@@ -39,9 +39,9 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_std_open") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
-      path = File.join(std_dir, "jsonc.mt")
+      path = File.join(std_dir, "sample_text.mt")
       content = <<~MT
-        module std.jsonc
+        module std.sample_text
 
         import std.maybe as maybe
         import std.string as string

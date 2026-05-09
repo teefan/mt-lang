@@ -4,14 +4,12 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaStdSpanTest < Minitest::Test
-  def test_host_runtime_executes_span_pointer_constructors
+  def test_host_runtime_executes_builtin_span_pointer_constructors
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_span_constructors",
-      "",
-      "import std.span as sp",
+      "module demo.span_constructors",
       "",
       "function sum(values: span[int]) -> int:",
       "    var total = 0",
@@ -24,10 +22,10 @@ class MilkTeaStdSpanTest < Minitest::Test
       "",
       "function main() -> int:",
       "    var values = array[int, 3](7, 8, 9)",
-      "    let view = sp.from_ptr[int](ptr_of(values[0]), 3)",
-      "    let empty = sp.empty[int]()",
+      "    let view = span[int](data = ptr_of(values[0]), len = 3)",
+      "    let empty = zero[span[int]]",
       "    var missing: ptr[int]? = null",
-      "    let null_view = sp.from_nullable_ptr[int](missing, 0)",
+      "    let null_view = unsafe: span[int](data = ptr[int]<-missing, len = 0)",
       "    if empty.len != 0:",
       "        return 1",
       "    if null_view.len != 0:",

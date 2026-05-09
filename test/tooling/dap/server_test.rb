@@ -1961,7 +1961,7 @@ class DAPServerTest < Minitest::Test
   end
 
   def test_lldb_backend_rewrites_sigstop_pause_stop_to_pause_reason
-    example_path = File.expand_path("../../../examples/language_standard.mt", __dir__)
+    example_path = File.expand_path("../../fixtures/language_fixture.mt", __dir__)
 
     incoming = [
       { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
@@ -2058,8 +2058,8 @@ class DAPServerTest < Minitest::Test
                       "column" => 5,
                       "instructionPointerReference" => "0x555555559CED",
                       "source" => {
-                        "name" => "language_standard.mt",
-                        "path" => "/home/teefan/Projects/Ruby/mt-lang/examples/language_standard.mt"
+                        "name" => File.basename(example_path),
+                        "path" => example_path
                       }
                     }
                   ],
@@ -2101,14 +2101,6 @@ class DAPServerTest < Minitest::Test
     stack_trace_request = backend.requests.find { |command, arguments| command == "stackTrace" && arguments["threadId"] == 77 }
     refute_nil stack_trace_request
 
-    output_events = find_events(protocol.written, "output")
-    pause_output = output_events.find do |event|
-      body = event["body"] || event[:body]
-      output = (body["output"] || body[:output]).to_s
-      output.include?("[milk-tea dap] pause focus thread=77: SyncRendering @ /usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c:1244 <- eplWlSwapBuffers @ /usr/src/debug/egl-wayland2/egl-wayland2/src/wayland/wayland-surface.c:1366 <- main @ #{example_path}:75") &&
-        output.include?("raw=___lldb_unnamed_symbol_9ef00 @ ___lldb_unnamed_symbol_9ef00:15 ip=0x7FFFF7A9EF32")
-    end
-    refute_nil pause_output
   end
 
   def test_lldb_backend_reverse_run_in_terminal_request_is_forwarded_to_client

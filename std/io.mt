@@ -1,8 +1,6 @@
 module std.io
 
-import std.fmt as fmt
 import std.c.unistd as unistd
-import std.string as string
 
 const stdout_fd: int = 1
 const stderr_fd: int = 2
@@ -43,27 +41,3 @@ public function print(text: str) -> bool:
 
 public function println(text: str) -> bool:
     return write_line(text)
-
-
-function print_formatted(text: ref[string.String]) -> bool:
-    let ok = write(text.as_str())
-    text.release()
-    return ok
-
-
-function println_formatted(text: ref[string.String]) -> bool:
-    let ok = write_line(text.as_str())
-    text.release()
-    return ok
-
-
-function write_error_formatted(text: ref[string.String]) -> bool:
-    let ok = write_error(text.as_str())
-    text.release()
-    return ok
-
-
-function write_error_line_formatted(text: ref[string.String]) -> bool:
-    let ok = write_error_line(text.as_str())
-    text.release()
-    return ok

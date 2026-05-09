@@ -20,10 +20,10 @@ module MilkTea
       lines = []
       constants = emitted_constants
       headers = @program.includes.map(&:header)
-      if uses_fatal_helper?
+      if uses_fatal_helper? || uses_format_helpers?
         headers << "<stdio.h>"
-        headers << "<stdlib.h>"
       end
+      headers << "<stdlib.h>" if uses_fatal_helper?
       headers << "<stdlib.h>" if uses_async_memory_helpers?
       headers.uniq.each do |header|
         lines << "#include #{header}"
@@ -35,6 +35,11 @@ module MilkTea
 
       if uses_fatal_helper?
         lines.concat(emit_fatal_helper)
+        lines << ""
+      end
+
+      if uses_format_helpers?
+        lines.concat(emit_format_helpers)
         lines << ""
       end
 
@@ -400,6 +405,7 @@ module MilkTea
 
     def uses_mt_fatal_helper?
       collect_checked_array_index_types.any? || collect_checked_span_index_types.any? ||
+        uses_format_helpers? ||
         emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_fatal mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_assign mt_str_builder_append mt_foreign_str_to_cstr_temp mt_foreign_strs_to_cstrs_temp]) }
     end
 
@@ -425,6 +431,38 @@ module MilkTea
 
     def uses_async_memory_helpers?
       emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_async_alloc mt_async_free]) }
+    end
+
+    def format_helper_callees
+      %w[
+        mt_format_str_make
+        mt_format_str_release
+        mt_format_cstr_len
+        mt_format_bool_len
+        mt_format_ptr_uint_len
+        mt_format_ulong_len
+        mt_format_uint_len
+        mt_format_long_len
+        mt_format_int_len
+        mt_format_float_len
+        mt_format_double_len
+        mt_format_double_precision_len
+        mt_format_append_str
+        mt_format_append_cstr
+        mt_format_append_bool
+        mt_format_append_ptr_uint
+        mt_format_append_ulong
+        mt_format_append_uint
+        mt_format_append_long
+        mt_format_append_int
+        mt_format_append_float
+        mt_format_append_double
+        mt_format_append_double_precision
+      ]
+    end
+
+    def uses_format_helpers?
+      emitted_functions.any? { |function| function_uses_named_call?(function, format_helper_callees) }
     end
 
     def function_uses_named_call?(function, callees)
@@ -527,6 +565,174 @@ module MilkTea
         "",
         "static void mt_async_free(void* memory) {",
         "#{INDENT}free(memory);",
+        "}",
+      ]
+    end
+
+    def emit_format_helpers
+      [
+        "static mt_str mt_format_str_make(uintptr_t len) {",
+        "#{INDENT}char* data = (char*)malloc((size_t)(len + 1));",
+        "#{INDENT}if (data == NULL) mt_fatal(\"format string allocation failed\");",
+        "#{INDENT}data[len] = '\\0';",
+        "#{INDENT}return (mt_str){ .data = data, .len = len };",
+        "}",
+        "",
+        "static void mt_format_str_release(mt_str value) {",
+        "#{INDENT}free(value.data);",
+        "}",
+        "",
+        "static void mt_format_check_capacity(mt_str target, uintptr_t offset, uintptr_t len) {",
+        "#{INDENT}if (offset > target.len || len > target.len - offset) mt_fatal(\"format string append exceeds capacity\");",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_bytes(mt_str target, uintptr_t offset, const char* data, uintptr_t len) {",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}if (len > 0) memcpy(target.data + offset, data, (size_t)len);",
+        "#{INDENT}offset += len;",
+        "#{INDENT}target.data[offset] = '\\0';",
+        "#{INDENT}return offset;",
+        "}",
+        "",
+        "static uintptr_t mt_format_cstr_len(const char* value) {",
+        "#{INDENT}return (uintptr_t)strlen(value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_bool_len(bool value) {",
+        "#{INDENT}return value ? 4 : 5;",
+        "}",
+        "",
+        "static uintptr_t mt_format_ptr_uint_len(uintptr_t value) {",
+        "#{INDENT}uintptr_t len = 1;",
+        "#{INDENT}while (value >= 10) {",
+        "#{INDENT * 2}value /= 10;",
+        "#{INDENT * 2}len += 1;",
+        "#{INDENT}}",
+        "#{INDENT}return len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_ulong_len(uint64_t value) {",
+        "#{INDENT}uintptr_t len = 1;",
+        "#{INDENT}while (value >= 10) {",
+        "#{INDENT * 2}value /= 10;",
+        "#{INDENT * 2}len += 1;",
+        "#{INDENT}}",
+        "#{INDENT}return len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_uint_len(uint32_t value) {",
+        "#{INDENT}return mt_format_ptr_uint_len((uintptr_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_long_len(int64_t value) {",
+        "#{INDENT}if (value < 0) return 1 + mt_format_ulong_len(((uint64_t)(-(value + 1))) + 1);",
+        "#{INDENT}return mt_format_ulong_len((uint64_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_int_len(int32_t value) {",
+        "#{INDENT}if (value < 0) return 1 + mt_format_ptr_uint_len((uintptr_t)(-((int64_t)value)));",
+        "#{INDENT}return mt_format_ptr_uint_len((uintptr_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_float_len(float value) {",
+        "#{INDENT}int written = snprintf(NULL, 0, \"%g\", (double)value);",
+        "#{INDENT}if (written < 0) mt_fatal(\"format string could not measure float\");",
+        "#{INDENT}return (uintptr_t)written;",
+        "}",
+        "",
+        "static uintptr_t mt_format_double_len(double value) {",
+        "#{INDENT}int written = snprintf(NULL, 0, \"%g\", value);",
+        "#{INDENT}if (written < 0) mt_fatal(\"format string could not measure double\");",
+        "#{INDENT}return (uintptr_t)written;",
+        "}",
+        "",
+        "static uintptr_t mt_format_double_precision_len(double value, int32_t precision) {",
+        "#{INDENT}int written = snprintf(NULL, 0, \"%.*f\", precision, value);",
+        "#{INDENT}if (written < 0) mt_fatal(\"format string could not measure double precision\");",
+        "#{INDENT}return (uintptr_t)written;",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_str(mt_str target, uintptr_t offset, mt_str value) {",
+        "#{INDENT}return mt_format_append_bytes(target, offset, value.data, value.len);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_cstr(mt_str target, uintptr_t offset, const char* value) {",
+        "#{INDENT}uintptr_t len = mt_format_cstr_len(value);",
+        "#{INDENT}return mt_format_append_bytes(target, offset, value, len);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_bool(mt_str target, uintptr_t offset, bool value) {",
+        "#{INDENT}return value ? mt_format_append_bytes(target, offset, \"true\", 4) : mt_format_append_bytes(target, offset, \"false\", 5);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_ptr_uint(mt_str target, uintptr_t offset, uintptr_t value) {",
+        "#{INDENT}uintptr_t len = mt_format_ptr_uint_len(value);",
+        "#{INDENT}uintptr_t index = offset + len;",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}target.data[index] = '\\0';",
+        "#{INDENT}do {",
+        "#{INDENT * 2}index -= 1;",
+        "#{INDENT * 2}target.data[index] = (char)('0' + (value % 10));",
+        "#{INDENT * 2}value /= 10;",
+        "#{INDENT}} while (index > offset);",
+        "#{INDENT}return offset + len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_ulong(mt_str target, uintptr_t offset, uint64_t value) {",
+        "#{INDENT}uintptr_t len = mt_format_ulong_len(value);",
+        "#{INDENT}uintptr_t index = offset + len;",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}target.data[index] = '\\0';",
+        "#{INDENT}do {",
+        "#{INDENT * 2}index -= 1;",
+        "#{INDENT * 2}target.data[index] = (char)('0' + (value % 10));",
+        "#{INDENT * 2}value /= 10;",
+        "#{INDENT}} while (index > offset);",
+        "#{INDENT}return offset + len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_uint(mt_str target, uintptr_t offset, uint32_t value) {",
+        "#{INDENT}return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_long(mt_str target, uintptr_t offset, int64_t value) {",
+        "#{INDENT}if (value < 0) {",
+        "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+        "#{INDENT * 2}return mt_format_append_ulong(target, offset, ((uint64_t)(-(value + 1))) + 1);",
+        "#{INDENT}}",
+        "#{INDENT}return mt_format_append_ulong(target, offset, (uint64_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_int(mt_str target, uintptr_t offset, int32_t value) {",
+        "#{INDENT}if (value < 0) {",
+        "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+        "#{INDENT * 2}return mt_format_append_ptr_uint(target, offset, (uintptr_t)(-((int64_t)value)));",
+        "#{INDENT}}",
+        "#{INDENT}return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_float(mt_str target, uintptr_t offset, float value) {",
+        "#{INDENT}uintptr_t len = mt_format_float_len(value);",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", (double)value);",
+        "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format float\");",
+        "#{INDENT}return offset + len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_double(mt_str target, uintptr_t offset, double value) {",
+        "#{INDENT}uintptr_t len = mt_format_double_len(value);",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", value);",
+        "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double\");",
+        "#{INDENT}return offset + len;",
+        "}",
+        "",
+        "static uintptr_t mt_format_append_double_precision(mt_str target, uintptr_t offset, double value, int32_t precision) {",
+        "#{INDENT}uintptr_t len = mt_format_double_precision_len(value, precision);",
+        "#{INDENT}mt_format_check_capacity(target, offset, len);",
+        "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%.*f\", precision, value);",
+        "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double precision\");",
+        "#{INDENT}return offset + len;",
         "}",
       ]
     end

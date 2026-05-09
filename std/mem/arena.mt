@@ -52,7 +52,7 @@ methods Arena:
         return this.offset
 
 
-    public edit function reset(mark: Mark) -> void:
+    public editable function reset(mark: Mark) -> void:
         if mark > this.offset:
             fatal(c"arena.reset invalid mark")
 
@@ -64,11 +64,11 @@ methods Arena:
         return this.capacity - this.offset
 
 
-    public edit function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
+    public editable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.alloc_bytes_aligned(size_bytes, 1)
 
 
-    public edit function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         let backing = this.memory
         if backing == null:
             return null
@@ -95,7 +95,7 @@ methods Arena:
             return result
 
 
-    public edit function alloc[T](count: ptr_uint) -> ptr[T]?:
+    public editable function alloc[T](count: ptr_uint) -> ptr[T]?:
         let element_size = ptr_uint<-size_of(T)
         if heap.mul_overflows(count, element_size):
             return null
@@ -107,7 +107,7 @@ methods Arena:
         return unsafe: ptr[T]<-memory
 
 
-    public edit function try_to_cstr(text: str) -> cstr?:
+    public editable function try_to_cstr(text: str) -> cstr?:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             return null
@@ -122,7 +122,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    public edit function to_cstr(text: str) -> cstr:
+    public editable function to_cstr(text: str) -> cstr:
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             fatal(c"Arena.to_cstr out of memory")
@@ -137,7 +137,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    public edit function release() -> void:
+    public editable function release() -> void:
         heap.release(this.memory)
         this.memory = null
         this.capacity = 0

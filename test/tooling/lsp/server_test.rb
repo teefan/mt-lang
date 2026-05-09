@@ -370,7 +370,7 @@ class LSPServerTest < Minitest::Test
       SOURCE_WITH_KEYWORD_NAMESPACE_PATH_SEMANTICS = <<~MT
       module std.async
 
-      import std.libuv.async as impl
+      import tmp.async as impl
 
       function main() -> int:
           return 0

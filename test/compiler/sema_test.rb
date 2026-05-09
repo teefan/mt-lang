@@ -5,13 +5,13 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaSemaTest < Minitest::Test
-  def test_language_standard_file_type_checks
-    result = MilkTea::ModuleLoader.check_file(language_standard_path)
+  def test_language_fixture_file_type_checks
+    result = MilkTea::ModuleLoader.check_file(language_fixture_path)
 
-    assert_equal "examples.language_standard", result.module_name
-    assert_equal %w[main mode_label pair_label printf release_allocated_values], result.functions.keys.sort
-    assert_equal true, result.imports.key?("alg")
-    assert_equal true, result.imports.key?("foreign_demo")
+    assert_equal "test.fixtures.language_fixture", result.module_name
+    assert_equal %w[describe main], result.functions.keys.sort
+    assert_equal true, result.imports.key?("maybe")
+    assert_equal true, result.imports.key?("runtime")
     assert_equal true, result.imports.key?("types")
   end
 
@@ -132,7 +132,7 @@ class MilkTeaSemaTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
       methods NumbersIter:
-          public edit function next() -> ptr[int]?:
+          public editable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -168,7 +168,7 @@ class MilkTeaSemaTest < Minitest::Test
               return NumbersIter(index = this.stop)
 
       methods NumbersIter:
-          public edit function next() -> ptr[int]:
+          public editable function next() -> ptr[int]:
               unsafe:
                   return ptr_of(this.index)
 
@@ -202,7 +202,7 @@ class MilkTeaSemaTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop)
 
       methods NumbersIter:
-          public edit function next() -> bool:
+          public editable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -402,7 +402,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/async main requires importing std\.async or std\.libuv\.async/, error.message)
+    assert_match(/async main requires importing std\.async/, error.message)
   end
 
   def test_rejects_async_main_with_non_exit_return_type
@@ -471,7 +471,7 @@ class MilkTeaSemaTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async edit function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
 
       async function main() -> int:
@@ -2360,7 +2360,7 @@ class MilkTeaSemaTest < Minitest::Test
           function get() -> T:
               return this.value
 
-          edit function set(value: T) -> void:
+          editable function set(value: T) -> void:
               this.value = value
 
           static function zero() -> Box[T]:
@@ -3783,7 +3783,7 @@ class MilkTeaSemaTest < Minitest::Test
           value: int
 
       methods Counter:
-          edit function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
           function read() -> int:
@@ -4140,7 +4140,7 @@ class MilkTeaSemaTest < Minitest::Test
           value: int
 
       methods Counter:
-          edit function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
       function main() -> int:
@@ -4155,7 +4155,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/cannot call edit method add on an immutable receiver/, error.message)
+    assert_match(/cannot call editable method add on an immutable receiver/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values
@@ -5048,7 +5048,7 @@ class MilkTeaSemaTest < Minitest::Test
           value: int
 
       methods Counter:
-          edit function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
           function read() -> int:
@@ -5726,8 +5726,8 @@ class MilkTeaSemaTest < Minitest::Test
 
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
   def check_source(source)

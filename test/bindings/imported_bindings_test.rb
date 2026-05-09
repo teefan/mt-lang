@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "libuv", "libc", "libm"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "libc"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -45,20 +45,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes registry.fetch("steamworks").binding_path, "/std/steamworks.mt"
     assert_includes registry.fetch("steamworks").policy_path, "/bindings/imported/steamworks.binding.json"
 
-    assert_equal "std.libuv", registry.fetch("libuv").module_name
-    assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
-    assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
-    assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
-
     assert_equal "std.libc", registry.fetch("libc").module_name
     assert_equal "std.c.libc", registry.fetch("libc").raw_module_name
     assert_includes registry.fetch("libc").binding_path, "/std/libc.mt"
     assert_includes registry.fetch("libc").policy_path, "/bindings/imported/libc.binding.json"
-
-    assert_equal "std.libm", registry.fetch("libm").module_name
-    assert_equal "std.c.libm", registry.fetch("libm").raw_module_name
-    assert_includes registry.fetch("libm").binding_path, "/std/libm.mt"
-    assert_includes registry.fetch("libm").policy_path, "/bindings/imported/libm.binding.json"
   end
 
   def test_checked_in_libc_binding_matches_policy_and_loads
@@ -91,44 +81,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public foreign function strtoq\(/, source)
     refute_match(/^public foreign function strtouq\(/, source)
     refute_match(/^public foreign function __ctype_get_mb_cur_max\(/, source)
-  end
-
-  def test_checked_in_libm_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("libm")
-
-    assert_includes binding.check!, "/std/c/libm.mt"
-
-    source = File.read(binding.binding_path)
-    assert_match(/^module std\.libm$/, source)
-    assert_match(/^import std\.c\.libm as c$/, source)
-    assert_match(/^public const PI: double = c\.M_PI$/, source)
-    assert_match(/^public const PI_F: float = c\.M_PI_F$/, source)
-    assert_match(/^public foreign function sqrt\(x: double\) -> double = c\.sqrt$/, source)
-    assert_match(/^public foreign function sqrtf\(x: float\) -> float = c\.sqrtf$/, source)
-    assert_match(/^public foreign function atan2\(y: double, x: double\) -> double = c\.atan2$/, source)
-    assert_match(/^public foreign function atan2f\(y: float, x: float\) -> float = c\.atan2f$/, source)
-    refute_match(/^public const M_PI:/, source)
-    refute_match(/^public foreign function atan_2\(/, source)
-  end
-
-  def test_checked_in_libuv_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("libuv")
-
-    assert_includes binding.check!, "/std/c/libuv.mt"
-
-    source = File.read(binding.binding_path)
-    assert_match(/^import std\.c\.libuv_system as sys$/, source)
-    assert_match(/^public type uv_loop_t = c\.uv_loop_t$/, source)
-    assert_match(/^public type uv_run_mode = c\.uv_run_mode$/, source)
-    assert_match(/^public type uv_alloc_cb = c\.uv_alloc_cb$/, source)
-    assert_match(/^public foreign function version\(\) -> uint = c\.uv_version$/, source)
-    assert_match(/^public foreign function version_string\(\) -> cstr = c\.uv_version_string$/, source)
-    assert_match(/^public foreign function default_loop\(\) -> ptr\[uv_loop_t\] = c\.uv_default_loop$/, source)
-    assert_match(/^public foreign function loop_init\(loop: ptr\[uv_loop_t\]\) -> int = c\.uv_loop_init$/, source)
-    assert_match(/^public foreign function loop_close\(loop: ptr\[uv_loop_t\]\) -> int = c\.uv_loop_close$/, source)
-    assert_match(/^public foreign function run\(arg_0: ptr\[uv_loop_t\], mode: uv_run_mode\) -> int = c\.uv_run$/, source)
-    refute_match(/^public foreign function uv_version\(/, source)
-    refute_match(/^public foreign function loop_configure\(/, source)
   end
 
   def test_checked_in_sdl3_binding_matches_policy_and_loads
@@ -370,11 +322,12 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public type va_list = /, source)
     refute_match(/^public type TraceLogCallback = /, source)
     refute_match(/^public foreign function set_trace_log_callback\(/, source)
-    assert_match(/^import std\.bytes as bytes$/, source)
-    assert_match(/^import std\.maybe as maybe$/, source)
-    assert_match(/^import std\.vec as vec$/, source)
-    assert_match(/^import std\.string as string$/, source)
-    assert_match(/^import std\.str as text$/, source)
+    assert_match(/^import std\.c\.raylib as c$/, source)
+    refute_match(/^import std\.bytes as bytes$/, source)
+    refute_match(/^import std\.maybe as maybe$/, source)
+    refute_match(/^import std\.vec as vec$/, source)
+    refute_match(/^import std\.string as string$/, source)
+    refute_match(/^import std\.str as text$/, source)
     assert_match(/^public foreign function load_shader\(vs_file_name: cstr\?, fs_file_name: cstr\?\) -> Shader = c\.LoadShader$/, source)
     assert_match(/^public foreign function load_shader_from_memory\(vs_code: cstr\?, fs_code: cstr\?\) -> Shader = c\.LoadShaderFromMemory$/, source)
     assert_match(/^public foreign function set_shader_value\[T\]\(shader: Shader, loc_index: int, in value: T as const_ptr\[void\], uniform_type: int\) -> void = c\.SetShaderValue$/, source)
@@ -384,17 +337,17 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function load_image_anim\(file_name: str as cstr, out frames: int\) -> Image = c\.LoadImageAnim$/, source)
     assert_match(/^public foreign function load_image_from_memory\(file_type: str as cstr, file_data: span\[ubyte\]\) -> Image = c\.LoadImageFromMemory\(file_type, file_data\.data, int<-file_data\.len\)$/, source)
     assert_match(/^public foreign function set_window_title\(title: str as cstr\) -> void = c\.SetWindowTitle$/, source)
-    assert_match(/^public foreign function get_monitor_name\(monitor: int\) -> str = text\.cstr_as_str\(c\.GetMonitorName\(monitor\)\)$/, source)
-    assert_match(/^public foreign function get_clipboard_text\(\) -> str = text\.cstr_as_str\(c\.GetClipboardText\(\)\)$/, source)
-    assert_match(/^public foreign function get_working_directory\(\) -> str = text\.cstr_as_str\(c\.GetWorkingDirectory\(\)\)$/, source)
-    assert_match(/^public foreign function get_application_directory\(\) -> str = text\.cstr_as_str\(c\.GetApplicationDirectory\(\)\)$/, source)
+    assert_match(/^public foreign function get_monitor_name\(monitor: int\) -> cstr = c\.GetMonitorName$/, source)
+    assert_match(/^public foreign function get_clipboard_text\(\) -> cstr = c\.GetClipboardText$/, source)
+    assert_match(/^public foreign function get_working_directory\(\) -> cstr = c\.GetWorkingDirectory$/, source)
+    assert_match(/^public foreign function get_application_directory\(\) -> cstr = c\.GetApplicationDirectory$/, source)
     assert_match(/^public foreign function get_file_length\(file_name: str as cstr\) -> int = c\.GetFileLength$/, source)
     assert_match(/^public foreign function get_file_mod_time\(file_name: str as cstr\) -> ptr_int = c\.GetFileModTime$/, source)
-    assert_match(/^public foreign function get_file_extension\(file_name: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileExtension\(file_name\)\)$/, source)
-    assert_match(/^public foreign function get_file_name\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileName\(file_path\)\)$/, source)
-    assert_match(/^public foreign function get_file_name_without_ext\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetFileNameWithoutExt\(file_path\)\)$/, source)
-    assert_match(/^public foreign function get_directory_path\(file_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetDirectoryPath\(file_path\)\)$/, source)
-    assert_match(/^public foreign function get_prev_directory_path\(dir_path: str as cstr\) -> str = text\.cstr_as_str\(c\.GetPrevDirectoryPath\(dir_path\)\)$/, source)
+    assert_match(/^public foreign function get_file_extension\(file_name: str as cstr\) -> cstr = c\.GetFileExtension$/, source)
+    assert_match(/^public foreign function get_file_name\(file_path: str as cstr\) -> cstr = c\.GetFileName$/, source)
+    assert_match(/^public foreign function get_file_name_without_ext\(file_path: str as cstr\) -> cstr = c\.GetFileNameWithoutExt$/, source)
+    assert_match(/^public foreign function get_directory_path\(file_path: str as cstr\) -> cstr = c\.GetDirectoryPath$/, source)
+    assert_match(/^public foreign function get_prev_directory_path\(dir_path: str as cstr\) -> cstr = c\.GetPrevDirectoryPath$/, source)
     assert_match(/^public foreign function make_directory\(dir_path: str as cstr\) -> int = c\.MakeDirectory$/, source)
     assert_match(/^public foreign function change_directory\(dir_path: str as cstr\) -> bool = c\.ChangeDirectory$/, source)
     assert_match(/^public foreign function is_path_file\(path: str as cstr\) -> bool = c\.IsPathFile$/, source)
@@ -403,30 +356,19 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function load_directory_files_ex\(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool\) -> FilePathList = c\.LoadDirectoryFilesEx$/, source)
     assert_match(/^public foreign function get_directory_file_count\(dir_path: str as cstr\) -> uint = c\.GetDirectoryFileCount$/, source)
     assert_match(/^public foreign function get_directory_file_count_ex\(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool\) -> uint = c\.GetDirectoryFileCountEx$/, source)
-    assert_match(/^public foreign function get_key_name\(key: int\) -> str = text\.cstr_as_str\(c\.GetKeyName\(key\)\)$/, source)
-    assert_match(/^public foreign function get_gamepad_name\(gamepad: int\) -> str = text\.cstr_as_str\(c\.GetGamepadName\(gamepad\)\)$/, source)
+    assert_match(/^public foreign function get_key_name\(key: int\) -> cstr = c\.GetKeyName$/, source)
+    assert_match(/^public foreign function get_gamepad_name\(gamepad: int\) -> cstr = c\.GetGamepadName$/, source)
     assert_match(/^public foreign function export_image\(image: Image, file_name: str as cstr\) -> bool = c\.ExportImage$/, source)
     assert_match(/^public foreign function update_texture\[T\]\(texture: Texture, pixels: ptr\[T\] as const_ptr\[void\]\) -> void = c\.UpdateTexture$/, source)
     assert_match(/^public foreign function update_mesh_buffer\[T\]\(mesh: Mesh, index: int, data: ptr\[T\] as const_ptr\[void\], data_size: int, offset: int\) -> void = c\.UpdateMeshBuffer$/, source)
     assert_match(/^public foreign function update_audio_stream\[T\]\(stream: AudioStream, data: ptr\[T\] as const_ptr\[void\], frame_count: int\) -> void = c\.UpdateAudioStream$/, source)
     assert_match(/^public foreign function draw_spline_linear_ptr\(points: const_ptr\[Vector2\], point_count: int, thick: float, color: Color\) -> void = c\.DrawSplineLinear$/, source)
-    assert_match(/^foreign function mt_raw_load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
-    assert_match(/^public function load_file_data\(file_name: str\) -> maybe\.Maybe\[bytes\.Buffer\]:$/, source)
-    assert_match(/^    c\.UnloadFileData\(ptr\[ubyte\]<-raw_result\)$/, source)
-    refute_match(/^public foreign function load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
-    refute_match(/^public foreign function unload_file_data\(consuming data: ptr\[ubyte\]\) -> void = c\.UnloadFileData$/, source)
-    assert_match(/^foreign function mt_raw_load_file_text\(file_name: str as cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
-    assert_match(/^public function load_file_text\(file_name: str\) -> maybe\.Maybe\[string\.String\]:$/, source)
-    assert_match(/^    c\.UnloadFileText\(ptr\[char\]<-raw_result\)$/, source)
-    refute_match(/^public foreign function load_file_text\(file_name: cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
-    refute_match(/^public foreign function unload_file_text\(text: ptr\[char\]\) -> void = c\.UnloadFileText$/, source)
-    assert_match(/^foreign function mt_raw_load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
-    assert_match(/^public function load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> maybe\.Maybe\[string\.String\]:$/, source)
-    assert_match(/^    c\.UnloadUTF8\(ptr\[char\]<-raw_result\)$/, source)
-    refute_match(/^public foreign function load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
-    refute_match(/^public foreign function unload_utf_8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
-    assert_match(/^public foreign function text_format_int_int_int\(format: str as cstr, first: int, second: int, third: int\) -> str = text\.cstr_as_str\(c\.TextFormat\(format, first, second, third\)\)$/, source)
-    assert_match(/^public foreign function text_format_cstr_float_float\(format: str as cstr, label: str as cstr, first: float, second: float\) -> str = text\.cstr_as_str\(c\.TextFormat\(format, label, first, second\)\)$/, source)
+    assert_match(/^public foreign function load_file_data\(file_name: str as cstr, out data_size: int\) -> ptr\[ubyte\]\? = c\.LoadFileData$/, source)
+    assert_match(/^public foreign function unload_file_data\(consuming data: ptr\[ubyte\]\) -> void = c\.UnloadFileData$/, source)
+    assert_match(/^public foreign function load_file_text\(file_name: str as cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
+    assert_match(/^public foreign function unload_file_text\(text: ptr\[char\]\) -> void = c\.UnloadFileText$/, source)
+    assert_match(/^public foreign function load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
+    assert_match(/^public foreign function unload_utf_8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
     assert_match(/^public foreign function image_format\(inout image: Image, new_format: int\) -> void = c\.ImageFormat$/, source)
     assert_match(/^public foreign function image_kernel_convolution\(inout image: Image, kernel: span\[float\]\) -> void = c\.ImageKernelConvolution\(image, kernel\.data, int<-kernel\.len\)$/, source)
     assert_match(/^public foreign function image_draw_text_ex\(inout dst: Image, font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color\) -> void = c\.ImageDrawTextEx$/, source)
@@ -440,15 +382,19 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function gen_texture_mipmaps\(inout texture: Texture2D\) -> void = c\.GenTextureMipmaps$/, source)
     assert_match(/^public foreign function load_font_data\(file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int, kind: FontType, out glyph_count: int\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
     assert_match(/^public foreign function gen_image_font_atlas\(glyphs: const_ptr\[GlyphInfo\], out glyph_recs: ptr\[Rectangle\], glyph_count: int, font_size: int, padding: int, pack_method: int\) -> Image = c\.GenImageFontAtlas$/, source)
-    assert_match(/^foreign function mt_raw_load_codepoints\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
-    assert_match(/^public function load_codepoints\(text: str\) -> maybe\.Maybe\[vec\.Vec\[int\]\]:$/, source)
-    assert_match(/^    c\.UnloadCodepoints\(ptr\[int\]<-raw_result\)$/, source)
-    refute_match(/^public foreign function load_codepoints_ptr\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
-    refute_match(/^public foreign function unload_codepoints\(codepoints: ptr\[int\]\) -> void = c\.UnloadCodepoints$/, source)
-    assert_match(/^public foreign function codepoint_to_utf_8\(codepoint: int, out utf_8_size: int\) -> str = text\.cstr_as_str\(c\.CodepointToUTF8\(codepoint, utf_8_size\)\)$/, source)
-    assert_match(/^public foreign function text_subtext\(text: str as cstr, position: int, length: int\) -> str = text\.cstr_as_str\(c\.TextSubtext\(text, position, length\)\)$/, source)
-    assert_match(/^public foreign function text_remove_spaces\(text: str as cstr\) -> str = text\.cstr_as_str\(c\.TextRemoveSpaces\(text\)\)$/, source)
+    assert_match(/^public foreign function load_codepoints\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
+    assert_match(/^public foreign function unload_codepoints\(codepoints: ptr\[int\]\) -> void = c\.UnloadCodepoints$/, source)
+    assert_match(/^public foreign function codepoint_to_utf_8\(codepoint: int, out utf_8_size: int\) -> cstr = c\.CodepointToUTF8$/, source)
+    assert_match(/^public foreign function text_subtext\(text: str as cstr, position: int, length: int\) -> cstr = c\.TextSubtext$/, source)
+    assert_match(/^public foreign function text_remove_spaces\(text: str as cstr\) -> cstr = c\.TextRemoveSpaces$/, source)
     assert_match(/^public foreign function load_fragment_shader\(fs_file_name: str as cstr\) -> Shader = c\.LoadShader\(null, fs_file_name\)$/, source)
+    refute_match(/cstr_as_str/, source)
+    refute_match(/^foreign function mt_raw_/, source)
+    refute_match(/^public function load_file_data\(/, source)
+    refute_match(/^public function load_file_text\(/, source)
+    refute_match(/^public function load_utf_8\(/, source)
+    refute_match(/^public function load_codepoints\(/, source)
+    refute_match(/^public foreign function text_format_/, source)
     refute_match(/^# extension from /, source)
     refute_match(/^public struct CodepointList:$/, source)
     refute_match(/^public def load_codepoints\(text: str\) -> CodepointList:$/, source)
@@ -463,8 +409,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes binding.check!, "/std/c/rlgl.mt"
 
     source = File.read(binding.binding_path)
-    assert_match(/^import std\.raylib as raylib$/, source)
-    assert_match(/^public type Matrix = raylib\.Matrix$/, source)
+    assert_match(/^import std\.c\.rlgl as c$/, source)
+    refute_match(/^import std\.raylib as raylib$/, source)
+    assert_match(/^public type Matrix = c\.Matrix$/, source)
     assert_match(/^public foreign function matrix_mode\(mode: int\) -> void = c\.rlMatrixMode$/, source)
     assert_match(/^public foreign function load_vertex_buffer\[T\]\(buffer: ptr\[T\] as const_ptr\[void\], size: int, dynamic: bool\) -> uint = c\.rlLoadVertexBuffer$/, source)
     assert_match(/^public foreign function load_texture\(data: const_ptr\[void\]\?, width: int, height: int, format: int, mipmap_count: int\) -> uint = c\.rlLoadTexture$/, source)
@@ -481,8 +428,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes binding.check!, "/std/c/raygui.mt"
 
     source = File.read(binding.binding_path)
-    assert_match(/^import std\.raylib as raylib$/, source)
-    assert_match(/^public type Rectangle = raylib\.Rectangle$/, source)
+    assert_match(/^import std\.c\.raygui as c$/, source)
+    refute_match(/^import std\.raylib as raylib$/, source)
+    assert_match(/^public type Rectangle = c\.Rectangle$/, source)
     assert_match(/^public type State = c\.GuiState$/, source)
     assert_match(/^public foreign function set_state\(state: State\) -> void = c\.GuiSetState\(int<-state\)$/, source)
     assert_match(/^public foreign function get_state\(\) -> State = State<-c\.GuiGetState\(\)$/, source)
@@ -498,7 +446,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3 box2d cjson libuv steamworks].include?(binding.name)
+      %w[raylib rlgl sdl3 box2d cjson steamworks].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end
@@ -514,7 +462,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     source = File.read(binding.binding_path)
     assert_match(/^module std\.steamworks$/, source)
     assert_match(/^import std\.c\.steamworks as c$/, source)
-    assert_match(/^import std\.str as text$/, source)
+    refute_match(/^import std\.str as text$/, source)
     assert_match(/^public type AppId_t = c\.AppId_t$/, source)
     assert_match(/^public type Friends = c\.ISteamFriends$/, source)
     assert_match(/^public type ErrMsg = c\.SteamErrMsg$/, source)
@@ -524,16 +472,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function init\(\) -> bool = c\.SteamAPI_Init$/, source)
     assert_match(/^public foreign function shutdown\(\) -> void = c\.SteamAPI_Shutdown$/, source)
     assert_match(/^public foreign function friends\(\) -> ptr\[Friends\] = c\.SteamAPI_SteamFriends$/, source)
-    assert_match(/^public foreign function friends_get_persona_name\(self: ptr\[Friends\]\) -> str = text\.cstr_as_str\(c\.SteamAPI_ISteamFriends_GetPersonaName\(self\)\)$/, source)
+    assert_match(/^public foreign function friends_get_persona_name\(self: ptr\[Friends\]\) -> cstr = c\.SteamAPI_ISteamFriends_GetPersonaName$/, source)
     assert_match(/^public foreign function internal_context_init\(p_context_init_data: ptr\[void\]\) -> ptr\[void\] = c\.SteamInternal_ContextInit$/, source)
+    refute_match(/cstr_as_str/, source)
     refute_match(/^public foreign function steam_api_init\(/, source)
     refute_match(/^public foreign function steam_api_i_steam_friends_get_persona_name\(/, source)
   end
 
-  def test_generate_supports_imports_type_alias_overrides_and_prefix_stripping
-    Dir.mktmpdir("milk-tea-imported-binding-overrides") do |dir|
+  def test_generate_rejects_policy_imports
+    Dir.mktmpdir("milk-tea-imported-binding-imports") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
-      shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
@@ -541,24 +489,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
       File.write(raw_path, <<~MT)
         external module std.c.sample:
-            struct Matrix:
-                m0: float
-
-            enum rlMode: int
-                RL_MODE_DEFAULT = 1
-
-            const IDENTITY: Matrix = Matrix(m0 = 1.0)
-
-            external function rlSetMatrix(matrix: Matrix) -> void
-            external function rlGetMode() -> rlMode
-      MT
-
-      File.write(shared_path, <<~MT)
-        module std.shared
-
-        import std.c.sample as c
-
-        public type Matrix = c.Matrix
+            external function rlSample() -> void
       MT
 
       File.write(policy_path, JSON.pretty_generate({
@@ -571,19 +502,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             alias: "shared",
           },
         ],
-        types: {
-          strip_prefix: "rl",
-          overrides: [
-            {
-              raw: "Matrix",
-              mapping: "shared.Matrix",
-            },
-          ],
-        },
+        types: {},
         constants: {},
-        functions: {
-          strip_prefix: "rl",
-        },
+        functions: {},
       }))
 
       binding = MilkTea::ImportedBindings::Binding.new(
@@ -594,29 +515,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         policy_path:,
       )
 
-      expected = <<~MT
-        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
-        module std.sample
+      error = assert_raises(MilkTea::ImportedBindings::Error) do
+        binding.generate(module_roots: [dir])
+      end
 
-        import std.c.sample as c
-        import std.shared as shared
-
-        public type Matrix = shared.Matrix
-        public type Mode = c.rlMode
-
-        public const IDENTITY: Matrix = c.IDENTITY
-
-        public foreign function set_matrix(matrix: Matrix) -> void = c.rlSetMatrix
-        public foreign function get_mode() -> Mode = c.rlGetMode
-      MT
-
-      module_roots = [dir, MilkTea.root]
-
-      generated = binding.generate(module_roots: module_roots)
-      assert_equal expected, generated
-
-      File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+      assert_match(/imports in #{Regexp.escape(policy_path)} are no longer supported; imported bindings must depend only on raw std\.c\.\* modules/, error.message)
     end
   end
 
@@ -694,8 +597,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     end
   end
 
-  def test_generate_supports_owned_string_wrappers_for_raw_pointer_results
-    Dir.mktmpdir("milk-tea-imported-binding-owned-string-wrapper") do |dir|
+  def test_generate_rejects_function_wrapper_overrides
+    Dir.mktmpdir("milk-tea-imported-binding-wrapper") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
@@ -712,41 +615,15 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         module_name: "std.sample",
         raw_module_name: "std.c.sample",
         raw_import_alias: "c",
-        imports: [
-          {
-            module_name: "std.maybe",
-            alias: "maybe",
-          },
-          {
-            module_name: "std.str",
-            alias: "text",
-          },
-          {
-            module_name: "std.string",
-            alias: "string",
-          },
-        ],
         types: {},
         constants: {},
         functions: {
-          include: [],
           overrides: [
             {
               raw: "LoadText",
               name: "load_text",
-              params: [
-                {
-                  name: "file_name",
-                  type: "str",
-                  boundary_type: "cstr",
-                },
-              ],
               wrapper: {
                 kind: "owned_string",
-                maybe_alias: "maybe",
-                text_alias: "text",
-                string_alias: "string",
-                release: "c.UnloadText",
               },
             },
           ],
@@ -761,40 +638,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         policy_path:,
       )
 
-      expected = [
-        "# generated by mtc imported-bindings from std.c.sample using sample.binding.json",
-        "module std.sample",
-        "",
-        "import std.c.sample as c",
-        "import std.maybe as maybe",
-        "import std.str as text",
-        "import std.string as string",
-        "",
-        "foreign function mt_raw_load_text(file_name: str as cstr) -> ptr[char]? = c.LoadText",
-        "",
-        "",
-        "public function load_text(file_name: str) -> maybe.Maybe[string.String]:",
-        "    let raw_result = mt_raw_load_text(file_name)",
-        "    if raw_result == null:",
-        "        return maybe.Maybe[string.String].none",
-        "",
-        "    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))",
-        "    c.UnloadText(ptr[char]<-raw_result)",
-        "    return maybe.Maybe[string.String].some(value= value)",
-      ].join("\n") + "\n"
+      error = assert_raises(MilkTea::ImportedBindings::Error) do
+        binding.generate(module_roots: [dir])
+      end
 
-      module_roots = [dir, MilkTea.root]
-
-      generated = binding.generate(module_roots: module_roots)
-      assert_equal expected, generated
-
-      File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+      assert_match(/function override in #{Regexp.escape(policy_path)} has unknown keys: wrapper/, error.message)
     end
   end
 
-  def test_generate_supports_owned_bytes_wrappers_for_pointer_and_count_results
-    Dir.mktmpdir("milk-tea-imported-binding-owned-bytes-wrapper") do |dir|
+  def test_generate_supports_direct_pointer_and_count_overrides_for_bytes_results
+    Dir.mktmpdir("milk-tea-imported-binding-direct-bytes") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
@@ -811,20 +664,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         module_name: "std.sample",
         raw_module_name: "std.c.sample",
         raw_import_alias: "c",
-        imports: [
-          {
-            module_name: "std.bytes",
-            alias: "bytes",
-          },
-          {
-            module_name: "std.maybe",
-            alias: "maybe",
-          },
-        ],
         types: {},
         constants: {},
         functions: {
-          include: [],
           overrides: [
             {
               raw: "LoadData",
@@ -841,116 +683,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
                   mode: "out",
                 },
               ],
-              wrapper: {
-                kind: "owned_bytes",
-                maybe_alias: "maybe",
-                bytes_alias: "bytes",
-                release: "c.UnloadData",
-              },
-            },
-          ],
-        },
-      }))
-
-      binding = MilkTea::ImportedBindings::Binding.new(
-        name: "sample",
-        module_name: "std.sample",
-        binding_path:,
-        raw_module_name: "std.c.sample",
-        policy_path:,
-      )
-
-      expected = [
-        "# generated by mtc imported-bindings from std.c.sample using sample.binding.json",
-        "module std.sample",
-        "",
-        "import std.c.sample as c",
-        "import std.bytes as bytes",
-        "import std.maybe as maybe",
-        "",
-        "foreign function mt_raw_load_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadData",
-        "",
-        "",
-        "public function load_data(file_name: str) -> maybe.Maybe[bytes.Buffer]:",
-        "    var data_size = 0",
-        "    let raw_result = mt_raw_load_data(file_name, data_size)",
-        "    if raw_result == null:",
-        "        return maybe.Maybe[bytes.Buffer].none",
-        "",
-        "    if data_size < 0:",
-        "        c.UnloadData(ptr[ubyte]<-raw_result)",
-        "        fatal(c\"imported wrapper load_data returned negative size\")",
-        "",
-        "    var value = bytes.with_capacity(ptr_uint<-data_size)",
-        "    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))",
-        "    c.UnloadData(ptr[ubyte]<-raw_result)",
-        "    return maybe.Maybe[bytes.Buffer].some(value= value)",
-      ].join("\n") + "\n"
-
-      module_roots = [dir, MilkTea.root]
-
-      generated = binding.generate(module_roots: module_roots)
-      assert_equal expected, generated
-
-      File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
-    end
-  end
-
-  def test_generate_supports_owned_vec_wrappers_for_pointer_and_count_results
-    Dir.mktmpdir("milk-tea-imported-binding-owned-vec-wrapper") do |dir|
-      raw_path = File.join(dir, "std", "c", "sample.mt")
-      binding_path = File.join(dir, "std", "sample.mt")
-      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
-      FileUtils.mkdir_p(File.dirname(raw_path))
-      FileUtils.mkdir_p(File.dirname(policy_path))
-
-      File.write(raw_path, <<~MT)
-        external module std.c.sample:
-            external function LoadItems(text: cstr, count: ptr[int]) -> ptr[int]?
-            external function UnloadItems(items: ptr[int]) -> void
-      MT
-
-      File.write(policy_path, JSON.pretty_generate({
-        module_name: "std.sample",
-        raw_module_name: "std.c.sample",
-        raw_import_alias: "c",
-        imports: [
-          {
-            module_name: "std.maybe",
-            alias: "maybe",
-          },
-          {
-            module_name: "std.vec",
-            alias: "vec",
-          },
-        ],
-        types: {},
-        constants: {},
-        functions: {
-          include: [],
-          overrides: [
-            {
-              raw: "LoadItems",
-              name: "load_items",
-              params: [
-                {
-                  name: "text",
-                  type: "str",
-                  boundary_type: "cstr",
-                },
-                {
-                  name: "count",
-                  type: "int",
-                  mode: "out",
-                },
-              ],
-              wrapper: {
-                kind: "owned_vec",
-                maybe_alias: "maybe",
-                vec_alias: "vec",
-                release: "c.UnloadItems",
-              },
+              return_type: "ptr[ubyte]?",
             },
           ],
         },
@@ -969,52 +702,91 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         module std.sample
 
         import std.c.sample as c
-        import std.maybe as maybe
-        import std.vec as vec
 
-        foreign function mt_raw_load_items(text: str as cstr, out count: int) -> ptr[int]? = c.LoadItems
-
-
-        public function load_items(text: str) -> maybe.Maybe[vec.Vec[int]]:
-            var count = 0
-            let raw_result = mt_raw_load_items(text, count)
-            if count < 0:
-                if raw_result != null:
-                    c.UnloadItems(ptr[int]<-raw_result)
-                fatal(c"imported wrapper load_items returned negative count")
-
-            var value = vec.Vec[int].with_capacity(ptr_uint<-count)
-            if count == 0:
-                if raw_result != null:
-                    c.UnloadItems(ptr[int]<-raw_result)
-                return maybe.Maybe[vec.Vec[int]].some(value= value)
-
-            if raw_result == null:
-                return maybe.Maybe[vec.Vec[int]].none
-
-            var index: ptr_uint = 0
-            while index < ptr_uint<-count:
-                unsafe:
-                    value.push(read(ptr[int]<-raw_result + index))
-                index += 1
-            c.UnloadItems(ptr[int]<-raw_result)
-            return maybe.Maybe[vec.Vec[int]].some(value= value)
+        public foreign function load_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadData
+        public foreign function unload_data(data: ptr[ubyte]) -> void = c.UnloadData
       MT
 
-      module_roots = [dir, MilkTea.root]
-
-      generated = binding.generate(module_roots: module_roots)
+      generated = binding.generate(module_roots: [dir])
       assert_equal expected, generated
 
       File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: module_roots)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
     end
   end
 
-  def test_generate_supports_shared_from_same_name_type_defaults
+  def test_generate_supports_direct_pointer_and_count_overrides_for_vec_results
+    Dir.mktmpdir("milk-tea-imported-binding-direct-vec") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        external module std.c.sample:
+            external function LoadItems(text: cstr, count: ptr[int]) -> ptr[int]?
+            external function UnloadItems(items: ptr[int]) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {},
+        constants: {},
+        functions: {
+          overrides: [
+            {
+              raw: "LoadItems",
+              name: "load_items",
+              params: [
+                {
+                  name: "text",
+                  type: "str",
+                  boundary_type: "cstr",
+                },
+                {
+                  name: "count",
+                  type: "int",
+                  mode: "out",
+                },
+              ],
+              return_type: "ptr[int]?",
+            },
+          ],
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+
+        public foreign function load_items(text: str as cstr, out count: int) -> ptr[int]? = c.LoadItems
+        public foreign function unload_items(items: ptr[int]) -> void = c.UnloadItems
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+
+      File.write(binding_path, generated)
+      assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
+    end
+  end
+
+  def test_generate_rejects_type_shared_from
     Dir.mktmpdir("milk-tea-imported-binding-shared-types") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
-      shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
@@ -1035,24 +807,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             external function rlGetMode() -> rlMode
       MT
 
-      File.write(shared_path, <<~MT)
-        module std.shared
-
-        import std.c.sample as c
-
-        public type Matrix = c.Matrix
-      MT
-
       File.write(policy_path, JSON.pretty_generate({
         module_name: "std.sample",
         raw_module_name: "std.c.sample",
         raw_import_alias: "c",
-        imports: [
-          {
-            module_name: "std.shared",
-            alias: "shared",
-          },
-        ],
         types: {
           strip_prefix: "rl",
           shared_from: ["shared"],
@@ -1071,35 +829,17 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         policy_path:,
       )
 
-      expected = <<~MT
-        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
-        module std.sample
+      error = assert_raises(MilkTea::ImportedBindings::Error) do
+        binding.generate(module_roots: [dir])
+      end
 
-        import std.c.sample as c
-        import std.shared as shared
-
-        public type Matrix = shared.Matrix
-        public type Mode = c.rlMode
-
-        public const IDENTITY: Matrix = c.IDENTITY
-
-        public foreign function set_matrix(matrix: Matrix) -> void = c.rlSetMatrix
-        public foreign function get_matrix() -> Matrix = c.rlGetMatrix
-        public foreign function get_mode() -> Mode = c.rlGetMode
-      MT
-
-      generated = binding.generate(module_roots: [dir])
-      assert_equal expected, generated
-
-      File.write(binding_path, generated)
-      assert_equal File.expand_path(raw_path), binding.check!(module_roots: [dir])
+      assert_match(/type section in #{Regexp.escape(policy_path)} has unknown keys: shared_from/, error.message)
     end
   end
 
   def test_generate_supports_include_prefixes_for_filtered_mixed_raw_modules
     Dir.mktmpdir("milk-tea-imported-binding-prefixes") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
-      shared_path = File.join(dir, "std", "shared.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
@@ -1125,28 +865,13 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             external function GuiLabel(text: cstr) -> int
       MT
 
-      File.write(shared_path, <<~MT)
-        module std.shared
-
-        import std.c.sample as c
-
-        public type Color = c.Color
-      MT
-
       File.write(policy_path, JSON.pretty_generate({
         module_name: "std.sample",
         raw_module_name: "std.c.sample",
         raw_import_alias: "c",
-        imports: [
-          {
-            module_name: "std.shared",
-            alias: "shared",
-          },
-        ],
         types: {
           include: ["Color"],
           include_prefixes: ["Gui"],
-          shared_from: ["shared"],
           strip_prefix: "Gui",
         },
         constants: {
@@ -1193,9 +918,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         module std.sample
 
         import std.c.sample as c
-        import std.shared as shared
 
-        public type Color = shared.Color
+        public type Color = c.Color
         public type State = c.GuiState
         public type IconName = c.GuiIconName
 

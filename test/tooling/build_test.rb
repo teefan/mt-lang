@@ -11,27 +11,24 @@ class MilkTeaBuildTest < Minitest::Test
     Dir.mktmpdir("milk-tea-build") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "language-standard")
-      c_path = File.join(dir, "language-standard.c")
+      output_path = File.join(dir, "language-fixture")
+      c_path = File.join(dir, "language-fixture.c")
 
-      result = MilkTea::Build.build(language_standard_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+      result = MilkTea::Build.build(language_fixture_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal File.expand_path(output_path), result.output_path
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
-      assert_includes result.link_flags, "-lm"
-      assert_includes result.link_flags, "-luv"
+      assert_equal [], result.link_flags
       assert File.exist?(output_path)
       assert File.exist?(c_path)
-      assert_match(/#include "uv\.h"/, File.read(c_path))
       refute_match(/^#line\s+/m, File.read(c_path))
 
       invocation = File.read(compiler_log).lines(chomp: true)
       assert_includes invocation, "-std=c11"
       refute_includes invocation, File.expand_path(c_path)
       assert_includes invocation, File.expand_path(output_path)
-      assert_includes invocation, "-lm"
-      assert_includes invocation, "-luv"
+      refute_includes invocation, "-lm"
     end
   end
 
@@ -70,7 +67,7 @@ class MilkTeaBuildTest < Minitest::Test
 
   def test_build_reports_missing_compiler
     error = assert_raises(MilkTea::BuildError) do
-      MilkTea::Build.build(language_standard_path, cc: "/definitely/missing/cc")
+      MilkTea::Build.build(language_fixture_path, cc: "/definitely/missing/cc")
     end
 
     assert_match(/C compiler not found/, error.message)
@@ -154,42 +151,6 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
-  def test_build_with_host_compiler_supports_imported_libm_binding
-    compiler = ENV.fetch("CC", "cc")
-    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-
-    Dir.mktmpdir("milk-tea-build-imported-libm") do |dir|
-      source_path = File.join(dir, "imported-libm.mt")
-      output_path = File.join(dir, "imported-libm")
-
-      File.write(source_path, [
-        "module demo.imported_libm",
-        "",
-        "import std.libm as libm",
-        "",
-        "function main() -> int:",
-        "    if libm.sqrtf(25.0) != 5.0:",
-        "        return 1",
-        "    if libm.PI_F <= 3.14:",
-        "        return 2",
-        "    return 0",
-        "",
-      ].join("\n"))
-
-      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
-
-      assert_equal File.expand_path(output_path), result.output_path
-      assert_includes result.link_flags, "-lm"
-      assert File.exist?(output_path)
-      assert File.executable?(output_path)
-
-      stdout, stderr, status = Open3.capture3(output_path)
-      assert_equal "", stdout
-      assert_equal "", stderr
-      assert_equal 0, status.exitstatus
-    end
-  end
-
   def test_build_with_host_compiler_supports_safe_span_str_main_args
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -238,7 +199,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.async_main_span_args",
         "",
-        "import std.libuv.async",
+        "import std.async as aio",
         "",
         "async function main(args: span[str]) -> int:",
         "    if args.len != 2:",
@@ -638,8 +599,8 @@ class MilkTeaBuildTest < Minitest::Test
 
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
   def write_raylib_smoke_source(dir)

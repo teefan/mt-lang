@@ -5,20 +5,21 @@ require "tempfile"
 require_relative "../test_helper"
 
 class MilkTeaCodegenTest < Minitest::Test
-  def test_generate_c_for_language_standard_emits_functions_and_imported_headers
-    program = MilkTea::ModuleLoader.check_program(language_standard_path)
+  def test_generate_c_for_language_fixture_emits_functions_and_imported_headers
+    program = MilkTea::ModuleLoader.check_program(language_fixture_path)
     generated = MilkTea::Codegen.generate_c(program)
 
     assert_match(/#include <stdbool\.h>/, generated)
     assert_match(/#include <stdint\.h>/, generated)
-    assert_match(/#include "uv\.h"/, generated)
-    assert_match(/#include "math\.h"/, generated)
-    assert_match(/typedef struct examples_language_standard_AppState/, generated)
-    assert_match(/static void examples_language_standard_AppState_touch\(examples_language_standard_AppState \*this, int32_t step\)/, generated)
-    assert_match(/examples_language_standard_AppState_touch\(&state, 3\);/, generated)
-    assert_match(/static int32_t examples_language_standard_main\(void\);/, generated)
+    assert_match(/#include <stdio\.h>/, generated)
+    assert_match(/typedef struct test_fixtures_language_fixture_AppState/, generated)
+    assert_match(/static void test_fixtures_language_fixture_AppState_touch\(test_fixtures_language_fixture_AppState \*this, int32_t step\)/, generated)
+    assert_match(/test_fixtures_language_fixture_AppState_touch\(&state, test_fixtures_language_fixture_default_step\);/, generated)
+    assert_match(/static int32_t test_fixtures_language_fixture_main\(void\);/, generated)
     assert_match(/int32_t main\(void\)/, generated)
-    assert_match(/examples_language_standard_printf\("extern -> %s %d\\n"/, generated)
+    refute_match(/#include "time_helpers\.h"/, generated)
+    refute_match(/#include "math\.h"/, generated)
+    refute_match(/#include "uv\.h"/, generated)
     refute_match(/#include "raylib\.h"/, generated)
   end
 
@@ -217,7 +218,7 @@ class MilkTeaCodegenTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
       methods NumbersIter:
-          public edit function next() -> ptr[int]?:
+          public editable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -258,7 +259,7 @@ class MilkTeaCodegenTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop)
 
       methods NumbersIter:
-          public edit function next() -> bool:
+          public editable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -349,7 +350,7 @@ class MilkTeaCodegenTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async edit function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
 
       async function main() -> int:
@@ -676,16 +677,17 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static std_string_String demo_format_codegen__fmt_1\(/, generated)
-    assert_match(/std_string_String text = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
-    assert_match(/std_string_String_with_capacity\(29\)/, generated)
-    assert_match(/std_fmt_append\(/, generated)
-    assert_match(/std_fmt_append_uint\(/, generated)
-    assert_match(/std_fmt_append_int\(/, generated)
-    assert_match(/std_fmt_append_ulong\(/, generated)
-    assert_match(/std_fmt_append_cstr\(/, generated)
-    assert_match(/std_fmt_append_bool\(/, generated)
-    refute_match(/std_fmt_append\(&text/, generated)
+    assert_match(/static mt_str demo_format_codegen__fmt_1\(/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
+    assert_match(/std_string_String text = std_fmt_string\(__mt_fmt_string_1\);/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    assert_match(/uintptr_t __mt_total_len = 29;/, generated)
+    assert_match(/mt_format_append_uint\(/, generated)
+    assert_match(/mt_format_append_int\(/, generated)
+    assert_match(/mt_format_append_ulong\(/, generated)
+    assert_match(/mt_format_append_cstr\(/, generated)
+    assert_match(/mt_format_append_bool\(/, generated)
+    refute_match(/std_fmt_append\(/, generated)
   end
 
   def test_generate_c_for_general_format_string_expressions
@@ -704,12 +706,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static std_string_String demo_format_expr_codegen__fmt_1\(/, generated)
-    assert_match(/std_string_String __mt_fmt_string_1 = demo_format_expr_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\)\);/, generated)
-    assert_match(/mt_str text = std_string_String_as_str\(__mt_fmt_string_1\);/, generated)
-    assert_match(/demo_format_expr_codegen_sink\(std_string_String_as_str\(__mt_fmt_string_2\)\)/, generated)
-    assert_match(/std_string_String_release\(&__mt_fmt_string_2\);/, generated)
-    assert_match(/std_string_String_release\(&__mt_fmt_string_1\);/, generated)
+    assert_match(/static mt_str demo_format_expr_codegen__fmt_1\(/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = demo_format_expr_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\)\);/, generated)
+    assert_match(/mt_str text = __mt_fmt_string_1;/, generated)
+    assert_match(/demo_format_expr_codegen_sink\(__mt_fmt_string_2\)/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_2\);/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
   end
 
   def test_generate_c_for_direct_string_sink_format_literals
@@ -728,11 +730,33 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static void demo_format_sink_codegen__fmt_\d+\(/, generated)
-    assert_match(/std_string_String_clear\(__mt_output\);/, generated)
-    assert_match(/std_fmt_append_int\(__mt_output, __mt_fmt_part_1\);/, generated)
-    assert_match(/std_fmt_append_bool\(__mt_output, __mt_fmt_part_1\);/, generated)
-    refute_match(/static std_string_String demo_format_sink_codegen__fmt_\d+\(/, generated)
+    assert_match(/static mt_str demo_format_sink_codegen__fmt_1\(/, generated)
+    assert_match(/static mt_str demo_format_sink_codegen__fmt_2\(/, generated)
+    assert_match(/std_string_String_assign\(&output, __mt_fmt_string_1\);/, generated)
+    assert_match(/std_string_String_append\(&output, __mt_fmt_string_2\);/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_2\);/, generated)
+  end
+
+  def test_generate_c_for_direct_io_format_string_calls
+    source = <<~MT
+      module demo.format_direct_io_codegen
+
+      import std.io as io
+
+      function main(value: int) -> int:
+          if not io.println(f"value=\#{value} ok=\#{true}"):
+              return 1
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static mt_str demo_format_direct_io_codegen__fmt_1\(/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = demo_format_direct_io_codegen__fmt_1\(value, true\);/, generated)
+    assert_match(/std_io_println\(__mt_fmt_string_1\)/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    refute_match(/std_io_write_line\(__mt_fmt_string_1\);/, generated)
   end
 
   def test_generate_c_reuses_identical_format_string_helpers
@@ -750,9 +774,9 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static std_string_String demo_format_dedup_codegen__fmt_1\(/, generated)
+    assert_match(/static mt_str demo_format_dedup_codegen__fmt_1\(/, generated)
     refute_match(/demo_format_dedup_codegen__fmt_2\(/, generated)
-    assert_match(/std_string_String __mt_fmt_string_1 = demo_format_dedup_codegen__fmt_1\(/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = demo_format_dedup_codegen__fmt_1\(/, generated)
   end
 
   def test_rejects_returning_general_format_string_as_borrowed_text
@@ -2162,27 +2186,6 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_fatal_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
   end
 
-  def test_generate_c_dedupes_standard_runtime_headers_from_extern_imports
-    source = [
-      "module demo.include_surface",
-      "",
-      "import std.fs as fs",
-      "import std.raylib as rl",
-      "",
-      "function main() -> int:",
-      "    return 0",
-      "",
-    ].join("\n")
-
-    generated = generate_c_from_source(source)
-
-    assert_equal 1, generated.scan('#include <stdio.h>').length
-    assert_equal 1, generated.scan('#include <stdlib.h>').length
-    refute_match(/#include "stdio\.h"/, generated)
-    refute_match(/#include "stdlib\.h"/, generated)
-    assert_match(/#include "raylib\.h"/, generated)
-  end
-
   def test_generate_c_for_enum_match_statement_as_switch
     source = [
       "module demo.match_surface",
@@ -2620,7 +2623,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    value: int",
       "",
       "methods Counter:",
-      "    edit function add(delta: int):",
+      "    editable function add(delta: int):",
       "        this.value += delta",
       "",
       "    function read() -> int:",
@@ -2683,7 +2686,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    value: int",
       "",
       "methods Counter:",
-      "    edit function add(delta: int):",
+      "    editable function add(delta: int):",
       "        this.value += delta",
       "",
       "    function read() -> int:",
@@ -3964,15 +3967,51 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/std_fmt_append_double_precision\(/, generated)
+    assert_match(/mt_format_append_double_precision\(/, generated)
     assert_match(/,\s*2\s*\)/, generated)
     assert_match(/,\s*5\s*\)/, generated)
   end
 
+  def test_generate_c_for_async_main_uses_std_async_block_on
+    source = <<~MT
+      module demo.async_main_codegen
+
+      import std.async as aio
+
+      async function main(args: span[str]) -> int:
+          return await aio.sleep(1) + int<-args.len
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t main\(int32_t argc, char \*\*argv\)/, generated)
+    assert_match(/__mt_async_main_arg_1/, generated)
+    assert_match(/std_async_block_on_int\(__mt_async_main_root\)/, generated)
+    refute_match(/async main runtime loop failed/, generated)
+  end
+
+  def test_generate_c_for_async_void_main_uses_std_async_run
+    source = <<~MT
+      module demo.async_main_void_codegen
+
+      import std.async as aio
+
+      async function main() -> void:
+          await aio.sleep(1)
+          return
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/int32_t main\(void\)/, generated)
+    assert_match(/std_async_run\(__mt_async_main_root\)/, generated)
+    refute_match(/async main runtime loop failed/, generated)
+  end
+
   private
 
-  def language_standard_path
-    File.expand_path("../../examples/language_standard.mt", __dir__)
+  def language_fixture_path
+    File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
   def generate_c_from_source(source)

@@ -270,6 +270,10 @@ module MilkTea
           flags << std_c_time_flag unless flags.include?(std_c_time_flag)
         end
 
+        analysis.directives.grep(AST::CompilerFlagDirective).each do |directive|
+          flags << directive.value unless flags.include?(directive.value)
+        end
+
         binding = @raw_bindings.find_by_module_name(module_name)
         next unless binding
 

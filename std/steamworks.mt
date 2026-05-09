@@ -2,7 +2,6 @@
 module std.steamworks
 
 import std.c.steamworks as c
-import std.str as text
 
 public type InputActionEvent_t_anonymous_union_2 = c.SteamInputActionEvent_t_anonymous_union_2
 public type CCallbackBase = c.CCallbackBase
@@ -595,7 +594,7 @@ public foreign function user_b_is_phone_requiring_verification(self: ptr[User]) 
 public foreign function user_get_market_eligibility(self: ptr[User]) -> APICall_t = c.SteamAPI_ISteamUser_GetMarketEligibility
 public foreign function user_get_duration_control(self: ptr[User]) -> APICall_t = c.SteamAPI_ISteamUser_GetDurationControl
 public foreign function user_b_set_duration_control_online_state(self: ptr[User], e_new_state: EDurationControlOnlineState) -> bool = c.SteamAPI_ISteamUser_BSetDurationControlOnlineState
-public foreign function friends_get_persona_name(self: ptr[Friends]) -> str = text.cstr_as_str(c.SteamAPI_ISteamFriends_GetPersonaName(self))
+public foreign function friends_get_persona_name(self: ptr[Friends]) -> cstr = c.SteamAPI_ISteamFriends_GetPersonaName
 public foreign function friends_get_persona_state(self: ptr[Friends]) -> EPersonaState = c.SteamAPI_ISteamFriends_GetPersonaState
 public foreign function friends_get_friend_count(self: ptr[Friends], i_friend_flags: int) -> int = c.SteamAPI_ISteamFriends_GetFriendCount
 public foreign function friends_get_friend_by_index(self: ptr[Friends], i_friend: int, i_friend_flags: int) -> uint64_steamid = c.SteamAPI_ISteamFriends_GetFriendByIndex

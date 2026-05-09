@@ -2,11 +2,6 @@
 module std.raylib
 
 import std.c.raylib as c
-import std.bytes as bytes
-import std.maybe as maybe
-import std.vec as vec
-import std.string as string
-import std.str as text
 
 public type Vector2 = c.Vector2
 public type Vector3 = c.Vector3
@@ -145,9 +140,9 @@ public foreign function get_monitor_physical_height(monitor: int) -> int = c.Get
 public foreign function get_monitor_refresh_rate(monitor: int) -> int = c.GetMonitorRefreshRate
 public foreign function get_window_position() -> Vector2 = c.GetWindowPosition
 public foreign function get_window_scale_dpi() -> Vector2 = c.GetWindowScaleDPI
-public foreign function get_monitor_name(monitor: int) -> str = text.cstr_as_str(c.GetMonitorName(monitor))
+public foreign function get_monitor_name(monitor: int) -> cstr = c.GetMonitorName
 public foreign function set_clipboard_text(text: str as cstr) -> void = c.SetClipboardText
-public foreign function get_clipboard_text() -> str = text.cstr_as_str(c.GetClipboardText())
+public foreign function get_clipboard_text() -> cstr = c.GetClipboardText
 public foreign function get_clipboard_image() -> Image = c.GetClipboardImage
 public foreign function enable_event_waiting() -> void = c.EnableEventWaiting
 public foreign function disable_event_waiting() -> void = c.DisableEventWaiting
@@ -214,38 +209,12 @@ public foreign function set_trace_log_level(log_level: int) -> void = c.SetTrace
 public foreign function mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
 public foreign function mem_realloc[T](memory: ptr[T], count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
 public foreign function mem_free[T](memory: ptr[T]) -> void = c.MemFree
-foreign function mt_raw_load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
-
-
-public function load_file_data(file_name: str) -> maybe.Maybe[bytes.Buffer]:
-    var data_size = 0
-    let raw_result = mt_raw_load_file_data(file_name, data_size)
-    if raw_result == null:
-        return maybe.Maybe[bytes.Buffer].none
-
-    if data_size < 0:
-        c.UnloadFileData(ptr[ubyte]<-raw_result)
-        fatal(c"imported wrapper load_file_data returned negative size")
-
-    var value = bytes.with_capacity(ptr_uint<-data_size)
-    bytes.append(ref_of(value), span[ubyte](data = ptr[ubyte]<-raw_result, len = ptr_uint<-data_size))
-    c.UnloadFileData(ptr[ubyte]<-raw_result)
-    return maybe.Maybe[bytes.Buffer].some(value= value)
-
+public foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
+public foreign function unload_file_data(consuming data: ptr[ubyte]) -> void = c.UnloadFileData
 public foreign function save_file_data(file_name: str as cstr, data: span[ubyte]) -> bool = c.SaveFileData(file_name, data.data, int<-data.len)
 public foreign function export_data_as_code(data: const_ptr[ubyte], data_size: int, file_name: cstr) -> bool = c.ExportDataAsCode
-foreign function mt_raw_load_file_text(file_name: str as cstr) -> ptr[char]? = c.LoadFileText
-
-
-public function load_file_text(file_name: str) -> maybe.Maybe[string.String]:
-    let raw_result = mt_raw_load_file_text(file_name)
-    if raw_result == null:
-        return maybe.Maybe[string.String].none
-
-    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
-    c.UnloadFileText(ptr[char]<-raw_result)
-    return maybe.Maybe[string.String].some(value= value)
-
+public foreign function load_file_text(file_name: str as cstr) -> ptr[char]? = c.LoadFileText
+public foreign function unload_file_text(text: ptr[char]) -> void = c.UnloadFileText
 public foreign function save_file_text(file_name: cstr, text: cstr) -> bool = c.SaveFileText
 public foreign function file_rename(file_name: cstr, file_rename: cstr) -> int = c.FileRename
 public foreign function file_remove(file_name: cstr) -> int = c.FileRemove
@@ -258,13 +227,13 @@ public foreign function directory_exists(dir_path: str as cstr) -> bool = c.Dire
 public foreign function is_file_extension(file_name: str as cstr, ext: str as cstr) -> bool = c.IsFileExtension
 public foreign function get_file_length(file_name: str as cstr) -> int = c.GetFileLength
 public foreign function get_file_mod_time(file_name: str as cstr) -> ptr_int = c.GetFileModTime
-public foreign function get_file_extension(file_name: str as cstr) -> str = text.cstr_as_str(c.GetFileExtension(file_name))
-public foreign function get_file_name(file_path: str as cstr) -> str = text.cstr_as_str(c.GetFileName(file_path))
-public foreign function get_file_name_without_ext(file_path: str as cstr) -> str = text.cstr_as_str(c.GetFileNameWithoutExt(file_path))
-public foreign function get_directory_path(file_path: str as cstr) -> str = text.cstr_as_str(c.GetDirectoryPath(file_path))
-public foreign function get_prev_directory_path(dir_path: str as cstr) -> str = text.cstr_as_str(c.GetPrevDirectoryPath(dir_path))
-public foreign function get_working_directory() -> str = text.cstr_as_str(c.GetWorkingDirectory())
-public foreign function get_application_directory() -> str = text.cstr_as_str(c.GetApplicationDirectory())
+public foreign function get_file_extension(file_name: str as cstr) -> cstr = c.GetFileExtension
+public foreign function get_file_name(file_path: str as cstr) -> cstr = c.GetFileName
+public foreign function get_file_name_without_ext(file_path: str as cstr) -> cstr = c.GetFileNameWithoutExt
+public foreign function get_directory_path(file_path: str as cstr) -> cstr = c.GetDirectoryPath
+public foreign function get_prev_directory_path(dir_path: str as cstr) -> cstr = c.GetPrevDirectoryPath
+public foreign function get_working_directory() -> cstr = c.GetWorkingDirectory
+public foreign function get_application_directory() -> cstr = c.GetApplicationDirectory
 public foreign function make_directory(dir_path: str as cstr) -> int = c.MakeDirectory
 public foreign function change_directory(dir_path: str as cstr) -> bool = c.ChangeDirectory
 public foreign function is_path_file(path: str as cstr) -> bool = c.IsPathFile
@@ -300,10 +269,10 @@ public foreign function is_key_released(key: KeyboardKey) -> bool = c.IsKeyRelea
 public foreign function is_key_up(key: KeyboardKey) -> bool = c.IsKeyUp
 public foreign function get_key_pressed() -> int = c.GetKeyPressed
 public foreign function get_char_pressed() -> int = c.GetCharPressed
-public foreign function get_key_name(key: int) -> str = text.cstr_as_str(c.GetKeyName(key))
+public foreign function get_key_name(key: int) -> cstr = c.GetKeyName
 public foreign function set_exit_key(key: KeyboardKey) -> void = c.SetExitKey
 public foreign function is_gamepad_available(gamepad: int) -> bool = c.IsGamepadAvailable
-public foreign function get_gamepad_name(gamepad: int) -> str = text.cstr_as_str(c.GetGamepadName(gamepad))
+public foreign function get_gamepad_name(gamepad: int) -> cstr = c.GetGamepadName
 public foreign function is_gamepad_button_pressed(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonPressed
 public foreign function is_gamepad_button_down(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonDown
 public foreign function is_gamepad_button_released(gamepad: int, button: GamepadButton) -> bool = c.IsGamepadButtonReleased
@@ -550,70 +519,22 @@ public foreign function measure_text_codepoints(font: Font, codepoints: const_pt
 public foreign function get_glyph_index(font: Font, codepoint: int) -> int = c.GetGlyphIndex
 public foreign function get_glyph_info(font: Font, codepoint: int) -> GlyphInfo = c.GetGlyphInfo
 public foreign function get_glyph_atlas_rec(font: Font, codepoint: int) -> Rectangle = c.GetGlyphAtlasRec
-foreign function mt_raw_load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
-
-
-public function load_utf_8(codepoints: const_ptr[int], length: int) -> maybe.Maybe[string.String]:
-    let raw_result = mt_raw_load_utf_8(codepoints, length)
-    if raw_result == null:
-        return maybe.Maybe[string.String].none
-
-    let value = string.String.from_str(text.chars_as_str(ptr[char]<-raw_result))
-    c.UnloadUTF8(ptr[char]<-raw_result)
-    return maybe.Maybe[string.String].some(value= value)
-
-foreign function mt_raw_load_codepoints(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
-
-
-public function load_codepoints(text: str) -> maybe.Maybe[vec.Vec[int]]:
-    var count = 0
-    let raw_result = mt_raw_load_codepoints(text, count)
-    if count < 0:
-        if raw_result != null:
-            c.UnloadCodepoints(ptr[int]<-raw_result)
-        fatal(c"imported wrapper load_codepoints returned negative count")
-
-    var value = vec.Vec[int].with_capacity(ptr_uint<-count)
-    if count == 0:
-        if raw_result != null:
-            c.UnloadCodepoints(ptr[int]<-raw_result)
-        return maybe.Maybe[vec.Vec[int]].some(value= value)
-
-    if raw_result == null:
-        return maybe.Maybe[vec.Vec[int]].none
-
-    var index: ptr_uint = 0
-    while index < ptr_uint<-count:
-        unsafe:
-            value.push(read(ptr[int]<-raw_result + index))
-        index += 1
-    c.UnloadCodepoints(ptr[int]<-raw_result)
-    return maybe.Maybe[vec.Vec[int]].some(value= value)
-
+public foreign function load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
+public foreign function unload_utf_8(text: ptr[char]) -> void = c.UnloadUTF8
+public foreign function load_codepoints(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
+public foreign function unload_codepoints(codepoints: ptr[int]) -> void = c.UnloadCodepoints
 public foreign function get_codepoint_count(text: str as cstr) -> int = c.GetCodepointCount
 public foreign function get_codepoint(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepoint
 public foreign function get_codepoint_next(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepointNext
 public foreign function get_codepoint_previous(text: cstr, codepoint_size: ptr[int]) -> int = c.GetCodepointPrevious
-public foreign function codepoint_to_utf_8(codepoint: int, out utf_8_size: int) -> str = text.cstr_as_str(c.CodepointToUTF8(codepoint, utf_8_size))
+public foreign function codepoint_to_utf_8(codepoint: int, out utf_8_size: int) -> cstr = c.CodepointToUTF8
 public foreign function load_text_lines(text: cstr, count: ptr[int]) -> ptr[ptr[char]] = c.LoadTextLines
 public foreign function unload_text_lines(text: ptr[ptr[char]], line_count: int) -> void = c.UnloadTextLines
 public foreign function text_copy(dst: ptr[char], src: cstr) -> int = c.TextCopy
 public foreign function text_is_equal(text_1: cstr, text_2: cstr) -> bool = c.TextIsEqual
 public foreign function text_length(text: str as cstr) -> uint = c.TextLength
-public foreign function text_format_int(format: str as cstr, value: int) -> str = text.cstr_as_str(c.TextFormat(format, value))
-public foreign function text_format_int_int(format: str as cstr, first: int, second: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
-public foreign function text_format_int_int_int(format: str as cstr, first: int, second: int, third: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third))
-public foreign function text_format_int_int_int_int(format: str as cstr, first: int, second: int, third: int, fourth: int) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third, fourth))
-public foreign function text_format_int_cstr(format: str as cstr, value: int, label: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, value, label))
-public foreign function text_format_cstr(format: str as cstr, value: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, value))
-public foreign function text_format_cstr_cstr(format: str as cstr, first: str as cstr, second: str as cstr) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
-public foreign function text_format_cstr_int_int(format: str as cstr, label: str as cstr, first: int, second: int) -> str = text.cstr_as_str(c.TextFormat(format, label, first, second))
-public foreign function text_format_int_int_float(format: str as cstr, first: int, second: int, third: float) -> str = text.cstr_as_str(c.TextFormat(format, first, second, third))
-public foreign function text_format_cstr_float_float(format: str as cstr, label: str as cstr, first: float, second: float) -> str = text.cstr_as_str(c.TextFormat(format, label, first, second))
-public foreign function text_format_float(format: str as cstr, value: float) -> str = text.cstr_as_str(c.TextFormat(format, value))
-public foreign function text_format_float_float(format: str as cstr, first: float, second: float) -> str = text.cstr_as_str(c.TextFormat(format, first, second))
-public foreign function text_subtext(text: str as cstr, position: int, length: int) -> str = text.cstr_as_str(c.TextSubtext(text, position, length))
-public foreign function text_remove_spaces(text: str as cstr) -> str = text.cstr_as_str(c.TextRemoveSpaces(text))
+public foreign function text_subtext(text: str as cstr, position: int, length: int) -> cstr = c.TextSubtext
+public foreign function text_remove_spaces(text: str as cstr) -> cstr = c.TextRemoveSpaces
 public foreign function get_text_between(text: cstr, begin: cstr, end: cstr) -> ptr[char] = c.GetTextBetween
 public foreign function text_replace(text: cstr, search: cstr, replacement: cstr) -> ptr[char] = c.TextReplace
 public foreign function text_replace_alloc(text: cstr, search: cstr, replacement: cstr) -> ptr[char] = c.TextReplaceAlloc

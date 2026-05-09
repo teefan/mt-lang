@@ -1,5 +1,5 @@
 [package]
-name = "snake_duel"
+name = "game_engine"
 version = "0.1.0"
 
 [profile]

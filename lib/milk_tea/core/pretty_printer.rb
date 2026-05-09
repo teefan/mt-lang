@@ -350,8 +350,8 @@ module MilkTea
       def render_function_signature(function, prefix: "")
         signature_prefix = if function.is_a?(AST::MethodDef)
                              case function.kind
-                             when :edit
-                               "edit function "
+                             when :editable
+                               "editable function "
                              when :static
                                "static function "
                              else
@@ -403,6 +403,8 @@ module MilkTea
           "link #{directive.value.inspect}"
         when AST::IncludeDirective
           "include #{directive.value.inspect}"
+        when AST::CompilerFlagDirective
+          "compiler_flag #{directive.value.inspect}"
         else
           raise ArgumentError, "unsupported AST directive #{directive.class.name}"
         end

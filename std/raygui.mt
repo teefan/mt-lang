@@ -2,13 +2,12 @@
 module std.raygui
 
 import std.c.raygui as c
-import std.raylib as raylib
 
-public type Vector2 = raylib.Vector2
-public type Vector3 = raylib.Vector3
-public type Color = raylib.Color
-public type Rectangle = raylib.Rectangle
-public type Font = raylib.Font
+public type Vector2 = c.Vector2
+public type Vector3 = c.Vector3
+public type Color = c.Color
+public type Rectangle = c.Rectangle
+public type Font = c.Font
 public type StyleProp = c.GuiStyleProp
 public type State = c.GuiState
 public type TextAlignment = c.GuiTextAlignment

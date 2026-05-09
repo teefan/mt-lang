@@ -4,8 +4,7 @@
 require "English"
 
 DEFAULT_PATTERNS = [
-  "examples/raylib/**/*.mt",
-  "examples/sdl3/**/*.mt",
+  "projects/**/*.mt",
 ].freeze
 
 def usage(io)
@@ -14,8 +13,7 @@ def usage(io)
 
       Run `bin/mtc check` over the matched files, printing elapsed time for each file.
       Defaults to:
-        examples/raylib/**/*.mt
-        examples/sdl3/**/*.mt
+        projects/**/*.mt
   TEXT
 end
 

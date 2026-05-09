@@ -2,12 +2,6 @@
   "module_name": "std.raygui",
   "raw_module_name": "std.c.raygui",
   "raw_import_alias": "c",
-  "imports": [
-    {
-      "module_name": "std.raylib",
-      "alias": "raylib"
-    }
-  ],
   "types": {
     "include": [
       "Color",
@@ -18,9 +12,6 @@
     ],
     "include_prefixes": [
       "Gui"
-    ],
-    "shared_from": [
-      "raylib"
     ],
     "strip_prefix": "Gui"
   },
