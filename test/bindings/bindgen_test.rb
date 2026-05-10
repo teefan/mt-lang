@@ -448,6 +448,51 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_emits_explicit_c_names_for_tagged_records
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-tagged-records") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = File.join(dir, "sample.mt")
+      File.write(header_path, <<~C)
+        struct PlainStruct {
+          int value;
+        };
+
+        typedef union AliasedUnion {
+          int left;
+          float right;
+        } AliasedUnion;
+
+        void take_plain(struct PlainStruct *value);
+        void take_union(AliasedUnion value);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/struct PlainStruct = c"struct PlainStruct":\n\s+value: int/, generated)
+      assert_match(/union AliasedUnion:\n\s+left: int\n\s+right: float/m, generated)
+      assert_match(/external function take_plain\(value: ptr\[PlainStruct\]\) -> void/, generated)
+      assert_match(/external function take_union\(value: AliasedUnion\) -> void/, generated)
+
+      File.write(output_path, generated)
+      analysis = MilkTea::ModuleLoader.check_file(output_path)
+
+      assert_equal :extern_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "PlainStruct"
+      assert_includes analysis.types.keys, "AliasedUnion"
+      assert_includes analysis.functions.keys, "take_plain"
+      assert_includes analysis.functions.keys, "take_union"
+    end
+  end
+
   def test_generate_skips_self_alias_primitive_typedefs
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)
