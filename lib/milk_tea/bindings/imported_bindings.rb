@@ -735,7 +735,7 @@ module MilkTea
 
       def render_pass_through_foreign_function(raw_declaration, spec:)
         function_name = foreign_function_name(raw_declaration.name, spec:)
-        params = raw_declaration.params.map { |param| render_raw_foreign_param(param) }
+        params = raw_declaration.params.map { |param| render_heuristic_foreign_param(param) }
         return_type = render_public_foreign_type(raw_declaration.return_type)
         mapping = "#{@import_alias}.#{raw_declaration.name}"
 
@@ -783,6 +783,17 @@ module MilkTea
 
       def render_raw_foreign_param(param)
         "#{snake_case(param.name)}: #{render_public_foreign_type(param.type)}"
+      end
+
+      def render_heuristic_foreign_param(param)
+        type = param.type
+
+        if type.is_a?(AST::TypeRef) && type.name.to_s == "cstr" && type.arguments.empty? && !type.nullable
+          name = snake_case(param.name)
+          return render_foreign_param({ "name" => name, "type" => "str", "boundary_type" => "cstr" })
+        end
+
+        render_raw_foreign_param(param)
       end
 
       def render_public_foreign_type(type)

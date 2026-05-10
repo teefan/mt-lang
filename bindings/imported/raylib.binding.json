@@ -119,31 +119,11 @@
         "mapping": "c.LoadShader(null, fs_file_name)"
       },
       {
-        "raw": "TakeScreenshot",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
         "raw": "SetConfigFlags",
         "params": [
           {
             "name": "flag_bits",
             "type": "ConfigFlags"
-          }
-        ]
-      },
-      {
-        "raw": "OpenURL",
-        "params": [
-          {
-            "name": "url",
-            "type": "str",
-            "boundary_type": "cstr"
           }
         ]
       },
@@ -263,17 +243,6 @@
         "return_type": "ptr[ubyte]?"
       },
       {
-        "raw": "LoadFileText",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "ptr[char]?"
-      },
-      {
         "raw": "UnloadFileData",
         "params": [
           {
@@ -312,41 +281,6 @@
           }
         ],
         "mapping": "c.LoadImageFromMemory(file_type, file_data.data, int<-file_data.len)"
-      },
-      {
-        "raw": "FileExists",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "DirectoryExists",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "IsFileExtension",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          },
-          {
-            "name": "ext",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
       },
       {
         "raw": "IsKeyPressed",
@@ -677,16 +611,6 @@
         "return_type": "ptr[int]?"
       },
       {
-        "raw": "GetCodepointCount",
-        "params": [
-          {
-            "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
         "raw": "GetCodepoint",
         "params": [
           {
@@ -730,16 +654,6 @@
           }
         ],
         "return_type": "cstr"
-      },
-      {
-        "raw": "TextLength",
-        "params": [
-          {
-            "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
       },
       {
         "raw": "TextSubtext",
@@ -831,16 +745,6 @@
         "params": [
           {
             "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "LoadImage",
-        "params": [
-          {
-            "name": "file_name",
             "type": "str",
             "boundary_type": "cstr"
           }
@@ -1120,26 +1024,6 @@
         "mapping": "c.LoadWaveFromMemory(file_type, file_data.data, int<-file_data.len)"
       },
       {
-        "raw": "SetClipboardText",
-        "params": [
-          {
-            "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "SetWindowTitle",
-        "params": [
-          {
-            "name": "title",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
         "raw": "GetMonitorName",
         "return_type": "cstr"
       },
@@ -1154,131 +1038,6 @@
       {
         "raw": "GetApplicationDirectory",
         "return_type": "cstr"
-      },
-      {
-        "raw": "GetFileLength",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "GetFileModTime",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "GetFileExtension",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "cstr"
-      },
-      {
-        "raw": "GetFileName",
-        "params": [
-          {
-            "name": "file_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "cstr"
-      },
-      {
-        "raw": "GetFileNameWithoutExt",
-        "params": [
-          {
-            "name": "file_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "cstr"
-      },
-      {
-        "raw": "GetDirectoryPath",
-        "params": [
-          {
-            "name": "file_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "cstr"
-      },
-      {
-        "raw": "GetPrevDirectoryPath",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
-        "return_type": "cstr"
-      },
-      {
-        "raw": "MakeDirectory",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "ChangeDirectory",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "IsPathFile",
-        "params": [
-          {
-            "name": "path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "IsFileNameValid",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "LoadDirectoryFiles",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
       },
       {
         "raw": "LoadDirectoryFilesEx",
@@ -1296,16 +1055,6 @@
           {
             "name": "scan_subdirs",
             "type": "bool"
-          }
-        ]
-      },
-      {
-        "raw": "GetDirectoryFileCount",
-        "params": [
-          {
-            "name": "dir_path",
-            "type": "str",
-            "boundary_type": "cstr"
           }
         ]
       },
@@ -1334,17 +1083,6 @@
       },
       {
         "raw": "GetGamepadName",
-        "return_type": "cstr"
-      },
-      {
-        "raw": "TextRemoveSpaces",
-        "params": [
-          {
-            "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ],
         "return_type": "cstr"
       },
       {
@@ -2126,16 +1864,6 @@
         ]
       },
       {
-        "raw": "LoadTexture",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
         "raw": "UpdateTexture",
         "type_params": [
           "T"
@@ -2180,16 +1908,6 @@
             "name": "texture",
             "type": "Texture2D",
             "mode": "inout"
-          }
-        ]
-      },
-      {
-        "raw": "LoadFont",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
           }
         ]
       },
@@ -2276,26 +1994,6 @@
           {
             "name": "pack_method",
             "type": "int"
-          }
-        ]
-      },
-      {
-        "raw": "LoadWave",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "LoadSound",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
           }
         ]
       },
