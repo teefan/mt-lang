@@ -664,7 +664,6 @@ module MilkTea
       end
 
       def build_async_main_entrypoint(binding, _constructor_c_name, async_info)
-        async_runtime_module_name = "std.async"
         task_type = async_info[:task_type]
         signature = root_main_entrypoint_signature(binding)
         raise LoweringError, "async main entrypoint requires a supported signature" unless signature
@@ -714,22 +713,22 @@ module MilkTea
         root_proc_expr = IR::Name.new(name: root_proc_name, type: root_proc_type, pointer: false)
 
         if async_info[:result_type] == @types.fetch("int")
-          block_on_binding = async_main_std_async_binding(async_runtime_module_name, "block_on", type_arguments: [async_info[:result_type]])
+          block_on_callee = async_main_runtime_callee_name("block_on", type_arguments: [async_info[:result_type]])
           body << IR::LocalDecl.new(
             name: result_name,
             c_name: result_name,
             type: @types.fetch("int"),
             value: IR::Call.new(
-              callee: function_binding_c_name(block_on_binding, module_name: block_on_binding.owner.module_name),
+              callee: block_on_callee,
               arguments: [root_proc_expr],
               type: @types.fetch("int"),
             ),
           )
         else
-          run_binding = async_main_std_async_binding(async_runtime_module_name, "run")
+          run_callee = async_main_runtime_callee_name("run")
           body << IR::ExpressionStmt.new(
             expression: IR::Call.new(
-              callee: function_binding_c_name(run_binding, module_name: run_binding.owner.module_name),
+              callee: run_callee,
               arguments: [root_proc_expr],
               type: @types.fetch("void"),
             ),
@@ -754,11 +753,10 @@ module MilkTea
         )
       end
 
-      def async_main_std_async_binding(module_name, function_name, type_arguments: [])
-        binding = analysis_for_module(module_name).functions.fetch(function_name)
-        return binding if type_arguments.empty?
-
-        binding.owner.send(:instantiate_function_binding, binding, type_arguments)
+      def async_main_runtime_callee_name(function_name, type_arguments: [])
+        binding = analysis_for_module("std.async").functions.fetch(function_name)
+        binding = binding.owner.send(:instantiate_function_binding, binding, type_arguments) if type_arguments.any?
+        function_binding_c_name(binding, module_name: binding.owner.module_name)
       end
 
       def build_root_main_entrypoint(binding)

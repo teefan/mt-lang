@@ -390,7 +390,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
-  def test_rejects_async_main_without_async_runtime_import
+  def test_type_checks_async_main_without_explicit_async_runtime_import
     source = <<~MT
       module demo.async_main
 
@@ -398,11 +398,9 @@ class MilkTeaSemaTest < Minitest::Test
           return 42
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
+    result = check_program_source(source)
 
-    assert_match(/async main requires importing std\.async/, error.message)
+    assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
   def test_rejects_async_main_with_non_exit_return_type

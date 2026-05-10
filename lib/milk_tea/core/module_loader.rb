@@ -71,11 +71,14 @@ module MilkTea
     end
 
     def imported_modules_for_ast(ast)
-      ast.imports.each_with_object({}) do |import, modules|
+      modules = ast.imports.each_with_object({}) do |import, modules_acc|
         import_path = resolve_module_path(import.path.to_s)
         import_analysis = check_path(import_path)
-        modules[import.path.to_s] = module_binding(import_analysis)
+        modules_acc[import.path.to_s] = module_binding(import_analysis)
       end
+
+      install_async_runtime_dependency!(ast, modules)
+      modules
     end
 
     private
@@ -103,11 +106,7 @@ module MilkTea
 
       @checking_paths << path
       ast = load_file(path)
-      imported_modules = ast.imports.each_with_object({}) do |import, modules|
-        import_path = resolve_module_path(import.path.to_s)
-        import_analysis = check_path(import_path)
-        modules[import.path.to_s] = module_binding(import_analysis)
-      end
+      imported_modules = imported_modules_for_ast(ast)
 
       analysis = Sema.check(ast, imported_modules:)
       @analysis_cache[path] = analysis
@@ -187,6 +186,21 @@ module MilkTea
         private_functions:,
         private_methods:,
       )
+    end
+
+    def install_async_runtime_dependency!(ast, modules)
+      return unless async_main_declared?(ast)
+      return if modules.key?("std.async")
+
+      import_path = resolve_module_path("std.async")
+      import_analysis = check_path(import_path)
+      modules["std.async"] = module_binding(import_analysis)
+    end
+
+    def async_main_declared?(ast)
+      ast.declarations.any? do |decl|
+        decl.is_a?(AST::FunctionDef) && decl.name == "main" && decl.async
+      end
     end
 
     def exported_declaration?(analysis, declaration)

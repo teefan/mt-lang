@@ -1,6 +1,6 @@
 module std.async.runtime
 
-import std.async.blocking_runtime as backend
+import std.async.libuv_runtime as backend
 import std.status as status
 
 
