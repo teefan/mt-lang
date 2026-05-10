@@ -30,6 +30,17 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     assert_equal %w[CMakeLists.txt include/SDL3/SDL.h include/SDL3/SDL_main.h], sdl3.sentinel_paths
   end
 
+  def test_default_sources_include_complete_pinned_libuv_checkout
+    sources = MilkTea::UpstreamSources.default_sources
+    libuv = sources.find { |source| source.name == "libuv" }
+
+    refute_nil libuv
+    assert_includes libuv.checkout_root.to_s, "/third_party/libuv-upstream"
+    assert_equal "https://github.com/libuv/libuv.git", libuv.repository_url
+    assert_equal "1cfa32ff59c076ffb6ed735bbc8c18361558661f", libuv.revision
+    assert_equal %w[CMakeLists.txt include/uv.h include/uv/version.h], libuv.sentinel_paths
+  end
+
   def test_source_bootstrap_clones_missing_checkout_at_pinned_revision
     skip "git not available" unless executable_available?("git")
 

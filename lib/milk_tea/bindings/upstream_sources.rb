@@ -94,6 +94,17 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "libuv",
+          checkout_root: root.join("third_party/libuv-upstream"),
+          repository_url: "https://github.com/libuv/libuv.git",
+          revision: "1cfa32ff59c076ffb6ed735bbc8c18361558661f",
+          sentinel_paths: %w[
+            CMakeLists.txt
+            include/uv.h
+            include/uv/version.h
+          ],
+        ),
+        Source.new(
           name: "steamworks_sdk",
           checkout_root: root.join("third_party/steamworks-sdk-upstream"),
           repository_url: "https://github.com/rlabrecque/steamworkssdk.git",

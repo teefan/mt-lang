@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl msf_gif libc sdl3 box2d cjson steamworks], registry.map(&:name)
+    assert_equal %w[raylib raygui rlights rlgl libc sdl3 box2d cjson libuv steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -36,9 +36,6 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadTextureCubemap"))
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadShaderBuffer"))
     assert_equal "ptr[void]?", registry.fetch("rlgl").function_return_type_overrides.fetch("rlGetProcAddress")
-    assert_equal "std.c.msf_gif", registry.fetch("msf_gif").module_name
-    assert_equal ["MSF_GIF_IMPL"], registry.fetch("msf_gif").implementation_defines
-    assert_includes registry.fetch("msf_gif").header_candidates.first, "third_party/raylib-upstream/examples/core/msf_gif.h"
     assert_equal "std.c.sdl3", registry.fetch("sdl3").module_name
     assert_equal ["SDL3"], registry.fetch("sdl3").link_libraries
     assert_includes registry.fetch("sdl3").compiler_flags, "-DSDL_MAIN_HANDLED=1"
@@ -161,6 +158,14 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "cstr?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_GetErrorPtr")
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddNullToObject")
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddStringToObject")
+    assert_equal "std.c.libuv", registry.fetch("libuv").module_name
+    assert_equal ["uv"], registry.fetch("libuv").link_libraries
+    assert_includes registry.fetch("libuv").compiler_flags, "-I#{MilkTea::VendoredLibUV.include_root}"
+    assert_includes registry.fetch("libuv").header_candidates.first, "third_party/libuv-upstream/include/uv.h"
+    assert_includes registry.fetch("libuv").tracked_header_paths.first, "third_party/libuv-upstream/include/uv.h"
+    assert_includes registry.fetch("libuv").tracked_header_prefixes.first, "third_party/libuv-upstream/include"
+    assert_includes registry.fetch("libuv").link_flags, "-L#{MilkTea::VendoredLibUV.archive_path.dirname}"
+    assert_equal ["uv_", "UV_"], registry.fetch("libuv").declaration_name_prefixes
     assert_equal "std.c.steamworks", registry.fetch("steamworks").module_name
     assert_equal MilkTea::Steamworks.default_link_libraries, registry.fetch("steamworks").link_libraries
     assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"
