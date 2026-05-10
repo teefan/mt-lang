@@ -256,7 +256,6 @@ module MilkTea
 
     def collect_compiler_flags(program)
       std_c_include_flag = "-I#{MilkTea.root.join('std/c')}"
-      std_c_time_flag = "-D_POSIX_C_SOURCE=200809L"
 
       program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
         analysis = program.analyses_by_module_name.fetch(module_name)
@@ -264,10 +263,6 @@ module MilkTea
 
         if module_name.start_with?("std.c.")
           flags << std_c_include_flag unless flags.include?(std_c_include_flag)
-        end
-
-        if module_name == "std.c.time"
-          flags << std_c_time_flag unless flags.include?(std_c_time_flag)
         end
 
         analysis.directives.grep(AST::CompilerFlagDirective).each do |directive|

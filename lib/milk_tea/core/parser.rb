@@ -258,6 +258,7 @@ module MilkTea
       line = previous.line
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
+      c_name = parse_optional_explicit_c_name
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
         consume(:colon, "expected ':' after field name")
@@ -265,7 +266,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, type_params:, fields:, packed:, alignment:, visibility:, line:)
+      AST::StructDecl.new(name:, type_params:, c_name:, fields:, packed:, alignment:, visibility:, line:)
     end
 
     def parse_struct_decl_with_layout(visibility: :private)
@@ -295,6 +296,7 @@ module MilkTea
     def parse_union_decl(visibility: :private)
       line = previous.line
       name = consume_name("expected union name").lexeme
+      c_name = parse_optional_explicit_c_name
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
         consume(:colon, "expected ':' after field name")
@@ -302,7 +304,13 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::UnionDecl.new(name:, fields:, visibility:, line:)
+      AST::UnionDecl.new(name:, c_name:, fields:, visibility:, line:)
+    end
+
+    def parse_optional_explicit_c_name
+      return nil unless match(:equal)
+
+      consume(:cstring, "expected C string literal after '='").literal
     end
 
     def parse_enum_decl(node_class, visibility: :private)

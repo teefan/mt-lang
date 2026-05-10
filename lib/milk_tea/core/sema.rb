@@ -282,6 +282,7 @@ module MilkTea
             case decl
             when AST::StructDecl
               validate_struct_layout!(decl)
+              validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
               @types[decl.name] = if decl.type_params.empty?
                                     Types::Struct.new(
@@ -290,6 +291,7 @@ module MilkTea
                                       external: external_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
+                                      c_name: decl.c_name,
                                     )
                                   else
                                     Types::GenericStructDefinition.new(
@@ -299,11 +301,13 @@ module MilkTea
                                       external: external_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
+                                      c_name: decl.c_name,
                                     )
                                   end
             when AST::UnionDecl
+              validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?)
+              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?, c_name: decl.c_name)
             when AST::VariantDecl
               ensure_available_type_name!(decl.name)
               @types[decl.name] = if decl.type_params.empty?
@@ -348,6 +352,15 @@ module MilkTea
         return if power_of_two?(decl.alignment)
 
         raise_sema_error("align(...) requires a power-of-two alignment, got #{decl.alignment}")
+      end
+
+      def validate_explicit_aggregate_c_name!(decl)
+        return unless decl.c_name
+
+        raise_sema_error("explicit C names are only allowed on external structs and unions") unless external_module?
+        return if !decl.respond_to?(:type_params) || decl.type_params.empty?
+
+        raise_sema_error("explicit C names are not supported on generic external structs")
       end
 
       def resolve_aggregate_fields

@@ -43,11 +43,11 @@ module MilkTea
     TypeAliasDecl = Data.define(:name, :target, :visibility, :line) do
       def initialize(name:, target:, visibility:, line: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :fields, :packed, :alignment, :visibility, :line) do
-      def initialize(name:, type_params:, fields:, packed:, alignment:, visibility:, line: nil) = super
+    StructDecl = Data.define(:name, :type_params, :c_name, :fields, :packed, :alignment, :visibility, :line) do
+      def initialize(name:, type_params:, c_name:, fields:, packed:, alignment:, visibility:, line: nil) = super
     end
-    UnionDecl = Data.define(:name, :fields, :visibility, :line) do
-      def initialize(name:, fields:, visibility:, line: nil) = super
+    UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
+      def initialize(name:, c_name:, fields:, visibility:, line: nil) = super
     end
     Field = Data.define(:name, :type) do
       def initialize(name:, type:) = super

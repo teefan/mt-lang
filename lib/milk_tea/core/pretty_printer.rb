@@ -278,7 +278,9 @@ module MilkTea
           header = +""
           header << visibility_prefix(declaration)
           header << "#{prefixes.join(' ')} " unless prefixes.empty?
-          header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}:"
+          header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}"
+          header << " = c#{declaration.c_name.inspect}" if declaration.c_name
+          header << ":"
           line(header)
           with_indent do
             declaration.fields.each do |field|
@@ -286,7 +288,9 @@ module MilkTea
             end
           end
         when AST::UnionDecl
-          line("#{visibility_prefix(declaration)}union #{declaration.name}:")
+          header = "#{visibility_prefix(declaration)}union #{declaration.name}"
+          header += " = c#{declaration.c_name.inspect}" if declaration.c_name
+          line("#{header}:")
           with_indent do
             declaration.fields.each do |field|
               line("#{field.name}: #{render_type(field.type)}")
