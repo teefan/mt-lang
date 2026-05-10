@@ -200,7 +200,17 @@ variant Token:
     eof
 ```
 
-`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Box[int]`.
+`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Maybe[int]`:
+
+```mt
+variant Maybe[T]:
+    just(value: T)
+    nothing
+
+variant Status[T, E]:
+    ok(value: T)
+    err(error: E)
+```
 
 Arm constructors:
 
@@ -455,7 +465,7 @@ Rules:
 - `size_of(T)`
 - `align_of(T)`
 - `offset_of(T, field)`
-- `proc(...) -> T: ...`
+- `proc(...) -> T: ...` — anonymous function expression, e.g. `let fn_ptr = proc(x: int) -> int: return x + 1`
 - `if cond: a else: b`
 
 ### 5.2 Postfix
@@ -506,6 +516,9 @@ Rules:
 - `ptr[T]`
 - `const_ptr[T]`
 - `ref[T]`
+  - receiver-modifier type: passes a stored value by reference, allowing methods to mutate the underlying storage
+  - functions like `append(output: ref[string.String], text: str)` receive a safe pointer to stored data
+  - `ref` types are non-null and cannot be nullable
 - `span[T]`
 - `array[T, N]`
 - `str_builder[N]`
@@ -638,6 +651,7 @@ Rules:
 Current async limitations:
 
 - `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, single-form `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- `await` is rejected inside `defer`, `let ... else:`, and parallel `for` loops
 - parallel `for` loops are rejected in async functions
 - `let ... else:` is rejected in async functions
 - `defer` is rejected in async functions
