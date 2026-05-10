@@ -81,26 +81,6 @@
         ]
       },
       {
-        "raw": "GuiLoadStyle",
-        "params": [
-          {
-            "name": "file_name",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
-        "raw": "GuiSetTooltip",
-        "params": [
-          {
-            "name": "tooltip",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
-      },
-      {
         "raw": "GuiIconText",
         "mapping": "c.GuiIconText(int<-icon_id, text)",
         "params": [
@@ -145,16 +125,6 @@
         "raw": "GuiGetIcons",
         "mapping": "span[uint](data = c.GuiGetIcons(), len = 2048)",
         "return_type": "span[uint]"
-      },
-      {
-        "raw": "GuiGetTextWidth",
-        "params": [
-          {
-            "name": "text",
-            "type": "str",
-            "boundary_type": "cstr"
-          }
-        ]
       },
       {
         "raw": "GuiWindowBox",
