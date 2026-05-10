@@ -4,6 +4,58 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaStdStringTest < Minitest::Test
+  def test_host_runtime_executes_owned_string_storage_methods
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_string_storage",
+      "",
+      "import std.string as string",
+      "",
+      "function byte_at(text: str, index: ptr_uint) -> int:",
+      "    unsafe:",
+      "        return int<-ubyte<-read(text.data + index)",
+      "",
+      "function main() -> int:",
+      "    var text = string.String.with_capacity(2)",
+      "    defer text.release()",
+      "    if text.capacity() < 2:",
+      "        return 1",
+      "    if not text.is_empty():",
+      "        return 2",
+      "",
+      "    text.push_byte(65)",
+      "    text.push_byte(66)",
+      "    text.push_byte(67)",
+      "    if text.count() != 3:",
+      "        return 3",
+      "    if text.capacity() < 3:",
+      "        return 4",
+      "",
+      "    let view = text.as_str()",
+      "    if byte_at(view, 0) != 65 or byte_at(view, 2) != 67:",
+      "        return 5",
+      "",
+      "    text.clear()",
+      "    if not text.is_empty():",
+      "        return 6",
+      "",
+      "    text.reserve(32)",
+      "    if text.capacity() < 32:",
+      "        return 7",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_owned_string_append_and_assign
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
