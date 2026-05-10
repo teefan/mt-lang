@@ -29,7 +29,27 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 44, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
+  end
+
+  def test_host_runtime_executes_async_main_without_explicit_runtime_import
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_async_main_no_import",
+      "",
+      "async function main() -> int:",
+      "    return 42",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 42, result.exit_status
+    assert_includes result.link_flags, "-luv"
   end
 
   def test_host_runtime_executes_async_main_with_void_result
@@ -53,7 +73,7 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 0, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
   end
 
   def test_host_runtime_executes_async_run_for_void_tasks
@@ -81,7 +101,7 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 3, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
   end
 
   def test_host_runtime_executes_block_on_with_direct_function_root
@@ -106,7 +126,7 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
   end
 
   def test_host_runtime_executes_block_on_with_captured_root_closure
@@ -134,7 +154,7 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
   end
 
   def test_host_runtime_executes_generic_async_work_with_polling_helpers
@@ -181,7 +201,7 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 42, result.exit_status
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-luv"
   end
 
   private

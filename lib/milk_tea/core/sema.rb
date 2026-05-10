@@ -538,9 +538,6 @@ module MilkTea
         raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
         raise_sema_error("external function #{decl.name} cannot be async") if external && async_function
         raise_sema_error("foreign function #{decl.name} cannot be async") if foreign && async_function
-        if decl.name == "main" && async_function
-          raise_sema_error("async main requires importing std.async") unless async_runtime_import_available?
-        end
 
         method_kind = decl.is_a?(AST::MethodDef) ? decl.kind : nil
         instance_method = receiver_type && method_kind != :static
@@ -3857,10 +3854,6 @@ module MilkTea
 
       def foreign_mapping_context?
         @foreign_mapping_depth.positive?
-      end
-
-      def async_runtime_import_available?
-        @imports.each_value.any? { |binding| binding.name == "std.async" }
       end
 
       def validate_async_function_body!(statements)
