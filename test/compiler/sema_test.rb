@@ -831,6 +831,22 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/precision.*float.*double|float.*double.*precision|format spec.*float.*double/i, error.message)
   end
 
+  def test_rejects_explicit_c_name_on_non_external_struct
+    source = <<~MT
+      module demo.bad
+
+      struct timespec = c"struct timespec":
+          tv_sec: ptr_int
+          tv_nsec: ptr_int
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/explicit C names are only allowed on external structs and unions/, error.message)
+  end
+
   def test_rejects_wrong_return_type
     source = <<~MT
       module demo.bad

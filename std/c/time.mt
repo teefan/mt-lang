@@ -1,12 +1,13 @@
 external module std.c.time:
-    include "time_helpers.h"
+    include "time.h"
+    compiler_flag "-D_POSIX_C_SOURCE=200809L"
 
     type time_t = ptr_int
     type clockid_t = int
 
     opaque tm = c"struct tm"
 
-    struct timespec:
+    struct timespec = c"struct timespec":
         tv_sec: ptr_int
         tv_nsec: ptr_int
 

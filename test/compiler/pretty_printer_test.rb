@@ -170,6 +170,19 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_extern_struct_with_explicit_c_name_like_source
+    source = <<~MT
+      external module std.c.time:
+          struct timespec = c"struct timespec":
+              tv_sec: ptr_int
+              tv_nsec: ptr_int
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_extern_module_groups_simple_declarations_by_kind
     source = <<~MT
       external module std.c.sample:

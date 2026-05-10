@@ -23,6 +23,39 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/#include "raylib\.h"/, generated)
   end
 
+  def test_generate_c_for_external_struct_with_explicit_c_name
+    source = <<~MT
+      module demo.timespec_codegen
+
+      import std.c.time as c
+
+      function main() -> int:
+          var duration = c.timespec(tv_sec = 1, tv_nsec = 2)
+          return c.nanosleep(ptr_of(duration), null)
+    MT
+
+    imported_sources = {
+      "std/c/time.mt" => <<~MT,
+        external module std.c.time:
+            include "time.h"
+
+            opaque tm = c"struct tm"
+
+            struct timespec = c"struct timespec":
+                tv_sec: ptr_int
+                tv_nsec: ptr_int
+
+            external function nanosleep(duration: const_ptr[timespec], remaining: ptr[timespec]?) -> int
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/#include <time\.h>/, generated)
+    assert_match(/struct timespec duration = \(struct timespec\)\{ \.tv_sec = 1, \.tv_nsec = 2 \};/, generated)
+    assert_match(/return nanosleep\(&duration, NULL\);/, generated)
+  end
+
     def test_generate_c_for_local_enums_flags_and_unions
       source = [
         "module demo.codegen_surface",

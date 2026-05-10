@@ -192,6 +192,22 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "struct tm", opaque_decl.c_name
   end
 
+  def test_parses_extern_struct_with_explicit_c_name
+    source = <<~MT
+      external module std.c.time:
+          struct timespec = c"struct timespec":
+              tv_sec: ptr_int
+              tv_nsec: ptr_int
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct_decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::StructDecl, struct_decl
+    assert_equal "timespec", struct_decl.name
+    assert_equal "struct timespec", struct_decl.c_name
+  end
+
   def test_parses_leading_imports_inside_extern_modules
     source = <<~MT
       external module std.c.helper:

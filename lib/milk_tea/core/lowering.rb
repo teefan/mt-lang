@@ -141,7 +141,7 @@ module MilkTea
       end
 
       def standard_c_runtime_header?(header_name)
-        %w[stdbool.h stdint.h stdlib.h string.h stddef.h stdio.h].include?(header_name)
+        %w[stdbool.h stdint.h stdlib.h string.h stddef.h stdio.h time.h].include?(header_name)
       end
 
       def program_uses_fatal?
@@ -8581,6 +8581,10 @@ module MilkTea
       def c_type_name(type)
         if type.is_a?(Types::Nullable)
           return "nullable_#{c_type_name(type.base)}"
+        end
+
+        if type.respond_to?(:c_name) && type.c_name
+          return type.c_name
         end
 
         if type.is_a?(Types::GenericInstance)
