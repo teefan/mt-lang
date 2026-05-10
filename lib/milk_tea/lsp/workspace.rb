@@ -23,6 +23,7 @@ module MilkTea
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @document_sources = {} # uri -> source string from the editor client
+        @document_state_mutex = Mutex.new
         @tokens_cache = {}   # uri -> [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
         @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
@@ -55,17 +56,23 @@ module MilkTea
         normalized = source.to_s
         raise ArgumentError, "invalid document source #{source.inspect}" unless DOCUMENT_SOURCES.include?(normalized)
 
-        previous = @document_sources[uri]
-        @document_sources[uri] = normalized
-        previous
+        @document_state_mutex.synchronize do
+          previous = @document_sources[uri]
+          @document_sources[uri] = normalized
+          previous
+        end
       end
 
       def document_source(uri)
-        @document_sources[uri]
+        @document_state_mutex.synchronize do
+          @document_sources[uri]
+        end
       end
 
       def background_document?(uri)
-        @document_sources[uri] == 'background-document'
+        @document_state_mutex.synchronize do
+          @document_sources[uri] == 'background-document'
+        end
       end
 
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
@@ -92,7 +99,9 @@ module MilkTea
       # ── Document lifecycle ──────────────────────────────────────────────────
 
       def open_document(uri, content)
-        @open_documents[uri] = content
+        @document_state_mutex.synchronize do
+          @open_documents[uri] = content
+        end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri) unless background_document?(uri)
         warm_document_analysis(uri, content)
@@ -100,14 +109,18 @@ module MilkTea
 
       def close_document(uri)
         # Keep indexed snapshot available for workspace-level features.
-        @open_documents.delete(uri)
-        @document_sources.delete(uri)
+        @document_state_mutex.synchronize do
+          @open_documents.delete(uri)
+          @document_sources.delete(uri)
+        end
         @last_good_analysis_cache.delete(uri)
         invalidate_cache(uri)
       end
 
       def update_document(uri, content)
-        @open_documents[uri] = content
+        @document_state_mutex.synchronize do
+          @open_documents[uri] = content
+        end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri) unless background_document?(uri)
         warm_document_analysis(uri, content)
@@ -131,7 +144,9 @@ module MilkTea
           new_content = change['text'].to_s
         end
 
-        @open_documents[uri] = new_content
+        @document_state_mutex.synchronize do
+          @open_documents[uri] = new_content
+        end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri) unless background_document?(uri)
       end
@@ -143,10 +158,12 @@ module MilkTea
 
         Dir.glob(File.join(root_path, '**', '*.mt')).each do |path|
           file_uri = path_to_uri(path)
-          @indexed_documents[file_uri] ||= begin
-            File.read(path)
-          rescue StandardError
-            nil
+          @document_state_mutex.synchronize do
+            @indexed_documents[file_uri] ||= begin
+              File.read(path)
+            rescue StandardError
+              nil
+            end
           end
         end
       end
@@ -158,7 +175,9 @@ module MilkTea
       # ── Accessors ───────────────────────────────────────────────────────────
 
       def get_content(uri)
-        @open_documents[uri] || @indexed_documents[uri] || ''
+        @document_state_mutex.synchronize do
+          @open_documents[uri] || @indexed_documents[uri] || ''
+        end
       end
 
       def get_tokens(uri)
@@ -192,7 +211,9 @@ module MilkTea
       end
 
       def all_documents
-        (@indexed_documents.keys + @open_documents.keys).uniq
+        @document_state_mutex.synchronize do
+          (@indexed_documents.keys + @open_documents.keys).uniq
+        end
       end
 
       # Return all identifier token locations matching +name+ across all known documents.
@@ -262,10 +283,12 @@ module MilkTea
       # Apply a workspace/didChangeWatchedFiles change to the indexed snapshot.
       # Open documents are source-of-truth and are left untouched.
       def apply_watched_file_change(uri, change_type)
-        return [] if @open_documents.key?(uri)
+        return [] if @document_state_mutex.synchronize { @open_documents.key?(uri) }
 
         if change_type.to_i == 3 # Deleted
-          @indexed_documents.delete(uri)
+          @document_state_mutex.synchronize do
+            @indexed_documents.delete(uri)
+          end
           invalidate_cache(uri)
           return refresh_import_dependent_caches(changed_uri: uri)
         end
@@ -273,7 +296,9 @@ module MilkTea
         path = uri_to_path(uri)
         return [] unless path && File.file?(path)
 
-        @indexed_documents[uri] = File.read(path)
+        @document_state_mutex.synchronize do
+          @indexed_documents[uri] = File.read(path)
+        end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri)
         refresh_import_dependent_caches(changed_uri: uri)
@@ -462,7 +487,9 @@ module MilkTea
           @diagnostics_cache.clear
           @last_good_analysis_cache.clear
         end
-        @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
+        @document_state_mutex.synchronize do
+          @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
+        end
       end
 
       # ── Compilation helpers ─────────────────────────────────────────────────
@@ -607,7 +634,11 @@ module MilkTea
       end
 
       def file_backed_source_overrides
-        @open_documents.each_with_object({}) do |(uri, content), overrides|
+        open_documents = @document_state_mutex.synchronize do
+          @open_documents.dup
+        end
+
+        open_documents.each_with_object({}) do |(uri, content), overrides|
           path = uri_to_path(uri)
           next unless path && File.file?(path)
 
@@ -717,8 +748,9 @@ module MilkTea
 
       def candidate_definition_uris(name, exclude_uri: nil)
         matcher = definition_line_matcher(name)
-        open_uris = @open_documents.keys
-        indexed_uris = @indexed_documents.keys
+        open_uris, indexed_uris = @document_state_mutex.synchronize do
+          [@open_documents.keys, @indexed_documents.keys]
+        end
 
         ordered_uris = (open_uris + indexed_uris).uniq
         warmed_candidates = nil

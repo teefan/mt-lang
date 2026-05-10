@@ -372,7 +372,7 @@ class MilkTeaLinterTest < Minitest::Test
   def test_reports_unused_import
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
-      import std.vec
+      import std.string
 
       function main() -> int:
           return 0
@@ -381,17 +381,17 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     w = warnings.first
     assert_equal "unused-import", w.code
-    assert_match(/unused import 'vec'/, w.message)
+    assert_match(/unused import 'string'/, w.message)
     assert_equal 2, w.line
   end
 
   def test_does_not_report_import_used_in_expression
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
-      import std.vec
+      import std.string
 
       function main() -> int:
-          let _v = vec.new()
+          let _value = string.String.create()
           return 0
     MT
 
@@ -401,9 +401,9 @@ class MilkTeaLinterTest < Minitest::Test
   def test_does_not_report_import_used_as_type_ref
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
-      import std.vec
+      import std.string
 
-      function process(_v: vec.Vec[int, 4]) -> int:
+      function process(_value: string.String) -> int:
           return 0
     MT
 
@@ -460,7 +460,7 @@ class MilkTeaLinterTest < Minitest::Test
   def test_import_with_alias_uses_alias_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
-      import std.vec as v
+      import std.string as s
 
       function main() -> int:
           return 0
@@ -469,7 +469,7 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     w = warnings.first
     assert_equal "unused-import", w.code
-    assert_match(/unused import 'v'/, w.message)
+    assert_match(/unused import 's'/, w.message)
   end
 
   # ── dead-assignment ────────────────────────────────────────────────────
