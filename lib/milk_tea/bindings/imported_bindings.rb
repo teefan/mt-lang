@@ -966,6 +966,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/cjson.binding.json"),
         ),
         Binding.new(
+          name: "libuv",
+          module_name: "std.libuv",
+          binding_path: root.join("std/libuv.mt"),
+          raw_module_name: "std.c.libuv",
+          policy_path: root.join("bindings/imported/libuv.binding.json"),
+        ),
+        Binding.new(
           name: "steamworks",
           module_name: "std.steamworks",
           binding_path: root.join("std/steamworks.mt"),

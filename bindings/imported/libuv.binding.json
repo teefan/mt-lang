@@ -1,0 +1,419 @@
+{
+  "module_name": "std.libuv",
+  "raw_module_name": "std.c.libuv",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {
+    "include_prefixes": [
+      "UV_"
+    ],
+    "strip_prefix": "UV_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "uv_"
+    ],
+    "strip_prefix": "uv_",
+    "exclude": [
+      "uv_loop_configure"
+    ],
+    "overrides": [
+      {
+        "raw": "uv_default_loop",
+        "return_type": "ptr[uv_loop_t]?"
+      },
+      {
+        "raw": "uv_loop_new",
+        "return_type": "ptr[uv_loop_t]?"
+      },
+      {
+        "raw": "uv_getaddrinfo",
+        "params": [
+          { "name": "loop", "type": "ptr[uv_loop_t]" },
+          { "name": "req", "type": "ptr[uv_getaddrinfo_t]" },
+          { "name": "getaddrinfo_cb", "type": "fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[addrinfo]) -> void" },
+          { "name": "node", "type": "cstr" },
+          { "name": "service", "type": "cstr" },
+          { "name": "hints", "type": "const_ptr[addrinfo]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_udp_connect",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_udp_t]" },
+          { "name": "addr", "type": "const_ptr[sockaddr]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_udp_send",
+        "params": [
+          { "name": "req", "type": "ptr[uv_udp_send_t]" },
+          { "name": "handle", "type": "ptr[uv_udp_t]" },
+          { "name": "bufs", "type": "const_ptr[uv_buf_t]" },
+          { "name": "nbufs", "type": "uint" },
+          { "name": "addr", "type": "const_ptr[sockaddr]" },
+          { "name": "send_cb", "type": "fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_udp_try_send",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_udp_t]" },
+          { "name": "bufs", "type": "const_ptr[uv_buf_t]" },
+          { "name": "nbufs", "type": "uint" },
+          { "name": "addr", "type": "const_ptr[sockaddr]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_handle_get_data",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "uv_req_get_data",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "uv_loop_get_data",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "uv_key_get",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "uv_dlerror",
+        "return_type": "cstr?"
+      },
+      {
+        "raw": "uv_fileno",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_handle_t]" },
+          { "name": "fd", "type": "uv_os_fd_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_send_buffer_size",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_handle_t]" },
+          { "name": "value", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_recv_buffer_size",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_handle_t]" },
+          { "name": "value", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_tcp_getsockname",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_tcp_t]" },
+          { "name": "name", "type": "sockaddr", "mode": "out" },
+          { "name": "namelen", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_tcp_getpeername",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_tcp_t]" },
+          { "name": "name", "type": "sockaddr", "mode": "out" },
+          { "name": "namelen", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_udp_getsockname",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_udp_t]" },
+          { "name": "name", "type": "sockaddr", "mode": "out" },
+          { "name": "namelen", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_udp_getpeername",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_udp_t]" },
+          { "name": "name", "type": "sockaddr", "mode": "out" },
+          { "name": "namelen", "type": "int", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_tty_get_winsize",
+        "params": [
+          { "name": "arg_0", "type": "ptr[uv_tty_t]" },
+          { "name": "width", "type": "int", "mode": "out" },
+          { "name": "height", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_pipe_getsockname",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_pipe_t]" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_pipe_getpeername",
+        "params": [
+          { "name": "handle", "type": "const_ptr[uv_pipe_t]" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_homedir",
+        "params": [
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_tmpdir",
+        "params": [
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_gethostname",
+        "params": [
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_if_indextoname",
+        "params": [
+          { "name": "ifindex", "type": "uint" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_if_indextoiid",
+        "params": [
+          { "name": "ifindex", "type": "uint" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_exepath",
+        "params": [
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_cwd",
+        "params": [
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_uptime",
+        "params": [
+          { "name": "uptime", "type": "double", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_resident_set_memory",
+        "params": [
+          { "name": "rss", "type": "ptr_uint", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_getpriority",
+        "params": [
+          { "name": "pid", "type": "int" },
+          { "name": "priority", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_thread_getpriority",
+        "params": [
+          { "name": "tid", "type": "ptr_uint" },
+          { "name": "priority", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_cpu_info",
+        "params": [
+          { "name": "cpu_infos", "type": "ptr[uv_cpu_info_t]?", "mode": "out" },
+          { "name": "count", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_interface_addresses",
+        "params": [
+          { "name": "addresses", "type": "ptr[uv_interface_address_t]?", "mode": "out" },
+          { "name": "count", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_environ",
+        "params": [
+          { "name": "envitems", "type": "ptr[uv_env_item_t]?", "mode": "out" },
+          { "name": "count", "type": "int", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_os_getenv",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_metrics_info",
+        "params": [
+          { "name": "loop", "type": "ptr[uv_loop_t]" },
+          { "name": "metrics", "type": "uv_metrics_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_getrusage",
+        "params": [
+          { "name": "rusage", "type": "uv_rusage_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_getrusage_thread",
+        "params": [
+          { "name": "rusage", "type": "uv_rusage_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_clock_gettime",
+        "params": [
+          { "name": "clock_id", "type": "uv_clock_id" },
+          { "name": "ts", "type": "uv_timespec64_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_gettimeofday",
+        "params": [
+          { "name": "tv", "type": "uv_timeval64_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_fs_scandir_next",
+        "params": [
+          { "name": "req", "type": "ptr[uv_fs_t]" },
+          { "name": "ent", "type": "uv_dirent_t", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_fs_poll_getpath",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_fs_poll_t]" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_fs_event_getpath",
+        "params": [
+          { "name": "handle", "type": "ptr[uv_fs_event_t]" },
+          { "name": "buffer", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint", "mode": "inout" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_ip4_addr",
+        "params": [
+          { "name": "ip", "type": "str", "boundary_type": "cstr" },
+          { "name": "port", "type": "int" },
+          { "name": "addr", "type": "sockaddr_in", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_ip6_addr",
+        "params": [
+          { "name": "ip", "type": "str", "boundary_type": "cstr" },
+          { "name": "port", "type": "int" },
+          { "name": "addr", "type": "sockaddr_in6", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_inet_pton",
+        "params": [
+          { "name": "af", "type": "int" },
+          { "name": "src", "type": "str", "boundary_type": "cstr" },
+          { "name": "dst", "type": "ptr[void]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_dlsym",
+        "params": [
+          { "name": "lib", "type": "ptr[uv_lib_t]" },
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "ptr", "type": "ptr[void]?", "mode": "out" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_thread_getname",
+        "params": [
+          { "name": "tid", "type": "ptr[uv_thread_t]" },
+          { "name": "name", "type": "ptr[char]" },
+          { "name": "size", "type": "ptr_uint" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "uv_utf16_to_wtf8",
+        "params": [
+          { "name": "utf_16", "type": "const_ptr[ushort]" },
+          { "name": "utf_16_len", "type": "ptr_int" },
+          { "name": "wtf_8_ptr", "type": "ptr[char]?", "mode": "out" },
+          { "name": "wtf_8_len_ptr", "type": "ptr_uint", "mode": "out" }
+        ],
+        "return_type": "int"
+      }
+    ]
+  }
+}

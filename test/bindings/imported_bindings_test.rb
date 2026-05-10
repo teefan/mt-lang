@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "steamworks", "libc"], registry.map(&:name)
+    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -40,6 +40,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes registry.fetch("cjson").binding_path, "/std/cjson.mt"
     assert_includes registry.fetch("cjson").policy_path, "/bindings/imported/cjson.binding.json"
 
+    assert_equal "std.libuv", registry.fetch("libuv").module_name
+    assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
+    assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
+    assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+
     assert_equal "std.steamworks", registry.fetch("steamworks").module_name
     assert_equal "std.c.steamworks", registry.fetch("steamworks").raw_module_name
     assert_includes registry.fetch("steamworks").binding_path, "/std/steamworks.mt"
@@ -49,6 +54,40 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.libc", registry.fetch("libc").raw_module_name
     assert_includes registry.fetch("libc").binding_path, "/std/libc.mt"
     assert_includes registry.fetch("libc").policy_path, "/bindings/imported/libc.binding.json"
+
+    assert_equal "std.time", registry.fetch("time").module_name
+    assert_equal "std.c.time", registry.fetch("time").raw_module_name
+    assert_includes registry.fetch("time").binding_path, "/std/time.mt"
+    assert_includes registry.fetch("time").policy_path, "/bindings/imported/time.binding.json"
+  end
+
+  def test_checked_in_libuv_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("libuv")
+
+    assert_includes binding.check!, "/std/c/libuv.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^module std\.libuv$/, source)
+    assert_match(/^import std\.c\.libuv as c$/, source)
+    assert_match(/^public type uv_loop_t = c\.uv_loop_t$/, source)
+    assert_match(/^public const VERSION_MAJOR: int = c\.UV_VERSION_MAJOR$/, source)
+    assert_match(/^public foreign function default_loop\(\) -> ptr\[uv_loop_t\]\? = c\.uv_default_loop$/, source)
+    assert_match(/^public foreign function loop_close\(loop: ptr\[uv_loop_t\]\) -> int = c\.uv_loop_close$/, source)
+    assert_match(/^public foreign function send_buffer_size\(handle: ptr\[uv_handle_t\], inout value: int\) -> int = c\.uv_send_buffer_size$/, source)
+    assert_match(/^public foreign function fileno\(handle: const_ptr\[uv_handle_t\], out fd: uv_os_fd_t\) -> int = c\.uv_fileno$/, source)
+    assert_match(/^public foreign function tcp_getsockname\(handle: const_ptr\[uv_tcp_t\], out name: sockaddr, inout namelen: int\) -> int = c\.uv_tcp_getsockname$/, source)
+    assert_match(/^public foreign function udp_getsockname\(handle: const_ptr\[uv_udp_t\], out name: sockaddr, inout namelen: int\) -> int = c\.uv_udp_getsockname$/, source)
+    assert_match(/^public foreign function tty_get_winsize\(arg_0: ptr\[uv_tty_t\], out width: int, out height: int\) -> int = c\.uv_tty_get_winsize$/, source)
+    assert_match(/^public foreign function pipe_getsockname\(handle: const_ptr\[uv_pipe_t\], buffer: ptr\[char\], inout size: ptr_uint\) -> int = c\.uv_pipe_getsockname$/, source)
+    assert_match(/^public foreign function os_getenv\(name: str as cstr, buffer: ptr\[char\], inout size: ptr_uint\) -> int = c\.uv_os_getenv$/, source)
+    assert_match(/^public foreign function cpu_info\(out cpu_infos: ptr\[uv_cpu_info_t\]\?, out count: int\) -> int = c\.uv_cpu_info$/, source)
+    assert_match(/^public foreign function interface_addresses\(out addresses: ptr\[uv_interface_address_t\]\?, out count: int\) -> int = c\.uv_interface_addresses$/, source)
+    assert_match(/^public foreign function os_environ\(out envitems: ptr\[uv_env_item_t\]\?, out count: int\) -> int = c\.uv_os_environ$/, source)
+    assert_match(/^public foreign function metrics_info\(loop: ptr\[uv_loop_t\], out metrics: uv_metrics_t\) -> int = c\.uv_metrics_info$/, source)
+    assert_match(/^public foreign function fs_scandir_next\(req: ptr\[uv_fs_t\], out ent: uv_dirent_t\) -> int = c\.uv_fs_scandir_next$/, source)
+    assert_match(/^public foreign function ip_4_addr\(ip: str as cstr, port: int, out addr: sockaddr_in\) -> int = c\.uv_ip4_addr$/, source)
+    assert_match(/^public foreign function dlsym\(lib: ptr\[uv_lib_t\], name: str as cstr, out ptr: ptr\[void\]\?\) -> int = c\.uv_dlsym$/, source)
+    assert_match(/^public foreign function utf_16_to_wtf_8\(utf_16: const_ptr\[ushort\], utf_16_len: ptr_int, out wtf_8_ptr: ptr\[char\]\?, out wtf_8_len_ptr: ptr_uint\) -> int = c\.uv_utf16_to_wtf8$/, source)
   end
 
   def test_checked_in_libc_binding_matches_policy_and_loads
@@ -446,7 +485,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
   def test_imported_bindings_outside_raylib_and_rlgl_do_not_expose_raw_ptr_void
     offending_bindings = MilkTea::ImportedBindings.default_registry.reject do |binding|
-      %w[raylib rlgl sdl3 box2d cjson steamworks].include?(binding.name)
+      %w[raylib rlgl sdl3 box2d cjson libuv steamworks].include?(binding.name)
     end.filter_map do |binding|
       binding.name if File.read(binding.binding_path).match?(/\bptr\[void\]\b/)
     end

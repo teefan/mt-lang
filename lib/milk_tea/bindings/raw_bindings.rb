@@ -246,6 +246,8 @@ module MilkTea
       vendored_box2d_library = vendored_box2d.library(root:)
       vendored_cjson = MilkTea::VendoredCJSON
       vendored_cjson_library = vendored_cjson.library(root:)
+      vendored_libuv = MilkTea::VendoredLibUV
+      vendored_libuv_library = vendored_libuv.library(root:)
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[ushort]?" },
@@ -964,6 +966,38 @@ module MilkTea
           },
           header_candidates: [
             vendored_cjson.source_root.join("cJSON.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "libuv",
+          module_name: "std.c.libuv",
+          binding_path: root.join("std/c/libuv.mt"),
+          include_directives: ["uv.h"],
+          link_libraries: ["uv"],
+          prepare: lambda do |_binding, **|
+            vendored_libuv.source(root:).bootstrap!
+          end,
+          vendored_library: vendored_libuv_library,
+          clang_args: vendored_libuv.include_flags(root:),
+          compiler_flags: vendored_libuv.include_flags(root:),
+          tracked_header_paths: [
+            vendored_libuv.header_path(root:).to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_libuv.include_root(root:).to_s,
+          ],
+          declaration_name_prefixes: ["uv_", "UV_"],
+          type_overrides: {
+            "cc_t" => "ubyte",
+            "DIR" => "void",
+            "in_addr" => "uint",
+            "in6_addr" => "array[ubyte, 16]",
+            "speed_t" => "uint",
+            "tcflag_t" => "uint",
+            "termios" => "void",
+          },
+          header_candidates: [
+            vendored_libuv.header_path(root:).to_s,
           ],
         ),
         Binding.new(
