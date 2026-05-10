@@ -763,21 +763,6 @@ module MilkTea
         end
       end
 
-      def build_function_signature(name, type_params:, params:, return_type:)
-        signature = +"public function #{name}"
-        signature << render_type_params(type_params)
-        signature << "(#{params.join(', ')})"
-        signature << " -> #{return_type}"
-        signature << ":"
-        signature
-      end
-
-      def render_call_args(arguments)
-        return "()" if arguments.empty?
-
-        "(#{arguments})"
-      end
-
       def foreign_function_name(raw_name, spec:)
         snake_case(default_public_name(raw_name, spec:, context: "generated function name"))
       end
