@@ -1625,22 +1625,20 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       module demo.fmt_spec
 
-      import std.io as io
-
       function main() -> int:
           let pi: double = 3.14159
-          io.println(f"pi=\#{pi:.2}")
-          io.println(f"\#{pi:.0}")
+          let first = f"pi=\#{pi:.2}"
+          let second = f"\#{pi:.0}"
           return 0
     MT
 
     ast = MilkTea::Parser.parse(source)
     main_fn = ast.declarations.last
-    println1 = main_fn.body[1].expression
-    println2 = main_fn.body[2].expression
+    format1_decl = main_fn.body[1]
+    format2_decl = main_fn.body[2]
 
     # f"pi=#{pi:.2}" -> text part "pi=" + expr part with precision 2
-    format1 = println1.arguments.first.value
+    format1 = format1_decl.value
     assert_instance_of MilkTea::AST::FormatString, format1
     assert_equal 2, format1.parts.length
 
@@ -1653,7 +1651,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal({ kind: :precision, value: 2 }, expr_part1.format_spec)
 
     # f"#{pi:.0}" -> single expr part with precision 0
-    format2 = println2.arguments.first.value
+    format2 = format2_decl.value
     assert_instance_of MilkTea::AST::FormatString, format2
     assert_equal 1, format2.parts.length
 

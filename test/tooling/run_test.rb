@@ -1093,22 +1093,28 @@ class MilkTeaRunTest < Minitest::Test
       File.write(source_path, [
         "module demo.defer_block_runtime",
         "",
-        "import std.io as io",
+        "function append_digit(target: ptr[int], digit: int) -> void:",
+        "    unsafe:",
+        "        read(target) = read(target) * 10 + digit",
+        "",
+        "function run(target: ptr[int]) -> void:",
+        "    defer append_digit(target, 3)",
+        "    defer:",
+        "        append_digit(target, 1)",
+        "        append_digit(target, 2)",
         "",
         "function main() -> int:",
-        "    defer io.print(\"3\")",
-        "    defer:",
-        "        io.print(\"1\")",
-        "        io.print(\"2\")",
-        "    return 0",
+        "    var total = 0",
+        "    run(ptr_of(total))",
+        "    return total",
         "",
       ].join("\n"))
 
       result = MilkTea::Run.run(source_path, cc: compiler)
 
-      assert_equal "123", result.stdout
+      assert_equal "", result.stdout
       assert_equal "", result.stderr
-      assert_equal 0, result.exit_status
+      assert_equal 123, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler

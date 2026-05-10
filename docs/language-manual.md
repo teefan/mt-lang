@@ -16,8 +16,6 @@ A file can be either:
 ```mt
 module demo.main
 
-import std.io as io
-
 function main() -> int:
     return 0
 ```
@@ -604,8 +602,6 @@ Format strings have type `str` and are valid anywhere a `str` value is accepted.
 The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
 
 - `std.fmt.string` — returns `string.String`
-- `std.io.print` / `std.io.println`
-- `std.io.write_error` / `std.io.write_error_line`
 
 ## 9. Safety And Conversion Rules
 

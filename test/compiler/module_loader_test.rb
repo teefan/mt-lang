@@ -49,11 +49,10 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(root_path, <<~MT)
         module demo.main
 
-        import std.io as io
-
         function main() -> int:
             let count = 7
-            if not io.println(f"count=\#{count}"):
+            let text = f"count=\#{count}"
+            if text.len == 0:
                 return 1
             return 0
       MT
@@ -62,7 +61,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       loaded_modules = program.analyses_by_module_name.keys
 
       assert_includes loaded_modules, "demo.main"
-      assert_includes loaded_modules, "std.io"
       refute_includes loaded_modules, "std.fmt"
       refute_includes loaded_modules, "std.string"
     end
