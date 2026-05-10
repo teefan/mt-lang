@@ -979,6 +979,13 @@ module MilkTea
           raw_module_name: "std.c.libc",
           policy_path: root.join("bindings/imported/libc.binding.json"),
         ),
+        Binding.new(
+          name: "time",
+          module_name: "std.time",
+          binding_path: root.join("std/time.mt"),
+          raw_module_name: "std.c.time",
+          policy_path: root.join("bindings/imported/time.binding.json"),
+        ),
       ]
     end
 

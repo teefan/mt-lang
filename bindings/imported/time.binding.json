@@ -1,0 +1,78 @@
+{
+  "module_name": "std.time",
+  "raw_module_name": "std.c.time",
+  "raw_import_alias": "c",
+  "types": {
+    "exclude": []
+  },
+  "constants": {
+    "exclude": []
+  },
+  "functions": {
+    "exclude": [],
+    "overrides": [
+      {
+        "raw": "time",
+        "name": "current_time",
+        "params": [
+          { "name": "timer", "type": "ptr[time_t]" }
+        ],
+        "return_type": "time_t"
+      },
+      {
+        "raw": "localtime",
+        "name": "to_local_time",
+        "params": [
+          { "name": "timer", "type": "ptr[time_t]" }
+        ],
+        "return_type": "ptr[tm]"
+      },
+      {
+        "raw": "gmtime",
+        "name": "to_utc_time",
+        "params": [
+          { "name": "timer", "type": "ptr[time_t]" }
+        ],
+        "return_type": "ptr[tm]"
+      },
+      {
+        "raw": "strftime",
+        "name": "format_date_time",
+        "params": [
+          { "name": "s", "type": "ptr[char]" },
+          { "name": "maxsize", "type": "ulong" },
+          { "name": "format", "type": "str", "boundary_type": "cstr" },
+          { "name": "tp", "type": "ptr[tm]" }
+        ],
+        "return_type": "ptr_uint"
+      },
+      {
+        "raw": "clock_getres",
+        "name": "get_clock_resolution",
+        "params": [
+          { "name": "clock_id", "type": "clockid_t" },
+          { "name": "resolution", "type": "ptr[timespec]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "clock_gettime",
+        "name": "get_clock_time",
+        "params": [
+          { "name": "clock_id", "type": "clockid_t" },
+          { "name": "value", "type": "ptr[timespec]" }
+        ],
+        "return_type": "int"
+      },
+      {
+        "raw": "nanosleep",
+        "name": "sleep_for_duration",
+        "params": [
+          { "name": "duration", "type": "const_ptr[timespec]" },
+          { "name": "remaining", "type": "ptr[timespec]?" }
+        ],
+        "return_type": "int"
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 module std.async.blocking_runtime
 
-import std.c.time as c
+import std.time as time
 import std.mem.heap as heap
 import std.status as status
 
@@ -60,10 +60,10 @@ function deactivate_current_runtime() -> void:
     return
 
 
-function duration_from_milliseconds(timeout: ptr_uint) -> c.timespec:
+function duration_from_milliseconds(timeout: ptr_uint) -> time.timespec:
     let seconds = timeout / milliseconds_per_second
     let milliseconds = timeout % milliseconds_per_second
-    return c.timespec(
+    return time.timespec(
         tv_sec = ptr_int<-seconds,
         tv_nsec = ptr_int<-(milliseconds * nanoseconds_per_millisecond),
     )
@@ -71,7 +71,7 @@ function duration_from_milliseconds(timeout: ptr_uint) -> c.timespec:
 
 function sleep_blocking(timeout: ptr_uint) -> int:
     var duration = duration_from_milliseconds(timeout)
-    return c.nanosleep(ptr_of(duration), null)
+    return time.sleep_for_duration(ptr_of(duration), null)
 
 
 function sleep_task(state: ptr[SleepState]) -> Task[int]:
