@@ -2532,7 +2532,7 @@ external module std.c.sdl3:
         window: SDL_WindowEvent
         kdevice: SDL_KeyboardDeviceEvent
         key: SDL_KeyboardEvent
-        edit_: SDL_TextEditingEvent
+        edit: SDL_TextEditingEvent
         edit_candidates: SDL_TextEditingCandidatesEvent
         text: SDL_TextInputEvent
         mdevice: SDL_MouseDeviceEvent

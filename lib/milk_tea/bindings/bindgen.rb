@@ -113,6 +113,7 @@ module MilkTea
         @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
         @allow_static_inline_functions = allow_static_inline_functions
         @record_aliases = {}
+        @record_aliases_by_tag_name = {}
         @enum_aliases = {}
         @record_visible_names = {}
         @enum_visible_names = {}
@@ -340,6 +341,9 @@ module MilkTea
           case target[:kind]
           when "RecordDecl"
             @record_aliases[target[:id]] = node["name"]
+            if target[:name] && !target[:name].empty?
+              @record_aliases_by_tag_name[target[:name]] ||= node["name"]
+            end
           when "EnumDecl"
             @enum_aliases[target[:id]] = node["name"]
           end
@@ -562,7 +566,7 @@ module MilkTea
             index:,
             kind: record_complete_definition?(record_node) ? record_node["tagUsed"] : "opaque",
             name: visible_name,
-            c_name: opaque_c_name(record_node),
+            c_name: record_c_name(record_node),
             node: record_node,
           }
 
@@ -884,7 +888,11 @@ module MilkTea
       end
 
       def emit_aggregate_declaration(kind, name, node)
-        lines = ["    #{kind} #{name}:"]
+        explicit_c_name = aggregate_explicit_c_name(name, node)
+        header = "    #{kind} #{name}"
+        header += " = c#{explicit_c_name.inspect}" if explicit_c_name
+        header += ":"
+        lines = [header]
         fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
         fields.each do |field|
           field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
@@ -1514,11 +1522,24 @@ module MilkTea
         end
       end
 
-      def opaque_c_name(node)
+      def record_c_name(node)
+        return unless node
+
         typedef_name = @record_aliases[node["id"]]
+        typedef_name ||= @record_aliases_by_tag_name[node["name"]] if node["name"]
         return typedef_name if typedef_name
 
-        "#{node["tagUsed"]} #{node["name"]}"
+        tag_name = node["name"]
+        return "#{node["tagUsed"]} #{tag_name}" if tag_name && !tag_name.empty?
+
+        nil
+      end
+
+      def aggregate_explicit_c_name(name, node)
+        c_name = record_c_name(node)
+        return if c_name.nil? || c_name == name
+
+        c_name
       end
 
       def synthetic_declarations_for(declarations)

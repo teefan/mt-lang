@@ -65,7 +65,7 @@ external module std.c.libc:
     external function initstate(__seed: uint, __statebuf: ptr[char], __statelen: ptr_uint) -> ptr[char]
     external function setstate(__statebuf: ptr[char]) -> ptr[char]
 
-    struct random_data:
+    struct random_data = c"struct random_data":
         fptr: ptr[int]
         rptr: ptr[int]
         state: ptr[int]
@@ -91,7 +91,7 @@ external module std.c.libc:
     external function seed48(__seed16v: ptr[ushort]) -> ptr[ushort]
     external function lcong48(__param: ptr[ushort]) -> void
 
-    struct drand48_data:
+    struct drand48_data = c"struct drand48_data":
         __x: array[ushort, 3]
         __old_x: array[ushort, 3]
         __c: ushort
