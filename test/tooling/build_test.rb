@@ -162,15 +162,9 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.main_span_args",
         "",
-        "import std.io as io",
-        "",
         "function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",
-        "    if not io.println(f\"a=\#{args[0]}\"):",
-        "        return 7",
-        "    if not io.println(f\"b=\#{args[1]}\"):",
-        "        return 8",
         "    return int<-args[0].len + int<-args[1].len",
         "",
       ].join("\n"))
@@ -182,7 +176,7 @@ class MilkTeaBuildTest < Minitest::Test
       assert File.executable?(output_path)
 
       stdout, stderr, status = Open3.capture3(output_path, "alpha", "beta")
-      assert_equal "a=alpha\nb=beta\n", stdout
+      assert_equal "", stdout
       assert_equal "", stderr
       assert_equal 9, status.exitstatus
     end

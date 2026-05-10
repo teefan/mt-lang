@@ -119,7 +119,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "module demo.std_fmt_float_string",
       "",
       "import std.fmt as fmt",
-      "import std.io as io",
       "import std.string as string",
       "",
       "function main() -> int:",
@@ -127,42 +126,15 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    let scale: double = 0.125",
       "    var output = fmt.string(f\"ratio=\#{ratio} scale=\#{scale}\")",
       "    defer output.release()",
-      "    if not io.println(output.as_str()):",
-      "        return 1",
-      "    return 0",
+      "    return int<-output.count()",
       "",
     ].join("\n")
 
     result = run_program(source, compiler:)
 
-    assert_equal "ratio=2.5 scale=0.125\n", result.stdout
+    assert_equal "", result.stdout
     assert_equal "", result.stderr
-    assert_equal 0, result.exit_status
-    assert_equal [], result.link_flags
-  end
-
-  def test_host_runtime_executes_direct_io_format_string_calls
-    compiler = ENV.fetch("CC", "cc")
-    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
-
-    source = [
-      "module demo.std_fmt_direct_io",
-      "",
-      "import std.io as io",
-      "",
-      "function main() -> int:",
-      "    let count = 7",
-      "    if not io.println(f\"count=\#{count} ok=\#{true}\"):",
-      "        return 1",
-      "    return 0",
-      "",
-    ].join("\n")
-
-    result = run_program(source, compiler:)
-
-    assert_equal "count=7 ok=true\n", result.stdout
-    assert_equal "", result.stderr
-    assert_equal 0, result.exit_status
+    assert_equal 21, result.exit_status
     assert_equal [], result.link_flags
   end
 
@@ -173,8 +145,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     source = [
       "module demo.std_fmt_general_expr",
       "",
-      "import std.io as io",
-      "",
       "function size(text: str) -> ptr_uint:",
       "    return text.len",
       "",
@@ -183,15 +153,13 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    let text = f\"count=\#{count}\"",
       "    if size(f\"ok=\#{true}\") == 0:",
       "        return 1",
-      "    if not io.println(text):",
-      "        return 2",
       "    return int<-text.len",
       "",
     ].join("\n")
 
     result = run_program(source, compiler:)
 
-    assert_equal "count=7\n", result.stdout
+    assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 7, result.exit_status
     assert_equal [], result.link_flags

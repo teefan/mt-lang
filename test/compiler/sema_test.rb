@@ -800,11 +800,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.fmt_spec
 
-      import std.io as io
-
       function main(pi: double, small: float) -> int:
-          io.println(f"pi=\#{pi:.2}")
-          io.println(f"small=\#{small:.4}")
+          let formatted_pi = f"pi=\#{pi:.2}"
+          let formatted_small = f"small=\#{small:.4}"
+          if formatted_pi.len == 0 or formatted_small.len == 0:
+              return 1
           return 0
     MT
 
@@ -817,10 +817,10 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.fmt_spec
 
-      import std.io as io
-
       function main(count: int) -> int:
-          io.println(f"count=\#{count:.2}")
+          let formatted = f"count=\#{count:.2}"
+          if formatted.len == 0:
+              return 1
           return 0
     MT
 

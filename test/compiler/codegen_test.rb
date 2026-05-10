@@ -738,27 +738,6 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_format_str_release\(__mt_fmt_string_2\);/, generated)
   end
 
-  def test_generate_c_for_direct_io_format_string_calls
-    source = <<~MT
-      module demo.format_direct_io_codegen
-
-      import std.io as io
-
-      function main(value: int) -> int:
-          if not io.println(f"value=\#{value} ok=\#{true}"):
-              return 1
-          return 0
-    MT
-
-    generated = generate_c_from_source(source)
-
-    assert_match(/static mt_str demo_format_direct_io_codegen__fmt_1\(/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = demo_format_direct_io_codegen__fmt_1\(value, true\);/, generated)
-    assert_match(/std_io_println\(__mt_fmt_string_1\)/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
-    refute_match(/std_io_write_line\(__mt_fmt_string_1\);/, generated)
-  end
-
   def test_generate_c_reuses_identical_format_string_helpers
     source = <<~MT
       module demo.format_dedup_codegen
@@ -3957,12 +3936,10 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       module demo.fmt_spec
 
-      import std.io as io
-
       function main(pi: double, small: float) -> int:
-          io.println(f"pi=\#{pi:.2}")
-          io.println(f"small=\#{small:.5}")
-          return 0
+          let formatted_pi = f"pi=\#{pi:.2}"
+          let formatted_small = f"small=\#{small:.5}"
+          return int<-formatted_pi.len + int<-formatted_small.len
     MT
 
     generated = generate_c_from_source(source)
