@@ -1775,35 +1775,3 @@ module MilkTea
 
   class BindgenError < StandardError; end
 end
-
-      def normalize_module_imports(imports)
-        return [] if imports.nil?
-        raise BindgenError, "module_imports must be an array" unless imports.is_a?(Array)
-
-        imports.map do |entry|
-          raise BindgenError, "module_imports entries must be hashes" unless entry.is_a?(Hash)
-
-          module_name = entry.fetch(:module_name) { entry.fetch("module_name", nil) }
-          import_alias = entry.fetch(:alias) { entry.fetch("alias", nil) }
-          raise BindgenError, "module_imports module_name must be a non-empty string" unless module_name.is_a?(String) && !module_name.empty?
-          raise BindgenError, "module_imports alias must be a non-empty string" unless import_alias.is_a?(String) && !import_alias.empty?
-
-          { module_name:, alias: import_alias }
-        end.freeze
-      end
-
-      def normalize_type_overrides(overrides)
-        return {} if overrides.nil?
-
-        raise BindgenError, "type_overrides must be a hash" unless overrides.is_a?(Hash)
-
-        overrides.each_with_object({}) do |(type_name, mapped_type), normalized|
-          unless type_name.is_a?(String) || type_name.is_a?(Symbol)
-            raise BindgenError, "type_overrides type names must be strings or symbols"
-          end
-
-          raise BindgenError, "type_overrides for #{type_name} must be a non-empty string" unless mapped_type.is_a?(String) && !mapped_type.empty?
-
-          normalized[type_name.to_s] = mapped_type
-        end.freeze
-      end
