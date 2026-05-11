@@ -83,6 +83,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "cstr?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetHint")
     assert_equal "SDL_FunctionPointer?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GL_GetProcAddress")
     assert_equal "SDL_FunctionPointer?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_EGL_GetProcAddress")
+    assert_equal "ptr[void]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_malloc")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strdup")
     assert_equal "ptr[void]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_LoadFile")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_strchr")
@@ -166,6 +167,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("libuv").tracked_header_prefixes.first, "third_party/libuv-upstream/include"
     assert_includes registry.fetch("libuv").link_flags, "-L#{MilkTea::VendoredLibUV.archive_path.dirname}"
     assert_equal ["uv_", "UV_"], registry.fetch("libuv").declaration_name_prefixes
+    assert_equal({ "node" => "cstr?", "service" => "cstr?", "hints" => "const_ptr[addrinfo]?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_getaddrinfo"))
+    assert_equal({ "ai" => "ptr[addrinfo]?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_freeaddrinfo"))
+    assert_equal "ptr[uv_loop_t]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_default_loop")
+    assert_equal "ptr[uv_loop_t]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_new")
+    assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_handle_get_data")
+    assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_req_get_data")
+    assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_key_get")
+    assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_get_data")
+    assert_equal "cstr?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_dlerror")
     assert_equal "std.c.steamworks", registry.fetch("steamworks").module_name
     assert_equal MilkTea::Steamworks.default_link_libraries, registry.fetch("steamworks").link_libraries
     assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"

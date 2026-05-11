@@ -494,7 +494,7 @@ public const MAJOR_VERSION: int = c.SDL_MAJOR_VERSION
 public const MINOR_VERSION: int = c.SDL_MINOR_VERSION
 public const MICRO_VERSION: int = c.SDL_MICRO_VERSION
 
-public foreign function malloc(size: ptr_uint) -> ptr[void] = c.SDL_malloc
+public foreign function malloc(size: ptr_uint) -> ptr[void]? = c.SDL_malloc
 public foreign function calloc(nmemb: ptr_uint, size: ptr_uint) -> ptr[void]? = c.SDL_calloc
 public foreign function realloc(mem: ptr[void]?, size: ptr_uint) -> ptr[void]? = c.SDL_realloc
 public foreign function free(mem: ptr[void]?) -> void = c.SDL_free

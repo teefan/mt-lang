@@ -19,26 +19,6 @@
     ],
     "overrides": [
       {
-        "raw": "uv_default_loop",
-        "return_type": "ptr[uv_loop_t]?"
-      },
-      {
-        "raw": "uv_loop_new",
-        "return_type": "ptr[uv_loop_t]?"
-      },
-      {
-        "raw": "uv_getaddrinfo",
-        "params": [
-          { "name": "loop", "type": "ptr[uv_loop_t]" },
-          { "name": "req", "type": "ptr[uv_getaddrinfo_t]" },
-          { "name": "getaddrinfo_cb", "type": "fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[addrinfo]) -> void" },
-          { "name": "node", "type": "cstr" },
-          { "name": "service", "type": "cstr" },
-          { "name": "hints", "type": "const_ptr[addrinfo]" }
-        ],
-        "return_type": "int"
-      },
-      {
         "raw": "uv_udp_connect",
         "params": [
           { "name": "handle", "type": "ptr[uv_udp_t]" },
@@ -67,26 +47,6 @@
           { "name": "addr", "type": "const_ptr[sockaddr]" }
         ],
         "return_type": "int"
-      },
-      {
-        "raw": "uv_handle_get_data",
-        "return_type": "ptr[void]?"
-      },
-      {
-        "raw": "uv_req_get_data",
-        "return_type": "ptr[void]?"
-      },
-      {
-        "raw": "uv_loop_get_data",
-        "return_type": "ptr[void]?"
-      },
-      {
-        "raw": "uv_key_get",
-        "return_type": "ptr[void]?"
-      },
-      {
-        "raw": "uv_dlerror",
-        "return_type": "cstr?"
       },
       {
         "raw": "uv_fileno",
