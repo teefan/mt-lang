@@ -1,12 +1,12 @@
 # Milk Tea Language Design
 
 Milk Tea is a statically typed, indentation-based systems language for games.
-It draws from:
+It is shaped by a few fixed commitments:
 
-- C's data layout, ABI honesty, and pointer model
-- C#'s type clarity, enums, flags, and explicit `unsafe` escape hatches
-- Ruby's readable naming and low-ceremony feel
-- Python's indentation, blocks, and approachable surface syntax
+- data layout and ABI boundaries stay explicit
+- public types and control flow stay easy to read
+- everyday code stays low-ceremony without hiding costs
+- unsafe operations stay available, but always spelled directly
 
 The output target is beautiful C. The generated C should be readable enough that a human can debug it, diff it, and ship it without feeling trapped inside a compiler's private IR.
 
@@ -294,7 +294,7 @@ Rules:
 
 - Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
 - `match` must be exhaustive for enums.
-- `break` and `continue` work exactly as in C and Python.
+- `break` and `continue` use ordinary loop control semantics.
 - Single-form `for` accepts `start..stop`, `array[T, N]`, and `span[T]` as iterables.
 - Parallel `for` accepts multiple array/span iterables and binds them in lockstep.
 - Parallel `for` does not accept ranges, and iterable lengths must match.
@@ -365,9 +365,13 @@ Current implemented shape:
 
 - `async function` lifts its return type to `Task[T]`
 - `await` is only valid inside async functions
-- async bodies support ordinary local declarations, assignments, returns, `if`, `while`, single-form `for`, `match`, and `unsafe`
-- current exclusions are explicit: `defer`, `let ... else:`, and parallel `for` are not supported in async functions yet
+- async entrypoint bootstrapping is compiler-owned, but async helpers stay explicit library surface; import `std.async as aio` when user code needs `sleep`, `work`, `completed`, `result`, `wait`, `run`, or runtime control
+- `aio.wait(...)` and `aio.run(...)` accept direct task expressions as well as zero-arg task roots; the compiler rewrites the direct-task form into the deferred root shape automatically
+- async bodies support ordinary local declarations, including `let ... else:`, assignments, returns, `if`, `while`, single-form and parallel `for`, `match`, `defer`, and `unsafe`
+- current exclusions are explicit only where state-machine cleanup ordering would become ambiguous or unsound; ordinary async `defer` cleanup, including awaited cleanup bodies, is supported
 - await placement is still intentionally restricted to the contexts the checker validates today rather than being universally expression-valid
+
+The default async model is a language-integrated entry boundary. `std.async` remains the explicit high-level helper surface for operations such as `sleep`, `work`, `completed`, `result`, `wait`, `wait_on`, and `with_runtime`, while the normal runtime model stays the single integrated libuv-backed runtime.
 
 ## Type system
 
@@ -737,6 +741,7 @@ Rules for safe references:
 
 - `ref[T]` is a non-null writable safe alias to one live object.
 - `ref_of(expr)` requires a mutable addressable lvalue source and produces `ref[T]`.
+- calling a function that expects `ref[T]` may pass a mutable addressable `T` directly; the compiler borrows it as if `ref_of(expr)` had been written explicitly.
 - `const_ptr_of(expr)` requires an addressable lvalue source and produces `const_ptr[T]` for read-only raw interop.
 - `read(ref_value)` is safe and yields the referenced lvalue/value.
 - `ptr_of(expr)` forms a writable raw pointer from a mutable safe lvalue.
@@ -806,7 +811,7 @@ The self-hosting preparation boundary is now clear: the standard library has own
 
 ### Lifetime story
 
-Milk Tea should not try to be Rust. It should instead make lifetime choices explicit at the API level.
+Milk Tea should make lifetime choices explicit at the API level.
 
 The model:
 
@@ -883,7 +888,7 @@ Milk Tea needs two interop surfaces, not one:
 1. a raw ABI surface for exact bindings
 2. an imported foreign surface for ordinary Milk Tea code
 
-This is the same split C# gets right with P/Invoke versus `unsafe` pointer code. The declaration site carries the boundary contract. Raw pointers, reinterpretation, and manual memory walking remain explicit.
+The declaration site carries the boundary contract. Raw pointers, reinterpretation, and manual memory walking remain explicit.
 
 ### Raw C bindings
 
@@ -1162,7 +1167,7 @@ let ints = rl.mem_alloc[int](16)
 
 `in`, `out`, and `inout` are declaration-side foreign-boundary forms, not imported-call expressions. They control how ordinary call-site arguments lower at the boundary without exposing `const_ptr_of(...)`, `ptr_of(...)`, or ABI casts in ordinary code.
 
-This is the C# part worth copying: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
+This boundary rule is deliberate: declarations say how the boundary works, while raw pointer code remains explicitly low-level.
 
 ### Strings and buffers at the FFI boundary
 
@@ -1277,4 +1282,4 @@ Milk Tea should be a language where:
 - C libraries fit naturally
 - the generated C remains clean enough to trust
 
-That combination is the point. The language should feel like a better place to write the kind of code people currently force into C, C++, or Rust even when those languages are fighting the job.
+That combination is the point. The language should feel like a direct place to write systems and game code without being pushed into a second abstraction model just to stay productive.

@@ -193,8 +193,6 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(source_path, [
         "module demo.async_main_span_args",
         "",
-        "import std.async as aio",
-        "",
         "async function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",

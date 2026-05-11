@@ -3391,8 +3391,22 @@ module MilkTea
 
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
         return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:, contextual_int_to_float: !external)
+        return true if implicit_ref_argument_compatible?(actual_type, expected_type, expression, scopes)
+        return true if direct_task_to_proc_argument_compatible?(actual_type, expected_type)
         return true if direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
 
+        false
+      end
+
+      def implicit_ref_argument_compatible?(actual_type, expected_type, expression, scopes)
+        return false unless expression && scopes
+        return false unless ref_type?(expected_type)
+        return false unless actual_type == referenced_type(expected_type)
+        return false unless safe_reference_source_expression?(expression, scopes:)
+
+        infer_lvalue(expression, scopes:)
+        true
+      rescue SemaError
         false
       end
 
@@ -3434,6 +3448,17 @@ module MilkTea
         return false unless direct_function_identity_expression?(expression, scopes)
 
         function_type_matches_proc_type?(actual_type, expected_type)
+      end
+
+      def direct_task_to_proc_argument_compatible?(actual_type, expected_type)
+        return false unless actual_type.is_a?(Types::Task)
+        return false unless task_root_proc_type?(expected_type)
+
+        actual_type == expected_type.return_type
+      end
+
+      def task_root_proc_type?(type)
+        proc_type?(type) && type.params.empty? && type.return_type.is_a?(Types::Task)
       end
 
       def function_type_matches_proc_type?(function_type, proc_type)
@@ -3863,11 +3888,8 @@ module MilkTea
       def validate_async_statement!(statement)
         case statement
         when AST::LocalDecl
-          raise_sema_error("let-else is not supported in async functions yet") if statement.else_body
-
-          return unless statement.value
-
-          validate_async_expression_support!(statement.value, context: "local initializer")
+          validate_async_expression_support!(statement.value, context: "local initializer") if statement.value
+          statement.else_body&.each { |s| validate_async_statement!(s) }
         when AST::Assignment
           validate_async_expression_support!(statement.target, context: "assignment target")
           validate_async_expression_support!(statement.value, context: "assignment")
@@ -3889,7 +3911,6 @@ module MilkTea
 
           statement.body.each { |s| validate_async_statement!(s) }
         when AST::ForStmt
-          raise_sema_error("async functions do not yet support parallel for loops") if statement.parallel?
           statement.iterables.each do |iterable|
             validate_async_expression_support!(iterable, context: "for iterables")
           end
@@ -3901,6 +3922,9 @@ module MilkTea
           statement.arms.each { |arm| arm.body.each { |s| validate_async_statement!(s) } }
         when AST::UnsafeStmt
           statement.body.each { |s| validate_async_statement!(s) }
+        when AST::DeferStmt
+          validate_async_expression_support!(statement.expression, context: "defer cleanup") if statement.expression
+          statement.body&.each { |s| validate_async_statement!(s) }
         when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
           nil
         else
@@ -3949,7 +3973,8 @@ module MilkTea
       def statement_contains_await?(statement)
         case statement
         when AST::LocalDecl
-          statement.value && expression_contains_await?(statement.value)
+          (statement.value && expression_contains_await?(statement.value)) ||
+            (statement.else_body && statements_contain_await?(statement.else_body))
         when AST::Assignment
           expression_contains_await?(statement.target) || expression_contains_await?(statement.value)
         when AST::IfStmt
@@ -4750,6 +4775,11 @@ module MilkTea
           candidate = actual_type.is_a?(Types::Nullable) ? actual_type.base : actual_type
           collect_type_substitutions(pattern_type.base, candidate, substitutions, function_name)
         when Types::GenericInstance
+          if ref_type?(pattern_type) && !ref_type?(actual_type)
+            collect_type_substitutions(referenced_type(pattern_type), actual_type, substitutions, function_name)
+            return
+          end
+
           return unless actual_type.is_a?(Types::GenericInstance)
           return unless actual_type.name == pattern_type.name && actual_type.arguments.length == pattern_type.arguments.length
 
@@ -4767,6 +4797,11 @@ module MilkTea
 
           collect_type_substitutions(pattern_type.result_type, actual_type.result_type, substitutions, function_name)
         when Types::Proc
+          if task_root_proc_type?(pattern_type) && actual_type.is_a?(Types::Task)
+            collect_type_substitutions(pattern_type.return_type, actual_type, substitutions, function_name)
+            return
+          end
+
           actual_params = case actual_type
                           when Types::Proc
                             return unless actual_type.params.length == pattern_type.params.length

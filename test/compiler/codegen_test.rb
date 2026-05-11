@@ -88,7 +88,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "",
       ].join("\n")
 
-    generated = generate_c_from_source(source)
+    generated = generate_c_from_program_source(source)
 
     assert_match(/typedef int32_t demo_codegen_surface_State;/, generated)
     assert_match(/demo_codegen_surface_State_idle = 0/, generated)
@@ -370,6 +370,29 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/position->y \+= velocity->y;/, generated)
   end
 
+  def test_generate_c_parallel_collection_for_loop_in_async_function
+    source = <<~MT
+      module demo.async_parallel_for
+
+      import std.async as aio
+
+      async function worker(values: span[int], other: span[int]) -> int:
+          var total = 0
+          for left, right in values, other:
+              total += await aio.sleep(1)
+              total += left + right
+          return total
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/demo_async_parallel_for_worker__frame/, generated)
+    assert_match(/if \(__mt_frame->for_iterable_[A-Za-z0-9_]+\.len != __mt_frame->for_iterable_[A-Za-z0-9_]+\.len\)/, generated)
+    assert_match(/__mt_frame->local_left = __mt_frame->for_iterable_[A-Za-z0-9_]+\.data\[__mt_frame->for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/__mt_frame->local_right = __mt_frame->for_iterable_[A-Za-z0-9_]+\.data\[__mt_frame->for_index_[A-Za-z0-9_]+\];/, generated)
+    assert_match(/resume_state_1:/, generated)
+  end
+
   def test_generate_c_for_async_methods
     source = <<~MT
       module demo.async_methods_codegen
@@ -451,7 +474,7 @@ class MilkTeaCodegenTest < Minitest::Test
           let echoed = box.echo(true)
           if echoed:
               return box.get()
-          return 0
+                  return 0
     MT
 
     generated = generate_c_from_program_source(source)
@@ -546,6 +569,78 @@ class MilkTeaCodegenTest < Minitest::Test
       assert_match(/while\s*\(/, generated)
       assert_match(/demo_await_in_while_accumulate__resume_state_1:/, generated)
     end
+
+      def test_generate_c_for_defer_in_async_function
+        source = <<~MT
+          module demo.async_defer_codegen
+
+          import std.async as aio
+
+          async function main() -> int:
+              var total = 0
+              if true:
+                  defer:
+                      total += 2
+                  await aio.sleep(1)
+                  total += 40
+              return total
+        MT
+
+        generated = generate_c_from_program_source(source)
+
+        assert_match(/demo_async_defer_codegen___async_main__frame/, generated)
+        assert_match(/demo_async_defer_codegen___async_main__resume_state_1:/, generated)
+        assert_match(/local_total/, generated)
+        assert_match(/\+= 2;/, generated)
+      end
+
+      def test_generate_c_for_await_in_async_defer_cleanup
+        source = <<~MT
+          module demo.async_defer_await_codegen
+
+          import std.async as aio
+
+          async function main() -> int:
+              var total = 0
+              if true:
+                  defer:
+                      total += await aio.sleep(1)
+                      total += 2
+                  total += 40
+              return total
+        MT
+
+        generated = generate_c_from_program_source(source)
+
+        assert_match(/demo_async_defer_await_codegen___async_main__frame/, generated)
+        assert_match(/demo_async_defer_await_codegen___async_main__resume_state_1:/, generated)
+        assert_match(/local_total/, generated)
+        assert_match(/\+= 2;/, generated)
+      end
+
+      def test_generate_c_for_let_else_in_async_function
+        source = <<~MT
+          module demo.async_let_else_codegen
+
+          import std.async as aio
+
+          async function maybe_value(handle: ptr[int]?) -> ptr[int]?:
+              return handle
+
+          async function main(handle: ptr[int]?) -> int:
+              let value = await maybe_value(handle) else:
+                  return 0
+              unsafe:
+                  return read(value)
+        MT
+
+        generated = generate_c_from_program_source(source)
+
+        assert_match(/demo_async_let_else_codegen___async_main__frame/, generated)
+        assert_match(/local_value/, generated)
+        assert_match(/if \(.*local_value == NULL\)/, generated)
+        assert_match(/resume_state_1:/, generated)
+      end
 
     def test_generate_c_for_await_in_if_condition
       source = <<~MT
@@ -2710,8 +2805,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "",
       "function main() -> int:",
       "    var counter = Counter(value = 3)",
+      "    increment(counter, 4)",
       "    let handle = ref_of(counter)",
-      "    increment(handle, 4)",
       "    let value_ref = ref_of(handle.value)",
       "    read(value_ref) += 2",
       "    unsafe:",
@@ -2726,8 +2821,8 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static void demo_ref_surface_Counter_add\(demo_ref_surface_Counter \*this, int32_t delta\)/, generated)
     assert_match(/static int32_t demo_ref_surface_Counter_read\(demo_ref_surface_Counter this\)/, generated)
     assert_match(/static void demo_ref_surface_increment\(demo_ref_surface_Counter \*counter, int32_t amount\)/, generated)
+  assert_match(/demo_ref_surface_increment\(&counter, 4\);/, generated)
     assert_match(/demo_ref_surface_Counter \*handle = &counter;/, generated)
-    assert_match(/demo_ref_surface_increment\(handle, 4\);/, generated)
     assert_match(/demo_ref_surface_Counter_add\(counter, amount\);/, generated)
     assert_match(/counter->value \+= 1;/, generated)
     assert_match(/int32_t \*value_ref = &handle->value;/, generated)
@@ -3982,7 +4077,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/,\s*5\s*\)/, generated)
   end
 
-  def test_generate_c_for_async_main_uses_std_async_block_on
+  def test_generate_c_for_async_main_uses_std_async_wait
     source = <<~MT
       module demo.async_main_codegen
 
@@ -3996,7 +4091,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/int32_t main\(int32_t argc, char \*\*argv\)/, generated)
     assert_match(/__mt_async_main_arg_1/, generated)
-    assert_match(/std_async_block_on_int\(__mt_async_main_root\)/, generated)
+    assert_match(/std_async_wait_int\(__mt_async_main_root\)/, generated)
     refute_match(/async main runtime loop failed/, generated)
   end
 
