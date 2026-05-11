@@ -81,12 +81,13 @@ function work_as_req(work: ptr[libuv.uv_work_t]) -> ptr[libuv.uv_req_t]:
 
 
 function noop_waiter(frame: ptr[void]) -> void:
+    unsafe: ptr[void]<-frame
     return
 
 
 function require_current_runtime() -> Runtime:
     if not current_runtime_active:
-        fatal(c"async runtime requires an active runtime; use async.block_on or async.run, or call the explicit *_on helpers")
+        fatal(c"async runtime requires an active runtime; use async.wait or async.run, or call the explicit *_on helpers")
     return current_runtime
 
 
@@ -452,30 +453,28 @@ public function pump(runtime: Runtime) -> void:
     return
 
 
-public function ready[T](task: Task[T]) -> bool:
+public function completed[T](task: Task[T]) -> bool:
     return task.ready(task.frame)
 
 
-public function finish[T](task: Task[T]) -> T:
-    if not ready[T](task):
-        fatal(c"async.finish called before task completed")
+public function result[T](task: Task[T]) -> T:
+    if not completed[T](task):
+        fatal(c"async.result called before task completed")
 
-    let result = task.take_result(task.frame)
-    task.release(task.frame)
-    return result
+    defer task.release(task.frame)
+    return task.take_result(task.frame)
 
 
-public function block_on_runtime[T](runtime: Runtime, task: Task[T]) -> T:
+public function wait_on[T](runtime: Runtime, task: Task[T]) -> T:
     require_live_runtime(runtime)
     while not task.ready(task.frame):
         runtime_poll(runtime)
 
-    let result = task.take_result(task.frame)
-    task.release(task.frame)
-    return result
+    defer task.release(task.frame)
+    return task.take_result(task.frame)
 
 
-public function run_runtime(runtime: Runtime, task: Task[void]) -> void:
+public function run_on(runtime: Runtime, task: Task[void]) -> void:
     require_live_runtime(runtime)
     while not task.ready(task.frame):
         runtime_poll(runtime)
@@ -485,26 +484,49 @@ public function run_runtime(runtime: Runtime, task: Task[void]) -> void:
     return
 
 
-public function block_on[T](root: proc() -> Task[T]) -> T:
+public function wait[T](root: proc() -> Task[T]) -> T:
     if current_runtime_active:
-        return block_on_runtime[T](current_runtime, root())
+        return wait_on[T](current_runtime, root())
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    let result = block_on_runtime[T](runtime, root())
-    runtime_deactivate()
-    runtime_release(ref_of(runtime))
-    return result
+    defer runtime_release(ref_of(runtime))
+    defer runtime_deactivate()
+    return wait_on[T](runtime, root())
 
 
 public function run(root: proc() -> Task[void]) -> void:
     if current_runtime_active:
-        run_runtime(current_runtime, root())
+        run_on(current_runtime, root())
         return
 
     var runtime = runtime_create()
     runtime_activate(runtime)
-    run_runtime(runtime, root())
-    runtime_deactivate()
-    runtime_release(ref_of(runtime))
+    defer runtime_release(ref_of(runtime))
+    defer runtime_deactivate()
+    run_on(runtime, root())
+    return
+
+
+public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
+    if current_runtime_active:
+        return body(current_runtime)
+
+    var runtime = runtime_create()
+    runtime_activate(runtime)
+    defer runtime_release(ref_of(runtime))
+    defer runtime_deactivate()
+    return body(runtime)
+
+
+public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
+    if current_runtime_active:
+        body(current_runtime)
+        return
+
+    var runtime = runtime_create()
+    runtime_activate(runtime)
+    defer runtime_release(ref_of(runtime))
+    defer runtime_deactivate()
+    body(runtime)
     return

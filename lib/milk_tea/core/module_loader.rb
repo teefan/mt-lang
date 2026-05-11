@@ -189,8 +189,8 @@ module MilkTea
     end
 
     def install_async_runtime_dependency!(ast, modules)
-      return unless async_main_declared?(ast)
       return if modules.key?("std.async")
+      return unless async_main_declared?(ast)
 
       import_path = resolve_module_path("std.async")
       import_analysis = check_path(import_path)

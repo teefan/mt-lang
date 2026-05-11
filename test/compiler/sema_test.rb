@@ -269,22 +269,24 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("apply")
   end
 
-  def test_rejects_parallel_for_loop_in_async_function
+  def test_type_checks_parallel_for_loop_in_async_function
     source = <<~MT
       module demo.parallel_for
 
+      import std.async as aio
+
       async function worker(values: span[int], other: span[int]) -> int:
+          var total = 0
           for left, right in values, other:
+              total += await aio.sleep(1)
               if left == right:
-                  return 1
-          return 0
+                  total += left
+          return total
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
+    result = check_program_source(source)
 
-    assert_match(/async functions do not yet support parallel for loops/, error.message)
+    assert_equal true, result.root_analysis.functions.key?("worker")
   end
 
   def test_type_checks_owned_foreign_release_after_let_else
@@ -394,13 +396,32 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       module demo.async_main
 
+      async function child() -> int:
+          return 41
+
       async function main() -> int:
-          return 42
+          return await child()
     MT
 
     result = check_program_source(source)
 
     assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+  end
+
+  def test_rejects_aio_without_explicit_async_runtime_import
+    source = <<~MT
+      module demo.async_main
+
+      async function main() -> int:
+          let waited = await aio.sleep(1)
+          return waited + 41
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/unknown name aio/, error.message)
   end
 
   def test_rejects_async_main_with_non_exit_return_type
@@ -454,6 +475,24 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_program_source(source)
 
     assert_equal "Task[int]", result.root_analysis.functions.fetch("main").type.return_type.to_s
+  end
+
+  def test_type_checks_wait_with_direct_task_expression_root
+    source = <<~MT
+      module demo.async_direct_task_root
+
+      import std.async as aio
+
+      async function child(bonus: int) -> int:
+          return await aio.sleep(1) + bonus
+
+      function main() -> int:
+          return aio.wait(child(41))
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal "int", result.root_analysis.functions.fetch("main").type.return_type.to_s
   end
 
   def test_type_checks_async_methods
@@ -705,6 +744,67 @@ class MilkTeaSemaTest < Minitest::Test
 
     result = check_program_source(source)
     assert_equal true, result.root_analysis.functions.key?("parent")
+  end
+
+  def test_type_checks_defer_in_async_functions
+    source = <<~MT
+      module demo.async_defer
+
+      import std.async as aio
+
+      async function main() -> int:
+          var total = 0
+          if true:
+              defer:
+                  total += 2
+              await aio.sleep(1)
+              total += 40
+          return total
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_let_else_in_async_functions
+    source = <<~MT
+      module demo.async_let_else
+
+      import std.async as aio
+
+      async function maybe_value(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      async function main(handle: ptr[int]?) -> int:
+          let value = await maybe_value(handle) else:
+              return 0
+          unsafe:
+              return read(value)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_await_inside_async_defer_cleanup
+    source = <<~MT
+      module demo.async_defer_await
+
+      import std.async as aio
+
+      async function main() -> int:
+          var total = 0
+          defer:
+              total += await aio.sleep(1)
+              total += 2
+          return total
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
   end
 
   def test_type_checks_std_fmt_string_with_format_literal
@@ -3462,15 +3562,11 @@ class MilkTeaSemaTest < Minitest::Test
 
       function main() -> int:
           break
-    MT
+      async function maybe_value(handle: ptr[int]?) -> ptr[int]?:
+        return handle
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(break_source)
-    end
-    assert_match(/break must be inside a loop/, error.message)
-
-    continue_source = <<~MT
-      module demo.bad
+      async function main(handle: ptr[int]?) -> int:
+        let value = await maybe_value(handle) else:
 
       function main() -> int:
           continue
@@ -5074,8 +5170,8 @@ class MilkTeaSemaTest < Minitest::Test
 
       function main() -> int:
           var counter = Counter(value = 3)
+          increment(counter, 4)
           let handle = ref_of(counter)
-          increment(handle, 4)
           let value_ref = ref_of(handle.value)
           read(value_ref) += 2
           unsafe:
@@ -5087,6 +5183,23 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal "ref[demo.refs.Counter]", result.functions.fetch("increment").type.params.first.type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_implicit_ref_arguments_for_generic_ref_parameters
+    source = <<~MT
+      module demo.generic_refs
+
+      function snapshot[T](value: ref[T]) -> T:
+          return read(value)
+
+      function main() -> int:
+          var number = 7
+          return snapshot(number)
+    MT
+
+    result = check_source(source)
+
     assert_equal true, result.functions.key?("main")
   end
 

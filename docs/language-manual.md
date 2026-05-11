@@ -518,6 +518,7 @@ Rules:
 - `ref[T]`
   - receiver-modifier type: passes a stored value by reference, allowing methods to mutate the underlying storage
   - functions like `append(output: ref[string.String], text: str)` receive a safe pointer to stored data
+    - passing a mutable addressable `T` to a `ref[T]` parameter borrows it implicitly, as if the call had written `ref_of(value)` at the call site
   - `ref` types are non-null and cannot be nullable
 - `span[T]`
 - `array[T, N]`
@@ -567,7 +568,7 @@ For recoverable failures, use `import std.status as status` and the ordinary lib
 
 For repeated pointer-plus-length span construction, prefer `std.span` helpers like `sp.from_ptr[T](ptr, len)` and `sp.from_nullable_ptr[T](ptr_or_null, len)`.
 
-`read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first.
+`read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first. Calls in the other direction are also lighter now: if a function expects `ref[T]`, passing a mutable addressable `T` borrows it implicitly.
 
 ## 8. Strings, C Strings, And Format Strings
 
@@ -645,16 +646,14 @@ Rules:
 
 - async function return type is lifted to `Task[T]`
 - `await` is only allowed inside async functions
-- `async main` requires importing `std.async`
+- `async main` is compiler-bootstrapped, but async helpers remain library surface; import `std.async as aio` when you want helpers such as `sleep`, `completed`, `result`, `wait`, `run`, or runtime control
+- `aio.wait(...)` and `aio.run(...)` accept either a zero-arg task root or a direct task expression; the compiler defers direct task expressions automatically
 - `async main` pre-lift return type must be `int` or `void`
 
 Current async limitations:
 
-- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, single-form `for` bodies and iterables, `match` discriminants and arms, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
-- `await` is rejected inside `defer`, `let ... else:`, and parallel `for` loops
-- parallel `for` loops are rejected in async functions
-- `let ... else:` is rejected in async functions
-- `defer` is rejected in async functions
+- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, single-form and parallel `for` bodies and iterables, `match` discriminants and arms, `let ... else:` initializers and else bodies, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- `defer` is supported in async functions, including cleanup bodies that `await`
 
 ## 11. Linting
 

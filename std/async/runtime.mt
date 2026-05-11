@@ -59,27 +59,36 @@ public function pump(runtime: Runtime) -> void:
     return
 
 
-public function ready[T](task: Task[T]) -> bool:
-    return backend.ready[T](task)
+public function completed[T](task: Task[T]) -> bool:
+    return backend.completed[T](task)
 
 
-public function finish[T](task: Task[T]) -> T:
-    return backend.finish[T](task)
+public function result[T](task: Task[T]) -> T:
+    return backend.result[T](task)
 
 
-public function block_on_runtime[T](runtime: Runtime, task: Task[T]) -> T:
-    return backend.block_on_runtime[T](runtime, task)
+public function wait_on[T](runtime: Runtime, task: Task[T]) -> T:
+    return backend.wait_on[T](runtime, task)
 
 
-public function run_runtime(runtime: Runtime, task: Task[void]) -> void:
-    backend.run_runtime(runtime, task)
+public function run_on(runtime: Runtime, task: Task[void]) -> void:
+    backend.run_on(runtime, task)
     return
 
 
-public function block_on[T](root: proc() -> Task[T]) -> T:
-    return backend.block_on[T](root)
+public function wait[T](root: proc() -> Task[T]) -> T:
+    return backend.wait[T](root)
 
 
 public function run(root: proc() -> Task[void]) -> void:
     backend.run(root)
+    return
+
+
+public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
+    return backend.with_runtime[T](body)
+
+
+public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
+    backend.run_with_runtime(body)
     return
