@@ -248,12 +248,12 @@ public foreign function get_directory_file_count(dir_path: str as cstr) -> uint 
 public foreign function get_directory_file_count_ex(base_path: str as cstr, filter: str as cstr, scan_subdirs: bool) -> uint = c.GetDirectoryFileCountEx
 public foreign function compress_data(data: const_ptr[ubyte], data_size: int, comp_data_size: ptr[int]) -> ptr[ubyte]? = c.CompressData
 public foreign function decompress_data(comp_data: const_ptr[ubyte], comp_data_size: int, data_size: ptr[int]) -> ptr[ubyte]? = c.DecompressData
-public foreign function encode_data_base_64(data: const_ptr[ubyte], data_size: int, output_size: ptr[int]) -> ptr[char]? = c.EncodeDataBase64
-public foreign function decode_data_base_64(text: str as cstr, output_size: ptr[int]) -> ptr[ubyte]? = c.DecodeDataBase64
-public foreign function compute_crc_32(data: ptr[ubyte], data_size: int) -> uint = c.ComputeCRC32
-public foreign function compute_md_5(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeMD5
-public foreign function compute_sha_1(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeSHA1
-public foreign function compute_sha_256(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeSHA256
+public foreign function encode_data_base64(data: const_ptr[ubyte], data_size: int, output_size: ptr[int]) -> ptr[char]? = c.EncodeDataBase64
+public foreign function decode_data_base64(text: str as cstr, output_size: ptr[int]) -> ptr[ubyte]? = c.DecodeDataBase64
+public foreign function compute_crc32(data: ptr[ubyte], data_size: int) -> uint = c.ComputeCRC32
+public foreign function compute_md5(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeMD5
+public foreign function compute_sha1(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeSHA1
+public foreign function compute_sha256(data: ptr[ubyte], data_size: int) -> ptr[uint] = c.ComputeSHA256
 public foreign function load_automation_event_list(file_name: cstr?) -> AutomationEventList = c.LoadAutomationEventList
 public foreign function unload_automation_event_list(list: AutomationEventList) -> void = c.UnloadAutomationEventList
 public foreign function export_automation_event_list(list: AutomationEventList, file_name: str as cstr) -> bool = c.ExportAutomationEventList
@@ -347,8 +347,8 @@ public foreign function draw_rectangle_lines_ex(rec: Rectangle, line_thick: floa
 public foreign function draw_rectangle_rounded(rec: Rectangle, roundness: float, segments: int, color: Color) -> void = c.DrawRectangleRounded
 public foreign function draw_rectangle_rounded_lines(rec: Rectangle, roundness: float, segments: int, color: Color) -> void = c.DrawRectangleRoundedLines
 public foreign function draw_rectangle_rounded_lines_ex(rec: Rectangle, roundness: float, segments: int, line_thick: float, color: Color) -> void = c.DrawRectangleRoundedLinesEx
-public foreign function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangle
-public foreign function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.DrawTriangleLines
+public foreign function draw_triangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.DrawTriangle
+public foreign function draw_triangle_lines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.DrawTriangleLines
 public foreign function draw_triangle_fan_ptr(points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.DrawTriangleFan
 public foreign function draw_triangle_strip_ptr(points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.DrawTriangleStrip
 public foreign function draw_poly(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void = c.DrawPoly
@@ -359,27 +359,27 @@ public foreign function draw_spline_basis_ptr(points: const_ptr[Vector2], point_
 public foreign function draw_spline_catmull_rom_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineCatmullRom
 public foreign function draw_spline_bezier_quadratic_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierQuadratic
 public foreign function draw_spline_bezier_cubic_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierCubic
-public foreign function draw_spline_segment_linear(p_1: Vector2, p_2: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentLinear
-public foreign function draw_spline_segment_basis(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBasis
-public foreign function draw_spline_segment_catmull_rom(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentCatmullRom
-public foreign function draw_spline_segment_bezier_quadratic(p_1: Vector2, c_2: Vector2, p_3: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierQuadratic
-public foreign function draw_spline_segment_bezier_cubic(p_1: Vector2, c_2: Vector2, c_3: Vector2, p_4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierCubic
+public foreign function draw_spline_segment_linear(p1: Vector2, p2: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentLinear
+public foreign function draw_spline_segment_basis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBasis
+public foreign function draw_spline_segment_catmull_rom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentCatmullRom
+public foreign function draw_spline_segment_bezier_quadratic(p1: Vector2, c2: Vector2, p3: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierQuadratic
+public foreign function draw_spline_segment_bezier_cubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierCubic
 public foreign function get_spline_point_linear(start_pos: Vector2, end_pos: Vector2, t: float) -> Vector2 = c.GetSplinePointLinear
-public foreign function get_spline_point_basis(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, t: float) -> Vector2 = c.GetSplinePointBasis
-public foreign function get_spline_point_catmull_rom(p_1: Vector2, p_2: Vector2, p_3: Vector2, p_4: Vector2, t: float) -> Vector2 = c.GetSplinePointCatmullRom
-public foreign function get_spline_point_bezier_quad(p_1: Vector2, c_2: Vector2, p_3: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierQuad
-public foreign function get_spline_point_bezier_cubic(p_1: Vector2, c_2: Vector2, c_3: Vector2, p_4: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierCubic
-public foreign function check_collision_recs(rec_1: Rectangle, rec_2: Rectangle) -> bool = c.CheckCollisionRecs
-public foreign function check_collision_circles(center_1: Vector2, radius_1: float, center_2: Vector2, radius_2: float) -> bool = c.CheckCollisionCircles
+public foreign function get_spline_point_basis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointBasis
+public foreign function get_spline_point_catmull_rom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointCatmullRom
+public foreign function get_spline_point_bezier_quad(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierQuad
+public foreign function get_spline_point_bezier_cubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierCubic
+public foreign function check_collision_recs(rec1: Rectangle, rec2: Rectangle) -> bool = c.CheckCollisionRecs
+public foreign function check_collision_circles(center1: Vector2, radius1: float, center2: Vector2, radius2: float) -> bool = c.CheckCollisionCircles
 public foreign function check_collision_circle_rec(center: Vector2, radius: float, rec: Rectangle) -> bool = c.CheckCollisionCircleRec
-public foreign function check_collision_circle_line(center: Vector2, radius: float, p_1: Vector2, p_2: Vector2) -> bool = c.CheckCollisionCircleLine
+public foreign function check_collision_circle_line(center: Vector2, radius: float, p1: Vector2, p2: Vector2) -> bool = c.CheckCollisionCircleLine
 public foreign function check_collision_point_rec(point: Vector2, rec: Rectangle) -> bool = c.CheckCollisionPointRec
 public foreign function check_collision_point_circle(point: Vector2, center: Vector2, radius: float) -> bool = c.CheckCollisionPointCircle
-public foreign function check_collision_point_triangle(point: Vector2, p_1: Vector2, p_2: Vector2, p_3: Vector2) -> bool = c.CheckCollisionPointTriangle
-public foreign function check_collision_point_line(point: Vector2, p_1: Vector2, p_2: Vector2, threshold: int) -> bool = c.CheckCollisionPointLine
+public foreign function check_collision_point_triangle(point: Vector2, p1: Vector2, p2: Vector2, p3: Vector2) -> bool = c.CheckCollisionPointTriangle
+public foreign function check_collision_point_line(point: Vector2, p1: Vector2, p2: Vector2, threshold: int) -> bool = c.CheckCollisionPointLine
 public foreign function check_collision_point_poly_ptr(point: Vector2, points: const_ptr[Vector2], point_count: int) -> bool = c.CheckCollisionPointPoly
-public foreign function check_collision_lines(start_pos_1: Vector2, end_pos_1: Vector2, start_pos_2: Vector2, end_pos_2: Vector2, collision_point: ptr[Vector2]) -> bool = c.CheckCollisionLines
-public foreign function get_collision_rec(rec_1: Rectangle, rec_2: Rectangle) -> Rectangle = c.GetCollisionRec
+public foreign function check_collision_lines(start_pos1: Vector2, end_pos1: Vector2, start_pos2: Vector2, end_pos2: Vector2, collision_point: ptr[Vector2]) -> bool = c.CheckCollisionLines
+public foreign function get_collision_rec(rec1: Rectangle, rec2: Rectangle) -> Rectangle = c.GetCollisionRec
 public foreign function load_image(file_name: str as cstr) -> Image = c.LoadImage
 public foreign function load_image_raw(file_name: str as cstr, width: int, height: int, format: int, header_size: int) -> Image = c.LoadImageRaw
 public foreign function load_image_anim(file_name: str as cstr, out frames: int) -> Image = c.LoadImageAnim
@@ -396,7 +396,7 @@ public foreign function gen_image_color(width: int, height: int, color: Color) -
 public foreign function gen_image_gradient_linear(width: int, height: int, direction: int, start: Color, end: Color) -> Image = c.GenImageGradientLinear
 public foreign function gen_image_gradient_radial(width: int, height: int, density: float, inner: Color, outer: Color) -> Image = c.GenImageGradientRadial
 public foreign function gen_image_gradient_square(width: int, height: int, density: float, inner: Color, outer: Color) -> Image = c.GenImageGradientSquare
-public foreign function gen_image_checked(width: int, height: int, checks_x: int, checks_y: int, col_1: Color, col_2: Color) -> Image = c.GenImageChecked
+public foreign function gen_image_checked(width: int, height: int, checks_x: int, checks_y: int, col1: Color, col2: Color) -> Image = c.GenImageChecked
 public foreign function gen_image_white_noise(width: int, height: int, factor: float) -> Image = c.GenImageWhiteNoise
 public foreign function gen_image_perlin_noise(width: int, height: int, offset_x: int, offset_y: int, scale: float) -> Image = c.GenImagePerlinNoise
 public foreign function gen_image_cellular(width: int, height: int, tile_size: int) -> Image = c.GenImageCellular
@@ -478,7 +478,7 @@ public foreign function draw_texture_ex(texture: Texture, position: Vector2, rot
 public foreign function draw_texture_rec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void = c.DrawTextureRec
 public foreign function draw_texture_pro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void = c.DrawTexturePro
 public foreign function draw_texture_n_patch(texture: Texture, n_patch_info: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void = c.DrawTextureNPatch
-public foreign function color_is_equal(col_1: Color, col_2: Color) -> bool = c.ColorIsEqual
+public foreign function color_is_equal(col1: Color, col2: Color) -> bool = c.ColorIsEqual
 public foreign function fade(color: Color, alpha: float) -> Color = c.Fade
 public foreign function color_to_int(color: Color) -> int = c.ColorToInt
 public foreign function color_normalize(color: Color) -> Vector4 = c.ColorNormalize
@@ -490,7 +490,7 @@ public foreign function color_brightness(color: Color, factor: float) -> Color =
 public foreign function color_contrast(color: Color, contrast: float) -> Color = c.ColorContrast
 public foreign function color_alpha(color: Color, alpha: float) -> Color = c.ColorAlpha
 public foreign function color_alpha_blend(dst: Color, src: Color, tint: Color) -> Color = c.ColorAlphaBlend
-public foreign function color_lerp(color_1: Color, color_2: Color, factor: float) -> Color = c.ColorLerp
+public foreign function color_lerp(color1: Color, color2: Color, factor: float) -> Color = c.ColorLerp
 public foreign function get_color(hex_value: uint) -> Color = c.GetColor
 public foreign function get_pixel_color[T](src_ptr: ptr[T] as ptr[void], format: int) -> Color = c.GetPixelColor
 public foreign function set_pixel_color[T](dst_ptr: ptr[T] as ptr[void], color: Color, format: int) -> void = c.SetPixelColor
@@ -519,19 +519,19 @@ public foreign function measure_text_codepoints(font: Font, codepoints: const_pt
 public foreign function get_glyph_index(font: Font, codepoint: int) -> int = c.GetGlyphIndex
 public foreign function get_glyph_info(font: Font, codepoint: int) -> GlyphInfo = c.GetGlyphInfo
 public foreign function get_glyph_atlas_rec(font: Font, codepoint: int) -> Rectangle = c.GetGlyphAtlasRec
-public foreign function load_utf_8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
-public foreign function unload_utf_8(text: ptr[char]) -> void = c.UnloadUTF8
+public foreign function load_utf8(codepoints: const_ptr[int], length: int) -> ptr[char]? = c.LoadUTF8
+public foreign function unload_utf8(text: ptr[char]) -> void = c.UnloadUTF8
 public foreign function load_codepoints(text: str as cstr, out count: int) -> ptr[int]? = c.LoadCodepoints
 public foreign function unload_codepoints(codepoints: ptr[int]) -> void = c.UnloadCodepoints
 public foreign function get_codepoint_count(text: str as cstr) -> int = c.GetCodepointCount
 public foreign function get_codepoint(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepoint
 public foreign function get_codepoint_next(text: str as cstr, out codepoint_size: int) -> int = c.GetCodepointNext
 public foreign function get_codepoint_previous(text: str as cstr, codepoint_size: ptr[int]) -> int = c.GetCodepointPrevious
-public foreign function codepoint_to_utf_8(codepoint: int, out utf_8_size: int) -> cstr = c.CodepointToUTF8
+public foreign function codepoint_to_utf8(codepoint: int, out utf_8_size: int) -> cstr = c.CodepointToUTF8
 public foreign function load_text_lines(text: str as cstr, count: ptr[int]) -> ptr[ptr[char]] = c.LoadTextLines
 public foreign function unload_text_lines(text: ptr[ptr[char]], line_count: int) -> void = c.UnloadTextLines
 public foreign function text_copy(dst: ptr[char], src: str as cstr) -> int = c.TextCopy
-public foreign function text_is_equal(text_1: str as cstr, text_2: str as cstr) -> bool = c.TextIsEqual
+public foreign function text_is_equal(text1: str as cstr, text2: str as cstr) -> bool = c.TextIsEqual
 public foreign function text_length(text: str as cstr) -> uint = c.TextLength
 public foreign function text_subtext(text: str as cstr, position: int, length: int) -> cstr = c.TextSubtext
 public foreign function text_remove_spaces(text: str as cstr) -> cstr = c.TextRemoveSpaces
@@ -556,7 +556,7 @@ public foreign function text_to_float(text: str as cstr) -> float = c.TextToFloa
 public foreign function draw_line_3d(start_pos: Vector3, end_pos: Vector3, color: Color) -> void = c.DrawLine3D
 public foreign function draw_point_3d(position: Vector3, color: Color) -> void = c.DrawPoint3D
 public foreign function draw_circle_3d(center: Vector3, radius: float, rotation_axis: Vector3, rotation_angle: float, color: Color) -> void = c.DrawCircle3D
-public foreign function draw_triangle_3d(v_1: Vector3, v_2: Vector3, v_3: Vector3, color: Color) -> void = c.DrawTriangle3D
+public foreign function draw_triangle_3d(v1: Vector3, v2: Vector3, v3: Vector3, color: Color) -> void = c.DrawTriangle3D
 public foreign function draw_triangle_strip_3d(points: const_ptr[Vector3], point_count: int, color: Color) -> void = c.DrawTriangleStrip3D
 public foreign function draw_cube(position: Vector3, width: float, height: float, length: float, color: Color) -> void = c.DrawCube
 public foreign function draw_cube_v(position: Vector3, size: Vector3, color: Color) -> void = c.DrawCubeV
@@ -618,14 +618,14 @@ public foreign function update_model_animation(model: Model, anim: ModelAnimatio
 public foreign function update_model_animation_ex(model: Model, anim_a: ModelAnimation, frame_a: float, anim_b: ModelAnimation, frame_b: float, blend: float) -> void = c.UpdateModelAnimationEx
 public foreign function unload_model_animations(animations: ptr[ModelAnimation], anim_count: int) -> void = c.UnloadModelAnimations
 public foreign function is_model_animation_valid(model: Model, anim: ModelAnimation) -> bool = c.IsModelAnimationValid
-public foreign function check_collision_spheres(center_1: Vector3, radius_1: float, center_2: Vector3, radius_2: float) -> bool = c.CheckCollisionSpheres
-public foreign function check_collision_boxes(box_1: BoundingBox, box_2: BoundingBox) -> bool = c.CheckCollisionBoxes
+public foreign function check_collision_spheres(center1: Vector3, radius1: float, center2: Vector3, radius2: float) -> bool = c.CheckCollisionSpheres
+public foreign function check_collision_boxes(box1: BoundingBox, box2: BoundingBox) -> bool = c.CheckCollisionBoxes
 public foreign function check_collision_box_sphere(box: BoundingBox, center: Vector3, radius: float) -> bool = c.CheckCollisionBoxSphere
 public foreign function get_ray_collision_sphere(ray: Ray, center: Vector3, radius: float) -> RayCollision = c.GetRayCollisionSphere
 public foreign function get_ray_collision_box(ray: Ray, box: BoundingBox) -> RayCollision = c.GetRayCollisionBox
 public foreign function get_ray_collision_mesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision = c.GetRayCollisionMesh
-public foreign function get_ray_collision_triangle(ray: Ray, p_1: Vector3, p_2: Vector3, p_3: Vector3) -> RayCollision = c.GetRayCollisionTriangle
-public foreign function get_ray_collision_quad(ray: Ray, p_1: Vector3, p_2: Vector3, p_3: Vector3, p_4: Vector3) -> RayCollision = c.GetRayCollisionQuad
+public foreign function get_ray_collision_triangle(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3) -> RayCollision = c.GetRayCollisionTriangle
+public foreign function get_ray_collision_quad(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3, p4: Vector3) -> RayCollision = c.GetRayCollisionQuad
 public foreign function init_audio_device() -> void = c.InitAudioDevice
 public foreign function close_audio_device() -> void = c.CloseAudioDevice
 public foreign function is_audio_device_ready() -> bool = c.IsAudioDeviceReady
@@ -692,3 +692,267 @@ public foreign function attach_audio_stream_processor(stream: AudioStream, proce
 public foreign function detach_audio_stream_processor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.DetachAudioStreamProcessor
 public foreign function attach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.AttachAudioMixedProcessor
 public foreign function detach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.DetachAudioMixedProcessor
+
+
+methods Color:
+    public function is_equal(col2: Color) -> bool:
+        return color_is_equal(this, col2)
+
+
+    public function to_int() -> int:
+        return color_to_int(this)
+
+
+    public function normalize() -> Vector4:
+        return color_normalize(this)
+
+
+    public static function from_normalized(normalized: Vector4) -> Color:
+        return color_from_normalized(normalized)
+
+
+    public function to_hsv() -> Vector3:
+        return color_to_hsv(this)
+
+
+    public static function from_hsv(hue: float, saturation: float, value: float) -> Color:
+        return color_from_hsv(hue, saturation, value)
+
+
+    public function tint(tint: Color) -> Color:
+        return color_tint(this, tint)
+
+
+    public function brightness(factor: float) -> Color:
+        return color_brightness(this, factor)
+
+
+    public function contrast(contrast: float) -> Color:
+        return color_contrast(this, contrast)
+
+
+    public function alpha(alpha: float) -> Color:
+        return color_alpha(this, alpha)
+
+
+    public function alpha_blend(src: Color, tint: Color) -> Color:
+        return color_alpha_blend(this, src, tint)
+
+
+    public function lerp(color2: Color, factor: float) -> Color:
+        return color_lerp(this, color2, factor)
+
+
+methods Image:
+    public function copy() -> Image:
+        return image_copy(this)
+
+
+    public static function text(text: str, font_size: int, color: Color) -> Image:
+        return image_text(text, font_size, color)
+
+
+    public static function text_ex(font: Font, text: str, font_size: float, spacing: float, tint: Color) -> Image:
+        return image_text_ex(font, text, font_size, spacing, tint)
+
+
+    public editable function format(new_format: int) -> void:
+        image_format(this, new_format)
+
+
+    public editable function to_pot(fill: Color) -> void:
+        image_to_pot(this, fill)
+
+
+    public editable function crop(crop: Rectangle) -> void:
+        image_crop(this, crop)
+
+
+    public editable function alpha_crop(threshold: float) -> void:
+        image_alpha_crop(this, threshold)
+
+
+    public editable function alpha_clear(color: Color, threshold: float) -> void:
+        image_alpha_clear(this, color, threshold)
+
+
+    public editable function alpha_mask(alpha_mask: Image) -> void:
+        image_alpha_mask(this, alpha_mask)
+
+
+    public editable function alpha_premultiply() -> void:
+        image_alpha_premultiply(this)
+
+
+    public editable function blur_gaussian(blur_size: int) -> void:
+        image_blur_gaussian(this, blur_size)
+
+
+    public editable function kernel_convolution(kernel: span[float]) -> void:
+        image_kernel_convolution(this, kernel)
+
+
+    public editable function resize(new_width: int, new_height: int) -> void:
+        image_resize(this, new_width, new_height)
+
+
+    public editable function resize_nn(new_width: int, new_height: int) -> void:
+        image_resize_nn(this, new_width, new_height)
+
+
+    public editable function resize_canvas(new_width: int, new_height: int, offset_x: int, offset_y: int, fill: Color) -> void:
+        image_resize_canvas(this, new_width, new_height, offset_x, offset_y, fill)
+
+
+    public editable function mipmaps() -> void:
+        image_mipmaps(this)
+
+
+    public editable function dither(r_bpp: int, g_bpp: int, b_bpp: int, a_bpp: int) -> void:
+        image_dither(this, r_bpp, g_bpp, b_bpp, a_bpp)
+
+
+    public editable function flip_vertical() -> void:
+        image_flip_vertical(this)
+
+
+    public editable function flip_horizontal() -> void:
+        image_flip_horizontal(this)
+
+
+    public editable function rotate(degrees: int) -> void:
+        image_rotate(this, degrees)
+
+
+    public editable function rotate_cw() -> void:
+        image_rotate_cw(this)
+
+
+    public editable function rotate_ccw() -> void:
+        image_rotate_ccw(this)
+
+
+    public editable function color_tint(color: Color) -> void:
+        image_color_tint(this, color)
+
+
+    public editable function color_invert() -> void:
+        image_color_invert(this)
+
+
+    public editable function color_grayscale() -> void:
+        image_color_grayscale(this)
+
+
+    public editable function color_contrast(contrast: float) -> void:
+        image_color_contrast(this, contrast)
+
+
+    public editable function color_brightness(brightness: int) -> void:
+        image_color_brightness(this, brightness)
+
+
+    public editable function color_replace(color: Color, replace: Color) -> void:
+        image_color_replace(this, color, replace)
+
+
+    public editable function clear_background(color: Color) -> void:
+        image_clear_background(this, color)
+
+
+    public editable function draw_pixel(pos_x: int, pos_y: int, color: Color) -> void:
+        image_draw_pixel(this, pos_x, pos_y, color)
+
+
+    public editable function draw_pixel_v(position: Vector2, color: Color) -> void:
+        image_draw_pixel_v(this, position, color)
+
+
+    public editable function draw_line(start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void:
+        image_draw_line(this, start_pos_x, start_pos_y, end_pos_x, end_pos_y, color)
+
+
+    public editable function draw_line_v(start: Vector2, end: Vector2, color: Color) -> void:
+        image_draw_line_v(this, start, end, color)
+
+
+    public editable function draw_line_ex(start: Vector2, end: Vector2, thick: int, color: Color) -> void:
+        image_draw_line_ex(this, start, end, thick, color)
+
+
+    public editable function draw_circle(center_x: int, center_y: int, radius: int, color: Color) -> void:
+        image_draw_circle(this, center_x, center_y, radius, color)
+
+
+    public editable function draw_circle_v(center: Vector2, radius: int, color: Color) -> void:
+        image_draw_circle_v(this, center, radius, color)
+
+
+    public editable function draw_circle_lines(center_x: int, center_y: int, radius: int, color: Color) -> void:
+        image_draw_circle_lines(this, center_x, center_y, radius, color)
+
+
+    public editable function draw_circle_lines_v(center: Vector2, radius: int, color: Color) -> void:
+        image_draw_circle_lines_v(this, center, radius, color)
+
+
+    public editable function draw_rectangle(pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void:
+        image_draw_rectangle(this, pos_x, pos_y, width, height, color)
+
+
+    public editable function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void:
+        image_draw_rectangle_v(this, position, size, color)
+
+
+    public editable function draw_rectangle_rec(rec: Rectangle, color: Color) -> void:
+        image_draw_rectangle_rec(this, rec, color)
+
+
+    public editable function draw_rectangle_lines(rec: Rectangle, thick: int, color: Color) -> void:
+        image_draw_rectangle_lines(this, rec, thick, color)
+
+
+    public editable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
+        image_draw_triangle(this, v_1, v_2, v_3, color)
+
+
+    public editable function draw_triangle_ex(v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void:
+        image_draw_triangle_ex(this, v_1, v_2, v_3, c_1, c_2, c_3)
+
+
+    public editable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
+        image_draw_triangle_lines(this, v_1, v_2, v_3, color)
+
+
+    public editable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
+        image_draw_triangle_fan(this, points, point_count, color)
+
+
+    public editable function draw_triangle_strip(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
+        image_draw_triangle_strip(this, points, point_count, color)
+
+
+    public editable function draw(src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void:
+        image_draw(this, src, src_rec, dst_rec, tint)
+
+
+    public editable function draw_text(text: str, pos_x: int, pos_y: int, font_size: int, color: Color) -> void:
+        image_draw_text(this, text, pos_x, pos_y, font_size, color)
+
+
+    public editable function draw_text_ex(font: Font, text: str, position: Vector2, font_size: float, spacing: float, tint: Color) -> void:
+        image_draw_text_ex(this, font, text, position, font_size, spacing, tint)
+
+
+methods Wave:
+    public function copy() -> Wave:
+        return wave_copy(this)
+
+
+methods ptr[Wave]:
+    public function crop(init_frame: int, final_frame: int) -> void:
+        wave_crop(this, init_frame, final_frame)
+
+
+    public function format(sample_rate: int, sample_size: int, channels: int) -> void:
+        wave_format(this, sample_rate, sample_size, channels)

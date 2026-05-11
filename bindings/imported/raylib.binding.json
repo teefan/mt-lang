@@ -16,6 +16,29 @@
     ]
   },
   "constants": {},
+  "methods": [
+    {
+      "type": "Color",
+      "include_prefixes": ["Color"],
+      "strip_prefix": "Color"
+    },
+    {
+      "type": "Image",
+      "include_prefixes": ["Image"],
+      "exclude": ["ImageFromImage", "ImageFromChannel"],
+      "strip_prefix": "Image"
+    },
+    {
+      "type": "Wave",
+      "include": ["WaveCopy"],
+      "strip_prefix": "Wave"
+    },
+    {
+      "type": "ptr[Wave]",
+      "include": ["WaveCrop", "WaveFormat"],
+      "strip_prefix": "Wave"
+    }
+  ],
   "functions": {
     "exclude": [
       "SetTraceLogCallback",

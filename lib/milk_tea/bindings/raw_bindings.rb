@@ -803,6 +803,29 @@ module MilkTea
           function_return_type_overrides: raylib_function_return_overrides,
         ),
         Binding.new(
+          name: "raymath",
+          module_name: "std.c.raymath",
+          binding_path: root.join("std/c/raymath.mt"),
+          include_directives: ["raylib.h", "raymath.h"],
+          bindgen_defines: ["RAYMATH_STATIC_INLINE"],
+          bindgen_include_directives: ["raylib.h"],
+          module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
+          link_libraries: ["m"],
+          clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
+          compiler_flags: ["-DRAYMATH_STATIC_INLINE"],
+          type_overrides: {
+            "Vector2" => "rl.Vector2",
+            "Vector3" => "rl.Vector3",
+            "Vector4" => "rl.Vector4",
+            "Matrix" => "rl.Matrix",
+            "Quaternion" => "rl.Quaternion",
+          },
+          header_candidates: [
+            root.join("third_party/raylib-upstream/src/raymath.h").to_s,
+          ],
+          allow_static_inline_functions: true,
+        ),
+        Binding.new(
           name: "raygui",
           module_name: "std.c.raygui",
           binding_path: root.join("std/c/raygui.mt"),
@@ -818,26 +841,6 @@ module MilkTea
           function_return_type_overrides: raygui_function_return_overrides,
         ),
         Binding.new(
-          name: "rlights",
-          module_name: "std.c.rlights",
-          binding_path: root.join("std/c/rlights.mt"),
-          include_directives: ["raylib.h", "rlights.h"],
-          module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
-          link_libraries: ["raylib"],
-          vendored_library: vendored_raylib_library,
-          clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
-          compiler_flags: ["-I#{root.join('third_party/raylib-upstream/src')}", "-DGRAPHICS_API_OPENGL_43"],
-          implementation_defines: ["RLIGHTS_IMPLEMENTATION"],
-          type_overrides: {
-            "Vector3" => "rl.Vector3",
-            "Color" => "rl.Color",
-            "Shader" => "rl.Shader",
-          },
-          header_candidates: [
-            root.join("third_party/raylib-upstream/examples/shaders/rlights.h").to_s,
-          ],
-        ),
-        Binding.new(
           name: "rlgl",
           module_name: "std.c.rlgl",
           binding_path: root.join("std/c/rlgl.mt"),
@@ -849,6 +852,11 @@ module MilkTea
             "rlLoadTexture" => { "data" => "const_ptr[void]?" },
             "rlLoadTextureCubemap" => { "data" => "const_ptr[void]?" },
             "rlLoadShaderBuffer" => { "data" => "const_ptr[void]?" },
+            "rlSetRenderBatchActive" => { "batch" => "ptr[rlRenderBatch]?" },
+            "rlLoadShaderProgram" => {
+              "vsCode" => "cstr?",
+              "fsCode" => "cstr?",
+            },
           },
           function_return_type_overrides: {
             "rlGetProcAddress" => "ptr[void]?",

@@ -279,7 +279,7 @@ external module std.c.rlgl:
     external function rlLoadRenderBatch(numBuffers: int, bufferElements: int) -> rlRenderBatch
     external function rlUnloadRenderBatch(batch: rlRenderBatch) -> void
     external function rlDrawRenderBatch(batch: ptr[rlRenderBatch]) -> void
-    external function rlSetRenderBatchActive(batch: ptr[rlRenderBatch]) -> void
+    external function rlSetRenderBatchActive(batch: ptr[rlRenderBatch]?) -> void
     external function rlDrawRenderBatchActive() -> void
     external function rlCheckRenderBatchLimit(vCount: int) -> bool
     external function rlSetTexture(id: uint) -> void
@@ -314,7 +314,7 @@ external module std.c.rlgl:
     external function rlCopyFramebuffer(x: int, y: int, width: int, height: int, format: int, pixels: ptr[void]) -> void
     external function rlResizeFramebuffer(width: int, height: int) -> void
     external function rlLoadShader(code: cstr, type_: int) -> uint
-    external function rlLoadShaderProgram(vsCode: cstr, fsCode: cstr) -> uint
+    external function rlLoadShaderProgram(vsCode: cstr?, fsCode: cstr?) -> uint
     external function rlLoadShaderProgramEx(vsId: uint, fsId: uint) -> uint
     external function rlLoadShaderProgramCompute(csId: uint) -> uint
     external function rlUnloadShader(id: uint) -> void

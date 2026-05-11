@@ -59,7 +59,6 @@ module MilkTea
           sentinel_paths: %w[
             src/raylib.h
             examples/shapes/raygui.h
-            examples/shaders/rlights.h
             examples/core/msf_gif.h
           ],
         ),

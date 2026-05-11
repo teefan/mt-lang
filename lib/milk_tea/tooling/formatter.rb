@@ -50,7 +50,8 @@ module MilkTea
     end
 
     # Enforce blank-line rules:
-    #   - exactly 2 blank lines before function definitions with a body
+    #   - exactly 2 blank lines before top-level function definitions with a body
+    #   - exactly 2 blank lines before top-level methods blocks
     #   - bodyless function declarations: 1 blank line before the first declaration,
     #     then 0 blank lines between consecutive declarations
     #   - at most 1 blank line everywhere else (constants, variable declarations, expressions)
@@ -67,7 +68,9 @@ module MilkTea
           blank_run += 1
         else
           if emitted_content
-            needed = if function_line?(line)
+            needed = if methods_block_header_line?(line)
+              2 # exactly 2 blank lines before methods blocks
+            elsif function_line?(line)
               if bodyless_function_line?(line)
                 if previous_content_line && function_line?(previous_content_line) && bodyless_function_line?(previous_content_line)
                   0 # Keep consecutive declaration-style functions tightly packed.

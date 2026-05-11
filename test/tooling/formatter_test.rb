@@ -211,6 +211,24 @@ class MilkTeaFormatterTest < Minitest::Test
     refute_includes formatted, "methods Ball:\n\n    function draw() -> void:"
   end
 
+  def test_tidy_mode_inserts_two_blank_lines_before_methods_block
+    source = <<~MT
+      module demo.methods
+
+      function helper() -> void:
+          return
+
+      methods Ball:
+          function draw() -> void:
+              return
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "    return\n\n\nmethods Ball:"
+    refute_includes formatted, "    return\n\nmethods Ball:"
+  end
+
   def test_tidy_mode_preserves_utf8_string_literals
     source = <<~MT
       module demo.utf8
