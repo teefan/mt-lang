@@ -3,6 +3,7 @@
 module MilkTea
   class CBackend
     INDENT = "  "
+    ARRAY_OUT_PARAM_NAME = "__mt_out"
 
     def self.emit(program, emit_line_directives: true)
       new(program, emit_line_directives:).emit
@@ -104,12 +105,6 @@ module MilkTea
 
       collect_generic_variant_decls.each do |variant_decl|
         lines.concat(emit_variant(variant_decl))
-        lines << ""
-      end
-
-      array_return_types = collect_array_return_types
-      array_return_types.each do |type|
-        lines.concat(emit_array_return_wrapper(type))
         lines << ""
       end
 
@@ -1138,10 +1133,14 @@ module MilkTea
     end
 
     def function_params(function)
-      if function.params.empty?
+      params = []
+      params << array_out_param_declaration(function.return_type, ARRAY_OUT_PARAM_NAME) if array_type?(function.return_type)
+      params.concat(emitted_function_params(function).map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.c_name) })
+
+      if params.empty?
         "void"
       else
-        function.params.map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.c_name) }.join(", ")
+        params.join(", ")
       end
     end
 
@@ -1176,7 +1175,11 @@ module MilkTea
       statement_lines = with_checked_index_aliases(aliases) do
         case statement
         when IR::LocalDecl
-          if array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
+          if array_type?(statement.type) && statement.value.is_a?(IR::Call)
+            lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
+            lines << emit_array_call_statement(statement.value, emit_array_out_argument(statement.c_name), indent)
+            lines
+          elsif array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
             lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
             lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
             lines
@@ -1184,7 +1187,9 @@ module MilkTea
             ["#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};"]
           end
         when IR::Assignment
-          if array_type?(statement.target.type) && statement.operator == "="
+          if array_type?(statement.target.type) && statement.operator == "=" && statement.value.is_a?(IR::Call)
+            [emit_array_call_statement(statement.value, emit_array_out_argument(emit_expression(statement.target)), indent)]
+          elsif array_type?(statement.target.type) && statement.operator == "="
             [emit_array_copy_statement(emit_expression(statement.target), statement.value, indent)]
           else
             ["#{indent}#{emit_expression(statement.target)} #{statement.operator} #{emit_expression(statement.value)};"]
@@ -1203,7 +1208,7 @@ module MilkTea
         when IR::ReturnStmt
           if statement.value
             if array_type?(function.return_type)
-              emit_array_return(statement.value, function.return_type, indent)
+              emit_array_return(statement.value, indent)
             else
               ["#{indent}return #{emit_expression(statement.value)};"]
             end
@@ -1751,8 +1756,9 @@ module MilkTea
           "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
         end
       when IR::Call
-        call = emit_call_expression(expression)
-        array_type?(expression.type) ? "#{call}.value" : call
+        raise LoweringError, "array-return call must be materialized before C emission" if array_type?(expression.type)
+
+        emit_call_expression(expression)
       when IR::Unary
         if expression.operator == "not"
           "!#{wrap_expression(expression.operand)}"
@@ -1842,9 +1848,68 @@ module MilkTea
         "(#{outer_c}){ .kind = #{kind_constant} }"
       else
         arm_c = "#{outer_c}_#{expression.arm_name}"
-        payload_fields = expression.fields.map { |f| ".#{f.name} = #{emit_initializer(f.value)}" }.join(", ")
+        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_initializer(field.value)}" }.join(", ")
         "(#{outer_c}){ .kind = #{kind_constant}, .data.#{expression.arm_name} = (struct #{arm_c}){ #{payload_fields} } }"
       end
+    end
+
+    def emit_call_expression(expression, array_out_argument: nil)
+      callee = expression.callee.is_a?(String) ? expression.callee : wrap_expression(expression.callee)
+      omit_receiver = omitted_method_receiver_call?(expression)
+      arguments = []
+      arguments << array_out_argument if array_out_argument
+      arguments.concat(expression.arguments.drop(omit_receiver ? 1 : 0).map { |argument| emit_expression(argument) })
+      call = "#{callee}(#{arguments.join(', ')})"
+      return call unless omit_receiver && expression.arguments.any?
+
+      "(#{discarded_expression(expression.arguments.first)}, #{call})"
+    end
+
+    def emit_array_call_statement(expression, out_argument, indent)
+      "#{indent}#{emit_call_expression(expression, array_out_argument: out_argument)};"
+    end
+
+    def emit_array_copy_statement(destination, source, indent)
+      "#{indent}memcpy(#{destination}, #{emit_expression(source)}, sizeof(#{destination}));"
+    end
+
+    def emit_array_return(expression, indent)
+      if expression.is_a?(IR::Call) && array_type?(expression.type)
+        return [emit_array_call_statement(expression, ARRAY_OUT_PARAM_NAME, indent), "#{indent}return;"]
+      end
+
+      [
+        emit_array_copy_statement("*#{ARRAY_OUT_PARAM_NAME}", expression, indent),
+        "#{indent}return;",
+      ]
+    end
+
+    def emitted_function_params(function)
+      omitted_method_receiver_function?(function) ? function.params.drop(1) : function.params
+    end
+
+    def omitted_method_receiver_call?(expression)
+      expression.callee.is_a?(String) && omitted_method_receiver_function_names.key?(expression.callee)
+    end
+
+    def omitted_method_receiver_function_names
+      @omitted_method_receiver_function_names ||= emitted_functions.each_with_object({}) do |function, omitted|
+        omitted[function.c_name] = true if omitted_method_receiver_function?(function)
+      end
+    end
+
+    def omitted_method_receiver_function?(function)
+      function.method_receiver_param &&
+        function.params.first &&
+        name_reference_count_in_statements(function.body, function.params.first.c_name).zero?
+    end
+
+    def discarded_expression(expression)
+      "(void)#{wrap_expression(expression)}"
+    end
+
+    def emit_array_out_argument(destination)
+      "&(#{destination})"
     end
 
     def emit_array_initializer(expression)
@@ -1881,34 +1946,6 @@ module MilkTea
 
     def emit_str_literal(expression)
       "(mt_str){ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
-    end
-
-    def emit_call_expression(expression)
-      callee = expression.callee.is_a?(String) ? expression.callee : wrap_expression(expression.callee)
-      "#{callee}(#{expression.arguments.map { |argument| emit_expression(argument) }.join(', ')})"
-    end
-
-    def emit_array_copy_statement(destination, source, indent)
-      "#{indent}memcpy(#{destination}, #{emit_expression(source)}, sizeof(#{destination}));"
-    end
-
-    def emit_array_return(expression, type, indent)
-      wrapper_type = array_return_wrapper_type_name(type)
-
-      if expression.is_a?(IR::ArrayLiteral)
-        return ["#{indent}return (#{wrapper_type}){ .value = #{emit_array_initializer(expression)} };"]
-      end
-
-      if expression.is_a?(IR::Call) && array_type?(expression.type)
-        return ["#{indent}return #{emit_call_expression(expression)};"]
-      end
-
-      temp_name = "__mt_return_value"
-      [
-        "#{indent}#{wrapper_type} #{temp_name};",
-        "#{indent}memcpy(#{temp_name}.value, #{emit_expression(expression)}, sizeof(#{temp_name}.value));",
-        "#{indent}return #{temp_name};",
-      ]
     end
 
     def emit_float_literal(expression)
@@ -2098,19 +2135,25 @@ module MilkTea
       operator == "and" ? "&&" : operator == "or" ? "||" : operator
     end
 
+    def void_type
+      @void_type ||= Types::Primitive.new("void")
+    end
+
     def c_declaration(type, name)
       base, declarator = c_declaration_parts(type, name)
       declarator.empty? ? base : "#{base} #{declarator}"
     end
 
     def c_function_declaration(return_type, name, params)
-      return "#{array_return_wrapper_type_name(return_type)} #{name}(#{params})" if array_type?(return_type)
-
-      c_declaration(return_type, "#{name}(#{params})")
+      c_declaration(array_type?(return_type) ? void_type : return_type, "#{name}(#{params})")
     end
 
     def c_function_return_type(type)
-      array_type?(type) ? array_return_wrapper_type_name(type) : c_type(type)
+      c_type(array_type?(type) ? void_type : type)
+    end
+
+    def array_out_param_declaration(type, name)
+      c_declaration(type, "(*#{name})")
     end
 
     def c_declaration_parts(type, name)
@@ -2122,9 +2165,11 @@ module MilkTea
       end
 
       if type.is_a?(Types::Function)
-        params = type.params.each_with_index.map do |param, index|
+        params = []
+        params << array_out_param_declaration(type.return_type, ARRAY_OUT_PARAM_NAME) if array_type?(type.return_type)
+        params.concat(type.params.each_with_index.map do |param, index|
           c_declaration(param.type, param.name || "arg#{index}")
-        end
+        end)
         params << "..." if type.variadic
         params = ["void"] if params.empty?
         return [c_function_return_type(type.return_type), "(*#{name})(#{params.join(', ')})"]
@@ -2200,10 +2245,6 @@ module MilkTea
 
     def global_storage(_type)
       "static"
-    end
-
-    def collect_array_return_types
-      emitted_functions.map(&:return_type).select { |type| array_type?(type) }.uniq
     end
 
     def collect_checked_array_index_types
@@ -3460,15 +3501,6 @@ module MilkTea
       end
     end
 
-    def emit_array_return_wrapper(type)
-      wrapper_type = array_return_wrapper_type_name(type)
-      [
-        "typedef struct #{wrapper_type} {",
-        "#{INDENT}#{c_declaration(type, 'value')};",
-        "} #{wrapper_type};",
-      ]
-    end
-
     def emit_span_type(type)
       span_type = span_type_name(type)
       [
@@ -3486,10 +3518,6 @@ module MilkTea
       return "" if attributes.empty?
 
       " __attribute__((#{attributes.join(', ')}))"
-    end
-
-    def array_return_wrapper_type_name(type)
-      "mt_array_return_#{sanitize_identifier(type.to_s)}"
     end
 
     def span_type_name(type)

@@ -512,6 +512,8 @@ module MilkTea
 
         return lower_async_function_decl(binding, receiver_type:) if binding.async
 
+        receiver_by_pointer = pointer_lowered_sync_method_receiver?(binding)
+
         body_params = binding.body_params.dup
         if binding.type.receiver_type
           receiver_binding = body_params.shift
@@ -520,13 +522,13 @@ module MilkTea
             type: receiver_binding.type,
             c_name:,
             mutable: receiver_binding.mutable,
-            pointer: binding.type.receiver_mutable,
+            pointer: receiver_by_pointer,
           )
           params << IR::Param.new(
             name: receiver_binding.name,
             c_name:,
             type: receiver_binding.type,
-            pointer: binding.type.receiver_mutable,
+            pointer: receiver_by_pointer,
           )
         end
 
@@ -561,6 +563,7 @@ module MilkTea
           return_type:,
           body:,
           entry_point: false,
+          method_receiver_param: !binding.type.receiver_type.nil?,
         )
       ensure
         @current_type_substitutions = previous_type_substitutions
@@ -1226,6 +1229,7 @@ module MilkTea
           return_type: async_info[:task_type],
           body:,
           entry_point: false,
+          method_receiver_param: !binding.type.receiver_type.nil?,
         )
       end
 
@@ -3072,6 +3076,7 @@ module MilkTea
                 env: local_env,
                 expected_type: storage_type,
                 allow_root_statement_foreign: true,
+                materialize_array_calls: !array_type?(storage_type),
               )
               lowered.concat(prepared_setup)
             end
@@ -3158,6 +3163,7 @@ module MilkTea
               env: local_env,
               expected_type: target.type,
               allow_root_statement_foreign: true,
+              materialize_array_calls: !array_type?(target.type),
             )
             lowered.concat(prepared_setup)
             if (foreign_call = foreign_call_info(prepared_value, local_env))
@@ -3366,6 +3372,7 @@ module MilkTea
                 env: local_env,
                 expected_type: return_type,
                 allow_root_statement_foreign: true,
+                materialize_array_calls: !array_type?(return_type),
               )
               lowered.concat(prepared_setup)
             end
@@ -4349,7 +4356,7 @@ module MilkTea
         end
       end
 
-      def prepare_expression_with_cleanups(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+      def prepare_expression_with_cleanups(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
         env[:prepared_expression_cleanups] ||= []
         start_index = env[:prepared_expression_cleanups].length
         setup, prepared_expression = prepare_expression_for_inline_lowering(
@@ -4357,13 +4364,14 @@ module MilkTea
           env:,
           expected_type:,
           allow_root_statement_foreign:,
+          materialize_array_calls:,
         )
         cleanup_count = env[:prepared_expression_cleanups].length - start_index
         cleanups = cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(start_index, cleanup_count) : []
         [setup, prepared_expression, cleanups || []]
       end
 
-      def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+      def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
         return [[], expression] unless expression
 
         if expression.is_a?(AST::Call) && (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
@@ -4393,7 +4401,13 @@ module MilkTea
         when AST::UnsafeExpr
           prepare_expression_for_inline_lowering(expression.expression, env:, expected_type:)
         when AST::Call
-          prepare_call_expression_for_inline_lowering(expression, env:, expected_type:, allow_root_statement_foreign:)
+          prepare_call_expression_for_inline_lowering(
+            expression,
+            env:,
+            expected_type:,
+            allow_root_statement_foreign:,
+            materialize_array_calls:,
+          )
         when AST::ProcExpr
           proc_type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_proc_expression_for_local(expression, env:, local_name: fresh_c_temp_name(env, "proc_expr"), proc_type: proc_type)
@@ -4403,7 +4417,7 @@ module MilkTea
         end
       end
 
-      def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false)
+      def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
         if binding && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
@@ -4425,7 +4439,17 @@ module MilkTea
           AST::Argument.new(name: argument.name, value: prepared_value)
         end
 
-        [callee_setup + argument_setup, AST::Call.new(callee:, arguments:)]
+        prepared_call = AST::Call.new(callee:, arguments:)
+        return [callee_setup + argument_setup, prepared_call] unless materialize_array_calls && callee_type.respond_to?(:return_type) && array_type?(callee_type.return_type)
+
+        call_type = infer_expression_type(prepared_call, env:, expected_type:)
+        materialize_prepared_expression(
+          callee_setup + argument_setup,
+          lower_expression(prepared_call, env:, expected_type: call_type),
+          env:,
+          type: call_type,
+          prefix: "array_call",
+        )
       end
 
       def prepare_format_string_expression_for_inline_lowering(format_string, env:)
@@ -5017,7 +5041,7 @@ module MilkTea
             IR::Call.new(callee: callee_expression, arguments:, type:)
           end
         when :method
-          receiver_arg = lower_method_receiver_argument(receiver, callee_type, env:)
+          receiver_arg = lower_method_receiver_argument(receiver, callee_type, callee_binding, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
           IR::Call.new(callee: callee_name, arguments:, type:)
         when :str_builder_clear
@@ -5189,11 +5213,11 @@ module MilkTea
         end
       end
 
-      def lower_method_receiver_argument(receiver, callee_type, env:)
+      def lower_method_receiver_argument(receiver, callee_type, callee_binding, env:)
         lowered_receiver = lower_expression(receiver, env:)
         declared_receiver_type = callee_type.receiver_type
 
-        if callee_type.receiver_mutable
+        if pointer_lowered_method_receiver?(callee_type, callee_binding)
           return lowered_receiver if ref_type?(lowered_receiver.type)
           return lowered_receiver if pointer_type?(lowered_receiver.type)
 
@@ -6346,6 +6370,9 @@ module MilkTea
 
         lowered = lower_expression(expression, env:, expected_type: expected_type)
         return lowered unless expected_type
+        if (materialized = materialize_pointer_backed_value(lowered, expected_type))
+          return materialized
+        end
         return lowered if lowered.type == expected_type
         return lower_direct_function_to_proc_expression(expression, lowered, env:, expected_type:) if direct_function_to_proc_contextual_compatibility?(expression, lowered.type, env:, expected_type:)
         return lower_str_builder_to_span_expression(lowered, expected_type) if str_builder_to_span_compatible?(lowered.type, expected_type)
@@ -6353,6 +6380,15 @@ module MilkTea
         return cast_expression(lowered, expected_type) if contextual_numeric_compatibility?(expression, lowered.type, expected_type, env:, external_numeric:, contextual_int_to_float:)
 
         lowered
+      end
+
+      def materialize_pointer_backed_value(lowered, expected_type)
+        return nil unless lowered.is_a?(IR::Name) && lowered.pointer
+        return nil unless lowered.type == expected_type
+        return nil if ref_type?(expected_type)
+        return nil if pointer_type?(expected_type)
+
+        IR::Unary.new(operator: "*", operand: lowered, type: lowered.type)
       end
 
       def direct_function_to_proc_contextual_compatibility?(expression, actual_type, env:, expected_type:)
@@ -7290,6 +7326,42 @@ module MilkTea
         return expression if expression.type == target_type
 
         IR::Cast.new(target_type:, expression:, type: target_type)
+      end
+
+      def pointer_lowered_sync_method_receiver?(binding)
+        return false if binding.async
+
+        pointer_lowered_method_receiver?(binding.type, binding)
+      end
+
+      def pointer_lowered_method_receiver?(callee_type, callee_binding)
+        return true if callee_type.receiver_mutable
+
+        receiver_type_uses_pointer_lowering?(callee_type.receiver_type) && !callee_binding&.async
+      end
+
+      def receiver_type_uses_pointer_lowering?(type)
+        case type
+        when Types::Nullable
+          receiver_type_uses_pointer_lowering?(type.base)
+        when Types::Struct, Types::StructInstance
+          type_contains_array_storage?(type)
+        else
+          false
+        end
+      end
+
+      def type_contains_array_storage?(type)
+        return true if array_type?(type)
+
+        case type
+        when Types::Struct, Types::StructInstance
+          type.fields.each_value.any? { |field_type| type_contains_array_storage?(field_type) }
+        when Types::Nullable
+          type_contains_array_storage?(type.base)
+        else
+          false
+        end
       end
 
       def reinterpret_expression(expression, target_type)
