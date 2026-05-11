@@ -1367,6 +1367,51 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/UpdateCamera\(\(\([A-Za-z_][A-Za-z0-9_]*\*\) \(&camera\)\), CAMERA_FREE\);/, generated)
   end
 
+  def test_generate_c_for_imported_inout_call_inside_editable_method_uses_receiver_pointer
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main() -> void:
+          var camera = sample.Camera(id = 1)
+          camera.update(sample.CameraMode.CAMERA_FREE)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            struct Camera:
+                id: int
+
+            enum CameraMode: int
+                CAMERA_FREE = 1
+
+            external function UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public type Camera = c.Camera
+        public type CameraMode = c.CameraMode
+
+        public foreign function update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
+
+        methods Camera:
+            public editable function update(mode: CameraMode) -> void:
+                update_camera(this, mode)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/static void Camera_update\(Camera \*this, CameraMode mode\)/, generated)
+    assert_match(/UpdateCamera\([^\n]*this[^\n]*, mode\);/, generated)
+    refute_match(/UpdateCamera\(&this, mode\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_without_temps_for_simple_statement_arguments
     source = <<~MT
       module demo.main

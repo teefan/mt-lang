@@ -23,11 +23,15 @@ module MilkTea
         include_roots.map { |path| "-I#{path}" }
       end
 
-      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
+      def build_flags(platform: nil)
+        include_flags
+      end
+
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), platform: nil)
         raise NotImplementedError, "#{self.class} must implement #prepare!"
       end
 
-      def link_flags
+      def link_flags(platform: nil)
         raise NotImplementedError, "#{self.class} must implement #link_flags"
       end
 
@@ -74,7 +78,7 @@ module MilkTea
     class Archive < Base
       attr_reader :build_root, :archive_path, :sources, :defines
 
-      def initialize(name:, source_root:, build_root:, archive_name:, sources:, include_roots: [], defines: [], system_link_flags: [], cc_env_var: nil, cxx_env_var: nil, cxx_flags: [], ar_env_var: nil)
+      def initialize(name:, source_root:, build_root:, archive_name:, sources:, include_roots: [], defines: [], system_link_flags: [], cc_env_var: nil, c_flags: [], cxx_env_var: nil, cxx_flags: [], ar_env_var: nil, default_ar: "ar")
         resolved_include_roots = include_roots.empty? ? [source_root] : include_roots
         super(name:, source_root:, include_roots: resolved_include_roots, cc_env_var:)
         @build_root = Pathname.new(File.expand_path(build_root.to_s))
@@ -82,19 +86,25 @@ module MilkTea
         @sources = sources.dup.freeze
         @defines = defines.dup.freeze
         @system_link_flags = system_link_flags.dup.freeze
+        @c_flags = c_flags.dup.freeze
         @cxx_env_var = cxx_env_var
         @cxx_flags = cxx_flags.dup.freeze
         @ar_env_var = ar_env_var
+        @default_ar = default_ar
       end
 
-      def link_flags
+      def link_flags(platform: nil)
         ["-L#{build_root}", *@system_link_flags]
       end
 
-      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), cxx: ENV.fetch("CXX", "c++"))
+      def build_flags(platform: nil)
+        [*include_flags, *defines.map { |define| "-D#{define}" }].uniq
+      end
+
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), cxx: ENV.fetch("CXX", "c++"), platform: nil)
         resolved_cc = resolved_cc(env, cc)
         resolved_cxx = resolved_cxx(env, cxx)
-        resolved_ar = env.fetch(@ar_env_var || "AR", "ar")
+        resolved_ar = env.fetch(@ar_env_var || "AR", @default_ar)
         signature = configuration_signature(cc: resolved_cc, cxx: resolved_cxx, ar: resolved_ar)
         signature_changed = signature != read_signature(build_root)
 
@@ -122,7 +132,7 @@ module MilkTea
       private
 
       def configuration_signature(cc:, cxx:, ar:)
-        [cc, cxx, ar, *include_flags, *defines, *@cxx_flags].join("\0")
+        [cc, cxx, ar, *include_flags, *defines, *@c_flags, *@cxx_flags].join("\0")
       end
 
       def resolved_cxx(env, default_cxx)
@@ -165,7 +175,7 @@ module MilkTea
         when ".cc", ".cpp", ".cxx"
           [cxx, @cxx_flags]
         else
-          [cc, []]
+          [cc, @c_flags]
         end
       end
 
@@ -199,11 +209,15 @@ module MilkTea
         @cmake_env_var = cmake_env_var
       end
 
-      def link_flags
+      def link_flags(platform: nil)
         ["-L#{archive_path.dirname}", *pkg_config_link_flags, *@system_link_flags].uniq
       end
 
-      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
+      def build_flags(platform: nil)
+        include_flags
+      end
+
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), platform: nil)
         resolved_cc = resolved_cc(env, cc)
         resolved_cmake = env.fetch(@cmake_env_var || "CMAKE", "cmake")
         signature = configuration_signature(cc: resolved_cc, cmake: resolved_cmake)

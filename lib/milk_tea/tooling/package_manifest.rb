@@ -4,7 +4,7 @@ module MilkTea
   class PackageManifestError < StandardError; end
 
   class PackageManifest
-    DataView = Data.define(:root_dir, :manifest_path, :package_name, :source_path, :profile, :platform, :output_path)
+    DataView = Data.define(:root_dir, :manifest_path, :package_name, :source_path, :profile, :platform, :output_path, :preload_path, :html_template_path)
 
     def self.load(path)
       new(path).load
@@ -47,6 +47,22 @@ module MilkTea
       output_path = build["output"]
       output_path = File.expand_path(output_path.to_s, root_dir) if output_path
 
+      preload_path = build["preload"]
+      if preload_path
+        preload_path = File.expand_path(preload_path.to_s, root_dir)
+        unless File.exist?(preload_path)
+          raise PackageManifestError, "build.preload not found: #{build["preload"]} (resolved to #{preload_path})"
+        end
+      end
+
+      html_template_path = build["html_template"]
+      if html_template_path
+        html_template_path = File.expand_path(html_template_path.to_s, root_dir)
+        unless File.file?(html_template_path)
+          raise PackageManifestError, "build.html_template not found: #{build["html_template"]} (resolved to #{html_template_path})"
+        end
+      end
+
       DataView.new(
         root_dir:,
         manifest_path:,
@@ -55,6 +71,8 @@ module MilkTea
         profile: profile_name,
         platform: platform_name,
         output_path:,
+        preload_path:,
+        html_template_path:,
       )
     end
 
@@ -148,8 +166,10 @@ module MilkTea
         :linux
       when "windows", "win", "win32"
         :windows
+      when "wasm", "web", "html5", "browser"
+        :wasm
       else
-        raise PackageManifestError, "unknown platform #{value}; expected linux|windows"
+        raise PackageManifestError, "unknown platform #{value}; expected linux|windows|wasm"
       end
     end
   end

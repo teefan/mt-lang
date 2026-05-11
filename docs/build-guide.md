@@ -1,0 +1,187 @@
+# Milk Tea Build Guide
+
+This guide documents package manifests, executable builds, and the current wasm workflow.
+
+## 1. Packages And Entry Points
+
+Milk Tea builds either a single source file or a package directory.
+
+- A source build compiles one `.mt` file directly.
+- A package build reads `package.toml` from the target directory.
+
+Minimal package example:
+
+```toml
+[package]
+name = "game_engine"
+version = "0.1.0"
+
+[profile]
+default = "debug"
+
+[platform]
+default = "wasm"
+
+[build]
+entry = "src/main.mt"
+preload = "assets"
+html_template = "web/shell.html"
+```
+
+Relevant build keys:
+
+- `build.entry`: entry source file, relative to the package root.
+- `build.output`: optional explicit output path.
+- `build.preload`: optional file or directory to bundle into a wasm build.
+- `build.html_template`: optional HTML shell template for wasm builds.
+- `profile.default`: default profile when the CLI does not receive `--profile`.
+- `platform.default`: default platform when the CLI does not receive `--platform`.
+
+## 2. Build Commands
+
+Build a source file:
+
+```sh
+mtc build path/to/app.mt
+```
+
+Build a package:
+
+```sh
+mtc build path/to/package
+```
+
+Run a source file or package:
+
+```sh
+mtc run path/to/package
+```
+
+Common options:
+
+- `--profile debug|release`
+- `--platform linux|windows|wasm`
+- `--cc COMPILER`
+- `-o OUTPUT`
+- `--keep-c PATH`
+
+The wasm platform also accepts the aliases `web`, `html5`, and `browser`.
+
+## 3. Output Paths
+
+Default package output paths are:
+
+```text
+build/bin/<platform>/<profile>/<package-name>
+```
+
+Platform-specific extensions are added automatically:
+
+- Linux: no extension
+- Windows: `.exe`
+- wasm: `.html`
+
+For direct source builds, the default output is the source path without `.mt`, except wasm builds, which default to a sibling `.html` file.
+
+For wasm outputs:
+
+- if the explicit output path has no extension, Milk Tea appends `.html`
+- if the explicit output path has an extension, it must be `.html`
+
+When targeting wasm, Milk Tea emits an Emscripten bundle next to the HTML entry point. The normal outputs are:
+
+- `<name>.html`
+- `<name>.js`
+- `<name>.wasm`
+- `<name>.data` when `build.preload` is used
+
+Depending on Emscripten flags and debug settings, extra side files such as worker scripts, symbol files, and source maps may also be generated.
+
+`mtc build --clean` removes the wasm HTML entry point and its sidecar bundle files.
+
+## 4. Compiler Selection
+
+Native builds use `--cc`, then `$CC`, then `cc`.
+
+Wasm builds use `--cc` when you pass it explicitly. Otherwise Milk Tea switches to `$EMCC`, falling back to `emcc`.
+
+That means these two commands are equivalent when `EMCC` is configured:
+
+```sh
+mtc build path/to/package --platform wasm
+mtc build path/to/package --platform wasm --cc "$EMCC"
+```
+
+## 5. Preloading Files For wasm
+
+Use `build.preload` to bundle a file or directory into the Emscripten virtual filesystem.
+
+```toml
+[build]
+entry = "src/main.mt"
+preload = "assets"
+```
+
+The configured path is resolved relative to the package root and must already exist.
+
+Milk Tea mounts the preloaded path at `/<basename>`. For example:
+
+- `preload = "assets"` becomes `/assets`
+- runtime code can load `assets/tetris_tiles.png`
+
+If you need multiple runtime assets, put them under a single directory and preload that directory.
+
+## 6. Custom HTML Templates
+
+Use `build.html_template` to provide a package-owned HTML shell for wasm output.
+
+```toml
+[build]
+entry = "src/main.mt"
+html_template = "web/shell.html"
+```
+
+The template path is resolved relative to the package root and must point to an existing file.
+
+The template must contain each placeholder exactly once:
+
+```html
+{{{ MILK_TEA_CANVAS }}}
+{{{ MILK_TEA_OUTPUT }}}
+{{{ MILK_TEA_BOOTSTRAP }}}
+{{{ SCRIPT }}}
+```
+
+Placeholder contract:
+
+- `{{{ MILK_TEA_CANVAS }}}`: where the app canvas is inserted.
+- `{{{ MILK_TEA_OUTPUT }}}`: where stdout and stderr output is rendered.
+- `{{{ MILK_TEA_BOOTSTRAP }}}`: Milk Tea bootstrap code that wires `Module.canvas`, `print`, and `printErr`.
+- `{{{ SCRIPT }}}`: the Emscripten loader script placeholder.
+
+`{{{ SCRIPT }}}` is not a Milk Tea placeholder. It is required by Emscripten and must remain in the template.
+
+If `build.html_template` is omitted, Milk Tea uses the default template in `lib/milk_tea/tooling/templates/wasm_shell.html`.
+
+## 7. Running wasm Targets
+
+`mtc run` behaves differently for wasm targets than for native binaries.
+
+```sh
+mtc run path/to/package
+```
+
+For wasm targets, Milk Tea:
+
+- builds the HTML bundle
+- starts a local preview server rooted at the build output directory
+- opens the generated HTML in the default browser
+- keeps the server in the foreground until you press `Ctrl-C`
+
+The preview server sends the cross-origin isolation headers required by the current raylib and Web Audio worker setup.
+
+## 8. Generated JavaScript
+
+The `<name>.js` file in a wasm build is generated by Emscripten from the emitted C program and the final linker flags. It is not handwritten Milk Tea runtime code.
+
+Milk Tea controls the HTML shell and the Emscripten invocation, but the JavaScript loader itself comes from Emscripten.

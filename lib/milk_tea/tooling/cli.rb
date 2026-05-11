@@ -391,8 +391,18 @@ module MilkTea
         end
       end
 
-      result = Run.run(path, module_roots: module_roots_for(path), **options)
-      @out.write(result.stdout)
+      preview_notice_emitted = false
+      result = Run.run(
+        path,
+        module_roots: module_roots_for(path),
+        preview_started: lambda do |message|
+          preview_notice_emitted = true
+          @out.write(message)
+          @out.flush if @out.respond_to?(:flush)
+        end,
+        **options
+      )
+      @out.write(result.stdout) unless preview_notice_emitted
       @err.write(result.stderr)
       result.exit_status
     end
@@ -778,22 +788,24 @@ module MilkTea
             --cc COMPILER                C compiler to use (default: $CC or cc).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
-            --platform PLATFORM          linux (default) | windows.
+            --platform PLATFORM          linux (default) | windows | wasm.
             --clean                      Remove existing build outputs and exit.
             -I PATH                      Add an extra module root.
         HELP
       "run"             => <<~HELP,
         Usage: mtc run [PATH_OR_PACKAGE] [OPTIONS]
 
-          Build and execute an executable target. Defaults to current directory
-          if a package.toml is present.
+          Build and execute an executable target. For wasm targets this starts a
+          local preview server, opens the generated HTML in your browser, and
+          keeps serving until you press Ctrl-C.
+          Defaults to current directory if a package.toml is present.
 
           Options:
             -o, --output OUTPUT          Output path for the compiled binary.
             --cc COMPILER                C compiler to use (default: $CC or cc).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
-            --platform PLATFORM          linux (default) | windows.
+            --platform PLATFORM          linux (default) | windows | wasm.
             -I PATH                      Add an extra module root.
         HELP
       "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
@@ -839,8 +851,8 @@ module MilkTea
       io.puts("       mtc check PATH")
       io.puts("       mtc lower PATH")
       io.puts("       mtc emit-c PATH")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [--clean] [-I PATH]")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--clean] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc deps doctor")

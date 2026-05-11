@@ -73,6 +73,201 @@ class MilkTeaBuildTest < Minitest::Test
     assert_match(/C compiler not found/, error.message)
   end
 
+  def test_build_wasm_normalizes_output_to_html_and_passes_shell_file
+    Dir.mktmpdir("milk-tea-build-wasm") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "web-smoke.mt")
+      output_path = File.join(dir, "web-smoke")
+
+      File.write(source_path, [
+        "module demo.web_smoke",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, platform: :wasm)
+      expected_output = File.expand_path("#{output_path}.html")
+
+      assert_equal expected_output, result.output_path
+      assert_equal :wasm, result.platform
+      assert File.exist?(expected_output)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "--shell-file"
+      assert_includes invocation, "-sINCOMING_MODULE_JS_API=canvas,print,printErr"
+      assert_includes invocation, expected_output
+    end
+  end
+
+  def test_default_wasm_shell_template_contains_required_placeholders
+    assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_CANVAS_PLACEHOLDER
+    assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_OUTPUT_PLACEHOLDER
+    assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_BOOTSTRAP_PLACEHOLDER
+    assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_SCRIPT_PLACEHOLDER
+  end
+
+  def test_wasm_shell_bootstrap_escapes_output_newlines_for_inline_javascript
+    assert_includes MilkTea::Build::WASM_SHELL_BOOTSTRAP_TEMPLATE, 'textContent += text + "\\n";'
+    assert_includes MilkTea::Build::WASM_SHELL_BOOTSTRAP_TEMPLATE, 'textContent += "[err] " + text + "\\n";'
+  end
+
+  def test_build_wasm_package_renders_custom_html_template_from_manifest
+    Dir.mktmpdir("milk-tea-build-wasm-template") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      rendered_shell = File.join(dir, "rendered-shell.html")
+      compiler_path = write_fake_compiler(dir, compiler_log, shell_copy_path: rendered_shell)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      web_dir = File.join(package_root, "web")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(web_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [platform]
+        default = "wasm"
+
+        [build]
+        entry = "src/main.mt"
+        html_template = "web/shell.html"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      File.write(File.join(web_dir, "shell.html"), <<~HTML)
+        <!doctype html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Custom Shell</title>
+          </head>
+          <body>
+            <main class="shell-frame">
+              <section class="shell-stage">{{{ MILK_TEA_CANVAS }}}</section>
+              <aside class="shell-log">{{{ MILK_TEA_OUTPUT }}}</aside>
+            </main>
+            {{{ MILK_TEA_BOOTSTRAP }}}
+            {{{ SCRIPT }}}
+          </body>
+        </html>
+      HTML
+
+      MilkTea::Build.build(package_root, cc: compiler_path)
+
+      rendered = File.read(rendered_shell)
+      assert_includes rendered, "<title>Custom Shell</title>"
+      assert_includes rendered, "shell-frame"
+      assert_includes rendered, "<canvas id=\"canvas\""
+      assert_includes rendered, "<pre id=\"output\">"
+      assert_includes rendered, "var Module = {"
+      assert_includes rendered, MilkTea::Build::WASM_SHELL_SCRIPT_PLACEHOLDER
+      refute_includes rendered, MilkTea::Build::WASM_SHELL_CANVAS_PLACEHOLDER
+      refute_includes rendered, MilkTea::Build::WASM_SHELL_OUTPUT_PLACEHOLDER
+      refute_includes rendered, MilkTea::Build::WASM_SHELL_BOOTSTRAP_PLACEHOLDER
+    end
+  end
+
+  def test_build_wasm_package_rejects_html_template_missing_required_placeholder
+    Dir.mktmpdir("milk-tea-build-wasm-template-error") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      web_dir = File.join(package_root, "web")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(web_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [platform]
+        default = "wasm"
+
+        [build]
+        entry = "src/main.mt"
+        html_template = "web/shell.html"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      File.write(File.join(web_dir, "shell.html"), <<~HTML)
+        <!doctype html>
+        <html>
+          <body>
+            {{{ MILK_TEA_CANVAS }}}
+            {{{ MILK_TEA_OUTPUT }}}
+            {{{ SCRIPT }}}
+          </body>
+        </html>
+      HTML
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(package_root, cc: compiler_path)
+      end
+
+      assert_match(/Milk Tea \{\{\{ MILK_TEA_BOOTSTRAP \}\}\}/, error.message)
+      refute File.exist?(compiler_log)
+    end
+  end
+
+  def test_build_wasm_package_passes_preload_file_from_manifest
+    Dir.mktmpdir("milk-tea-build-wasm-preload") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [platform]
+        default = "wasm"
+
+        [build]
+        entry = "src/main.mt"
+        preload = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      MilkTea::Build.build(package_root, cc: compiler_path)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      preload_index = invocation.index("--preload-file")
+      refute_nil preload_index
+      assert_equal "#{File.join(package_root, "assets")}@/assets", invocation.fetch(preload_index + 1)
+    end
+  end
+
   def test_build_emits_debug_map_sidecar_for_user_functions
     Dir.mktmpdir("milk-tea-build-debug-map") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -374,6 +569,42 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_source_file_inside_package_uses_wasm_manifest_defaults
+    Dir.mktmpdir("milk-tea-build-package-wasm") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [build]
+        entry = "src/main.mt"
+
+        [platform]
+        default = "wasm"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(package_root, cc: compiler_path)
+      expected_output = File.join(package_root, "build", "bin", "wasm", "debug", "web_demo.html")
+
+      assert_equal File.expand_path(expected_output), result.output_path
+      assert_equal :wasm, result.platform
+      assert File.exist?(expected_output)
+    end
+  end
+
   def test_build_source_file_inside_package_surfaces_invalid_manifest
     Dir.mktmpdir("milk-tea-build-invalid-package-manifest") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -405,6 +636,26 @@ class MilkTeaBuildTest < Minitest::Test
 
       assert_match(/invalid package\.toml/, error.message)
       refute File.exist?(compiler_log)
+    end
+  end
+
+  def test_clean_removes_wasm_bundle_artifacts_for_explicit_output
+    Dir.mktmpdir("milk-tea-build-clean-wasm") do |dir|
+      output_path = File.join(dir, "bundle.html")
+      File.write(output_path, "html")
+      File.write(File.join(dir, "bundle.js"), "js")
+      File.write(File.join(dir, "bundle.wasm"), "wasm")
+      File.write(File.join(dir, "bundle.data"), "data")
+      File.write(MilkTea::DebugMap.sidecar_path_for(output_path), "debug-map")
+
+      cleaned = MilkTea::Build.clean(language_fixture_path, output_path:, platform: :wasm)
+
+      assert_equal File.expand_path(output_path), cleaned
+      refute File.exist?(output_path)
+      refute File.exist?(File.join(dir, "bundle.js"))
+      refute File.exist?(File.join(dir, "bundle.wasm"))
+      refute File.exist?(File.join(dir, "bundle.data"))
+      refute File.exist?(MilkTea::DebugMap.sidecar_path_for(output_path))
     end
   end
 
@@ -512,6 +763,51 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_raylib_wasm_uses_web_raylib_archive_and_flags
+    Dir.mktmpdir("milk-tea-build-raylib-wasm") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = File.join(dir, "fake-emcc")
+      source_path = write_raylib_smoke_source(dir)
+      output_path = File.join(dir, "raylib-web")
+      raw_bindings = MilkTea::RawBindings.default_registry(root: MilkTea.root)
+
+      File.write(compiler_path, <<~SH)
+        #!/bin/sh
+        {
+          printf '%s\n' '---'
+          printf '%s\n' "$@"
+        } >> #{compiler_log.inspect}
+        output=''
+        previous=''
+        for argument in "$@"; do
+          if [ "$previous" = '-o' ]; then
+            output="$argument"
+          fi
+          previous="$argument"
+        done
+        : > "$output"
+      SH
+      File.chmod(0o755, compiler_path)
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, raw_bindings:, platform: :wasm)
+
+      assert_equal File.expand_path("#{output_path}.html"), result.output_path
+
+      log = File.read(compiler_log)
+      assert_includes log, "-DPLATFORM_WEB"
+      assert_includes log, "-DGRAPHICS_API_OPENGL_ES2"
+      assert_includes log, "-DMA_ENABLE_AUDIO_WORKLETS"
+      assert_includes log, "-sUSE_GLFW=3"
+      assert_includes log, "-sAUDIO_WORKLET=1"
+      assert_includes log, "-sWASM_WORKERS=1"
+      assert_includes log, "-sASYNCIFY"
+      assert_match(/---\n.*\n-c\n.*\n-sAUDIO_WORKLET=1\n.*\n-sWASM_WORKERS=1\n/m, log)
+      assert_includes log, "tmp/vendored-raylib-web"
+      refute_includes log, "-DGRAPHICS_API_OPENGL_43"
+      refute_includes log, "tmp/vendored-raylib-opengl43"
+    end
+  end
+
   def test_build_uses_default_raygui_binding_compiler_flags_when_imported
     Dir.mktmpdir("milk-tea-build-raygui") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -610,19 +906,27 @@ class MilkTeaBuildTest < Minitest::Test
     path
   end
 
-  def write_fake_compiler(dir, log_path)
+  def write_fake_compiler(dir, log_path, shell_copy_path: nil)
     path = File.join(dir, "fake-cc")
     File.write(path, <<~SH)
       #!/bin/sh
       printf '%s\n' "$@" > #{log_path.inspect}
+      shell_copy_target=#{(shell_copy_path || "").inspect}
       output=''
+      shell_file=''
       previous=''
       for argument in "$@"; do
         if [ "$previous" = '-o' ]; then
           output="$argument"
         fi
+        if [ "$previous" = '--shell-file' ]; then
+          shell_file="$argument"
+        fi
         previous="$argument"
       done
+      if [ -n "$shell_file" ] && [ -n "$shell_copy_target" ]; then
+        cp "$shell_file" "$shell_copy_target"
+      fi
       : > "$output"
     SH
     File.chmod(0o755, path)

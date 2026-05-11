@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "tmpdir"
+require "net/http"
 require_relative "../test_helper"
 
 class MilkTeaRunTest < Minitest::Test
@@ -131,6 +132,101 @@ class MilkTeaRunTest < Minitest::Test
 
       assert_match(/invalid package\.toml/, error.message)
       refute File.exist?(compiler_log)
+    end
+  end
+
+  def test_run_wasm_target_opens_browser_preview
+    Dir.mktmpdir("milk-tea-run-wasm") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "", stderr: "", exit_status: 0)
+      source_path = File.join(dir, "web.mt")
+      opened_urls = []
+      opened_after_listen = nil
+
+      preview_server_class = Class.new do
+        class << self
+          attr_accessor :listening, :started_root_dir, :served_forever
+        end
+
+        def initialize(root_dir:, idle_timeout: nil)
+          self.class.started_root_dir = root_dir
+          self.class.listening = false
+          self.class.served_forever = false
+        end
+
+        def listen!
+          self.class.listening = true
+          self
+        end
+
+        def url_for(entry_name)
+          "http://127.0.0.1:43123/#{entry_name}"
+        end
+
+        def serve_forever
+          self.class.served_forever = true
+        end
+      end
+
+      File.write(source_path, [
+        "module demo.web",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(
+        source_path,
+        cc: compiler_path,
+        platform: :wasm,
+        browser_opener: lambda do |url|
+          opened_after_listen = preview_server_class.listening
+          opened_urls << url
+        end,
+        preview_server_class: preview_server_class,
+      )
+
+      expected_output = File.expand_path(File.join(dir, "web.html"))
+
+      assert_equal true, opened_after_listen
+      assert_equal ["http://127.0.0.1:43123/web.html"], opened_urls
+      assert_equal File.expand_path(dir), preview_server_class.started_root_dir
+      assert_equal true, preview_server_class.served_forever
+      assert_equal "serving http://127.0.0.1:43123/web.html (press Ctrl-C to stop)\n", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_equal expected_output, result.output_path
+      assert_nil result.c_path
+      assert_equal File.expand_path(compiler_path), result.compiler
+      assert_equal [], result.link_flags
+      assert_equal :wasm, result.platform
+      assert File.exist?(compiler_log)
+    end
+  end
+
+  def test_wasm_preview_server_sets_cross_origin_isolation_headers_and_png_mime_type
+    Dir.mktmpdir("milk-tea-run-wasm-server") do |dir|
+      File.write(File.join(dir, "index.html"), "<html></html>")
+      File.binwrite(File.join(dir, "sprite.png"), "fake-png")
+
+      server = MilkTea::Run::WasmPreviewServer.new(root_dir: dir, idle_timeout: 30).start
+
+      begin
+        uri = URI("http://#{server.host}:#{server.port}/sprite.png")
+        response = Net::HTTP.get_response(uri)
+
+        assert_equal "200", response.code
+        assert_equal "image/png", response["content-type"]
+        assert_equal "same-origin", response["cross-origin-opener-policy"]
+        assert_equal "require-corp", response["cross-origin-embedder-policy"]
+      ensure
+        begin
+          server.stop
+        rescue Errno::ESRCH, Errno::ENOENT
+          nil
+        end
+      end
     end
   end
 

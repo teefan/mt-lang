@@ -1,12 +1,14 @@
 [package]
-name = "game_engine"
+name = "tetris"
 version = "0.1.0"
 
 [profile]
 default = "debug"
 
 [platform]
-default = "linux"
+default = "wasm"
 
 [build]
 entry = "src/main.mt"
+preload = "assets"
+html_template = "web/shell.html"
