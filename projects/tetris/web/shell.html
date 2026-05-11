@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Milk Tea Tetris</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --page-bg: #07131f;
+        --page-grid: rgba(180, 222, 255, 0.08);
+        --panel-bg: rgba(7, 19, 31, 0.82);
+        --panel-border: rgba(156, 220, 254, 0.22);
+        --panel-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+        --headline: #f3fbff;
+        --accent-a: #4cc9f0;
+        --accent-b: #80ed99;
+        --accent-c: #f9c74f;
+        --text-dim: rgba(235, 246, 255, 0.76);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background:
+          linear-gradient(180deg, rgba(10, 30, 46, 0.94), rgba(4, 10, 18, 1)),
+          radial-gradient(circle at top, rgba(76, 201, 240, 0.16), transparent 36%),
+          var(--page-bg);
+        color: var(--headline);
+        font-family: "Iosevka Etoile", "IBM Plex Mono", "JetBrains Mono", monospace;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--page-grid) 1px, transparent 1px),
+          linear-gradient(90deg, var(--page-grid) 1px, transparent 1px);
+        background-size: 26px 26px;
+        mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.75), transparent 85%);
+        pointer-events: none;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        overflow: hidden;
+      }
+
+      .shell {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 18rem;
+        gap: 1.25rem;
+        width: min(1100px, 100%);
+        align-items: start;
+      }
+
+      .stage {
+        position: relative;
+        padding: 1rem;
+        border: 1px solid var(--panel-border);
+        border-radius: 28px;
+        background: linear-gradient(180deg, rgba(11, 25, 39, 0.92), rgba(7, 15, 24, 0.84));
+        box-shadow: var(--panel-shadow);
+        overflow: hidden;
+      }
+
+      .stage::before {
+        content: "MILK TEA TETRIS";
+        position: absolute;
+        top: 0.95rem;
+        left: 1.1rem;
+        z-index: 2;
+        letter-spacing: 0.28em;
+        font-size: 0.72rem;
+        color: rgba(243, 251, 255, 0.7);
+      }
+
+      .stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 28px;
+        pointer-events: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      #canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 640 / 700;
+        margin-top: 1.5rem;
+        border: 0;
+        border-radius: 20px;
+        background: #02070d;
+      }
+
+      .sidebar {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .panel {
+        border: 1px solid var(--panel-border);
+        border-radius: 22px;
+        background: var(--panel-bg);
+        box-shadow: var(--panel-shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .summary {
+        padding: 1.2rem 1.2rem 1.1rem;
+      }
+
+      .summary h1 {
+        margin: 0;
+        font-size: clamp(1.55rem, 2.5vw, 2.15rem);
+        line-height: 1;
+      }
+
+      .summary p {
+        margin: 0.75rem 0 0;
+        line-height: 1.55;
+        color: var(--text-dim);
+        font-size: 0.95rem;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 1rem;
+      }
+
+      .chip {
+        padding: 0.35rem 0.65rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 0.76rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .chip:nth-child(1) { color: var(--accent-a); }
+      .chip:nth-child(2) { color: var(--accent-b); }
+      .chip:nth-child(3) { color: var(--accent-c); }
+
+      .console {
+        overflow: hidden;
+      }
+
+      .console-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.9rem 1rem 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 0.78rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(243, 251, 255, 0.7);
+      }
+
+      .console-dot {
+        width: 0.62rem;
+        height: 0.62rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
+        box-shadow: 0 0 18px rgba(76, 201, 240, 0.55);
+      }
+
+      #output {
+        margin: 0;
+        min-height: 13rem;
+        max-height: 28rem;
+        padding: 0.95rem 1rem 1rem;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: rgba(222, 243, 255, 0.86);
+        font-size: 0.78rem;
+        line-height: 1.45;
+        background: transparent;
+      }
+
+      @media (max-width: 920px) {
+        body {
+          padding: 1rem;
+          overflow: auto;
+        }
+
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          order: -1;
+        }
+
+        #output {
+          max-height: 12rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="stage">
+        {{{ MILK_TEA_CANVAS }}}
+      </section>
+      <aside class="sidebar">
+        <section class="panel summary">
+          <h1>Milk Tea Tetris</h1>
+          <p>
+            Browser-targeted raylib build, packaged through the Milk Tea toolchain.
+            The shell is package-local now, so this project owns its web wrapper.
+          </p>
+          <div class="chips">
+            <span class="chip">raylib</span>
+            <span class="chip">wasm</span>
+            <span class="chip">emscripten</span>
+          </div>
+        </section>
+        <section class="panel console">
+          <div class="console-header">
+            <span>Runtime Output</span>
+            <span class="console-dot" aria-hidden="true"></span>
+          </div>
+          {{{ MILK_TEA_OUTPUT }}}
+        </section>
+      </aside>
+    </main>
+    {{{ MILK_TEA_BOOTSTRAP }}}
+    {{{ SCRIPT }}}
+  </body>
+</html>

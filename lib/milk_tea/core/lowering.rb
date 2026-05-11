@@ -5594,10 +5594,7 @@ module MilkTea
       def lower_foreign_pointer_argument_value(parameter, argument, env:)
         slot_type = foreign_slot_boundary_value_type(parameter.type)
         operand = foreign_argument_expression(argument)
-        address = IR::AddressOf.new(
-          expression: lower_expression(operand, env:),
-          type: pointer_to(slot_type),
-        )
+        address = lower_addr_expression(operand, env:, target_type: pointer_to(slot_type))
 
         converted = foreign_identity_projection_expression(address, parameter.boundary_type)
         return converted if converted

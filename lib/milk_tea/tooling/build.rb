@@ -10,6 +10,51 @@ module MilkTea
   class BuildError < StandardError; end
 
   class Build
+    DEFAULT_WASM_SHELL_TEMPLATE_PATH = File.expand_path("templates/wasm_shell.html", __dir__).freeze
+    WASM_SHELL_SCRIPT_PLACEHOLDER = "{{{ SCRIPT }}}".freeze
+    WASM_SHELL_CANVAS_PLACEHOLDER = "{{{ MILK_TEA_CANVAS }}}".freeze
+    WASM_SHELL_OUTPUT_PLACEHOLDER = "{{{ MILK_TEA_OUTPUT }}}".freeze
+    WASM_SHELL_BOOTSTRAP_PLACEHOLDER = "{{{ MILK_TEA_BOOTSTRAP }}}".freeze
+    WASM_SHELL_TEMPLATE = File.read(DEFAULT_WASM_SHELL_TEMPLATE_PATH).freeze
+    WASM_SHELL_CANVAS_TEMPLATE = <<~HTML.freeze
+      <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    HTML
+    WASM_SHELL_OUTPUT_TEMPLATE = <<~HTML.freeze
+      <pre id="output"></pre>
+    HTML
+    WASM_SHELL_BOOTSTRAP_TEMPLATE = <<~HTML.freeze
+      <script>
+        var Module = {
+          print: (function() {
+            var element = document.getElementById('output');
+            if (element) element.textContent = '';
+            return function(text) {
+              if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+              console.log(text);
+              if (element) {
+                element.textContent += text + "\\n";
+                element.scrollTop = element.scrollHeight;
+              }
+            };
+          })(),
+          printErr: (function() {
+            var element = document.getElementById('output');
+            return function(text) {
+              if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+              console.error(text);
+              if (element) {
+                element.textContent += "[err] " + text + "\\n";
+                element.scrollTop = element.scrollHeight;
+              }
+            };
+          })(),
+          canvas: (function() {
+            return document.getElementById('canvas');
+          })()
+        };
+      </script>
+    HTML
+
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform)
 
     def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, debug: false, profile: nil, platform: nil)
@@ -49,8 +94,10 @@ module MilkTea
       @manifest_output_path = manifest.output_path
       @explicit_output_path = !output_path.nil?
       resolved_output = output_path || manifest.output_path || default_package_output_path
-      @output_path = File.expand_path(resolved_output)
-      @cc = cc
+      @output_path = normalize_output_path(File.expand_path(resolved_output))
+      @preload_path = manifest.preload_path
+      @html_template_path = manifest.html_template_path
+      @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
       @module_roots = (module_roots || [MilkTea.root]).dup
@@ -67,8 +114,10 @@ module MilkTea
       @platform = normalize_platform(platform || host_platform)
       @manifest_output_path = nil
       @explicit_output_path = !output_path.nil?
-      @output_path = File.expand_path(output_path || default_source_output_path(@source_path))
-      @cc = cc
+      @output_path = normalize_output_path(File.expand_path(output_path || default_source_output_path(@source_path)))
+      @preload_path = nil
+      @html_template_path = nil
+      @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
       @module_roots = module_roots || [MilkTea.root]
@@ -80,7 +129,7 @@ module MilkTea
       if File.directory?(target_path)
         FileUtils.rm_rf(target_path)
       else
-        FileUtils.rm_f(target_path)
+        clean_output_artifacts(target_path)
         FileUtils.rm_f(DebugMap.sidecar_path_for(@output_path))
       end
       target_path
@@ -164,12 +213,13 @@ module MilkTea
     end
 
     def default_source_output_path(source_path)
-      source_path.sub(/\.mt\z/, "")
+      base = source_path.sub(/\.mt\z/, "")
+      target_wasm? ? "#{base}.html" : base
     end
 
     def default_package_output_path
       build_root = File.join(@project_root, "build")
-      File.join(build_root, "bin", @platform.to_s, @profile.to_s, "#{@package_name}#{executable_extension}")
+      File.join(build_root, "bin", @platform.to_s, @profile.to_s, "#{@package_name}#{artifact_extension}")
     end
 
     def normalize_profile(value)
@@ -189,9 +239,27 @@ module MilkTea
         :linux
       when "windows", "win", "win32"
         :windows
+      when "wasm", "web", "html5", "browser"
+        :wasm
       else
-        raise BuildError, "unknown platform #{value}; expected linux|windows"
+        raise BuildError, "unknown platform #{value}; expected linux|windows|wasm"
       end
+    end
+
+    def normalize_output_path(path)
+      return path unless target_wasm?
+
+      extension = File.extname(path)
+      return "#{path}.html" if extension.empty?
+      return path if extension == ".html"
+
+      raise BuildError, "wasm output path must end with .html or omit the extension: #{path}"
+    end
+
+    def resolve_compiler(requested_cc)
+      return ENV.fetch("EMCC", "emcc") if target_wasm? && requested_cc == ENV.fetch("CC", "cc")
+
+      requested_cc
     end
 
     def prepare_bindings(program)
@@ -202,7 +270,7 @@ module MilkTea
         binding = @raw_bindings.find_by_module_name(module_name)
         next unless binding
 
-        binding.prepare!(cc: @cc)
+        binding.prepare!(cc: @cc, platform: @platform)
       end
     rescue RawBindings::Error => e
       raise BuildError, e.message
@@ -236,7 +304,7 @@ module MilkTea
 
         binding = @raw_bindings.find_by_module_name(module_name)
         if binding
-          binding.link_flags.grep(/\A-L/).each do |flag|
+          binding.link_flags(platform: @platform).grep(/\A-L/).each do |flag|
             flags << flag unless flags.include?(flag)
           end
         end
@@ -247,7 +315,7 @@ module MilkTea
         end
 
         if binding
-          binding.link_flags.reject { |flag| flag.start_with?("-L") }.each do |flag|
+          binding.link_flags(platform: @platform).reject { |flag| flag.start_with?("-L") }.each do |flag|
             flags << flag unless flags.include?(flag)
           end
         end
@@ -272,7 +340,7 @@ module MilkTea
         binding = @raw_bindings.find_by_module_name(module_name)
         next unless binding
 
-        binding.build_flags.each do |flag|
+        binding.build_flags(platform: @platform).each do |flag|
           flags << flag unless flags.include?(flag)
         end
       end
@@ -281,6 +349,8 @@ module MilkTea
     end
 
     def compile(c_path, compiler_flags, link_flags)
+      return compile_wasm(c_path, compiler_flags, link_flags) if target_wasm?
+
       profile_flags = profile_compiler_flags
       command = [@cc, "-std=c11", *profile_flags, *compiler_flags, c_path, "-o", @output_path, *link_flags]
       stdout, stderr, status = Open3.capture3(*command)
@@ -296,12 +366,89 @@ module MilkTea
       /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
     end
 
+    def clean_output_artifacts(target_path)
+      FileUtils.rm_f(target_path)
+      return unless target_wasm? && File.extname(target_path) == ".html"
+
+      base_path = target_path.sub(/\.html\z/, "")
+      %w[.js .wasm .data .worker.js .symbols .wasm.map].each do |extension|
+        FileUtils.rm_f("#{base_path}#{extension}")
+      end
+    end
+
+    def compile_wasm(c_path, compiler_flags, link_flags)
+      profile_flags = profile_compiler_flags
+      preload_flags = wasm_preload_flags
+      module_api_flags = ["-sINCOMING_MODULE_JS_API=canvas,print,printErr"]
+
+      with_wasm_shell_file do |shell_path|
+        command = [@cc, "-std=c11", *profile_flags, *compiler_flags, c_path, "-o", @output_path, "--shell-file", shell_path, *module_api_flags, *preload_flags, *link_flags]
+        stdout, stderr, status = Open3.capture3(*command)
+        return if status.success?
+
+        details = [stdout, stderr].reject(&:empty?).join
+        raise BuildError, details.empty? ? "C compiler failed" : "C compiler failed:\n#{details}"
+      end
+    rescue Errno::ENOENT
+      raise BuildError, "C compiler not found: #{@cc}"
+    end
+
+    def with_wasm_shell_file
+      Tempfile.create(["milk-tea-shell", ".html"]) do |file|
+        file.write(render_wasm_shell_template)
+        file.flush
+        file.close
+        yield file.path
+      end
+    end
+
+    def render_wasm_shell_template
+      template_source = load_wasm_shell_template_source
+      validate_wasm_shell_placeholder!(template_source, WASM_SHELL_SCRIPT_PLACEHOLDER, "Emscripten {{{ SCRIPT }}}")
+      validate_wasm_shell_placeholder!(template_source, WASM_SHELL_CANVAS_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_CANVAS }}}")
+      validate_wasm_shell_placeholder!(template_source, WASM_SHELL_OUTPUT_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_OUTPUT }}}")
+      validate_wasm_shell_placeholder!(template_source, WASM_SHELL_BOOTSTRAP_PLACEHOLDER, "Milk Tea {{{ MILK_TEA_BOOTSTRAP }}}")
+
+      template_source
+        .sub(WASM_SHELL_CANVAS_PLACEHOLDER, WASM_SHELL_CANVAS_TEMPLATE)
+        .sub(WASM_SHELL_OUTPUT_PLACEHOLDER, WASM_SHELL_OUTPUT_TEMPLATE)
+        .sub(WASM_SHELL_BOOTSTRAP_PLACEHOLDER, WASM_SHELL_BOOTSTRAP_TEMPLATE)
+    end
+
+    def load_wasm_shell_template_source
+      return WASM_SHELL_TEMPLATE.dup unless @html_template_path
+
+      File.read(@html_template_path)
+    end
+
+    def validate_wasm_shell_placeholder!(template_source, placeholder, label)
+      count = template_source.scan(Regexp.new(Regexp.escape(placeholder))).length
+      return if count == 1
+
+      template_path = @html_template_path || DEFAULT_WASM_SHELL_TEMPLATE_PATH
+      raise BuildError, "wasm HTML template must contain #{label} exactly once: #{template_path}"
+    end
+
+    def wasm_preload_flags
+      return [] unless target_wasm? && @preload_path
+
+      mount_path = "/#{File.basename(@preload_path)}"
+      ["--preload-file", "#{@preload_path}@#{mount_path}"]
+    end
+
     def target_windows?
       @platform == :windows
     end
 
-    def executable_extension
-      target_windows? ? ".exe" : ""
+    def target_wasm?
+      @platform == :wasm
+    end
+
+    def artifact_extension
+      return ".html" if target_wasm?
+      return ".exe" if target_windows?
+
+      ""
     end
 
     def profile_compiler_flags

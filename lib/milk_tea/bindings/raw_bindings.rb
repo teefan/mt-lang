@@ -57,9 +57,9 @@ module MilkTea
         name
       end
 
-      def link_flags
+      def link_flags(platform: nil)
         flags = []
-        flags.concat(vendored_library.link_flags) if vendored_library
+        flags.concat(vendored_library.link_flags(platform:)) if vendored_library
         flags.concat(@link_flags)
         flags.uniq
       end
@@ -106,7 +106,7 @@ module MilkTea
         report_path
       end
 
-      def build_flags(env: ENV, header_path: nil)
+      def build_flags(env: ENV, header_path: nil, platform: nil)
         resolved_header_path = header_path || self.header_path(env:)
         include_dir = File.dirname(resolved_header_path)
         flags = []
@@ -115,6 +115,7 @@ module MilkTea
           flags << "-D#{define}"
         end
         flags.concat(compiler_flags)
+        flags.concat(vendored_library.build_flags(platform:)) if vendored_library&.respond_to?(:build_flags)
         flags.uniq
       end
 
@@ -142,9 +143,13 @@ module MilkTea
         resolved_header_path
       end
 
-      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
-        @prepare&.call(self, env:, cc:)
-        vendored_library&.prepare!(env:, cc:)
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), platform: nil)
+        if @prepare
+          kwargs = { env:, cc: }
+          kwargs[:platform] = platform if prepare_accepts_keyword?(:platform)
+          @prepare.call(self, **kwargs)
+        end
+        vendored_library&.prepare!(env:, cc:, platform:)
       end
 
       private
@@ -190,6 +195,12 @@ module MilkTea
         kwargs[:declaration_name_prefixes] = declaration_name_prefixes unless declaration_name_prefixes.empty?
         kwargs[:allow_static_inline_functions] = true if @allow_static_inline_functions
         kwargs
+      end
+
+      def prepare_accepts_keyword?(keyword)
+        @prepare.parameters.any? do |kind, name|
+          kind == :keyrest || ((kind == :key || kind == :keyreq) && name == keyword)
+        end
       end
 
       def normalized_output(source)
@@ -794,7 +805,6 @@ module MilkTea
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
           vendored_library: vendored_raylib_library,
-          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           header_candidates: [
             vendored_raylib.source_root(root:).join("raylib.h").to_s,
           ],

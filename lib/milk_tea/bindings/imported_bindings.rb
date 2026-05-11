@@ -885,7 +885,6 @@ module MilkTea
         if method_params.any? { |param| param["mode"] }
           raise Error, "method generation for #{raw_name} in #{@policy_path} cannot wrap out/inout non-receiver parameters; exclude it from methods"
         end
-
         call_args = []
         call_args << "this" unless method_kind == :static
         call_args.concat(method_params.map { |param| param.fetch("name") })

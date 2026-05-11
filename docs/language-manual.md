@@ -2,6 +2,8 @@
 
 This manual documents the Milk Tea language as implemented today in the lexer, parser, semantic checker, and compiler tests.
 
+Package manifests and build or run workflow are documented separately in `docs/build-guide.md`.
+
 ## 1. Source Files And Modules
 
 Milk Tea source files use the `.mt` extension.

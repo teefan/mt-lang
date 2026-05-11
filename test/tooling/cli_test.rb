@@ -272,6 +272,27 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_build_command_compiles_wasm_with_fake_compiler
+    Dir.mktmpdir("milk-tea-cli-build-wasm") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "language-fixture")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["build", language_fixture_path, "--cc", compiler_path, "--platform", "wasm", "-o", output_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/built .*language_fixture\.mt -> .*language-fixture\.html/, out.string)
+      assert File.exist?("#{output_path}.html")
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, "--shell-file"
+      assert_includes invocation, File.expand_path("#{output_path}.html")
+    end
+  end
+
   def test_build_command_requires_option_values
     out = StringIO.new
     err = StringIO.new
@@ -334,6 +355,26 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_build_command_clean_removes_wasm_bundle_outputs
+    Dir.mktmpdir("milk-tea-cli-build-clean-wasm") do |dir|
+      output_path = File.join(dir, "custom-web.html")
+      File.write(output_path, "html")
+      File.write(File.join(dir, "custom-web.js"), "js")
+      File.write(File.join(dir, "custom-web.wasm"), "wasm")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["build", language_fixture_path, "--clean", "--platform", "wasm", "-o", output_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/cleaned .*custom-web\.html/, out.string)
+      refute File.exist?(output_path)
+      refute File.exist?(File.join(dir, "custom-web.js"))
+      refute File.exist?(File.join(dir, "custom-web.wasm"))
+    end
+  end
+
   def test_run_command_executes_built_program_and_returns_its_status
     Dir.mktmpdir("milk-tea-cli-run") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -349,6 +390,36 @@ class MilkTeaCliTest < Minitest::Test
       invocation = File.read(compiler_log).lines(chomp: true)
       refute_includes invocation, "-lm"
     end
+  end
+
+  def test_run_command_reports_how_to_stop_wasm_preview
+    out = StringIO.new
+    err = StringIO.new
+
+    fake_result = MilkTea::Run::Result.new(
+      stdout: "serving http://127.0.0.1:43123/web.html (press Ctrl-C to stop)\n",
+      stderr: "",
+      exit_status: 0,
+      output_path: "/tmp/web.html",
+      c_path: nil,
+      compiler: "/tmp/fake-emcc",
+      link_flags: [],
+      platform: :wasm,
+    )
+
+    runner = lambda do |_path, **kwargs|
+      kwargs.fetch(:preview_started).call(fake_result.stdout)
+      fake_result
+    end
+
+    status = with_singleton_method_override(MilkTea::Run, :run, runner) do
+      MilkTea::CLI.start(["run", language_fixture_path, "--platform", "wasm"], out:, err:)
+    end
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_equal fake_result.stdout, out.string
+    refute_match(/stop-preview/, out.string)
   end
 
   def test_bindgen_command_writes_output_file
@@ -484,6 +555,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc emit-c PATH/, err.string)
     assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc run \[PATH_OR_PACKAGE\]/, err.string)
+    refute_match(/mtc stop-preview \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc deps bootstrap/, err.string)
     assert_match(/mtc bindgen MODULE HEADER/, err.string)
     assert_match(/mtc dap/, err.string)
@@ -805,6 +877,23 @@ class MilkTeaCliTest < Minitest::Test
     ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
       candidate = File.join(entry, program)
       File.file?(candidate) && File.executable?(candidate)
+    end
+  end
+
+  def with_singleton_method_override(object, method_name, implementation)
+    singleton_class = class << object; self; end
+    original_name = "__cli_test_original_#{method_name}__"
+    original_defined = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
+    singleton_class.alias_method(original_name, method_name) if original_defined
+    singleton_class.define_method(method_name) do |*args, **kwargs, &block|
+      implementation.call(*args, **kwargs, &block)
+    end
+    yield
+  ensure
+    singleton_class.remove_method(method_name) if singleton_class.method_defined?(method_name)
+    if original_defined
+      singleton_class.alias_method(method_name, original_name)
+      singleton_class.remove_method(original_name)
     end
   end
 end
