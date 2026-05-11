@@ -229,6 +229,20 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_variadic_foreign_declarations_like_source
+    source = <<~MT
+      module std.stdio
+
+      import std.c.stdio as c
+
+      public foreign function print(format: str as cstr, ...) -> int = c.printf
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_array_char_zero_construction_like_source
     source = <<~MT
       module demo.array_char

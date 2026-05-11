@@ -74,8 +74,8 @@ module MilkTea
     ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :line) do
       def initialize(name:, type_params:, params:, return_type:, variadic:, line: nil) = super
     end
-    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :mapping, :visibility, :line) do
-      def initialize(name:, type_params:, params:, return_type:, mapping:, visibility:, line: nil) = super
+    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :line) do
+      def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, line: nil) = super
     end
     Param = Data.define(:name, :type, :line, :column) do
       def initialize(name:, type:, line: nil, column: nil) = super

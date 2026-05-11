@@ -465,17 +465,18 @@ module MilkTea
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
       params = nil
+      variadic = false
       return_type = nil
       mapping = nil
       with_type_param_names(type_params.map(&:name)) do
-        params = parse_foreign_params
+        params, variadic = parse_foreign_params(allow_variadic: true)
         consume(:arrow, "expected '->' before foreign function return type")
         return_type = parse_type_ref
         consume(:equal, "expected '=' before foreign function mapping")
         mapping = parse_expression
       end
       consume_end_of_statement
-      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, mapping:, visibility:, line:)
+      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, line:)
     end
 
     def parse_params(allow_variadic: false)
@@ -502,12 +503,18 @@ module MilkTea
       params
     end
 
-    def parse_foreign_params
+    def parse_foreign_params(allow_variadic: false)
       consume(:lparen, "expected '('")
       params = []
+      variadic = false
 
       unless check(:rparen)
         loop do
+          if allow_variadic && match(:ellipsis)
+            variadic = true
+            break
+          end
+
           params << parse_foreign_param
           break unless match(:comma)
           raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
@@ -515,6 +522,8 @@ module MilkTea
       end
 
       consume(:rparen, "expected ')' after parameters")
+      return [params, variadic] if allow_variadic
+
       params
     end
 

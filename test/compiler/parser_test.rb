@@ -1637,6 +1637,24 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "data_size", return_stmt.value.arguments[1].value.name
   end
 
+  def test_parses_variadic_foreign_function_declarations
+    source = <<~MT
+      module std.stdio
+
+      import std.c.stdio as c
+
+      public foreign function print(format: str as cstr, ...) -> int = c.printf
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    foreign_def = ast.declarations.last
+
+    assert_equal "print", foreign_def.name
+    assert_equal ["format"], foreign_def.params.map(&:name)
+    assert_equal true, foreign_def.variadic
+    assert_instance_of MilkTea::AST::MemberAccess, foreign_def.mapping
+  end
+
   def test_parses_format_string_precision_spec
     source = <<~MT
       module demo.fmt_spec
