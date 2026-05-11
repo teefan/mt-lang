@@ -90,6 +90,15 @@
         ]
       },
       {
+        "raw": "rlGetGlTextureFormats",
+        "params": [
+          { "name": "format", "type": "int" },
+          { "name": "gl_internal_format", "mode": "out", "type": "uint" },
+          { "name": "gl_format", "mode": "out", "type": "uint" },
+          { "name": "gl_type", "mode": "out", "type": "uint" }
+        ]
+      },
+      {
         "raw": "rlSetUniform",
         "type_params": ["T"],
         "params": [
@@ -105,6 +114,16 @@
           { "name": "size", "type": "uint" },
           { "name": "data", "type": "const_ptr[void]?" },
           { "name": "usage_hint", "type": "int" }
+        ]
+      },
+      {
+        "raw": "rlGenTextureMipmaps",
+        "params": [
+          { "name": "id", "type": "uint" },
+          { "name": "width", "type": "int" },
+          { "name": "height", "type": "int" },
+          { "name": "format", "type": "int" },
+          { "name": "mipmaps", "mode": "out", "type": "int" }
         ]
       },
       {

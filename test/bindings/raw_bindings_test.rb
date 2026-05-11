@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raygui rlights rlgl libc sdl3 box2d cjson libuv steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc sdl3 box2d cjson libuv steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -20,21 +20,28 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[ubyte]?", registry.fetch("raylib").function_return_type_overrides.fetch("LoadFileData")
     assert_equal "ptr[void]?", registry.fetch("raylib").function_return_type_overrides.fetch("MemAlloc")
     assert_equal "ptr[Material]?", registry.fetch("raylib").function_return_type_overrides.fetch("LoadMaterials")
+    assert_equal "std.c.raymath", registry.fetch("raymath").module_name
+    assert_equal ["m"], registry.fetch("raymath").link_libraries
+    assert_equal ["RAYMATH_STATIC_INLINE"], registry.fetch("raymath").bindgen_defines
+    assert_equal ["raylib.h"], registry.fetch("raymath").bindgen_include_directives
+    assert_includes registry.fetch("raymath").compiler_flags, "-DRAYMATH_STATIC_INLINE"
+    assert_equal [{ module_name: "std.c.raylib", alias: "rl" }], registry.fetch("raymath").module_imports
+    assert_equal "rl.Vector3", registry.fetch("raymath").type_overrides.fetch("Vector3")
+    assert_equal "rl.Quaternion", registry.fetch("raymath").type_overrides.fetch("Quaternion")
+    assert_includes registry.fetch("raymath").header_candidates.first, "third_party/raylib-upstream/src/raymath.h"
     assert_equal ["RAYGUI_IMPLEMENTATION"], registry.fetch("raygui").implementation_defines
     assert_equal ["raylib", "m"], registry.fetch("raygui").link_libraries
     assert_includes registry.fetch("raygui").header_candidates.first, "third_party/raylib-upstream/examples/shapes/raygui.h"
     assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raygui").function_param_type_overrides.fetch("LoadFontData"))
     assert_equal "ptr[ptr[char]]?", registry.fetch("raygui").function_return_type_overrides.fetch("GuiLoadIcons")
-    assert_equal "std.c.rlights", registry.fetch("rlights").module_name
-    assert_equal ["RLIGHTS_IMPLEMENTATION"], registry.fetch("rlights").implementation_defines
-    assert_equal ["raylib"], registry.fetch("rlights").link_libraries
-    assert_includes registry.fetch("rlights").header_candidates.first, "third_party/raylib-upstream/examples/shaders/rlights.h"
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
     assert_includes registry.fetch("rlgl").header_candidates.first, "third_party/raylib-upstream/src/rlgl.h"
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadTexture"))
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadTextureCubemap"))
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadShaderBuffer"))
+    assert_equal({ "batch" => "ptr[rlRenderBatch]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlSetRenderBatchActive"))
+    assert_equal({ "vsCode" => "cstr?", "fsCode" => "cstr?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadShaderProgram"))
     assert_equal "ptr[void]?", registry.fetch("rlgl").function_return_type_overrides.fetch("rlGetProcAddress")
     assert_equal "std.c.sdl3", registry.fetch("sdl3").module_name
     assert_equal ["SDL3"], registry.fetch("sdl3").link_libraries

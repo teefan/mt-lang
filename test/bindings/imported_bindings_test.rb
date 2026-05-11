@@ -9,11 +9,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
+    assert_equal ["raylib", "raymath", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
     assert_includes registry.fetch("raylib").policy_path, "/bindings/imported/raylib.binding.json"
+
+    assert_equal "std.raymath", registry.fetch("raymath").module_name
+    assert_equal "std.c.raymath", registry.fetch("raymath").raw_module_name
+    assert_includes registry.fetch("raymath").binding_path, "/std/raymath.mt"
+    assert_includes registry.fetch("raymath").policy_path, "/bindings/imported/raymath.binding.json"
 
     assert_equal "std.rlgl", registry.fetch("rlgl").module_name
     assert_equal "std.c.rlgl", registry.fetch("rlgl").raw_module_name
@@ -387,6 +392,13 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function get_file_name_without_ext\(file_path: str as cstr\) -> cstr = c\.GetFileNameWithoutExt$/, source)
     assert_match(/^public foreign function get_directory_path\(file_path: str as cstr\) -> cstr = c\.GetDirectoryPath$/, source)
     assert_match(/^public foreign function get_prev_directory_path\(dir_path: str as cstr\) -> cstr = c\.GetPrevDirectoryPath$/, source)
+    assert_match(/^public foreign function begin_mode_2d\(camera: Camera2D\) -> void = c\.BeginMode2D$/, source)
+    assert_match(/^public foreign function end_mode_2d\(\) -> void = c\.EndMode2D$/, source)
+    assert_match(/^public foreign function begin_mode_3d\(camera: Camera3D\) -> void = c\.BeginMode3D$/, source)
+    assert_match(/^public foreign function end_mode_3d\(\) -> void = c\.EndMode3D$/, source)
+    assert_match(/^public foreign function get_world_to_screen_2d\(position: Vector2, camera: Camera2D\) -> Vector2 = c\.GetWorldToScreen2D$/, source)
+    assert_match(/^public foreign function get_screen_to_world_2d\(position: Vector2, camera: Camera2D\) -> Vector2 = c\.GetScreenToWorld2D$/, source)
+    assert_match(/^public foreign function get_camera_matrix_2d\(camera: Camera2D\) -> Matrix = c\.GetCameraMatrix2D$/, source)
     assert_match(/^public foreign function make_directory\(dir_path: str as cstr\) -> int = c\.MakeDirectory$/, source)
     assert_match(/^public foreign function change_directory\(dir_path: str as cstr\) -> bool = c\.ChangeDirectory$/, source)
     assert_match(/^public foreign function is_path_file\(path: str as cstr\) -> bool = c\.IsPathFile$/, source)
@@ -406,8 +418,8 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function unload_file_data\(consuming data: ptr\[ubyte\]\) -> void = c\.UnloadFileData$/, source)
     assert_match(/^public foreign function load_file_text\(file_name: str as cstr\) -> ptr\[char\]\? = c\.LoadFileText$/, source)
     assert_match(/^public foreign function unload_file_text\(text: ptr\[char\]\) -> void = c\.UnloadFileText$/, source)
-    assert_match(/^public foreign function load_utf_8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
-    assert_match(/^public foreign function unload_utf_8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
+    assert_match(/^public foreign function load_utf8\(codepoints: const_ptr\[int\], length: int\) -> ptr\[char\]\? = c\.LoadUTF8$/, source)
+    assert_match(/^public foreign function unload_utf8\(text: ptr\[char\]\) -> void = c\.UnloadUTF8$/, source)
     assert_match(/^public foreign function image_format\(inout image: Image, new_format: int\) -> void = c\.ImageFormat$/, source)
     assert_match(/^public foreign function image_kernel_convolution\(inout image: Image, kernel: span\[float\]\) -> void = c\.ImageKernelConvolution\(image, kernel\.data, int<-kernel\.len\)$/, source)
     assert_match(/^public foreign function image_draw_text_ex\(inout dst: Image, font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color\) -> void = c\.ImageDrawTextEx$/, source)
@@ -417,16 +429,29 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function load_sound\(file_name: str as cstr\) -> Sound = c\.LoadSound$/, source)
     assert_match(/^public foreign function load_wave_from_memory\(file_type: str as cstr, file_data: span\[ubyte\]\) -> Wave = c\.LoadWaveFromMemory\(file_type, file_data\.data, int<-file_data\.len\)$/, source)
     assert_match(/^public foreign function set_clipboard_text\(text: str as cstr\) -> void = c\.SetClipboardText$/, source)
+    assert_match(/^public foreign function draw_line_3d\(start_pos: Vector3, end_pos: Vector3, color: Color\) -> void = c\.DrawLine3D$/, source)
+    assert_match(/^public foreign function draw_point_3d\(position: Vector3, color: Color\) -> void = c\.DrawPoint3D$/, source)
+    assert_match(/^public foreign function draw_circle_3d\(center: Vector3, radius: float, rotation_axis: Vector3, rotation_angle: float, color: Color\) -> void = c\.DrawCircle3D$/, source)
+    assert_match(/^public foreign function draw_triangle_3d\(v1: Vector3, v2: Vector3, v3: Vector3, color: Color\) -> void = c\.DrawTriangle3D$/, source)
     assert_match(/^public foreign function load_font_from_memory\(file_type: str as cstr, file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int\) -> Font = c\.LoadFontFromMemory$/, source)
     assert_match(/^public foreign function gen_texture_mipmaps\(inout texture: Texture2D\) -> void = c\.GenTextureMipmaps$/, source)
     assert_match(/^public foreign function load_font_data\(file_data: const_ptr\[ubyte\], data_size: int, font_size: int, codepoints: ptr\[int\]\?, codepoint_count: int, kind: FontType, out glyph_count: int\) -> ptr\[GlyphInfo\] = c\.LoadFontData$/, source)
     assert_match(/^public foreign function gen_image_font_atlas\(glyphs: const_ptr\[GlyphInfo\], out glyph_recs: ptr\[Rectangle\], glyph_count: int, font_size: int, padding: int, pack_method: int\) -> Image = c\.GenImageFontAtlas$/, source)
     assert_match(/^public foreign function load_codepoints\(text: str as cstr, out count: int\) -> ptr\[int\]\? = c\.LoadCodepoints$/, source)
     assert_match(/^public foreign function unload_codepoints\(codepoints: ptr\[int\]\) -> void = c\.UnloadCodepoints$/, source)
-    assert_match(/^public foreign function codepoint_to_utf_8\(codepoint: int, out utf_8_size: int\) -> cstr = c\.CodepointToUTF8$/, source)
+    assert_match(/^public foreign function codepoint_to_utf8\(codepoint: int, out utf_8_size: int\) -> cstr = c\.CodepointToUTF8$/, source)
     assert_match(/^public foreign function text_subtext\(text: str as cstr, position: int, length: int\) -> cstr = c\.TextSubtext$/, source)
     assert_match(/^public foreign function text_remove_spaces\(text: str as cstr\) -> cstr = c\.TextRemoveSpaces$/, source)
     assert_match(/^public foreign function load_fragment_shader\(fs_file_name: str as cstr\) -> Shader = c\.LoadShader\(null, fs_file_name\)$/, source)
+    assert_match(/methods Color:.*?public function alpha\(alpha: float\) -> Color:\n\s+return color_alpha\(this, alpha\)/m, source)
+    assert_match(/methods Color:.*?public static function from_hsv\(hue: float, saturation: float, value: float\) -> Color:\n\s+return color_from_hsv\(hue, saturation, value\)/m, source)
+    assert_match(/methods Image:.*?public static function text\(text: str, font_size: int, color: Color\) -> Image:\n\s+return image_text\(text, font_size, color\)/m, source)
+    assert_match(/methods Image:.*?public editable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
+    assert_match(/methods Wave:.*?public function copy\(\) -> Wave:\n\s+return wave_copy\(this\)/m, source)
+    assert_match(/methods ptr\[Wave\]:.*?public function crop\(init_frame: int, final_frame: int\) -> void:\n\s+wave_crop\(this, init_frame, final_frame\).*?public function format\(sample_rate: int, sample_size: int, channels: int\) -> void:\n\s+wave_format\(this, sample_rate, sample_size, channels\)/m, source)
+    refute_match(/^public foreign function begin_mode2_d\(/, source)
+    refute_match(/^public foreign function get_world_to_screen2_d\(/, source)
+    refute_match(/^public foreign function draw_line3_d\(/, source)
     refute_match(/cstr_as_str/, source)
     refute_match(/^foreign function mt_raw_/, source)
     refute_match(/^public function load_file_data\(/, source)
@@ -455,10 +480,36 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function load_vertex_buffer\[T\]\(buffer: ptr\[T\] as const_ptr\[void\], size: int, dynamic: bool\) -> uint = c\.rlLoadVertexBuffer$/, source)
     assert_match(/^public foreign function load_texture\(data: const_ptr\[void\]\?, width: int, height: int, format: int, mipmap_count: int\) -> uint = c\.rlLoadTexture$/, source)
     assert_match(/^public foreign function load_texture_cubemap\(data: const_ptr\[void\]\?, size: int, format: int, mipmap_count: int\) -> uint = c\.rlLoadTextureCubemap$/, source)
+    assert_match(/^public foreign function set_render_batch_active\(batch: ptr\[RenderBatch\]\?\) -> void = c\.rlSetRenderBatchActive$/, source)
+    assert_match(/^public foreign function get_gl_texture_formats\(format: int, out gl_internal_format: uint, out gl_format: uint, out gl_type: uint\) -> void = c\.rlGetGlTextureFormats$/, source)
+    assert_match(/^public foreign function gen_texture_mipmaps\(id: uint, width: int, height: int, format: int, out mipmaps: int\) -> void = c\.rlGenTextureMipmaps$/, source)
     assert_match(/^public foreign function get_proc_address\(proc_name: str as cstr\) -> ptr\[void\]\? = c\.rlGetProcAddress$/, source)
+    assert_match(/^public foreign function load_shader_program\(vs_code: cstr\?, fs_code: cstr\?\) -> uint = c\.rlLoadShaderProgram$/, source)
     assert_match(/^public foreign function set_uniform\[T\]\(loc_index: int, value: ptr\[T\] as const_ptr\[void\], uniform_type: int, count: int\) -> void = c\.rlSetUniform$/, source)
     assert_match(/^public foreign function load_shader_buffer\(size: uint, data: const_ptr\[void\]\?, usage_hint: int\) -> uint = c\.rlLoadShaderBuffer$/, source)
     assert_match(/^public foreign function update_shader_buffer\[T\]\(id: uint, data: ptr\[T\] as const_ptr\[void\], data_size: uint, offset: uint\) -> void = c\.rlUpdateShaderBuffer$/, source)
+  end
+
+  def test_checked_in_raymath_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("raymath")
+
+    assert_includes binding.check!, "/std/c/raymath.mt"
+
+    source = File.read(binding.binding_path)
+    assert_match(/^import std\.c\.raymath as c$/, source)
+    assert_match(/^import std\.c\.raylib as rl$/, source)
+    assert_match(/^public type float3 = c\.float3$/, source)
+    assert_match(/^public type float16 = c\.float16$/, source)
+    assert_match(/^public foreign function clamp\(value: float, min: float, max: float\) -> float = c\.Clamp$/, source)
+    assert_match(/^public foreign function vector2_zero\(\) -> rl\.Vector2 = c\.Vector2Zero$/, source)
+    refute_match(/^public foreign function vector_2zero\(\) -> rl\.Vector2 = c\.Vector2Zero$/, source)
+    refute_match(/^public foreign function vector_2_zero\(\) -> rl\.Vector2 = c\.Vector2Zero$/, source)
+    assert_match(/^public foreign function vector3_ortho_normalize\(inout v1: rl\.Vector3, inout v2: rl\.Vector3\) -> void = c\.Vector3OrthoNormalize$/, source)
+    assert_match(/^public foreign function quaternion_to_axis_angle\(q: rl\.Quaternion, out axis: rl\.Vector3, out angle: float\) -> void = c\.QuaternionToAxisAngle$/, source)
+    assert_match(/^public foreign function matrix_decompose\(mat: rl\.Matrix, out translation: rl\.Vector3, out rotation: rl\.Quaternion, out scale: rl\.Vector3\) -> void = c\.MatrixDecompose$/, source)
+    assert_match(/methods rl\.Vector2:.*?public static function zero\(\) -> rl\.Vector2:\n\s+return vector2_zero\(\).*?public function add\(v2: rl\.Vector2\) -> rl\.Vector2:\n\s+return vector2_add\(this, v2\)/m, source)
+    assert_match(/methods rl\.Matrix:.*?public function determinant\(\) -> float:\n\s+return matrix_determinant\(this\).*?public static function identity\(\) -> rl\.Matrix:\n\s+return matrix_identity\(\)/m, source)
+    assert_match(/methods rl\.Quaternion:.*?public static function identity\(\) -> rl\.Quaternion:\n\s+return quaternion_identity\(\).*?public function nlerp\(q2: rl\.Vector4, amount: float\) -> rl\.Quaternion:\n\s+return quaternion_nlerp\(this, q2, amount\)/m, source)
   end
 
   def test_checked_in_raygui_binding_matches_policy_and_loads
