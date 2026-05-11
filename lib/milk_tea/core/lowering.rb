@@ -5319,6 +5319,7 @@ module MilkTea
           owner_analysis:,
           expected_type: expected_type || call_type,
         )
+        lowered_call = append_variadic_foreign_call_arguments(lowered_call, call.arguments, binding.type, env:)
 
         [lowered, lowered_call, call_type, release_assignments, cleanup_statements]
       ensure
@@ -5734,6 +5735,7 @@ module MilkTea
           owner_analysis:,
           expected_type: type,
         )
+        lowered_expression = append_variadic_foreign_call_arguments(lowered_expression, expression.arguments, binding.type, env:)
 
         converted = foreign_identity_projection_expression(lowered_expression, type)
         return converted if converted
@@ -5741,6 +5743,20 @@ module MilkTea
         lowered_expression
       ensure
         @current_type_substitutions = previous_type_substitutions
+      end
+
+      def append_variadic_foreign_call_arguments(lowered_expression, arguments, function_type, env:)
+        return lowered_expression unless function_type.variadic
+
+        extra_arguments = arguments.drop(function_type.params.length)
+        return lowered_expression if extra_arguments.empty?
+        return lowered_expression unless lowered_expression.is_a?(IR::Call)
+
+        IR::Call.new(
+          callee: lowered_expression.callee,
+          arguments: lowered_expression.arguments + extra_arguments.map { |argument| lower_contextual_expression(argument.value, env:, expected_type: nil) },
+          type: lowered_expression.type,
+        )
       end
 
       def lower_inline_foreign_mapping_expression(expression, mapping_env:, replacements:, owner_analysis:, expected_type: nil)

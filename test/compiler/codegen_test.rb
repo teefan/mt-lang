@@ -1543,6 +1543,25 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/DrawText\(TextFormat\("Collision Area: %i", area\), \(GetScreenWidth\(\) \/ 2\) - 100, 20, 20, std_sample_BLACK\);/, generated)
   end
 
+  def test_generate_c_for_variadic_foreign_mapping_calls
+    source = <<~MT
+      module demo.variadic_foreign
+
+      import std.stdio as stdio
+
+      function main() -> int:
+          var buffer = zero[array[char, 64]]
+          stdio.print("ok=%d\\n", 1)
+          stdio.format_to(ptr_of(buffer[0]), 64, "n=%d", 7)
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/printf\("ok=%d\\n", 1\);/, generated)
+    assert_match(/snprintf\([^\n]*"n=%d", 7\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_identity_pointer_projections
     source = <<~MT
       module demo.main
