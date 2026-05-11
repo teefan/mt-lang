@@ -507,6 +507,39 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_generic_struct_only_in_expression
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-generic-expression-only") do |dir|
+      source_path = File.join(dir, "generic-expression-only.mt")
+
+      File.write(source_path, [
+        "module demo.generic_expression_only_runtime",
+        "",
+        "struct Box[T]:",
+        "    value: T",
+        "",
+        "function main() -> int:",
+        "    let ok: bool = Box[int](value = 7).value == 7",
+        "    if ok:",
+        "        return 1",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 1, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_generic_functions
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

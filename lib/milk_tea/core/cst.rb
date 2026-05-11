@@ -8,34 +8,26 @@ module MilkTea
       end
 
       def reconstruct_normalized
+        reconstruct_from_tokens(normalize_spaces: true)
+      end
+
+      def reconstruct_from_tokens(normalize_spaces: false)
         return "" if tokens.empty?
 
         tokens.each_with_object(+"") do |token, result|
-          token.leading_trivia.each do |entry|
-            if entry.kind == :space && entry.column > 1
-              result << " "
-            else
-              result << segment_text(entry.start_offset, entry.end_offset, entry.text)
-            end
-          end
+          append_trivia(result, token.leading_trivia, normalize_spaces:, leading: true)
           result << segment_text(token.start_offset, token.end_offset, token.lexeme) unless token.eof?
-          token.trailing_trivia.each do |entry|
-            if entry.kind == :space
-              result << " "
-            else
-              result << segment_text(entry.start_offset, entry.end_offset, entry.text)
-            end
-          end
+          append_trivia(result, token.trailing_trivia, normalize_spaces:, leading: false)
         end
       end
 
-      def reconstruct_from_tokens
-        return "" if tokens.empty?
-
-        tokens.each_with_object(+"") do |token, result|
-          token.leading_trivia.each { |entry| result << segment_text(entry.start_offset, entry.end_offset, entry.text) }
-          result << segment_text(token.start_offset, token.end_offset, token.lexeme) unless token.eof?
-          token.trailing_trivia.each { |entry| result << segment_text(entry.start_offset, entry.end_offset, entry.text) }
+      def append_trivia(result, entries, normalize_spaces:, leading:)
+        entries.each do |entry|
+          if normalize_spaces && entry.kind == :space && (!leading || entry.column > 1)
+            result << " "
+          else
+            result << segment_text(entry.start_offset, entry.end_offset, entry.text)
+          end
         end
       end
 

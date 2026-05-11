@@ -615,7 +615,7 @@ Format strings have type `str` and are valid anywhere a `str` value is accepted.
 
 The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
 
-- `std.fmt.string` — returns `string.String`
+- `std.fmt.format` — returns `string.String`
 
 ## 9. Safety And Conversion Rules
 

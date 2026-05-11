@@ -422,7 +422,7 @@ module MilkTea
     end
 
     def uses_text_buffer_helpers?
-      emitted_functions.any? { |function| function_uses_named_call?(function, %w[mt_str_builder_len mt_str_builder_as_cstr mt_str_builder_clear mt_str_builder_assign mt_str_builder_append mt_str_builder_prepare_write]) }
+      uses_str_builder_helpers?
     end
 
     def uses_str_builder_helpers?
@@ -3171,6 +3171,10 @@ module MilkTea
         case statement
         when IR::LocalDecl
           collect_generic_struct_type(statement.type, generic_struct_types, visited)
+          collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited)
+        when IR::Assignment
+          collect_generic_struct_types_from_expression(statement.target, generic_struct_types, visited)
+          collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited)
         when IR::BlockStmt
           collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
         when IR::WhileStmt
@@ -3182,15 +3186,21 @@ module MilkTea
           collect_generic_struct_types_from_statements(statement.body, generic_struct_types, visited)
           collect_generic_struct_types_from_statements([statement.post], generic_struct_types, visited)
         when IR::IfStmt
+          collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
           collect_generic_struct_types_from_statements(statement.then_body, generic_struct_types, visited)
           collect_generic_struct_types_from_statements(statement.else_body, generic_struct_types, visited) if statement.else_body
         when IR::SwitchStmt
+          collect_generic_struct_types_from_expression(statement.expression, generic_struct_types, visited)
           statement.cases.each do |switch_case|
             collect_generic_struct_types_from_statements(switch_case.body, generic_struct_types, visited)
           end
         when IR::StaticAssert
           collect_generic_struct_types_from_expression(statement.condition, generic_struct_types, visited)
           collect_generic_struct_types_from_expression(statement.message, generic_struct_types, visited)
+        when IR::ReturnStmt
+          collect_generic_struct_types_from_expression(statement.value, generic_struct_types, visited) if statement.value
+        when IR::ExpressionStmt
+          collect_generic_struct_types_from_expression(statement.expression, generic_struct_types, visited)
         end
       end
     end
@@ -3203,6 +3213,7 @@ module MilkTea
         collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
       when IR::Call
+        collect_generic_struct_type(expression.type, generic_struct_types, visited)
         collect_generic_struct_types_from_expression(expression.callee, generic_struct_types, visited) unless expression.callee.is_a?(String)
         expression.arguments.each { |argument| collect_generic_struct_types_from_expression(argument, generic_struct_types, visited) }
       when IR::Unary
@@ -3225,6 +3236,7 @@ module MilkTea
       when IR::Cast
         collect_generic_struct_types_from_expression(expression.expression, generic_struct_types, visited)
       when IR::AggregateLiteral
+        collect_generic_struct_type(expression.type, generic_struct_types, visited)
         expression.fields.each { |field| collect_generic_struct_types_from_expression(field.value, generic_struct_types, visited) }
       when IR::ArrayLiteral
         expression.elements.each { |element| collect_generic_struct_types_from_expression(element, generic_struct_types, visited) }

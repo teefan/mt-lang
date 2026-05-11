@@ -38,7 +38,7 @@ If code allocates, takes an address, dereferences a raw pointer, performs an FFI
 
 FFI visibility belongs at the declaration site. Raw `external module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
-The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.string(f"...")` when ownership must escape.
+The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.format(f"...")` when ownership must escape.
 
 ### 2. C is the ABI ground truth
 
@@ -804,7 +804,7 @@ Implemented core modules:
 - `std.maybe` provides `Maybe[T]` for APIs where an explicit optional value is clearer than a nullable pointer.
 - `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
-- `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.string(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
+- `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.format(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
 - `std.async` provides the first-party async runtime surface.
 
 The self-hosting preparation boundary is now clear: the standard library has owned text, borrowed string helpers, explicit memory utilities, maybe/status sum types, and async runtime support. The remaining self-hosting work is not another hidden stdlib dependency; it is the actual compiler port: AST data structures, lexer, parser, type representation, semantic analysis, lowering, C generation, module loading, CLI behavior, and eventually bindgen strategy.

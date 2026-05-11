@@ -12,7 +12,7 @@ public function append(output: ref[string.String], text: str) -> void:
     return
 
 
-public function string(text: str) -> string.String:
+public function format(text: str) -> string.String:
     return string.String.from_str(text)
 
 

@@ -807,7 +807,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_type_checks_std_fmt_string_with_format_literal
+  def test_type_checks_std_fmt_format_with_format_literal
     source = <<~MT
       module demo.format
 
@@ -815,7 +815,7 @@ class MilkTeaSemaTest < Minitest::Test
       import std.string as string
 
       function main(count: ubyte, delta: short, ticks: ulong) -> int:
-          var text = fmt.string(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
+          var text = fmt.format(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
           defer text.release()
           return int<-text.count()
     MT
@@ -3562,11 +3562,15 @@ class MilkTeaSemaTest < Minitest::Test
 
       function main() -> int:
           break
-      async function maybe_value(handle: ptr[int]?) -> ptr[int]?:
-        return handle
+    MT
 
-      async function main(handle: ptr[int]?) -> int:
-        let value = await maybe_value(handle) else:
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(break_source)
+    end
+    assert_match(/break must be inside a loop/, error.message)
+
+    continue_source = <<~MT
+      module demo.bad
 
       function main() -> int:
           continue

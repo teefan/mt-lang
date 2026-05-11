@@ -563,24 +563,19 @@ module MilkTea
     end
 
     def parse_function_type_ref
-      consume(:lparen, "expected '(' after fn")
-      params = []
-
-      unless check(:rparen)
-        loop do
-          params << parse_function_type_param
-          break unless match(:comma)
-        end
+      parse_callable_type_ref(keyword: "fn", param_context: "function type parameters") do |params, return_type|
+        AST::FunctionType.new(params:, return_type:)
       end
-
-      consume(:rparen, "expected ')' after function type parameters")
-      consume(:arrow, "expected '->' after function type parameters")
-      return_type = parse_type_ref
-      AST::FunctionType.new(params:, return_type:)
     end
 
     def parse_proc_type_ref
-      consume(:lparen, "expected '(' after proc")
+      parse_callable_type_ref(keyword: "proc", param_context: "proc type parameters") do |params, return_type|
+        AST::ProcType.new(params:, return_type:)
+      end
+    end
+
+    def parse_callable_type_ref(keyword:, param_context:)
+      consume(:lparen, "expected '(' after #{keyword}")
       params = []
 
       unless check(:rparen)
@@ -590,10 +585,10 @@ module MilkTea
         end
       end
 
-      consume(:rparen, "expected ')' after proc type parameters")
-      consume(:arrow, "expected '->' after proc type parameters")
+      consume(:rparen, "expected ')' after #{param_context}")
+      consume(:arrow, "expected '->' after #{param_context}")
       return_type = parse_type_ref
-      AST::ProcType.new(params:, return_type:)
+      yield params, return_type
     end
 
     def parse_function_type_param

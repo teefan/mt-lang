@@ -327,7 +327,7 @@ class MilkTeaParserTest < Minitest::Test
       import std.string as string
 
       function main(count: int) -> int:
-          let text = fmt.string(f"count=\#{count} ok=\#{true}")
+          let text = fmt.format(f"count=\#{count} ok=\#{true}")
           return int<-text.count()
     MT
 
