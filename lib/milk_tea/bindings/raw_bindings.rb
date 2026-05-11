@@ -253,6 +253,25 @@ module MilkTea
         "Mesh" => { "indices" => "ptr[ushort]?" },
       }.freeze
 
+      libuv_function_param_overrides = {
+        "uv_getaddrinfo" => {
+          "node" => "cstr?",
+          "service" => "cstr?",
+          "hints" => "const_ptr[addrinfo]?",
+        },
+        "uv_freeaddrinfo" => { "ai" => "ptr[addrinfo]?" },
+      }.freeze
+
+      libuv_function_return_overrides = {
+        "uv_default_loop" => "ptr[uv_loop_t]?",
+        "uv_loop_new" => "ptr[uv_loop_t]?",
+        "uv_handle_get_data" => "ptr[void]?",
+        "uv_req_get_data" => "ptr[void]?",
+        "uv_dlerror" => "cstr?",
+        "uv_key_get" => "ptr[void]?",
+        "uv_loop_get_data" => "ptr[void]?",
+      }.freeze
+
       raylib_function_param_overrides = {
         "LoadAutomationEventList" => { "fileName" => "cstr?" },
         "LoadFontEx" => { "codepoints" => "ptr[int]?" },
@@ -669,6 +688,7 @@ module MilkTea
         "SDL_LoadSurface" => "ptr[SDL_Surface]?",
         "SDL_LoadSurface_IO" => "ptr[SDL_Surface]?",
         "SDL_MapGPUTransferBuffer" => "ptr[void]?",
+        "SDL_malloc" => "ptr[void]?",
         "SDL_OpenFileStorage" => "ptr[SDL_Storage]?",
         "SDL_OpenHaptic" => "ptr[SDL_Haptic]?",
         "SDL_OpenHapticFromJoystick" => "ptr[SDL_Haptic]?",
@@ -996,6 +1016,8 @@ module MilkTea
             "tcflag_t" => "uint",
             "termios" => "void",
           },
+          function_param_type_overrides: libuv_function_param_overrides,
+          function_return_type_overrides: libuv_function_return_overrides,
           header_candidates: [
             vendored_libuv.header_path(root:).to_s,
           ],

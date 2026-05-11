@@ -371,10 +371,10 @@ external module std.c.libuv:
 
     external function uv_library_shutdown() -> void
     external function uv_replace_allocator(malloc_func: fn(arg0: ptr_uint) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void], calloc_func: fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> int
-    external function uv_default_loop() -> ptr[uv_loop_t]
+    external function uv_default_loop() -> ptr[uv_loop_t]?
     external function uv_loop_init(loop: ptr[uv_loop_t]) -> int
     external function uv_loop_close(loop: ptr[uv_loop_t]) -> int
-    external function uv_loop_new() -> ptr[uv_loop_t]
+    external function uv_loop_new() -> ptr[uv_loop_t]?
     external function uv_loop_delete(arg0: ptr[uv_loop_t]) -> void
     external function uv_loop_size() -> ptr_uint
     external function uv_loop_alive(loop: const_ptr[uv_loop_t]) -> int
@@ -491,11 +491,11 @@ external module std.c.libuv:
     external function uv_handle_size(type_: uv_handle_type) -> ptr_uint
     external function uv_handle_get_type(handle: const_ptr[uv_handle_t]) -> uv_handle_type
     external function uv_handle_type_name(type_: uv_handle_type) -> cstr
-    external function uv_handle_get_data(handle: const_ptr[uv_handle_t]) -> ptr[void]
+    external function uv_handle_get_data(handle: const_ptr[uv_handle_t]) -> ptr[void]?
     external function uv_handle_get_loop(handle: const_ptr[uv_handle_t]) -> ptr[uv_loop_t]
     external function uv_handle_set_data(handle: ptr[uv_handle_t], data: ptr[void]) -> void
     external function uv_req_size(type_: uv_req_type) -> ptr_uint
-    external function uv_req_get_data(req: const_ptr[uv_req_t]) -> ptr[void]
+    external function uv_req_get_data(req: const_ptr[uv_req_t]) -> ptr[void]?
     external function uv_req_set_data(req: ptr[uv_req_t], data: ptr[void]) -> void
     external function uv_req_get_type(req: const_ptr[uv_req_t]) -> uv_req_type
     external function uv_req_type_name(type_: uv_req_type) -> cstr
@@ -878,8 +878,8 @@ external module std.c.libuv:
         addrinfo: ptr[addrinfo]
         retcode: int
 
-    external function uv_getaddrinfo(loop: ptr[uv_loop_t], req: ptr[uv_getaddrinfo_t], getaddrinfo_cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[addrinfo]) -> void, node: cstr, service: cstr, hints: const_ptr[addrinfo]) -> int
-    external function uv_freeaddrinfo(ai: ptr[addrinfo]) -> void
+    external function uv_getaddrinfo(loop: ptr[uv_loop_t], req: ptr[uv_getaddrinfo_t], getaddrinfo_cb: fn(arg0: ptr[uv_getaddrinfo_t], arg1: int, arg2: ptr[addrinfo]) -> void, node: cstr?, service: cstr?, hints: const_ptr[addrinfo]?) -> int
+    external function uv_freeaddrinfo(ai: ptr[addrinfo]?) -> void
 
     struct uv_getnameinfo_s = c"uv_getnameinfo_t":
         data: ptr[void]
@@ -1310,7 +1310,7 @@ external module std.c.libuv:
     external function uv_dlopen(filename: cstr, lib: ptr[uv_lib_t]) -> int
     external function uv_dlclose(lib: ptr[uv_lib_t]) -> void
     external function uv_dlsym(lib: ptr[uv_lib_t], name: cstr, ptr: ptr[ptr[void]]) -> int
-    external function uv_dlerror(lib: const_ptr[uv_lib_t]) -> cstr
+    external function uv_dlerror(lib: const_ptr[uv_lib_t]) -> cstr?
     external function uv_mutex_init(handle: ptr[uv_mutex_t]) -> int
     external function uv_mutex_init_recursive(handle: ptr[uv_mutex_t]) -> int
     external function uv_mutex_destroy(handle: ptr[uv_mutex_t]) -> void
@@ -1342,7 +1342,7 @@ external module std.c.libuv:
     external function uv_once(guard: ptr[uv_once_t], callback: fn() -> void) -> void
     external function uv_key_create(key: ptr[uv_key_t]) -> int
     external function uv_key_delete(key: ptr[uv_key_t]) -> void
-    external function uv_key_get(key: ptr[uv_key_t]) -> ptr[void]
+    external function uv_key_get(key: ptr[uv_key_t]) -> ptr[void]?
     external function uv_key_set(key: ptr[uv_key_t], value: ptr[void]) -> void
     external function uv_gettimeofday(tv: ptr[uv_timeval64_t]) -> int
 
@@ -1437,7 +1437,7 @@ external module std.c.libuv:
         inotify_watchers: ptr[void]
         inotify_fd: int
 
-    external function uv_loop_get_data(arg0: const_ptr[uv_loop_t]) -> ptr[void]
+    external function uv_loop_get_data(arg0: const_ptr[uv_loop_t]) -> ptr[void]?
     external function uv_loop_set_data(arg0: ptr[uv_loop_t], data: ptr[void]) -> void
     external function uv_utf16_length_as_wtf8(utf16: const_ptr[ushort], utf16_len: ptr_int) -> ptr_uint
     external function uv_utf16_to_wtf8(utf16: const_ptr[ushort], utf16_len: ptr_int, wtf8_ptr: ptr[ptr[char]], wtf8_len_ptr: ptr[ptr_uint]) -> int

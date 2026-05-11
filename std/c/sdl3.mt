@@ -45,7 +45,7 @@ external module std.c.sdl3:
     enum SDL_DUMMY_ENUM: int
         DUMMY_ENUM_VALUE = 0
 
-    external function SDL_malloc(size: ptr_uint) -> ptr[void]
+    external function SDL_malloc(size: ptr_uint) -> ptr[void]?
     external function SDL_calloc(nmemb: ptr_uint, size: ptr_uint) -> ptr[void]?
     external function SDL_realloc(mem: ptr[void]?, size: ptr_uint) -> ptr[void]?
     external function SDL_free(mem: ptr[void]?) -> void
