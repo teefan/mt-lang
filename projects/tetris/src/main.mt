@@ -63,6 +63,7 @@ const cells_t_3: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 0,
 const cells_z_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
 const cells_z_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
 
+
 function make_game() -> Game:
     var game = zero[Game]
     game.reset()

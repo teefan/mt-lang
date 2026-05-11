@@ -4,51 +4,6 @@
   "raw_import_alias": "c",
   "types": {},
   "constants": {},
-  "methods": [
-    {
-      "type": "rl.Vector2",
-      "include_prefixes": ["Vector2"],
-      "strip_prefix": "Vector2"
-    },
-    {
-      "type": "rl.Vector3",
-      "include_prefixes": ["Vector3"],
-      "exclude": ["Vector3OrthoNormalize"],
-      "strip_prefix": "Vector3"
-    },
-    {
-      "type": "rl.Vector4",
-      "include_prefixes": ["Vector4"],
-      "strip_prefix": "Vector4"
-    },
-    {
-      "type": "rl.Matrix",
-      "include_prefixes": ["Matrix"],
-      "exclude": ["MatrixDecompose"],
-      "strip_prefix": "Matrix"
-    },
-    {
-      "type": "rl.Quaternion",
-      "receiver_types": ["rl.Quaternion", "rl.Vector4"],
-      "include_prefixes": ["Quaternion"],
-      "exclude": [
-        "QuaternionAdd",
-        "QuaternionAddValue",
-        "QuaternionSubtract",
-        "QuaternionSubtractValue",
-        "QuaternionLength",
-        "QuaternionNormalize",
-        "QuaternionInvert",
-        "QuaternionMultiply",
-        "QuaternionScale",
-        "QuaternionDivide",
-        "QuaternionLerp",
-        "QuaternionEquals",
-        "QuaternionToAxisAngle"
-      ],
-      "strip_prefix": "Quaternion"
-    }
-  ],
   "functions": {
     "overrides": [
       {

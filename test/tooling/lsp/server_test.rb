@@ -120,6 +120,27 @@ class LSPServerTest < Minitest::Test
         return 1
   MT
 
+  SOURCE_WITH_EDITABLE_METHOD_RECEIVER_COMPLETION = <<~MT
+    struct Counter:
+        value: int
+
+    methods Counter:
+        editable function reset():
+            this.value = 0
+  MT
+
+  SOURCE_WITH_MEMBER_CHAIN_HOVER = <<~MT
+    struct Piece:
+        kind: int
+
+    struct Game:
+        active: Piece
+
+    methods Game:
+        function current_kind() -> int:
+            return this.active.kind
+  MT
+
   SOURCE_WITH_HOVER_DOCS = <<~MT
     ## Adds two values.
     ## Used by main.
@@ -771,6 +792,68 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_on_imported_type_static_method_uses_qualified_receiver
+    Dir.mktmpdir("milk-tea-lsp-hover-imported-type") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      foo_source = <<~MT
+        module std.foo
+
+        public struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            public static function zero() -> int:
+                return 0
+      MT
+      main_source = <<~MT
+        module app
+
+        import std.foo as foo
+
+        public function main() -> int:
+            return foo.Point.zero()
+      MT
+
+      foo_path = File.join(std_dir, "foo.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(foo_path, foo_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      foo_uri = path_to_uri(foo_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("foo.Point.zero") }
+        call_char = main_source.lines[call_line].index("zero") + 1
+        definition_line = foo_source.lines.index { |line| line.include?("static function zero") }
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "static function zero() -> int"
+        assert_includes hover_value, "Defined at: [std/foo.mt:#{definition_line + 1}](#{foo_uri}#L#{definition_line + 1})"
+      end
+    end
+  end
+
   def test_document_link_resolves_existing_relative_resource_path_string
     Dir.mktmpdir("milk-tea-lsp-doc-link") do |dir|
       assets_dir = File.join(dir, "assets")
@@ -830,6 +913,90 @@ class LSPServerTest < Minitest::Test
       lines = locations.map { |loc| loc.dig("range", "start", "line") }
       assert_includes lines, 0
       assert_includes lines, 4
+    end
+  end
+
+  def test_references_on_imported_type_static_method_are_receiver_scoped
+    Dir.mktmpdir("milk-tea-lsp-refs-imported-type") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      foo_source = <<~MT
+        module std.foo
+
+        public struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            public static function zero() -> int:
+                return 0
+
+        public function call_zero() -> int:
+            return Point.zero()
+      MT
+      other_source = <<~MT
+        module app.other
+
+        public function zero() -> int:
+            return 0
+
+        public function call_zero() -> int:
+            return zero()
+      MT
+      main_source = <<~MT
+        module app
+
+        import std.foo as foo
+
+        public function main() -> int:
+            return foo.Point.zero()
+      MT
+
+      foo_path = File.join(std_dir, "foo.mt")
+      other_path = File.join(dir, "other.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(foo_path, foo_source)
+      File.write(other_path, other_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      foo_uri = path_to_uri(foo_path)
+      other_uri = path_to_uri(other_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("foo.Point.zero") }
+        call_char = main_source.lines[call_line].index("zero") + 1
+
+        response = client.send_request("textDocument/references", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char },
+          "context" => { "includeDeclaration" => true }
+        })
+
+        locations = response.fetch("result")
+        starts = locations.map { |loc| [loc["uri"], loc.dig("range", "start", "line")] }
+        foo_definition_line = foo_source.lines.index { |line| line.include?("static function zero") }
+        foo_call_line = foo_source.lines.index { |line| line.include?("Point.zero") }
+
+        assert_includes starts, [foo_uri, foo_definition_line]
+        assert_includes starts, [foo_uri, foo_call_line]
+        assert_includes starts, [main_uri, call_line]
+        refute_includes starts, [other_uri, other_source.lines.index { |line| line.include?("function zero") }]
+        refute_includes starts, [other_uri, other_source.lines.index { |line| line.include?("return zero()") }]
+      end
     end
   end
 
@@ -1050,6 +1217,69 @@ class LSPServerTest < Minitest::Test
 
     assert_equal "textDocument/publishDiagnostics", published.fetch("method")
     assert_equal uri, published.dig("params", :uri)
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
+  def test_watched_file_change_skips_diagnostics_for_background_documents
+    protocol = RecordingProtocol.new
+    server = MilkTea::LSP::Server.new(protocol: protocol)
+
+    Dir.mktmpdir("milk-tea-lsp-watch-background") do |dir|
+      lib_path = File.join(dir, "mathx.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(lib_path, <<~MT)
+        module mathx
+
+        public function greet() -> int:
+            return 1
+      MT
+
+      main_source = <<~MT
+        module main
+
+        import mathx as mx
+
+        function main() -> int:
+            return mx.greet()
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      server.send(:handle_initialize, { "rootUri" => root_uri, "capabilities" => {} })
+      server.send(:handle_initialized, {})
+      server.send(:handle_document_context, {
+        "textDocument" => { "uri" => main_uri },
+        "source" => "background-document"
+      })
+      server.send(:handle_did_open, {
+        "textDocument" => {
+          "uri" => main_uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => main_source
+        }
+      })
+
+      refute_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, main_uri
+
+      File.write(lib_path, <<~MT)
+        module mathx
+
+        public function greet() -> str:
+            return "oops"
+      MT
+
+      server.send(:handle_did_change_watched_files, {
+        "changes" => [{ "uri" => lib_uri, "type" => 2 }]
+      })
+
+      refute_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, main_uri
+    end
   ensure
     server&.send(:handle_shutdown, nil)
   end
@@ -1540,6 +1770,132 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_definition_on_imported_type_static_method_jumps_to_method_declaration
+    Dir.mktmpdir("milk-tea-lsp-def-imported-type") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      foo_source = <<~MT
+        module std.foo
+
+        public struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            public static function zero() -> int:
+                return 0
+      MT
+      main_source = <<~MT
+        module app
+
+        import std.foo as foo
+
+        public function main() -> int:
+            return foo.Point.zero()
+      MT
+
+      foo_path = File.join(std_dir, "foo.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(foo_path, foo_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      foo_uri = path_to_uri(foo_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("foo.Point.zero") }
+        call_char = main_source.lines[call_line].index("zero") + 1
+        definition_line = foo_source.lines.index { |line| line.include?("static function zero") }
+        definition_char = foo_source.lines[definition_line].index("zero")
+
+        definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal foo_uri, definition.dig("result", "uri")
+        assert_equal definition_line, definition.dig("result", "range", "start", "line")
+        assert_equal definition_char, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
+  def test_type_definition_on_imported_type_static_method_jumps_to_method_declaration
+    Dir.mktmpdir("milk-tea-lsp-type-def-imported-type") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      foo_source = <<~MT
+        module std.foo
+
+        public struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            public static function zero() -> int:
+                return 0
+      MT
+      main_source = <<~MT
+        module app
+
+        import std.foo as foo
+
+        public function main() -> int:
+            return foo.Point.zero()
+      MT
+
+      foo_path = File.join(std_dir, "foo.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(foo_path, foo_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      foo_uri = path_to_uri(foo_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("foo.Point.zero") }
+        call_char = main_source.lines[call_line].index("zero") + 1
+        definition_line = foo_source.lines.index { |line| line.include?("static function zero") }
+        definition_char = foo_source.lines[definition_line].index("zero")
+
+        definition = client.send_request("textDocument/typeDefinition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal foo_uri, definition.dig("result", "uri")
+        assert_equal definition_line, definition.dig("result", "range", "start", "line")
+        assert_equal definition_char, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
   def test_did_change_watched_files_refreshes_workspace_index
     Dir.mktmpdir("milk-tea-lsp-watch") do |dir|
       watched_path = File.join(dir, "watched.mt")
@@ -1784,6 +2140,65 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_completion_returns_static_methods_for_imported_type_receiver
+    Dir.mktmpdir("mt_lsp_imported_type_completion") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      File.write(File.join(std_dir, "foo.mt"), <<~MT)
+        module std.foo
+
+        public struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            public static function zero() -> int:
+                return 0
+
+            public function length() -> int:
+                return this.x + this.y
+      MT
+
+      source = <<~MT
+        module app
+
+        import std.foo as foo
+
+        public function main() -> int:
+            return foo.Point.zero()
+      MT
+      source_path = File.join(dir, "main.mt")
+      File.write(source_path, source)
+
+      server = MilkTea::LSP::Server.new(protocol: RecordingProtocol.new)
+      begin
+        uri = path_to_uri(source_path)
+        workspace = server.instance_variable_get(:@workspace)
+        workspace.open_document(uri, source)
+
+        partial_source = source.sub("return foo.Point.zero()", "return foo.Point.")
+        workspace.update_document(uri, partial_source)
+
+        dot_line = partial_source.lines.index { |line| line.include?("return foo.Point.") }
+        dot_char = partial_source.lines[dot_line].chomp.length
+
+        result = server.send(:handle_completion, {
+          "textDocument" => { "uri" => uri },
+          "position"     => { "line" => dot_line, "character" => dot_char }
+        })
+
+        items = result.fetch(:items)
+        labels = items.map { |item| item[:label] }
+
+        assert_includes labels, "zero"
+        refute_includes labels, "length"
+      ensure
+        server&.send(:stop_diagnostics_workers)
+      end
+    end
+  end
+
   def test_completion_returns_fields_and_methods_for_local_value_receiver
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1958,6 +2373,34 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_completion_uses_enclosing_receiver_for_this_in_editable_method
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_editable_this_completion_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_EDITABLE_METHOD_RECEIVER_COMPLETION }
+      })
+
+      partial_source = SOURCE_WITH_EDITABLE_METHOD_RECEIVER_COMPLETION.sub("        this.value = 0", "        this.")
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => partial_source }]
+      })
+
+      dot_line = partial_source.lines.index { |line| line.include?("this.") }
+      dot_char = partial_source.lines[dot_line].chomp.length
+
+      response = client.send_request("textDocument/completion", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => dot_line, "character" => dot_char }
+      })
+
+      labels = response.fetch("result").fetch("items").map { |i| i["label"] }
+      assert_includes labels, "value"
+      assert_includes labels, "reset"
+    end
+  end
+
   def test_hover_returns_method_info_for_method_name
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1971,8 +2414,50 @@ class LSPServerTest < Minitest::Test
         "position"     => { "line" => 5, "character" => 13 }
       })
       hover_value = response.dig("result", "contents", "value")
-      assert_includes hover_value, "local zero"
-      refute_includes hover_value, "-> int"
+      assert_includes hover_value, "function zero() -> int"
+      refute_includes hover_value, "local zero"
+    end
+  end
+
+  def test_hover_formats_builtin_type_without_redundant_alias
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_builtin_type_hover_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_CALL }
+      })
+
+      response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 0, "character" => 16 }
+      })
+      hover_value = response.dig("result", "contents", "value")
+      assert_includes hover_value, "type int"
+      refute_includes hover_value, "type int = int"
+    end
+  end
+
+  def test_hover_returns_field_info_for_member_chain_segments
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_member_chain_hover_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_MEMBER_CHAIN_HOVER }
+      })
+
+      active_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 8, "character" => 20 }
+      })
+      active_hover_value = active_hover.dig("result", "contents", "value")
+      assert_includes active_hover_value, "active: Piece"
+
+      kind_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 8, "character" => 27 }
+      })
+      kind_hover_value = kind_hover.dig("result", "contents", "value")
+      assert_includes kind_hover_value, "kind: int"
     end
   end
 

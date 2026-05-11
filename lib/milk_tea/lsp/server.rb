@@ -643,8 +643,14 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return [] unless token&.type == :identifier
 
+        analysis = @workspace.get_analysis(uri)
+        include_declaration = params.dig('context', 'includeDeclaration') != false
+        if analysis && (target = resolve_static_type_reference_target(uri, token, analysis))
+          return static_type_method_references(target, include_declaration: include_declaration)
+        end
+
         refs = @workspace.find_all_references(token.lexeme)
-        return refs unless params.dig('context', 'includeDeclaration') == false
+        return refs if include_declaration
 
         found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
         return refs unless found
@@ -1299,6 +1305,7 @@ module MilkTea
 
         # When user is typing after '.', return module members or method completions.
         dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+        dot_recv_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
         if dot_recv
           # Module member access: rl.init_window, rl.RAYWHITE, etc.
           if (module_binding = analysis.imports[dot_recv])
@@ -1336,35 +1343,42 @@ module MilkTea
             end
             return { isIncomplete: false, items: items }
           end
+          if (type_receiver = resolve_type_receiver_info(analysis, dot_recv, dot_recv_path))
+            receiver_label = type_receiver[:label]
+            type = type_receiver[:type]
 
-          # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
-          if (type = analysis.types[dot_recv]).is_a?(Types::EnumBase)
-            items = type.members.filter_map do |mname|
-              next if !prefix.empty? && !mname.start_with?(prefix)
-              {
-                label:      mname,
-                kind:       20, # EnumMember
-                detail:     "#{dot_recv}.#{mname}",
-                insertText: mname,
-                sortText:   "0_#{mname}"
-              }
+            # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
+            if type.is_a?(Types::EnumBase)
+              items = type.members.filter_map do |mname|
+                next if !prefix.empty? && !mname.start_with?(prefix)
+                {
+                  label:      mname,
+                  kind:       20, # EnumMember
+                  detail:     "#{receiver_label}.#{mname}",
+                  insertText: mname,
+                  sortText:   "0_#{mname}"
+                }
+              end
+              return { isIncomplete: false, items: items }
             end
-            return { isIncomplete: false, items: items }
-          end
 
-          # Variant arm access: Option.None, Result.Ok, etc.
-          if (type = analysis.types[dot_recv]).is_a?(Types::Variant)
-            items = type.arm_names.filter_map do |aname|
-              next if !prefix.empty? && !aname.start_with?(prefix)
-              {
-                label:      aname,
-                kind:       20, # EnumMember
-                detail:     "#{dot_recv}.#{aname}",
-                insertText: aname,
-                sortText:   "0_#{aname}"
-              }
+            # Variant arm access: Option.None, Result.Ok, etc.
+            if type.is_a?(Types::Variant)
+              items = type.arm_names.filter_map do |aname|
+                next if !prefix.empty? && !aname.start_with?(prefix)
+                {
+                  label:      aname,
+                  kind:       20, # EnumMember
+                  detail:     "#{receiver_label}.#{aname}",
+                  insertText: aname,
+                  sortText:   "0_#{aname}"
+                }
+              end
+              return { isIncomplete: false, items: items }
             end
-            return { isIncomplete: false, items: items }
+
+            items = completion_items_for_type_receiver(analysis, type, prefix)
+            return { isIncomplete: false, items: items } unless items.empty?
           end
 
           if (receiver_type = resolve_dot_receiver_value_type(analysis, dot_recv, lsp_line + 1, lsp_char + 1))
@@ -1403,35 +1417,58 @@ module MilkTea
             kind:         3,  # Function
             detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
             insertText:   name,
-            sortText:     "0_#{name}"  # Functions first
+            insertTextFormat: 1,
+            sortText:     "0_#{name}"
           }
         end
 
-        # User-defined types
+        # Types
         builtin_names = Sema::BUILTIN_TYPE_NAMES
-        analysis.types.each do |name, _type|
+        analysis.types.each do |name, type|
           next if builtin_names.include?(name)
           next unless prefix.empty? || name.start_with?(prefix)
 
+          kind = case type
+                 when Types::StructInstance then 22 # Struct
+                 when Types::EnumBase, Types::Variant then 13 # Enum
+                 else 7 # Class/type
+                 end
+
           items << {
-            label:      name,
-            kind:       7,  # Class
-            detail:     "type #{name}",
-            insertText: name,
-            sortText:   "1_#{name}"
+            label:        name,
+            kind:         kind,
+            detail:       "type #{name}",
+            insertText:   name,
+            insertTextFormat: 1,
+            sortText:     "1_#{name}"
           }
         end
 
-        # Top-level values / constants
+        # Imported modules
+        analysis.imports.each do |name, module_binding|
+          next unless prefix.empty? || name.start_with?(prefix)
+
+          items << {
+            label:        name,
+            kind:         9,  # Module
+            detail:       "module #{module_binding.name}",
+            insertText:   name,
+            insertTextFormat: 1,
+            sortText:     "2_#{name}"
+          }
+        end
+
+        # Values
         analysis.values.each do |name, binding|
           next unless prefix.empty? || name.start_with?(prefix)
 
           items << {
-            label:      name,
-            kind:       6,  # Variable
-            detail:     "#{name}: #{binding.type}",
-            insertText: name,
-            sortText:   "2_#{name}"
+            label:        name,
+            kind:         6,  # Variable
+            detail:       "#{name}: #{binding.type}",
+            insertText:   name,
+            insertTextFormat: 1,
+            sortText:     "3_#{name}"
           }
         end
 
@@ -1439,6 +1476,136 @@ module MilkTea
       rescue StandardError => e
         warn "Error in completion handler: #{e.message}"
         { isIncomplete: false, items: [] }
+      end
+
+      def completion_items_for_type_receiver(analysis, receiver_type, prefix)
+        methods_for_receiver_type(analysis, receiver_type).filter_map do |mname, binding|
+          next unless binding.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
+          next unless prefix.empty? || mname.start_with?(prefix)
+
+          params_str = format_params(binding.type.params)
+          {
+            label:      mname,
+            kind:       2,  # Method
+            detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
+            insertText: mname,
+            sortText:   "0_#{mname}"
+          }
+        end
+      end
+
+      def resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+        if analysis.types.key?(receiver_name)
+          type = analysis.types.fetch(receiver_name)
+          module_name = type.respond_to?(:module_name) ? type.module_name : analysis.module_name
+          return { label: receiver_name, type:, module_name: }
+        end
+
+        return nil unless receiver_path&.include?('.')
+
+        module_alias, type_name = receiver_path.split('.', 2)
+        return nil unless module_alias && type_name
+
+        module_binding = analysis.imports[module_alias]
+        return nil unless module_binding
+
+        type = module_binding.types[type_name]
+        return nil unless type
+
+        { label: receiver_path, type:, module_name: module_binding.name }
+      end
+
+      def resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, method_name)
+        receiver_info = resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+        return nil unless receiver_info
+
+        binding = static_method_binding_for_receiver(analysis, receiver_info[:type], method_name)
+        return nil unless binding
+
+        receiver_info.merge(binding:)
+      end
+
+      def static_method_binding_for_receiver(analysis, receiver_type, method_name)
+        binding = methods_for_receiver_type(analysis, receiver_type)[method_name]
+        return nil unless binding&.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
+
+        binding
+      end
+
+      def resolve_static_type_reference_target(uri, token, analysis)
+        token_end_char = token.column - 1 + token.lexeme.length
+        receiver_name = @workspace.find_dot_receiver(uri, token.line - 1, token_end_char)
+        receiver_path = @workspace.find_dot_receiver_path(uri, token.line - 1, token_end_char)
+
+        if (target = resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, token.lexeme))
+          location = module_member_binding_location(uri, target[:module_name], token.lexeme, target[:binding])
+          location ||= module_member_definition_location(uri, target[:module_name], token.lexeme)
+          return target.merge(location:)
+        end
+
+        binding = static_method_binding_at_token(analysis, token)
+        return nil unless binding
+
+        location = module_member_binding_location(uri, analysis.module_name, token.lexeme, binding)
+        location ||= module_member_definition_location(uri, analysis.module_name, token.lexeme)
+        {
+          label: token.lexeme,
+          type: binding.declared_receiver_type,
+          module_name: analysis.module_name,
+          binding:,
+          location:,
+        }
+      end
+
+      def static_method_binding_at_token(analysis, token)
+        binding = method_binding_at_token(analysis, token)
+        return nil unless binding&.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
+
+        binding
+      end
+
+      def static_type_method_references(target, include_declaration:)
+        refs = @workspace.find_all_references(target[:binding].name)
+        refs.filter do |ref|
+          if location_matches_reference?(target[:location], ref)
+            include_declaration
+          else
+            static_type_method_reference?(ref, target)
+          end
+        end
+      end
+
+      def static_type_method_reference?(ref, target)
+        token = @workspace.find_token_at(ref[:uri], ref.dig(:range, :start, :line), ref.dig(:range, :start, :character))
+        return false unless token&.type == :identifier
+
+        analysis = @workspace.get_analysis(ref[:uri])
+        return false unless analysis
+
+        token_end_char = ref.dig(:range, :end, :character)
+        receiver_name = @workspace.find_dot_receiver(ref[:uri], ref.dig(:range, :start, :line), token_end_char)
+        receiver_path = @workspace.find_dot_receiver_path(ref[:uri], ref.dig(:range, :start, :line), token_end_char)
+        candidate = resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, token.lexeme)
+        return false unless candidate
+
+        candidate_location = module_member_binding_location(ref[:uri], candidate[:module_name], token.lexeme, candidate[:binding])
+        candidate_location ||= module_member_definition_location(ref[:uri], candidate[:module_name], token.lexeme)
+        same_location?(candidate_location, target[:location])
+      end
+
+      def location_matches_reference?(location, ref)
+        return false unless location
+
+        same_location?(location, {
+          uri: ref[:uri],
+          range: ref[:range]
+        })
+      end
+
+      def same_location?(left, right)
+        return false unless left && right
+
+        left[:uri] == right[:uri] && left[:range] == right[:range]
       end
 
       # ── Enhancement 4: Workspace Symbol ─────────────────────────────────────
@@ -1473,7 +1640,9 @@ module MilkTea
         end
 
         invalidate_document_caches_for(affected_uris)
-        affected_uris.each { |affected_uri| schedule_diagnostics(affected_uri, force: true) }
+        affected_uris.each do |affected_uri|
+          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
+        end
         nil
       end
 
@@ -1662,16 +1831,23 @@ module MilkTea
         analysis = @workspace.get_analysis(uri)
         return nil unless analysis
 
+        if token_index && (member_hover = resolve_member_access_hover_info(analysis, tokens, token_index))
+          return member_hover
+        end
+
         name = token.lexeme
         signature = nil
         source_location = nil
 
-        if (binding = analysis.functions[name])
+        if (binding = method_binding_at_token(analysis, token))
+          signature = method_signature(binding)
+          source_location = module_member_binding_location(uri, analysis.module_name, name, binding)
+        elsif (binding = analysis.functions[name])
           params_str = format_params(binding.type.params)
           signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
         elsif analysis.types.key?(name)
           type = analysis.types[name]
-          signature = "type #{name} = #{type}"
+          signature = type_hover_signature(name, type)
         elsif (binding = analysis.values[name])
           signature = "#{name}: #{binding.type}"
         elsif (import_binding = analysis.imports[name])
@@ -1679,10 +1855,12 @@ module MilkTea
           source_location = module_definition_location(uri, import_binding.name)
         else
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
           if dot_receiver && (module_binding = analysis.imports[dot_receiver])
             if (fn = module_binding.functions[name])
               params_str = format_params(fn.type.params)
               signature = "function #{name}(#{params_str}) -> #{fn.type.return_type}"
+              source_location = module_member_binding_location(uri, module_binding.name, name, fn)
             elsif (val = module_binding.values[name])
               signature = "#{name}: #{val.type}"
             elsif module_binding.types.key?(name)
@@ -1690,8 +1868,17 @@ module MilkTea
             end
 
             if signature
-              source_location = module_member_definition_location(uri, module_binding.name, name)
+              source_location ||= module_member_definition_location(uri, module_binding.name, name)
               source_location ||= module_definition_location(uri, module_binding.name)
+            end
+          end
+
+          unless signature
+            if (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, name))
+              signature = method_signature(type_method[:binding])
+              source_location = module_member_binding_location(uri, type_method[:module_name], name, type_method[:binding])
+              source_location ||= module_member_definition_location(uri, type_method[:module_name], name)
+              source_location ||= module_definition_location(uri, type_method[:module_name])
             end
           end
 
@@ -1869,9 +2056,14 @@ module MilkTea
           end
 
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
           if dot_receiver && analysis.imports.key?(dot_receiver)
             module_name = analysis.imports.fetch(dot_receiver).name
             return module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
+          elsif (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, token.lexeme))
+            return module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
+              module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
+              module_definition_location(uri, type_method[:module_name])
           elsif analysis.imports.key?(token.lexeme)
             module_name = analysis.imports.fetch(token.lexeme).name
             return module_definition_location(uri, module_name)
@@ -3022,9 +3214,31 @@ module MilkTea
         }
       end
 
+      def module_member_binding_location(current_uri, module_name, member_name, binding)
+        path = module_path_for_name(current_uri, module_name)
+        return nil unless path
+
+        ast = binding&.ast
+        if ast&.line && ast.respond_to?(:column) && ast.column
+          start_line = ast.line - 1
+          start_char = ast.column - 1
+
+          return {
+            uri: path_to_uri(File.expand_path(path)),
+            range: {
+              start: { line: start_line, character: start_char },
+              end: { line: start_line, character: start_char + member_name.length }
+            }
+          }
+        end
+
+        module_member_definition_location(current_uri, module_name, member_name)
+      end
+
       def module_path_for_name(current_uri, module_name)
         current_path = uri_to_path(current_uri)
         return nil unless current_path
+        return current_path if module_name.nil? || module_name.empty?
 
         module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
         relative_path = File.join(*module_name.split('.')) + '.mt'
@@ -3079,6 +3293,125 @@ module MilkTea
         end
 
         analysis.values[receiver_name]&.type
+      end
+
+      def resolve_member_access_hover_info(analysis, tokens, token_index)
+        chain = member_access_chain_at(tokens, token_index)
+        return nil unless chain
+
+        hovered_segment = chain[:segments].find { |segment| segment[:token_index] == token_index }
+        return nil unless hovered_segment && hovered_segment[:position].positive?
+
+        current_type = resolve_dot_receiver_value_type(
+          analysis,
+          chain[:segments].first[:name],
+          chain[:line],
+          chain[:char],
+        )
+        return nil unless current_type
+
+        chain[:segments][1..hovered_segment[:position]].each do |segment|
+          receiver_type = project_field_receiver_type_for_completion(current_type)
+          return nil unless receiver_type.respond_to?(:field)
+
+          field_type = receiver_type.field(segment[:name])
+          return nil unless field_type
+
+          if segment[:token_index] == token_index
+            return {
+              signature: "#{segment[:name]}: #{field_type}",
+              docs: nil,
+              source: nil,
+              source_uri: nil,
+              source_line: nil,
+            }
+          end
+
+          current_type = field_type
+        end
+
+        nil
+      end
+
+      def member_access_chain_at(tokens, token_index)
+        token = tokens[token_index]
+        return nil unless token&.type == :identifier
+
+        indices = [token_index]
+        current_index = token_index
+
+        loop do
+          dot_index = previous_non_trivia_token_index(tokens, current_index)
+          break unless dot_index && tokens[dot_index].type == :dot && tokens[dot_index].line == token.line
+
+          receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+          break unless receiver_index && tokens[receiver_index].type == :identifier && tokens[receiver_index].line == token.line
+
+          indices.unshift(receiver_index)
+          current_index = receiver_index
+        end
+
+        current_index = token_index
+        loop do
+          dot_index = next_non_trivia_token_index(tokens, current_index + 1)
+          break unless dot_index && tokens[dot_index].type == :dot && tokens[dot_index].line == token.line
+
+          member_index = next_non_trivia_token_index(tokens, dot_index + 1)
+          break unless member_index && tokens[member_index].type == :identifier && tokens[member_index].line == token.line
+
+          indices << member_index
+          current_index = member_index
+        end
+
+        return nil if indices.length < 2
+
+        {
+          line: token.line,
+          char: token.column + token.lexeme.length,
+          segments: indices.each_with_index.map do |index, position|
+            {
+              name: tokens[index].lexeme,
+              token_index: index,
+              position: position,
+            }
+          end,
+        }
+      end
+
+      def method_binding_at_token(analysis, token)
+        analysis.methods.each_value do |methods|
+          methods.each_value do |binding|
+            next unless binding.name == token.lexeme
+            next unless binding.ast.is_a?(AST::MethodDef)
+            next unless binding.ast.line == token.line
+            next unless binding.ast.respond_to?(:column) && binding.ast.column == token.column
+
+            return binding
+          end
+        end
+
+        nil
+      end
+
+      def method_signature(binding)
+        params_str = format_params(binding.type.params)
+        keyword = case binding.ast.kind
+                  when :editable
+                    "editable function"
+                  when :static
+                    "static function"
+                  else
+                    "function"
+                  end
+
+        "#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
+      end
+
+      def type_hover_signature(name, type)
+        rendered_type = type.to_s
+        return "type #{name}" if rendered_type == name
+
+        "type #{name} = #{rendered_type}"
       end
 
       def resolve_local_hover_type(analysis, name, line, char)
