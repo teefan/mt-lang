@@ -37,6 +37,59 @@
       "type": "ptr[Wave]",
       "include": ["WaveCrop", "WaveFormat"],
       "strip_prefix": "Wave"
+    },
+    {
+      "type": "Vector2",
+      "module_name": "std.raymath",
+      "module_import_alias": "math",
+      "include_prefixes": ["vector2_"],
+      "strip_prefix": "vector2_"
+    },
+    {
+      "type": "Vector3",
+      "module_name": "std.raymath",
+      "module_import_alias": "math",
+      "include_prefixes": ["vector3_"],
+      "exclude": ["vector3_ortho_normalize"],
+      "strip_prefix": "vector3_"
+    },
+    {
+      "type": "Vector4",
+      "module_name": "std.raymath",
+      "module_import_alias": "math",
+      "include_prefixes": ["vector4_"],
+      "strip_prefix": "vector4_"
+    },
+    {
+      "type": "Matrix",
+      "module_name": "std.raymath",
+      "module_import_alias": "math",
+      "include_prefixes": ["matrix_"],
+      "exclude": ["matrix_decompose"],
+      "strip_prefix": "matrix_"
+    },
+    {
+      "type": "Quaternion",
+      "module_name": "std.raymath",
+      "module_import_alias": "math",
+      "receiver_types": ["Quaternion", "Vector4"],
+      "include_prefixes": ["quaternion_"],
+      "exclude": [
+        "quaternion_add",
+        "quaternion_add_value",
+        "quaternion_subtract",
+        "quaternion_subtract_value",
+        "quaternion_length",
+        "quaternion_normalize",
+        "quaternion_invert",
+        "quaternion_multiply",
+        "quaternion_scale",
+        "quaternion_divide",
+        "quaternion_lerp",
+        "quaternion_equals",
+        "quaternion_to_axis_angle"
+      ],
+      "strip_prefix": "quaternion_"
     }
   ],
   "functions": {

@@ -407,6 +407,15 @@ module MilkTea
       # context, e.g. for "vec.len|" returns "vec". Returns nil otherwise.
       # lsp_char is the 0-based cursor character position (LSP convention).
       def find_dot_receiver(uri, lsp_line, lsp_char)
+        receiver_path = find_dot_receiver_path(uri, lsp_line, lsp_char)
+        return nil unless receiver_path
+
+        receiver_path.split('.').last
+      rescue StandardError
+        nil
+      end
+
+      def find_dot_receiver_path(uri, lsp_line, lsp_char)
         content = get_content(uri)
         lines = content.split("\n", -1)
         line_str = lines[lsp_line] || ''
@@ -417,11 +426,8 @@ module MilkTea
         return nil if idx < 0 || line_str[idx] != '.'
 
         dot_idx = idx
-        j = dot_idx - 1
-        return nil if j < 0 || line_str[j] !~ /[A-Za-z0-9_]/
-
-        j -= 1 while j > 0 && line_str[j - 1] =~ /[A-Za-z0-9_]/
-        line_str[j...dot_idx]
+        receiver_match = line_str[0...dot_idx].match(/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\z/)
+        receiver_match&.[](1)
       rescue StandardError
         nil
       end

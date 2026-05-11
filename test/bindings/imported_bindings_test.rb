@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raylib", "raymath", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -92,9 +92,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function os_environ\(out envitems: ptr\[uv_env_item_t\]\?, out count: int\) -> int = c\.uv_os_environ$/, source)
     assert_match(/^public foreign function metrics_info\(loop: ptr\[uv_loop_t\], out metrics: uv_metrics_t\) -> int = c\.uv_metrics_info$/, source)
     assert_match(/^public foreign function fs_scandir_next\(req: ptr\[uv_fs_t\], out ent: uv_dirent_t\) -> int = c\.uv_fs_scandir_next$/, source)
-    assert_match(/^public foreign function ip_4_addr\(ip: str as cstr, port: int, out addr: sockaddr_in\) -> int = c\.uv_ip4_addr$/, source)
+    assert_match(/^public foreign function ip4_addr\(ip: str as cstr, port: int, out addr: sockaddr_in\) -> int = c\.uv_ip4_addr$/, source)
     assert_match(/^public foreign function dlsym\(lib: ptr\[uv_lib_t\], name: str as cstr, out ptr: ptr\[void\]\?\) -> int = c\.uv_dlsym$/, source)
-    assert_match(/^public foreign function utf_16_to_wtf_8\(utf_16: const_ptr\[ushort\], utf_16_len: ptr_int, out wtf_8_ptr: ptr\[char\]\?, out wtf_8_len_ptr: ptr_uint\) -> int = c\.uv_utf16_to_wtf8$/, source)
+    assert_match(/^public foreign function utf16_to_wtf8\(utf_16: const_ptr\[ushort\], utf_16_len: ptr_int, out wtf_8_ptr: ptr\[char\]\?, out wtf_8_len_ptr: ptr_uint\) -> int = c\.uv_utf16_to_wtf8$/, source)
   end
 
   def test_checked_in_libc_binding_matches_policy_and_loads
@@ -367,6 +367,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public type TraceLogCallback = /, source)
     refute_match(/^public foreign function set_trace_log_callback\(/, source)
     assert_match(/^import std\.c\.raylib as c$/, source)
+    assert_match(/^import std\.raymath as math$/, source)
     refute_match(/^import std\.bytes as bytes$/, source)
     refute_match(/^import std\.maybe as maybe$/, source)
     refute_match(/^import std\.vec as vec$/, source)
@@ -449,6 +450,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/methods Image:.*?public editable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
     assert_match(/methods Wave:.*?public function copy\(\) -> Wave:\n\s+return wave_copy\(this\)/m, source)
     assert_match(/methods ptr\[Wave\]:.*?public function crop\(init_frame: int, final_frame: int\) -> void:\n\s+wave_crop\(this, init_frame, final_frame\).*?public function format\(sample_rate: int, sample_size: int, channels: int\) -> void:\n\s+wave_format\(this, sample_rate, sample_size, channels\)/m, source)
+    assert_match(/methods Vector2:.*?public static function zero\(\) -> Vector2:\n\s+return math\.vector2_zero\(\).*?public function add\(v2: Vector2\) -> Vector2:\n\s+return math\.vector2_add\(this, v2\)/m, source)
+    assert_match(/methods Matrix:.*?public function determinant\(\) -> float:\n\s+return math\.matrix_determinant\(this\).*?public static function identity\(\) -> Matrix:\n\s+return math\.matrix_identity\(\).*?public function to_float_v\(\) -> math\.float16:\n\s+return math\.matrix_to_float_v\(this\)/m, source)
+    assert_match(/methods Quaternion:.*?public static function identity\(\) -> Quaternion:\n\s+return math\.quaternion_identity\(\).*?public function nlerp\(q2: Vector4, amount: float\) -> Quaternion:\n\s+return math\.quaternion_nlerp\(this, q2, amount\)/m, source)
     refute_match(/^public foreign function begin_mode2_d\(/, source)
     refute_match(/^public foreign function get_world_to_screen2_d\(/, source)
     refute_match(/^public foreign function draw_line3_d\(/, source)
@@ -507,9 +511,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function vector3_ortho_normalize\(inout v1: rl\.Vector3, inout v2: rl\.Vector3\) -> void = c\.Vector3OrthoNormalize$/, source)
     assert_match(/^public foreign function quaternion_to_axis_angle\(q: rl\.Quaternion, out axis: rl\.Vector3, out angle: float\) -> void = c\.QuaternionToAxisAngle$/, source)
     assert_match(/^public foreign function matrix_decompose\(mat: rl\.Matrix, out translation: rl\.Vector3, out rotation: rl\.Quaternion, out scale: rl\.Vector3\) -> void = c\.MatrixDecompose$/, source)
-    assert_match(/methods rl\.Vector2:.*?public static function zero\(\) -> rl\.Vector2:\n\s+return vector2_zero\(\).*?public function add\(v2: rl\.Vector2\) -> rl\.Vector2:\n\s+return vector2_add\(this, v2\)/m, source)
-    assert_match(/methods rl\.Matrix:.*?public function determinant\(\) -> float:\n\s+return matrix_determinant\(this\).*?public static function identity\(\) -> rl\.Matrix:\n\s+return matrix_identity\(\)/m, source)
-    assert_match(/methods rl\.Quaternion:.*?public static function identity\(\) -> rl\.Quaternion:\n\s+return quaternion_identity\(\).*?public function nlerp\(q2: rl\.Vector4, amount: float\) -> rl\.Quaternion:\n\s+return quaternion_nlerp\(this, q2, amount\)/m, source)
+    refute_match(/^methods rl\.Vector2:$/, source)
+    refute_match(/^methods rl\.Matrix:$/, source)
+    refute_match(/^methods rl\.Quaternion:$/, source)
   end
 
   def test_checked_in_raygui_binding_matches_policy_and_loads
@@ -874,6 +878,92 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     end
   end
 
+  def test_generate_supports_methods_sourced_from_another_module
+    Dir.mktmpdir("milk-tea-imported-binding-method-source") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      helper_path = File.join(dir, "std", "helper.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        external module std.c.sample:
+            struct Vector2:
+                x: float
+                y: float
+
+            external function Vector2Zero() -> Vector2
+            external function Vector2Add(v1: Vector2, v2: Vector2) -> Vector2
+            external function Vector2Tag(v: Vector2) -> int
+      MT
+
+      File.write(helper_path, <<~MT)
+        module std.helper
+
+        import std.c.sample as raw
+
+        public type SampleTag = int
+
+        public foreign function vector2_zero() -> raw.Vector2 = raw.Vector2Zero
+        public foreign function vector2_add(v1: raw.Vector2, v2: raw.Vector2) -> raw.Vector2 = raw.Vector2Add
+        public foreign function vector2_tag(v: raw.Vector2) -> SampleTag = raw.Vector2Tag
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {},
+        constants: {},
+        functions: [],
+        methods: [
+          {
+            type: "Vector2",
+            module_name: "std.helper",
+            module_import_alias: "helper",
+            include_prefixes: ["vector2_"],
+            strip_prefix: "vector2_",
+          },
+        ],
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+        module std.sample
+
+        import std.c.sample as c
+        import std.helper as helper
+
+        public type Vector2 = c.Vector2
+
+
+        methods Vector2:
+            public static function zero() -> Vector2:
+                return helper.vector2_zero()
+
+
+            public function add(v2: Vector2) -> Vector2:
+                return helper.vector2_add(this, v2)
+
+
+            public function tag() -> helper.SampleTag:
+                return helper.vector2_tag(this)
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+    end
+  end
+
   def test_generate_rejects_type_shared_from
     Dir.mktmpdir("milk-tea-imported-binding-shared-types") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
@@ -1101,7 +1191,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         public foreign function init() -> bool = c.SteamAPI_Init
         public foreign function friends() -> ptr[Friends] = c.SteamAPI_SteamFriends
         public foreign function friends_get_persona_name(self: ptr[Friends]) -> cstr = c.SteamAPI_ISteamFriends_GetPersonaName
-        public foreign function networking_messages_v_002() -> ptr[NetworkingMessages] = c.SteamAPI_SteamNetworkingMessages_SteamAPI_v002
+        public foreign function networking_messages_v002() -> ptr[NetworkingMessages] = c.SteamAPI_SteamNetworkingMessages_SteamAPI_v002
         public foreign function internal_context_init(p_context_init_data: ptr[void]) -> ptr[void] = c.SteamInternal_ContextInit
         public foreign function steam_game_server_run_callbacks() -> void = c.SteamGameServer_RunCallbacks
       MT

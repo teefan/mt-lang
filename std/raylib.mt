@@ -2,6 +2,7 @@
 module std.raylib
 
 import std.c.raylib as c
+import std.raymath as math
 
 public type Vector2 = c.Vector2
 public type Vector3 = c.Vector3
@@ -956,3 +957,508 @@ methods ptr[Wave]:
 
     public function format(sample_rate: int, sample_size: int, channels: int) -> void:
         wave_format(this, sample_rate, sample_size, channels)
+
+
+methods Vector2:
+    public static function zero() -> Vector2:
+        return math.vector2_zero()
+
+
+    public static function one() -> Vector2:
+        return math.vector2_one()
+
+
+    public function add(v2: Vector2) -> Vector2:
+        return math.vector2_add(this, v2)
+
+
+    public function add_value(add: float) -> Vector2:
+        return math.vector2_add_value(this, add)
+
+
+    public function subtract(v2: Vector2) -> Vector2:
+        return math.vector2_subtract(this, v2)
+
+
+    public function subtract_value(sub: float) -> Vector2:
+        return math.vector2_subtract_value(this, sub)
+
+
+    public function length() -> float:
+        return math.vector2_length(this)
+
+
+    public function length_sqr() -> float:
+        return math.vector2_length_sqr(this)
+
+
+    public function dot_product(v2: Vector2) -> float:
+        return math.vector2_dot_product(this, v2)
+
+
+    public function cross_product(v2: Vector2) -> float:
+        return math.vector2_cross_product(this, v2)
+
+
+    public function distance(v2: Vector2) -> float:
+        return math.vector2_distance(this, v2)
+
+
+    public function distance_sqr(v2: Vector2) -> float:
+        return math.vector2_distance_sqr(this, v2)
+
+
+    public function angle(v2: Vector2) -> float:
+        return math.vector2_angle(this, v2)
+
+
+    public function line_angle(end: Vector2) -> float:
+        return math.vector2_line_angle(this, end)
+
+
+    public function scale(scale: float) -> Vector2:
+        return math.vector2_scale(this, scale)
+
+
+    public function multiply(v2: Vector2) -> Vector2:
+        return math.vector2_multiply(this, v2)
+
+
+    public function negate() -> Vector2:
+        return math.vector2_negate(this)
+
+
+    public function divide(v2: Vector2) -> Vector2:
+        return math.vector2_divide(this, v2)
+
+
+    public function normalize() -> Vector2:
+        return math.vector2_normalize(this)
+
+
+    public function transform(mat: Matrix) -> Vector2:
+        return math.vector2_transform(this, mat)
+
+
+    public function lerp(v2: Vector2, amount: float) -> Vector2:
+        return math.vector2_lerp(this, v2, amount)
+
+
+    public function reflect(normal: Vector2) -> Vector2:
+        return math.vector2_reflect(this, normal)
+
+
+    public function min(v2: Vector2) -> Vector2:
+        return math.vector2_min(this, v2)
+
+
+    public function max(v2: Vector2) -> Vector2:
+        return math.vector2_max(this, v2)
+
+
+    public function rotate(angle: float) -> Vector2:
+        return math.vector2_rotate(this, angle)
+
+
+    public function move_towards(target: Vector2, max_distance: float) -> Vector2:
+        return math.vector2_move_towards(this, target, max_distance)
+
+
+    public function invert() -> Vector2:
+        return math.vector2_invert(this)
+
+
+    public function clamp(min: Vector2, max: Vector2) -> Vector2:
+        return math.vector2_clamp(this, min, max)
+
+
+    public function clamp_value(min: float, max: float) -> Vector2:
+        return math.vector2_clamp_value(this, min, max)
+
+
+    public function equals(q: Vector2) -> int:
+        return math.vector2_equals(this, q)
+
+
+    public function refract(n: Vector2, r: float) -> Vector2:
+        return math.vector2_refract(this, n, r)
+
+
+methods Vector3:
+    public static function zero() -> Vector3:
+        return math.vector3_zero()
+
+
+    public static function one() -> Vector3:
+        return math.vector3_one()
+
+
+    public function add(v2: Vector3) -> Vector3:
+        return math.vector3_add(this, v2)
+
+
+    public function add_value(add: float) -> Vector3:
+        return math.vector3_add_value(this, add)
+
+
+    public function subtract(v2: Vector3) -> Vector3:
+        return math.vector3_subtract(this, v2)
+
+
+    public function subtract_value(sub: float) -> Vector3:
+        return math.vector3_subtract_value(this, sub)
+
+
+    public function scale(scalar: float) -> Vector3:
+        return math.vector3_scale(this, scalar)
+
+
+    public function multiply(v2: Vector3) -> Vector3:
+        return math.vector3_multiply(this, v2)
+
+
+    public function cross_product(v2: Vector3) -> Vector3:
+        return math.vector3_cross_product(this, v2)
+
+
+    public function perpendicular() -> Vector3:
+        return math.vector3_perpendicular(this)
+
+
+    public function length() -> float:
+        return math.vector3_length(this)
+
+
+    public function length_sqr() -> float:
+        return math.vector3_length_sqr(this)
+
+
+    public function dot_product(v2: Vector3) -> float:
+        return math.vector3_dot_product(this, v2)
+
+
+    public function distance(v2: Vector3) -> float:
+        return math.vector3_distance(this, v2)
+
+
+    public function distance_sqr(v2: Vector3) -> float:
+        return math.vector3_distance_sqr(this, v2)
+
+
+    public function angle(v2: Vector3) -> float:
+        return math.vector3_angle(this, v2)
+
+
+    public function negate() -> Vector3:
+        return math.vector3_negate(this)
+
+
+    public function divide(v2: Vector3) -> Vector3:
+        return math.vector3_divide(this, v2)
+
+
+    public function normalize() -> Vector3:
+        return math.vector3_normalize(this)
+
+
+    public function project(v2: Vector3) -> Vector3:
+        return math.vector3_project(this, v2)
+
+
+    public function reject(v2: Vector3) -> Vector3:
+        return math.vector3_reject(this, v2)
+
+
+    public function transform(mat: Matrix) -> Vector3:
+        return math.vector3_transform(this, mat)
+
+
+    public function rotate_by_quaternion(q: Vector4) -> Vector3:
+        return math.vector3_rotate_by_quaternion(this, q)
+
+
+    public function rotate_by_axis_angle(axis: Vector3, angle: float) -> Vector3:
+        return math.vector3_rotate_by_axis_angle(this, axis, angle)
+
+
+    public function move_towards(target: Vector3, max_distance: float) -> Vector3:
+        return math.vector3_move_towards(this, target, max_distance)
+
+
+    public function lerp(v2: Vector3, amount: float) -> Vector3:
+        return math.vector3_lerp(this, v2, amount)
+
+
+    public function cubic_hermite(tangent1: Vector3, v2: Vector3, tangent2: Vector3, amount: float) -> Vector3:
+        return math.vector3_cubic_hermite(this, tangent1, v2, tangent2, amount)
+
+
+    public function reflect(normal: Vector3) -> Vector3:
+        return math.vector3_reflect(this, normal)
+
+
+    public function min(v2: Vector3) -> Vector3:
+        return math.vector3_min(this, v2)
+
+
+    public function max(v2: Vector3) -> Vector3:
+        return math.vector3_max(this, v2)
+
+
+    public function barycenter(a: Vector3, b: Vector3, c: Vector3) -> Vector3:
+        return math.vector3_barycenter(this, a, b, c)
+
+
+    public function unproject(projection: Matrix, view: Matrix) -> Vector3:
+        return math.vector3_unproject(this, projection, view)
+
+
+    public function to_float_v() -> math.float3:
+        return math.vector3_to_float_v(this)
+
+
+    public function invert() -> Vector3:
+        return math.vector3_invert(this)
+
+
+    public function clamp(min: Vector3, max: Vector3) -> Vector3:
+        return math.vector3_clamp(this, min, max)
+
+
+    public function clamp_value(min: float, max: float) -> Vector3:
+        return math.vector3_clamp_value(this, min, max)
+
+
+    public function equals(q: Vector3) -> int:
+        return math.vector3_equals(this, q)
+
+
+    public function refract(n: Vector3, r: float) -> Vector3:
+        return math.vector3_refract(this, n, r)
+
+
+methods Vector4:
+    public static function zero() -> Vector4:
+        return math.vector4_zero()
+
+
+    public static function one() -> Vector4:
+        return math.vector4_one()
+
+
+    public function add(v2: Vector4) -> Vector4:
+        return math.vector4_add(this, v2)
+
+
+    public function add_value(add: float) -> Vector4:
+        return math.vector4_add_value(this, add)
+
+
+    public function subtract(v2: Vector4) -> Vector4:
+        return math.vector4_subtract(this, v2)
+
+
+    public function subtract_value(add: float) -> Vector4:
+        return math.vector4_subtract_value(this, add)
+
+
+    public function length() -> float:
+        return math.vector4_length(this)
+
+
+    public function length_sqr() -> float:
+        return math.vector4_length_sqr(this)
+
+
+    public function dot_product(v2: Vector4) -> float:
+        return math.vector4_dot_product(this, v2)
+
+
+    public function distance(v2: Vector4) -> float:
+        return math.vector4_distance(this, v2)
+
+
+    public function distance_sqr(v2: Vector4) -> float:
+        return math.vector4_distance_sqr(this, v2)
+
+
+    public function scale(scale: float) -> Vector4:
+        return math.vector4_scale(this, scale)
+
+
+    public function multiply(v2: Vector4) -> Vector4:
+        return math.vector4_multiply(this, v2)
+
+
+    public function negate() -> Vector4:
+        return math.vector4_negate(this)
+
+
+    public function divide(v2: Vector4) -> Vector4:
+        return math.vector4_divide(this, v2)
+
+
+    public function normalize() -> Vector4:
+        return math.vector4_normalize(this)
+
+
+    public function min(v2: Vector4) -> Vector4:
+        return math.vector4_min(this, v2)
+
+
+    public function max(v2: Vector4) -> Vector4:
+        return math.vector4_max(this, v2)
+
+
+    public function lerp(v2: Vector4, amount: float) -> Vector4:
+        return math.vector4_lerp(this, v2, amount)
+
+
+    public function move_towards(target: Vector4, max_distance: float) -> Vector4:
+        return math.vector4_move_towards(this, target, max_distance)
+
+
+    public function invert() -> Vector4:
+        return math.vector4_invert(this)
+
+
+    public function equals(q: Vector4) -> int:
+        return math.vector4_equals(this, q)
+
+
+methods Matrix:
+    public function determinant() -> float:
+        return math.matrix_determinant(this)
+
+
+    public function trace() -> float:
+        return math.matrix_trace(this)
+
+
+    public function transpose() -> Matrix:
+        return math.matrix_transpose(this)
+
+
+    public function invert() -> Matrix:
+        return math.matrix_invert(this)
+
+
+    public static function identity() -> Matrix:
+        return math.matrix_identity()
+
+
+    public function add(right: Matrix) -> Matrix:
+        return math.matrix_add(this, right)
+
+
+    public function subtract(right: Matrix) -> Matrix:
+        return math.matrix_subtract(this, right)
+
+
+    public function multiply(right: Matrix) -> Matrix:
+        return math.matrix_multiply(this, right)
+
+
+    public function multiply_value(value: float) -> Matrix:
+        return math.matrix_multiply_value(this, value)
+
+
+    public static function translate(x: float, y: float, z: float) -> Matrix:
+        return math.matrix_translate(x, y, z)
+
+
+    public static function rotate(axis: Vector3, angle: float) -> Matrix:
+        return math.matrix_rotate(axis, angle)
+
+
+    public static function rotate_x(angle: float) -> Matrix:
+        return math.matrix_rotate_x(angle)
+
+
+    public static function rotate_y(angle: float) -> Matrix:
+        return math.matrix_rotate_y(angle)
+
+
+    public static function rotate_z(angle: float) -> Matrix:
+        return math.matrix_rotate_z(angle)
+
+
+    public static function rotate_xyz(angle: Vector3) -> Matrix:
+        return math.matrix_rotate_xyz(angle)
+
+
+    public static function rotate_zyx(angle: Vector3) -> Matrix:
+        return math.matrix_rotate_zyx(angle)
+
+
+    public static function scale(x: float, y: float, z: float) -> Matrix:
+        return math.matrix_scale(x, y, z)
+
+
+    public static function frustum(left: double, right: double, bottom: double, top: double, near_plane: double, far_plane: double) -> Matrix:
+        return math.matrix_frustum(left, right, bottom, top, near_plane, far_plane)
+
+
+    public static function perspective(fov_y: double, aspect: double, near_plane: double, far_plane: double) -> Matrix:
+        return math.matrix_perspective(fov_y, aspect, near_plane, far_plane)
+
+
+    public static function ortho(left: double, right: double, bottom: double, top: double, near_plane: double, far_plane: double) -> Matrix:
+        return math.matrix_ortho(left, right, bottom, top, near_plane, far_plane)
+
+
+    public static function look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
+        return math.matrix_look_at(eye, target, up)
+
+
+    public function to_float_v() -> math.float16:
+        return math.matrix_to_float_v(this)
+
+
+    public static function compose(translation: Vector3, rotation: Vector4, scale: Vector3) -> Matrix:
+        return math.matrix_compose(translation, rotation, scale)
+
+
+methods Quaternion:
+    public static function identity() -> Quaternion:
+        return math.quaternion_identity()
+
+
+    public function nlerp(q2: Vector4, amount: float) -> Quaternion:
+        return math.quaternion_nlerp(this, q2, amount)
+
+
+    public function slerp(q2: Vector4, amount: float) -> Quaternion:
+        return math.quaternion_slerp(this, q2, amount)
+
+
+    public function cubic_hermite_spline(out_tangent1: Vector4, q2: Vector4, in_tangent2: Vector4, t: float) -> Quaternion:
+        return math.quaternion_cubic_hermite_spline(this, out_tangent1, q2, in_tangent2, t)
+
+
+    public static function from_vector3_to_vector3(from: Vector3, to: Vector3) -> Quaternion:
+        return math.quaternion_from_vector3_to_vector3(from, to)
+
+
+    public static function from_matrix(mat: Matrix) -> Quaternion:
+        return math.quaternion_from_matrix(mat)
+
+
+    public function to_matrix() -> Matrix:
+        return math.quaternion_to_matrix(this)
+
+
+    public static function from_axis_angle(axis: Vector3, angle: float) -> Quaternion:
+        return math.quaternion_from_axis_angle(axis, angle)
+
+
+    public static function from_euler(pitch: float, yaw: float, roll: float) -> Quaternion:
+        return math.quaternion_from_euler(pitch, yaw, roll)
+
+
+    public function to_euler() -> Vector3:
+        return math.quaternion_to_euler(this)
+
+
+    public function transform(mat: Matrix) -> Quaternion:
+        return math.quaternion_transform(this, mat)
