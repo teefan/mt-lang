@@ -474,7 +474,7 @@ class MilkTeaCodegenTest < Minitest::Test
           let echoed = box.echo(true)
           if echoed:
               return box.get()
-                  return 0
+          return 0
     MT
 
     generated = generate_c_from_program_source(source)
@@ -516,7 +516,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/demo_async_flow_codegen_sum_range__frame/, generated)
     assert_match(/demo_async_flow_codegen_clamp_sum__frame/, generated)
-    assert_match(/for\s*\(/, generated)
+    assert_match(/while\s*\(/, generated)
     assert_match(/total\s*\+=/, generated)
   end
 
@@ -791,7 +791,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
   end
 
-  def test_generate_c_for_std_fmt_string_format_literals
+  def test_generate_c_for_std_fmt_format_literals
     source = <<~MT
       module demo.format_codegen
 
@@ -799,7 +799,7 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.string as string
 
       function main(value: ubyte, delta: short, ticks: ulong, raw: cstr) -> int:
-          let text = fmt.string(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
+          let text = fmt.format(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
           return int<-text.count()
     MT
 
@@ -807,7 +807,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/static mt_str demo_format_codegen__fmt_1\(/, generated)
     assert_match(/mt_str __mt_fmt_string_1 = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
-    assert_match(/std_string_String text = std_fmt_string\(__mt_fmt_string_1\);/, generated)
+    assert_match(/std_string_String text = std_fmt_format\(__mt_fmt_string_1\);/, generated)
     assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
     assert_match(/uintptr_t __mt_total_len = 29;/, generated)
     assert_match(/mt_format_append_uint\(/, generated)
@@ -2112,6 +2112,27 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_surface_Slice_int items;/, generated)
     assert_match(/static int32_t demo_generic_surface_first\(demo_generic_surface_Slice_int items\)/, generated)
     assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_int\)\{ \.data = &value, \.len = 1 \} \};/, generated)
+  end
+
+  def test_generate_c_for_generic_struct_used_only_in_expression
+    source = [
+      "module demo.generic_expression_only",
+      "",
+      "struct Box[T]:",
+      "    value: T",
+      "",
+      "function main() -> int:",
+      "    let ok: bool = Box[int](value = 7).value == 7",
+      "    if ok:",
+      "        return 1",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct demo_generic_expression_only_Box_int demo_generic_expression_only_Box_int;/, generated)
+    assert_match(/struct demo_generic_expression_only_Box_int \{/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments

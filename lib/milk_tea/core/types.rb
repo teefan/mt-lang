@@ -11,6 +11,57 @@ module MilkTea
       ptr const_ptr ref span array str_builder Task
     ]).freeze
 
+    def self.substitute_type_variables(type, substitutions)
+      case type
+      when TypeVar
+        substitutions.fetch(type.name, type)
+      when Nullable
+        Nullable.new(substitute_type_variables(type.base, substitutions))
+      when GenericInstance
+        GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type_variables(argument, substitutions) })
+      when Span
+        Span.new(substitute_type_variables(type.element_type, substitutions))
+      when Task
+        Task.new(substitute_type_variables(type.result_type, substitutions))
+      when Proc
+        Proc.new(
+          params: type.params.map do |param|
+            Parameter.new(
+              param.name,
+              substitute_type_variables(param.type, substitutions),
+              mutable: param.mutable,
+              passing_mode: param.passing_mode,
+              boundary_type: param.boundary_type ? substitute_type_variables(param.boundary_type, substitutions) : nil,
+            )
+          end,
+          return_type: substitute_type_variables(type.return_type, substitutions),
+        )
+      when Function
+        Function.new(
+          type.name,
+          params: type.params.map do |param|
+            Parameter.new(
+              param.name,
+              substitute_type_variables(param.type, substitutions),
+              mutable: param.mutable,
+              passing_mode: param.passing_mode,
+              boundary_type: param.boundary_type ? substitute_type_variables(param.boundary_type, substitutions) : nil,
+            )
+          end,
+          return_type: substitute_type_variables(type.return_type, substitutions),
+          receiver_type: type.receiver_type ? substitute_type_variables(type.receiver_type, substitutions) : nil,
+          receiver_mutable: type.receiver_mutable,
+          external: type.external,
+        )
+      when StructInstance
+        type.definition.instantiate(type.arguments.map { |argument| substitute_type_variables(argument, substitutions) })
+      when VariantInstance
+        type.definition.instantiate(type.arguments.map { |argument| substitute_type_variables(argument, substitutions) })
+      else
+        type
+      end
+    end
+
     class Base
       def bitwise?
         false
@@ -445,65 +496,12 @@ module MilkTea
         instance = StructInstance.new(self, arguments)
         @instances[key] = instance
         instance.define_fields(
-          @fields.transform_values { |type| substitute_type(type, substitutions) },
+          @fields.transform_values { |type| Types.substitute_type_variables(type, substitutions) },
         )
       end
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
-      end
-
-      private
-
-      def substitute_type(type, substitutions)
-        case type
-        when TypeVar
-          substitutions.fetch(type.name, type)
-        when Nullable
-          Nullable.new(substitute_type(type.base, substitutions))
-        when GenericInstance
-          GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
-        when Span
-          Span.new(substitute_type(type.element_type, substitutions))
-        when Task
-          Task.new(substitute_type(type.result_type, substitutions))
-        when Proc
-          Proc.new(
-            params: type.params.map do |param|
-              Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-          )
-        when Function
-          Function.new(
-            type.name,
-            params: type.params.map do |param|
-              Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_mutable: type.receiver_mutable,
-            external: type.external,
-          )
-        when StructInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when VariantInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        else
-          type
-        end
       end
     end
 
@@ -647,66 +645,13 @@ module MilkTea
         @instances[key] = instance
         instance.define_arms(
           @arms.transform_values do |fields|
-            fields.transform_values { |type| substitute_type(type, substitutions) }
+            fields.transform_values { |type| Types.substitute_type_variables(type, substitutions) }
           end,
         )
       end
 
       def to_s
         module_name ? "#{module_name}.#{name}" : name
-      end
-
-      private
-
-      def substitute_type(type, substitutions)
-        case type
-        when TypeVar
-          substitutions.fetch(type.name, type)
-        when Nullable
-          Nullable.new(substitute_type(type.base, substitutions))
-        when GenericInstance
-          GenericInstance.new(type.name, type.arguments.map { |argument| argument.is_a?(LiteralTypeArg) ? argument : substitute_type(argument, substitutions) })
-        when Span
-          Span.new(substitute_type(type.element_type, substitutions))
-        when Task
-          Task.new(substitute_type(type.result_type, substitutions))
-        when Proc
-          Proc.new(
-            params: type.params.map do |param|
-              Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-          )
-        when Function
-          Function.new(
-            type.name,
-            params: type.params.map do |param|
-              Parameter.new(
-                param.name,
-                substitute_type(param.type, substitutions),
-                mutable: param.mutable,
-                passing_mode: param.passing_mode,
-                boundary_type: param.boundary_type ? substitute_type(param.boundary_type, substitutions) : nil,
-              )
-            end,
-            return_type: substitute_type(type.return_type, substitutions),
-            receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_mutable: type.receiver_mutable,
-            external: type.external,
-          )
-        when StructInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        when VariantInstance
-          type.definition.instantiate(type.arguments.map { |argument| substitute_type(argument, substitutions) })
-        else
-          type
-        end
       end
     end
 

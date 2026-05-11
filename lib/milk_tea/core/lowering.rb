@@ -21,7 +21,6 @@ module MilkTea
         @functions = {}
         @struct_types = {}
         @union_types = {}
-        @variant_types = {}
         @synthetic_structs = []
         @synthetic_functions = []
         @synthetic_proc_counter = 0
@@ -110,8 +109,6 @@ module MilkTea
             @struct_types[decl.name] = @types.fetch(decl.name)
           when AST::UnionDecl
             @union_types[decl.name] = @types.fetch(decl.name)
-          when AST::VariantDecl
-            @variant_types[decl.name] = @types.fetch(decl.name)
           end
         end
       end
@@ -183,121 +180,85 @@ module MilkTea
       end
 
       def block_uses_fatal?(statements)
-        statements.any? { |statement| statement_uses_fatal?(statement) }
+        block_uses_expression_pattern?(statements) { |expression| fatal_expression?(expression) }
       end
 
       def block_uses_offsetof?(statements)
-        statements.any? { |statement| statement_uses_offsetof?(statement) }
+        block_uses_expression_pattern?(statements) { |expression| offsetof_expression?(expression) }
       end
 
-      def statement_uses_fatal?(statement)
+      def block_uses_expression_pattern?(statements, &predicate)
+        statements.any? { |statement| statement_uses_expression_pattern?(statement, &predicate) }
+      end
+
+      def statement_uses_expression_pattern?(statement, &predicate)
         case statement
         when AST::LocalDecl
-          expression_uses_fatal?(statement.value)
+          expression_uses_pattern?(statement.value, &predicate)
         when AST::Assignment
-          expression_uses_fatal?(statement.target) || expression_uses_fatal?(statement.value)
+          expression_uses_pattern?(statement.target, &predicate) || expression_uses_pattern?(statement.value, &predicate)
         when AST::IfStmt
-          statement.branches.any? { |branch| expression_uses_fatal?(branch.condition) || block_uses_fatal?(branch.body) } ||
-            (statement.else_body && block_uses_fatal?(statement.else_body))
+          statement.branches.any? { |branch| expression_uses_pattern?(branch.condition, &predicate) || block_uses_expression_pattern?(branch.body, &predicate) } ||
+            (statement.else_body && block_uses_expression_pattern?(statement.else_body, &predicate))
         when AST::MatchStmt
-          expression_uses_fatal?(statement.expression) || statement.arms.any? { |arm| expression_uses_fatal?(arm.pattern) || block_uses_fatal?(arm.body) }
+          expression_uses_pattern?(statement.expression, &predicate) || statement.arms.any? { |arm| expression_uses_pattern?(arm.pattern, &predicate) || block_uses_expression_pattern?(arm.body, &predicate) }
         when AST::StaticAssert
-          expression_uses_fatal?(statement.condition) || expression_uses_fatal?(statement.message)
+          expression_uses_pattern?(statement.condition, &predicate) || expression_uses_pattern?(statement.message, &predicate)
         when AST::ForStmt
-          statement.iterables.any? { |iterable| expression_uses_fatal?(iterable) } || block_uses_fatal?(statement.body)
+          statement.iterables.any? { |iterable| expression_uses_pattern?(iterable, &predicate) } || block_uses_expression_pattern?(statement.body, &predicate)
         when AST::UnsafeStmt, AST::WhileStmt
           expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
-          (expression && expression_uses_fatal?(expression)) || block_uses_fatal?(statement.body)
+          (expression && expression_uses_pattern?(expression, &predicate)) || block_uses_expression_pattern?(statement.body, &predicate)
         when AST::ReturnStmt
-          statement.value && expression_uses_fatal?(statement.value)
+          statement.value && expression_uses_pattern?(statement.value, &predicate)
         when AST::DeferStmt, AST::ExpressionStmt
-          expression_uses_fatal?(statement.expression)
+          expression_uses_pattern?(statement.expression, &predicate)
         else
           false
         end
       end
 
-      def statement_uses_offsetof?(statement)
-        case statement
-        when AST::LocalDecl
-          expression_uses_offsetof?(statement.value)
-        when AST::Assignment
-          expression_uses_offsetof?(statement.target) || expression_uses_offsetof?(statement.value)
-        when AST::IfStmt
-          statement.branches.any? { |branch| expression_uses_offsetof?(branch.condition) || block_uses_offsetof?(branch.body) } ||
-            (statement.else_body && block_uses_offsetof?(statement.else_body))
-        when AST::MatchStmt
-          expression_uses_offsetof?(statement.expression) || statement.arms.any? { |arm| expression_uses_offsetof?(arm.pattern) || block_uses_offsetof?(arm.body) }
-        when AST::StaticAssert
-          expression_uses_offsetof?(statement.condition) || expression_uses_offsetof?(statement.message)
-        when AST::ForStmt
-          statement.iterables.any? { |iterable| expression_uses_offsetof?(iterable) } || block_uses_offsetof?(statement.body)
-        when AST::UnsafeStmt, AST::WhileStmt
-          expression = statement.is_a?(AST::WhileStmt) ? statement.condition : nil
-          (expression && expression_uses_offsetof?(expression)) || block_uses_offsetof?(statement.body)
-        when AST::ReturnStmt
-          statement.value && expression_uses_offsetof?(statement.value)
-        when AST::DeferStmt, AST::ExpressionStmt
-          expression_uses_offsetof?(statement.expression)
-        else
-          false
-        end
+      def fatal_expression?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "fatal"
+      end
+
+      def offsetof_expression?(expression)
+        expression.is_a?(AST::OffsetofExpr)
       end
 
       def expression_uses_fatal?(expression)
-        case expression
-        when AST::AwaitExpr
-          expression_uses_fatal?(expression.expression)
-        when AST::Call
-          identifier = expression.callee
-          return true if identifier.is_a?(AST::Identifier) && identifier.name == "fatal"
-
-          expression_uses_fatal?(expression.callee) || expression.arguments.any? { |argument| expression_uses_fatal?(argument.value) }
-        when AST::BinaryOp
-          expression_uses_fatal?(expression.left) || expression_uses_fatal?(expression.right)
-        when AST::RangeExpr
-          expression_uses_fatal?(expression.start_expr) || expression_uses_fatal?(expression.end_expr)
-        when AST::IfExpr
-          expression_uses_fatal?(expression.condition) || expression_uses_fatal?(expression.then_expression) || expression_uses_fatal?(expression.else_expression)
-        when AST::UnsafeExpr
-          expression_uses_fatal?(expression.expression)
-        when AST::UnaryOp
-          expression_uses_fatal?(expression.operand)
-        when AST::MemberAccess
-          expression_uses_fatal?(expression.receiver)
-        when AST::IndexAccess
-          expression_uses_fatal?(expression.receiver) || expression_uses_fatal?(expression.index)
-        when AST::Specialization
-          expression_uses_fatal?(expression.callee) || expression.arguments.any? { |argument| expression_uses_fatal?(argument.value) }
-        else
-          false
-        end
+        expression_uses_pattern?(expression) { |candidate| fatal_expression?(candidate) }
       end
 
       def expression_uses_offsetof?(expression)
+        expression_uses_pattern?(expression) { |candidate| offsetof_expression?(candidate) }
+      end
+
+      def expression_uses_pattern?(expression, &predicate)
+        return false unless expression
+        return true if predicate.call(expression)
+
         case expression
         when AST::AwaitExpr
-          expression_uses_offsetof?(expression.expression)
-        when AST::OffsetofExpr
-          true
+          expression_uses_pattern?(expression.expression, &predicate)
         when AST::Call
-          expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
+          expression_uses_pattern?(expression.callee, &predicate) || expression.arguments.any? { |argument| expression_uses_pattern?(argument.value, &predicate) }
         when AST::BinaryOp
-          expression_uses_offsetof?(expression.left) || expression_uses_offsetof?(expression.right)
-        when AST::IfExpr
-          expression_uses_offsetof?(expression.condition) || expression_uses_offsetof?(expression.then_expression) || expression_uses_offsetof?(expression.else_expression)
-        when AST::UnsafeExpr
-          expression_uses_offsetof?(expression.expression)
-        when AST::UnaryOp
-          expression_uses_offsetof?(expression.operand)
-        when AST::MemberAccess
-          expression_uses_offsetof?(expression.receiver)
-        when AST::IndexAccess
-          expression_uses_offsetof?(expression.receiver) || expression_uses_offsetof?(expression.index)
+          expression_uses_pattern?(expression.left, &predicate) || expression_uses_pattern?(expression.right, &predicate)
         when AST::RangeExpr
-          expression_uses_offsetof?(expression.start_expr) || expression_uses_offsetof?(expression.end_expr)
+          expression_uses_pattern?(expression.start_expr, &predicate) || expression_uses_pattern?(expression.end_expr, &predicate)
+        when AST::IfExpr
+          expression_uses_pattern?(expression.condition, &predicate) || expression_uses_pattern?(expression.then_expression, &predicate) || expression_uses_pattern?(expression.else_expression, &predicate)
+        when AST::UnsafeExpr
+          expression_uses_pattern?(expression.expression, &predicate)
+        when AST::UnaryOp
+          expression_uses_pattern?(expression.operand, &predicate)
+        when AST::MemberAccess
+          expression_uses_pattern?(expression.receiver, &predicate)
+        when AST::IndexAccess
+          expression_uses_pattern?(expression.receiver, &predicate) || expression_uses_pattern?(expression.index, &predicate)
         when AST::Specialization
-          expression_uses_offsetof?(expression.callee) || expression.arguments.any? { |argument| expression_uses_offsetof?(argument.value) }
+          expression_uses_pattern?(expression.callee, &predicate) || expression.arguments.any? { |argument| expression_uses_pattern?(argument.value, &predicate) }
         else
           false
         end
@@ -2170,7 +2131,7 @@ module MilkTea
           IR::Assignment.new(target: loop_var_expr, operator: "=", value: start_expr),
           IR::Assignment.new(target: stop_field_expr, operator: "=", value: stop_expr),
           IR::WhileStmt.new(
-            condition: IR::BinaryOp.new(operator: cmp_op, left: loop_var_expr, right: stop_field_expr, type: @types.fetch("bool")),
+            condition: IR::Binary.new(operator: cmp_op, left: loop_var_expr, right: stop_field_expr, type: @types.fetch("bool")),
             body: body + [IR::Assignment.new(target: loop_var_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: loop_var_type))],
           ),
         ]
@@ -3419,7 +3380,7 @@ module MilkTea
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
             if prepared_cleanups.any? && cstr_trackable_type?(return_type)
-              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use fmt.string(...) when ownership must escape"
+              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use fmt.format(...) when ownership must escape"
             end
 
             cleanup = prepared_cleanups.flat_map(&:itself) + cleanup_statements(local_defers, active_defers)

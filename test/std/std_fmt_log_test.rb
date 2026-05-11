@@ -52,12 +52,12 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
-  def test_host_runtime_executes_fmt_string_format_literals
+  def test_host_runtime_executes_fmt_format_literals
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_string",
+      "module demo.std_fmt_format",
       "",
       "import std.fmt as fmt",
       "import std.mem.arena as arena",
@@ -69,7 +69,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    let delta: short = -42",
       "    let small: ubyte = 7",
       "    let ticks: ulong = 9",
-      "    var output = fmt.string(f\"n=\#{delta} ok=\#{true} small=\#{small} ticks=\#{ticks} raw=\#{scratch.to_cstr(\"wow\")}\")",
+      "    var output = fmt.format(f\"n=\#{delta} ok=\#{true} small=\#{small} ticks=\#{ticks} raw=\#{scratch.to_cstr(\"wow\")}\")",
       "    let total = int<-output.count()",
       "    defer output.release()",
       "    return total",
@@ -116,7 +116,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_float_string",
+      "module demo.std_fmt_float_format",
       "",
       "import std.fmt as fmt",
       "import std.string as string",
@@ -124,7 +124,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "function main() -> int:",
       "    let ratio: float = 2.5",
       "    let scale: double = 0.125",
-      "    var output = fmt.string(f\"ratio=\#{ratio} scale=\#{scale}\")",
+      "    var output = fmt.format(f\"ratio=\#{ratio} scale=\#{scale}\")",
       "    defer output.release()",
       "    return int<-output.count()",
       "",

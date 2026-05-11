@@ -1961,8 +1961,6 @@ class DAPServerTest < Minitest::Test
   end
 
   def test_lldb_backend_rewrites_sigstop_pause_stop_to_pause_reason
-    example_path = File.expand_path("../../fixtures/language_fixture.mt", __dir__)
-
     incoming = [
       { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
       { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => false } },

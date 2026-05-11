@@ -407,7 +407,6 @@ module MilkTea
         end
       end
 
-      lexeme = line[start...index]
       if line[index, 5] == "float" && !identifier_part?(line[index + 5].to_s)
         type = :float
         index += 5
