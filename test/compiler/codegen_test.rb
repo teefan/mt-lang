@@ -448,7 +448,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/demo_generic_methods_codegen_Box_echo_int/, generated)
     assert_match(/demo_generic_methods_codegen_Box_make_int/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_echo_int\(box, 3\)/, generated)
+    assert_match(/int32_t a = \(\(void\)box, demo_generic_methods_codegen_Box_echo_int\(3\)\);/, generated)
     assert_match(/demo_generic_methods_codegen_Box_make_int\(4\)/, generated)
   end
 
@@ -484,7 +484,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int\(\)/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_get_int\(box\)/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool\(box, true\)/, generated)
+    assert_match(/if \(\(\(void\)box, demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\)\) \{/, generated)
   end
 
   def test_generate_c_for_async_with_control_flow
@@ -2917,6 +2917,87 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return demo_ref_surface_Counter_read\(\*handle\);/, generated)
   end
 
+  def test_generate_c_for_immutable_array_bearing_method_receivers_uses_pointer_params
+    source = [
+      "module demo.large_receiver_surface",
+      "",
+      "struct Big:",
+      "    data: array[int, 8]",
+      "",
+      "function first_value(big: Big) -> int:",
+      "    return big.data[0]",
+      "",
+      "methods Big:",
+      "    function first() -> int:",
+      "        return first_value(this)",
+      "",
+      "function main() -> int:",
+      "    let big = Big(data = array[int, 8](1, 2, 3, 4, 5, 6, 7, 8))",
+      "    return big.first()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_large_receiver_surface_Big_first\(demo_large_receiver_surface_Big \*this\)/, generated)
+    assert_match(/return demo_large_receiver_surface_first_value\(\*this\);/, generated)
+    assert_match(/return demo_large_receiver_surface_Big_first\(&big\);/, generated)
+  end
+
+  def test_generate_c_for_unused_method_receivers_omits_param_but_keeps_receiver_evaluation
+    source = [
+      "module demo.receiver_elision_surface",
+      "",
+      "var calls: int = 0",
+      "",
+      "struct Counter:",
+      "    value: int",
+      "",
+      "function make_counter() -> Counter:",
+      "    calls += 1",
+      "    return Counter(value = calls)",
+      "",
+      "methods Counter:",
+      "    function answer() -> int:",
+      "        return 7",
+      "",
+      "function main() -> int:",
+      "    return make_counter().answer()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_receiver_elision_surface_Counter_answer\(void\)/, generated)
+    refute_match(/demo_receiver_elision_surface_Counter_answer\(demo_receiver_elision_surface_Counter/, generated)
+    assert_match(/return \(\(void\)demo_receiver_elision_surface_make_counter\(\), demo_receiver_elision_surface_Counter_answer\(\)\);/, generated)
+  end
+
+  def test_generate_c_for_function_values_returning_arrays
+    source = [
+      "module demo.fn_array_return_surface",
+      "",
+      "function make() -> array[int, 2]:",
+      "    return array[int, 2](4, 9)",
+      "",
+      "function read_first(callback: fn() -> array[int, 2]) -> int:",
+      "    let values = callback()",
+      "    unsafe:",
+      "        return values[0]",
+      "",
+      "function main() -> int:",
+      "    return read_first(make)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_fn_array_return_surface_make\(int32_t \(\*__mt_out\)\[2\]\);/, generated)
+    assert_match(/static int32_t demo_fn_array_return_surface_read_first\(void \(\*callback\)\(int32_t \(\*__mt_out\)\[2\]\)\);/, generated)
+    assert_match(/int32_t values\[2\];\n  callback\(&\(values\)\);/, generated)
+    assert_match(/return demo_fn_array_return_surface_read_first\(demo_fn_array_return_surface_make\);/, generated)
+  end
+
   def test_generate_c_for_imported_associated_functions_on_type_aliases
     Dir.mktmpdir("milk-tea-codegen-associated") do |dir|
       FileUtils.mkdir_p(File.join(dir, "demo"))
@@ -3171,12 +3252,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_array_return_array_int_4/, generated)
-    assert_match(/static mt_array_return_array_int_4 demo_array_return_surface_make\(void\)/, generated)
-    assert_match(/return \(mt_array_return_array_int_4\)\{ \.value = \{ 1, 2, 3, 4 \} \};/, generated)
-    assert_match(/mt_array_return_array_int_4 __mt_return_value;/, generated)
-    assert_match(/memcpy\(__mt_return_value\.value, values, sizeof\(__mt_return_value\.value\)\);/, generated)
-    assert_match(/return demo_array_return_surface_read\(demo_array_return_surface_clone\(demo_array_return_surface_make\(\)\.value\)\.value\);/, generated)
+    refute_match(/mt_array_return_array_int_4/, generated)
+    assert_match(/static void demo_array_return_surface_make\(int32_t \(\*__mt_out\)\[4\]\);/, generated)
+    assert_match(/static void demo_array_return_surface_clone\(int32_t \(\*__mt_out\)\[4\], int32_t values_input\[4\]\);/, generated)
+    assert_match(/memcpy\(\*__mt_out, \(int32_t \[4\]\) \{ 1, 2, 3, 4 \}, sizeof\(\*__mt_out\)\);/, generated)
+    assert_match(/memcpy\(\*__mt_out, values, sizeof\(\*__mt_out\)\);/, generated)
+    assert_match(/demo_array_return_surface_make\(&\(__mt_array_call_\d+\)\);/, generated)
+    assert_match(/demo_array_return_surface_clone\(&\(__mt_array_call_\d+\), __mt_array_call_\d+\);/, generated)
+    assert_match(/return demo_array_return_surface_read\(__mt_array_call_\d+\);/, generated)
   end
 
   def test_generate_c_for_unsafe_reinterpret_calls

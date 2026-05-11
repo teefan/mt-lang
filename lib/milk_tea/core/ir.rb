@@ -14,7 +14,9 @@ module MilkTea
     EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)
     EnumMember = Data.define(:name, :c_name, :value)
     Field = Data.define(:name, :type)
-    Function = Data.define(:name, :c_name, :params, :return_type, :body, :entry_point)
+    Function = Data.define(:name, :c_name, :params, :return_type, :body, :entry_point, :method_receiver_param) do
+      def initialize(name:, c_name:, params:, return_type:, body:, entry_point:, method_receiver_param: false) = super
+    end
     Param = Data.define(:name, :c_name, :type, :pointer)
 
     LocalDecl = Data.define(:name, :c_name, :type, :value, :line, :source_path) do
