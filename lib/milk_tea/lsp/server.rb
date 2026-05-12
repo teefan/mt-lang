@@ -78,6 +78,7 @@ module MilkTea
         @semantic_tokens_cache = {}
         @fixall_cache = {}
         @definition_file_token_cache = {}
+        @definition_file_ast_cache = {}
         @diagnostics_perf = {
           scheduled: 0,
           skipped_unchanged: 0,
@@ -1831,8 +1832,20 @@ module MilkTea
         analysis = @workspace.get_analysis(uri)
         return nil unless analysis
 
-        if token_index && (member_hover = resolve_member_access_hover_info(analysis, tokens, token_index))
+        if token_index && field_declaration_token?(tokens, token_index)
+          return resolve_field_declaration_hover_info(analysis, tokens, token_index)
+        end
+
+        if token_index && named_argument_label_token?(tokens, token_index)
+          return resolve_named_argument_label_hover_info(analysis, tokens, token_index)
+        end
+
+        if token_index && (member_hover = resolve_member_access_hover_info(uri, analysis, tokens, token_index))
           return member_hover
+        end
+
+        if token_index && (enum_member_hover = resolve_enum_member_hover_info(uri, analysis, tokens, token_index))
+          return enum_member_hover
         end
 
         name = token.lexeme
@@ -2053,6 +2066,10 @@ module MilkTea
               return member_location if member_location
               return module_definition_location(uri, module_name)
             end
+          end
+
+          if token_index && (enum_member_location = resolve_enum_member_definition_location(uri, analysis, tokens, token_index))
+            return enum_member_location
           end
 
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
@@ -3214,6 +3231,19 @@ module MilkTea
         }
       end
 
+      def enum_member_definition_location(current_uri, module_name, type_name, member_name)
+        path = module_path_for_name(current_uri, module_name)
+        return nil unless path
+
+        token = find_enum_member_token_in_file(path, type_name, member_name)
+        return nil unless token
+
+        {
+          uri: path_to_uri(File.expand_path(path)),
+          range: token_to_range(token)
+        }
+      end
+
       def module_member_binding_location(current_uri, module_name, member_name, binding)
         path = module_path_for_name(current_uri, module_name)
         return nil unless path
@@ -3246,11 +3276,7 @@ module MilkTea
       end
 
       def find_definition_token_in_file(path, name)
-        mtime = File.mtime(path).to_i rescue 0
-        cache_key = "#{path}:#{mtime}"
-        tokens = @definition_file_token_cache[cache_key] ||= begin
-          MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
-        end
+        tokens = definition_file_tokens(path)
 
         tokens.each_cons(2) do |kw_tok, id_tok|
           next unless MilkTea::LSP::Workspace::DEFINITION_KEYWORDS.include?(kw_tok.type)
@@ -3262,6 +3288,80 @@ module MilkTea
         nil
       rescue StandardError
         nil
+      end
+
+      def find_enum_member_token_in_file(path, type_name, member_name)
+        tokens = definition_file_tokens(path)
+
+        tokens.each_with_index do |token, index|
+          next unless [:enum, :flags].include?(token.type)
+
+          name_index = next_non_trivia_token_index(tokens, index + 1)
+          next unless name_index && tokens[name_index].type == :identifier && tokens[name_index].lexeme == type_name
+
+          member_token = find_enum_member_token_in_body(tokens, index, member_name)
+          return member_token if member_token
+        end
+
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def find_enum_member_token_in_body(tokens, header_index, member_name)
+        header = tokens[header_index]
+        i = header_index + 1
+
+        while i < tokens.length
+          token = tokens[i]
+
+          if token.line > header.line && ![:newline, :indent, :dedent, :eof].include?(token.type) &&
+              first_non_trivia_token_on_line?(tokens, i) && token.column <= header.column
+            break
+          end
+
+          if token.type == :identifier && token.lexeme == member_name && token.line > header.line &&
+              first_non_trivia_token_on_line?(tokens, i) && token.column > header.column
+            return token
+          end
+
+          i += 1
+        end
+
+        nil
+      end
+
+      def enum_member_value_text(current_uri, module_name, type_name, member_name)
+        path = module_path_for_name(current_uri, module_name)
+        return nil unless path
+
+        declaration = definition_file_ast(path)&.declarations&.find do |decl|
+          (decl.is_a?(AST::EnumDecl) || decl.is_a?(AST::FlagsDecl)) && decl.name == type_name
+        end
+        return nil unless declaration
+
+        member = declaration.members.find { |candidate| candidate.name == member_name }
+        return nil unless member&.value
+
+        MilkTea::PrettyPrinter::ASTFormatter.new.send(:render_expression, member.value)
+      rescue StandardError
+        nil
+      end
+
+      def definition_file_tokens(path)
+        mtime = File.mtime(path).to_i rescue 0
+        cache_key = "#{path}:#{mtime}"
+        @definition_file_token_cache[cache_key] ||= begin
+          MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
+        end
+      end
+
+      def definition_file_ast(path)
+        mtime = File.mtime(path).to_i rescue 0
+        cache_key = "#{path}:#{mtime}"
+        @definition_file_ast_cache[cache_key] ||= begin
+          MilkTea::Parser.parse(nil, path: path_to_uri(path), tokens: definition_file_tokens(path))
+        end
       end
 
       def module_member_access_info(tokens, index)
@@ -3295,7 +3395,7 @@ module MilkTea
         analysis.values[receiver_name]&.type
       end
 
-      def resolve_member_access_hover_info(analysis, tokens, token_index)
+      def resolve_member_access_hover_info(current_uri, analysis, tokens, token_index)
         chain = member_access_chain_at(tokens, token_index)
         return nil unless chain
 
@@ -3311,26 +3411,206 @@ module MilkTea
         return nil unless current_type
 
         chain[:segments][1..hovered_segment[:position]].each do |segment|
-          receiver_type = project_field_receiver_type_for_completion(current_type)
-          return nil unless receiver_type.respond_to?(:field)
+          field_receiver_type = project_field_receiver_type_for_completion(current_type)
+          if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+            if segment[:token_index] == token_index
+              return {
+                signature: "#{segment[:name]}: #{field_type}",
+                docs: nil,
+                source: nil,
+                source_uri: nil,
+                source_line: nil,
+              }
+            end
 
-          field_type = receiver_type.field(segment[:name])
-          return nil unless field_type
-
-          if segment[:token_index] == token_index
-            return {
-              signature: "#{segment[:name]}: #{field_type}",
-              docs: nil,
-              source: nil,
-              source_uri: nil,
-              source_line: nil,
-            }
+            current_type = field_type
+            next
           end
 
-          current_type = field_type
+          next unless segment[:token_index] == token_index
+
+          method_receiver_type = project_method_receiver_type_for_completion(current_type)
+          method_info = member_method_info_for_receiver_type(analysis, method_receiver_type, segment[:name])
+          return nil unless method_info
+
+          source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
+          source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+
+          return {
+            signature: method_signature(method_info[:binding]),
+            docs: nil,
+            source: hover_source_label_from_location(source_location),
+            source_uri: hover_source_uri_from_location(source_location),
+            source_line: hover_source_line_from_location(source_location),
+          }
         end
 
         nil
+      end
+
+      def member_method_info_for_receiver_type(analysis, receiver_type, method_name)
+        return nil unless receiver_type
+
+        if (binding = analysis.methods.fetch(receiver_type, {})[method_name])
+          return {
+            binding: binding,
+            module_name: analysis.module_name,
+          }
+        end
+
+        analysis.imports.each_value do |module_binding|
+          binding = module_binding.methods.fetch(receiver_type, {})[method_name]
+          next unless binding
+
+          return {
+            binding: binding,
+            module_name: module_binding.name,
+          }
+        end
+
+        nil
+      end
+
+      def resolve_enum_member_hover_info(current_uri, analysis, tokens, token_index)
+        member_info = resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)
+        return nil unless member_info
+
+        signature = "#{member_info[:member_name]}: #{member_info[:receiver_label]}"
+        signature += " = #{member_info[:value_text]}" if member_info[:value_text]
+
+        {
+          signature: signature,
+          docs: nil,
+          source: hover_source_label_from_location(member_info[:location]),
+          source_uri: hover_source_uri_from_location(member_info[:location]),
+          source_line: hover_source_line_from_location(member_info[:location]),
+        }
+      end
+
+      def resolve_enum_member_definition_location(current_uri, analysis, tokens, token_index)
+        resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)&.fetch(:location, nil)
+      end
+
+      def resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)
+        return nil unless type_name_member_access?(tokens, token_index, analysis)
+
+        token = tokens[token_index]
+        token_end_char = token.column - 1 + token.lexeme.length
+        receiver_name = @workspace.find_dot_receiver(current_uri, token.line - 1, token_end_char)
+        receiver_path = @workspace.find_dot_receiver_path(current_uri, token.line - 1, token_end_char)
+        receiver_info = resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+        return nil unless receiver_info
+
+        receiver_type = receiver_info[:type]
+        return nil unless receiver_type.is_a?(Types::EnumBase)
+        return nil unless receiver_type.member(token.lexeme)
+
+        owner_module_name = receiver_type.respond_to?(:module_name) ? receiver_type.module_name : receiver_info[:module_name]
+
+        {
+          receiver_label: receiver_info[:label],
+          member_name: token.lexeme,
+          value_text: enum_member_value_text(current_uri, owner_module_name, receiver_type.name, token.lexeme),
+          location: enum_member_definition_location(current_uri, owner_module_name, receiver_type.name, token.lexeme),
+        }
+      end
+
+      def resolve_field_declaration_hover_info(analysis, tokens, token_index)
+        receiver_info = field_declaration_receiver_info(analysis, tokens, token_index)
+        return nil unless receiver_info
+
+        field_name = tokens[token_index].lexeme
+        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+        return nil unless receiver_type.respond_to?(:field)
+
+        field_type = receiver_type.field(field_name)
+        return nil unless field_type
+
+        {
+          signature: "#{field_name}: #{field_type}",
+          docs: nil,
+          source: nil,
+          source_uri: nil,
+          source_line: nil,
+        }
+      end
+
+      def resolve_named_argument_label_hover_info(analysis, tokens, token_index)
+        receiver_info = named_argument_label_receiver_info(analysis, tokens, token_index)
+        return nil unless receiver_info
+
+        field_name = tokens[token_index].lexeme
+        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+        return nil unless receiver_type.respond_to?(:field)
+
+        field_type = receiver_type.field(field_name)
+        return nil unless field_type
+
+        {
+          signature: "#{field_name}: #{field_type}",
+          docs: nil,
+          source: nil,
+          source_uri: nil,
+          source_line: nil,
+        }
+      end
+
+      def field_declaration_receiver_info(analysis, tokens, token_index)
+        token = tokens[token_index]
+        return nil unless token
+
+        i = token_index - 1
+        while i >= 0
+          current = tokens[i]
+          i -= 1
+
+          next if [:newline, :indent, :dedent, :eof].include?(current.type)
+          next if current.line == token.line
+          next if current.column >= token.column
+
+          header_line_tokens = non_trivia_tokens_on_line(tokens, current.line)
+          header = header_line_tokens.first
+          return nil unless [:struct, :union].include?(header&.type)
+
+          type_token = header_line_tokens[1]
+          return nil unless type_token&.type == :identifier
+
+          return resolve_type_receiver_info(analysis, type_token.lexeme, type_token.lexeme)
+        end
+
+        nil
+      end
+
+      def named_argument_label_receiver_info(analysis, tokens, token_index)
+        opener_index = parameter_list_opener_index(tokens, token_index)
+        return nil unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return nil unless head_index
+
+        if tokens[head_index].type == :rbracket
+          lbracket_index = matching_opener_index(tokens, head_index)
+          return nil unless lbracket_index
+
+          head_index = previous_non_trivia_token_index(tokens, lbracket_index)
+          return nil unless head_index
+        end
+
+        head = tokens[head_index]
+        return nil unless head.type == :identifier
+
+        receiver_name = head.lexeme
+        receiver_path = receiver_name
+
+        dot_index = previous_non_trivia_token_index(tokens, head_index)
+        if dot_index && tokens[dot_index].type == :dot
+          module_index = previous_non_trivia_token_index(tokens, dot_index)
+          return nil unless module_index && tokens[module_index].type == :identifier
+
+          receiver_path = "#{tokens[module_index].lexeme}.#{receiver_name}"
+        end
+
+        resolve_type_receiver_info(analysis, receiver_name, receiver_path)
       end
 
       def member_access_chain_at(tokens, token_index)
