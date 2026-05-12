@@ -155,6 +155,39 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :private, methods_block.methods[1].visibility
   end
 
+  def test_parses_interfaces_implements_and_constrained_type_params
+    source = <<~MT
+      module demo.interfaces
+
+      public interface Damageable:
+          editable function take_damage(amount: int) -> void
+          function is_alive() -> bool
+
+      struct NPC implements Damageable:
+          hp: int
+
+      function damage_one[T implements Damageable](target: ref[T]) -> void:
+          target.take_damage(1)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    interface_decl = ast.declarations[0]
+    struct_decl = ast.declarations[1]
+    function_decl = ast.declarations[2]
+
+    assert_instance_of MilkTea::AST::InterfaceDecl, interface_decl
+    assert_equal :public, interface_decl.visibility
+    assert_equal %w[take_damage is_alive], interface_decl.methods.map(&:name)
+    assert_equal :editable, interface_decl.methods.first.kind
+
+    assert_instance_of MilkTea::AST::StructDecl, struct_decl
+    assert_equal ["Damageable"], struct_decl.implements.map(&:to_s)
+
+    assert_instance_of MilkTea::AST::FunctionDef, function_decl
+    assert_equal ["Damageable"], function_decl.type_params.first.constraints.map(&:to_s)
+  end
+
   def test_parses_module_scope_vars_with_and_without_initializer
     source = <<~MT
       module demo.globals

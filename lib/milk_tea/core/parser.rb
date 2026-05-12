@@ -115,6 +115,8 @@ module MilkTea
         parse_enum_decl(AST::FlagsDecl, visibility:)
       elsif match(:variant)
         parse_variant_decl(visibility:)
+      elsif match(:interface)
+        parse_interface_decl(visibility:)
       elsif match(:opaque)
         parse_opaque_decl(visibility:)
       elsif match(:methods)
@@ -258,6 +260,7 @@ module MilkTea
       line = previous.line
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
+      implements = parse_implements_clause
       c_name = parse_optional_explicit_c_name
       fields = parse_named_block do
         field_name = consume_name("expected field name").lexeme
@@ -266,7 +269,7 @@ module MilkTea
         consume_end_of_statement
         AST::Field.new(name: field_name, type: field_type)
       end
-      AST::StructDecl.new(name:, type_params:, c_name:, fields:, packed:, alignment:, visibility:, line:)
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, packed:, alignment:, visibility:, line:)
     end
 
     def parse_struct_decl_with_layout(visibility: :private)
@@ -367,12 +370,22 @@ module MilkTea
     def parse_opaque_decl(visibility: :private)
       line = previous.line
       name = consume_name("expected opaque type name").lexeme
+      implements = parse_implements_clause
       c_name = nil
       if match(:equal)
         c_name = consume(:cstring, "expected C string literal after '='").literal
       end
       consume_end_of_statement
-      AST::OpaqueDecl.new(name:, c_name:, visibility:, line:)
+      AST::OpaqueDecl.new(name:, implements:, c_name:, visibility:, line:)
+    end
+
+    def parse_interface_decl(visibility: :private)
+      line = previous.line
+      name = consume_name("expected interface name").lexeme
+      methods = parse_named_block do
+        parse_interface_method_decl
+      end
+      AST::InterfaceDecl.new(name:, methods:, visibility:, line:)
     end
 
     def parse_methods_block
@@ -426,6 +439,32 @@ module MilkTea
         body = parse_block
       end
       AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:, column: name_token.column)
+    end
+
+    def parse_interface_method_decl
+      visibility, visibility_token = parse_visibility
+      raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
+
+      async = match(:async)
+      kind = if match(:editable)
+               :editable
+             elsif match(:static)
+               :static
+             else
+               :plain
+             end
+      consume(:function, "expected function declaration")
+      line = previous.line
+
+      name_token = consume_name("expected function name")
+      name = name_token.lexeme
+      type_params = parse_declaration_type_params
+      raise error(name_token, "interface method #{name} cannot be generic") if type_params.any?
+
+      params = parse_params
+      return_type = match(:arrow) ? parse_type_ref : nil
+      consume_end_of_statement
+      AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, line:, column: name_token.column)
     end
 
     def parse_visibility
@@ -626,13 +665,29 @@ module MilkTea
       params = []
       unless check(:rbracket)
         loop do
-          params << AST::TypeParam.new(name: consume_name("expected type parameter name").lexeme)
+          name = consume_name("expected type parameter name").lexeme
+          constraints = if match(:implements)
+                          parsed = [parse_qualified_name]
+                          parsed << parse_qualified_name while match(:and)
+                          parsed
+                        else
+                          []
+                        end
+          params << AST::TypeParam.new(name:, constraints:)
           break unless match(:comma)
         end
       end
 
       consume(:rbracket, "expected ']' after type parameters")
       params
+    end
+
+    def parse_implements_clause
+      return [] unless match(:implements)
+
+      implements = [parse_qualified_name]
+      implements << parse_qualified_name while match(:comma)
+      implements
     end
 
     def parse_block

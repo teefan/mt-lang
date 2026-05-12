@@ -117,6 +117,7 @@ Top-level declarations:
 - `const`
 - `var`
 - `type`
+- `interface`
 - `struct`
 - `union`
 - `variant`
@@ -202,6 +203,15 @@ variant Token:
     eof
 ```
 
+`struct` and `opaque` declarations may add nominal interface conformance with `implements`:
+
+```mt
+struct NPC implements Damageable, Named:
+    hp: int
+
+opaque SDL_Window implements Closable
+```
+
 `variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Maybe[int]`:
 
 ```mt
@@ -231,7 +241,24 @@ align(16) struct Mat4:
 
 `align(...)` must be a positive power of two.
 
-### 3.5 Methods
+### 3.5 Interfaces
+
+```mt
+public interface Damageable:
+    editable function take_damage(amount: int) -> void
+    function is_alive() -> bool
+```
+
+Rules:
+
+- Interface bodies contain instance method signatures only.
+- Interface methods may be `function` or `editable function`.
+- Interface methods may not be `static`, `async`, or generic.
+- Interface methods do not have bodies.
+- `public` is allowed on the interface declaration, not on individual interface methods.
+- Bare interface names are not runtime storage types; they are contracts used by `implements` and constrained generics.
+
+### 3.6 Methods
 
 ```mt
 methods Counter:
@@ -256,7 +283,7 @@ Method capabilities:
 - async methods are supported
 - generic methods are supported
 
-### 3.6 Functions
+### 3.7 Functions
 
 ```mt
 function add(a: int, b: int) -> int:
@@ -270,8 +297,20 @@ Rules:
 - Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
+- Generic function and method type parameters may declare nominal interface constraints with `implements`.
 
-### 3.7 Extern functions
+Examples:
+
+```mt
+function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+    if target.is_alive():
+        target.take_damage(amount)
+
+function tag[T implements Damageable and Named](target: ref[T]) -> str:
+    return target.name()
+```
+
+### 3.8 Extern functions
 
 ```mt
 external function printf(format: cstr, ...) -> int
@@ -285,7 +324,7 @@ Rules:
 - cannot be async
 - cannot take or return arrays
 
-### 3.8 Foreign functions
+### 3.9 Foreign functions
 
 ```mt
 foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
@@ -544,6 +583,12 @@ Supported:
 - generic functions
 - generic foreign functions
 
+Rules:
+
+- Interface constraints are supported on generic functions and generic methods.
+- Multiple interface constraints on the same type parameter use `and`: `T implements A and B`.
+- Interface constraints are not supported on generic struct or variant type parameters.
+
 Type arguments can be:
 
 - types
@@ -716,8 +761,9 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 
 Current implementation rejects:
 
-- generic constraints on type parameters
-- interface declarations and interface constraints
+- interface methods with `static`, `async`, or generic signatures
+- runtime interface value types such as `Damageable` as a field, local, parameter, or return type
+- interface constraints on generic struct or variant type parameters
 
 ## 13. Example
 

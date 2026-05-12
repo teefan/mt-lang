@@ -48,6 +48,226 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("read")
   end
 
+  def test_type_checks_nominal_interface_constraint_calls
+    source = <<~MT
+      module demo.interfaces
+
+      interface Damageable:
+          editable function take_damage(amount: int) -> void
+          function is_alive() -> bool
+
+      struct NPC implements Damageable:
+          hp: int
+
+      methods NPC:
+          editable function take_damage(amount: int):
+              this.hp -= amount
+
+          function is_alive() -> bool:
+              return this.hp > 0
+
+      function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+          if target.is_alive():
+              target.take_damage(amount)
+
+      function main() -> int:
+          var npc = NPC(hp = 10)
+          damage_one(npc, 3)
+          return npc.hp
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_nominal_interface_constraint_without_explicit_implements
+    source = <<~MT
+      module demo.interfaces
+
+      interface Damageable:
+          editable function take_damage(amount: int) -> void
+          function is_alive() -> bool
+
+      struct NPC:
+          hp: int
+
+      methods NPC:
+          editable function take_damage(amount: int):
+              this.hp -= amount
+
+          function is_alive() -> bool:
+              return this.hp > 0
+
+      function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+          if target.is_alive():
+              target.take_damage(amount)
+
+      function main() -> int:
+          var npc = NPC(hp = 10)
+          damage_one(npc, 3)
+          return npc.hp
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/does not implement interface Damageable/, error.message)
+  end
+
+  def test_rejects_explicit_interface_conformance_with_missing_method
+    source = <<~MT
+      module demo.interfaces
+
+      interface Damageable:
+          editable function take_damage(amount: int) -> void
+          function is_alive() -> bool
+
+      struct NPC implements Damageable:
+          hp: int
+
+      methods NPC:
+          editable function take_damage(amount: int):
+              this.hp -= amount
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/missing method is_alive/, error.message)
+  end
+
+  def test_type_checks_multiple_interfaces_on_single_type
+    source = <<~MT
+      module demo.interfaces
+
+      interface Damageable:
+          editable function take_damage(amount: int) -> void
+
+      interface Named:
+          function name() -> str
+
+      struct NPC implements Damageable, Named:
+          label: str
+          hp: int
+
+      methods NPC:
+          editable function take_damage(amount: int):
+              this.hp -= amount
+
+          function name() -> str:
+              return this.label
+
+      function tag_and_damage[T implements Damageable and Named](target: ref[T]) -> str:
+          target.take_damage(1)
+          return target.name()
+
+      function main() -> int:
+          var npc = NPC(label = "orc", hp = 10)
+          let label = tag_and_damage(npc)
+          if label == "orc" and npc.hp == 9:
+              return 0
+          return 1
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_imported_public_interface_constraints
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function damage_one[T implements sample.Damageable](target: ref[T], amount: int) -> void:
+          if target.is_alive():
+              target.take_damage(amount)
+
+      function main() -> int:
+          var npc = sample.NPC(hp = 5)
+          damage_one(npc, 2)
+          return npc.hp
+    MT
+
+    imported_sources = {
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+            function is_alive() -> bool
+
+        public struct NPC implements Damageable:
+            hp: int
+
+        methods NPC:
+            public editable function take_damage(amount: int):
+                this.hp -= amount
+
+            public function is_alive() -> bool:
+                return this.hp > 0
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_downstream_imported_public_interface_conformance
+    root_source = <<~MT
+      module demo.main
+
+      import std.contracts as contracts
+      import std.entities as entities
+
+      function damage_one[T implements contracts.Damageable](target: ref[T], amount: int) -> void:
+          if target.is_alive():
+              target.take_damage(amount)
+
+      function main() -> int:
+          var npc = entities.NPC(hp = 5)
+          damage_one(npc, 2)
+          return npc.hp
+    MT
+
+    imported_sources = {
+      "std/contracts.mt" => <<~MT,
+        module std.contracts
+
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+            function is_alive() -> bool
+      MT
+      "std/entities.mt" => <<~MT,
+        module std.entities
+
+        import std.contracts as contracts
+
+        public struct NPC implements contracts.Damageable:
+            hp: int
+
+        methods NPC:
+            public editable function take_damage(amount: int):
+                this.hp -= amount
+
+            public function is_alive() -> bool:
+                return this.hp > 0
+      MT
+    }
+
+    result = check_program_source(root_source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_short_circuit_nullable_flow_narrowing
     source = <<~MT
       module demo.null_flow

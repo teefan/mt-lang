@@ -24,7 +24,7 @@ The output target is beautiful C. The generated C should be readable enough that
 - No inheritance
 - No hidden virtual dispatch
 - No operator overloading beyond the built-in operators
-- No trait system or typeclass machinery
+- No trait system or typeclass constraint solver beyond explicit nominal interfaces
 - No macro system that rewrites arbitrary ASTs
 - No garbage collector
 - No implicit conversions between unrelated primitive types
@@ -260,6 +260,71 @@ Receiver rule:
 Value receivers are deliberate. They keep fluent calls on temporaries honest and let method calls lower directly to plain C value parameters. Writable methods are the only place where the compiler takes an address implicitly.
 
 The rule is fixed and inspectable. There is no method lookup at runtime.
+
+### Interfaces
+
+Interfaces are explicit nominal method-set contracts for static polymorphism.
+They do not introduce inheritance, hidden dispatch, or a second object model.
+
+```mt
+interface Damageable:
+	editable function take_damage(amount: int) -> void
+	function is_alive() -> bool
+
+struct NPC implements Damageable:
+	name: str
+	hp: int
+
+methods NPC:
+	editable function take_damage(amount: int):
+		this.hp -= amount
+
+	function is_alive() -> bool:
+		return this.hp > 0
+```
+
+Conformance belongs on the nominal type declaration, not on a `methods` block.
+That keeps the contract visible at the owning type and avoids import-sensitive structural matching.
+
+Rules for interfaces in v1:
+
+- `interface` bodies contain instance method signatures only.
+- Interface requirements may be `function` or `editable function`, but not `static function`.
+- Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance in v1.
+- Interface methods may not be generic or async in v1.
+- `struct` and `opaque` declarations may implement zero or more interfaces.
+- Multiple interfaces are allowed: `struct Boss implements Damageable, Drawable:`.
+- A type implements an interface only when its declaration says so explicitly.
+- Conformance matching uses method name, receiver mutability, parameter types, return type, and asyncness.
+- An `editable function` requirement must be satisfied by an editable method exactly.
+- If two interfaces require the same method with the same signature, one implementation satisfies both. If the signatures differ, the declaration is rejected.
+- Interface conformance is a compile-time fact, not a storage type.
+
+Generic constraints use the same word form:
+
+```mt
+function deal_area_damage[T implements Damageable](targets: span[T], amount: int):
+	for i in 0..targets.len:
+		if targets[i].is_alive():
+			targets[i].take_damage(amount)
+```
+
+When one type parameter needs multiple interfaces, join them with `and` inside the type-parameter clause:
+
+```mt
+function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
+	value.update()
+	value.draw()
+```
+
+Constraint checking happens after type inference and specialization, and constrained calls still lower to ordinary static method calls in generated C.
+There is no witness table or vtable for constrained generics.
+
+Bare interface names are not runtime value types in v1.
+That means surfaces such as `var x: Damageable`, `array[Damageable, 10]`, fields of interface type, and returns of bare interface type are invalid.
+If Milk Tea later grows runtime polymorphic interface values, that surface must be spelled separately, for example `dyn Damageable`, so the dynamic cost stays visible in source.
+
+Because fixed arrays copy by value, mutating interface-constrained collection code should usually take `span[T]` or `ref[array[T, N]]` rather than `array[T, N]` by value.
 
 ### Control flow
 
@@ -548,12 +613,13 @@ Allowed in v1:
 - generic structs
 - generic variants
 - generic functions
+- generic functions with explicit `implements` interface constraints
 - explicit specialization calls
 - monomorphized code generation
 
 Not allowed in v1:
 
-- generic constraints
+- structural or inferred generic constraints
 - type-level computation
 - arbitrary compile-time execution
 

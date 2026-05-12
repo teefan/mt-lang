@@ -170,6 +170,33 @@ class LSPServerTest < Minitest::Test
         return add(1, 2)
   MT
 
+  SOURCE_WITH_LOCAL_INTERFACES = <<~MT
+    ## Shared gameplay contract.
+    interface ScreenState:
+        editable function update(effect: int) -> void
+        function draw(texture: int) -> void
+
+    struct TitleScreen implements ScreenState:
+        ticks: int
+
+    struct PauseScreen implements ScreenState:
+        ticks: int
+
+    methods TitleScreen:
+        editable function update(effect: int):
+            this.ticks += effect
+
+        function draw(texture: int) -> void:
+            let sink = texture
+
+    methods PauseScreen:
+        editable function update(effect: int):
+            this.ticks += effect
+
+        function draw(texture: int) -> void:
+            let sink = texture
+  MT
+
   SOURCE_WITH_LOCAL_VALUE_COMPLETION = <<~MT
     struct Point:
         x: int
@@ -500,6 +527,7 @@ class LSPServerTest < Minitest::Test
       assert_equal true, capabilities["definitionProvider"]
       assert_equal true, capabilities["declarationProvider"]
       assert_equal true, capabilities["typeDefinitionProvider"]
+      assert_equal true, capabilities["implementationProvider"]
       assert_equal true, capabilities["referencesProvider"]
       assert_kind_of Hash, capabilities["documentLinkProvider"]
       assert_equal true, capabilities["documentHighlightProvider"]
@@ -582,6 +610,111 @@ class LSPServerTest < Minitest::Test
         assert_equal 6, hover_range.dig("start", "line")
         assert_equal 11, hover_range.dig("start", "character")
         assert_equal 14, hover_range.dig("end", "character")
+      end
+    end
+  end
+
+  def test_hover_returns_interface_info_for_local_implements_clause
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+
+      uri = "file:///tmp/lsp_hover_interface_local.mt"
+      source = SOURCE_WITH_LOCAL_INTERFACES
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      implements_line = source.lines.index { |line| line.include?("implements ScreenState") }
+      interface_char = source.lines[implements_line].index("ScreenState") + 1
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => implements_line, "character" => interface_char },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "interface ScreenState"
+      assert_includes hover_value, "editable function update(effect: int) -> void"
+      assert_includes hover_value, "function draw(texture: int) -> void"
+      assert_includes hover_value, "Shared gameplay contract."
+      refute_includes hover_value, "local ScreenState"
+    end
+  end
+
+  def test_hover_and_definition_on_imported_interface_jump_to_interface_declaration
+    Dir.mktmpdir("milk-tea-lsp-interface-import") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      contracts_source = <<~MT
+        module std.contracts
+
+        ## Damage contract.
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+      MT
+      main_source = <<~MT
+        module demo.main
+
+        import std.contracts as contracts
+
+        struct NPC implements contracts.Damageable:
+            hp: int
+
+        methods NPC:
+            editable function take_damage(amount: int):
+                this.hp -= amount
+      MT
+
+      contracts_path = File.join(std_dir, "contracts.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(contracts_path, contracts_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      contracts_uri = path_to_uri(contracts_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source,
+          }
+        })
+
+        implements_line = main_source.lines.index { |line| line.include?("contracts.Damageable") }
+        interface_char = main_source.lines[implements_line].index("Damageable") + 1
+        definition_line = contracts_source.lines.index { |line| line.include?("interface Damageable") }
+        definition_char = contracts_source.lines[definition_line].index("Damageable")
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => implements_line, "character" => interface_char }
+        })
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "interface Damageable"
+        assert_includes hover_value, "editable function take_damage(amount: int) -> void"
+        assert_includes hover_value, "Damage contract."
+        assert_includes hover_value, "Defined at: [std/contracts.mt:#{definition_line + 1}](#{contracts_uri}#L#{definition_line + 1})"
+
+        definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => implements_line, "character" => interface_char }
+        })
+
+        assert_equal contracts_uri, definition.dig("result", "uri")
+        assert_equal definition_line, definition.dig("result", "range", "start", "line")
+        assert_equal definition_char, definition.dig("result", "range", "start", "character")
       end
     end
   end
@@ -1294,6 +1427,149 @@ class LSPServerTest < Minitest::Test
       response = client.send_request("textDocument/documentSymbol", { "textDocument" => { "uri" => uri } })
       names = response.fetch("result").map { |s| s["name"] }
       assert_includes names, "SDL_Window"
+    end
+  end
+
+  def test_document_symbol_captures_interface_declarations_with_interface_kind
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_interface_symbol_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_LOCAL_INTERFACES }
+      })
+
+      response = client.send_request("textDocument/documentSymbol", { "textDocument" => { "uri" => uri } })
+      symbol = response.fetch("result").find { |entry| entry["name"] == "ScreenState" }
+
+      refute_nil symbol
+      assert_equal 11, symbol["kind"]
+    end
+  end
+
+  def test_implementation_on_interface_returns_implementing_type_locations
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_interface_implementation_test.mt"
+      source = SOURCE_WITH_LOCAL_INTERFACES
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      interface_line = source.lines.index { |line| line.include?("interface ScreenState") }
+      interface_char = source.lines[interface_line].index("ScreenState") + 1
+      title_line = source.lines.index { |line| line.include?("struct TitleScreen") }
+      title_char = source.lines[title_line].index("TitleScreen")
+      pause_line = source.lines.index { |line| line.include?("struct PauseScreen") }
+      pause_char = source.lines[pause_line].index("PauseScreen")
+
+      implementation = client.send_request("textDocument/implementation", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => interface_line, "character" => interface_char }
+      })
+
+      starts = implementation.fetch("result").map do |location|
+        [location.fetch("uri"), location.dig("range", "start", "line"), location.dig("range", "start", "character")]
+      end
+
+      assert_includes starts, [uri, title_line, title_char]
+      assert_includes starts, [uri, pause_line, pause_char]
+    end
+  end
+
+  def test_implementation_on_interface_method_returns_implementing_method_locations
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_interface_method_implementation_test.mt"
+      source = SOURCE_WITH_LOCAL_INTERFACES
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      interface_line = source.lines.index { |line| line.include?("editable function update(effect: int) -> void") }
+      interface_char = source.lines[interface_line].index("update") + 1
+
+      update_lines = source.lines.each_index.select do |index|
+        source.lines[index].include?("editable function update(effect: int):")
+      end
+      title_line, pause_line = update_lines
+      title_char = source.lines[title_line].index("update")
+      pause_char = source.lines[pause_line].index("update")
+
+      implementation = client.send_request("textDocument/implementation", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => interface_line, "character" => interface_char }
+      })
+
+      starts = implementation.fetch("result").map do |location|
+        [location.fetch("uri"), location.dig("range", "start", "line"), location.dig("range", "start", "character")]
+      end
+
+      assert_includes starts, [uri, title_line, title_char]
+      assert_includes starts, [uri, pause_line, pause_char]
+    end
+  end
+
+  def test_implementation_on_imported_interface_method_returns_implementing_method_locations
+    Dir.mktmpdir("milk-tea-lsp-interface-method-import") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      contracts_source = <<~MT
+        module std.contracts
+
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+      MT
+      entities_source = <<~MT
+        module std.entities
+
+        import std.contracts as contracts
+
+        public struct NPC implements contracts.Damageable:
+            hp: int
+
+        methods NPC:
+            public editable function take_damage(amount: int):
+                this.hp -= amount
+      MT
+
+      contracts_path = File.join(std_dir, "contracts.mt")
+      entities_path = File.join(std_dir, "entities.mt")
+      File.write(contracts_path, contracts_source)
+      File.write(entities_path, entities_source)
+
+      root_uri = path_to_uri(dir)
+      contracts_uri = path_to_uri(contracts_path)
+      entities_uri = path_to_uri(entities_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => contracts_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => contracts_source
+          }
+        })
+
+        interface_line = contracts_source.lines.index { |line| line.include?("take_damage") }
+        interface_char = contracts_source.lines[interface_line].index("take_damage") + 1
+        method_line = entities_source.lines.index { |line| line.include?("editable function take_damage") }
+        method_char = entities_source.lines[method_line].index("take_damage")
+
+        implementation = client.send_request("textDocument/implementation", {
+          "textDocument" => { "uri" => contracts_uri },
+          "position" => { "line" => interface_line, "character" => interface_char }
+        })
+
+        starts = implementation.fetch("result").map do |location|
+          [location.fetch("uri"), location.dig("range", "start", "line"), location.dig("range", "start", "character")]
+        end
+
+        assert_includes starts, [entities_uri, method_line, method_char]
+      end
     end
   end
 
@@ -2898,6 +3174,99 @@ class LSPServerTest < Minitest::Test
         second_answer = semantic_entry_for_lexeme(main_source, second_entries, "Answer")
 
         assert_equal "type", second_answer.fetch("tokenType")
+      end
+    end
+  end
+
+  def test_semantic_tokens_classify_local_interfaces_like_types
+    source = <<~MT
+      interface ScreenState:
+          function draw(texture: int) -> void
+
+      struct PauseScreen implements ScreenState:
+          ticks: int
+
+      methods PauseScreen:
+          function draw(texture: int) -> void:
+              let sink = texture
+
+      function run_screen_frame[T implements ScreenState](screen: ref[T], texture: int) -> void:
+          screen.draw(texture)
+    MT
+
+    with_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_semantic_interface_local_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/semanticTokens/full", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+      entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+      interface_decl = semantic_entry_for_lexeme_on_line(source, entries, "ScreenState", 0)
+      interface_impl = semantic_entry_for_lexeme_on_line(source, entries, "ScreenState", 3)
+      interface_constraint = semantic_entry_for_lexeme_on_line(source, entries, "ScreenState", 10)
+
+      assert_equal "type", interface_decl.fetch("tokenType")
+      assert_includes interface_decl.fetch("modifierNames"), "declaration"
+      assert_equal "type", interface_impl.fetch("tokenType")
+      assert_equal "type", interface_constraint.fetch("tokenType")
+    end
+  end
+
+  def test_semantic_tokens_classify_imported_interfaces_like_types
+    Dir.mktmpdir("mt_lsp_semantic_tokens_imported_interface") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      contracts_source = <<~MT
+        module std.contracts
+
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+      MT
+      main_source = <<~MT
+        module demo.main
+
+        import std.contracts as contracts
+
+        struct NPC implements contracts.Damageable:
+            hp: int
+
+        methods NPC:
+            editable function take_damage(amount: int):
+                this.hp -= amount
+      MT
+
+      contracts_path = File.join(std_dir, "contracts.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(contracts_path, contracts_source)
+      File.write(main_path, main_source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        alias_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "contracts", 2)
+        interface_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "Damageable", 4)
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "type", interface_entry.fetch("tokenType")
       end
     end
   end
