@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
+require "tomlrb"
+
 module MilkTea
   class PackageManifestError < StandardError; end
 
   class PackageManifest
-    DataView = Data.define(:root_dir, :manifest_path, :package_name, :source_path, :profile, :platform, :output_path, :preload_path, :html_template_path)
+    DependencyView = Data.define(:name, :version, :git, :git_rev, :git_subdir, :path)
+    DataView = Data.define(:root_dir, :manifest_path, :package_name, :package_version, :package_kind, :source_root, :source_path, :profile, :platform, :output_path, :preload_path, :html_template_path, :dependencies)
 
     def self.load(path)
       new(path).load
@@ -28,21 +31,21 @@ module MilkTea
       if package_name.nil? || package_name.empty?
         package_name = File.basename(root_dir).tr("-", "_")
       end
+      package_version = package["version"]
+      package_version = package_version.to_s unless package_version.nil?
+      package_version = nil if package_version == ""
 
-      build_type_name = (build["type"] || "executable").to_s
-      unless build_type_name == "executable"
-        raise PackageManifestError, "unsupported build.type #{build_type_name} in #{manifest_path}; only executable is supported"
+      package_kind = normalize_package_kind(package["kind"] || build["type"] || default_package_kind(build))
+      source_root_value = package["source_root"] || default_source_root(root_dir)
+      source_root = File.expand_path(source_root_value.to_s, root_dir)
+      unless File.directory?(source_root)
+        raise PackageManifestError, "package.source_root not found: #{source_root_value} (resolved to #{source_root})"
       end
 
       profile_name = normalize_profile_name(build["profile"] || profile_config["default"])
       platform_name = normalize_platform_name(build["platform"] || platform_config["default"])
 
-      default_entry = "src/main.mt"
-      entry = (build["entry"] || default_entry).to_s
-      source_path = File.expand_path(entry, root_dir)
-      unless File.file?(source_path)
-        raise PackageManifestError, "build.entry not found: #{entry} (resolved to #{source_path})"
-      end
+      source_path = resolve_source_path(root_dir, build, package_kind)
 
       output_path = build["output"]
       output_path = File.expand_path(output_path.to_s, root_dir) if output_path
@@ -63,16 +66,22 @@ module MilkTea
         end
       end
 
+      dependencies = parse_dependencies(config.fetch("dependencies", {}), root_dir:, manifest_path:)
+
       DataView.new(
         root_dir:,
         manifest_path:,
         package_name:,
+        package_version:,
+        package_kind:,
+        source_root:,
         source_path:,
         profile: profile_name,
         platform: platform_name,
         output_path:,
         preload_path:,
         html_template_path:,
+        dependencies:,
       )
     end
 
@@ -107,46 +116,159 @@ module MilkTea
     end
 
     def parse_manifest(path)
-      data = {}
-      current_section = nil
-
-      File.readlines(path, chomp: true).each_with_index do |line, index|
-        clean = line.sub(/\s+#.*\z/, "").strip
-        next if clean.empty?
-
-        if (section_match = clean.match(/\A\[([a-zA-Z0-9_.-]+)\]\z/))
-          current_section = section_match[1]
-          data[current_section] ||= {}
-          next
-        end
-
-        key_match = clean.match(/\A([a-zA-Z0-9_.-]+)\s*=\s*(.+)\z/)
-        unless key_match
-          raise PackageManifestError, "invalid package.toml at #{path}:#{index + 1}"
-        end
-
-        key = key_match[1]
-        value = parse_value(key_match[2], path:, line_number: index + 1)
-
-        target = current_section ? (data[current_section] ||= {}) : data
-        target[key] = value
-      end
+      data = Tomlrb.load_file(path)
+      raise PackageManifestError, "package.toml root must be a table: #{path}" unless data.is_a?(Hash)
 
       data
+    rescue StandardError => e
+      raise PackageManifestError, "invalid package.toml at #{path}: #{e.message}"
     end
 
-    def parse_value(raw_value, path:, line_number:)
-      value = raw_value.strip
+    def default_package_kind(build)
+      "application"
+    end
 
-      if value.start_with?("\"") && value.end_with?("\"") && value.length >= 2
-        return value[1..-2].gsub('\\"', '"').gsub("\\\\", "\\")
+    def default_source_root(root_dir)
+      "."
+    end
+
+    def resolve_source_path(root_dir, build, package_kind)
+      return nil if package_kind == :library
+
+      if build["entry"]
+        entry = build["entry"].to_s
+        source_path = File.expand_path(entry, root_dir)
+        unless File.file?(source_path)
+          raise PackageManifestError, "build.entry not found: #{entry} (resolved to #{source_path})"
+        end
+
+        return source_path
       end
 
-      if value.match?(/\A[a-zA-Z0-9_.\/-]+\z/)
-        return value
+      default_source_path = File.expand_path("src/main.mt", root_dir)
+      return default_source_path if File.file?(default_source_path)
+
+      requested_path = File.expand_path(@path)
+      return requested_path if File.file?(requested_path) && path_within_root?(requested_path, root_dir)
+
+      nil
+    end
+
+    def path_within_root?(path, root_dir)
+      normalized_root = File.expand_path(root_dir)
+      path == normalized_root || path.start_with?(normalized_root + File::SEPARATOR)
+    end
+
+    def parse_dependencies(raw_dependencies, root_dir:, manifest_path:)
+      return [] if raw_dependencies.nil?
+      unless raw_dependencies.is_a?(Hash)
+        raise PackageManifestError, "dependencies must be a table in #{manifest_path}"
       end
 
-      raise PackageManifestError, "unsupported package.toml value at #{path}:#{line_number}"
+      raw_dependencies.map do |name, spec|
+        parse_dependency(name, spec, root_dir:, manifest_path:)
+      end
+    end
+
+    def parse_dependency(name, spec, root_dir:, manifest_path:)
+      case spec
+      when String
+        return DependencyView.new(
+          name.to_s,
+          normalize_registry_dependency_version(spec, name:, manifest_path:),
+          nil,
+          nil,
+          nil,
+          nil,
+        )
+      when Hash
+        version = normalize_optional_dependency_value(spec["version"])
+        git = normalize_optional_dependency_value(spec["git"])
+        git_rev = normalize_optional_dependency_value(spec["rev"])
+        git_subdir = normalize_optional_dependency_value(spec["subdir"])
+        path_value = normalize_optional_dependency_value(spec["path"])
+
+        if git_rev && !git
+          raise PackageManifestError, "dependency #{name} in #{manifest_path} declares rev without git"
+        end
+
+        if git_subdir && !git
+          raise PackageManifestError, "dependency #{name} in #{manifest_path} declares subdir without git"
+        end
+
+        declared_sources = []
+        declared_sources << "version" if version
+        declared_sources << "git" if git
+        declared_sources << "path" if path_value
+
+        if declared_sources.empty?
+          raise PackageManifestError, "dependency #{name} in #{manifest_path} must declare version, git, or path"
+        end
+
+        if declared_sources.length > 1
+          raise PackageManifestError,
+                "dependency #{name} in #{manifest_path} must choose exactly one of version, git, or path"
+        end
+
+        if path_value
+          path = File.expand_path(path_value, root_dir)
+          unless File.directory?(path)
+            raise PackageManifestError, "dependency #{name} path not found: #{spec["path"]} (resolved to #{path})"
+          end
+
+          return DependencyView.new(name.to_s, nil, nil, nil, nil, path)
+        end
+
+        if git
+          unless git_rev
+            raise PackageManifestError,
+                  "dependency #{name} in #{manifest_path} uses git resolution but is missing rev"
+          end
+
+          return DependencyView.new(name.to_s, nil, git, git_rev, git_subdir, nil)
+        end
+
+        DependencyView.new(
+          name.to_s,
+          normalize_registry_dependency_version(version, name:, manifest_path:),
+          nil,
+          nil,
+          nil,
+          nil,
+        )
+      else
+        raise PackageManifestError, "dependency #{name} in #{manifest_path} has unsupported type #{spec.class}"
+      end
+    end
+
+    def normalize_optional_dependency_value(value)
+      text = value.to_s.strip
+      text.empty? ? nil : text
+    end
+
+    def normalize_registry_dependency_version(value, name:, manifest_path:)
+      text = normalize_optional_dependency_value(value)
+      if text.nil?
+        raise PackageManifestError, "dependency #{name} in #{manifest_path} must declare a version"
+      end
+
+      if text.match?(/[<>=~^*,\s]/)
+        raise PackageManifestError,
+              "dependency #{name} in #{manifest_path} uses version range #{text.inspect}, but only exact registry versions are currently supported"
+      end
+
+      text
+    end
+
+    def normalize_package_kind(value)
+      case value.to_s
+      when "", "application", "app", "executable"
+        :application
+      when "library", "lib"
+        :library
+      else
+        raise PackageManifestError, "unknown package kind #{value}; expected application|library"
+      end
     end
 
     def normalize_profile_name(value)

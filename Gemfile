@@ -7,6 +7,8 @@ ruby "4.0.3"
 gem "rake", "~> 13.4"
 gem "rexml", "~> 3.4"
 gem "fiddle"
+gem "racc", "~> 1.8"
+gem "tomlrb", "~> 2.0", ">= 2.0.4"
 
 group :development, :test do
   gem "minitest", "~> 6.0"

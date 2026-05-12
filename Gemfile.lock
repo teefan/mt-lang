@@ -7,8 +7,10 @@ GEM
       drb (~> 2.0)
       prism (~> 1.5)
     prism (1.9.0)
+    racc (1.8.1)
     rake (13.4.2)
     rexml (3.4.4)
+    tomlrb (2.0.4)
 
 PLATFORMS
   ruby
@@ -17,16 +19,20 @@ PLATFORMS
 DEPENDENCIES
   fiddle
   minitest (~> 6.0)
+  racc (~> 1.8)
   rake (~> 13.4)
   rexml (~> 3.4)
+  tomlrb (~> 2.0, >= 2.0.4)
 
 CHECKSUMS
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   fiddle (1.1.8) sha256=7fa8ee3627271497f3add5503acdbc3f40b32f610fc1cf49634f083ef3f32eee
   minitest (6.0.4) sha256=df1304664589d40f46089247fdc451f866b0ce0d7cae1457a15fc1eb7d48dca1
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
+  racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   rexml (3.4.4) sha256=19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142
+  tomlrb (2.0.4) sha256=262f77947ac3ac9b3366a0a5940ecd238300c553e2e14f22009e2afcd2181b99
 
 RUBY VERSION
   ruby 4.0.3

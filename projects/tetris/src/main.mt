@@ -1,6 +1,8 @@
 module game_engine
 
 import std.raylib as rl
+import tetris.pieces.defs as pieces
+import tetris.rules.scoring as scoring
 
 const board_width: int = 10
 const board_height: int = 20
@@ -15,24 +17,6 @@ const window_width: int = 640
 const window_height: int = 700
 const horizontal_repeat_delay: float = 0.16
 const horizontal_repeat_interval: float = 0.05
-
-const piece_i: int = 1
-const piece_j: int = 2
-const piece_l: int = 3
-const piece_o: int = 4
-const piece_s: int = 5
-const piece_t: int = 6
-const piece_z: int = 7
-
-struct Cell:
-    x: int
-    y: int
-
-struct Piece:
-    kind: int
-    rotation: int
-    x: int
-    y: int
 
 interface ScreenState:
     editable function update(effect: rl.Sound) -> void
@@ -50,7 +34,7 @@ struct PausedScreen implements ScreenState:
 
 struct Game implements ScreenState:
     board: array[int, 200]
-    active: Piece
+    active: pieces.Piece
     next_kind: int
     score: int
     lines: int
@@ -62,26 +46,6 @@ struct Game implements ScreenState:
     exit_requested: bool
     cleared_flash: float
     game_over: bool
-
-const cells_i_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 3, y = 1))
-const cells_i_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 2, y = 1), Cell(x = 2, y = 2), Cell(x = 2, y = 3))
-const cells_j_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_j_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_j_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 2, y = 2))
-const cells_j_3: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 0, y = 2), Cell(x = 1, y = 2))
-const cells_l_0: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_l_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2), Cell(x = 2, y = 2))
-const cells_l_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 0, y = 2))
-const cells_l_3: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_o: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_s_0: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1))
-const cells_s_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 2, y = 2))
-const cells_t_0: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_t_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
-const cells_t_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
-const cells_t_3: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_z_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_z_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
 
 
 function make_paused_screen(game: Game) -> PausedScreen:
@@ -102,55 +66,7 @@ function run_screen_frame[T implements ScreenState](screen: ref[T], texture: rl.
 
 
 function random_kind() -> int:
-    return rl.get_random_value(piece_i, piece_z)
-
-
-function shape_cells(kind: int, rotation: int) -> array[Cell, 4]:
-    let spin = rotation % 4
-
-    if kind == piece_i:
-        if spin == 0 or spin == 2:
-            return cells_i_0
-        return cells_i_1
-
-    if kind == piece_j:
-        if spin == 0:
-            return cells_j_0
-        elif spin == 1:
-            return cells_j_1
-        elif spin == 2:
-            return cells_j_2
-        return cells_j_3
-
-    if kind == piece_l:
-        if spin == 0:
-            return cells_l_0
-        elif spin == 1:
-            return cells_l_1
-        elif spin == 2:
-            return cells_l_2
-        return cells_l_3
-
-    if kind == piece_o:
-        return cells_o
-
-    if kind == piece_s:
-        if spin == 0 or spin == 2:
-            return cells_s_0
-        return cells_s_1
-
-    if kind == piece_t:
-        if spin == 0:
-            return cells_t_0
-        elif spin == 1:
-            return cells_t_1
-        elif spin == 2:
-            return cells_t_2
-        return cells_t_3
-
-    if spin == 0 or spin == 2:
-        return cells_z_0
-    return cells_z_1
+    return rl.get_random_value(pieces.piece_i, pieces.piece_z)
 
 
 function tile_source_rect(tile_id: int) -> rl.Rectangle:
@@ -164,27 +80,6 @@ function tile_source_rect(tile_id: int) -> rl.Rectangle:
 
 function board_index(x: int, y: int) -> int:
     return y * board_width + x
-
-
-function gravity_seconds(level: int) -> float:
-    if level <= 0:
-        return 0.7
-    if level == 1:
-        return 0.58
-    if level == 2:
-        return 0.47
-    if level == 3:
-        return 0.38
-    if level == 4:
-        return 0.3
-    if level == 5:
-        return 0.24
-    return 0.18
-
-
-methods Piece:
-    static function default() -> Piece:
-        return Piece(kind = piece_t, rotation = 0, x = 3, y = 0)
 
 
 methods TitleScreen:
@@ -250,7 +145,7 @@ methods Game:
     static function default() -> Game:
         var game = Game(
             board = zero[array[int, 200]],
-            active = default[Piece],
+            active = default[pieces.Piece],
             next_kind = random_kind(),
             score = 0,
             lines = 0,
@@ -284,7 +179,7 @@ methods Game:
 
 
     editable function spawn_next_piece():
-        this.active = Piece(kind = this.next_kind, rotation = 0, x = 3, y = 0)
+        this.active = pieces.Piece(kind = this.next_kind, rotation = 0, x = 3, y = 0)
         this.next_kind = random_kind()
         this.drop_timer = 0.0
         this.horizontal_move_direction = 0
@@ -296,8 +191,8 @@ methods Game:
             this.game_over = true
 
 
-    editable function collides(piece: Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
-        let cells = shape_cells(piece.kind, next_rotation)
+    editable function collides(piece: pieces.Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
+        let cells = pieces.shape_cells(piece.kind, next_rotation)
 
         for i in 0..4:
             let cell = cells[i]
@@ -345,7 +240,7 @@ methods Game:
 
 
     editable function lock_piece(effect: rl.Sound):
-        let cells = shape_cells(this.active.kind, this.active.rotation)
+        let cells = pieces.shape_cells(this.active.kind, this.active.rotation)
 
         for i in 0..4:
             let cell = cells[i]
@@ -358,7 +253,7 @@ methods Game:
         if cleared > 0:
             this.lines += cleared
             this.level = this.lines / 10
-            this.score += cleared * cleared * 100 * (this.level + 1)
+            this.score += scoring.clear_score(cleared, this.level)
             this.cleared_flash = 0.18
             rl.play_sound(effect)
         else:
@@ -459,7 +354,7 @@ methods Game:
         let drop_scale = if rl.is_key_down(rl.KeyboardKey.KEY_DOWN): 0.12 else: 1.0
         this.drop_timer += frame_time
 
-        if this.drop_timer < gravity_seconds(this.level) * drop_scale:
+        if this.drop_timer < scoring.gravity_seconds(this.level) * drop_scale:
             return
 
         this.drop_timer = 0.0
@@ -503,7 +398,7 @@ methods Game:
         if this.game_over:
             return
 
-        let cells = shape_cells(this.active.kind, this.active.rotation)
+        let cells = pieces.shape_cells(this.active.kind, this.active.rotation)
         for i in 0..4:
             let cell = cells[i]
             let px = board_left + (this.active.x + cell.x) * cell_size
@@ -520,7 +415,7 @@ methods Game:
         )
         rl.draw_text("NEXT", preview_left, preview_top - 10, 26, rl.RAYWHITE)
 
-        let cells = shape_cells(this.next_kind, 0)
+        let cells = pieces.shape_cells(this.next_kind, 0)
         for i in 0..4:
             let cell = cells[i]
             let px = preview_left + 28 + cell.x * (cell_size - 4)

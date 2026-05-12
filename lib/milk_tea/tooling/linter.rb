@@ -188,7 +188,7 @@ module MilkTea
       resolved_path = resolve_lint_path(path)
       if resolved_path && File.file?(resolved_path)
         loader = ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path))
-        imported_modules = loader.imported_modules_for_ast(ast)
+        imported_modules = loader.imported_modules_for_ast(ast, importer_path: resolved_path)
       end
 
       Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]

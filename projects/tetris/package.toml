@@ -12,3 +12,7 @@ default = "wasm"
 entry = "src/main.mt"
 preload = "assets"
 html_template = "web/shell.html"
+
+[dependencies]
+"tetris.pieces" = { path = "packages/tetris_pieces" }
+"tetris.rules" = { path = "packages/tetris_rules" }

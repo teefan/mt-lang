@@ -57,9 +57,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, debug: false, profile: nil, platform: nil)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, debug:, profile:, platform:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, debug:, profile:, platform:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil)
@@ -83,12 +83,18 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, debug: false, profile: nil, platform: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil)
       manifest = PackageManifest.load(path)
       @package_build = true
       @source_path = manifest.source_path
       @project_root = manifest.root_dir
       @package_name = manifest.package_name
+      if manifest.package_kind == :library
+        raise BuildError, "cannot build library package #{manifest.package_name} as an executable"
+      end
+      unless @source_path
+        raise BuildError, "application package #{manifest.package_name} has no build entry; set build.entry or create src/main.mt"
+      end
       @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || manifest.platform || host_platform)
       @manifest_output_path = manifest.output_path
@@ -100,8 +106,8 @@ module MilkTea
       @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
-      @module_roots = (module_roots || [MilkTea.root]).dup
-      @module_roots << manifest.root_dir unless @module_roots.include?(manifest.root_dir)
+      @package_graph = package_graph
+      @module_roots = (module_roots || @package_graph&.source_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)).dup
       @debug = debug
     rescue PackageManifestError => e
       raise BuildError, e.message if package_manifest_required_for?(path)
@@ -120,7 +126,8 @@ module MilkTea
       @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @raw_bindings = raw_bindings
-      @module_roots = module_roots || [MilkTea.root]
+      @package_graph = package_graph
+      @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
       @debug = debug
     end
 
@@ -137,7 +144,7 @@ module MilkTea
 
     def build
       ensure_compiler_available!
-      program = ModuleLoader.new(module_roots: @module_roots).check_program(@source_path)
+      program = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph).check_program(@source_path)
       prepare_bindings(program)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
       ensure_program_has_entrypoint!(program, ir_program)

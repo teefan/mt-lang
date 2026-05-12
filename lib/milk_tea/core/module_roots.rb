@@ -4,13 +4,14 @@ module MilkTea
   module ModuleRoots
     module_function
 
-    def roots_for_path(path, env: ENV)
+    def roots_for_path(path, env: ENV, locked: false)
       roots = []
 
       add_env_roots!(roots, env)
 
-      package_root = package_root_for_path(path)
-      roots << package_root if package_root
+      package_roots_for_path(path, locked:).each do |root|
+        roots << root
+      end
 
       project_root = project_root_for_path(path)
       roots << project_root if project_root
@@ -21,6 +22,15 @@ module MilkTea
            .compact
            .uniq
            .select { |root| File.directory?(root) }
+    end
+
+    def package_roots_for_path(path, locked: false)
+      PackageGraph.load(path, locked:).source_roots
+    rescue PackageManifestError
+      package_root = package_root_for_path(path)
+      return [] unless package_root
+
+      [package_root]
     end
 
     def project_root_for_path(path)

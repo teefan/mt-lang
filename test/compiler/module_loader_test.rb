@@ -139,6 +139,208 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
+  def test_check_program_resolves_path_dependency_package_modules
+    Dir.mktmpdir("milk-tea-module-loader-package-dependencies") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [build]
+        entry = "src/snake_duel/main.mt"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      root_path = File.join(app_src_dir, "main.mt")
+      File.write(root_path, <<~MT)
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+
+        function main() -> int:
+            return layout.default_width()
+      MT
+
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
+
+      assert_equal "snake_duel.main", program.root_analysis.module_name
+      assert_equal true, program.analyses_by_module_name.key?("teefan.ui.layout")
+      assert_equal %w[default_width], program.root_analysis.imports.fetch("layout").functions.keys.sort
+    end
+  end
+
+  def test_check_program_allows_dependency_packages_to_import_their_own_direct_dependencies
+    Dir.mktmpdir("milk-tea-module-loader-transitive-allowed") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      math_root = File.join(dir, "libs", "math")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+      math_src_dir = File.join(math_root, "src", "teefan", "math")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+      FileUtils.mkdir_p(math_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [build]
+        entry = "src/snake_duel/main.mt"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.math" = { path = "../math" }
+      TOML
+
+      File.write(File.join(math_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.math"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_src_dir, "main.mt"), <<~MT)
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+
+        function main() -> int:
+            return layout.default_width()
+      MT
+
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        import teefan.math.ops as ops
+
+        public function default_width() -> int:
+            return ops.bump(9)
+      MT
+
+      File.write(File.join(math_src_dir, "ops.mt"), <<~MT)
+        module teefan.math.ops
+
+        public function bump(value: int) -> int:
+            return value + 1
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(File.join(app_src_dir, "main.mt"))).check_program(File.join(app_src_dir, "main.mt"))
+
+      assert_equal true, program.analyses_by_module_name.key?("teefan.ui.layout")
+      assert_equal true, program.analyses_by_module_name.key?("teefan.math.ops")
+    end
+  end
+
+  def test_check_program_rejects_transitive_dependency_imports_from_root_package
+    Dir.mktmpdir("milk-tea-module-loader-transitive-blocked") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      math_root = File.join(dir, "libs", "math")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+      math_src_dir = File.join(math_root, "src", "teefan", "math")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+      FileUtils.mkdir_p(math_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [build]
+        entry = "src/snake_duel/main.mt"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.math" = { path = "../math" }
+      TOML
+
+      File.write(File.join(math_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.math"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_src_dir, "main.mt"), <<~MT)
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+        import teefan.math.ops as ops
+
+        function main() -> int:
+            return layout.default_width() + ops.bump(1)
+      MT
+
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      File.write(File.join(math_src_dir, "ops.mt"), <<~MT)
+        module teefan.math.ops
+
+        public function bump(value: int) -> int:
+            return value + 1
+      MT
+
+      error = assert_raises(MilkTea::ModuleLoadError) do
+        MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(File.join(app_src_dir, "main.mt"))).check_program(File.join(app_src_dir, "main.mt"))
+      end
+
+      assert_match(/package dependency not declared/, error.message)
+    end
+  end
+
   def test_check_program_resolves_extern_module_imported_types
     Dir.mktmpdir("milk-tea-module-loader-extern-imports") do |dir|
       dep_path = File.join(dir, "std", "c", "dep.mt")

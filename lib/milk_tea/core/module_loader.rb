@@ -34,11 +34,13 @@ module MilkTea
     # +source_overrides+ is an optional path => source hash used by the LSP for
     # unsaved open documents. When any override is present the shared cache is
     # bypassed so dependent analyses never reuse bindings built from stale disk state.
-    def initialize(module_roots: [MilkTea.root], shared_cache: nil, source_overrides: nil)
+    def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
       @analysis_cache = {}
       @checking_paths = []
+      @package_graph = package_graph
+      @package_manifest_cache = {}
       @shared_cache = shared_cache # Hash or nil; mutated in-place to persist across calls
       @source_overrides = normalize_source_overrides(source_overrides)
     end
@@ -70,14 +72,14 @@ module MilkTea
       )
     end
 
-    def imported_modules_for_ast(ast)
+    def imported_modules_for_ast(ast, importer_path: nil)
       modules = ast.imports.each_with_object({}) do |import, modules_acc|
-        import_path = resolve_module_path(import.path.to_s)
+        import_path = resolve_module_path(import.path.to_s, importer_path:)
         import_analysis = check_path(import_path)
         modules_acc[import.path.to_s] = module_binding(import_analysis)
       end
 
-      install_async_runtime_dependency!(ast, modules)
+      install_async_runtime_dependency!(ast, modules, importer_path:)
       modules
     end
 
@@ -106,7 +108,7 @@ module MilkTea
 
       @checking_paths << path
       ast = load_file(path)
-      imported_modules = imported_modules_for_ast(ast)
+      imported_modules = imported_modules_for_ast(ast, importer_path: path)
 
       analysis = Sema.check(ast, imported_modules:)
       @analysis_cache[path] = analysis
@@ -143,12 +145,73 @@ module MilkTea
       @shared_cache && @source_overrides.empty?
     end
 
-    def resolve_module_path(module_name)
+    def resolve_module_path(module_name, importer_path: nil)
       relative_path = File.join(*module_name.split(".")) + ".mt"
-      candidate = @module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |path| File.file?(path) }
+      blocked = false
+      candidate = @module_roots.lazy.map { |root| File.join(root, relative_path) }.find do |path|
+        next false unless File.file?(path)
+
+        allowed = import_allowed?(module_name, importer_path, path)
+        blocked ||= !allowed
+        allowed
+      end
+      raise ModuleLoadError.new("package dependency not declared", path: module_name) if blocked
       raise ModuleLoadError.new("module not found", path: module_name) unless candidate
 
       File.expand_path(candidate)
+    end
+
+    def import_allowed?(module_name, importer_path, candidate_path)
+      if @package_graph
+        return import_allowed_by_graph?(module_name, importer_path, candidate_path)
+      end
+
+      importer_manifest = package_manifest_for_path(importer_path)
+      return true unless importer_manifest
+
+      candidate_manifest = package_manifest_for_path(candidate_path)
+      return true unless candidate_manifest
+      return true if candidate_manifest.manifest_path == importer_manifest.manifest_path
+
+      dependency = importer_manifest.dependencies.find { |entry| entry.name == candidate_manifest.package_name }
+      return false unless dependency
+
+      package_namespace_match?(module_name, dependency.name)
+    end
+
+    def import_allowed_by_graph?(module_name, importer_path, candidate_path)
+      importer_package = @package_graph.package_for_path(importer_path)
+      return true unless importer_package
+
+      candidate_package = @package_graph.package_for_path(candidate_path)
+      return true unless candidate_package
+      return true if candidate_package.manifest.manifest_path == importer_package.manifest.manifest_path
+
+      dependency = importer_package.edges.find do |edge|
+        edge.node && edge.node.manifest.package_name == candidate_package.manifest.package_name
+      end
+      return false unless dependency
+
+      package_namespace_match?(module_name, dependency.dependency.name)
+    end
+
+    def package_manifest_for_path(path)
+      return nil unless path
+
+      package_root = ModuleRoots.package_root_for_path(path)
+      return nil unless package_root
+
+      manifest_path = File.join(package_root, "package.toml")
+      return @package_manifest_cache[manifest_path] if @package_manifest_cache.key?(manifest_path)
+
+      @package_manifest_cache[manifest_path] = PackageManifest.load(path)
+    rescue PackageManifestError
+      @package_manifest_cache[manifest_path] = nil if manifest_path
+      nil
+    end
+
+    def package_namespace_match?(module_name, package_name)
+      module_name == package_name || module_name.start_with?("#{package_name}.")
     end
 
     def module_binding(analysis)
@@ -198,11 +261,11 @@ module MilkTea
       )
     end
 
-    def install_async_runtime_dependency!(ast, modules)
+    def install_async_runtime_dependency!(ast, modules, importer_path: nil)
       return if modules.key?("std.async")
       return unless async_main_declared?(ast)
 
-      import_path = resolve_module_path("std.async")
+      import_path = resolve_module_path("std.async", importer_path:)
       import_analysis = check_path(import_path)
       modules["std.async"] = module_binding(import_analysis)
     end

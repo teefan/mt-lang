@@ -82,7 +82,10 @@ export class MilkTeaLspClient {
         fileEvents: vscode.workspace.createFileSystemWatcher('**/*.mt'),
       },
       initializationOptions: {
-        milkTea: { format: { mode: getConfig().format.mode } },
+        milkTea: {
+          format: { mode: getConfig().format.mode },
+          lsp: { dependencyResolution: getConfig().lsp.dependencyResolution },
+        },
       },
     };
 
@@ -173,6 +176,14 @@ export class MilkTeaLspClient {
     const mode = getConfig().format.mode;
     await this.client.sendNotification('workspace/didChangeConfiguration', {
       settings: { milkTea: { format: { mode } } },
+    });
+  }
+
+  async syncDependencyResolution(): Promise<void> {
+    if (!this.client) { return; }
+    const dependencyResolution = getConfig().lsp.dependencyResolution;
+    await this.client.sendNotification('workspace/didChangeConfiguration', {
+      settings: { milkTea: { lsp: { dependencyResolution } } },
     });
   }
 

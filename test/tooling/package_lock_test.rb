@@ -1,0 +1,126 @@
+# frozen_string_literal: true
+
+require "tmpdir"
+require_relative "../test_helper"
+
+class MilkTeaPackageLockTest < Minitest::Test
+  def test_load_uses_materialized_cache_root_for_registry_source_entries
+    Dir.mktmpdir("milk-tea-package-lock-cache-root") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      app_src_dir = File.join(app_root, "src")
+      cache_root = File.join(dir, "cache")
+      registry_root = File.join(cache_root, "registry", "teefan.ui@1.2.3")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(File.join(registry_root, "src"))
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(registry_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_root, "package.lock"), <<~LOCK)
+        schema_version = 1
+        root_package = "snake_duel"
+
+        [[package]]
+        name = "snake_duel"
+        kind = "application"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{app_root.inspect}
+        manifest_path = #{File.join(app_root, "package.toml").inspect}
+        source_root = #{app_src_dir.inspect}
+        dependencies = ["teefan.ui"]
+
+        [[package]]
+        name = "teefan.ui"
+        kind = "library"
+        version = "1.2.3"
+        source_kind = "registry"
+        registry_package = "teefan.ui"
+        registry_version = "1.2.3"
+        manifest_path = #{File.join(registry_root, "package.toml").inspect}
+        source_root = #{File.join(registry_root, "src").inspect}
+        dependencies = []
+      LOCK
+
+      source_resolver = MilkTea::PackageSourceResolver.new(
+        source_cache: MilkTea::PackageSourceCache.new(root: cache_root),
+      )
+
+      root = MilkTea::PackageLock.load(app_root, source_resolver:)
+      dependency_node = root.edges.fetch(0).node
+
+      assert_equal :registry, dependency_node.source.kind
+      assert_equal File.expand_path(registry_root), dependency_node.source.local_root
+      assert_equal File.expand_path(registry_root), dependency_node.manifest.root_dir
+    end
+  end
+
+  def test_load_rejects_unmaterialized_cache_backed_sources
+    Dir.mktmpdir("milk-tea-package-lock-missing-cache-root") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      app_src_dir = File.join(app_root, "src")
+      cache_root = File.join(dir, "cache")
+      registry_root = File.join(cache_root, "registry", "teefan.ui@1.2.3")
+
+      FileUtils.mkdir_p(app_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_root, "package.lock"), <<~LOCK)
+        schema_version = 1
+        root_package = "snake_duel"
+
+        [[package]]
+        name = "snake_duel"
+        kind = "application"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{app_root.inspect}
+        manifest_path = #{File.join(app_root, "package.toml").inspect}
+        source_root = #{app_src_dir.inspect}
+        dependencies = ["teefan.ui"]
+
+        [[package]]
+        name = "teefan.ui"
+        kind = "library"
+        version = "1.2.3"
+        source_kind = "registry"
+        registry_package = "teefan.ui"
+        registry_version = "1.2.3"
+        manifest_path = #{File.join(registry_root, "package.toml").inspect}
+        source_root = #{File.join(registry_root, "src").inspect}
+        dependencies = []
+      LOCK
+
+      source_resolver = MilkTea::PackageSourceResolver.new(
+        source_cache: MilkTea::PackageSourceCache.new(root: cache_root),
+      )
+
+      error = assert_raises(MilkTea::PackageLockError) do
+        MilkTea::PackageLock.load(app_root, source_resolver:)
+      end
+
+      assert_match(/not materialized in the source cache/, error.message)
+      assert_match(/registry/, error.message)
+      assert_match(/package\.toml/, error.message)
+    end
+  end
+end
