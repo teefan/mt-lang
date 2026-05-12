@@ -9,6 +9,13 @@ npm install
 npm run compile
 ```
 
+## Settings
+
+- `milkTea.lsp.dependencyResolution`: `auto` (default), `live`, `locked`, or `frozen`.
+- `auto` uses `package.lock` when it is current and falls back to live manifests otherwise.
+- `locked` always resolves semantic editor features from `package.lock`.
+- `frozen` requires a current `package.lock` and reports a lockfile diagnostic when it is missing or stale.
+
 ## Package And Install
 
 Build a VSIX package:

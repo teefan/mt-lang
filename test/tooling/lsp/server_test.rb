@@ -2620,6 +2620,626 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_document_diagnostic_locked_uses_package_lock_when_manifest_dependencies_drift
+    Dir.mktmpdir("milk-tea-lsp-locked-diagnostics") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+
+        function main() -> int:
+            let value = layout.default_width()
+            unsafe:
+                let copy = value + 1
+            return value
+      MT
+
+      File.write(File.join(app_src_dir, "main.mt"), main_source)
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      MilkTea::PackageLock.write(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      root_uri = path_to_uri(dir)
+      main_path = File.join(app_src_dir, "main.mt")
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "locked"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        result = response.fetch("result")
+        items = result.fetch("items")
+        codes = items.map { |item| item["code"] }
+        messages = items.map { |item| item["message"] }
+
+        assert_includes codes, "redundant-unsafe"
+        refute messages.any? { |message| message.match?(/module not found|package dependency not declared/) },
+               "expected locked diagnostics to avoid live-manifest import failures, got: #{messages.inspect}"
+      end
+    end
+  end
+
+  def test_document_diagnostic_frozen_reports_stale_package_lock
+    Dir.mktmpdir("milk-tea-lsp-frozen-diagnostics") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+
+        function main() -> int:
+            let value = layout.default_width()
+            unsafe:
+                let copy = value + 1
+            return value
+      MT
+
+      File.write(File.join(app_src_dir, "main.mt"), main_source)
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      MilkTea::PackageLock.write(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      root_uri = path_to_uri(dir)
+      main_path = File.join(app_src_dir, "main.mt")
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "frozen"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        result = response.fetch("result")
+        items = result.fetch("items")
+        messages = items.map { |item| item["message"] }
+        codes = items.map { |item| item["code"] }
+
+        assert messages.any? { |message| message.include?("package.lock is out of date") },
+               "expected frozen diagnostics to report stale package.lock, got: #{messages.inspect}"
+        refute_includes codes, "redundant-unsafe"
+      end
+    end
+  end
+
+  def test_completion_locked_uses_package_lock_when_manifest_dependencies_drift
+    Dir.mktmpdir("milk-tea-lsp-locked-completion") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as duel_ui
+
+        function main() -> int:
+            return duel_ui.default_width()
+      MT
+
+      File.write(File.join(app_src_dir, "main.mt"), main_source)
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      MilkTea::PackageLock.write(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      root_uri = path_to_uri(dir)
+      main_path = File.join(app_src_dir, "main.mt")
+      main_uri = path_to_uri(main_path)
+      partial_source = main_source.sub("return duel_ui.default_width()", "return duel_ui.")
+      dot_line = partial_source.lines.index { |line| line.include?("return duel_ui.") }
+      dot_char = partial_source.lines.fetch(dot_line).chomp.length
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "locked"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => main_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => partial_source }]
+        })
+
+        response = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => dot_line, "character" => dot_char }
+        })
+        result = response.fetch("result")
+        items = result.fetch("items")
+        labels = items.map { |item| item["label"] }
+        default_width = items.find { |item| item["label"] == "default_width" }
+
+        assert_includes labels, "default_width"
+        assert_equal 3, default_width.fetch("kind")
+      end
+    end
+  end
+
+  def test_semantic_tokens_locked_uses_package_lock_when_manifest_dependencies_drift
+    Dir.mktmpdir("milk-tea-lsp-locked-semantic-tokens") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as duel_ui
+
+        function main() -> int:
+            return duel_ui.default_width()
+      MT
+
+      File.write(File.join(app_src_dir, "main.mt"), main_source)
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      MilkTea::PackageLock.write(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      root_uri = path_to_uri(dir)
+      main_path = File.join(app_src_dir, "main.mt")
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        init = client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "locked"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+
+        legend = {
+          "tokenTypes" => MilkTea::LSP::Server::SEMANTIC_TOKEN_TYPES,
+          "tokenModifiers" => MilkTea::LSP::Server::SEMANTIC_TOKEN_MODIFIERS,
+        }
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        alias_entry = semantic_entry_for_lexeme(main_source, entries, "duel_ui")
+        member_entry = semantic_entry_for_lexeme(main_source, entries, "default_width")
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "function", member_entry.fetch("tokenType")
+      end
+    end
+  end
+
+  def test_hover_and_definition_locked_uses_package_lock_when_manifest_dependencies_drift
+    Dir.mktmpdir("milk-tea-lsp-locked-hover-definition") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      ui_source = <<~MT
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as duel_ui
+
+        function main() -> int:
+            return duel_ui.default_width()
+      MT
+
+      main_path = File.join(app_src_dir, "main.mt")
+      ui_path = File.join(ui_src_dir, "layout.mt")
+      File.write(main_path, main_source)
+      File.write(ui_path, ui_source)
+
+      MilkTea::PackageLock.write(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+      ui_uri = path_to_uri(ui_path)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "locked"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("duel_ui.default_width") }
+        call_char = main_source.lines.fetch(call_line).index("default_width") + 1
+        definition_line = ui_source.lines.index { |line| line.include?("public function default_width") }
+        definition_char = ui_source.lines.fetch(definition_line).index("default_width")
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "function default_width() -> int"
+        assert_includes hover_value, "Defined at: [libs/ui/src/teefan/ui/layout.mt:#{definition_line + 1}](#{ui_uri}#L#{definition_line + 1})"
+
+        definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal ui_uri, definition.dig("result", "uri")
+        assert_equal definition_line, definition.dig("result", "range", "start", "line")
+        assert_equal definition_char, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
+  def test_hover_frozen_stops_using_stale_analysis_after_manifest_watched_change
+    Dir.mktmpdir("milk-tea-lsp-frozen-hover-watch") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      manifest_path = File.join(app_root, "package.toml")
+      manifest_uri = path_to_uri(manifest_path)
+
+      File.write(manifest_path, <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.3.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as duel_ui
+
+        function main() -> int:
+            return duel_ui.default_width()
+      MT
+
+      File.write(File.join(app_src_dir, "main.mt"), main_source)
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      MilkTea::PackageLock.write(app_root)
+
+      root_uri = path_to_uri(dir)
+      main_path = File.join(app_src_dir, "main.mt")
+      main_uri = path_to_uri(main_path)
+      call_line = main_source.lines.index { |line| line.include?("duel_ui.default_width") }
+      call_char = main_source.lines.fetch(call_line).index("default_width") + 1
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => root_uri,
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "dependencyResolution" => "frozen"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+        first_hover_value = first_hover.dig("result", "contents", "value")
+
+        assert_includes first_hover_value, "function default_width() -> int"
+
+        File.write(manifest_path, <<~TOML)
+          [package]
+          name = "snake_duel"
+          version = "0.1.0"
+          source_root = "src"
+        TOML
+
+        client.send_notification("workspace/didChangeWatchedFiles", {
+          "changes" => [{ "uri" => manifest_uri, "type" => 2 }]
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        diagnostic_messages = diagnostics.fetch("result").fetch("items").map { |item| item["message"] }
+
+        assert diagnostic_messages.any? { |message| message.include?("package.lock is out of date") },
+               "expected frozen diagnostics after watched manifest drift, got: #{diagnostic_messages.inspect}"
+
+        second_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_nil second_hover["result"]
+      end
+    end
+  end
+
   def test_completion_returns_function_names
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

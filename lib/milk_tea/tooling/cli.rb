@@ -87,9 +87,12 @@ module MilkTea
         return 1
       end
 
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
       require "json"
 
-      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: module_roots_for(path))
+      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: module_roots_for(path, locked: resolution[:locked]))
       @out.puts(JSON.pretty_generate(payload))
       0
     end
@@ -102,7 +105,10 @@ module MilkTea
         return 1
       end
 
-      ast = make_module_loader(path).load_file(path)
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
+      ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
       0
     end
@@ -199,6 +205,7 @@ module MilkTea
         return 1
       end
 
+      resolution = { locked: false, frozen: false }
       select = nil
       ignore = nil
       fix = false
@@ -222,6 +229,11 @@ module MilkTea
           ignore = arg.split(",").map(&:strip).to_set
         when "--fix"
           fix = true
+        when "--locked"
+          resolution[:locked] = true
+        when "--frozen"
+          resolution[:locked] = true
+          resolution[:frozen] = true
         when "--output-format"
           fmt_arg = @argv.shift
           unless fmt_arg
@@ -252,10 +264,12 @@ module MilkTea
         return 0
       end
 
+      ensure_current_lockfiles!(paths) if resolution[:frozen]
+
       if fix
         paths.each do |p|
           source = read_source_file(p)
-          fixed = Linter.fix_source(source, path: p)
+          fixed = Linter.fix_source(source, path: p, sema_analysis: lint_sema_analysis_for(source, p, locked: resolution[:locked]))
           if fixed != source
             File.write(p, fixed)
             @out.puts("fixed #{p}")
@@ -266,13 +280,7 @@ module MilkTea
 
       all_warnings = paths.flat_map do |p|
         source = read_source_file(p)
-        analysis = begin
-          ast = Parser.parse(source, path: p)
-          imported_modules = make_module_loader(p).imported_modules_for_ast(ast)
-          Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
-        rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
-          nil
-        end
+        analysis = lint_sema_analysis_for(source, p, locked: resolution[:locked])
 
         Linter.lint_source(source, path: p, select:, ignore:, sema_analysis: analysis)
       end
@@ -309,7 +317,10 @@ module MilkTea
         return 1
       end
 
-      result = make_module_loader(path).check_file(path)
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
+      result = make_module_loader(path, locked: resolution[:locked]).check_file(path)
       module_name = result.module_name || "(anonymous)"
       @out.puts("checked #{path} as #{module_name}")
       0
@@ -323,7 +334,10 @@ module MilkTea
         return 1
       end
 
-      program = make_module_loader(path).check_program(path)
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
+      program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
       @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
       0
     end
@@ -336,7 +350,10 @@ module MilkTea
         return 1
       end
 
-      program = make_module_loader(path).check_program(path)
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
+      program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
       @out.write(Codegen.generate_c(program, emit_line_directives: false))
       0
     end
@@ -366,7 +383,10 @@ module MilkTea
         return 0
       end
 
-      result = Build.build(path, module_roots: module_roots_for(path), **options)
+      ensure_current_lockfile!(path) if options.delete(:frozen)
+      locked = options.delete(:locked)
+      package_graph = package_graph_for(path, locked:)
+      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
       @out.puts("built #{path} -> #{result.output_path}")
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
@@ -391,10 +411,14 @@ module MilkTea
         end
       end
 
+      ensure_current_lockfile!(path) if options.delete(:frozen)
+      locked = options.delete(:locked)
+      package_graph = package_graph_for(path, locked:)
       preview_notice_emitted = false
       result = Run.run(
         path,
-        module_roots: module_roots_for(path),
+        module_roots: module_roots_for(path, locked:),
+        package_graph:,
         preview_started: lambda do |message|
           preview_notice_emitted = true
           @out.write(message)
@@ -475,6 +499,157 @@ module MilkTea
         end
 
         checks.all? { |_, ok, _| ok } ? 0 : 1
+      when "tree"
+        path = nil
+        if @argv.first && !@argv.first.start_with?("-")
+          path = @argv.shift
+        end
+
+        unless path
+          if File.file?(File.join(Dir.pwd, "package.toml"))
+            path = Dir.pwd
+          else
+            @err.puts("missing package path")
+            print_usage(@err)
+            return 1
+          end
+        end
+
+        if @argv.any?
+          @err.puts("unknown deps option #{@argv.first}")
+          print_usage(@err)
+          return 1
+        end
+
+        @out.puts(PackageGraph.render_tree(path, source_resolver: dependency_source_resolver(:materialize)))
+        0
+      when "lock"
+        path = nil
+        check = false
+        until @argv.empty?
+          arg = @argv.shift
+          case arg
+          when "--check"
+            check = true
+          when /^-/
+            @err.puts("unknown deps option #{arg}")
+            print_usage(@err)
+            return 1
+          else
+            if path
+              @err.puts("unknown deps option #{arg}")
+              print_usage(@err)
+              return 1
+            end
+
+            path = arg
+          end
+        end
+
+        unless path
+          if File.file?(File.join(Dir.pwd, "package.toml"))
+            path = Dir.pwd
+          else
+            @err.puts("missing package path")
+            print_usage(@err)
+            return 1
+          end
+        end
+
+        if check
+          result = PackageLock.check(path, source_resolver: dependency_source_resolver(:materialize))
+          if result.current?
+            @out.puts("up to date #{result.lock_path}")
+            0
+          elsif result.missing?
+            @out.puts("missing #{result.lock_path}")
+            1
+          else
+            @out.puts("out of date #{result.lock_path}")
+            1
+          end
+        else
+          result = PackageLock.write(path, source_resolver: dependency_source_resolver(:materialize))
+          @out.puts("wrote #{result.lock_path}")
+          0
+        end
+      when "publish"
+        path = nil
+        upstream = false
+        until @argv.empty?
+          arg = @argv.shift
+          case arg
+          when "--upstream"
+            upstream = true
+          when /^-/
+            @err.puts("unknown deps option #{arg}")
+            print_usage(@err)
+            return 1
+          else
+            if path
+              @err.puts("unknown deps option #{arg}")
+              print_usage(@err)
+              return 1
+            end
+
+            path = arg
+          end
+        end
+
+        unless path
+          if File.file?(File.join(Dir.pwd, "package.toml"))
+            path = Dir.pwd
+          else
+            @err.puts("missing package path")
+            print_usage(@err)
+            return 1
+          end
+        end
+
+        result = dependency_registry_store.publish(path, target: upstream ? :upstream : :local)
+        @out.puts("published #{result.package_name}@#{result.version} -> #{result.path}")
+        0
+      when "fetch"
+        path = nil
+        until @argv.empty?
+          arg = @argv.shift
+          case arg
+          when /^-/
+            @err.puts("unknown deps option #{arg}")
+            print_usage(@err)
+            return 1
+          else
+            if path
+              @err.puts("unknown deps option #{arg}")
+              print_usage(@err)
+              return 1
+            end
+
+            path = arg
+          end
+        end
+
+        unless path
+          if File.file?(File.join(Dir.pwd, "package.toml"))
+            path = Dir.pwd
+          else
+            @err.puts("missing package path")
+            print_usage(@err)
+            return 1
+          end
+        end
+
+        results = dependency_source_fetcher.fetch_locked_sources(path)
+        if results.empty?
+          lock_path = File.join(PackageManifest.load(path).root_dir, "package.lock")
+          @out.puts("no cache-backed sources in #{lock_path}")
+        else
+          results.each do |result|
+            verb = result.status == :present ? "kept" : "materialized"
+            @out.puts("#{verb} #{result.package_name} -> #{result.path}")
+          end
+        end
+        0
       else
         @err.puts("unknown deps subcommand #{subcommand}")
         print_usage(@err)
@@ -532,6 +707,8 @@ module MilkTea
         keep_c_path: nil,
         profile: nil,
         platform: nil,
+        locked: false,
+        frozen: false,
       }
       options[:clean] = false if allow_clean
 
@@ -563,6 +740,11 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:platform] = value
+        when "--locked"
+          options[:locked] = true
+        when "--frozen"
+          options[:locked] = true
+          options[:frozen] = true
         when "--clean"
           if allow_clean
             options[:clean] = true
@@ -682,7 +864,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -696,15 +878,15 @@ module MilkTea
       raise ModuleLoadError.new("expected a source file, got a directory", path: path)
     end
 
-    def make_module_loader(path = nil)
-      ModuleLoader.new(module_roots: module_roots_for(path))
+    def make_module_loader(path = nil, locked: false)
+      ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:))
     end
 
-    def module_roots_for(path = nil)
+    def module_roots_for(path = nil, locked: false)
       roots = @include_module_roots.dup
 
       if path
-        MilkTea::ModuleRoots.roots_for_path(path).each do |root|
+        MilkTea::ModuleRoots.roots_for_path(path, locked:).each do |root|
           roots << root unless roots.include?(root)
         end
       end
@@ -713,6 +895,108 @@ module MilkTea
         roots << root unless roots.include?(root)
       end
       roots
+    end
+
+    def package_graph_for(path = nil, locked: false)
+      return nil unless locked && path
+
+      PackageGraph.load(path, locked: true)
+    end
+
+    def dependency_source_cache
+      @dependency_source_cache ||= PackageSourceCache.new
+    end
+
+    def dependency_registry_store
+      @dependency_registry_store ||= PackageRegistryStore.new
+    end
+
+    def dependency_source_fetcher
+      @dependency_source_fetcher ||= PackageSourceFetcher.new(
+        source_cache: dependency_source_cache,
+        source_resolver: dependency_source_resolver(:reject),
+        registry_store: dependency_registry_store,
+      )
+    end
+
+    def dependency_source_resolver(mode)
+      @dependency_source_resolvers ||= {}
+      @dependency_source_resolvers[mode] ||= case mode
+                                             when :reject
+                                               PackageSourceResolver.new(source_cache: dependency_source_cache)
+                                             when :cache
+                                               PackageSourceResolver.new(
+                                                 source_cache: dependency_source_cache,
+                                                 remote_resolution: :cache,
+                                               )
+                                             when :materialize
+                                               PackageSourceResolver.new(
+                                                 source_cache: dependency_source_cache,
+                                                 remote_resolution: :materialize,
+                                                 source_fetcher: dependency_source_fetcher,
+                                               )
+                                             else
+                                               raise ArgumentError, "unknown dependency source resolution mode #{mode.inspect}"
+                                             end
+    end
+
+    def extract_resolution_flags!
+      locked = false
+      frozen = false
+      remaining = []
+
+      @argv.each do |arg|
+        if arg == "--locked"
+          locked = true
+        elsif arg == "--frozen"
+          locked = true
+          frozen = true
+        else
+          remaining << arg
+        end
+      end
+
+      @argv = remaining
+      { locked:, frozen: }
+    end
+
+    def ensure_current_lockfile!(path)
+      result = PackageLock.check(path, source_resolver: dependency_source_resolver(:cache))
+      return if result.current?
+
+      message = if result.missing?
+                  "package.lock is missing: #{result.lock_path}"
+                else
+                  "package.lock is out of date: #{result.lock_path}"
+                end
+      raise PackageLockError, message
+    end
+
+    def ensure_current_lockfiles!(paths)
+      checked = {}
+
+      paths.each do |path|
+        result = PackageLock.check(path, source_resolver: dependency_source_resolver(:cache))
+        next if checked[result.lock_path]
+
+        checked[result.lock_path] = true
+        next if result.current?
+
+        message = if result.missing?
+                    "package.lock is missing: #{result.lock_path}"
+                  else
+                    "package.lock is out of date: #{result.lock_path}"
+                  end
+        raise PackageLockError, message
+      end
+    end
+
+    def lint_sema_analysis_for(source, path, locked: false)
+      ast = Parser.parse(source, path: path)
+      imported_modules = make_module_loader(path, locked:).imported_modules_for_ast(ast, importer_path: path)
+      Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
+    rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
+      nil
     end
 
     def extract_include_paths!
@@ -747,8 +1031,8 @@ module MilkTea
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
-      "semantic-tokens" => "Usage: mtc semantic-tokens PATH\n\n  Emit LSP-style semantic token data for a source file as JSON.",
-      "parse"           => "Usage: mtc parse PATH\n\n  Parse a source file and print the AST.",
+      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen]\n\n  Emit LSP-style semantic token data for a source file as JSON.",
+      "parse"           => "Usage: mtc parse PATH [--locked] [--frozen]\n\n  Parse a source file and print the AST.",
       "fmt"             => <<~HELP,
         Usage: mtc fmt PATH|DIR [OPTIONS]
 
@@ -773,10 +1057,12 @@ module MilkTea
             --ignore RULES          Comma-separated list of rule codes to suppress.
             --fix                   Apply auto-fixable changes in place.
             --output-format FORMAT  Output format: text (default) or json.
+            --locked                Resolve package dependencies from package.lock.
+            --frozen                Require a current package.lock and use locked resolution.
         HELP
-      "check"           => "Usage: mtc check PATH\n\n  Run semantic analysis on a source file and report errors.",
-      "lower"           => "Usage: mtc lower PATH\n\n  Lower a source file to IR and print it.",
-      "emit-c"          => "Usage: mtc emit-c PATH\n\n  Compile a source file to C and print the output.",
+      "check"           => "Usage: mtc check PATH [--locked] [--frozen]\n\n  Run semantic analysis on a source file and report errors.",
+      "lower"           => "Usage: mtc lower PATH [--locked] [--frozen]\n\n  Lower a source file to IR and print it.",
+      "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen]\n\n  Compile a source file to C and print the output.",
       "build"           => <<~HELP,
         Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -789,6 +1075,8 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
+            --locked                     Resolve dependencies from package.lock.
+            --frozen                     Require a current package.lock and use locked resolution.
             --clean                      Remove existing build outputs and exit.
             -I PATH                      Add an extra module root.
         HELP
@@ -806,17 +1094,23 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
+            --locked                     Resolve dependencies from package.lock.
+            --frozen                     Require a current package.lock and use locked resolution.
             -I PATH                      Add an extra module root.
         HELP
       "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
       "deps"            => <<~HELP,
         Usage: mtc deps SUBCOMMAND
 
-          Manage toolchain dependencies.
+          Manage toolchain and package dependencies.
 
           Subcommands:
             bootstrap    Download and prepare all upstream native libraries.
             doctor       Check that all required tools and libraries are available.
+            tree         Print the package dependency tree for a local package.
+            lock         Write or verify a deterministic package.lock for a local package.
+            publish      Publish an exact-version package into the local or configured upstream registry store.
+            fetch        Materialize cache-backed sources from package.lock explicitly.
         HELP
       "bindgen"         => <<~HELP,
         Usage: mtc bindgen MODULE HEADER [OPTIONS]
@@ -844,18 +1138,22 @@ module MilkTea
 
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
-      io.puts("       mtc semantic-tokens PATH")
-      io.puts("       mtc parse PATH")
+      io.puts("       mtc semantic-tokens PATH [--locked] [--frozen]")
+      io.puts("       mtc parse PATH [--locked] [--frozen]")
       io.puts("       mtc fmt PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
-      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json]")
-      io.puts("       mtc check PATH")
-      io.puts("       mtc lower PATH")
-      io.puts("       mtc emit-c PATH")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--clean] [-I PATH]")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [-I PATH]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen]")
+      io.puts("       mtc check PATH [--locked] [--frozen]")
+      io.puts("       mtc lower PATH [--locked] [--frozen]")
+      io.puts("       mtc emit-c PATH [--locked] [--frozen]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc deps bootstrap")
       io.puts("       mtc deps doctor")
+      io.puts("       mtc deps tree [PATH_OR_PACKAGE]")
+      io.puts("       mtc deps lock [PATH_OR_PACKAGE] [--check]")
+      io.puts("       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
+      io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
     end
   end

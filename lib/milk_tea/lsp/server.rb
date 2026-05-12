@@ -73,6 +73,7 @@ module MilkTea
         @protocol = protocol
         @workspace = Workspace.new
         @format_mode = :tidy
+        @dependency_resolution_mode = :auto
         @handlers = {}
         @diagnostic_report_cache = {}
         @semantic_tokens_cache = {}
@@ -848,6 +849,9 @@ module MilkTea
       def apply_configuration_settings(settings)
         mode = formatter_mode_from_settings(settings)
         @format_mode = mode if mode
+
+        dependency_resolution_mode = dependency_resolution_mode_from_settings(settings)
+        apply_dependency_resolution_mode(dependency_resolution_mode) if dependency_resolution_mode
       end
 
       def formatter_mode_from_settings(settings)
@@ -863,6 +867,35 @@ module MilkTea
         return normalized if Formatter::MODES.include?(normalized)
 
         nil
+      end
+
+      def dependency_resolution_mode_from_settings(settings)
+        return nil unless settings.is_a?(Hash)
+
+        mode =
+          settings.dig('milkTea', 'lsp', 'dependencyResolution') ||
+          settings.dig('milk_tea', 'lsp', 'dependencyResolution') ||
+          settings.dig('lsp', 'dependencyResolution')
+        return nil unless mode
+
+        normalized = DependencyResolution.normalize_mode(mode)
+        return normalized if DependencyResolution::MODES.include?(normalized)
+
+        nil
+      end
+
+      def apply_dependency_resolution_mode(mode)
+        normalized = DependencyResolution.normalize_mode(mode)
+        return if @dependency_resolution_mode == normalized
+
+        @dependency_resolution_mode = normalized
+        @workspace.dependency_resolution_mode = normalized
+        @diagnostic_report_cache.clear
+        open_uris = @workspace.open_document_uris
+        invalidate_document_caches_for(open_uris)
+        open_uris.each do |uri|
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+        end
       end
 
       def handle_code_action(params)
@@ -3474,9 +3507,14 @@ module MilkTea
         current_analysis = @workspace.get_analysis(current_uri)
         return current_path if current_analysis&.module_name == module_name
 
-        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
+        resolution = DependencyResolution.resolve(current_path, mode: @workspace.dependency_resolution_mode)
+        return nil unless resolution.ok?
+
+        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path, locked: resolution.locked)
         relative_path = File.join(*module_name.split('.')) + '.mt'
         module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+      rescue PackageLockError
+        nil
       end
 
       def find_definition_token_in_file(path, name)

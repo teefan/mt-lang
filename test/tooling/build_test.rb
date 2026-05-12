@@ -569,6 +569,66 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_source_file_inside_package_resolves_path_dependency_source_roots
+    Dir.mktmpdir("milk-tea-build-package-dependency") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [build]
+        entry = "src/snake_duel/main.mt"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      source_path = File.join(app_src_dir, "main.mt")
+      File.write(source_path, [
+        "module snake_duel.main",
+        "",
+        "import teefan.ui.layout as layout",
+        "",
+        "function main() -> int:",
+        "    return layout.default_width() - 10",
+        "",
+      ].join("\n"))
+
+      File.write(File.join(ui_src_dir, "layout.mt"), [
+        "module teefan.ui.layout",
+        "",
+        "public function default_width() -> int:",
+        "    return 10",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Build.build(source_path, cc: compiler_path)
+      expected_output = File.join(app_root, "build", "bin", "linux", "debug", "snake_duel")
+
+      assert_equal File.expand_path(expected_output), result.output_path
+      assert File.exist?(expected_output)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, File.expand_path(expected_output)
+    end
+  end
+
   def test_build_source_file_inside_package_uses_wasm_manifest_defaults
     Dir.mktmpdir("milk-tea-build-package-wasm") do |dir|
       compiler_log = File.join(dir, "compiler.log")

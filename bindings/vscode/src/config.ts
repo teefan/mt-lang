@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 export type LogLevel = 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace';
 export type FormatterMode = 'tidy' | 'preserve' | 'safe' | 'canonical';
+export type DependencyResolutionMode = 'auto' | 'live' | 'locked' | 'frozen';
 
 export interface RetryConfig {
   enabled: boolean;
@@ -16,6 +17,7 @@ export interface MilkTeaConfig {
     extraArgs: string[];
     logLevel: LogLevel;
     traceServer: 'off' | 'messages' | 'verbose';
+    dependencyResolution: DependencyResolutionMode;
     retry: RetryConfig;
   };
   dap: {
@@ -39,6 +41,7 @@ export function getConfig(): MilkTeaConfig {
       extraArgs:   cfg.get<string[]>('lsp.extraArgs', []),
       logLevel:    cfg.get<LogLevel>('lsp.logLevel', 'info'),
       traceServer: cfg.get<'off' | 'messages' | 'verbose'>('lsp.traceServer', 'off'),
+      dependencyResolution: cfg.get<DependencyResolutionMode>('lsp.dependencyResolution', 'auto'),
       retry: {
         enabled:     cfg.get<boolean>('lsp.retry.enabled', true),
         maxAttempts: cfg.get<number>('lsp.retry.maxAttempts', 3),

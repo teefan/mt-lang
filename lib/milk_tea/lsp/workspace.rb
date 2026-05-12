@@ -20,6 +20,7 @@ module MilkTea
 
       def initialize(error_output: nil)
         @error_output = error_output
+        @dependency_resolution_mode = :auto
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @document_sources = {} # uri -> source string from the editor client
@@ -50,6 +51,23 @@ module MilkTea
 
       def shared_module_cache
         @shared_module_cache
+      end
+
+      def dependency_resolution_mode=(mode)
+        normalized = DependencyResolution.normalize_mode(mode)
+        return if @dependency_resolution_mode == normalized
+
+        @dependency_resolution_mode = normalized
+        @analysis_state_mutex.synchronize do
+          @shared_module_cache.clear
+          @analysis_cache.clear
+          @diagnostics_cache.clear
+          @last_good_analysis_cache.clear
+        end
+      end
+
+      def dependency_resolution_mode
+        @dependency_resolution_mode
       end
 
       def set_document_source(uri, source)
@@ -83,7 +101,13 @@ module MilkTea
           entry = @diagnostics_cache[uri]
           return entry[:diagnostics] if entry && entry[:content_hash] == hash
 
-          result = Diagnostics.collect(uri, content, shared_module_cache: @shared_module_cache, source_overrides: file_backed_source_overrides)
+          result = Diagnostics.collect(
+            uri,
+            content,
+            shared_module_cache: @shared_module_cache,
+            source_overrides: file_backed_source_overrides,
+            dependency_resolution_mode: @dependency_resolution_mode,
+          )
           diagnostics = result[:diagnostics]
           analysis = result[:analysis]
           @analysis_cache[uri] = analysis if analysis
@@ -488,10 +512,12 @@ module MilkTea
 
       def refresh_import_dependent_caches(changed_uri: nil)
         @analysis_state_mutex.synchronize do
+          preserved_last_good_analysis = changed_uri ? @last_good_analysis_cache[changed_uri] : nil
           @shared_module_cache.clear
           @analysis_cache.clear
           @diagnostics_cache.clear
           @last_good_analysis_cache.clear
+          @last_good_analysis_cache[changed_uri] = preserved_last_good_analysis if changed_uri && preserved_last_good_analysis
         end
         @document_state_mutex.synchronize do
           @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
@@ -584,10 +610,14 @@ module MilkTea
 
         path = uri_to_path(uri)
         result = if path && File.file?(path)
+                   resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
+                   return nil unless resolution.ok?
+
                    # Use the full module loader for file-backed documents so
                    # imports resolve consistently with CLI `mtc check`.
                    loader = MilkTea::ModuleLoader.new(
-                     module_roots: MilkTea::ModuleRoots.roots_for_path(path),
+                     module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+                     package_graph: (resolution.locked ? PackageGraph.load(path, locked: true) : nil),
                      shared_cache: @shared_module_cache,
                      source_overrides: file_backed_source_overrides,
                    )
@@ -597,11 +627,17 @@ module MilkTea
                  end
         @last_good_analysis_cache[uri] = result
         result
-      rescue MilkTea::SemaError, ModuleLoadError
+      rescue MilkTea::SemaError, ModuleLoadError, PackageLockError
         @last_good_analysis_cache[uri]
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"
         @last_good_analysis_cache[uri]
+      end
+
+      def open_document_uris
+        @document_state_mutex.synchronize do
+          @open_documents.keys.dup
+        end
       end
 
       # ── Symbol extraction (token-based, no AST position requirement) ────────

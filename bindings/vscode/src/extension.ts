@@ -266,6 +266,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await lspClient.syncFormatMode();
       }
 
+      if (event.affectsConfiguration('milkTea.lsp.dependencyResolution') && lspClient.isRunning) {
+        await lspClient.syncDependencyResolution();
+      }
+
       // If the server path or enabled flag changed, offer a restart.
       if (
         event.affectsConfiguration('milkTea.lsp.serverPath') ||

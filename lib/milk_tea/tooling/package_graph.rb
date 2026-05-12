@@ -1,0 +1,133 @@
+# frozen_string_literal: true
+
+module MilkTea
+  class PackageGraphError < StandardError; end
+
+  class PackageGraph
+    Edge = Data.define(:dependency, :node)
+    Node = Data.define(:manifest, :source, :edges)
+
+    def self.load(path, locked: false, source_resolver: PackageSourceResolver.new)
+      return PackageLock.load(path, source_resolver:) if locked
+
+      new(path, source_resolver:).load
+    end
+
+    def initialize(path, source_resolver: PackageSourceResolver.new)
+      @path = File.expand_path(path)
+      @source_resolver = source_resolver
+      @nodes_by_manifest_path = {}
+      @manifest_paths_by_package_name = {}
+      @build_stack = []
+    end
+
+    def load
+      root_manifest = PackageManifest.load(@path)
+      build_node(root_manifest, source: @source_resolver.source_for_manifest(root_manifest))
+    end
+
+    def self.render_tree(path, source_resolver: PackageSourceResolver.new)
+      load(path, source_resolver:).tree_lines.join("\n")
+    end
+
+    class Node
+      def packages(nodes = [], visited = {})
+        return nodes if visited[manifest.manifest_path]
+
+        visited[manifest.manifest_path] = true
+        nodes << self
+        edges.each do |edge|
+          edge.node&.packages(nodes, visited)
+        end
+        nodes
+      end
+
+      def source_roots(roots = [], visited = {})
+        return roots if visited[manifest.manifest_path]
+
+        visited[manifest.manifest_path] = true
+        roots << manifest.source_root
+        edges.each do |edge|
+          edge.node&.source_roots(roots, visited)
+        end
+        roots
+      end
+
+      def package_for_path(path, matches = [])
+        return nil unless path
+
+        expanded_path = File.expand_path(path)
+        matches << self if package_path?(expanded_path)
+        edges.each do |edge|
+          edge.node&.package_for_path(expanded_path, matches)
+        end
+
+        matches.max_by { |node| node.manifest.root_dir.length }
+      end
+
+      def tree_lines(indent = 0)
+        lines = [("  " * indent) + manifest.package_name]
+        edges.each do |edge|
+          if edge.node
+            lines.concat(edge.node.tree_lines(indent + 1))
+          else
+            lines << (("  " * (indent + 1)) + edge.dependency.name)
+          end
+        end
+        lines
+      end
+
+      private
+
+      def package_path?(path)
+        root_dir = manifest.root_dir
+        path == root_dir || path.start_with?(root_dir + File::SEPARATOR)
+      end
+    end
+
+    private
+
+    def build_node(manifest, source:)
+      existing = @nodes_by_manifest_path[manifest.manifest_path]
+      return existing if existing
+
+      if @build_stack.include?(manifest.manifest_path)
+        cycle_paths = @build_stack + [manifest.manifest_path]
+        cycle_names = cycle_paths.map { |path| package_name_for_manifest_path(path) }
+        raise PackageGraphError, "package dependency cycle detected: #{cycle_names.join(' -> ')}"
+      end
+
+      register_package_name!(manifest)
+
+      @build_stack << manifest.manifest_path
+      edges = manifest.dependencies.map do |dependency|
+        resolved_package = @source_resolver.resolve(dependency, parent_manifest: manifest)
+        edge_node = build_node(resolved_package.manifest, source: resolved_package.source)
+        Edge.new(dependency:, node: edge_node)
+      end
+
+      node = Node.new(manifest:, source:, edges:)
+      @nodes_by_manifest_path[manifest.manifest_path] = node
+      node
+    ensure
+      @build_stack.pop if @build_stack.last == manifest.manifest_path
+    end
+
+    def register_package_name!(manifest)
+      existing_path = @manifest_paths_by_package_name[manifest.package_name]
+      return @manifest_paths_by_package_name[manifest.package_name] = manifest.manifest_path unless existing_path
+      return if existing_path == manifest.manifest_path
+
+      raise PackageGraphError, "duplicate package name #{manifest.package_name} at #{manifest.manifest_path} and #{existing_path}"
+    end
+
+    def package_name_for_manifest_path(manifest_path)
+      node = @nodes_by_manifest_path[manifest_path]
+      return node.manifest.package_name if node
+
+      PackageManifest.load(manifest_path).package_name
+    rescue PackageManifestError
+      manifest_path
+    end
+  end
+end

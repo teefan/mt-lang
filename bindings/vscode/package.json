@@ -156,6 +156,23 @@
           "default": "off",
           "description": "Traces the raw JSON-RPC communication between VS Code and the Milk Tea language server."
         },
+        "milkTea.lsp.dependencyResolution": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "live",
+            "locked",
+            "frozen"
+          ],
+          "enumDescriptions": [
+            "Use package.lock when it is current, otherwise fall back to live manifests.",
+            "Always resolve imports from live package manifests.",
+            "Always resolve imports from package.lock when present.",
+            "Require a current package.lock and report a lockfile error when it is missing or stale."
+          ],
+          "default": "auto",
+          "description": "Controls how the Milk Tea LSP resolves package dependencies for diagnostics, semantic tokens, and other semantic features."
+        },
         "milkTea.lsp.retry.enabled": {
           "type": "boolean",
           "default": true,

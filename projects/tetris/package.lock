@@ -1,0 +1,32 @@
+schema_version = 1
+root_package = "tetris"
+
+[[package]]
+name = "tetris"
+kind = "application"
+version = "0.1.0"
+source_kind = "path"
+source_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris"
+manifest_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/package.toml"
+source_root = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris"
+dependencies = ["tetris.pieces", "tetris.rules"]
+
+[[package]]
+name = "tetris.pieces"
+kind = "library"
+version = "0.1.0"
+source_kind = "path"
+source_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_pieces"
+manifest_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_pieces/package.toml"
+source_root = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_pieces/src"
+dependencies = []
+
+[[package]]
+name = "tetris.rules"
+kind = "library"
+version = "0.1.0"
+source_kind = "path"
+source_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_rules"
+manifest_path = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_rules/package.toml"
+source_root = "/home/teefan/Projects/Ruby/mt-lang/projects/tetris/packages/tetris_rules/src"
+dependencies = []
