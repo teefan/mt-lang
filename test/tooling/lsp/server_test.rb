@@ -2437,6 +2437,32 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_returns_field_info_for_field_declarations
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_field_declaration_hover_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE }
+      })
+
+      x_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 1, "character" => 4 }
+      })
+      x_hover_value = x_hover.dig("result", "contents", "value")
+      assert_includes x_hover_value, "x: float"
+      refute_includes x_hover_value, "local x"
+
+      y_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 2, "character" => 4 }
+      })
+      y_hover_value = y_hover.dig("result", "contents", "value")
+      assert_includes y_hover_value, "y: float"
+      refute_includes y_hover_value, "local y"
+    end
+  end
+
   def test_hover_returns_field_info_for_member_chain_segments
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -2458,6 +2484,96 @@ class LSPServerTest < Minitest::Test
       })
       kind_hover_value = kind_hover.dig("result", "contents", "value")
       assert_includes kind_hover_value, "kind: int"
+    end
+  end
+
+  def test_hover_returns_method_info_for_member_access_segments
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      source_path = File.expand_path("projects/tetris/src/main.mt", Dir.pwd)
+      uri = path_to_uri(source_path)
+      source = File.read(source_path)
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      line = source.lines.index { |text| text.include?("this.reset()") }
+      character = source.lines.fetch(line).index("reset")
+
+      hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character }
+      })
+      hover_value = hover.dig("result", "contents", "value")
+
+      assert_includes hover_value, "editable function reset() -> void"
+      refute_includes hover_value, "local reset"
+    end
+  end
+
+  def test_hover_returns_field_info_for_named_constructor_labels
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_named_constructor_label_hover_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_PARAMETER_AND_LABEL_SEMANTICS }
+      })
+
+      x_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 5, "character" => 21 }
+      })
+      x_hover_value = x_hover.dig("result", "contents", "value")
+      assert_includes x_hover_value, "x: int"
+      refute_includes x_hover_value, "local x"
+
+      y_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 5, "character" => 35 }
+      })
+      y_hover_value = y_hover.dig("result", "contents", "value")
+      assert_includes y_hover_value, "y: int"
+      refute_includes y_hover_value, "local y"
+    end
+  end
+
+  def test_hover_and_definition_resolve_imported_enum_members
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      source_path = File.expand_path("projects/tetris/src/main.mt", Dir.pwd)
+      uri = path_to_uri(source_path)
+      source = File.read(source_path)
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      line = source.lines.index { |text| text.include?("KEY_ENTER") }
+      character = source.lines.fetch(line).index("KEY_ENTER")
+
+      hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character }
+      })
+      hover_value = hover.dig("result", "contents", "value")
+      assert_includes hover_value, "KEY_ENTER"
+      assert_includes hover_value, "rl.KeyboardKey"
+      assert_includes hover_value, "257"
+      assert_includes hover_value, "std/c/raylib.mt"
+
+      definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character }
+      })
+      definition_result = definition.fetch("result")
+
+      expected_path = File.expand_path("std/c/raylib.mt", Dir.pwd)
+      expected_line = File.readlines(expected_path).index { |text| text.include?("KEY_ENTER = 257") }
+      assert_equal path_to_uri(expected_path), definition_result.fetch("uri")
+      assert_equal expected_line, definition_result.dig("range", "start", "line")
     end
   end
 
