@@ -13,6 +13,8 @@ const preview_left: int = 388
 const preview_top: int = 104
 const window_width: int = 640
 const window_height: int = 700
+const horizontal_repeat_delay: float = 0.16
+const horizontal_repeat_interval: float = 0.05
 
 const piece_i: int = 1
 const piece_j: int = 2
@@ -54,6 +56,10 @@ struct Game implements ScreenState:
     lines: int
     level: int
     drop_timer: float
+    horizontal_move_direction: int
+    horizontal_move_repeat_timer: float
+    pause_requested: bool
+    exit_requested: bool
     cleared_flash: float
     game_over: bool
 
@@ -250,6 +256,10 @@ methods Game:
             lines = 0,
             level = 0,
             drop_timer = 0.0,
+            horizontal_move_direction = 0,
+            horizontal_move_repeat_timer = 0.0,
+            pause_requested = false,
+            exit_requested = false,
             cleared_flash = 0.0,
             game_over = false,
         )
@@ -264,6 +274,10 @@ methods Game:
         this.lines = 0
         this.level = 0
         this.drop_timer = 0.0
+        this.horizontal_move_direction = 0
+        this.horizontal_move_repeat_timer = 0.0
+        this.pause_requested = false
+        this.exit_requested = false
         this.cleared_flash = 0.0
         this.game_over = false
         this.spawn_next_piece()
@@ -273,6 +287,10 @@ methods Game:
         this.active = Piece(kind = this.next_kind, rotation = 0, x = 3, y = 0)
         this.next_kind = random_kind()
         this.drop_timer = 0.0
+        this.horizontal_move_direction = 0
+        this.horizontal_move_repeat_timer = 0.0
+        this.pause_requested = false
+        this.exit_requested = false
 
         if this.collides(this.active, 0, 0, this.active.rotation):
             this.game_over = true
@@ -387,8 +405,12 @@ methods Game:
 
 
     editable function update(effect: rl.Sound):
+        let frame_time = rl.get_frame_time()
+        this.pause_requested = false
+        this.exit_requested = false
+
         if this.cleared_flash > 0.0:
-            this.cleared_flash -= rl.get_frame_time()
+            this.cleared_flash -= frame_time
             if this.cleared_flash < 0.0:
                 this.cleared_flash = 0.0
 
@@ -397,11 +419,32 @@ methods Game:
                 this.reset()
             return
 
-        if rl.is_key_pressed_repeat(rl.KeyboardKey.KEY_LEFT):
-            this.try_move(-1, 0)
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_P):
+            this.pause_requested = true
+            return
 
-        if rl.is_key_pressed_repeat(rl.KeyboardKey.KEY_RIGHT):
-            this.try_move(1, 0)
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
+            this.exit_requested = true
+            return
+
+        var horizontal_direction = 0
+        if rl.is_key_down(rl.KeyboardKey.KEY_LEFT) and not rl.is_key_down(rl.KeyboardKey.KEY_RIGHT):
+            horizontal_direction = -1
+        elif rl.is_key_down(rl.KeyboardKey.KEY_RIGHT) and not rl.is_key_down(rl.KeyboardKey.KEY_LEFT):
+            horizontal_direction = 1
+
+        if horizontal_direction == 0:
+            this.horizontal_move_direction = 0
+            this.horizontal_move_repeat_timer = 0.0
+        elif horizontal_direction != this.horizontal_move_direction:
+            this.horizontal_move_direction = horizontal_direction
+            this.horizontal_move_repeat_timer = horizontal_repeat_delay
+            this.try_move(horizontal_direction, 0)
+        else:
+            this.horizontal_move_repeat_timer -= frame_time
+            while this.horizontal_move_repeat_timer <= 0.0:
+                this.try_move(horizontal_direction, 0)
+                this.horizontal_move_repeat_timer += horizontal_repeat_interval
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_UP) or rl.is_key_pressed(rl.KeyboardKey.KEY_X):
             this.try_rotate(1)
@@ -414,7 +457,7 @@ methods Game:
             return
 
         let drop_scale = if rl.is_key_down(rl.KeyboardKey.KEY_DOWN): 0.12 else: 1.0
-        this.drop_timer += rl.get_frame_time()
+        this.drop_timer += frame_time
 
         if this.drop_timer < gravity_seconds(this.level) * drop_scale:
             return
@@ -520,6 +563,7 @@ methods Game:
 function main() -> int:
     rl.init_window(window_width, window_height, "Milk Tea Tetris")
     defer rl.close_window()
+    rl.set_exit_key(rl.KeyboardKey.KEY_NULL)
     rl.set_target_fps(60)
 
     rl.init_audio_device()
@@ -553,10 +597,10 @@ function main() -> int:
                 showing_title = true
         else:
             run_screen_frame(game, tiles, clear_sound)
-            if not game.game_over and rl.is_key_pressed(rl.KeyboardKey.KEY_P):
+            if game.pause_requested:
                 paused = make_paused_screen(game)
                 showing_pause = true
-            elif rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
+            elif game.exit_requested:
                 title = default[TitleScreen]
                 showing_title = true
 
