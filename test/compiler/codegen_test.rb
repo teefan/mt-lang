@@ -52,7 +52,7 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_match(/#include <time\.h>/, generated)
-    assert_match(/struct timespec duration = \(struct timespec\)\{ \.tv_sec = 1, \.tv_nsec = 2 \};/, generated)
+    assert_match(/struct timespec duration = \{ \.tv_sec = 1, \.tv_nsec = 2 \};/, generated)
     assert_match(/return nanosleep\(&duration, NULL\);/, generated)
   end
 
@@ -217,7 +217,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static int32_t demo_span_surface_first\(mt_span_int items\)/, generated)
     assert_match(/if \(items\.len == 0\)/, generated)
     assert_match(/return \*items\.data;/, generated)
-    assert_match(/mt_span_int items = \(mt_span_int\)\{ \.data = &value, \.len = 1 \};/, generated)
+    assert_match(/mt_span_int items = \{ \.data = &value, \.len = 1 \};/, generated)
   end
 
   def test_generate_c_emits_line_directives_for_user_statements
@@ -448,7 +448,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/demo_generic_methods_codegen_Box_echo_int/, generated)
     assert_match(/demo_generic_methods_codegen_Box_make_int/, generated)
-    assert_match(/int32_t a = \(\(void\)box, demo_generic_methods_codegen_Box_echo_int\(3\)\);/, generated)
+    assert_match(/int32_t a = demo_generic_methods_codegen_Box_echo_int\(3\);/, generated)
     assert_match(/demo_generic_methods_codegen_Box_make_int\(4\)/, generated)
   end
 
@@ -484,7 +484,57 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int\(\)/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_get_int\(box\)/, generated)
-    assert_match(/if \(\(\(void\)box, demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\)\) \{/, generated)
+    assert_match(/if \(demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\) \{/, generated)
+  end
+
+  def test_generate_c_keeps_omitted_receiver_wrapper_for_side_effectful_receiver_expression
+    source = <<~MT
+      module demo.side_effectful_receiver_codegen
+
+      struct Box:
+          value: int
+
+      methods Box:
+          static function build() -> Box:
+              return Box(value = 1)
+
+          function echo[T](input: T) -> T:
+              return input
+
+      function main() -> int:
+          if Box.build().echo(true):
+              return 1
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_side_effectful_receiver_codegen_Box_build\(\)/, generated)
+    assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build\(\), demo_side_effectful_receiver_codegen_Box_echo_bool\(true\)\)\) \{/, generated)
+  end
+
+  def test_generate_c_suppresses_unused_emitted_parameters
+    source = <<~MT
+      module demo.unused_params_codegen
+
+      interface Runner:
+          function tick(effect: int) -> int
+
+      struct Title implements Runner:
+          value: int
+
+      methods Title:
+          function tick(effect: int) -> int:
+              return this.value
+
+      function main() -> int:
+          let title = Title(value = 3)
+          return title.tick(7)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/static int32_t demo_unused_params_codegen_Title_tick\(demo_unused_params_codegen_Title this, int32_t effect\) \{\s+\(void\)effect;/m, generated)
   end
 
   def test_generate_c_for_default_specialization_with_override_and_zero_fallback
@@ -836,11 +886,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static mt_str demo_format_codegen__fmt_1\(/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = demo_format_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\), ticks, raw, true\);/, generated)
+    refute_match(/demo_format_codegen__fmt_\d+/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
     assert_match(/std_string_String text = std_fmt_format\(__mt_fmt_string_1\);/, generated)
     assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
-    assert_match(/uintptr_t __mt_total_len = 29;/, generated)
+    assert_match(/uintptr_t __mt_fmt_total_len_\d+ = 29;/, generated)
     assert_match(/mt_format_append_uint\(/, generated)
     assert_match(/mt_format_append_int\(/, generated)
     assert_match(/mt_format_append_ulong\(/, generated)
@@ -865,11 +915,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static mt_str demo_format_expr_codegen__fmt_1\(/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = demo_format_expr_codegen__fmt_1\(\(\(uint32_t\) value\), \(\(int32_t\) delta\)\);/, generated)
+    refute_match(/demo_format_expr_codegen__fmt_\d+/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
     assert_match(/mt_str text = __mt_fmt_string_1;/, generated)
-    assert_match(/demo_format_expr_codegen_sink\(__mt_fmt_string_2\)/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_2\);/, generated)
+    assert_match(/demo_format_expr_codegen_sink\(__mt_fmt_string_\d+\)/, generated)
+    assert_operator generated.scan(/mt_format_str_release\(__mt_fmt_string_\d+\);/).length, :>=, 2
     assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
   end
 
@@ -889,15 +939,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static mt_str demo_format_sink_codegen__fmt_1\(/, generated)
-    assert_match(/static mt_str demo_format_sink_codegen__fmt_2\(/, generated)
-    assert_match(/std_string_String_assign\(&output, __mt_fmt_string_1\);/, generated)
-    assert_match(/std_string_String_append\(&output, __mt_fmt_string_2\);/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_2\);/, generated)
+    refute_match(/demo_format_sink_codegen__fmt_\d+/, generated)
+    assert_match(/std_string_String_assign\(&output, __mt_fmt_string_\d+\);/, generated)
+    assert_match(/std_string_String_append\(&output, __mt_fmt_string_\d+\);/, generated)
+    assert_equal 2, generated.scan(/mt_format_str_release\(__mt_fmt_string_\d+\);/).length
   end
 
-  def test_generate_c_reuses_identical_format_string_helpers
+  def test_generate_c_inlines_identical_format_string_builders_without_helpers
     source = <<~MT
       module demo.format_dedup_codegen
 
@@ -912,9 +960,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static mt_str demo_format_dedup_codegen__fmt_1\(/, generated)
-    refute_match(/demo_format_dedup_codegen__fmt_2\(/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = demo_format_dedup_codegen__fmt_1\(/, generated)
+    refute_match(/demo_format_dedup_codegen__fmt_\d+/, generated)
+    assert_equal 2, generated.scan(/mt_str __mt_fmt_string_\d+ = mt_format_str_make\(__mt_fmt_total_len_\d+\);/).length
   end
 
   def test_rejects_returning_general_format_string_as_borrowed_text
@@ -1619,6 +1666,44 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/DrawText\(TextFormat\("Collision Area: %i", area\), \(GetScreenWidth\(\) \/ 2\) - 100, 20, 20, std_sample_BLACK\);/, generated)
   end
 
+  def test_generate_c_for_foreign_text_calls_with_dynamic_format_literals_without_extra_cstr_copy
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main(score: int) -> void:
+          sample.draw_text(f"Score  \#{score}", 10, 20, 20, sample.BLACK)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            const BLACK: int = 0
+
+            external function DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public const BLACK: int = c.BLACK
+
+        public foreign function draw_text(text: str as cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void = c.DrawText
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    refute_match(/demo_main__fmt_\d+/, generated)
+    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
+    assert_match(/DrawText\(\(\(const char\*\) __mt_fmt_string_1\.data\), 10, 20, 20, std_sample_BLACK\);/, generated)
+    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    refute_match(/mt_foreign_str_to_cstr_temp/, generated)
+    refute_match(/mt_free_foreign_cstr_temp/, generated)
+  end
+
   def test_generate_c_for_variadic_foreign_mapping_calls
     source = <<~MT
       module demo.variadic_foreign
@@ -2206,7 +2291,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/struct demo_generic_surface_Holder \{/, generated)
     assert_match(/demo_generic_surface_Slice_int items;/, generated)
     assert_match(/static int32_t demo_generic_surface_first\(demo_generic_surface_Slice_int items\)/, generated)
-    assert_match(/demo_generic_surface_Holder holder = \(demo_generic_surface_Holder\)\{ \.items = \(demo_generic_surface_Slice_int\)\{ \.data = &value, \.len = 1 \} \};/, generated)
+    assert_match(/demo_generic_surface_Holder holder = \{ \.items = \{ \.data = &value, \.len = 1 \} \};/, generated)
   end
 
   def test_generate_c_for_generic_struct_used_only_in_expression
@@ -2630,12 +2715,69 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_source(source)
 
     assert_match(/static int32_t demo_simple_loop_surface_main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t i = 0;\s+(?:#[^\n]*\n\s+)?while \(i < 3\) \{/m, generated)
-    assert_match(/int32_t main\(void\) \{\s+(?:#[^\n]*\n\s+)?int32_t __mt_result = demo_simple_loop_surface_main\(\);/m, generated)
+    assert_match(/int32_t main\(void\) \{\s+(?:#[^\n]*\n\s+)?return demo_simple_loop_surface_main\(\);/m, generated)
     assert_match(/while \(i < 3\) \{/, generated)
     refute_match(/\n  \{\n    while \(i < 3\) \{/, generated)
     refute_match(/__mt_loop_continue_\d+:;/, generated)
     refute_match(/__mt_loop_break_\d+:;/, generated)
     refute_match(/goto __mt_loop_(continue|break)_\d+;/, generated)
+  end
+
+  def test_generate_c_rewrites_imported_aggregate_constants_for_static_storage
+    source = <<~MT
+      module demo.static_const_colors
+
+      import std.sample as sample
+
+      function main() -> int:
+          return int<-sample.WHITE.r
+    MT
+
+    imported_sources = {
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public type Color = c.Color
+        public const WHITE: Color = c.WHITE
+      MT
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            struct Color:
+                r: byte
+                g: byte
+                b: byte
+                a: byte
+
+            const WHITE: Color = Color(r = 255, g = 255, b = 255, a = 255)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/static const Color std_sample_WHITE = \{ \.r = 255, \.g = 255, \.b = 255, \.a = 255 \};/, generated)
+    refute_match(/static const Color std_sample_WHITE = c\.WHITE;/, generated)
+  end
+
+  def test_generate_c_emits_pedantic_safe_static_array_aggregate_initializers
+    source = <<~MT
+      module demo.static_array_init
+
+      struct Cell:
+          x: int
+          y: int
+
+      const CELLS: array[Cell, 2] = array[Cell, 2](Cell(x = 1, y = 2), Cell(x = 3, y = 4))
+
+      function main() -> int:
+          return CELLS[0].x
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static const demo_static_array_init_Cell demo_static_array_init_CELLS\[2\] = \{ \{ \.x = 1, \.y = 2 \}, \{ \.x = 3, \.y = 4 \} \};/, generated)
+    refute_match(/\(demo_static_array_init_Cell\)\{ \.x = 1, \.y = 2 \}/, generated)
   end
 
   def test_generate_c_uses_structured_break_for_simple_loop_exit
@@ -2744,7 +2886,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/typedef struct mt_str \{/, generated)
     assert_match(/char\* data;/, generated)
     assert_match(/uintptr_t len;/, generated)
-    assert_match(/static const mt_str demo_str_surface_greeting = \(mt_str\)\{ \.data = "hello", \.len = 5 \};/, generated)
+    assert_match(/static const mt_str demo_str_surface_greeting = \{ \.data = "hello", \.len = 5 \};/, generated)
     assert_match(/static void mt_fatal_str\(mt_str message\) \{/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/mt_fatal_str\(demo_str_surface_greeting\);/, generated)
@@ -2780,7 +2922,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
     assert_match(/char \*buffer = \(\(char\*\) memory\);/, generated)
     assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
-    assert_match(/mt_str text = \(mt_str\)\{ \.data = "hello world", \.len = 11 \};/, generated)
+    assert_match(/mt_str text = \{ \.data = "hello world", \.len = 11 \};/, generated)
     assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
   end
 
@@ -3260,8 +3402,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/demo_partial_surface_Point origin = \(demo_partial_surface_Point\) \{ 0 \};/, generated)
-    assert_match(/demo_partial_surface_Point point = \(demo_partial_surface_Point\)\{ \.x = 5 \};/, generated)
+    assert_match(/demo_partial_surface_Point origin = \{ 0 \};/, generated)
+    assert_match(/demo_partial_surface_Point point = \{ \.x = 5 \};/, generated)
     assert_match(/uint32_t palette\[4\] = \{ 1, 2 \};/, generated)
   end
 
@@ -3481,7 +3623,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_str_builder_32 buffer = \{ 0 \};/, generated)
     assert_match(/mt_str_builder_assign\(\(mt_str\)\{ \.data = "hi", \.len = 2 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
     assert_match(/mt_str_builder_append\(\(mt_str\)\{ \.data = "!", \.len = 1 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
-    assert_match(/mt_str text = \(mt_str\)\{ \.data = &buffer\.data\[0\], \.len = mt_str_builder_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
+    assert_match(/mt_str text = \{ \.data = &buffer\.data\[0\], \.len = mt_str_builder_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
     assert_match(/const char\* label = mt_str_builder_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
     assert_match(/mt_str_builder_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
@@ -3516,7 +3658,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/mt_span_char __mt_foreign_arg_public_1 = \(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
+    assert_match(/mt_span_char __mt_foreign_arg_public_1 = \{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
     assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
   end
 
@@ -3759,7 +3901,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/mt_span_char __mt_foreign_arg_public_\d+ = \(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \};/, generated)
+    assert_match(/mt_span_char __mt_foreign_arg_public_\d+ = \{ \.data = &buffer\[0\], \.len = 32 \};/, generated)
     assert_match(/TextBox\(__mt_foreign_arg_public_\d+\.data, \(\(int32_t\) __mt_foreign_arg_public_\d+\.len\)\);/, generated)
   end
 
