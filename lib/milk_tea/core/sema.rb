@@ -56,6 +56,10 @@ module MilkTea
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
     FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
+    TypeParamConstraintBinding = Data.define(:interfaces, :requires_default) do
+      def initialize(interfaces: [], requires_default: false) = super
+    end
+    DefaultResolution = Data.define(:target_type, :binding)
     ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
@@ -374,7 +378,7 @@ module MilkTea
         return unless decl.respond_to?(:type_params)
         return unless decl.type_params.any? { |type_param| type_param.constraints.any? }
 
-        raise_sema_error("#{context} does not support interface constraints on type parameters")
+        raise_sema_error("#{context} does not support constraints on type parameters")
       end
 
       def declare_interface_binding(decl)
@@ -740,16 +744,31 @@ module MilkTea
         type_params.each_with_object({}) do |type_param, constraints|
           next if type_param.constraints.empty?
 
-          resolved = []
-          seen = {}
-          type_param.constraints.each do |constraint_ref|
-            interface = resolve_interface_ref(constraint_ref)
-            raise_sema_error("duplicate interface constraint #{type_param.name} implements #{interface.name}") if seen.key?(interface)
+          resolved_interfaces = []
+          seen_interfaces = {}
+          requires_default = false
 
-            seen[interface] = true
-            resolved << interface
+          type_param.constraints.each do |constraint|
+            case constraint.kind
+            when :interface
+              interface = resolve_interface_ref(constraint.interface_ref)
+              raise_sema_error("duplicate interface constraint #{type_param.name} implements #{interface.name}") if seen_interfaces.key?(interface)
+
+              seen_interfaces[interface] = true
+              resolved_interfaces << interface
+            when :defaults
+              raise_sema_error("duplicate defaults constraint #{type_param.name} defaults") if requires_default
+
+              requires_default = true
+            else
+              raise_sema_error("unsupported type parameter constraint #{constraint.kind}")
+            end
           end
-          constraints[type_param.name] = resolved.freeze
+
+          constraints[type_param.name] = TypeParamConstraintBinding.new(
+            interfaces: resolved_interfaces.freeze,
+            requires_default: requires_default,
+          )
         end
       end
 
@@ -823,7 +842,14 @@ module MilkTea
         when AST::UnsafeExpr
           validate_static_storage_initializer!(expression.expression, scopes:)
         when AST::Specialization
-          return if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+          if expression.callee.is_a?(AST::Identifier)
+            return if expression.callee.name == "zero"
+
+            if expression.callee.name == "default"
+              resolution = resolve_default_specialization(expression)
+              return if resolution.binding.nil? && default_zero_fallback_type?(resolution.target_type, expected_type: nil)
+            end
+          end
 
           raise_sema_error("module variable initializer must be static-storage-safe")
         when AST::Call
@@ -1058,6 +1084,10 @@ module MilkTea
       end
 
       def validate_interface_method_match!(receiver_type, interface, interface_method, method)
+        if method.ast.is_a?(AST::MethodDef) && method.ast.type_params.any?
+          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: interface methods cannot be implemented by generic methods")
+        end
+
         expected_mutable = interface_method.kind == :editable
         actual_mutable = method.type.receiver_mutable
         if actual_mutable != expected_mutable
@@ -2143,9 +2173,17 @@ module MilkTea
           when AST::Call
             infer_call(expression, scopes:, expected_type:)
           when AST::Specialization
-            if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
-              callable_kind, callable, = resolve_callable(expression, scopes:)
-              return check_zero_call(callable, [], expected_type:) if callable_kind == :zero
+            if expression.callee.is_a?(AST::Identifier)
+              if expression.callee.name == "zero"
+                callable_kind, callable, = resolve_callable(expression, scopes:)
+                return check_zero_call(callable, [], expected_type:) if callable_kind == :zero
+              end
+
+              if expression.callee.name == "default"
+                resolution = resolve_default_specialization(expression)
+                return resolution.target_type if resolution.binding
+                return check_zero_call(resolution.target_type, [], expected_type:, operation: "default")
+              end
             end
 
             if (callable_resolution = resolve_specialized_callable_binding(expression, scopes:))
@@ -2536,6 +2574,8 @@ module MilkTea
           check_reinterpret_call(callable, expression.arguments, scopes:)
         when :zero
           raise_sema_error("zero[T]() is no longer supported; use zero[T]")
+        when :default
+          raise_sema_error("default[T]() is no longer supported; use default[T]")
         when :fatal
           check_fatal_call(expression.arguments, scopes:)
         when :ref_of
@@ -2883,6 +2923,10 @@ module MilkTea
             return [:zero, resolve_type_ref(type_arg), nil]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "default"
+            return [:default, resolve_default_specialization(callee), nil]
+          end
+
           if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
             return callable_resolution
           end
@@ -3197,15 +3241,54 @@ module MilkTea
         target_type
       end
 
-      def check_zero_call(target_type, arguments, expected_type: nil)
-        raise_sema_error("zero expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+      def check_zero_call(target_type, arguments, expected_type: nil, operation: "zero")
+        raise_sema_error("#{operation} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
 
-        zero_initializable_type?(target_type)
+        zero_initializable_type?(target_type, operation:)
         if expected_type.is_a?(Types::Nullable) && typed_null_target_type?(expected_type.base) && types_compatible?(target_type, expected_type.base)
-          raise_sema_error("use null instead of zero[#{target_type}] in nullable pointer-like context #{expected_type}")
+          raise_sema_error("use null instead of #{operation}[#{target_type}] in nullable pointer-like context #{expected_type}")
         end
 
         target_type
+      end
+
+      def resolve_default_specialization(callee)
+        raise_sema_error("default requires exactly one type argument") unless callee.arguments.length == 1
+
+        type_arg = callee.arguments.first.value
+        raise_sema_error("default type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+        target_type = resolve_type_ref(type_arg)
+        DefaultResolution.new(
+          target_type:,
+          binding: resolve_explicit_default_binding(target_type, context: "default[#{target_type}]"),
+        )
+      end
+
+      def resolve_explicit_default_binding(target_type, context:)
+        method = lookup_method(target_type, "default")
+        if method
+          raise_sema_error("#{context} requires associated function #{target_type}.default()") unless method.type.receiver_type.nil?
+
+          method = instantiate_function_binding_with_receiver(method, [], receiver_type: target_type) if method.type_params.any?
+          raise_sema_error("#{context} requires #{target_type}.default() to take 0 arguments") unless method.type.params.empty?
+          unless types_compatible?(method.type.return_type, target_type)
+            raise_sema_error("#{context} requires #{target_type}.default() to return #{target_type}, got #{method.type.return_type}")
+          end
+
+          return method
+        end
+
+        if (imported_module = imported_module_with_private_method(target_type, "default"))
+          raise_sema_error("#{target_type}.default is private to module #{imported_module.name}")
+        end
+
+        nil
+      end
+
+      def default_zero_fallback_type?(target_type, expected_type:)
+        check_zero_call(target_type, [], expected_type:, operation: "default")
+        true
       end
 
       def check_str_builder_method_call(kind, receiver, arguments, scopes:)
@@ -4332,7 +4415,7 @@ module MilkTea
         sized_layout_type?(type)
       end
 
-      def zero_initializable_type?(type)
+      def zero_initializable_type?(type, operation: "zero")
         return true if type.is_a?(Types::Primitive) && !type.void?
         return true if type.is_a?(Types::Nullable)
         return true if type.is_a?(Types::EnumBase)
@@ -4346,7 +4429,7 @@ module MilkTea
         return true if array_type?(type)
         return true if str_builder_type?(type)
 
-        raise_sema_error("zero does not support type #{type}")
+        raise_sema_error("#{operation} does not support type #{type}")
       end
 
       def layout_aggregate_type?(type)
@@ -4458,7 +4541,7 @@ module MilkTea
         nil
       end
 
-      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero reinterpret cast].freeze
+      BUILTIN_VALUE_SPECIALIZATIONS = %w[zero default reinterpret cast].freeze
 
       def type_ref_from_specialization(expression)
         case expression.callee
@@ -4911,7 +4994,7 @@ module MilkTea
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
         substitutions = binding.type_params.zip(type_arguments).to_h
-        validate_function_interface_constraints!(binding, substitutions)
+        validate_function_type_param_constraints!(binding, substitutions)
         type = substitute_type(binding.type, substitutions)
         body_params = binding.body_params.map { |param| substitute_value_binding(param, substitutions) }
         validate_specialized_function_binding!(binding.name, type, body_params)
@@ -4935,16 +5018,22 @@ module MilkTea
         binding.instances[key] = instance
       end
 
-      def validate_function_interface_constraints!(binding, substitutions)
-        binding.type_param_constraints.each do |name, interfaces|
+      def validate_function_type_param_constraints!(binding, substitutions)
+        binding.type_param_constraints.each do |name, constraints|
           actual_type = substitutions[name]
           raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless actual_type
 
-          interfaces.each do |interface|
+          constraints.interfaces.each do |interface|
             next if type_implements_interface?(actual_type, interface)
 
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
           end
+
+          next unless constraints.requires_default
+
+          next if resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+
+          raise_sema_error("type #{actual_type} does not satisfy defaults constraint for function #{binding.name}")
         end
       end
 

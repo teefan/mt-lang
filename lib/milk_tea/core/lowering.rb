@@ -9,6 +9,9 @@ module MilkTea
     end
 
     class Lowerer
+      ExplicitDefaultBinding = Data.define(:binding, :callee_name)
+      DefaultResolution = Data.define(:target_type, :binding, :callee_name)
+
       def initialize(program)
         @program = program
         @analysis = nil
@@ -6905,6 +6908,13 @@ module MilkTea
           return IR::ZeroInit.new(type:)
         end
 
+        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "default"
+          resolution = resolve_default_specialization(expression, env:)
+          return IR::Call.new(callee: resolution.callee_name, arguments: [], type:) if resolution.binding
+
+          return IR::ZeroInit.new(type:)
+        end
+
         if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
           callable_kind, function_binding, = callable_resolution
           raise LoweringError, "specialized method must be called" if callable_kind == :method
@@ -7240,6 +7250,8 @@ module MilkTea
           elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
             _, _, _, function_type = resolve_callee(expression, env, arguments: [])
             function_type.return_type
+          elsif expression.callee.is_a?(AST::Identifier) && expression.callee.name == "default"
+            resolve_default_specialization(expression, env:).target_type
           elsif (callable_resolution = resolve_specialized_callable_binding(expression, env:))
             callable_kind, function_binding, = callable_resolution
             raise LoweringError, "specialized method must be called" if callable_kind == :method
@@ -7665,6 +7677,64 @@ module MilkTea
         [callable_kind, instantiate_function_binding_with_receiver(binding, type_arguments, receiver_type:), receiver]
       end
 
+      def resolve_default_specialization(expression, env:)
+        target_type = resolve_type_ref(expression.arguments.fetch(0).value)
+
+        explicit_default = resolve_explicit_default_binding(target_type, context: "default[#{target_type}]")
+        if explicit_default
+          return DefaultResolution.new(target_type:, binding: explicit_default.binding, callee_name: explicit_default.callee_name)
+        end
+
+        raise LoweringError, "default does not support type #{target_type}" unless default_zero_fallback_type?(target_type)
+
+        DefaultResolution.new(target_type:, binding: nil, callee_name: nil)
+      end
+
+      def resolve_explicit_default_binding(target_type, context:)
+        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
+        method_entry_receiver_type = target_type
+        method_entry = @method_definitions[[target_type, "default"]]
+        unless method_entry || dispatch_receiver_type == target_type
+          method_entry_receiver_type = dispatch_receiver_type
+          method_entry = @method_definitions[[dispatch_receiver_type, "default"]]
+        end
+        return nil unless method_entry
+
+        method_analysis, method_ast = method_entry
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        raise LoweringError, "#{context} requires associated function #{target_type}.default()" unless method_binding.type.receiver_type.nil?
+
+        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
+        raise LoweringError, "#{context} requires #{target_type}.default() to take 0 arguments" unless method_binding.type.params.empty?
+        unless method_binding.type.return_type == target_type
+          raise LoweringError, "#{context} requires #{target_type}.default() to return #{target_type}, got #{method_binding.type.return_type}"
+        end
+
+        callee_name = if method_binding.external
+                        method_binding.name
+                      else
+                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
+                      end
+        ExplicitDefaultBinding.new(binding: method_binding, callee_name:)
+      end
+
+      def default_zero_fallback_type?(type)
+        return true if type.is_a?(Types::Primitive) && !type.void?
+        return true if type.is_a?(Types::Nullable)
+        return true if type.is_a?(Types::EnumBase)
+        return true if type.is_a?(Types::Span)
+        return true if type.is_a?(Types::StringView)
+        return true if task_type?(type)
+        return true if type.is_a?(Types::Struct)
+        return true if type.is_a?(Types::Variant)
+        return true if pointer_type?(type)
+        return true if type.is_a?(Types::Opaque) && !type.external
+        return true if array_type?(type)
+        return true if str_builder_type?(type)
+
+        false
+      end
+
       def resolve_specialization_type_arguments(expression)
         expression.arguments.map do |argument|
           resolve_type_argument(argument.value)
@@ -7849,7 +7919,7 @@ module MilkTea
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
         substitutions = binding.type_params.zip(type_arguments).to_h
-        validate_function_interface_constraints!(binding, substitutions)
+        validate_function_type_param_constraints!(binding, substitutions)
         instance = Sema::FunctionBinding.new(
           name: binding.name,
           type: substitute_type(binding.type, substitutions),
@@ -7869,16 +7939,22 @@ module MilkTea
         binding.instances[key] = instance
       end
 
-      def validate_function_interface_constraints!(binding, substitutions)
-        binding.type_param_constraints.each do |name, interfaces|
+      def validate_function_type_param_constraints!(binding, substitutions)
+        binding.type_param_constraints.each do |name, constraints|
           actual_type = substitutions[name]
           raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless actual_type
 
-          interfaces.each do |interface|
+          constraints.interfaces.each do |interface|
             next if type_implements_interface?(actual_type, interface)
 
             raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
           end
+
+          next unless constraints.requires_default
+
+          next if resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+
+          raise LoweringError, "type #{actual_type} does not satisfy defaults constraint for function #{binding.name}"
         end
       end
 

@@ -28,7 +28,7 @@ module MilkTea
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
-      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read fatal cast reinterpret array span zero range].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
         equal plus minus star slash percent less greater tilde
@@ -592,10 +592,11 @@ module MilkTea
         lsp_line  = params['position']['line']
         lsp_char  = params['position']['character']
 
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        context = token_context_at(uri, lsp_line, lsp_char)
+        token = context&.fetch(:token, nil)
         return nil unless token&.type == :identifier
 
-        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token)
+        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index])
         return nil unless info
 
         {
@@ -1804,12 +1805,20 @@ module MilkTea
 
       # ── Enhancement 1 helpers: hover type resolution ─────────────────────────
 
-      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil)
-        token ||= @workspace.find_token_at(uri, lsp_line, lsp_char)
+      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil, tokens: nil, token_index: nil)
+        if token.nil?
+          context = token_context_at(uri, lsp_line, lsp_char)
+          return nil unless context
+
+          token = context[:token]
+          tokens = context[:tokens]
+          token_index = context[:token_index]
+        end
+
         return nil unless token&.type == :identifier
 
-        tokens = @workspace.get_tokens(uri) || []
-        token_index = tokens.index(token)
+        tokens ||= @workspace.get_tokens(uri) || []
+        token_index = tokens.index(token) if token_index.nil?
         if token_index
           module_info = module_declaration_info_at(tokens, token_index)
           if module_info
@@ -1842,11 +1851,11 @@ module MilkTea
         return nil unless analysis
 
         if token_index && field_declaration_token?(tokens, token_index)
-          return resolve_field_declaration_hover_info(analysis, tokens, token_index)
+          return resolve_field_declaration_hover_info(uri, analysis, tokens, token_index)
         end
 
         if token_index && named_argument_label_token?(tokens, token_index)
-          return resolve_named_argument_label_hover_info(analysis, tokens, token_index)
+          return resolve_named_argument_label_hover_info(uri, analysis, tokens, token_index)
         end
 
         if token_index && (member_hover = resolve_member_access_hover_info(uri, analysis, tokens, token_index))
@@ -1874,7 +1883,7 @@ module MilkTea
           type = analysis.types[name]
           signature = type_hover_signature(name, type)
         elsif (binding = analysis.values[name])
-          signature = "#{name}: #{binding.type}"
+          signature = value_hover_signature(binding)
         elsif (import_binding = analysis.imports[name])
           signature = "module #{import_binding.name}"
           source_location = module_definition_location(uri, import_binding.name)
@@ -1887,7 +1896,7 @@ module MilkTea
               signature = "function #{name}(#{params_str}) -> #{fn.type.return_type}"
               source_location = module_member_binding_location(uri, module_binding.name, name, fn)
             elsif (val = module_binding.values[name])
-              signature = "#{name}: #{val.type}"
+              signature = value_hover_signature(val)
             elsif module_binding.types.key?(name)
               signature = "type #{name}"
             elsif (binding = module_binding.interfaces[name])
@@ -1911,8 +1920,8 @@ module MilkTea
           end
 
           unless signature
-            if (local_type = resolve_local_hover_type(analysis, name, lsp_line + 1, lsp_char + 1))
-              signature = "#{name}: #{local_type}"
+            if (local_binding = resolve_local_hover_binding(analysis, name, lsp_line + 1, lsp_char + 1))
+              signature = value_hover_signature(local_binding)
             end
           end
 
@@ -1950,6 +1959,89 @@ module MilkTea
           source_uri: source_uri,
           source_line: source_line,
         }
+      end
+
+      def token_context_at(uri, lsp_line, lsp_char)
+        tokens = @workspace.get_tokens(uri) || []
+        interpolation_context = fstring_interpolation_token_context(tokens, lsp_line, lsp_char)
+        return interpolation_context if interpolation_context
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token
+
+        {
+          token: token,
+          tokens: tokens,
+          token_index: tokens.index(token),
+        }
+      end
+
+      def fstring_interpolation_token_context(tokens, lsp_line, lsp_char)
+        target_line = lsp_line + 1
+        target_char = lsp_char + 1
+
+        fstring_token = tokens.find do |token|
+          next false unless token.type == :fstring
+
+          token_contains_position?(token, target_line, target_char)
+        end
+        return nil unless fstring_token
+
+        Array(fstring_token.literal).each do |part|
+          next unless part[:kind] == :expr
+          next unless part[:line] == target_line
+
+          expression_tokens = interpolation_expression_tokens(part)
+          token = expression_tokens.find { |candidate| token_contains_position?(candidate, target_line, target_char) }
+          next unless token
+
+          return {
+            token: token,
+            tokens: expression_tokens,
+            token_index: expression_tokens.index(token),
+          }
+        end
+
+        nil
+      end
+
+      def interpolation_expression_tokens(part)
+        source = part[:source]
+        return [] if source.nil? || source.strip.empty?
+
+        MilkTea::Lexer.new(source).lex
+          .reject { |token| [:newline, :indent, :dedent, :eof].include?(token.type) }
+          .map do |token|
+            adjusted_line = part[:line] + token.line - 1
+            adjusted_column = token.line == 1 ? (part[:column] + token.column - 1) : token.column
+
+            token.with(
+              line: adjusted_line,
+              column: adjusted_column,
+              start_offset: nil,
+              end_offset: nil,
+              leading_trivia: [].freeze,
+              trailing_trivia: [].freeze,
+            )
+          end
+      rescue MilkTea::LexError
+        []
+      end
+
+      def token_contains_position?(token, target_line, target_char)
+        segments = token.lexeme.split("\n", -1)
+        end_line = token.line + segments.length - 1
+        return false if target_line < token.line || target_line > end_line
+
+        if segments.length == 1
+          return token.column <= target_char && target_char < (token.column + segments.first.length)
+        end
+
+        if target_line == token.line
+          return token.column <= target_char && target_char <= (token.column + segments.first.length - 1)
+        end
+
+        target_char <= segments.fetch(target_line - token.line).length
       end
 
       def render_hover_markdown(info)
@@ -2061,11 +2153,12 @@ module MilkTea
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
 
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        context = token_context_at(uri, lsp_line, lsp_char)
+        token = context&.fetch(:token, nil)
         return nil unless token&.type == :identifier
 
-        tokens = @workspace.get_tokens(uri) || []
-        token_index = tokens.index(token)
+        tokens = context[:tokens]
+        token_index = context[:token_index]
         return nil if token_index && module_declaration_info_at(tokens, token_index)
 
         if token_index && (import_info = import_path_info_at(tokens, token_index))
@@ -2074,6 +2167,10 @@ module MilkTea
 
         analysis = @workspace.get_analysis(uri)
         if analysis
+          if token_index && (field_location = resolve_field_member_definition_location(uri, analysis, tokens, token_index))
+            return field_location
+          end
+
           if token_index && (member_access = module_member_access_info(tokens, token_index))
             if (import_binding = analysis.imports[member_access[:receiver]])
               module_name = import_binding.name
@@ -2114,6 +2211,38 @@ module MilkTea
           uri: found[:uri],
           range: token_to_range(found[:token])
         }
+      end
+
+      def resolve_field_member_definition_location(current_uri, analysis, tokens, token_index)
+        chain = member_access_chain_at(tokens, token_index)
+        return nil unless chain
+
+        hovered_segment = chain[:segments].find { |segment| segment[:token_index] == token_index }
+        return nil unless hovered_segment && hovered_segment[:position].positive?
+
+        current_type = resolve_dot_receiver_value_type(
+          analysis,
+          chain[:segments].first[:name],
+          chain[:line],
+          chain[:char],
+        )
+        return nil unless current_type
+
+        chain[:segments][1..hovered_segment[:position]].each do |segment|
+          field_receiver_type = project_field_receiver_type_for_completion(current_type)
+          if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+            return field_definition_location(current_uri, field_receiver_type, segment[:name]) if segment[:token_index] == token_index
+
+            current_type = field_type
+            next
+          end
+
+          return nil if segment[:token_index] == token_index
+
+          break
+        end
+
+        nil
       end
 
       def resolve_implementation_locations(params)
@@ -2231,14 +2360,13 @@ module MilkTea
           source = part[:source]
           unless source.nil? || source.strip.empty?
             begin
-              sub_tokens = MilkTea::Lexer.new(source).lex
-                                        .reject { |t| [:newline, :indent, :dedent, :eof].include?(t.type) }
+              sub_tokens = interpolation_expression_tokens(part)
               sub_tokens.each_with_index do |sub_tok, i|
                 sem_type, modifiers = classify_semantic_token(sub_tokens, i, analysis)
                 next unless sem_type
                 result << {
-                  line: fstr_line,
-                  start_char: expr_col0 + (sub_tok.column - 1),
+                  line: sub_tok.line - 1,
+                  start_char: sub_tok.column - 1,
                   length: sub_tok.lexeme.length,
                   type: sem_type,
                   modifiers: modifiers
@@ -2483,7 +2611,7 @@ module MilkTea
           return [:function, []] if bare_function_value_identifier_site?(analysis, tok)
         end
 
-        return [:function, ['defaultLibrary']] if bare_zero_specialization?(name, tokens, index)
+        return [:function, ['defaultLibrary']] if bare_builtin_specialization?(name, tokens, index)
 
         [:variable, []]
       end
@@ -2820,8 +2948,8 @@ module MilkTea
         type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || type.is_a?(Types::Task)
       end
 
-      def bare_zero_specialization?(name, tokens, index)
-        return false unless name == 'zero'
+      def bare_builtin_specialization?(name, tokens, index)
+        return false unless name == 'zero' || name == 'default'
 
         next_index = next_non_trivia_token_index(tokens, index + 1)
         return false unless next_index && tokens[next_index].type == :lbracket
@@ -3279,6 +3407,22 @@ module MilkTea
         }
       end
 
+      def field_definition_location(current_uri, receiver_type, field_name)
+        owner_type = field_owner_type(receiver_type)
+        return nil unless owner_type&.respond_to?(:name)
+
+        path = module_path_for_name(current_uri, owner_type.module_name)
+        return nil unless path
+
+        token = find_field_token_in_type(path, owner_type.name, field_name, current_uri: current_uri)
+        return nil unless token
+
+        {
+          uri: path_to_uri(File.expand_path(path)),
+          range: token_to_range(token)
+        }
+      end
+
       def enum_member_definition_location(current_uri, module_name, type_name, member_name)
         path = module_path_for_name(current_uri, module_name)
         return nil unless path
@@ -3318,6 +3462,9 @@ module MilkTea
         return nil unless current_path
         return current_path if module_name.nil? || module_name.empty?
 
+        current_analysis = @workspace.get_analysis(current_uri)
+        return current_path if current_analysis&.module_name == module_name
+
         module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
         relative_path = File.join(*module_name.split('.')) + '.mt'
         module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
@@ -3335,6 +3482,48 @@ module MilkTea
 
         nil
       rescue StandardError
+        nil
+      end
+
+      def find_field_token_in_type(path, type_name, field_name, current_uri: nil)
+        tokens = definition_lookup_tokens(path, current_uri: current_uri)
+
+        tokens.each_with_index do |token, index|
+          next unless [:struct, :union].include?(token.type)
+
+          name_index = next_non_trivia_token_index(tokens, index + 1)
+          next unless name_index && tokens[name_index].type == :identifier && tokens[name_index].lexeme == type_name
+
+          field_token = find_field_token_in_body(tokens, index, field_name)
+          return field_token if field_token
+        end
+
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def find_field_token_in_body(tokens, header_index, field_name)
+        header = tokens[header_index]
+        i = header_index + 1
+
+        while i < tokens.length
+          token = tokens[i]
+
+          if token.line > header.line && ![:newline, :indent, :dedent, :eof].include?(token.type) &&
+              first_non_trivia_token_on_line?(tokens, i) && token.column <= header.column
+            break
+          end
+
+          if token.type == :identifier && token.lexeme == field_name && token.line > header.line &&
+              first_non_trivia_token_on_line?(tokens, i) && token.column > header.column
+            colon_index = next_non_trivia_token_index(tokens, i + 1)
+            return token if colon_index && tokens[colon_index].type == :colon
+          end
+
+          i += 1
+        end
+
         nil
       end
 
@@ -3402,6 +3591,16 @@ module MilkTea
         @definition_file_token_cache[cache_key] ||= begin
           MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
         end
+      end
+
+      def definition_lookup_tokens(path, current_uri: nil)
+        current_path = current_uri ? uri_to_path(current_uri) : nil
+        if current_path && File.expand_path(current_path) == File.expand_path(path)
+          workspace_tokens = @workspace.get_tokens(current_uri)
+          return workspace_tokens if workspace_tokens
+        end
+
+        definition_file_tokens(path)
       end
 
       def definition_file_ast(path)
@@ -3475,13 +3674,15 @@ module MilkTea
         chain[:segments][1..hovered_segment[:position]].each do |segment|
           field_receiver_type = project_field_receiver_type_for_completion(current_type)
           if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+            source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
+
             if segment[:token_index] == token_index
               return {
-                signature: "#{segment[:name]}: #{field_type}",
+                signature: field_hover_signature(segment[:name], field_type),
                 docs: nil,
-                source: nil,
-                source_uri: nil,
-                source_line: nil,
+                source: hover_source_label_from_location(source_location),
+                source_uri: hover_source_uri_from_location(source_location),
+                source_line: hover_source_line_from_location(source_location),
               }
             end
 
@@ -3577,7 +3778,7 @@ module MilkTea
         }
       end
 
-      def resolve_field_declaration_hover_info(analysis, tokens, token_index)
+      def resolve_field_declaration_hover_info(current_uri, analysis, tokens, token_index)
         receiver_info = field_declaration_receiver_info(analysis, tokens, token_index)
         return nil unless receiver_info
 
@@ -3588,16 +3789,18 @@ module MilkTea
         field_type = receiver_type.field(field_name)
         return nil unless field_type
 
+        source_location = field_definition_location(current_uri, receiver_type, field_name)
+
         {
-          signature: "#{field_name}: #{field_type}",
+          signature: field_hover_signature(field_name, field_type),
           docs: nil,
-          source: nil,
-          source_uri: nil,
-          source_line: nil,
+          source: hover_source_label_from_location(source_location),
+          source_uri: hover_source_uri_from_location(source_location),
+          source_line: hover_source_line_from_location(source_location),
         }
       end
 
-      def resolve_named_argument_label_hover_info(analysis, tokens, token_index)
+      def resolve_named_argument_label_hover_info(current_uri, analysis, tokens, token_index)
         receiver_info = named_argument_label_receiver_info(analysis, tokens, token_index)
         return nil unless receiver_info
 
@@ -3608,12 +3811,14 @@ module MilkTea
         field_type = receiver_type.field(field_name)
         return nil unless field_type
 
+        source_location = field_definition_location(current_uri, receiver_type, field_name)
+
         {
-          signature: "#{field_name}: #{field_type}",
+          signature: field_hover_signature(field_name, field_type),
           docs: nil,
-          source: nil,
-          source_uri: nil,
-          source_line: nil,
+          source: hover_source_label_from_location(source_location),
+          source_uri: hover_source_uri_from_location(source_location),
+          source_line: hover_source_line_from_location(source_location),
         }
       end
 
@@ -3756,6 +3961,28 @@ module MilkTea
         "type #{name} = #{rendered_type}"
       end
 
+      def field_hover_signature(name, type)
+        "field #{name}: #{type}"
+      end
+
+      def value_hover_signature(binding)
+        case binding.kind
+        when :const
+          "const #{binding.name}: #{binding.type} (immutable)"
+        when :var
+          "var #{binding.name}: #{binding.type} (mutable)"
+        when :let
+          "let #{binding.name}: #{binding.type} (immutable)"
+        when :param
+          "parameter #{binding.name}: #{binding.type} (immutable)"
+        when :local
+          suffix = binding.mutable ? 'mutable' : 'immutable'
+          "local #{binding.name}: #{binding.type} (#{suffix})"
+        else
+          "#{binding.name}: #{binding.type}"
+        end
+      end
+
       def resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
         binding = analysis.interfaces[token.lexeme]
         return binding if binding
@@ -3862,16 +4089,47 @@ module MilkTea
         left.name == right.name && left.module_name == right.module_name
       end
 
-      def resolve_local_hover_type(analysis, name, line, char)
+      def resolve_local_hover_binding(analysis, name, line, char)
+        declared_binding = declared_generic_local_hover_binding(analysis, name, line)
+        return declared_binding if declared_binding
+
         frame = enclosing_completion_frame(analysis, line)
         return nil unless frame
 
         snapshot = latest_completion_snapshot(frame, line, char)
         binding = snapshot&.bindings&.dig(name)
-        return binding.type if binding
+        return binding if binding
 
         future_snapshot = same_line_future_completion_snapshot(frame, line, char)
-        future_snapshot&.bindings&.dig(name)&.type
+        future_snapshot&.bindings&.dig(name)
+      end
+
+      def resolve_local_hover_type(analysis, name, line, char)
+        resolve_local_hover_binding(analysis, name, line, char)&.type
+      end
+
+      def declared_generic_local_hover_binding(analysis, name, line)
+        binding = generic_function_binding_for_line(analysis, line)
+        return nil unless binding
+
+        binding.body_params.find { |param| param.name == name }
+      end
+
+      def generic_function_binding_for_line(analysis, line)
+        generic_function_bindings(analysis).filter_map do |binding|
+          next unless binding.ast.respond_to?(:body) && binding.ast.respond_to?(:line)
+
+          start_line = binding.ast.line
+          end_line = generic_statement_list_end_line(Array(binding.ast.body), start_line)
+          next unless start_line <= line && line <= end_line
+
+          [end_line - start_line, -start_line, binding]
+        end.min_by { |span, start_line, _binding| [span, start_line] }&.last
+      end
+
+      def generic_function_bindings(analysis)
+        analysis.functions.each_value.select { |binding| binding.type_params.any? } +
+          analysis.methods.each_value.flat_map(&:values).select { |binding| binding.type_params.any? }
       end
 
       def enclosing_completion_frame(analysis, line)
@@ -3959,6 +4217,13 @@ module MilkTea
         return type.arguments.first if pointer_type_name?(type)
 
         type
+      end
+
+      def field_owner_type(receiver_type)
+        aggregate_type = project_field_receiver_type_for_completion(receiver_type)
+        return aggregate_type.definition if aggregate_type.is_a?(Types::StructInstance)
+
+        aggregate_type
       end
 
       def ref_type_name?(type)

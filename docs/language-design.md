@@ -182,6 +182,9 @@ flags DrawFlags: uint
 - `var` creates a mutable local binding.
 - `const` defines a compile-time constant.
 - A typed local declaration without `= ...` zero-initializes that local. This is the normal local-storage form and is only valid for types that `zero[T]` already supports. Use `zero[T]` or `Type()` only when you need a value expression.
+- Use `zero[T]` when you want raw zero-initialization. Use `default[T]` when you want a semantic default value: it calls an accessible `T.default()` associated function when present, otherwise it falls back to the same raw initialization contract as `zero[T]`.
+- When a generic API must require an explicit semantic default and reject raw zero fallback, constrain the type parameter with `defaults` and call `default[T]` inside that API.
+- `init` is not special syntax. Constructor-like setup remains an ordinary static method naming convention such as `Type.init(...)`.
 - For pointer-like absence, use a nullable type plus `null`. `zero[ptr[T]]` remains available for low-level zero-initialized pointer storage, but the compiler rejects it when the surrounding expected type is already a nullable pointer-like type. In those contexts, write `null`.
 
 ```mt
@@ -315,6 +318,13 @@ When one type parameter needs multiple interfaces, join them with `and` inside t
 function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
 	value.update()
 	value.draw()
+```
+
+`defaults` is a separate constraint kind for generic APIs that need an actual associated default provider instead of accepting `default[T]` zero fallback:
+
+```mt
+function spawn_state[T defaults and implements ScreenState]() -> T:
+	return default[T]
 ```
 
 Constraint checking happens after type inference and specialization, and constrained calls still lower to ordinary static method calls in generated C.

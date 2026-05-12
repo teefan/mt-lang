@@ -278,6 +278,8 @@ Kinds:
 - `editable function` (mutable receiver)
 - `static function` (no receiver)
 
+Names such as `init` and `default` are ordinary static functions. There is no constructor keyword or hidden initializer syntax.
+
 Method capabilities:
 
 - async methods are supported
@@ -297,7 +299,7 @@ Rules:
 - Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may declare nominal interface constraints with `implements`.
+- Generic function and method type parameters may declare constraints with `implements` and `defaults`.
 
 Examples:
 
@@ -308,6 +310,12 @@ function damage_one[T implements Damageable](target: ref[T], amount: int) -> voi
 
 function tag[T implements Damageable and Named](target: ref[T]) -> str:
     return target.name()
+
+function make_default[T defaults]() -> T:
+    return default[T]
+
+function boot_screen[T defaults and implements ScreenState]() -> T:
+    return default[T]
 ```
 
 ### 3.8 Extern functions
@@ -585,9 +593,11 @@ Supported:
 
 Rules:
 
-- Interface constraints are supported on generic functions and generic methods.
-- Multiple interface constraints on the same type parameter use `and`: `T implements A and B`.
-- Interface constraints are not supported on generic struct or variant type parameters.
+- Constraints are supported on generic functions and generic methods.
+- Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
+- `defaults` requires an accessible zero-argument associated function `T.default()` that returns `T`.
+- Constraint kinds compose with `and`: `T defaults and implements ScreenState` and `T implements Named and defaults` are both valid.
+- Constraints are not supported on generic struct or variant type parameters.
 
 Type arguments can be:
 
@@ -608,8 +618,13 @@ Special recognized callables:
 - `T<-value`
 - `reinterpret[T](value)`
 - `zero[T]`
+- `default[T]`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
+
+`default[T]` first looks for an accessible zero-argument associated function `T.default()` that returns `T`. If none exists, it falls back to the same raw initialization contract as `zero[T]`.
+
+When a generic API needs an explicit semantic default instead of that fallback behavior, add a `defaults` constraint to the type parameter. `T defaults` requires an accessible zero-argument `T.default()` that returns `T`.
 
 For recoverable failures, use `import std.status as status` and the ordinary library type `status.Status[T, E]`. Its `.ok(...)` and `.err(...)` constructors are variant arms, not built-in callables.
 

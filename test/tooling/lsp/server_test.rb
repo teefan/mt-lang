@@ -359,7 +359,21 @@ class LSPServerTest < Minitest::Test
     function main() -> int:
         let callback: fn(value: int) -> int = add_one
         let zeroed = zero[Box]
-        return apply(add_one, zeroed.value) + callback(0)
+        let defaulted = default[Box]
+        return apply(add_one, zeroed.value) + callback(defaulted.value)
+  MT
+
+  SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS = <<~MT
+    function cast(value: int) -> int:
+        return value
+
+    function range(value: int) -> int:
+        return value + 1
+
+    function main(value: int) -> int:
+        let from_cast = cast(value)
+        let from_range = range(value)
+        return from_cast + from_range
   MT
 
   SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS = <<~MT
@@ -461,6 +475,18 @@ class LSPServerTest < Minitest::Test
         let name = "milk"
         let msg = f"hello #{name}"
         return msg.len
+  MT
+
+  SOURCE_WITH_FSTRING_MEMBER_INTERPOLATION = <<~'MT'
+    struct Snapshot:
+        score: int
+
+    struct Screen:
+        snapshot: Snapshot
+
+    methods Screen:
+        function label() -> str:
+            return f"score #{this.snapshot.score}"
   MT
 
   SOURCE_WITH_PLAIN_HEREDOC_CSTRING = <<~MT
@@ -746,7 +772,7 @@ class LSPServerTest < Minitest::Test
       })
 
       hover_value = hover_response.dig("result", "contents", "value")
-      assert_includes hover_value, "value: int"
+      assert_includes hover_value, "let value: int (immutable)"
     end
   end
 
@@ -777,7 +803,7 @@ class LSPServerTest < Minitest::Test
       })
 
       hover_value = hover_response.dig("result", "contents", "value")
-      assert_includes hover_value, "value: int"
+      assert_includes hover_value, "let value: int (immutable)"
     end
   end
 
@@ -803,11 +829,140 @@ class LSPServerTest < Minitest::Test
 
       hover_response = client.send_request("textDocument/hover", {
         "textDocument" => { "uri" => uri },
-        "position" => { "line" => 0, "character" => 9 },
+        "position" => { "line" => 1, "character" => 11 },
       })
 
       hover_value = hover_response.dig("result", "contents", "value")
-      assert_includes hover_value, "value: int"
+      assert_includes hover_value, "parameter value: int (immutable)"
+    end
+  end
+
+  def test_hover_shows_var_and_const_binding_kinds
+    source = <<~MT
+      const answer: int = 42
+      var score: int = 0
+
+      function main() -> int:
+          score += 1
+          return answer + score
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_value_kind_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      const_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 5, "character" => 11 },
+      })
+      const_hover_value = const_hover.dig("result", "contents", "value")
+      assert_includes const_hover_value, "const answer: int (immutable)"
+
+      var_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 5, "character" => 20 },
+      })
+      var_hover_value = var_hover.dig("result", "contents", "value")
+      assert_includes var_hover_value, "var score: int (mutable)"
+    end
+  end
+
+  def test_hover_shows_declared_generic_parameter_type_in_generic_body
+    source = <<~MT
+      interface ScreenState:
+          function update(effect: int) -> void
+
+      struct TitleScreen implements ScreenState:
+          ticks: int
+
+      methods TitleScreen:
+          function update(effect: int) -> void:
+              let sink = effect
+
+      function run_screen_frame[T implements ScreenState](screen: ref[T], effect: int) -> void:
+          screen.update(effect)
+
+      function main() -> int:
+          var title = TitleScreen(ticks = 0)
+          run_screen_frame(title, 1)
+          return 0
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_generic_param_type.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 11, "character" => 6 },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "parameter screen: ref[T] (immutable)"
+      refute_includes hover_value, "TitleScreen"
+    end
+  end
+
+  def test_hover_and_definition_resolve_fstring_local_bindings
+    source = <<~'MT'
+      function main() -> int:
+          let name = "milk"
+          let msg = f"hello #{name}"
+          return 0
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_fstring_local_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      line = source.lines.index { |text| text.include?('#{name}') }
+      character = source.lines.fetch(line).index("name")
+
+      hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character },
+      })
+      hover_value = hover.dig("result", "contents", "value")
+      assert_includes hover_value, "let name: str (immutable)"
+
+      definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character },
+      })
+      definition_result = definition.fetch("result")
+
+      assert_equal uri, definition_result.fetch("uri")
+      assert_equal 1, definition_result.dig("range", "start", "line")
     end
   end
 
@@ -2752,14 +2907,110 @@ class LSPServerTest < Minitest::Test
         "position" => { "line" => 8, "character" => 20 }
       })
       active_hover_value = active_hover.dig("result", "contents", "value")
-      assert_includes active_hover_value, "active: Piece"
+      assert_includes active_hover_value, "field active: Piece"
 
       kind_hover = client.send_request("textDocument/hover", {
         "textDocument" => { "uri" => uri },
         "position" => { "line" => 8, "character" => 27 }
       })
       kind_hover_value = kind_hover.dig("result", "contents", "value")
-      assert_includes kind_hover_value, "kind: int"
+      assert_includes kind_hover_value, "field kind: int"
+    end
+  end
+
+  def test_definition_returns_field_declaration_for_member_access_segments
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_member_chain_definition_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_MEMBER_CHAIN_HOVER }
+      })
+
+      definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 8, "character" => 27 }
+      })
+      definition_result = definition.fetch("result")
+
+      assert_equal uri, definition_result.fetch("uri")
+      assert_equal 1, definition_result.dig("range", "start", "line")
+    end
+  end
+
+  def test_definition_returns_current_module_field_declaration_in_tetris
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      source_path = File.expand_path("projects/tetris/src/main.mt", Dir.pwd)
+      uri = path_to_uri(source_path)
+      source = File.read(source_path)
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      line = source.lines.index { |text| text.include?("this.drop_timer +=") }
+      character = source.lines.fetch(line).index("drop_timer")
+      definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character }
+      })
+      definition_result = definition.fetch("result")
+
+      expected_line = source.lines.index { |text| text == "    drop_timer: float\n" }
+      assert_equal uri, definition_result.fetch("uri")
+      assert_equal expected_line, definition_result.dig("range", "start", "line")
+    end
+  end
+
+  def test_hover_and_definition_resolve_fstring_member_access_segments_in_tetris
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      source_path = File.expand_path("projects/tetris/src/main.mt", Dir.pwd)
+      uri = path_to_uri(source_path)
+      source = File.read(source_path)
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      line = source.lines.index { |text| text.include?('f"Score  #{this.snapshot.score}"') }
+      line_text = source.lines.fetch(line)
+
+      snapshot_character = line_text.index("snapshot")
+      snapshot_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => snapshot_character }
+      })
+      snapshot_hover_value = snapshot_hover.dig("result", "contents", "value")
+      assert_includes snapshot_hover_value, "field snapshot: game_engine.Game"
+
+      snapshot_definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => snapshot_character }
+      })
+      snapshot_result = snapshot_definition.fetch("result")
+      snapshot_line = source.lines.index { |text| text == "    snapshot: Game\n" }
+      assert_equal uri, snapshot_result.fetch("uri")
+      assert_equal snapshot_line, snapshot_result.dig("range", "start", "line")
+
+      score_character = line_text.rindex("score")
+      score_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => score_character }
+      })
+      score_hover_value = score_hover.dig("result", "contents", "value")
+      assert_includes score_hover_value, "field score: int"
+
+      score_definition = client.send_request("textDocument/definition", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => score_character }
+      })
+      score_result = score_definition.fetch("result")
+      score_line = source.lines.index { |text| text == "    score: int\n" }
+      assert_equal uri, score_result.fetch("uri")
+      assert_equal score_line, score_result.dig("range", "start", "line")
     end
   end
 
@@ -3476,12 +3727,41 @@ class LSPServerTest < Minitest::Test
 
         callback_value = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 10)
         zero_value = semantic_entry_for_lexeme_on_line(source, entries, "zero", 11)
-        callback_argument = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 12)
+        default_value = semantic_entry_for_lexeme_on_line(source, entries, "default", 12)
+        callback_argument = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 13)
 
         assert_equal "function", callback_value.fetch("tokenType")
         assert_equal "function", callback_argument.fetch("tokenType")
         assert_equal "function", zero_value.fetch("tokenType")
+        assert_equal "function", default_value.fetch("tokenType")
         assert_includes zero_value.fetch("modifierNames"), "defaultLibrary"
+        assert_includes default_value.fetch("modifierNames"), "defaultLibrary"
+      end
+    end
+
+    def test_semantic_tokens_do_not_mark_user_defined_cast_or_range_as_default_library
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_user_defined_cast_range_test.mt"
+        source = SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        cast_call = semantic_entry_for_lexeme_on_line(source, entries, "cast", 7)
+        range_call = semantic_entry_for_lexeme_on_line(source, entries, "range", 8)
+
+        assert_equal "function", cast_call.fetch("tokenType")
+        assert_equal "function", range_call.fetch("tokenType")
+        refute_includes cast_call.fetch("modifierNames"), "defaultLibrary"
+        refute_includes range_call.fetch("modifierNames"), "defaultLibrary"
       end
     end
 
@@ -3727,6 +4007,37 @@ class LSPServerTest < Minitest::Test
         refute_nil interpolation_name_entry
         assert_equal "variable", interpolation_name_entry.fetch("tokenType")
       end
+    end
+
+    def test_semantic_tokens_classify_fstring_member_access_with_real_context
+      protocol = Object.new
+      protocol.define_singleton_method(:write_notification) { |_method, _params| nil }
+
+      server = MilkTea::LSP::Server.new(protocol: protocol)
+      init = server.send(:handle_initialize, { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_semantic_fstring_member_access_test.mt"
+      source = SOURCE_WITH_FSTRING_MEMBER_INTERPOLATION
+
+      server.send(:handle_did_open, {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = server.send(:handle_semantic_tokens_full, {
+        "textDocument" => { "uri" => uri }
+      })
+
+      legend = init.fetch(:capabilities).fetch(:semanticTokensProvider).fetch(:legend)
+      entries = decode_semantic_token_entries(response.fetch(:data), {
+        "tokenTypes" => legend.fetch(:tokenTypes),
+        "tokenModifiers" => legend.fetch(:tokenModifiers),
+      })
+      snapshot_entry = semantic_entry_for_lexeme_on_line(source, entries, "snapshot", 8)
+      score_entry = semantic_entry_for_lexeme_on_line(source, entries, "score", 8)
+
+      assert_equal "property", snapshot_entry.fetch("tokenType")
+      assert_equal "property", score_entry.fetch("tokenType")
+    ensure
+      server&.send(:handle_shutdown, {})
     end
 
     def test_semantic_tokens_cover_multiline_heredoc_strings
