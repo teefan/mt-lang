@@ -27,8 +27,6 @@ module MilkTea
         @synthetic_structs = []
         @synthetic_functions = []
         @synthetic_proc_counter = 0
-        @synthetic_format_counter = 0
-        @format_builder_cache = {}
         @lowered_function_c_names = {}
         @method_definitions = build_method_definitions
       end
@@ -295,7 +293,7 @@ module MilkTea
       def lower_constants
         @analysis.ast.declarations.grep(AST::ConstDecl).map do |decl|
           type = @values.fetch(decl.name).type
-          value = lower_expression(decl.value, env: empty_env, expected_type: type)
+          value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
           IR::Constant.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
         end
       end
@@ -746,6 +744,8 @@ module MilkTea
           body << IR::ExpressionStmt.new(expression: call)
           body.concat(cleanup_statements)
           body << IR::ReturnStmt.new(value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")))
+        elsif cleanup_statements.empty?
+          body << IR::ReturnStmt.new(value: call)
         else
           result_name = "__mt_result"
           body << IR::LocalDecl.new(
@@ -4478,15 +4478,58 @@ module MilkTea
       def build_dynamic_format_string_temp_setup(format_string, env:)
         string_type = @types.fetch("str")
         temp_name = fresh_c_temp_name(env, "fmt_string")
-        register_prepared_temp!(env, temp_name, string_type)
+        total_len_name = fresh_c_temp_name(env, "fmt_total_len")
+        offset_name = fresh_c_temp_name(env, "fmt_offset")
+        register_prepared_temp!(env, temp_name, string_type, cstr_backed: true)
+        total_len_value = IR::Name.new(name: total_len_name, type: @types.fetch("ptr_uint"), pointer: false)
+        result_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
+        offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
 
-        setup, builder_c_name, builder_arguments = build_format_string_builder_call(format_string, env:)
+        setup, format_parts = build_dynamic_format_string_parts(format_string, env:)
+        literal_capacity = format_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
+
+        setup << IR::LocalDecl.new(
+          name: total_len_name,
+          c_name: total_len_name,
+          type: @types.fetch("ptr_uint"),
+          value: IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint")),
+        )
+
+        format_parts.each do |part|
+          next if part[:kind] == :text
+
+          setup << IR::Assignment.new(
+            target: total_len_value,
+            operator: "=",
+            value: IR::Binary.new(
+              operator: "+",
+              left: total_len_value,
+              right: format_string_part_length_expression(part),
+              type: @types.fetch("ptr_uint"),
+            ),
+          )
+        end
+
         setup << IR::LocalDecl.new(
           name: temp_name,
           c_name: temp_name,
           type: string_type,
-          value: IR::Call.new(callee: builder_c_name, arguments: builder_arguments, type: string_type),
+          value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_len_value], type: string_type),
         )
+        setup << IR::LocalDecl.new(
+          name: offset_name,
+          c_name: offset_name,
+          type: @types.fetch("ptr_uint"),
+          value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+        )
+
+        format_parts.each do |part|
+          setup << IR::Assignment.new(
+            target: offset_value,
+            operator: "=",
+            value: format_string_part_append_expression(part, result_value, offset_value),
+          )
+        end
 
         [setup, temp_name]
       end
@@ -4499,35 +4542,36 @@ module MilkTea
         end.join
       end
 
-      def build_format_string_helper_plan(format_string, env:)
-        helper_parts = []
-        helper_params = []
-        helper_arguments = []
+      def build_dynamic_format_string_parts(format_string, env:)
+        format_parts = []
         setup = []
 
         format_string.parts.each do |part|
           if part.is_a?(AST::FormatTextPart)
             next if part.value.empty?
 
-            helper_parts << { kind: :text, value: part.value }
+            format_parts << { kind: :text, value: part.value }
             next
           end
 
           expression_setup, prepared_expression = prepare_expression_for_inline_lowering(part.expression, env:)
           setup.concat(expression_setup)
           value_type = infer_expression_type(prepared_expression, env:)
-          parameter_name = "part_#{helper_params.length + 1}"
-          parameter_c_name = "__mt_fmt_#{parameter_name}"
 
           if part.format_spec && part.format_spec[:kind] == :precision
             precision = part.format_spec[:value]
             append_argument_type = @types.fetch("double")
-            helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
-            helper_arguments << cast_expression(
-              lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
-              append_argument_type,
+            parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+            setup << IR::LocalDecl.new(
+              name: parameter_c_name,
+              c_name: parameter_c_name,
+              type: append_argument_type,
+              value: cast_expression(
+                lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                append_argument_type,
+              ),
             )
-            helper_parts << {
+            format_parts << {
               kind: :precision_expression,
               append_function_name: "append_double_precision",
               parameter_c_name: parameter_c_name,
@@ -4536,12 +4580,17 @@ module MilkTea
             }
           else
             append_function_name, append_argument_type = format_string_append_plan(value_type)
-            helper_params << IR::Param.new(name: parameter_name, c_name: parameter_c_name, type: append_argument_type, pointer: false)
-            helper_arguments << cast_expression(
-              lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
-              append_argument_type,
+            parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+            setup << IR::LocalDecl.new(
+              name: parameter_c_name,
+              c_name: parameter_c_name,
+              type: append_argument_type,
+              value: cast_expression(
+                lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                append_argument_type,
+              ),
             )
-            helper_parts << {
+            format_parts << {
               kind: :expression,
               append_function_name: append_function_name,
               parameter_c_name: parameter_c_name,
@@ -4550,104 +4599,7 @@ module MilkTea
           end
         end
 
-        [setup, helper_params, helper_arguments, helper_parts]
-      end
-
-      def build_format_string_builder_call(format_string, env:)
-        setup, helper_params, helper_arguments, helper_parts = build_format_string_helper_plan(format_string, env:)
-        signature = format_string_helper_signature(:owned_str, helper_parts)
-        helper_c_name = @format_builder_cache[signature]
-        unless helper_c_name
-          helper_c_name = "#{@module_prefix}__fmt_#{fresh_format_symbol}"
-          @synthetic_functions << build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
-          @format_builder_cache[signature] = helper_c_name
-        end
-
-        [setup, helper_c_name, helper_arguments]
-      end
-
-      def format_string_helper_signature(kind, helper_parts)
-        [
-          @module_prefix,
-          kind,
-          helper_parts.map do |part|
-            case part[:kind]
-            when :text
-              [:text, part[:value]]
-            when :precision_expression
-              [:precision_expression, part[:precision], part[:parameter_type].to_s]
-            else
-              [:expression, part[:append_function_name], part[:parameter_type].to_s]
-            end
-          end,
-        ]
-      end
-
-      def build_format_string_builder_function(helper_c_name, helper_params, helper_parts)
-        string_type = @types.fetch("str")
-        result_name = "__mt_result"
-        result_value = IR::Name.new(name: result_name, type: string_type, pointer: false)
-        total_len_name = "__mt_total_len"
-        total_len_value = IR::Name.new(name: total_len_name, type: @types.fetch("ptr_uint"), pointer: false)
-        offset_name = "__mt_offset"
-        offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
-        literal_capacity = helper_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
-
-        body = [
-          IR::LocalDecl.new(
-            name: total_len_name,
-            c_name: total_len_name,
-            type: @types.fetch("ptr_uint"),
-            value: IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint")),
-          ),
-        ]
-
-        helper_parts.each do |part|
-          next if part[:kind] == :text
-
-          body << IR::Assignment.new(
-            target: total_len_value,
-            operator: "=",
-            value: IR::Binary.new(
-              operator: "+",
-              left: total_len_value,
-              right: format_string_part_length_expression(part),
-              type: @types.fetch("ptr_uint"),
-            ),
-          )
-        end
-
-        body << IR::LocalDecl.new(
-          name: result_name,
-          c_name: result_name,
-          type: string_type,
-          value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_len_value], type: string_type),
-        )
-        body << IR::LocalDecl.new(
-          name: offset_name,
-          c_name: offset_name,
-          type: @types.fetch("ptr_uint"),
-          value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
-        )
-
-        helper_parts.each do |part|
-          body << IR::Assignment.new(
-            target: offset_value,
-            operator: "=",
-            value: format_string_part_append_expression(part, result_value, offset_value),
-          )
-        end
-
-        body << IR::ReturnStmt.new(value: result_value)
-
-        IR::Function.new(
-          name: helper_c_name,
-          c_name: helper_c_name,
-          params: helper_params,
-          return_type: string_type,
-          body: body,
-          entry_point: false,
-        )
+        [setup, format_parts]
       end
 
       def format_string_has_dynamic_parts?(format_string)
@@ -4848,8 +4800,8 @@ module MilkTea
         ]
       end
 
-      def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil)
-        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:)
+      def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
+        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:, cstr_backed:, cstr_list_backed:)
       end
 
       def foreign_call_requires_statement_lowering?(expression, binding, env:)
@@ -8957,10 +8909,6 @@ module MilkTea
 
       def fresh_proc_symbol
         @synthetic_proc_counter += 1
-      end
-
-      def fresh_format_symbol
-        @synthetic_format_counter += 1
       end
 
       def current_actual_scope(scopes)

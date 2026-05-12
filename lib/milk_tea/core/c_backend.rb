@@ -1149,9 +1149,15 @@ module MilkTea
       body = compact_generated_statement_sequence(function.body)
       lines = ["#{function_signature(function)} {"]
       used_labels = collect_used_labels(body)
+      unused_param_lines = emit_unused_param_suppressions(function, INDENT)
       if body.empty?
-        lines << "#{INDENT}(void)0;"
+        if unused_param_lines.empty?
+          lines << "#{INDENT}(void)0;"
+        else
+          lines.concat(unused_param_lines)
+        end
       else
+        lines.concat(unused_param_lines)
         lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
       end
       lines << "}"
@@ -1825,11 +1831,41 @@ module MilkTea
       case expression
       when IR::ArrayLiteral
         emit_array_initializer(expression)
+      when IR::AggregateLiteral
+        emit_aggregate_initializer(expression)
+      when IR::VariantLiteral
+        emit_variant_initializer(expression)
+      when IR::StringLiteral
+        expression.type.is_a?(Types::StringView) ? emit_str_initializer(expression) : emit_expression(expression)
       when IR::ZeroInit
         emit_zero_initializer(expression.type)
       else
         emit_expression(expression)
       end
+    end
+
+    def emit_aggregate_initializer(expression)
+      return emit_zero_initializer(expression.type) if expression.fields.empty?
+
+      fields = expression.fields.map do |field|
+        ".#{field.name} = #{emit_initializer(field.value)}"
+      end.join(", ")
+      "{ #{fields} }"
+    end
+
+    def emit_variant_initializer(expression)
+      outer_c = named_type_c_name(expression.type)
+      kind_constant = "#{outer_c}_kind_#{expression.arm_name}"
+      if expression.fields.empty?
+        "{ .kind = #{kind_constant} }"
+      else
+        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_initializer(field.value)}" }.join(", ")
+        "{ .kind = #{kind_constant}, .data.#{expression.arm_name} = { #{payload_fields} } }"
+      end
+    end
+
+    def emit_str_initializer(expression)
+      "{ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
     end
 
     def emit_aggregate_literal(expression)
@@ -1861,6 +1897,7 @@ module MilkTea
       arguments.concat(expression.arguments.drop(omit_receiver ? 1 : 0).map { |argument| emit_expression(argument) })
       call = "#{callee}(#{arguments.join(', ')})"
       return call unless omit_receiver && expression.arguments.any?
+      return call if side_effect_free_expression?(expression.arguments.first)
 
       "(#{discarded_expression(expression.arguments.first)}, #{call})"
     end
@@ -1886,6 +1923,14 @@ module MilkTea
 
     def emitted_function_params(function)
       omitted_method_receiver_function?(function) ? function.params.drop(1) : function.params
+    end
+
+    def emit_unused_param_suppressions(function, indent)
+      emitted_function_params(function).filter_map do |param|
+        next unless name_reference_count_in_statements(function.body, param.c_name).zero?
+
+        "#{indent}(void)#{param.c_name};"
+      end
     end
 
     def omitted_method_receiver_call?(expression)
