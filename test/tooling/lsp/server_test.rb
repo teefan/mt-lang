@@ -363,6 +363,15 @@ class LSPServerTest < Minitest::Test
         return apply(add_one, zeroed.value) + callback(defaulted.value)
   MT
 
+  SOURCE_WITH_BUILTIN_CALLABLE_HOVER = <<~MT
+    function main() -> int:
+        var items = array[int, 2](1, 2)
+        let view = span[int](data = ptr_of(items[0]), len = 2)
+        let alias = ref_of(items[0])
+        let first = read(alias)
+        return first + view[1]
+  MT
+
   SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS = <<~MT
     function cast(value: int) -> int:
         return value
@@ -920,6 +929,96 @@ class LSPServerTest < Minitest::Test
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "parameter screen: ref[T] (immutable)"
       refute_includes hover_value, "TitleScreen"
+    end
+  end
+
+  def test_hover_shows_builtin_default_value_signature
+    source = SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_builtin_default_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      line = source.lines.index { |text| text.include?("default[Box]") }
+      character = source.lines.fetch(line).rindex("default")
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => line, "character" => character },
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "builtin default[Box] -> Box"
+      assert_includes hover_value, "falls back to the same raw initialization contract as `zero[T]`"
+      refute_includes hover_value, "local default"
+    end
+  end
+
+  def test_hover_shows_builtin_callable_signatures
+    source = SOURCE_WITH_BUILTIN_CALLABLE_HOVER
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_builtin_callable_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      array_line = source.lines.index { |text| text.include?("array[int, 2](1, 2)") }
+      array_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => array_line, "character" => source.lines.fetch(array_line).index("array") },
+      })
+      array_hover_value = array_hover.dig("result", "contents", "value")
+      assert_includes array_hover_value, "builtin array[int, 2](...) -> array[int, 2]"
+
+      span_line = source.lines.index { |text| text.include?("span[int](data =") }
+      span_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => span_line, "character" => source.lines.fetch(span_line).index("span") },
+      })
+      span_hover_value = span_hover.dig("result", "contents", "value")
+      assert_includes span_hover_value, "builtin span[int](data = ..., len = ...) -> span[int]"
+
+      ptr_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => span_line, "character" => source.lines.fetch(span_line).index("ptr_of") },
+      })
+      ptr_hover_value = ptr_hover.dig("result", "contents", "value")
+      assert_includes ptr_hover_value, "builtin ptr_of(value) -> ptr[T]"
+
+      ref_line = source.lines.index { |text| text.include?("ref_of(items[0])") }
+      ref_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => ref_line, "character" => source.lines.fetch(ref_line).index("ref_of") },
+      })
+      ref_hover_value = ref_hover.dig("result", "contents", "value")
+      assert_includes ref_hover_value, "builtin ref_of(value) -> ref[T]"
+
+      read_line = source.lines.index { |text| text.include?("read(alias)") }
+      read_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => read_line, "character" => source.lines.fetch(read_line).index("read") },
+      })
+      read_hover_value = read_hover.dig("result", "contents", "value")
+      assert_includes read_hover_value, "builtin read(value) -> T"
     end
   end
 

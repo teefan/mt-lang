@@ -1868,6 +1868,7 @@ module MilkTea
 
         name = token.lexeme
         signature = nil
+        docs = nil
         source_location = nil
 
         if (binding = method_binding_at_token(analysis, token))
@@ -1920,6 +1921,13 @@ module MilkTea
           end
 
           unless signature
+            if token_index && (builtin_info = builtin_hover_info(name, tokens, token_index))
+              signature = builtin_info[:signature]
+              docs = builtin_info[:docs]
+            end
+          end
+
+          unless signature
             if (local_binding = resolve_local_hover_binding(analysis, name, lsp_line + 1, lsp_char + 1))
               signature = value_hover_signature(local_binding)
             end
@@ -1954,7 +1962,7 @@ module MilkTea
 
         {
           signature: signature,
-          docs: hover_doc_comment_for_definition(definition_entry),
+          docs: docs || hover_doc_comment_for_definition(definition_entry),
           source: hover_source_label_for_definition(definition_entry) || hover_source_label_from_location(source_location),
           source_uri: source_uri,
           source_line: source_line,
@@ -2160,6 +2168,7 @@ module MilkTea
         tokens = context[:tokens]
         token_index = context[:token_index]
         return nil if token_index && module_declaration_info_at(tokens, token_index)
+        return nil if token_index && builtin_hover_info(token.lexeme, tokens, token_index)
 
         if token_index && (import_info = import_path_info_at(tokens, token_index))
           return module_definition_location(uri, import_info[:module_name])
@@ -3963,6 +3972,126 @@ module MilkTea
 
       def field_hover_signature(name, type)
         "field #{name}: #{type}"
+      end
+
+      BUILTIN_CALL_HOVER_INFO = {
+        'fatal' => {
+          signature: 'builtin fatal(message) -> never',
+          docs: '`fatal(message)` aborts execution with the provided message.'
+        },
+        'ref_of' => {
+          signature: 'builtin ref_of(value) -> ref[T]',
+          docs: '`ref_of(x)` borrows a mutable safe lvalue as `ref[T]`.'
+        },
+        'const_ptr_of' => {
+          signature: 'builtin const_ptr_of(value) -> const_ptr[T]',
+          docs: '`const_ptr_of(x)` takes the address of a safe lvalue as `const_ptr[T]`.'
+        },
+        'ptr_of' => {
+          signature: 'builtin ptr_of(value) -> ptr[T]',
+          docs: '`ptr_of(x)` takes the address of a mutable safe lvalue as `ptr[T]`.'
+        },
+        'read' => {
+          signature: 'builtin read(value) -> T',
+          docs: '`read(value)` projects a `ref[T]` or pointer-like value to its referent.'
+        },
+      }.freeze
+
+      def builtin_hover_info(name, tokens, token_index)
+        specialization_info = builtin_value_specialization_info(name, tokens, token_index)
+        return specialization_info if specialization_info
+
+        type_constructor_info = builtin_type_constructor_hover_info(name, tokens, token_index)
+        return type_constructor_info if type_constructor_info
+
+        builtin_call_hover_info(name, tokens, token_index)
+      end
+
+      def builtin_value_specialization_info(name, tokens, token_index)
+        return nil unless %w[zero default reinterpret].include?(name)
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        target_type = render_builtin_specialization(tokens[(lbracket_index + 1)...rbracket_index])
+        return nil if target_type.empty?
+
+        docs = case name
+               when 'zero'
+                 '`zero[T]` returns the raw zero-initialized value for `T`.'
+               when 'default'
+                 '`default[T]` first looks for an accessible zero-argument associated function `T.default()` that returns `T`. If none exists, it falls back to the same raw initialization contract as `zero[T]`.'
+               when 'reinterpret'
+                 '`reinterpret[T](value)` bit-casts a value to `T`; it requires `unsafe` and compatible concrete sized types.'
+               end
+
+        {
+          signature: if name == 'reinterpret'
+                       "builtin #{specialization}(value) -> #{target_type}"
+                     else
+                       "builtin #{specialization} -> #{target_type}"
+                     end,
+          docs: docs,
+        }
+      end
+
+      def builtin_type_constructor_hover_info(name, tokens, token_index)
+        return nil unless %w[array span].include?(name)
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+
+        if after_bracket_index && tokens[after_bracket_index].type == :lparen
+          docs = if name == 'array'
+                   '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
+                 else
+                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                 end
+
+          return {
+            signature: if name == 'array'
+                         "builtin #{specialization}(...) -> #{specialization}"
+                       else
+                         "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
+                       end,
+            docs: docs,
+          }
+        end
+
+        docs = if name == 'array'
+                 '`array[T, N]` is the built-in fixed-length array type.'
+               else
+                 '`span[T]` is the built-in non-owning contiguous view type.'
+               end
+
+        {
+          signature: "builtin type #{specialization}",
+          docs: docs,
+        }
+      end
+
+      def builtin_call_hover_info(name, tokens, token_index)
+        info = BUILTIN_CALL_HOVER_INFO[name]
+        return nil unless info
+
+        next_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless next_index && tokens[next_index].type == :lparen
+
+        info
+      end
+
+      def render_builtin_specialization(tokens)
+        Array(tokens).map(&:lexeme).join.gsub(',', ', ')
       end
 
       def value_hover_signature(binding)
