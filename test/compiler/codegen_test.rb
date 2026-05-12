@@ -2232,6 +2232,42 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return \(\*demo_generic_functions_head_int\(items\)\) \+ smallest;/, generated)
   end
 
+  def test_generate_c_for_generic_functions_with_interface_constraints
+    source = [
+      "module demo.interface_codegen",
+      "",
+      "interface Damageable:",
+      "    editable function take_damage(amount: int) -> void",
+      "    function is_alive() -> bool",
+      "",
+      "struct NPC implements Damageable:",
+      "    hp: int",
+      "",
+      "methods NPC:",
+      "    editable function take_damage(amount: int):",
+      "        this.hp -= amount",
+      "",
+      "    function is_alive() -> bool:",
+      "        return this.hp > 0",
+      "",
+      "function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:",
+      "    if target.is_alive():",
+      "        target.take_damage(amount)",
+      "",
+      "function main() -> int:",
+      "    var npc = NPC(hp = 5)",
+      "    damage_one(npc, 2)",
+      "    return npc.hp",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static void demo_interface_codegen_damage_one_demo_interface_codegen_NPC\(/, generated)
+    assert_match(/demo_interface_codegen_damage_one_demo_interface_codegen_NPC\(&npc, 2\);/, generated)
+    refute_match(/Damageable/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "module demo.generic_layout",

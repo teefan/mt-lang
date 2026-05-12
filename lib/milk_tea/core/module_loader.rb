@@ -153,7 +153,9 @@ module MilkTea
 
     def module_binding(analysis)
       types = {}
+      interfaces = {}
       private_types = {}
+      private_interfaces = {}
       values = {}
       private_values = {}
       functions = {}
@@ -164,6 +166,9 @@ module MilkTea
         when AST::StructDecl, AST::UnionDecl, AST::VariantDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
           target = exported_declaration?(analysis, declaration) ? types : private_types
           target[declaration.name] = analysis.types.fetch(declaration.name)
+        when AST::InterfaceDecl
+          target = exported_declaration?(analysis, declaration) ? interfaces : private_interfaces
+          target[declaration.name] = analysis.interfaces.fetch(declaration.name)
         when AST::ConstDecl, AST::VarDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
           target[declaration.name] = analysis.values.fetch(declaration.name)
@@ -174,17 +179,22 @@ module MilkTea
       end
 
       methods, private_methods = exported_methods(analysis, types)
+      implemented_interfaces, private_implemented_interfaces = exported_interface_implementations(analysis, types, interfaces)
 
       Sema::ModuleBinding.new(
         name: analysis.module_name,
         types:,
+        interfaces:,
         values:,
         functions:,
         methods:,
+        implemented_interfaces:,
         private_types:,
+        private_interfaces:,
         private_values:,
         private_functions:,
         private_methods:,
+        private_implemented_interfaces:,
       )
     end
 
@@ -241,6 +251,37 @@ module MilkTea
       [methods, private_methods]
     end
 
+    def exported_interface_implementations(analysis, exported_types, exported_interfaces)
+      implemented_interfaces = {}
+      private_implemented_interfaces = {}
+
+      analysis.implemented_interfaces.each do |receiver_type, interfaces|
+        public_interfaces = []
+        hidden_interfaces = []
+
+        interfaces.each do |interface|
+          visible = exported_method_receiver?(receiver_type, analysis, exported_types) &&
+            exported_interface_binding?(interface, analysis, exported_interfaces)
+          if visible
+            public_interfaces << interface
+          else
+            hidden_interfaces << interface
+          end
+        end
+
+        implemented_interfaces[receiver_type] = public_interfaces.freeze unless public_interfaces.empty?
+        private_implemented_interfaces[receiver_type] = hidden_interfaces.freeze unless hidden_interfaces.empty?
+      end
+
+      [implemented_interfaces.freeze, private_implemented_interfaces.freeze]
+    end
+
+    def exported_interface_binding?(interface, analysis, exported_interfaces)
+      return true if exported_interfaces.value?(interface)
+
+      imported_interface_binding?(interface, analysis.imports)
+    end
+
     def exported_method_receiver?(receiver_type, analysis, exported_types)
       return true if receiver_type.is_a?(Types::StringView)
       return true if exported_types.value?(receiver_type)
@@ -262,6 +303,14 @@ module MilkTea
     def imported_receiver_type?(receiver_type, imports)
       imports.each_value do |module_binding|
         return true if module_binding.types.value?(receiver_type)
+      end
+
+      false
+    end
+
+    def imported_interface_binding?(interface, imports)
+      imports.each_value do |module_binding|
+        return true if module_binding.interfaces.value?(interface)
       end
 
       false

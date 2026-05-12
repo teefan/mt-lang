@@ -7849,6 +7849,7 @@ module MilkTea
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
         substitutions = binding.type_params.zip(type_arguments).to_h
+        validate_function_interface_constraints!(binding, substitutions)
         instance = Sema::FunctionBinding.new(
           name: binding.name,
           type: substitute_type(binding.type, substitutions),
@@ -7858,6 +7859,7 @@ module MilkTea
           external: binding.external,
           async: binding.async,
           type_params: [].freeze,
+          type_param_constraints: {}.freeze,
           instances: {},
           type_arguments: key,
           owner: binding.owner,
@@ -7865,6 +7867,36 @@ module MilkTea
           declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )
         binding.instances[key] = instance
+      end
+
+      def validate_function_interface_constraints!(binding, substitutions)
+        binding.type_param_constraints.each do |name, interfaces|
+          actual_type = substitutions[name]
+          raise LoweringError, "cannot infer type argument #{name} for function #{binding.name}" unless actual_type
+
+          interfaces.each do |interface|
+            next if type_implements_interface?(actual_type, interface)
+
+            raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
+          end
+        end
+      end
+
+      def interface_implementation_key(type)
+        return type.definition if type.is_a?(Types::StructInstance)
+
+        type
+      end
+
+      def type_implements_interface?(type, interface)
+        key = interface_implementation_key(type)
+        return true if @analysis.implemented_interfaces.fetch(key, []).include?(interface)
+
+        @imports.each_value do |module_binding|
+          return true if module_binding.implemented_interfaces.fetch(key, []).include?(interface)
+        end
+
+        false
       end
 
       def infer_function_type_arguments(binding, arguments, env, receiver_type: nil)

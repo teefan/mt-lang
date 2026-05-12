@@ -32,7 +32,21 @@ struct Piece:
     x: int
     y: int
 
-struct Game:
+interface ScreenState:
+    editable function update(effect: rl.Sound) -> void
+    function draw(texture: rl.Texture2D) -> void
+
+struct TitleScreen implements ScreenState:
+    blink_timer: float
+    start_requested: bool
+
+struct PausedScreen implements ScreenState:
+    blink_timer: float
+    resume_requested: bool
+    exit_requested: bool
+    snapshot: Game
+
+struct Game implements ScreenState:
     board: array[int, 200]
     active: Piece
     next_kind: int
@@ -68,6 +82,23 @@ function make_game() -> Game:
     var game = zero[Game]
     game.reset()
     return game
+
+
+function make_paused_screen(game: Game) -> PausedScreen:
+    return PausedScreen(
+        blink_timer = 0.0,
+        resume_requested = false,
+        exit_requested = false,
+        snapshot = game,
+    )
+
+
+function run_screen_frame[T implements ScreenState](screen: ref[T], texture: rl.Texture2D, effect: rl.Sound) -> void:
+    screen.update(effect)
+
+    rl.begin_drawing()
+    defer rl.end_drawing()
+    screen.draw(texture)
 
 
 function random_kind() -> int:
@@ -149,6 +180,58 @@ function gravity_seconds(level: int) -> float:
     if level == 5:
         return 0.24
     return 0.18
+
+
+methods TitleScreen:
+    editable function update(effect: rl.Sound):
+        this.blink_timer += rl.get_frame_time()
+
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
+            this.start_requested = true
+
+
+    function draw(texture: rl.Texture2D) -> void:
+        rl.clear_background(rl.Color(r = 7, g = 10, b = 18, a = 255))
+        rl.draw_rectangle_gradient_v(0, 0, window_width, window_height, rl.Color(r = 17, g = 28, b = 52, a = 255), rl.Color(r = 6, g = 10, b = 18, a = 255))
+        rl.draw_text("MILK TEA", 148, 168, 58, rl.RAYWHITE)
+        rl.draw_text("TETRIS", 214, 236, 58, rl.GOLD)
+        rl.draw_text("Stack clean lines and survive the climb.", 108, 334, 24, rl.SKYBLUE)
+        rl.draw_text("Left/Right move  Up/Z/X rotate", 126, 404, 22, rl.LIGHTGRAY)
+        rl.draw_text("Down soft drop   Space hard drop", 114, 434, 22, rl.LIGHTGRAY)
+        rl.draw_text("P pauses the run, Esc returns here", 124, 466, 20, rl.GRAY)
+
+        let blink = int<-(this.blink_timer * 3.0)
+        if blink % 2 == 0:
+            rl.draw_text("Press Enter or Space to start", 142, 544, 28, rl.WHITE)
+
+
+methods PausedScreen:
+    editable function update(effect: rl.Sound):
+        this.blink_timer += rl.get_frame_time()
+
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) or rl.is_key_pressed(rl.KeyboardKey.KEY_P):
+            this.resume_requested = true
+
+        if rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
+            this.exit_requested = true
+
+
+    function draw(texture: rl.Texture2D) -> void:
+        this.snapshot.draw(texture)
+        rl.draw_rectangle(0, 0, window_width, window_height, rl.Color(r = 6, g = 10, b = 18, a = 164))
+        rl.draw_rectangle_rounded(rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0), 0.12, 10, rl.Color(r = 18, g = 26, b = 44, a = 244))
+        rl.draw_rectangle_lines_ex(rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0), 3.0, rl.Color(r = 87, g = 111, b = 166, a = 255))
+        rl.draw_text("PAUSED", 236, 212, 54, rl.RAYWHITE)
+        rl.draw_text("Frozen board. Same stack, same next piece.", 152, 286, 22, rl.SKYBLUE)
+        rl.draw_text(f"Score  #{this.snapshot.score}", 186, 344, 26, rl.GOLD)
+        rl.draw_text(f"Lines  #{this.snapshot.lines}", 186, 378, 26, rl.LIME)
+        rl.draw_text(f"Level  #{this.snapshot.level}", 186, 412, 26, rl.ORANGE)
+        rl.draw_text("Enter / Space / P resumes", 160, 454, 22, rl.LIGHTGRAY)
+        rl.draw_text("Esc returns to title", 196, 482, 20, rl.GRAY)
+
+        let blink = int<-(this.blink_timer * 3.0)
+        if blink % 2 == 0:
+            rl.draw_text("Press a key to continue", 176, 526, 24, rl.WHITE)
 
 
 methods Game:
@@ -391,6 +474,7 @@ methods Game:
         rl.draw_text("Rotate Up / Z / X", preview_left, 584, 18, rl.LIGHTGRAY)
         rl.draw_text("Soft   Hold Down", preview_left, 608, 18, rl.LIGHTGRAY)
         rl.draw_text("Drop   Space", preview_left, 632, 18, rl.LIGHTGRAY)
+        rl.draw_text("Pause  P", preview_left, 656, 18, rl.LIGHTGRAY)
 
         if this.cleared_flash > 0.0:
             rl.draw_text("LINE CLEAR!", preview_left, 250, 24, rl.YELLOW)
@@ -424,13 +508,37 @@ function main() -> int:
     let clear_sound = rl.load_sound("assets/line_clear.wav")
     defer rl.unload_sound(clear_sound)
 
-    var game = make_game()
+    var title: TitleScreen
+    var paused: PausedScreen
+    var game: Game
+    var showing_title = true
+    var showing_pause = false
 
     while not rl.window_should_close():
-        game.update(clear_sound)
-
-        rl.begin_drawing()
-        defer rl.end_drawing()
-        game.draw(tiles)
+        if showing_title:
+            run_screen_frame(title, tiles, clear_sound)
+            if title.start_requested:
+                game = make_game()
+                paused = zero[PausedScreen]
+                showing_title = false
+                showing_pause = false
+        elif showing_pause:
+            run_screen_frame(paused, tiles, clear_sound)
+            if paused.resume_requested:
+                paused = zero[PausedScreen]
+                showing_pause = false
+            elif paused.exit_requested:
+                title = zero[TitleScreen]
+                paused = zero[PausedScreen]
+                showing_pause = false
+                showing_title = true
+        else:
+            run_screen_frame(game, tiles, clear_sound)
+            if not game.game_over and rl.is_key_pressed(rl.KeyboardKey.KEY_P):
+                paused = make_paused_screen(game)
+                showing_pause = true
+            elif rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
+                title = zero[TitleScreen]
+                showing_title = true
 
     return 0

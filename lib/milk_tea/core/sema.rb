@@ -23,7 +23,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :values, :functions, :methods, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
@@ -53,10 +53,16 @@ module MilkTea
         )
       end
     end
-    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
-    ModuleBinding = Data.define(:name, :types, :values, :functions, :methods, :private_types, :private_values, :private_functions, :private_methods) do
+    InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
+    InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
+    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
+    ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
+      end
+
+      def private_interface?(name)
+        private_interfaces.key?(name)
       end
 
       def private_value?(name)
@@ -128,10 +134,12 @@ module MilkTea
         @module_kind = ast.module_kind
         @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }
         @types = {}
+        @interfaces = {}
         @top_level_values = {}
         @top_level_functions = {}
         @imports = {}
         @methods = Hash.new { |hash, key| hash[key] = {} }
+        @implemented_interfaces = Hash.new { |hash, key| hash[key] = [] }
         @null_type = Types::Null.new
         @loop_depth = 0
         @unsafe_depth = 0
@@ -168,6 +176,7 @@ module MilkTea
         resolve_variant_arms
         declare_top_level_values
         declare_functions
+        check_interface_conformances
         check_top_level_values
         finalize_top_level_const_values
         check_top_level_static_asserts
@@ -180,9 +189,11 @@ module MilkTea
           directives: @ast.directives,
           imports: @imports,
           types: @types,
+          interfaces: @interfaces,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
+          implemented_interfaces: snapshot_implemented_interfaces,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
           callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
@@ -205,6 +216,7 @@ module MilkTea
         resolve_variant_arms
         declare_top_level_values
         declare_functions
+        check_interface_conformances
 
         errors = []
 
@@ -235,9 +247,11 @@ module MilkTea
           directives: @ast.directives,
           imports: @imports,
           types: @types,
+          interfaces: @interfaces,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
+          implemented_interfaces: snapshot_implemented_interfaces,
           local_completion_frames: @local_completion_frames.dup.freeze,
           binding_resolution: binding_resolution_snapshot,
           callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
@@ -262,6 +276,12 @@ module MilkTea
         end.freeze
       end
 
+      def snapshot_implemented_interfaces
+        @implemented_interfaces.each_with_object({}) do |(receiver_type, interfaces), snapshot|
+          snapshot[receiver_type] = interfaces.dup.freeze
+        end.freeze
+      end
+
       def install_imports
         @ast.imports.each do |import|
           with_error_node(import) do
@@ -281,6 +301,7 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::StructDecl
+              validate_disallowed_type_param_constraints!(decl, "struct #{decl.name}")
               validate_struct_layout!(decl)
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
@@ -309,6 +330,7 @@ module MilkTea
               ensure_available_type_name!(decl.name)
               @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?, c_name: decl.c_name)
             when AST::VariantDecl
+              validate_disallowed_type_param_constraints!(decl, "variant #{decl.name}")
               ensure_available_type_name!(decl.name)
               @types[decl.name] = if decl.type_params.empty?
                                     Types::Variant.new(decl.name, module_name: @module_name)
@@ -333,6 +355,9 @@ module MilkTea
                 external: external_module?,
                 c_name: decl.c_name,
               )
+            when AST::InterfaceDecl
+              ensure_available_type_name!(decl.name)
+              @interfaces[decl.name] = declare_interface_binding(decl)
             end
           end
         end
@@ -343,6 +368,61 @@ module MilkTea
           ensure_available_type_name!(decl.name)
           @types[decl.name] = resolve_type_ref(decl.target)
         end
+      end
+
+      def validate_disallowed_type_param_constraints!(decl, context)
+        return unless decl.respond_to?(:type_params)
+        return unless decl.type_params.any? { |type_param| type_param.constraints.any? }
+
+        raise_sema_error("#{context} does not support interface constraints on type parameters")
+      end
+
+      def declare_interface_binding(decl)
+        methods = {}
+
+        decl.methods.each do |method_decl|
+          method = resolve_interface_method_binding(method_decl)
+          raise_sema_error("duplicate method #{decl.name}.#{method.name}") if methods.key?(method.name)
+
+          methods[method.name] = method
+        end
+
+        InterfaceBinding.new(
+          name: decl.name,
+          methods: methods.freeze,
+          ast: decl,
+          module_name: @module_name,
+        )
+      end
+
+      def resolve_interface_method_binding(method_decl)
+        raise_sema_error("interface method #{method_decl.name} cannot be async") if method_decl.async
+        raise_sema_error("interface method #{method_decl.name} cannot be static") if method_decl.kind == :static
+
+        params = []
+        seen = {}
+        method_decl.params.each do |param|
+          raise_sema_error("duplicate parameter #{param.name} in #{method_decl.name}") if seen.key?(param.name)
+
+          seen[param.name] = true
+          type = resolve_type_ref(param.type)
+          validate_parameter_ref_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false)
+          validate_parameter_proc_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false, foreign: false)
+          params << Types::Parameter.new(param.name, type)
+        end
+
+        return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type) : @types.fetch("void")
+        validate_return_ref_type!(return_type, function_name: method_decl.name)
+        validate_return_proc_type!(return_type, function_name: method_decl.name)
+
+        InterfaceMethodBinding.new(
+          name: method_decl.name,
+          params: params.freeze,
+          return_type: return_type,
+          kind: method_decl.kind,
+          async: method_decl.async,
+          ast: method_decl,
+        )
       end
 
       def validate_struct_layout!(decl)
@@ -534,6 +614,7 @@ module MilkTea
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = receiver_type_param_names + decl.type_params.map(&:name)
+        type_param_constraints = resolve_type_param_constraints(decl.type_params)
         raise_sema_error("external function #{decl.name} cannot be generic") if external && type_param_names.any?
         raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
         raise_sema_error("external function #{decl.name} cannot be async") if external && async_function
@@ -646,12 +727,30 @@ module MilkTea
           external:,
           async: async_function,
           type_params: type_param_names.freeze,
+          type_param_constraints: type_param_constraints.freeze,
           instances: {},
           type_arguments: [].freeze,
           owner: self,
           type_substitutions: {}.freeze,
           declared_receiver_type: declared_receiver_type,
         )
+      end
+
+      def resolve_type_param_constraints(type_params)
+        type_params.each_with_object({}) do |type_param, constraints|
+          next if type_param.constraints.empty?
+
+          resolved = []
+          seen = {}
+          type_param.constraints.each do |constraint_ref|
+            interface = resolve_interface_ref(constraint_ref)
+            raise_sema_error("duplicate interface constraint #{type_param.name} implements #{interface.name}") if seen.key?(interface)
+
+            seen[interface] = true
+            resolved << interface
+          end
+          constraints[type_param.name] = resolved.freeze
+        end
       end
 
       def check_top_level_values
@@ -905,6 +1004,30 @@ module MilkTea
         end
       end
 
+      def check_interface_conformances
+        @ast.declarations.each do |decl|
+          with_error_node(decl) do
+            next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::OpaqueDecl)
+            next if decl.implements.empty?
+
+            receiver_type = @types.fetch(decl.name)
+            resolved_interfaces = []
+            seen = {}
+
+            decl.implements.each do |interface_ref|
+              interface = resolve_interface_ref(interface_ref)
+              raise_sema_error("duplicate interface #{decl.name} implements #{interface.name}") if seen.key?(interface)
+
+              seen[interface] = true
+              resolved_interfaces << interface
+              validate_interface_conformance!(receiver_type, interface)
+            end
+
+            @implemented_interfaces[interface_implementation_key(receiver_type)] = resolved_interfaces.freeze
+          end
+        end
+      end
+
       def check_functions
         @top_level_functions.each_value do |binding|
           check_function(binding)
@@ -914,6 +1037,37 @@ module MilkTea
           method_map.each_value do |binding|
             check_function(binding)
           end
+        end
+      end
+
+      def validate_interface_conformance!(receiver_type, interface)
+        interface.methods.each_value do |interface_method|
+          method = lookup_local_method_for_interface(receiver_type, interface_method.name)
+          raise_sema_error("type #{receiver_type} implements interface #{interface.name} but is missing method #{interface_method.name}") unless method
+
+          validate_interface_method_match!(receiver_type, interface, interface_method, method)
+        end
+      end
+
+      def lookup_local_method_for_interface(receiver_type, name)
+        dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
+
+        method = @methods.fetch(receiver_type, {})[name]
+        method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method
+      end
+
+      def validate_interface_method_match!(receiver_type, interface, interface_method, method)
+        expected_mutable = interface_method.kind == :editable
+        actual_mutable = method.type.receiver_mutable
+        if actual_mutable != expected_mutable
+          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver mutability does not match")
+        end
+
+        method_params = method.type.params.map(&:type)
+        interface_params = interface_method.params.map(&:type)
+        unless method_params == interface_params && method.type.return_type == interface_method.return_type && method.async == interface_method.async
+          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: signature does not match")
         end
       end
 
@@ -3170,7 +3324,7 @@ module MilkTea
       end
 
       def ensure_available_type_name!(name)
-        raise_sema_error("duplicate type #{name}") if @types.key?(name)
+        raise_sema_error("duplicate type #{name}") if @types.key?(name) || @interfaces.key?(name)
       end
 
       def ensure_available_value_name!(name)
@@ -3179,6 +3333,47 @@ module MilkTea
 
       def current_type_params
         @current_type_substitutions || {}
+      end
+
+      def resolve_interface_ref(interface_ref)
+        parts = interface_ref.parts
+
+        if parts.length == 1
+          interface = @interfaces[parts.first]
+          raise_sema_error("unknown interface #{parts.first}") unless interface
+
+          return interface
+        end
+
+        if parts.length == 2 && @imports.key?(parts.first)
+          imported_module = @imports.fetch(parts.first)
+          interface = imported_module.interfaces[parts.last]
+          if imported_module.private_interface?(parts.last)
+            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
+          end
+          raise_sema_error("unknown interface #{interface_ref}") unless interface
+
+          return interface
+        end
+
+        raise_sema_error("unknown interface #{interface_ref}")
+      end
+
+      def interface_implementation_key(type)
+        return type.definition if type.is_a?(Types::StructInstance)
+
+        type
+      end
+
+      def type_implements_interface?(type, interface)
+        key = interface_implementation_key(type)
+        return true if @implemented_interfaces.fetch(key, []).include?(interface)
+
+        @imports.each_value do |module_binding|
+          return true if module_binding.implemented_interfaces.fetch(key, []).include?(interface)
+        end
+
+        false
       end
 
       def resolve_type_ref(type_ref, type_params: current_type_params)
@@ -4716,6 +4911,7 @@ module MilkTea
         return binding.instances.fetch(key) if binding.instances.key?(key)
 
         substitutions = binding.type_params.zip(type_arguments).to_h
+        validate_function_interface_constraints!(binding, substitutions)
         type = substitute_type(binding.type, substitutions)
         body_params = binding.body_params.map { |param| substitute_value_binding(param, substitutions) }
         validate_specialized_function_binding!(binding.name, type, body_params)
@@ -4729,6 +4925,7 @@ module MilkTea
           external: binding.external,
           async: binding.async,
           type_params: [].freeze,
+          type_param_constraints: {}.freeze,
           instances: {},
           type_arguments: key,
           owner: binding.owner,
@@ -4736,6 +4933,19 @@ module MilkTea
           declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )
         binding.instances[key] = instance
+      end
+
+      def validate_function_interface_constraints!(binding, substitutions)
+        binding.type_param_constraints.each do |name, interfaces|
+          actual_type = substitutions[name]
+          raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless actual_type
+
+          interfaces.each do |interface|
+            next if type_implements_interface?(actual_type, interface)
+
+            raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
+          end
+        end
       end
 
       def infer_function_type_arguments(binding, arguments, scopes:, receiver_type: nil)

@@ -8,7 +8,9 @@ module MilkTea
       end
     end
 
-    TypeParam = Data.define(:name)
+    TypeParam = Data.define(:name, :constraints) do
+      def initialize(name:, constraints: []) = super
+    end
     TypeArgument = Data.define(:value)
     class TypeRef < Data.define(:name, :arguments, :nullable)
       def to_s
@@ -43,8 +45,8 @@ module MilkTea
     TypeAliasDecl = Data.define(:name, :target, :visibility, :line) do
       def initialize(name:, target:, visibility:, line: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :c_name, :fields, :packed, :alignment, :visibility, :line) do
-      def initialize(name:, type_params:, c_name:, fields:, packed:, alignment:, visibility:, line: nil) = super
+    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :packed, :alignment, :visibility, :line) do
+      def initialize(name:, type_params:, implements:, c_name:, fields:, packed:, alignment:, visibility:, line: nil) = super
     end
     UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
       def initialize(name:, c_name:, fields:, visibility:, line: nil) = super
@@ -59,11 +61,17 @@ module MilkTea
       def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
     end
     EnumMember = Data.define(:name, :value)
-    OpaqueDecl = Data.define(:name, :c_name, :visibility, :line) do
-      def initialize(name:, c_name:, visibility:, line: nil) = super
+    OpaqueDecl = Data.define(:name, :implements, :c_name, :visibility, :line) do
+      def initialize(name:, implements:, c_name:, visibility:, line: nil) = super
+    end
+    InterfaceDecl = Data.define(:name, :methods, :visibility, :line) do
+      def initialize(name:, methods:, visibility:, line: nil) = super
     end
     MethodsBlock = Data.define(:type_name, :methods, :line) do
       def initialize(type_name:, methods:, line: nil) = super
+    end
+    InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :line, :column) do
+      def initialize(name:, params:, return_type:, kind:, async:, line: nil, column: nil) = super
     end
     FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :line, :column) do
       def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, line: nil, column: nil) = super

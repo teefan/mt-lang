@@ -207,7 +207,7 @@ module MilkTea
       end
 
       BLOCK_DECLARATION_TYPES = [
-        AST::FunctionDef, AST::ForeignFunctionDecl, AST::MethodsBlock,
+        AST::FunctionDef, AST::ForeignFunctionDecl, AST::InterfaceDecl, AST::MethodsBlock,
         AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::VariantDecl,
       ].freeze
 
@@ -279,6 +279,7 @@ module MilkTea
           header << visibility_prefix(declaration)
           header << "#{prefixes.join(' ')} " unless prefixes.empty?
           header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}"
+          header << render_implements_clause(declaration.implements)
           header << " = c#{declaration.c_name.inspect}" if declaration.c_name
           header << ":"
           line(header)
@@ -302,8 +303,16 @@ module MilkTea
           emit_enum_like("flags", declaration.name, declaration.backing_type, declaration.members, declaration.visibility)
         when AST::OpaqueDecl
           text = "#{visibility_prefix(declaration)}opaque #{declaration.name}"
+          text += render_implements_clause(declaration.implements)
           text += " = c#{declaration.c_name.inspect}" if declaration.c_name
           line(text)
+        when AST::InterfaceDecl
+          line("#{visibility_prefix(declaration)}interface #{declaration.name}:")
+          with_indent do
+            declaration.methods.each do |method|
+              line(render_interface_method_signature(method))
+            end
+          end
         when AST::MethodsBlock
           line("methods #{render_type(declaration.type_name)}:")
           with_indent do
@@ -392,7 +401,33 @@ module MilkTea
       def render_type_params(type_params)
         return "" if type_params.empty?
 
-        "[#{type_params.map(&:name).join(', ')}]"
+        rendered = type_params.map do |type_param|
+          next type_param.name if type_param.constraints.empty?
+
+          "#{type_param.name} implements #{type_param.constraints.map(&:to_s).join(' and ')}"
+        end
+        "[#{rendered.join(', ')}]"
+      end
+
+      def render_implements_clause(implements)
+        return "" if implements.empty?
+
+        " implements #{implements.map(&:to_s).join(', ')}"
+      end
+
+      def render_interface_method_signature(method)
+        prefix = +""
+        prefix << "async " if method.async
+        prefix << case method.kind
+                  when :editable
+                    "editable function "
+                  else
+                    "function "
+                  end
+
+        text = "#{prefix}#{method.name}(#{method.params.map { |param| render_param(param) }.join(', ')})"
+        text << " -> #{render_type(method.return_type)}" if method.return_type
+        text
       end
 
       def render_import(import)

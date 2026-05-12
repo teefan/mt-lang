@@ -140,6 +140,7 @@ module MilkTea
         @handlers['textDocument/definition']        = method(:handle_definition)
         @handlers['textDocument/declaration']       = method(:handle_declaration)
         @handlers['textDocument/typeDefinition']    = method(:handle_type_definition)
+        @handlers['textDocument/implementation']    = method(:handle_implementation)
         @handlers['textDocument/references']        = method(:handle_references)
         @handlers['textDocument/documentLink']      = method(:handle_document_link)
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
@@ -392,6 +393,7 @@ module MilkTea
             definitionProvider: true,
             declarationProvider: true,
             typeDefinitionProvider: true,
+            implementationProvider: true,
             referencesProvider: true,
             documentLinkProvider: {
               resolveProvider: false
@@ -632,6 +634,13 @@ module MilkTea
       rescue StandardError => e
         warn "Error in typeDefinition handler: #{e.message}"
         nil
+      end
+
+      def handle_implementation(params)
+        resolve_implementation_locations(params)
+      rescue StandardError => e
+        warn "Error in implementation handler: #{e.message}"
+        []
       end
 
       # ── References ──────────────────────────────────────────────────────────
@@ -1858,6 +1867,9 @@ module MilkTea
         elsif (binding = analysis.functions[name])
           params_str = format_params(binding.type.params)
           signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
+        elsif (binding = analysis.interfaces[name])
+          signature = interface_signature(binding)
+          source_location = module_member_definition_location(uri, binding.module_name, name)
         elsif analysis.types.key?(name)
           type = analysis.types[name]
           signature = type_hover_signature(name, type)
@@ -1878,6 +1890,9 @@ module MilkTea
               signature = "#{name}: #{val.type}"
             elsif module_binding.types.key?(name)
               signature = "type #{name}"
+            elsif (binding = module_binding.interfaces[name])
+              signature = interface_signature(binding)
+              source_location = module_member_definition_location(uri, module_binding.name, name)
             end
 
             if signature
@@ -2099,6 +2114,27 @@ module MilkTea
           uri: found[:uri],
           range: token_to_range(found[:token])
         }
+      end
+
+      def resolve_implementation_locations(params)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return [] unless token&.type == :identifier
+
+        analysis = @workspace.get_analysis(uri)
+        return [] unless analysis
+
+        if (target = resolve_interface_method_target_at_token(analysis, token))
+          return interface_method_implementation_locations(target[:interface], target[:method])
+        end
+
+        interface_binding = resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
+        return [] unless interface_binding
+
+        interface_implementation_locations(interface_binding)
       end
 
       def resource_document_link(uri, file_path, token)
@@ -2335,7 +2371,7 @@ module MilkTea
           return [:function, ['declaration']]
         end
 
-        if prev_tok && [:struct, :union, :enum, :flags, :variant, :type, :opaque].include?(prev_tok.type)
+        if prev_tok && [:struct, :union, :enum, :flags, :variant, :type, :opaque, :interface].include?(prev_tok.type)
           return [:type, ['declaration']]
         end
 
@@ -2372,6 +2408,7 @@ module MilkTea
           end
 
           return [:type, []] if analysis.types.key?(name)
+          return [:type, []] if analysis.interfaces.key?(name)
           return [:namespace, []] if analysis.imports.key?(name)
 
           if (binding = analysis.values[name])
@@ -2379,7 +2416,7 @@ module MilkTea
           end
         end
 
-        if analysis && analysis.types.key?(name) && identifier_in_type_argument_position?(tokens, index)
+        if analysis && (analysis.types.key?(name) || analysis.interfaces.key?(name)) && identifier_in_type_argument_position?(tokens, index)
           return [:type, []]
         end
 
@@ -2396,6 +2433,7 @@ module MilkTea
                 return [:property, []]
               end
               return [:type, []] if module_binding.types.key?(name)
+              return [:type, []] if module_binding.interfaces.key?(name)
               if (value_binding = module_binding.values[name])
                 modifiers = []
                 modifiers << 'readonly' if value_binding.respond_to?(:mutable) && value_binding.mutable == false
@@ -2430,6 +2468,7 @@ module MilkTea
 
         if analysis
           return [:type, []] if analysis.types.key?(name)
+          return [:type, []] if analysis.interfaces.key?(name)
 
           if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
@@ -2910,20 +2949,29 @@ module MilkTea
 
         depth = 0
         type_param_tokens = []
+        expect_name = false
         i = lbracket_index
         while i < line_tokens.length
           tok = line_tokens[i]
           case tok.type
           when :lbracket
             depth += 1
+            expect_name = true if depth == 1
           when :rbracket
             depth -= 1
             return {
               names: type_param_tokens.map(&:lexeme),
               tokens: type_param_tokens,
             } if depth.zero?
+          when :comma
+            expect_name = true if depth == 1
+          when :implements
+            expect_name = false if depth == 1
           else
-            type_param_tokens << tok if depth == 1 && tok.type == :identifier
+            if depth == 1 && expect_name && tok.type == :identifier
+              type_param_tokens << tok
+              expect_name = false
+            end
           end
           i += 1
         end
@@ -3383,6 +3431,20 @@ module MilkTea
         params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
       end
 
+      def interface_signature(binding)
+        method_lines = binding.methods.values.map do |method|
+          "    #{interface_method_signature(method)}"
+        end
+
+        (["interface #{binding.name}"] + method_lines).join("\n")
+      end
+
+      def interface_method_signature(binding)
+        keyword = binding.kind == :editable ? 'editable function' : 'function'
+        keyword = "async #{keyword}" if binding.async
+        "#{keyword} #{binding.name}(#{format_params(binding.params)}) -> #{binding.return_type}"
+      end
+
       def resolve_dot_receiver_value_type(analysis, receiver_name, line, char)
         frame = enclosing_completion_frame(analysis, line)
         if frame
@@ -3694,6 +3756,112 @@ module MilkTea
         "type #{name} = #{rendered_type}"
       end
 
+      def resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
+        binding = analysis.interfaces[token.lexeme]
+        return binding if binding
+
+        dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+        return nil unless dot_receiver
+
+        analysis.imports[dot_receiver]&.interfaces&.fetch(token.lexeme, nil)
+      end
+
+      def resolve_interface_method_target_at_token(analysis, token)
+        analysis.interfaces.each_value do |interface_binding|
+          method_binding = interface_binding.methods[token.lexeme]
+          next unless method_binding
+          next unless method_binding.ast.line == token.line
+          next unless method_binding.ast.respond_to?(:column) && method_binding.ast.column == token.column
+
+          return { interface: interface_binding, method: method_binding }
+        end
+
+        nil
+      end
+
+      def interface_implementation_locations(interface_binding)
+        seen = Set.new
+        @workspace.all_documents.filter_map do |doc_uri|
+          analysis = @workspace.get_analysis(doc_uri)
+          next unless analysis
+
+          analysis.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
+            next unless interfaces.any? { |candidate| same_interface_binding?(candidate, interface_binding) }
+
+            location = interface_receiver_definition_location(doc_uri, receiver_type)
+            next unless location
+
+            key = [location[:uri], location.dig(:range, :start, :line), location.dig(:range, :start, :character)]
+            next if seen.include?(key)
+
+            seen << key
+            locations << location
+          end
+        end.flatten
+      end
+
+      def interface_method_implementation_locations(interface_binding, interface_method)
+        seen = Set.new
+        @workspace.all_documents.filter_map do |doc_uri|
+          analysis = @workspace.get_analysis(doc_uri)
+          next unless analysis
+
+          analysis.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
+            next unless interfaces.any? { |candidate| same_interface_binding?(candidate, interface_binding) }
+
+            method = methods_for_receiver_type(analysis, receiver_type)[interface_method.name]
+            next unless method
+
+            module_name = receiver_module_name(receiver_type)
+            location = module_member_binding_location(doc_uri, module_name, interface_method.name, method)
+            location ||= module_member_definition_location(doc_uri, module_name, interface_method.name)
+            next unless location
+
+            key = [location[:uri], location.dig(:range, :start, :line), location.dig(:range, :start, :character)]
+            next if seen.include?(key)
+
+            seen << key
+            locations << location
+          end
+        end.flatten
+      end
+
+      def interface_receiver_definition_location(current_uri, receiver_type)
+        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+
+        if receiver_type.module_name.nil? || receiver_type.module_name.empty?
+          token = local_type_definition_token(current_uri, receiver_type.name)
+          token ||= @workspace.find_definition_token(current_uri, receiver_type.name)
+          return { uri: current_uri, range: token_to_range(token) } if token
+        end
+
+        module_member_definition_location(current_uri, receiver_type.module_name, receiver_type.name)
+      end
+
+      def receiver_module_name(receiver_type)
+        receiver_type = receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+
+        receiver_type.module_name
+      end
+
+      def local_type_definition_token(uri, name)
+        tokens = @workspace.get_tokens(uri)
+        return nil unless tokens
+
+        tokens.each_cons(2) do |kw_tok, id_tok|
+          next unless [:struct, :opaque].include?(kw_tok.type)
+          next unless id_tok.type == :identifier && id_tok.lexeme == name
+
+          return id_tok
+        end
+
+        nil
+      end
+
+      def same_interface_binding?(left, right)
+        left.name == right.name && left.module_name == right.module_name
+      end
+
       def resolve_local_hover_type(analysis, name, line, char)
         frame = enclosing_completion_frame(analysis, line)
         return nil unless frame
@@ -3821,6 +3989,7 @@ module MilkTea
       def symbol_kind(kind)
         case kind
         when 'function'   then 6
+        when 'interface'  then 11
         when 'struct'     then 5
         when 'union'      then 5
         when 'enum'       then 10
