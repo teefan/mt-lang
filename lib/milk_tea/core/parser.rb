@@ -666,13 +666,7 @@ module MilkTea
       unless check(:rbracket)
         loop do
           name = consume_name("expected type parameter name").lexeme
-          constraints = if match(:implements)
-                          parsed = [parse_qualified_name]
-                          parsed << parse_qualified_name while match(:and)
-                          parsed
-                        else
-                          []
-                        end
+          constraints = parse_type_param_constraints
           params << AST::TypeParam.new(name:, constraints:)
           break unless match(:comma)
         end
@@ -680,6 +674,36 @@ module MilkTea
 
       consume(:rbracket, "expected ']' after type parameters")
       params
+    end
+
+    def parse_type_param_constraints
+      constraints = []
+      interface_constraint_mode = false
+
+      if match(:implements)
+        interface_constraint_mode = true
+        constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
+      elsif match(:defaults)
+        constraints << AST::TypeParamConstraint.new(kind: :defaults)
+      else
+        return constraints
+      end
+
+      while match(:and)
+        if match(:implements)
+          interface_constraint_mode = true
+          constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
+        elsif match(:defaults)
+          interface_constraint_mode = false
+          constraints << AST::TypeParamConstraint.new(kind: :defaults)
+        elsif interface_constraint_mode
+          constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
+        else
+          raise error(peek, "expected constraint after 'and'")
+        end
+      end
+
+      constraints
     end
 
     def parse_implements_clause

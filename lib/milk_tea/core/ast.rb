@@ -8,6 +8,10 @@ module MilkTea
       end
     end
 
+    TypeParamConstraint = Data.define(:kind, :interface_ref) do
+      def initialize(kind:, interface_ref: nil) = super
+    end
+
     TypeParam = Data.define(:name, :constraints) do
       def initialize(name:, constraints: []) = super
     end

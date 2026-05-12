@@ -185,7 +185,28 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal ["Damageable"], struct_decl.implements.map(&:to_s)
 
     assert_instance_of MilkTea::AST::FunctionDef, function_decl
-    assert_equal ["Damageable"], function_decl.type_params.first.constraints.map(&:to_s)
+    assert_equal [[:interface, "Damageable"]], function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] }
+  end
+
+  def test_parses_default_and_interface_type_param_constraints
+    source = <<~MT
+      module demo.defaults
+
+      interface ScreenState:
+          function draw() -> void
+
+      function make_default[T defaults and implements ScreenState]() -> T:
+          return default[T]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    function_decl = ast.declarations[1]
+
+    assert_instance_of MilkTea::AST::FunctionDef, function_decl
+    assert_equal(
+      [[:defaults, nil], [:interface, "ScreenState"]],
+      function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] },
+    )
   end
 
   def test_parses_module_scope_vars_with_and_without_initializer

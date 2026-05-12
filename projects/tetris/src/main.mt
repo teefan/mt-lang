@@ -78,12 +78,6 @@ const cells_z_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1,
 const cells_z_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
 
 
-function make_game() -> Game:
-    var game = zero[Game]
-    game.reset()
-    return game
-
-
 function make_paused_screen(game: Game) -> PausedScreen:
     return PausedScreen(
         blink_timer = 0.0,
@@ -182,7 +176,19 @@ function gravity_seconds(level: int) -> float:
     return 0.18
 
 
+methods Piece:
+    static function default() -> Piece:
+        return Piece(kind = piece_t, rotation = 0, x = 3, y = 0)
+
+
 methods TitleScreen:
+    static function default() -> TitleScreen:
+        return TitleScreen(
+            blink_timer = 0.0,
+            start_requested = false,
+        )
+
+
     editable function update(effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
@@ -235,6 +241,22 @@ methods PausedScreen:
 
 
 methods Game:
+    static function default() -> Game:
+        var game = Game(
+            board = zero[array[int, 200]],
+            active = default[Piece],
+            next_kind = random_kind(),
+            score = 0,
+            lines = 0,
+            level = 0,
+            drop_timer = 0.0,
+            cleared_flash = 0.0,
+            game_over = false,
+        )
+        game.spawn_next_piece()
+        return game
+
+
     editable function reset():
         this.board = zero[array[int, 200]]
         this.next_kind = random_kind()
@@ -508,7 +530,7 @@ function main() -> int:
     let clear_sound = rl.load_sound("assets/line_clear.wav")
     defer rl.unload_sound(clear_sound)
 
-    var title: TitleScreen
+    var title = default[TitleScreen]
     var paused: PausedScreen
     var game: Game
     var showing_title = true
@@ -518,18 +540,15 @@ function main() -> int:
         if showing_title:
             run_screen_frame(title, tiles, clear_sound)
             if title.start_requested:
-                game = make_game()
-                paused = zero[PausedScreen]
+                game = default[Game]
                 showing_title = false
                 showing_pause = false
         elif showing_pause:
             run_screen_frame(paused, tiles, clear_sound)
             if paused.resume_requested:
-                paused = zero[PausedScreen]
                 showing_pause = false
             elif paused.exit_requested:
-                title = zero[TitleScreen]
-                paused = zero[PausedScreen]
+                title = default[TitleScreen]
                 showing_pause = false
                 showing_title = true
         else:
@@ -538,7 +557,7 @@ function main() -> int:
                 paused = make_paused_screen(game)
                 showing_pause = true
             elif rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
-                title = zero[TitleScreen]
+                title = default[TitleScreen]
                 showing_title = true
 
     return 0

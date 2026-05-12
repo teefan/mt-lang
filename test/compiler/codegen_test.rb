@@ -487,6 +487,37 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(\(\(void\)box, demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\)\) \{/, generated)
   end
 
+  def test_generate_c_for_default_specialization_with_override_and_zero_fallback
+    source = <<~MT
+      module demo.default_codegen
+
+      struct Player:
+          hp: int
+
+      methods Player:
+          static function default() -> Player:
+              return Player(hp = 100)
+
+      struct Plain:
+          hp: int
+
+      function make_default[T]() -> T:
+          return default[T]
+
+      function main() -> int:
+          let player = make_default[Player]()
+          let plain = make_default[Plain]()
+          return player.hp + plain.hp
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/static demo_default_codegen_Player demo_default_codegen_make_default_demo_default_codegen_Player\(void\)/, generated)
+    assert_match(/return demo_default_codegen_Player_default\(\);/, generated)
+    assert_match(/static demo_default_codegen_Plain demo_default_codegen_make_default_demo_default_codegen_Plain\(void\)/, generated)
+    assert_match(/return \(demo_default_codegen_Plain\) \{ 0 \};/, generated)
+  end
+
   def test_generate_c_for_async_with_control_flow
     source = <<~MT
       module demo.async_flow_codegen
@@ -3487,6 +3518,39 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/mt_span_char __mt_foreign_arg_public_1 = \(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
     assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
+  end
+
+  def test_generate_c_for_generic_functions_with_defaults_and_interface_constraints
+    source = [
+      "module demo.defaults_constraint_codegen",
+      "",
+      "interface Named:",
+      "    function value() -> int",
+      "",
+      "struct Counter implements Named:",
+      "    count: int",
+      "",
+      "methods Counter:",
+      "    static function default() -> Counter:",
+      "        return Counter(count = 7)",
+      "",
+      "    function value() -> int:",
+      "        return this.count",
+      "",
+      "function make_and_read[T defaults and implements Named]() -> int:",
+      "    let item = default[T]",
+      "    return item.value()",
+      "",
+      "function main() -> int:",
+      "    return make_and_read[Counter]()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_defaults_constraint_codegen_make_and_read_demo_defaults_constraint_codegen_Counter\(void\)/, generated)
+    assert_match(/demo_defaults_constraint_codegen_Counter item = demo_defaults_constraint_codegen_Counter_default\(\);/, generated)
+    assert_match(/return demo_defaults_constraint_codegen_Counter_value\(item\);/, generated)
   end
 
   def test_generate_c_for_generic_foreign_defs_with_str_builder_public_capacity_mapping

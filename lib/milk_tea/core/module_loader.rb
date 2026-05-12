@@ -261,7 +261,8 @@ module MilkTea
 
         interfaces.each do |interface|
           visible = exported_method_receiver?(receiver_type, analysis, exported_types) &&
-            exported_interface_binding?(interface, analysis, exported_interfaces)
+            exported_interface_binding?(interface, analysis, exported_interfaces) &&
+            exported_interface_methods?(receiver_type, interface, analysis, exported_types)
           if visible
             public_interfaces << interface
           else
@@ -274,6 +275,15 @@ module MilkTea
       end
 
       [implemented_interfaces.freeze, private_implemented_interfaces.freeze]
+    end
+
+    def exported_interface_methods?(receiver_type, interface, analysis, exported_types)
+      return false unless exported_method_receiver?(receiver_type, analysis, exported_types)
+
+      interface.methods.each_key.all? do |method_name|
+        binding = analysis.methods.fetch(receiver_type, {})[method_name]
+        binding && binding.ast.respond_to?(:visibility) && binding.ast.visibility == :public
+      end
     end
 
     def exported_interface_binding?(interface, analysis, exported_interfaces)

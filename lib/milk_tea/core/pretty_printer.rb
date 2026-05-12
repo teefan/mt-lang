@@ -404,9 +404,31 @@ module MilkTea
         rendered = type_params.map do |type_param|
           next type_param.name if type_param.constraints.empty?
 
-          "#{type_param.name} implements #{type_param.constraints.map(&:to_s).join(' and ')}"
+          "#{type_param.name} #{render_type_param_constraints(type_param.constraints)}"
         end
         "[#{rendered.join(', ')}]"
+      end
+
+      def render_type_param_constraints(constraints)
+        parts = []
+        index = 0
+        while index < constraints.length
+          constraint = constraints[index]
+          if constraint.kind == :interface
+            interfaces = [constraint.interface_ref.to_s]
+            index += 1
+            while index < constraints.length && constraints[index].kind == :interface
+              interfaces << constraints[index].interface_ref.to_s
+              index += 1
+            end
+            parts << "implements #{interfaces.join(' and ')}"
+          else
+            parts << "defaults"
+            index += 1
+          end
+        end
+
+        parts.join(' and ')
       end
 
       def render_implements_clause(implements)

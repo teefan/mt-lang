@@ -142,6 +142,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/missing method is_alive/, error.message)
   end
 
+  def test_rejects_explicit_interface_conformance_with_generic_method
+    source = <<~MT
+      module demo.interfaces
+
+      interface Drawable:
+          function draw() -> void
+
+      struct Screen implements Drawable:
+          ticks: int
+
+      methods Screen:
+          function draw[T]() -> void:
+              return
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot be implemented by generic methods/, error.message)
+  end
+
   def test_type_checks_multiple_interfaces_on_single_type
     source = <<~MT
       module demo.interfaces
@@ -178,6 +200,58 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_defaults_constraint_with_interface_requirement
+    source = <<~MT
+      module demo.defaults
+
+      interface Named:
+          function value() -> int
+
+      struct Counter implements Named:
+          count: int
+
+      methods Counter:
+          static function default() -> Counter:
+              return Counter(count = 7)
+
+          function value() -> int:
+              return this.count
+
+      function make_and_read[T defaults and implements Named]() -> int:
+          let item = default[T]
+          return item.value()
+
+      function main() -> int:
+          return make_and_read[Counter]()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_defaults_constraint_without_explicit_default_provider
+    source = <<~MT
+      module demo.defaults_bad
+
+      struct Plain:
+          value: int
+
+      function make_default[T defaults]() -> T:
+          return default[T]
+
+      function main() -> int:
+          let plain = make_default[Plain]()
+          return plain.value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type demo\.defaults_bad\.Plain does not satisfy defaults constraint for function make_default/, error.message)
   end
 
   def test_type_checks_imported_public_interface_constraints
@@ -266,6 +340,55 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_program_source(root_source, imported_sources)
 
     assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_downstream_imported_interface_conformance_with_private_methods
+    root_source = <<~MT
+      module demo.main
+
+      import std.contracts as contracts
+      import std.entities as entities
+
+      function damage_one[T implements contracts.Damageable](target: ref[T], amount: int) -> void:
+          if target.is_alive():
+              target.take_damage(amount)
+
+      function main() -> int:
+          var npc = entities.NPC(hp = 5)
+          damage_one(npc, 2)
+          return npc.hp
+    MT
+
+    imported_sources = {
+      "std/contracts.mt" => <<~MT,
+        module std.contracts
+
+        public interface Damageable:
+            editable function take_damage(amount: int) -> void
+            function is_alive() -> bool
+      MT
+      "std/entities.mt" => <<~MT,
+        module std.entities
+
+        import std.contracts as contracts
+
+        public struct NPC implements contracts.Damageable:
+            hp: int
+
+        methods NPC:
+            editable function take_damage(amount: int):
+                this.hp -= amount
+
+            function is_alive() -> bool:
+                return this.hp > 0
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(root_source, imported_sources)
+    end
+
+    assert_match(/type std\.entities\.NPC does not implement interface Damageable for function damage_one/, error.message)
   end
 
   def test_type_checks_short_circuit_nullable_flow_narrowing
@@ -4312,6 +4435,75 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/zero does not support type void/, error.message)
+  end
+
+  def test_type_checks_default_specialization_with_associated_override_and_zero_fallback
+    source = <<~MT
+      module demo.default_builtin
+
+      struct Player:
+          hp: int
+
+      methods Player:
+          static function default() -> Player:
+              return Player(hp = 100)
+
+      struct Plain:
+          hp: int
+
+      function make_default[T]() -> T:
+          return default[T]
+
+      function main() -> int:
+          let player = make_default[Player]()
+          let plain = make_default[Plain]()
+          return player.hp + plain.hp
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Player")
+    assert_equal true, result.types.key?("Plain")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_default_call_form
+    source = <<~MT
+      module demo.default_call_form
+
+      function main() -> int:
+          let value = default[int]()
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/default\[T\]\(\) is no longer supported; use default\[T\]/, error.message)
+  end
+
+  def test_rejects_default_override_with_parameters
+    source = <<~MT
+      module demo.bad_default_override
+
+      struct Player:
+          hp: int
+
+      methods Player:
+          static function default(seed: int) -> Player:
+              return Player(hp = seed)
+
+      function main() -> int:
+          let player = default[Player]
+          return player.hp
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/default\[demo\.bad_default_override\.Player\] requires demo\.bad_default_override\.Player\.default\(\) to take 0 arguments/, error.message)
   end
 
   def test_rejects_extern_array_params_and_returns

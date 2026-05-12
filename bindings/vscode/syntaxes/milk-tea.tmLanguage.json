@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "$schema": "https://json.schemastore.org/tmlanguage.json",
   "name": "Milk Tea",
   "scopeName": "source.milk-tea",
   "fileTypes": ["mt"],
@@ -279,27 +279,27 @@
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|methods|type|const|let|var|external|foreign|static|static_assert|edit|include|link|align)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|methods|type|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link|align)\\b"
     },
 
     "keyword-operator": {
       "name": "keyword.operator.word.milk-tea",
-      "match": "\\b(and|or|not|as|in|size_of|align_of|offset_of|consuming|inout|out)\\b"
+      "match": "\\b(and|or|not|as|in|implements|defaults|size_of|align_of|offset_of|consuming|inout|out)\\b"
     },
 
     "keyword-modifier": {
       "name": "storage.modifier.milk-tea",
-      "match": "\\b(public|packed|async)\\b"
+      "match": "\\b(public|packed|async|editable)\\b"
     },
 
     "keyword-builtin": {
       "name": "support.function.builtin.milk-tea",
-      "match": "\\b(ref_of|const_ptr_of|ptr_of|read)\\b"
+      "match": "\\b(ref_of|const_ptr_of|ptr_of|read|fatal|reinterpret|zero|default)\\b"
     },
 
     "type-primitive": {
       "name": "support.type.primitive.milk-tea",
-      "match": "\\b(bool|byte|char|byte|short|int|long|ubyte|ushort|uint|ulong|ptr_int|ptr_uint|float|double|void|str|cstr)\\b"
+      "match": "\\b(bool|byte|ubyte|char|short|ushort|int|uint|long|ulong|ptr_int|ptr_uint|float|double|void|str|cstr)\\b"
     },
 
     "constant-language": {
@@ -348,10 +348,24 @@
           }
         },
         {
-          "comment": "Type annotation after colon — param or let/var",
-          "match": "(?<=:)\\s*([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)",
+          "comment": "Parameter type annotation after colon",
+          "match": "([,(]\\s*(?:(?:in|inout|out|consuming)\\s+)?[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*)([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)(?=\\s*(?:as\\b|,|\\)))",
           "captures": {
-            "1": { "name": "entity.name.type.milk-tea" }
+            "2": { "name": "entity.name.type.milk-tea" }
+          }
+        },
+        {
+          "comment": "Local or constant type annotation after colon",
+          "match": "((?:\\bpublic\\s+)?(?:let|var|const)\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*)([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)(?=\\s*(?:=|$|#))",
+          "captures": {
+            "2": { "name": "entity.name.type.milk-tea" }
+          }
+        },
+        {
+          "comment": "Field declaration type annotation after colon",
+          "match": "(^\\s*(?!(?:if|elif|else|for|in|while|break|continue|return|match|defer|unsafe|await|then|module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|methods|type|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link|align|public|packed|async|editable)\\b)[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*)([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)(?=\\s*(?:$|#))",
+          "captures": {
+            "2": { "name": "entity.name.type.milk-tea" }
           }
         },
         {
