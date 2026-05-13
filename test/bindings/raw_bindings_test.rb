@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc sdl3 box2d cjson libuv steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno sdl3 box2d cjson libuv steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -191,6 +191,15 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["-D_GNU_SOURCE"], registry.fetch("libc").compiler_flags
     assert_equal "bindgen:check:libc", registry.fetch("libc").check_task_name
     assert_equal({ "__endptr" => "ptr[ptr[char]]?" }, registry.fetch("libc").function_param_type_overrides.fetch("strtoul"))
+    assert_equal "std.c.ctype", registry.fetch("ctype").module_name
+    assert_equal ["mt_ctype_"], registry.fetch("ctype").declaration_name_prefixes
+    assert_equal "bindgen:check:ctype", registry.fetch("ctype").check_task_name
+    assert_includes registry.fetch("ctype").header_candidates.first, "/std/c/ctype_bindgen.h"
+    assert_equal "std.c.errno", registry.fetch("errno").module_name
+    assert_equal ["MT_ERRNO_", "mt_errno_"], registry.fetch("errno").declaration_name_prefixes
+    assert_equal "bindgen:check:errno", registry.fetch("errno").check_task_name
+    assert_equal "cstr?", registry.fetch("errno").function_return_type_overrides.fetch("mt_errno_strerror")
+    assert_includes registry.fetch("errno").header_candidates.first, "/std/c/errno_bindgen.h"
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
 

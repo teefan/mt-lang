@@ -16,7 +16,10 @@ external module std.c.stdio:
     external function vprintf(format: cstr, args: va_list) -> int
     external function vfprintf(stream: FILE?, format: cstr, args: va_list) -> int
     external function fopen(path: cstr, mode: cstr) -> FILE?
+    external function tmpfile() -> FILE?
     external function fclose(stream: FILE?) -> int
+    external function rename(old_path: cstr, new_path: cstr) -> int
+    external function remove(path: cstr) -> int
     external function fgetc(stream: FILE?) -> int
     external function fputc(ch: int, stream: FILE?) -> int
     external function fgets(text: ptr[char], count: int, stream: FILE?) -> ptr[char]?

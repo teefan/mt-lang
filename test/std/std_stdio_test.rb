@@ -193,6 +193,69 @@ class MilkTeaStdStdioTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_stdio_temp_and_path_wrappers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_stdio_temp_and_paths",
+      "",
+      "import std.stdio as stdio",
+      "import std.str as str",
+      "",
+      "function main() -> int:",
+      "    let temp = stdio.temporary_file()",
+      "    if temp == null:",
+      "        return 1",
+      "    if stdio.write_string(\"temp\", temp) < 0:",
+      "        return 2",
+      "    stdio.rewind(temp)",
+      "    var temp_line = zero[array[char, 8]]",
+      "    if stdio.read_line(ptr_of(temp_line[0]), 8, temp) == null:",
+      "        return 3",
+      "    let temp_view = str.chars_as_str(ptr_of(temp_line[0]))",
+      "    if not temp_view.equal(\"temp\"):",
+      "        return 4",
+      "    if stdio.close(temp) != 0:",
+      "        return 5",
+      "",
+      "    let writer = stdio.open(\"rename-source.txt\", \"w\")",
+      "    if writer == null:",
+      "        return 6",
+      "    if stdio.write_string(\"done\", writer) < 0:",
+      "        return 7",
+      "    if stdio.close(writer) != 0:",
+      "        return 8",
+      "    if stdio.rename(\"rename-source.txt\", \"rename-target.txt\") != 0:",
+      "        return 9",
+      "",
+      "    let reader = stdio.open(\"rename-target.txt\", \"r\")",
+      "    if reader == null:",
+      "        return 10",
+      "    var renamed = zero[array[char, 8]]",
+      "    if stdio.read_line(ptr_of(renamed[0]), 8, reader) == null:",
+      "        return 11",
+      "    if stdio.close(reader) != 0:",
+      "        return 12",
+      "    let renamed_view = str.chars_as_str(ptr_of(renamed[0]))",
+      "    if not renamed_view.equal(\"done\"):",
+      "        return 13",
+      "    if stdio.remove(\"rename-target.txt\") != 0:",
+      "        return 14",
+      "    if stdio.open(\"rename-target.txt\", \"r\") != null:",
+      "        return 15",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

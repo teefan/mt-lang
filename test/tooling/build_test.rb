@@ -962,8 +962,10 @@ class MilkTeaBuildTest < Minitest::Test
         "    now = ctime.time(ptr_of(now))",
         "    let tm_info = ctime.localtime(ptr_of(now))",
         "    var time_buffer = zero[array[char, 9]]",
+        "    if tm_info == null:",
+        "        return 1",
         "    unsafe:",
-        "        ctime.strftime(ptr_of(time_buffer[0]), 9, time_format, tm_info)",
+        "        ctime.strftime(ptr_of(time_buffer[0]), 9, time_format, ptr[ctime.tm]<-tm_info)",
         "    return 0",
         "",
       ].join("\n"))

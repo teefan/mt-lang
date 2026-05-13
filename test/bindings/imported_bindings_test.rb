@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks", "libc", "time"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -55,15 +55,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes registry.fetch("steamworks").binding_path, "/std/steamworks.mt"
     assert_includes registry.fetch("steamworks").policy_path, "/bindings/imported/steamworks.binding.json"
 
-    assert_equal "std.libc", registry.fetch("libc").module_name
-    assert_equal "std.c.libc", registry.fetch("libc").raw_module_name
-    assert_includes registry.fetch("libc").binding_path, "/std/libc.mt"
-    assert_includes registry.fetch("libc").policy_path, "/bindings/imported/libc.binding.json"
-
-    assert_equal "std.time", registry.fetch("time").module_name
-    assert_equal "std.c.time", registry.fetch("time").raw_module_name
-    assert_includes registry.fetch("time").binding_path, "/std/time.mt"
-    assert_includes registry.fetch("time").policy_path, "/bindings/imported/time.binding.json"
   end
 
   def test_checked_in_libuv_binding_matches_policy_and_loads
@@ -95,36 +86,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function ip4_addr\(ip: str as cstr, port: int, out addr: sockaddr_in\) -> int = c\.uv_ip4_addr$/, source)
     assert_match(/^public foreign function dlsym\(lib: ptr\[uv_lib_t\], name: str as cstr, out ptr: ptr\[void\]\?\) -> int = c\.uv_dlsym$/, source)
     assert_match(/^public foreign function utf16_to_wtf8\(utf_16: const_ptr\[ushort\], utf_16_len: ptr_int, out wtf_8_ptr: ptr\[char\]\?, out wtf_8_len_ptr: ptr_uint\) -> int = c\.uv_utf16_to_wtf8$/, source)
-  end
-
-  def test_checked_in_libc_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("libc")
-
-    assert_includes binding.check!, "/std/c/libc.mt"
-
-    source = File.read(binding.binding_path)
-    assert_match(/^module std\.libc$/, source)
-    assert_match(/^import std\.c\.libc as c$/, source)
-    assert_match(/^public type IntDiv = c\.div_t$/, source)
-    assert_match(/^public type PtrIntDiv = c\.ldiv_t$/, source)
-    assert_match(/^public type LongDiv = c\.lldiv_t$/, source)
-    assert_match(/^public foreign function parse_int\(text: str as cstr\) -> int = c\.atoi$/, source)
-    assert_match(/^public foreign function parse_long\(text: str as cstr\) -> ptr_int = c\.atol$/, source)
-    assert_match(/^public foreign function parse_long_long\(text: str as cstr\) -> long = c\.atoll$/, source)
-    assert_match(/^public foreign function parse_double_to_end\(text: str as cstr, end_ptr: ptr\[ptr\[char\]\]\?\) -> double = c\.strtod$/, source)
-    assert_match(/^public foreign function get_environment_variable\(name: str as cstr\) -> cstr\? = c\.getenv$/, source)
-    assert_match(/^public foreign function create_temp_file\[N\]\(template: str_builder\[N\] as ptr\[char\]\) -> int = c\.mkstemp$/, source)
-    assert_match(/^public foreign function create_temp_file_with_suffix\[N\]\(template: str_builder\[N\] as ptr\[char\], suffix_length: int\) -> int = c\.mkstemps$/, source)
-    assert_match(/^public foreign function create_temp_directory\[N\]\(template: str_builder\[N\] as ptr\[char\]\) -> cstr\? = c\.mkdtemp$/, source)
-    assert_match(/^public foreign function resolve_path\[N\]\(name: str as cstr, resolved: str_builder\[N\] as ptr\[char\]\) -> cstr\? = c\.realpath$/, source)
-    refute_match(/^public foreign function atoi\(/, source)
-    refute_match(/^public foreign function atol\(/, source)
-    refute_match(/^public foreign function atoll\(/, source)
-    refute_match(/^public foreign function putenv\(/, source)
-    refute_match(/^public foreign function mktemp\(/, source)
-    refute_match(/^public foreign function strtoq\(/, source)
-    refute_match(/^public foreign function strtouq\(/, source)
-    refute_match(/^public foreign function __ctype_get_mb_cur_max\(/, source)
   end
 
   def test_checked_in_sdl3_binding_matches_policy_and_loads
