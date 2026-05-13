@@ -458,6 +458,118 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("read_handle")
   end
 
+  def test_type_checks_let_else_status_success_binding
+    source = <<~MT
+      module demo.status_flow
+
+      import std.status as status
+
+      function parse(input: int) -> status.Status[int, int]:
+          if input < 0:
+              return status.Status[int, int].err(error= 7)
+          return status.Status[int, int].ok(value= input + 1)
+
+      function read_value(input: int) -> int:
+          let value = parse(input) else:
+              return 7
+          return value + 10
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_value")
+  end
+
+  def test_type_checks_let_else_status_error_binding
+    source = <<~MT
+      module demo.status_flow
+
+      import std.status as status
+
+      function parse(input: int) -> status.Status[int, int]:
+          if input < 0:
+              return status.Status[int, int].err(error= 7)
+          return status.Status[int, int].ok(value= input + 1)
+
+      function read_value(input: int) -> int:
+          let value = parse(input) else as error:
+              return error
+          return value + 10
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_value")
+  end
+
+  def test_type_checks_let_else_status_void_discard_binding
+    source = <<~MT
+      module demo.status_void_flow
+
+      import std.status as status
+
+      function done() -> void:
+          return
+
+      function parse(input: int) -> status.Status[void, int]:
+          if input < 0:
+              return status.Status[void, int].err(error= 7)
+          return status.Status[void, int].ok(value= done())
+
+      function read_value(input: int) -> int:
+          let _ = parse(input) else as error:
+              return error
+          return 10
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_value")
+  end
+
+  def test_rejects_let_else_discard_binding_with_type_annotation
+    source = <<~MT
+      module demo.status_void_flow
+
+      import std.status as status
+
+      function done() -> void:
+          return
+
+      function parse() -> status.Status[void, int]:
+          return status.Status[void, int].ok(value= done())
+
+      function main() -> int:
+          let _: void = parse() else:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/let-else discard binding _ cannot have a type annotation/, error.message)
+  end
+
+  def test_rejects_let_else_error_binding_for_nullable_initializer
+    source = <<~MT
+      module demo.null_flow
+
+      function read_handle(handle: ptr[int]?) -> int:
+          let value = handle else as error:
+              return 0
+          unsafe:
+              return read(value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/let-else error binding for value requires std\.status\.Status\[T, E\]/, error.message)
+  end
+
   def test_type_checks_for_loop_over_custom_iterator_protocol
     source = <<~MT
       module demo.iterator_for

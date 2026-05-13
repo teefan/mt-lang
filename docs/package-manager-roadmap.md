@@ -1,6 +1,6 @@
 # Package Manager Roadmap
 
-This document defines the next implementation steps for Milk Tea package management after the current exact-version, path, pinned-git, lockfile, and source-cache model.
+This document records the current implementation status and remaining follow-up work for Milk Tea package management.
 
 ## Goals
 
@@ -14,17 +14,18 @@ This document defines the next implementation steps for Milk Tea package managem
 
 The current implementation is intentionally simple:
 
-- manifests support only local `path`, pinned `git` + `rev`, and exact registry versions
-- `PackageGraph` rejects duplicate package names anywhere in the graph
-- `package.lock` records dependency edges by package name only
-- `ModuleLoader` resolves imports by scanning a flat list of `source_root` directories
-- graph-aware import checks match dependencies by package name only
+- manifests support local `path`, pinned `git` + `rev`, and exact or ranged registry versions
+- live local-path graphs and `package.lock` graphs can both carry duplicate package namespaces as distinct package instances
+- exact and ranged registry dependencies now resolve per dependency instance once source selection is explicit
+- `package.lock` schema v2 records dependency edges by package instance id while still keeping readable dependency names
+- live compiler/LSP package resolution now follows the importer's exact dependency edge when a package graph is available
+- live direct resolution remains fetch-free; cache-backed dependencies still flow through `deps lock` plus `--locked` or `--frozen`
 
-Those choices make the current model predictable, but they also mean a real multi-version dependency solver cannot fit on top of the current graph and loader unchanged.
+Those choices keep the current model predictable while allowing duplicate package namespaces across fixed and ranged registry graphs. The core package-manager architecture is now landed; the remaining work is mostly diagnostics and UX polish.
 
 ## Core Design Decision
 
-Milk Tea should move to a two-layer dependency model:
+Milk Tea now uses a two-layer dependency model:
 
 1. source selection
 2. version solving
@@ -33,25 +34,23 @@ Source selection decides how a dependency can be satisfied:
 
 - local `path` dependencies are fixed local packages
 - pinned git dependencies are fixed source identities
-- registry dependencies are solver-managed candidates
+- exact registry versions are fixed source identities
+- ranged registry dependencies are solver-managed candidates resolved per dependency edge
 
-Version solving should apply only to registry dependencies. Path and pinned git sources should enter the solve as already-selected package instances that contribute additional dependency requirements from their manifests.
+Version solving applies only to registry dependencies. Path, pinned git, and exact registry sources enter the solve as already-selected package instances that contribute additional dependency requirements from their manifests.
 
-## Recommended Solver
+## Current Solver
 
-Milk Tea should implement a PubGrub-style solver rather than a naive DFS backtracker.
+Milk Tea currently uses a deterministic edge-aware DFS/backtracker for registry requirements.
 
-Reasons:
+Current properties:
 
-- deterministic selection order is easy to enforce
-- conflict explanations are much better than plain backtracking failures
-- range support naturally grows from exact-version support
-- future registry transports can reuse the same incompatibility model
+- it prefers the highest available registry version that satisfies each dependency edge
+- it backtracks through transitive descendants when a candidate's own dependency graph fails
+- different importer package instances may resolve the same package namespace to different versions when needed
+- selective `deps update NAME...` keeps unrelated locked registry instances pinned by dependency edge, not just by package name
 
-The initial candidate ordering should stay simple and deterministic:
-
-- prefer the highest available registry version that satisfies the current requirement set
-- break ties by source priority only when different source kinds are ever allowed to compete for the same package name
+This is sufficient for the current package model because direct dependencies stay namespace-unique inside each package manifest. A future PubGrub-style layer would still be worthwhile if conflict explanations become a priority.
 
 ## Version Model
 
@@ -97,41 +96,38 @@ The registry abstraction should expose:
 - dependency requirements for each version
 - package metadata needed for lockfile rendering and diagnostics
 
-For the current filesystem registry, the first implementation can read this metadata directly from published package roots. A future HTTP registry can provide the same information through an index without changing solver behavior.
+The current implementation can read this metadata from published filesystem registry roots or from a static HTTP mirror that serves `packages/<name>/versions.txt` plus package archives. A richer HTTP registry can still provide the same information through its own index without changing solver behavior.
 
 ## The Duplicate Package Name Rule
 
-The current rule is too strict for real range solving:
+The old whole-graph uniqueness rule is gone.
 
-- it blocks transitive duplicate versions entirely
-- it forces the entire graph to collapse to one resolved version per package name
-- it makes range support equivalent to global version unification only
-
-That rule should be changed, but not removed blindly.
-
-### What should remain true
-
-Milk Tea should keep this rule:
+The current rule set is:
 
 - one package instance cannot declare two direct dependencies that expose the same package namespace
+- transitive duplicate package namespaces are allowed when different importer package instances resolve to different sources or versions
 
-That restriction should stay because Milk Tea imports are written against package namespaces such as `import teefan.ui.layout`, not dependency aliases. Two direct dependencies with the same namespace would make import resolution ambiguous.
-
-### What should change
-
-Milk Tea should drop this rule:
-
-- one package name per whole graph
-
-Transitive duplicates must be allowed if different importer package instances resolve to different compatible versions.
+That restriction stays because Milk Tea imports are written against package namespaces such as `import teefan.ui.layout`, not dependency aliases. Two direct dependencies with the same namespace would make import resolution ambiguous.
 
 ## Required Graph And Loader Refactor
 
-Supporting transitive duplicate versions requires more than a solver.
+Supporting transitive duplicate versions required more than a solver.
+
+Part of this refactor is now landed for locked graphs:
+
+- `package.lock` schema v2 records stable package instance ids and dependency edges by instance id
+- locked compiler and LSP paths resolve package imports through the importer's exact dependency edge instead of flat source-root order
+
+That refactor is also landed for live local-path graphs:
+
+- `PackageGraph` no longer rejects transitive duplicate package namespaces when they resolve to different package roots or registry versions
+- live CLI and LSP analysis paths pass that graph into `ModuleLoader`, so each importer resolves package imports against its own direct dependency edge
+
+The main remaining follow-up is polish around diagnostics and UX, not graph identity or version-selection correctness.
 
 ### Package graph changes
 
-`PackageGraph` should move from package-name uniqueness to package-instance identity.
+`PackageGraph` now carries explicit package-instance identity through fixed-source and solver-produced graphs.
 
 Recommended node identity fields:
 
@@ -144,9 +140,9 @@ Edges should target specific package instances, not just package names.
 
 ### Lockfile changes
 
-`package.lock` will need a schema upgrade.
+`package.lock` now uses schema version 2 for instance-aware graphs.
 
-`schema_version = 2` should record:
+The current schema records:
 
 - a stable package instance id for every resolved package
 - source identity fields
@@ -157,9 +153,9 @@ Name-only dependency arrays are not sufficient once the graph can contain more t
 
 ### Module loader changes
 
-`ModuleLoader` must stop resolving imports by scanning a flat list of every `source_root`.
+Locked `ModuleLoader` paths and live package-graph-backed paths now resolve package imports by exact dependency instance across local-path, exact-registry, and ranged-registry graphs.
 
-Instead, import resolution should work like this:
+The locked resolution rule is:
 
 1. find the importer package instance
 2. if the import is inside the importer's own namespace, resolve against the importer's source root
@@ -167,9 +163,7 @@ Instead, import resolution should work like this:
 4. resolve only inside that dependency instance's source root
 5. keep `std` resolution separate from package-instance resolution
 
-This is the critical change that makes transitive duplicate versions safe.
-
-Without it, two resolved versions of the same package namespace would collide in the current flat root search.
+This is the critical change that makes transitive duplicate versions safe once the graph is resolved.
 
 ## Manifest Shape
 
@@ -247,44 +241,20 @@ If the user wants to change a requirement, Milk Tea should support either:
 - `mtc deps add NAME@NEW_REQ` for an existing dependency
 - or a future `mtc deps set NAME@NEW_REQ`
 
-## Recommended Delivery Plan
+## Delivery Status
 
-### Phase 1: Real requirements with global unification
+### Landed
 
-This phase is the fastest shippable improvement.
+- `PackageVersion` and `PackageVersionReq` support exact, bounded, caret, tilde, and shorthand requirement syntax
+- `deps add`, `deps remove`, `deps lock`, `deps update`, `deps fetch`, and `deps publish` are implemented
+- `package.lock` schema v2 records package instance ids and dependency edges by instance id
+- locked compiler, CLI, and LSP flows resolve imports through exact dependency instances
+- ranged registry dependencies now resolve per dependency edge, allowing transitive duplicate versions when needed
+- selective `deps update NAME...` keeps unrelated locked registry instances pinned by dependency edge
 
-- add `PackageVersion` and `PackageVersionReq`
-- allow registry requirement syntax beyond exact versions
-- implement a real solver
-- keep the current global duplicate-package-name rule for now
-- add `deps add`, `deps remove`, and `deps update`
-- keep the current lockfile shape if one resolved version per package name is still enforced
+### Open Follow-Up
 
-This delivers exact, exact-or-higher, caret, tilde, and bounded ranges quickly, as long as the graph can be unified to one version per package namespace.
-
-### Phase 2: Package-instance-aware resolution
-
-This phase lifts the real architectural blocker.
-
-- add package instance ids
-- change lockfile edges from names to ids
-- remove flat source-root import scanning for package dependencies
-- allow transitive duplicate versions
-- keep direct duplicate namespaces rejected
-
-### Phase 3: Diagnostics and policy polish
-
-- add solver conflict explanations to CLI errors
+- add better solver conflict explanations to CLI errors
 - add `deps why` and `deps outdated`
-- add selective update policies if needed
 - decide whether dependency aliases should ever participate in language import syntax
-
-## Recommended Immediate Next Steps
-
-1. Implement `PackageVersion` and `PackageVersionReq` with tests.
-2. Change manifest parsing so registry dependency strings accept requirement syntax instead of exact-only syntax.
-3. Introduce a registry metadata provider abstraction for listing available versions and dependency metadata.
-4. Add `deps add`, `deps remove`, and `deps update` using the existing single-version-per-name graph.
-5. After that lands, start the package-instance refactor before attempting transitive duplicate-version support.
-
-This sequence gives Milk Tea useful range solving and real UX quickly without pretending the current module loader can safely host duplicate package namespaces.
+- revisit any remaining module-indexing cleanup if future features need a global lookup across duplicate package instances

@@ -482,7 +482,8 @@ module MilkTea
           text += ": #{render_type(statement.type)}" if statement.type
           text += " = #{render_expression(statement.value)}" if statement.value
           if statement.else_body
-            line("#{text} else:")
+            else_header = statement.else_binding ? "else as #{statement.else_binding.name}:" : "else:"
+            line("#{text} #{else_header}")
             with_indent do
               statement.else_body.each { |nested| emit_statement(nested) }
             end

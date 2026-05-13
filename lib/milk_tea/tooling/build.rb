@@ -2,8 +2,11 @@
 
 require "fileutils"
 require "open3"
+require "rubygems/package"
 require "tempfile"
+require "zlib"
 
+require_relative "asset_pack"
 require_relative "debug_map"
 
 module MilkTea
@@ -55,14 +58,14 @@ module MilkTea
       </script>
     HTML
 
-    Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform)
+    Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, debug:, profile:, platform:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, debug:, profile:, platform:, bundle:, archive:).build
     end
 
-    def self.clean(path, output_path: nil, profile: nil, platform: nil)
+    def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
       new(
         path,
         output_path:,
@@ -72,7 +75,9 @@ module MilkTea
         module_roots: nil,
         debug: false,
         profile:,
-        platform:
+        platform:,
+        bundle:,
+        archive:
       ).clean
     end
 
@@ -83,12 +88,14 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       manifest = PackageManifest.load(path)
       @package_build = true
       @source_path = manifest.source_path
       @project_root = manifest.root_dir
       @package_name = manifest.package_name
+      @archive = archive
+      @bundle = bundle || archive
       if manifest.package_kind == :library
         raise BuildError, "cannot build library package #{manifest.package_name} as an executable"
       end
@@ -97,11 +104,18 @@ module MilkTea
       end
       @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || manifest.platform || host_platform)
+      validate_bundle_mode!
       @manifest_output_path = manifest.output_path
       @explicit_output_path = !output_path.nil?
-      resolved_output = output_path || manifest.output_path || default_package_output_path
-      @output_path = normalize_output_path(File.expand_path(resolved_output))
-      @preload_path = manifest.preload_path
+      if @bundle
+        @bundle_root = File.expand_path(output_path || manifest.output_path || default_package_bundle_root)
+        @output_path = File.join(@bundle_root, "#{@package_name}#{artifact_extension}")
+      else
+        @bundle_root = nil
+        resolved_output = output_path || manifest.output_path || default_package_output_path
+        @output_path = normalize_output_path(File.expand_path(resolved_output))
+      end
+      @assets_paths = manifest.assets_paths
       @html_template_path = manifest.html_template_path
       @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
@@ -116,12 +130,16 @@ module MilkTea
       @source_path = File.expand_path(path)
       @project_root = File.dirname(@source_path)
       @package_name = File.basename(@project_root).tr("-", "_")
+      @archive = archive
+      @bundle = bundle || archive
       @profile = normalize_profile(profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || host_platform)
+      validate_bundle_mode!
       @manifest_output_path = nil
       @explicit_output_path = !output_path.nil?
+      @bundle_root = nil
       @output_path = normalize_output_path(File.expand_path(output_path || default_source_output_path(@source_path)))
-      @preload_path = nil
+      @assets_paths = []
       @html_template_path = nil
       @cc = resolve_compiler(cc)
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
@@ -137,8 +155,10 @@ module MilkTea
         FileUtils.rm_rf(target_path)
       else
         clean_output_artifacts(target_path)
+        clean_staged_runtime_assets(target_path)
         FileUtils.rm_f(DebugMap.sidecar_path_for(@output_path))
       end
+      clean_bundle_archive
       target_path
     end
 
@@ -170,24 +190,39 @@ module MilkTea
           compile(@keep_c_path, compiler_flags, link_flags)
         end
         debug_map.write(debug_map_path)
-        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
+        stage_runtime_assets
+        archive_path = write_bundle_archive
+        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:)
       end
 
       compile_generated_c(compiled_c, compiler_flags, link_flags)
 
       debug_map.write(debug_map_path)
+      stage_runtime_assets
+      archive_path = write_bundle_archive
 
-      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform)
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:)
     end
 
     private
 
     def clean_target_path
       if @package_build && !@explicit_output_path && @manifest_output_path.nil?
+        return File.join(@project_root, "build", "dist") if @bundle
+
         File.join(@project_root, "build")
+      elsif @bundle
+        @bundle_root
       else
         @output_path
       end
+    end
+
+    def validate_bundle_mode!
+      return unless @bundle
+
+      raise BuildError, "bundle mode requires a package build" unless @package_build
+      raise BuildError, "bundle mode is supported only for native package builds" if target_wasm?
     end
 
     def ensure_program_has_entrypoint!(program, ir_program)
@@ -227,6 +262,10 @@ module MilkTea
     def default_package_output_path
       build_root = File.join(@project_root, "build")
       File.join(build_root, "bin", @platform.to_s, @profile.to_s, "#{@package_name}#{artifact_extension}")
+    end
+
+    def default_package_bundle_root
+      File.join(@project_root, "build", "dist", @platform.to_s, @profile.to_s, @package_name)
     end
 
     def normalize_profile(value)
@@ -383,9 +422,23 @@ module MilkTea
       end
     end
 
+    def clean_bundle_archive
+      return unless @archive
+
+      FileUtils.rm_f(bundle_archive_path)
+    end
+
+    def clean_staged_runtime_assets(target_path)
+      runtime_asset_mappings_for(target_path).each do |_source_path, staged_path|
+        FileUtils.rm_rf(staged_path)
+      end
+
+      FileUtils.rm_f(runtime_asset_pack_path_for(target_path)) if runtime_assets_packed?
+    end
+
     def compile_wasm(c_path, compiler_flags, link_flags)
       profile_flags = profile_compiler_flags
-      preload_flags = wasm_preload_flags
+      preload_flags = wasm_asset_flags
       module_api_flags = ["-sINCOMING_MODULE_JS_API=canvas,print,printErr"]
 
       with_wasm_shell_file do |shell_path|
@@ -436,11 +489,118 @@ module MilkTea
       raise BuildError, "wasm HTML template must contain #{label} exactly once: #{template_path}"
     end
 
-    def wasm_preload_flags
-      return [] unless target_wasm? && @preload_path
+    def wasm_asset_flags
+      return [] unless target_wasm? && !@assets_paths.empty?
 
-      mount_path = "/#{File.basename(@preload_path)}"
-      ["--preload-file", "#{@preload_path}@#{mount_path}"]
+      @assets_paths.flat_map do |assets_path|
+        mount_path = "/#{File.basename(assets_path)}"
+        ["--preload-file", "#{assets_path}@#{mount_path}"]
+      end
+    end
+
+    def stage_runtime_assets
+      if runtime_assets_packed?
+        runtime_asset_mappings_for(@output_path).each do |_source_path, staged_path|
+          FileUtils.rm_rf(staged_path)
+        end
+
+        begin
+          AssetPack.write(runtime_asset_pack_path_for(@output_path), @assets_paths)
+        rescue AssetPackError => e
+          raise BuildError, e.message
+        end
+
+        return
+      end
+
+      runtime_asset_mappings_for(@output_path).each do |source_path, staged_path|
+        ensure_runtime_assets_do_not_overlap_source!(source_path, staged_path)
+        FileUtils.rm_rf(staged_path)
+        FileUtils.mkdir_p(File.dirname(staged_path))
+
+        if File.directory?(source_path)
+          FileUtils.cp_r(source_path, File.dirname(staged_path))
+        else
+          FileUtils.cp(source_path, File.dirname(staged_path))
+        end
+      end
+    end
+
+    def write_bundle_archive
+      return nil unless @archive
+
+      archive_path = bundle_archive_path
+      FileUtils.rm_f(archive_path)
+      FileUtils.mkdir_p(File.dirname(archive_path))
+
+      Tempfile.create(["milk-tea-bundle", ".tar"]) do |tar_file|
+        Gem::Package::TarWriter.new(tar_file) do |tar|
+          add_archive_tree(tar, @bundle_root, File.basename(@bundle_root))
+        end
+
+        tar_file.flush
+        tar_file.rewind
+
+        Zlib::GzipWriter.open(archive_path) do |gzip|
+          IO.copy_stream(tar_file, gzip)
+        end
+      end
+
+      archive_path
+    end
+
+    def bundle_archive_path
+      "#{@bundle_root}.tar.gz"
+    end
+
+    def add_archive_tree(tar, source_path, archive_path)
+      stat = File.lstat(source_path)
+
+      if stat.directory?
+        tar.mkdir(archive_path, stat.mode & 0o777)
+        Dir.children(source_path).sort.each do |child|
+          add_archive_tree(tar, File.join(source_path, child), File.join(archive_path, child))
+        end
+      elsif stat.file?
+        tar.add_file(archive_path, stat.mode & 0o777) do |io|
+          File.open(source_path, "rb") do |file|
+            IO.copy_stream(file, io)
+          end
+        end
+      end
+    end
+
+    def runtime_asset_mappings_for(target_path)
+      return [] if @assets_paths.empty?
+      return [] if target_wasm?
+
+      @assets_paths.filter_map do |assets_path|
+        staged_path = File.join(File.dirname(target_path), File.basename(assets_path))
+        next if staged_path == assets_path
+
+        [assets_path, staged_path]
+      end
+    end
+
+    def runtime_assets_packed?
+      @bundle && !target_wasm? && !@assets_paths.empty?
+    end
+
+    def runtime_asset_pack_path_for(target_path)
+      File.join(File.dirname(target_path), "assets.mtpack")
+    end
+
+    def ensure_runtime_assets_do_not_overlap_source!(source_path, staged_path)
+      return unless File.directory?(source_path)
+      return unless path_within?(staged_path, source_path)
+
+      raise BuildError, "native runtime asset output would be written inside build.assets source tree: #{staged_path}"
+    end
+
+    def path_within?(path, root)
+      normalized_path = File.expand_path(path)
+      normalized_root = File.expand_path(root)
+      normalized_path == normalized_root || normalized_path.start_with?(normalized_root + File::SEPARATOR)
     end
 
     def target_windows?

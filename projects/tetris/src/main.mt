@@ -1,6 +1,10 @@
 module game_engine
 
+import std.maybe as maybe
 import std.raylib as rl
+import std.raylib.packed_assets as rl_assets
+import std.raylib.runtime as rl_runtime
+import std.status as status
 import tetris.pieces.defs as pieces
 import tetris.rules.scoring as scoring
 
@@ -48,6 +52,28 @@ struct Game implements ScreenState:
     game_over: bool
 
 
+struct RuntimeAssets:
+    tiles: rl.Texture2D
+    clear_sound: rl.Sound
+
+
+variant RuntimeAssetsError:
+    missing_assets_directory
+    packed_assets(error: rl_assets.Error)
+
+
+function packed_assets_error(error: rl_assets.Error) -> RuntimeAssetsError:
+    return RuntimeAssetsError.packed_assets(error = error)
+
+
+function runtime_assets_exit_code(error: RuntimeAssetsError) -> int:
+    match error:
+        RuntimeAssetsError.missing_assets_directory:
+            return 1
+        RuntimeAssetsError.packed_assets as payload:
+            return int<-payload.error
+
+
 function make_paused_screen(game: Game) -> PausedScreen:
     return PausedScreen(
         blink_timer = 0.0,
@@ -82,6 +108,46 @@ function board_index(x: int, y: int) -> int:
     return y * board_width + x
 
 
+function load_runtime_assets() -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+    let assets_pack = rl_assets.open_assets_pack_if_present() else as error:
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+
+    match assets_pack:
+        maybe.Maybe.none:
+            return load_directory_runtime_assets()
+        maybe.Maybe.some as reader_payload:
+            var reader = reader_payload.value
+            defer rl_assets.close_reader(ref_of(reader))
+            return load_packed_runtime_assets(reader)
+
+
+function load_packed_runtime_assets(reader: rl_assets.Reader) -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+    let tiles = rl_assets.load_texture(reader, "assets/tetris_tiles.png") else as error:
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+
+    let clear_sound = rl_assets.load_sound(reader, "assets/line_clear.wav") else as error:
+        rl.unload_texture(tiles)
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+
+    return status.Status[RuntimeAssets, RuntimeAssetsError].ok(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+
+
+function load_directory_runtime_assets() -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+    if not rl_runtime.enter_assets_directory():
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= RuntimeAssetsError.missing_assets_directory)
+
+    let tiles = rl.load_texture("tetris_tiles.png")
+    if not rl.is_texture_valid(tiles):
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(rl_assets.Error.invalid_texture))
+
+    let clear_sound = rl.load_sound("line_clear.wav")
+    if not rl.is_sound_valid(clear_sound):
+        rl.unload_texture(tiles)
+        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(rl_assets.Error.invalid_sound))
+
+    return status.Status[RuntimeAssets, RuntimeAssetsError].ok(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+
+
 methods TitleScreen:
     static function default() -> TitleScreen:
         return TitleScreen(
@@ -90,14 +156,14 @@ methods TitleScreen:
         )
 
 
-    editable function update(effect: rl.Sound):
+    editable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
             this.start_requested = true
 
 
-    function draw(texture: rl.Texture2D) -> void:
+    function draw(_texture: rl.Texture2D) -> void:
         rl.clear_background(rl.Color(r = 7, g = 10, b = 18, a = 255))
         rl.draw_rectangle_gradient_v(0, 0, window_width, window_height, rl.Color(r = 17, g = 28, b = 52, a = 255), rl.Color(r = 6, g = 10, b = 18, a = 255))
         rl.draw_text("MILK TEA", 148, 168, 58, rl.RAYWHITE)
@@ -112,8 +178,14 @@ methods TitleScreen:
             rl.draw_text("Press Enter or Space to start", 142, 544, 28, rl.WHITE)
 
 
+methods RuntimeAssets:
+    editable function release():
+        rl.unload_texture(this.tiles)
+        rl.unload_sound(this.clear_sound)
+
+
 methods PausedScreen:
-    editable function update(effect: rl.Sound):
+    editable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) or rl.is_key_pressed(rl.KeyboardKey.KEY_P):
@@ -464,10 +536,10 @@ function main() -> int:
     rl.init_audio_device()
     defer rl.close_audio_device()
 
-    let tiles = rl.load_texture("assets/tetris_tiles.png")
-    defer rl.unload_texture(tiles)
-    let clear_sound = rl.load_sound("assets/line_clear.wav")
-    defer rl.unload_sound(clear_sound)
+    let loaded_assets = load_runtime_assets() else as error:
+        return runtime_assets_exit_code(error)
+    var assets = loaded_assets
+    defer assets.release()
 
     var title = default[TitleScreen]
     var paused: PausedScreen
@@ -477,13 +549,13 @@ function main() -> int:
 
     while not rl.window_should_close():
         if showing_title:
-            run_screen_frame(title, tiles, clear_sound)
+            run_screen_frame(title, assets.tiles, assets.clear_sound)
             if title.start_requested:
                 game = default[Game]
                 showing_title = false
                 showing_pause = false
         elif showing_pause:
-            run_screen_frame(paused, tiles, clear_sound)
+            run_screen_frame(paused, assets.tiles, assets.clear_sound)
             if paused.resume_requested:
                 showing_pause = false
             elif paused.exit_requested:
@@ -491,7 +563,7 @@ function main() -> int:
                 showing_pause = false
                 showing_title = true
         else:
-            run_screen_frame(game, tiles, clear_sound)
+            run_screen_frame(game, assets.tiles, assets.clear_sound)
             if game.pause_requested:
                 paused = make_paused_screen(game)
                 showing_pause = true

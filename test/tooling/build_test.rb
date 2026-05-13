@@ -2,7 +2,9 @@
 
 require "json"
 require "open3"
+require "rubygems/package"
 require "tmpdir"
+require "zlib"
 require_relative "../test_helper"
 require_relative "../../lib/milk_tea/bindings"
 
@@ -228,8 +230,8 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
-  def test_build_wasm_package_passes_preload_file_from_manifest
-    Dir.mktmpdir("milk-tea-build-wasm-preload") do |dir|
+  def test_build_wasm_package_passes_assets_from_manifest_via_preload_file
+    Dir.mktmpdir("milk-tea-build-wasm-assets") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
       package_root = File.join(dir, "web-demo")
@@ -247,7 +249,7 @@ class MilkTeaBuildTest < Minitest::Test
 
         [build]
         entry = "src/main.mt"
-        preload = "assets"
+        assets = "assets"
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
@@ -262,9 +264,471 @@ class MilkTeaBuildTest < Minitest::Test
       MilkTea::Build.build(package_root, cc: compiler_path)
 
       invocation = File.read(compiler_log).lines(chomp: true)
-      preload_index = invocation.index("--preload-file")
-      refute_nil preload_index
-      assert_equal "#{File.join(package_root, "assets")}@/assets", invocation.fetch(preload_index + 1)
+      assets_index = invocation.index("--preload-file")
+      refute_nil assets_index
+      assert_equal "#{File.join(package_root, "assets")}@/assets", invocation.fetch(assets_index + 1)
+    end
+  end
+
+  def test_build_wasm_package_passes_multiple_assets_from_manifest_via_preload_file
+    Dir.mktmpdir("milk-tea-build-wasm-assets-multi") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [platform]
+        default = "wasm"
+
+        [build]
+        entry = "src/main.mt"
+        assets = ["assets", "credits.txt"]
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+      File.write(File.join(package_root, "credits.txt"), "credits")
+
+      MilkTea::Build.build(package_root, cc: compiler_path)
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      preload_pairs = invocation.each_cons(2).select { |flag, _value| flag == "--preload-file" }
+
+      assert_equal 2, preload_pairs.length
+      assert_includes preload_pairs, ["--preload-file", "#{File.join(package_root, "assets")}@/assets"]
+      assert_includes preload_pairs, ["--preload-file", "#{File.join(package_root, "credits.txt")}@/credits.txt"]
+    end
+  end
+
+  def test_build_native_package_stages_assets_directory_next_to_output_binary
+    Dir.mktmpdir("milk-tea-build-native-assets") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      result = MilkTea::Build.build(package_root, cc: compiler_path)
+      staged_assets_dir = File.join(File.dirname(result.output_path), "assets")
+
+      assert_equal :linux, result.platform
+      assert File.exist?(result.output_path)
+      assert File.directory?(staged_assets_dir)
+      assert_equal "hello", File.read(File.join(staged_assets_dir, "note.txt"))
+
+      invocation = File.read(compiler_log).lines(chomp: true)
+      refute_includes invocation, "--preload-file"
+    end
+  end
+
+  def test_clean_explicit_native_package_output_removes_staged_assets_directory
+    Dir.mktmpdir("milk-tea-build-native-clean-assets") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      custom_output = File.join(dir, "dist", "desktop-demo")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      MilkTea::Build.build(package_root, output_path: custom_output, cc: compiler_path)
+
+      staged_assets_dir = File.join(File.dirname(custom_output), "assets")
+      assert File.exist?(custom_output)
+      assert File.directory?(staged_assets_dir)
+
+      MilkTea::Build.clean(package_root, output_path: custom_output)
+
+      refute File.exist?(custom_output)
+      refute File.exist?(staged_assets_dir)
+    end
+  end
+
+  def test_clean_explicit_native_package_output_removes_multiple_staged_assets
+    Dir.mktmpdir("milk-tea-build-native-clean-multi-assets") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      custom_output = File.join(dir, "dist", "desktop-demo")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = ["assets", "credits.txt"]
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+      File.write(File.join(package_root, "credits.txt"), "credits")
+
+      MilkTea::Build.build(package_root, output_path: custom_output, cc: compiler_path)
+
+      staged_assets_dir = File.join(File.dirname(custom_output), "assets")
+      staged_credits = File.join(File.dirname(custom_output), "credits.txt")
+      assert File.exist?(custom_output)
+      assert File.directory?(staged_assets_dir)
+      assert File.file?(staged_credits)
+
+      MilkTea::Build.clean(package_root, output_path: custom_output)
+
+      refute File.exist?(custom_output)
+      refute File.exist?(staged_assets_dir)
+      refute File.exist?(staged_credits)
+    end
+  end
+
+  def test_build_native_package_bundle_outputs_executable_and_assets_in_dist_directory
+    Dir.mktmpdir("milk-tea-build-native-bundle") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      result = MilkTea::Build.build(package_root, cc: compiler_path, bundle: true)
+      expected_bundle_root = File.join(package_root, "build", "dist", "linux", "debug", "desktop_demo")
+      pack_path = File.join(expected_bundle_root, "assets.mtpack")
+      pack = parse_asset_pack(pack_path)
+
+      assert_equal File.join(expected_bundle_root, "desktop_demo"), result.output_path
+      assert File.exist?(result.output_path)
+      assert File.exist?(pack_path)
+      refute File.exist?(File.join(expected_bundle_root, "assets"))
+      assert_equal ["assets/note.txt"], pack.fetch(:entries).map { |entry| entry.fetch(:path) }
+      assert_equal "hello", pack.fetch(:entries)[0].fetch(:data)
+    end
+  end
+
+  def test_build_native_package_archive_stages_multiple_assets_and_archives_them
+    Dir.mktmpdir("milk-tea-build-native-archive-multi-assets") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = ["assets", "credits.txt"]
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+      File.write(File.join(package_root, "credits.txt"), "credits")
+
+      result = MilkTea::Build.build(package_root, cc: compiler_path, archive: true)
+      expected_bundle_root = File.join(package_root, "build", "dist", "linux", "debug", "desktop_demo")
+      expected_archive = "#{expected_bundle_root}.tar.gz"
+      pack_path = File.join(expected_bundle_root, "assets.mtpack")
+      pack = parse_asset_pack(pack_path)
+
+      assert_equal File.join(expected_bundle_root, "desktop_demo"), result.output_path
+      assert_equal expected_archive, result.archive_path
+      assert File.exist?(pack_path)
+      refute File.exist?(File.join(expected_bundle_root, "assets"))
+      refute File.exist?(File.join(expected_bundle_root, "credits.txt"))
+      assert_equal ["assets/note.txt", "credits.txt"], pack.fetch(:entries).map { |entry| entry.fetch(:path) }
+      assert_equal "hello", pack.fetch(:entries)[0].fetch(:data)
+      assert_equal "credits", pack.fetch(:entries)[1].fetch(:data)
+
+      entries = []
+      Zlib::GzipReader.open(expected_archive) do |gzip|
+        Gem::Package::TarReader.new(gzip) do |tar|
+          tar.each { |entry| entries << entry.full_name }
+        end
+      end
+
+      assert_includes entries, "desktop_demo/assets.mtpack"
+      refute_includes entries, "desktop_demo/assets"
+      refute_includes entries, "desktop_demo/assets/note.txt"
+      refute_includes entries, "desktop_demo/credits.txt"
+    end
+  end
+
+  def test_clean_native_package_bundle_removes_dist_root_only
+    Dir.mktmpdir("milk-tea-build-native-bundle-clean") do |dir|
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      dist_dir = File.join(package_root, "build", "dist", "linux", "debug", "desktop_demo")
+      bin_dir = File.join(package_root, "build", "bin", "linux", "debug")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(dist_dir)
+      FileUtils.mkdir_p(bin_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(dist_dir, "desktop_demo"), "stale")
+      marker_path = File.join(bin_dir, "keep")
+      File.write(marker_path, "keep")
+
+      cleaned = MilkTea::Build.clean(package_root, bundle: true)
+
+      assert_equal File.join(package_root, "build", "dist"), cleaned
+      refute File.exist?(dist_dir)
+      assert File.exist?(marker_path)
+    end
+  end
+
+  def test_build_bundle_rejects_direct_source_builds
+    error = assert_raises(MilkTea::BuildError) do
+      MilkTea::Build.build(language_fixture_path, bundle: true)
+    end
+
+    assert_match(/bundle mode requires a package build/, error.message)
+  end
+
+  def test_build_bundle_rejects_wasm_package_builds
+    Dir.mktmpdir("milk-tea-build-wasm-bundle") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "web-demo")
+      src_dir = File.join(package_root, "src")
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "web_demo"
+
+        [platform]
+        default = "wasm"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.web_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(package_root, cc: compiler_path, bundle: true)
+      end
+
+      assert_match(/bundle mode is supported only for native package builds/, error.message)
+    end
+  end
+
+  def test_build_archive_writes_tarball_for_native_bundle
+    Dir.mktmpdir("milk-tea-build-native-archive") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      result = MilkTea::Build.build(package_root, cc: compiler_path, archive: true)
+      expected_bundle_root = File.join(package_root, "build", "dist", "linux", "debug", "desktop_demo")
+      expected_archive = "#{expected_bundle_root}.tar.gz"
+
+      assert_equal File.join(expected_bundle_root, "desktop_demo"), result.output_path
+      assert_equal expected_archive, result.archive_path
+      assert File.exist?(expected_archive)
+
+      entries = []
+      Zlib::GzipReader.open(expected_archive) do |gzip|
+        Gem::Package::TarReader.new(gzip) do |tar|
+          tar.each { |entry| entries << entry.full_name }
+        end
+      end
+
+      assert_includes entries, "desktop_demo"
+      assert_includes entries, "desktop_demo/desktop_demo"
+      assert_includes entries, "desktop_demo/assets.mtpack"
+      refute_includes entries, "desktop_demo/assets"
+      refute_includes entries, "desktop_demo/assets/note.txt"
+    end
+  end
+
+  def test_clean_native_package_archive_removes_bundle_and_archive
+    Dir.mktmpdir("milk-tea-build-native-archive-clean") do |dir|
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      bundle_root = File.join(package_root, "build", "dist", "linux", "debug", "desktop_demo")
+      archive_path = "#{bundle_root}.tar.gz"
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(bundle_root)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), [
+        "module projects.desktop_demo.main",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+      File.write(File.join(bundle_root, "desktop_demo"), "stale")
+      File.write(archive_path, "archive")
+
+      cleaned = MilkTea::Build.clean(package_root, archive: true)
+
+      assert_equal File.join(package_root, "build", "dist"), cleaned
+      refute File.exist?(bundle_root)
+      refute File.exist?(archive_path)
     end
   end
 
@@ -944,6 +1408,40 @@ class MilkTeaBuildTest < Minitest::Test
   end
 
   private
+
+  def parse_asset_pack(path)
+    bytes = File.binread(path)
+    magic, version, header_flags, entry_count, index_size, data_offset = bytes.byteslice(0, MilkTea::AssetPack::HEADER_SIZE).unpack(MilkTea::AssetPack::HEADER_FORMAT)
+
+    offset = MilkTea::AssetPack::HEADER_SIZE
+    entries = []
+    entry_count.times do
+      path_length, flags, entry_data_offset, stored_size, unpacked_size = bytes.byteslice(offset, MilkTea::AssetPack::ENTRY_PREFIX_SIZE).unpack(MilkTea::AssetPack::ENTRY_PREFIX_FORMAT)
+      offset += MilkTea::AssetPack::ENTRY_PREFIX_SIZE
+
+      path_bytes = bytes.byteslice(offset, path_length)
+      offset += path_length
+
+      entries << {
+        path: path_bytes.force_encoding(Encoding::UTF_8),
+        flags:,
+        data_offset: entry_data_offset,
+        stored_size:,
+        unpacked_size:,
+        data: bytes.byteslice(entry_data_offset, stored_size),
+      }
+    end
+
+    {
+      magic:,
+      version:,
+      header_flags:,
+      entry_count:,
+      index_size:,
+      data_offset:,
+      entries:,
+    }
+  end
 
   def language_fixture_path
     File.expand_path("../fixtures/language_fixture.mt", __dir__)

@@ -133,6 +133,66 @@ class MilkTeaStdStdioTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_stdio_position_wrappers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_stdio_position",
+      "",
+      "import std.stdio as stdio",
+      "",
+      "function main() -> int:",
+      "    var source_bytes = array[ubyte, 5](10, 20, 30, 40, 50)",
+      "    let writer = stdio.open(\"position.bin\", \"wb\")",
+      "    if writer == null:",
+      "        return 1",
+      "    if stdio.write_bytes(unsafe: const_ptr[void]<-ptr_of(source_bytes[0]), 1, 5, writer) != 5:",
+      "        return 2",
+      "    if stdio.close(writer) != 0:",
+      "        return 3",
+      "",
+      "    let reader = stdio.open(\"position.bin\", \"rb\")",
+      "    if reader == null:",
+      "        return 4",
+      "    if stdio.tell(reader) != ptr_int<-0:",
+      "        return 5",
+      "    if stdio.seek(reader, ptr_int<-2, stdio.SEEK_SET) != 0:",
+      "        return 6",
+      "    if stdio.tell(reader) != ptr_int<-2:",
+      "        return 7",
+      "    var target_bytes = zero[array[ubyte, 1]]",
+      "    if stdio.read_bytes(unsafe: ptr[void]<-ptr_of(target_bytes[0]), 1, 1, reader) != 1:",
+      "        return 8",
+      "    if target_bytes[0] != 30:",
+      "        return 9",
+      "    if stdio.seek(reader, ptr_int<-1, stdio.SEEK_CUR) != 0:",
+      "        return 10",
+      "    if stdio.tell(reader) != ptr_int<-4:",
+      "        return 11",
+      "    if stdio.seek(reader, ptr_int<-0, stdio.SEEK_END) != 0:",
+      "        return 12",
+      "    if stdio.tell(reader) != ptr_int<-5:",
+      "        return 13",
+      "    stdio.rewind(reader)",
+      "    if stdio.tell(reader) != ptr_int<-0:",
+      "        return 14",
+      "    if stdio.read_bytes(unsafe: ptr[void]<-ptr_of(target_bytes[0]), 1, 1, reader) != 1:",
+      "        return 15",
+      "    if stdio.close(reader) != 0:",
+      "        return 16",
+      "    return int<-target_bytes[0]",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

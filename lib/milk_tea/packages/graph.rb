@@ -19,7 +19,6 @@ module MilkTea
       @graph_source_resolver = source_resolver
       @registry_metadata_provider = registry_metadata_provider
       @nodes_by_manifest_path = {}
-      @manifest_paths_by_package_name = {}
       @build_stack = []
     end
 
@@ -100,11 +99,9 @@ module MilkTea
         raise PackageGraphError, "package dependency cycle detected: #{cycle_names.join(' -> ')}"
       end
 
-      register_package_name!(manifest)
-
       @build_stack << manifest.manifest_path
       edges = manifest.dependencies.map do |dependency|
-        resolved_package = @graph_source_resolver.resolve(dependency, parent_manifest: manifest)
+        resolved_package = @graph_source_resolver.resolve(dependency, parent_manifest: manifest, parent_source: source)
         edge_node = build_node(resolved_package.manifest, source: resolved_package.source)
         Edge.new(dependency:, node: edge_node)
       end
@@ -114,14 +111,6 @@ module MilkTea
       node
     ensure
       @build_stack.pop if @build_stack.last == manifest.manifest_path
-    end
-
-    def register_package_name!(manifest)
-      existing_path = @manifest_paths_by_package_name[manifest.package_name]
-      return @manifest_paths_by_package_name[manifest.package_name] = manifest.manifest_path unless existing_path
-      return if existing_path == manifest.manifest_path
-
-      raise PackageGraphError, "duplicate package name #{manifest.package_name} at #{manifest.manifest_path} and #{existing_path}"
     end
 
     def package_name_for_manifest_path(manifest_path)
@@ -139,6 +128,7 @@ module MilkTea
       solution = PackageDependencySolver.new(
         source_resolver: @source_resolver,
         registry_metadata_provider: @registry_metadata_provider,
+        locked_registry_versions: @source_resolver.resolved_registry_versions,
       ).solve(root_manifest)
 
       @source_resolver.with_resolved_registry_versions(solution.registry_versions)

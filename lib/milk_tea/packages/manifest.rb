@@ -23,7 +23,7 @@ module MilkTea
         registry? && !version.nil?
       end
     end
-    DataView = Data.define(:root_dir, :manifest_path, :package_name, :package_version, :package_kind, :source_root, :source_path, :profile, :platform, :output_path, :preload_path, :html_template_path, :dependencies)
+    DataView = Data.define(:root_dir, :manifest_path, :package_name, :package_version, :package_kind, :source_root, :source_path, :profile, :platform, :output_path, :assets_paths, :html_template_path, :dependencies)
 
     def self.load(path)
       new(path).load
@@ -66,13 +66,7 @@ module MilkTea
       output_path = build["output"]
       output_path = File.expand_path(output_path.to_s, root_dir) if output_path
 
-      preload_path = build["preload"]
-      if preload_path
-        preload_path = File.expand_path(preload_path.to_s, root_dir)
-        unless File.exist?(preload_path)
-          raise PackageManifestError, "build.preload not found: #{build["preload"]} (resolved to #{preload_path})"
-        end
-      end
+      assets_paths = parse_assets_paths(build["assets"], root_dir)
 
       html_template_path = build["html_template"]
       if html_template_path
@@ -95,13 +89,34 @@ module MilkTea
         profile: profile_name,
         platform: platform_name,
         output_path:,
-        preload_path:,
+        assets_paths:,
         html_template_path:,
         dependencies:,
       )
     end
 
     private
+
+    def parse_assets_paths(raw_assets, root_dir)
+      return [] unless raw_assets
+
+      asset_paths = (raw_assets.is_a?(Array) ? raw_assets : [raw_assets]).map do |raw_asset|
+        asset_path = File.expand_path(raw_asset.to_s, root_dir)
+        unless File.exist?(asset_path)
+          raise PackageManifestError, "build.assets not found: #{raw_asset} (resolved to #{asset_path})"
+        end
+
+        asset_path
+      end
+
+      duplicate_basenames = asset_paths.group_by { |asset_path| File.basename(asset_path) }
+                                       .select { |_basename, paths| paths.length > 1 }
+                                       .keys
+                                       .sort
+      return asset_paths if duplicate_basenames.empty?
+
+      raise PackageManifestError, "build.assets entries must have unique basenames: #{duplicate_basenames.join(", ")}"
+    end
 
     def resolve_manifest_path(path)
       if File.directory?(path)

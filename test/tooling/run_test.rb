@@ -21,6 +21,8 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal File.expand_path(c_path), result.c_path
       assert_equal File.expand_path(compiler_path), result.compiler
       assert_equal [], result.link_flags
+      assert_nil result.bundle_root
+      assert_nil result.archive_path
       assert File.exist?(output_path)
       assert File.exist?(c_path)
       refute_match(/^#line\s+/m, File.read(c_path))
@@ -135,6 +137,57 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_package_build_accepts_archive_option
+    Dir.mktmpdir("milk-tea-run-package-archive") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "bundle-run\n", stderr: "bundle-err\n", exit_status: 9)
+      package_root = File.join(dir, "desktop-demo")
+      src_dir = File.join(package_root, "src")
+      assets_dir = File.join(package_root, "assets")
+      output_root = File.join(dir, "dist", "desktop_demo")
+      FileUtils.mkdir_p(src_dir)
+      FileUtils.mkdir_p(assets_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "desktop_demo"
+
+        [platform]
+        default = "linux"
+
+        [build]
+        entry = "src/main.mt"
+        assets = "assets"
+      TOML
+
+      File.write(File.join(src_dir, "main.mt"), <<~MT)
+        module projects.desktop_demo.main
+
+        function main() -> int:
+            return 0
+      MT
+      File.write(File.join(assets_dir, "note.txt"), "hello")
+
+      result = MilkTea::Run.run(package_root, cc: compiler_path, output_path: output_root, archive: true)
+
+      assert_equal "bundle-run\n", result.stdout
+      assert_equal "bundle-err\n", result.stderr
+      assert_equal 9, result.exit_status
+      assert_equal File.expand_path(output_root), result.output_path
+      assert_nil result.c_path
+      assert_equal File.expand_path(compiler_path), result.compiler
+      assert_equal [], result.link_flags
+      assert_equal :linux, result.platform
+      assert_equal File.expand_path(output_root), result.bundle_root
+      assert_equal "#{File.expand_path(output_root)}.tar.gz", result.archive_path
+      assert File.exist?(File.join(output_root, "desktop_demo"))
+      assert File.exist?(File.join(output_root, "assets.mtpack"))
+      assert File.exist?("#{output_root}.tar.gz")
+      refute File.exist?(File.join(output_root, "assets", "note.txt"))
+      assert_includes File.read(compiler_log).lines(chomp: true), "-o"
+    end
+  end
+
   def test_run_wasm_target_opens_browser_preview
     Dir.mktmpdir("milk-tea-run-wasm") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -201,6 +254,8 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal File.expand_path(compiler_path), result.compiler
       assert_equal [], result.link_flags
       assert_equal :wasm, result.platform
+      assert_nil result.bundle_root
+      assert_nil result.archive_path
       assert File.exist?(compiler_log)
     end
   end
@@ -764,6 +819,53 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_nested_status_maybe_alias_values
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-status-maybe") do |dir|
+      source_path = File.join(dir, "status_maybe_reader.mt")
+
+      File.write(source_path, [
+        "module demo.status_maybe_reader_runtime",
+        "",
+        "import std.maybe as maybe",
+        "import std.status as status",
+        "import std.asset_pack as pack",
+        "",
+        "type Reader = pack.Reader",
+        "",
+        "function make() -> status.Status[maybe.Maybe[Reader], int]:",
+        "    return status.Status[maybe.Maybe[Reader], int].ok(value= maybe.Maybe[Reader].some(value= Reader(file = null, entry_count = 0)))",
+        "",
+        "function main() -> int:",
+        "    let result = make()",
+        "    match result:",
+        "        status.Status.err as payload:",
+        "            return payload.error",
+        "        status.Status.ok as payload:",
+        "            match payload.value:",
+        "                maybe.Maybe.none:",
+        "                    return 1",
+        "                maybe.Maybe.some as reader_payload:",
+        "                    if reader_payload.value.file == null:",
+        "                        return int<-reader_payload.value.entry_count",
+        "                    return 2",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_builtin_fatal
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -912,6 +1014,126 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal "", result.stdout
       assert_equal "", result.stderr
       assert_equal 16, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_let_else_status_success_binding
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-status-let-else") do |dir|
+      source_path = File.join(dir, "status_let_else.mt")
+
+      File.write(source_path, [
+        "module demo.status_let_else_runtime",
+        "",
+        "import std.status as status",
+        "",
+        "function parse(flag: int) -> status.Status[int, int]:",
+        "    if flag < 0:",
+        "        return status.Status[int, int].err(error= 20)",
+        "    return status.Status[int, int].ok(value= flag + 1)",
+        "",
+        "function consume(flag: int) -> int:",
+        "    let value: int = parse(flag) else:",
+        "        return 20",
+        "    return value + 3",
+        "",
+        "function main() -> int:",
+        "    return consume(4) + consume(-1)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 28, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_let_else_status_error_binding
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-status-let-else-error") do |dir|
+      source_path = File.join(dir, "status_let_else_error.mt")
+
+      File.write(source_path, [
+        "module demo.status_let_else_error_runtime",
+        "",
+        "import std.status as status",
+        "",
+        "function parse(flag: int) -> status.Status[int, int]:",
+        "    if flag < 0:",
+        "        return status.Status[int, int].err(error= 20)",
+        "    return status.Status[int, int].ok(value= flag + 1)",
+        "",
+        "function consume(flag: int) -> int:",
+        "    let value: int = parse(flag) else as error:",
+        "        return error",
+        "    return value + 3",
+        "",
+        "function main() -> int:",
+        "    return consume(4) + consume(-1)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 28, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
+  def test_run_with_host_compiler_executes_program_using_let_else_status_void_discard_binding
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-status-let-else-void") do |dir|
+      source_path = File.join(dir, "status_let_else_void.mt")
+
+      File.write(source_path, [
+        "module demo.status_let_else_void_runtime",
+        "",
+        "import std.status as status",
+        "",
+        "function done() -> void:",
+        "    return",
+        "",
+        "function parse(flag: int) -> status.Status[void, int]:",
+        "    if flag < 0:",
+        "        return status.Status[void, int].err(error= 20)",
+        "    return status.Status[void, int].ok(value= done())",
+        "",
+        "function consume(flag: int) -> int:",
+        "    let _ = parse(flag) else as error:",
+        "        return error",
+        "    return 8",
+        "",
+        "function main() -> int:",
+        "    return consume(1) + consume(-1)",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 28, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path
       assert_equal compiler, result.compiler

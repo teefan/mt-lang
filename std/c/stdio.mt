@@ -5,6 +5,9 @@ external module std.c.stdio:
     opaque va_list = c"va_list"
 
     const EOF: int = -1
+    const SEEK_SET: int = 0
+    const SEEK_CUR: int = 1
+    const SEEK_END: int = 2
 
     external function printf(format: cstr, ...) -> int
     external function fprintf(stream: FILE?, format: cstr, ...) -> int
@@ -20,6 +23,9 @@ external module std.c.stdio:
     external function fputs(text: cstr, stream: FILE?) -> int
     external function fread(buffer: ptr[void], element_size: ptr_uint, count: ptr_uint, stream: FILE?) -> ptr_uint
     external function fwrite(buffer: const_ptr[void], element_size: ptr_uint, count: ptr_uint, stream: FILE?) -> ptr_uint
+    external function fseek(stream: FILE?, offset: ptr_int, whence: int) -> int
+    external function ftell(stream: FILE?) -> ptr_int
+    external function rewind(stream: FILE?) -> void
     external function feof(stream: FILE?) -> int
     external function ferror(stream: FILE?) -> int
     external function clearerr(stream: FILE?) -> void

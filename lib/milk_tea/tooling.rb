@@ -5,6 +5,7 @@ require_relative "core"
 require_relative "packages"
 
 require_relative "tooling/debug_map"
+require_relative "tooling/asset_pack"
 require_relative "tooling/build"
 require_relative "tooling/run"
 require_relative "tooling/cst_formatter"
