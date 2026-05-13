@@ -70,7 +70,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    let small: ubyte = 7",
       "    let ticks: ulong = 9",
       "    var output = fmt.format(f\"n=\#{delta} ok=\#{true} small=\#{small} ticks=\#{ticks} raw=\#{scratch.to_cstr(\"wow\")}\")",
-      "    let total = int<-output.count()",
+      "    let total = int<-output.len()",
       "    defer output.release()",
       "    return total",
       "",
@@ -99,7 +99,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    defer output.release()",
       "    output.assign(f\"value=\#{value}\")",
       "    output.append(f\" ok=\#{true}\")",
-      "    return int<-output.count()",
+      "    return int<-output.len()",
       "",
     ].join("\n")
 
@@ -126,7 +126,7 @@ class MilkTeaStdFmtLogTest < Minitest::Test
       "    let scale: double = 0.125",
       "    var output = fmt.format(f\"ratio=\#{ratio} scale=\#{scale}\")",
       "    defer output.release()",
-      "    return int<-output.count()",
+      "    return int<-output.len()",
       "",
     ].join("\n")
 

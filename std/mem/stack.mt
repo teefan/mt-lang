@@ -1,7 +1,6 @@
 module std.mem.stack
 
 import std.mem.arena as arena
-import std.mem.heap as heap
 
 public type Mark = arena.Mark
 
@@ -19,6 +18,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
 
 public function create_for[T](count: ptr_uint) -> Stack:
     return Stack(arena = arena.create_for[T](count))
+
 
 methods Stack:
     public function mark() -> Mark:

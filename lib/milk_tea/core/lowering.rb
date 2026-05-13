@@ -4865,6 +4865,10 @@ module MilkTea
 
       def lower_expression(expression, env:, expected_type: nil)
         type = infer_expression_type(expression, env:, expected_type:)
+        if type.is_a?(Types::Primitive) && type.boolean?
+          constant = compile_time_const_value(expression, env:)
+          return IR::BooleanLiteral.new(value: constant, type:) if constant == true || constant == false
+        end
 
         case expression
         when AST::AwaitExpr
@@ -7795,7 +7799,7 @@ module MilkTea
 
       def compile_time_const_value(expression, env: nil)
         case expression
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral, AST::StringLiteral
           expression.value
         when AST::Identifier
           if env
@@ -7826,6 +7830,19 @@ module MilkTea
           return if left.nil? || right.nil?
 
           case expression.operator
+          when "=="
+            return compile_time_equality_result(left, right)
+          when "!="
+            result = compile_time_equality_result(left, right)
+            return result.nil? ? nil : !result
+          when "and"
+            return left && right if (left == true || left == false) && (right == true || right == false)
+
+            return
+          when "or"
+            return left || right if (left == true || left == false) && (right == true || right == false)
+
+            return
           when "+"
             left + right
           when "-"
@@ -7850,6 +7867,14 @@ module MilkTea
             nil
           end
         end
+      end
+
+      def compile_time_equality_result(left, right)
+        return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
+        return left == right if left.is_a?(String) && right.is_a?(String)
+        return left == right if (left == true || left == false) && (right == true || right == false)
+
+        nil
       end
 
       def specialize_function_binding(binding, arguments, env, receiver_type: nil)

@@ -40,8 +40,8 @@ module MilkTea
         semantic_tokens_command
       when "parse"
         parse_command
-      when "fmt"
-        fmt_command
+      when "format"
+        format_command
       when "lint"
         lint_command
       when "check"
@@ -128,7 +128,7 @@ module MilkTea
       0
     end
 
-    def fmt_command
+    def format_command
       path = @argv.shift
       unless path
         @err.puts("missing source file path")
@@ -136,11 +136,11 @@ module MilkTea
         return 1
       end
 
-      options = parse_fmt_options
+      options = parse_format_options
       return 1 unless options
 
       if File.directory?(path)
-        return fmt_directory(path, options)
+        return format_directory(path, options)
       end
 
       source = read_source_file(path)
@@ -170,7 +170,7 @@ module MilkTea
       0
     end
 
-    def fmt_directory(dir, options)
+    def format_directory(dir, options)
       paths = Dir.glob(File.join(dir, "**/*.mt")).sort
       if paths.empty?
         @out.puts("no .mt files found in #{dir}")
@@ -178,7 +178,7 @@ module MilkTea
       end
 
       unless options[:check] || options[:write]
-        @err.puts("fmt on a directory requires --check or --write")
+        @err.puts("format on a directory requires --check or --write")
         print_usage(@err)
         return 1
       end
@@ -570,7 +570,7 @@ module MilkTea
       options
     end
 
-    def parse_fmt_options
+    def parse_format_options
       options = {
         check: false,
         write: false,
@@ -591,14 +591,14 @@ module MilkTea
         when "--safe"
           options[:mode] = :safe
         else
-          @err.puts("unknown fmt option #{option}")
+          @err.puts("unknown format option #{option}")
           print_usage(@err)
           return nil
         end
       end
 
       if options[:check] && options[:write]
-        @err.puts("fmt options --check and --write cannot be combined")
+        @err.puts("format options --check and --write cannot be combined")
         print_usage(@err)
         return nil
       end
@@ -751,8 +751,8 @@ module MilkTea
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
       "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit LSP-style semantic token data for a source file as JSON.",
       "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
-      "fmt"             => <<~HELP,
-        Usage: mtc fmt PATH|DIR [OPTIONS]
+      "format"          => <<~HELP,
+        Usage: mtc format PATH|DIR [OPTIONS]
 
           Format Milk Tea source files.
 
@@ -893,7 +893,7 @@ module MilkTea
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc fmt PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
+      io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")

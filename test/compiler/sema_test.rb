@@ -1272,7 +1272,7 @@ class MilkTeaSemaTest < Minitest::Test
       function main(count: ubyte, delta: short, ticks: ulong) -> int:
           var text = fmt.format(f"count=\#{count} delta=\#{delta} ticks=\#{ticks} ok=\#{true}")
           defer text.release()
-          return int<-text.count()
+          return int<-text.len()
     MT
 
     result = check_program_source(source)

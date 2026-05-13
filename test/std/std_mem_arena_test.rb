@@ -101,6 +101,42 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_arena_cstr_helpers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_mem_arena_cstr",
+      "",
+      "import std.mem.arena as arena",
+      "import std.str as text_ops",
+      "",
+      "function main() -> int:",
+      "    var scratch = arena.create(16)",
+      "    defer scratch.release()",
+      "",
+      "    let copied = scratch.try_to_cstr(\"milk\")",
+      "    if copied == null:",
+      "        return 1",
+      "    if not text_ops.cstr_as_str(copied).equal(\"milk\"):",
+      "        return 2",
+      "",
+      "    let copied_again = scratch.to_cstr(\"tea\")",
+      "    if not text_ops.cstr_as_str(copied_again).equal(\"tea\"):",
+      "        return 3",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_aligned_arena_allocation_helper
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

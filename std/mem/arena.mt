@@ -108,31 +108,31 @@ methods Arena:
 
 
     public editable function try_to_cstr(text: str) -> cstr?:
+        if text.len == heap.ptr_uint_max():
+            return null
+
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
             return null
 
         unsafe:
+            heap.copy_bytes(memory, ptr[ubyte]<-text.data, text.len)
             let buffer = ptr[char]<-memory
-            var index: ptr_uint = 0
-            while index < text.len:
-                read(buffer + index) = read(text.data + index)
-                index += 1
             read(buffer + text.len) = zero[char]
             return cstr<-buffer
 
 
     public editable function to_cstr(text: str) -> cstr:
+        if text.len == heap.ptr_uint_max():
+            fatal(c"arena.to_cstr size overflow")
+
         let memory = this.alloc_bytes(text.len + 1)
         if memory == null:
-            fatal(c"Arena.to_cstr out of memory")
+            fatal(c"arena.to_cstr out of memory")
 
         unsafe:
+            heap.copy_bytes(memory, ptr[ubyte]<-text.data, text.len)
             let buffer = ptr[char]<-memory
-            var index: ptr_uint = 0
-            while index < text.len:
-                read(buffer + index) = read(text.data + index)
-                index += 1
             read(buffer + text.len) = zero[char]
             return cstr<-buffer
 

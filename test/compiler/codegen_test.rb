@@ -881,7 +881,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       function main(value: ubyte, delta: short, ticks: ulong, raw: cstr) -> int:
           let text = fmt.format(f"value=\#{value} delta=\#{delta} ticks=\#{ticks} raw=\#{raw} ok=\#{true}")
-          return int<-text.count()
+          return int<-text.len()
     MT
 
     generated = generate_c_from_source(source)
@@ -934,7 +934,7 @@ class MilkTeaCodegenTest < Minitest::Test
           defer output.release()
           output.assign(f"value=\#{value}")
           output.append(f" ok=\#{true}")
-          return int<-output.count()
+          return int<-output.len()
     MT
 
     generated = generate_c_from_source(source)
@@ -3034,6 +3034,31 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
     assert_match(/mt_str text = \{ \.data = "hello world", \.len = 11 \};/, generated)
     assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
+  end
+
+  def test_generate_c_for_str_equality_and_compile_time_folding
+    source = <<~MT
+      module demo.str_compare_surface
+
+      const same: bool = "milk" == "milk"
+      static_assert("milk" != "tea", "string compare failed")
+
+      function main(left: str, right: str) -> int:
+          if left == right:
+              return 1
+          if left != right:
+              return 2
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static bool mt_str_equal\(mt_str left, mt_str right\) \{/, generated)
+    assert_match(/static const bool demo_str_compare_surface_same = true;/, generated)
+    assert_match(/_Static_assert\(true, "string compare failed"\);/, generated)
+    assert_match(/if \(mt_str_equal\(left, right\)\) \{/, generated)
+    assert_match(/if \(\(!mt_str_equal\(left, right\)\)\) \{/, generated)
+    refute_match(/_Static_assert\(\(mt_str\)/, generated)
   end
 
   def test_rejects_codegen_for_direct_str_construction_outside_unsafe
