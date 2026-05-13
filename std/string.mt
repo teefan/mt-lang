@@ -2,6 +2,7 @@ module std.string
 
 import std.mem.arena as arena
 import std.mem.heap as heap
+import std.str as text_ops
 
 public struct String:
     data: ptr[ubyte]?
@@ -25,7 +26,7 @@ methods String:
         return result
 
 
-    public function count() -> ptr_uint:
+    public function len() -> ptr_uint:
         return this.len
 
 
@@ -89,10 +90,36 @@ methods String:
 
 
     public editable function append(suffix: str) -> void:
-        var index: ptr_uint = 0
-        while index < suffix.len:
-            unsafe: this.push_byte(ubyte<-read(suffix.data + index))
-            index += 1
+        if suffix.len == 0:
+            return
+
+        let current_len = this.len
+        if suffix.len > heap.ptr_uint_max() - current_len:
+            fatal(c"string.append size overflow")
+
+        let new_len = current_len + suffix.len
+        let needs_growth = new_len > this.capacity
+
+        var copied: ptr[ubyte]? = null
+        if needs_growth:
+            copied = heap.must_alloc[ubyte](suffix.len)
+            unsafe: heap.copy_bytes(copied, ptr[ubyte]<-suffix.data, suffix.len)
+
+        this.reserve(new_len)
+
+        let data = this.data
+        if data == null:
+            fatal(c"string.append missing storage")
+
+        unsafe:
+            let destination = ptr[ubyte]<-data + current_len
+            if copied != null:
+                heap.copy_bytes(destination, copied, suffix.len)
+                heap.release(copied)
+            else:
+                heap.copy_bytes(destination, ptr[ubyte]<-suffix.data, suffix.len)
+
+        this.len = new_len
         return
 
 
@@ -107,7 +134,11 @@ methods String:
         if data == null and this.len != 0:
             fatal(c"string.as_str requires storage when len > 0")
 
-        return unsafe: str(data = ptr[char]<-data, len = this.len)
+        let borrowed = unsafe: str(data = ptr[char]<-data, len = this.len)
+        if not borrowed.is_valid_utf8():
+            fatal(c"string.as_str text must be valid UTF-8")
+
+        return borrowed
 
 
     public function to_cstr(space: ref[arena.Arena]) -> cstr:

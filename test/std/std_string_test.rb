@@ -28,7 +28,7 @@ class MilkTeaStdStringTest < Minitest::Test
       "    text.push_byte(65)",
       "    text.push_byte(66)",
       "    text.push_byte(67)",
-      "    if text.count() != 3:",
+      "    if text.len() != 3:",
       "        return 3",
       "    if text.capacity() < 3:",
       "        return 4",
@@ -95,6 +95,42 @@ class MilkTeaStdStringTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_owned_string_self_append_on_growth
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_string_self_append",
+      "",
+      "import std.str as text",
+      "import std.string as string",
+      "",
+      "function main() -> int:",
+      "    var value = string.String.from_str(\"abc\")",
+      "    defer value.release()",
+      "",
+      "    let full = value.as_str()",
+      "    value.append(full)",
+      "    if not value.as_str().equal(\"abcabc\"):",
+      "        return 1",
+      "",
+      "    let middle = value.as_str().slice(1, 4)",
+      "    value.append(middle)",
+      "    if not value.as_str().equal(\"abcabcbcab\"):",
+      "        return 2",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_owned_string_to_cstr
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -134,6 +170,32 @@ class MilkTeaStdStringTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_rejects_invalid_utf8_owned_string_as_str
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_string_invalid_utf8",
+      "",
+      "import std.string as string",
+      "",
+      "function main() -> int:",
+      "    var value = string.String.create()",
+      "    defer value.release()",
+      "    value.push_byte(ubyte<-0xFF)",
+      "    let borrowed = value.as_str()",
+      "    return int<-borrowed.len",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal 134, result.exit_status
+    assert_match(/string\.as_str text must be valid UTF-8/, result.stderr)
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_str_helpers
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -169,6 +231,45 @@ class MilkTeaStdStringTest < Minitest::Test
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 12, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_str_equality_operators
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "module demo.std_str_equality_ops",
+      "",
+      "import std.mem.arena as arena",
+      "import std.str as text",
+      "",
+      "function main() -> int:",
+      "    var scratch = arena.create(64)",
+      "    defer scratch.release()",
+      "",
+      "    let left = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))",
+      "    let right = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))",
+      "    let other = text.cstr_as_str(scratch.to_cstr(\"Tea\"))",
+      "",
+      "    if left != right:",
+      "        return 1",
+      "    if not (left == right):",
+      "        return 2",
+      "    if left == other:",
+      "        return 3",
+      "    if not (left != other):",
+      "        return 4",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
     assert_equal [], result.link_flags
   end
 

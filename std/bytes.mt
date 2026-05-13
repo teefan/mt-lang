@@ -20,11 +20,7 @@ methods Bytes:
             return Bytes.empty()
 
         let data = heap.must_alloc[ubyte](source.len)
-        var index: ptr_uint = 0
-        while index < source.len:
-            unsafe:
-                read(data + index) = read(source.data + index)
-            index += 1
+        heap.copy_bytes(data, source.data, source.len)
 
         return Bytes(data = data, len = source.len)
 

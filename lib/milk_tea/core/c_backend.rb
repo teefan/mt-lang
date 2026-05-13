@@ -44,6 +44,11 @@ module MilkTea
         lines << ""
       end
 
+      if uses_str_equality_helper?
+        lines.concat(emit_str_equality_helper)
+        lines << ""
+      end
+
       if uses_text_buffer_helpers?
         lines.concat(emit_text_buffer_helpers)
         lines << ""
@@ -460,8 +465,16 @@ module MilkTea
       emitted_functions.any? { |function| function_uses_named_call?(function, format_helper_callees) }
     end
 
+    def uses_str_equality_helper?
+      emitted_functions.any? { |function| function_uses_str_equality?(function) }
+    end
+
     def function_uses_named_call?(function, callees)
       function.body.any? { |statement| statement_uses_named_call?(statement, callees) }
+    end
+
+    def function_uses_str_equality?(function)
+      function.body.any? { |statement| statement_uses_str_equality?(statement) }
     end
 
     def statement_uses_named_call?(statement, callees)
@@ -494,6 +507,38 @@ module MilkTea
       end
     end
 
+    def statement_uses_str_equality?(statement)
+      case statement
+      when IR::LocalDecl
+        expression_uses_str_equality?(statement.value)
+      when IR::Assignment
+        expression_uses_str_equality?(statement.target) || expression_uses_str_equality?(statement.value)
+      when IR::BlockStmt
+        statement.body.any? { |inner| statement_uses_str_equality?(inner) }
+      when IR::WhileStmt
+        expression_uses_str_equality?(statement.condition) || statement.body.any? { |inner| statement_uses_str_equality?(inner) }
+      when IR::ForStmt
+        statement_uses_str_equality?(statement.init) ||
+          expression_uses_str_equality?(statement.condition) ||
+          statement.body.any? { |inner| statement_uses_str_equality?(inner) } ||
+          statement_uses_str_equality?(statement.post)
+      when IR::IfStmt
+        expression_uses_str_equality?(statement.condition) ||
+          statement.then_body.any? { |inner| statement_uses_str_equality?(inner) } ||
+          (statement.else_body && statement.else_body.any? { |inner| statement_uses_str_equality?(inner) })
+      when IR::SwitchStmt
+        expression_uses_str_equality?(statement.expression) || statement.cases.any? { |switch_case| switch_case.body.any? { |inner| statement_uses_str_equality?(inner) } }
+      when IR::StaticAssert
+        expression_uses_str_equality?(statement.condition) || expression_uses_str_equality?(statement.message)
+      when IR::ReturnStmt
+        statement.value && expression_uses_str_equality?(statement.value)
+      when IR::ExpressionStmt
+        expression_uses_str_equality?(statement.expression)
+      else
+        false
+      end
+    end
+
     def expression_uses_named_call?(expression, callees)
       case expression
       when IR::Call
@@ -516,6 +561,31 @@ module MilkTea
         expression.fields.any? { |field| expression_uses_named_call?(field.value, callees) }
       when IR::ArrayLiteral
         expression.elements.any? { |element| expression_uses_named_call?(element, callees) }
+      else
+        false
+      end
+    end
+
+    def expression_uses_str_equality?(expression)
+      case expression
+      when IR::Binary
+        str_equality_expression?(expression) || expression_uses_str_equality?(expression.left) || expression_uses_str_equality?(expression.right)
+      when IR::Call
+        (!expression.callee.is_a?(String) && expression_uses_str_equality?(expression.callee)) || expression.arguments.any? { |argument| expression_uses_str_equality?(argument) }
+      when IR::Member
+        expression_uses_str_equality?(expression.receiver)
+      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+        expression_uses_str_equality?(expression.receiver) || expression_uses_str_equality?(expression.index)
+      when IR::Unary
+        expression_uses_str_equality?(expression.operand)
+      when IR::Conditional
+        expression_uses_str_equality?(expression.condition) || expression_uses_str_equality?(expression.then_expression) || expression_uses_str_equality?(expression.else_expression)
+      when IR::ReinterpretExpr, IR::Cast, IR::AddressOf
+        expression_uses_str_equality?(expression.expression)
+      when IR::AggregateLiteral
+        expression.fields.any? { |field| expression_uses_str_equality?(field.value) }
+      when IR::ArrayLiteral
+        expression.elements.any? { |element| expression_uses_str_equality?(element) }
       else
         false
       end
@@ -546,6 +616,18 @@ module MilkTea
       end
 
       lines
+    end
+
+    def emit_str_equality_helper
+      [
+        "static bool mt_str_equal(mt_str left, mt_str right) {",
+        "#{INDENT}if (left.len != right.len) return false;",
+        "#{INDENT}for (uintptr_t index = 0; index < left.len; index++) {",
+        "#{INDENT * 2}if (left.data[index] != right.data[index]) return false;",
+        "#{INDENT}}",
+        "#{INDENT}return true;",
+        "}",
+      ]
     end
 
     def emit_async_memory_helpers
@@ -1773,6 +1855,8 @@ module MilkTea
           "#{expression.operator}#{wrap_expression(expression.operand)}"
         end
       when IR::Binary
+        return emit_str_equality_expression(expression) if str_equality_expression?(expression)
+
         "#{wrap_expression(expression.left)} #{c_operator(expression.operator)} #{wrap_expression(expression.right)}"
       when IR::Conditional
         "#{wrap_expression(expression.condition)} ? #{wrap_expression(expression.then_expression)} : #{wrap_expression(expression.else_expression)}"
@@ -1826,6 +1910,15 @@ module MilkTea
       else
         raise LoweringError, "unsupported IR expression #{expression.class.name}"
       end
+    end
+
+    def str_equality_expression?(expression)
+      ["==", "!="].include?(expression.operator) && expression.left.type.is_a?(Types::StringView) && expression.right.type.is_a?(Types::StringView)
+    end
+
+    def emit_str_equality_expression(expression)
+      call = "mt_str_equal(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
+      expression.operator == "!=" ? "(!#{call})" : call
     end
 
     def emit_initializer(expression)

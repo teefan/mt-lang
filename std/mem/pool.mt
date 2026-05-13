@@ -77,6 +77,7 @@ public function slot_size_for[T]() -> ptr_uint:
 public function create_for[T](slot_count: ptr_uint) -> Pool:
     return create_aligned(slot_size_for[T](), slot_count, ptr_uint<-align_of(T))
 
+
 methods Pool:
     public function remaining_slots() -> ptr_uint:
         return this.slot_count - this.used_count

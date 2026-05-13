@@ -952,7 +952,7 @@ module MilkTea
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
         case expression
-        when AST::IntegerLiteral, AST::FloatLiteral
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
           expression.value
         when AST::StringLiteral
           expression.value
@@ -969,6 +969,12 @@ module MilkTea
           end
         when AST::UnaryOp
           operand = evaluate_compile_time_const_value(expression.operand, scopes:)
+          if expression.operator == "not"
+            return !operand if operand == true || operand == false
+
+            return
+          end
+
           return unless operand.is_a?(Numeric)
 
           case expression.operator
@@ -987,6 +993,22 @@ module MilkTea
       end
 
       def evaluate_compile_time_const_binary(operator, left, right)
+        case operator
+        when "=="
+          return compile_time_equality_result(left, right)
+        when "!="
+          result = compile_time_equality_result(left, right)
+          return result.nil? ? nil : !result
+        when "and"
+          return left && right if (left == true || left == false) && (right == true || right == false)
+
+          return
+        when "or"
+          return left || right if (left == true || left == false) && (right == true || right == false)
+
+          return
+        end
+
         return unless left.is_a?(Numeric) && right.is_a?(Numeric)
 
         case operator
@@ -1023,6 +1045,14 @@ module MilkTea
 
           left ^ right
         end
+      end
+
+      def compile_time_equality_result(left, right)
+        return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
+        return left == right if left.is_a?(String) && right.is_a?(String)
+        return left == right if (left == true || left == false) && (right == true || right == false)
+
+        nil
       end
 
       def check_top_level_static_asserts

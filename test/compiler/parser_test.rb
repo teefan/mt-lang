@@ -402,7 +402,7 @@ class MilkTeaParserTest < Minitest::Test
 
       function main(count: int) -> int:
           let text = fmt.format(f"count=\#{count} ok=\#{true}")
-          return int<-text.count()
+          return int<-text.len()
     MT
 
     ast = MilkTea::Parser.parse(source)

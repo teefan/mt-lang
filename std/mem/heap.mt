@@ -106,6 +106,21 @@ public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr
     return unsafe: ptr[void]<-memory
 
 
+public function copy_bytes(destination: ptr[ubyte]?, source: ptr[ubyte]?, size_bytes: ptr_uint) -> void:
+    if size_bytes == 0:
+        return
+
+    if destination == null or source == null:
+        fatal(c"heap.copy_bytes requires non-null pointers for non-empty copies")
+
+    var index: ptr_uint = 0
+    while index < size_bytes:
+        unsafe:
+            read(ptr[ubyte]<-destination + index) = read(ptr[ubyte]<-source + index)
+        index += 1
+    return
+
+
 public function resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> ptr[void]?:
     if size_bytes == 0:
         release_bytes(memory)
