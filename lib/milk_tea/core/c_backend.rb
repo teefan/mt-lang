@@ -2084,6 +2084,7 @@ module MilkTea
     end
 
     def aggregate_field_type(type, field_name)
+      return proc_field_types(type).fetch(field_name) if type.is_a?(Types::Proc)
       return type.field(field_name) if type.respond_to?(:field)
 
       raise LoweringError, "unsupported aggregate field lookup for #{type}"
@@ -2649,16 +2650,22 @@ module MilkTea
         IR::StructDecl.new(
           name: type.to_s,
           c_name: proc_type_name(type),
-          fields: [
-            IR::Field.new(name: "env", type: Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])),
-            IR::Field.new(name: "invoke", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))] + type.params, return_type: type.return_type)),
-            IR::Field.new(name: "release", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))], return_type: Types::Primitive.new("void"))),
-            IR::Field.new(name: "retain", type: Types::Function.new(nil, params: [Types::Parameter.new("env", Types::GenericInstance.new("ptr", [Types::Primitive.new("void")]))], return_type: Types::Primitive.new("void"))),
-          ],
+          fields: proc_field_types(type).map { |field_name, field_type| IR::Field.new(name: field_name, type: field_type) },
           packed: false,
           alignment: nil,
         )
       end
+    end
+
+    def proc_field_types(type)
+      void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+
+      {
+        "env" => void_ptr,
+        "invoke" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)] + type.params, return_type: type.return_type),
+        "release" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)], return_type: Types::Primitive.new("void")),
+        "retain" => Types::Function.new(nil, params: [Types::Parameter.new("env", void_ptr)], return_type: Types::Primitive.new("void")),
+      }
     end
 
     def collect_str_builder_decls

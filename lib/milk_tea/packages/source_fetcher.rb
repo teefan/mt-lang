@@ -102,7 +102,7 @@ module MilkTea
     def git_checkout_current?(checkout_root, revision)
       return false unless File.directory?(checkout_root)
 
-      stdout, stderr, status = Open3.capture3("git", "-C", checkout_root, "rev-parse", "HEAD")
+      stdout, _stderr, status = Open3.capture3("git", "-C", checkout_root, "rev-parse", "HEAD")
       return false unless status.success?
 
       stdout.strip == revision

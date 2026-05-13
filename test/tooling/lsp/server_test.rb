@@ -3021,7 +3021,7 @@ class LSPServerTest < Minitest::Test
       main_uri = path_to_uri(main_path)
 
       with_server do |client|
-        init = client.send_request("initialize", {
+        client.send_request("initialize", {
           "rootUri" => root_uri,
           "capabilities" => {},
           "initializationOptions" => {

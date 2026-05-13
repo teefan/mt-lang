@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "cgi"
+require "cgi/escape"
 require "minitest/autorun"
 require "socket"
 require_relative "../lib/milk_tea"

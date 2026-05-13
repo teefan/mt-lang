@@ -22,10 +22,12 @@ module MilkTea
         super(name: "steamworks", source_root: @root.join("third_party/steamworks-sdk-upstream"))
       end
 
-      def link_flags
-        case platform
+      def link_flags(platform: nil)
+        resolved_platform = platform || host_platform
+
+        case resolved_platform
         when :windows
-          copied_import_library = build_root.join(MilkTea::Steamworks::IMPORT_LIBRARY_BASENAME_BY_PLATFORM.fetch(platform))
+          copied_import_library = build_root.join(MilkTea::Steamworks::IMPORT_LIBRARY_BASENAME_BY_PLATFORM.fetch(resolved_platform))
           return [copied_import_library.to_s] if File.file?(copied_import_library)
 
           ["-L#{build_root}"]
@@ -34,12 +36,13 @@ module MilkTea
         end
       end
 
-      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"))
+      def prepare!(env: ENV, cc: ENV.fetch("CC", "cc"), platform: nil)
         _resolved_cc = resolved_cc(env, cc)
         FileUtils.mkdir_p(build_root)
 
-        import_library = MilkTea::Steamworks.import_library_path(root:, env:, platform:, bootstrap: true)
-        runtime_library = MilkTea::Steamworks.runtime_library_path(root:, env:, platform:, bootstrap: true)
+        resolved_platform = platform || host_platform
+        import_library = MilkTea::Steamworks.import_library_path(root:, env:, platform: resolved_platform, bootstrap: true)
+        runtime_library = MilkTea::Steamworks.runtime_library_path(root:, env:, platform: resolved_platform, bootstrap: true)
 
         copy_if_present(import_library)
         copy_if_present(runtime_library)
@@ -59,7 +62,7 @@ module MilkTea
         destination.to_s
       end
 
-      def platform
+      def host_platform
         MilkTea::Steamworks.host_platform
       end
     end
