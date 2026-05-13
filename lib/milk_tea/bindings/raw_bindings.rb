@@ -908,6 +908,31 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "ctype",
+          module_name: "std.c.ctype",
+          binding_path: root.join("std/c/ctype.mt"),
+          declaration_name_prefixes: ["mt_ctype_"],
+          include_directives: ["ctype_bindgen.h"],
+          allow_static_inline_functions: true,
+          header_candidates: [
+            root.join("std/c/ctype_bindgen.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "errno",
+          module_name: "std.c.errno",
+          binding_path: root.join("std/c/errno.mt"),
+          declaration_name_prefixes: ["MT_ERRNO_", "mt_errno_"],
+          include_directives: ["errno_bindgen.h"],
+          allow_static_inline_functions: true,
+          function_return_type_overrides: {
+            "mt_errno_strerror" => "cstr?",
+          },
+          header_candidates: [
+            root.join("std/c/errno_bindgen.h").to_s,
+          ],
+        ),
+        Binding.new(
           name: "sdl3",
           module_name: "std.c.sdl3",
           binding_path: root.join("std/c/sdl3.mt"),

@@ -20,7 +20,10 @@ public foreign function format_to_with_args(buffer: ptr[char], maxlen: ptr_uint,
 public foreign function print_with_args(format: str as cstr, args: VaList) -> int = c.vprintf
 public foreign function print_to_with_args(stream: File?, format: str as cstr, args: VaList) -> int = c.vfprintf
 public foreign function open(path: str as cstr, mode: str as cstr) -> File? = c.fopen
+public foreign function temporary_file() -> File? = c.tmpfile
 public foreign function close(stream: File?) -> int = c.fclose
+public foreign function rename(from_path: str as cstr, to_path: str as cstr) -> int = c.rename
+public foreign function remove(path: str as cstr) -> int = c.remove
 public foreign function read_char(stream: File?) -> int = c.fgetc
 public foreign function write_char(ch: int, stream: File?) -> int = c.fputc
 public foreign function read_line(buffer: ptr[char], max_count: int, stream: File?) -> ptr[char]? = c.fgets

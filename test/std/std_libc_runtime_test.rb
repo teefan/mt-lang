@@ -4,7 +4,7 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaStdLibcRuntimeTest < Minitest::Test
-  def test_host_runtime_executes_generated_temp_and_realpath_helpers
+  def test_host_runtime_executes_curated_parse_environment_temp_and_realpath_helpers
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
@@ -18,6 +18,11 @@ class MilkTeaStdLibcRuntimeTest < Minitest::Test
         "import std.str as text",
         "",
         "function main() -> int:",
+        "    if libc.parse_int(\"42\") != 42:",
+        "        return 12",
+        "    if libc.get_environment_variable(\"PATH\") == null:",
+        "        return 13",
+        "",
         "    var file_template: str_builder[64]",
         "    file_template.assign(\"mt-libc-file-XXXXXX\")",
         "    let file = libc.create_temp_file(file_template)",
