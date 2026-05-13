@@ -4,6 +4,27 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaPackageManifestTest < Minitest::Test
+  def test_load_defaults_package_name_to_snake_case_directory_basename
+    Dir.mktmpdir("milk-tea-package-manifest-default-name") do |dir|
+      project_root = File.join(dir, "MyProject")
+      FileUtils.mkdir_p(File.join(project_root, "src"))
+      File.write(File.join(project_root, "src", "main.mt"), <<~MT)
+        module my_project
+      MT
+      File.write(File.join(project_root, "package.toml"), <<~TOML)
+        [package]
+        version = "0.1.0"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      manifest = MilkTea::PackageManifest.load(project_root)
+
+      assert_equal "my_project", manifest.package_name
+    end
+  end
+
   def test_load_parses_exact_registry_dependency_as_exact_requirement
     Dir.mktmpdir("milk-tea-package-manifest") do |dir|
       FileUtils.mkdir_p(File.join(dir, "src"))

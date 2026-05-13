@@ -54,6 +54,8 @@ module MilkTea
         build_command
       when "run"
         run_command
+      when "new"
+        new_command
       when "dap"
         dap_command
       when "toolchain"
@@ -451,6 +453,25 @@ module MilkTea
       result.exit_status
     end
 
+    def new_command
+      name = @argv.shift
+      unless name
+        @err.puts("missing project name")
+        print_usage(@err)
+        return 1
+      end
+
+      if @argv.any?
+        @err.puts("unknown new option #{@argv.first}")
+        print_usage(@err)
+        return 1
+      end
+
+      result = ProjectScaffold.create(name)
+      @out.puts("created #{result.root_path}")
+      0
+    end
+
     def deps_command
       PackageManagerCLI.start(
         @argv,
@@ -596,7 +617,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -782,6 +803,14 @@ module MilkTea
             --clean                      Remove existing build outputs and exit.
             -I, --include-path PATH      Add an extra module root.
         HELP
+      "new"             => <<~HELP,
+        Usage: mtc new NAME
+
+          Create a new application package scaffold with package.toml and src/main.mt.
+          NAME selects the target directory, and its basename is normalized to
+          snake_case for package.name and the generated module declaration.
+          The target may be a new directory or an existing empty directory.
+        HELP
       "run"             => <<~HELP,
         Usage: mtc run [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -870,6 +899,7 @@ module MilkTea
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")

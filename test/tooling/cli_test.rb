@@ -3243,6 +3243,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc lower PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc emit-c PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)
+    assert_match(/mtc new NAME/, err.string)
     assert_match(/mtc run \[PATH_OR_PACKAGE\]/, err.string)
     refute_match(/mtc stop-preview \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc toolchain bootstrap/, err.string)
@@ -3255,6 +3256,105 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc deps fetch \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc bindgen MODULE HEADER .*--nullable-report PATH/, err.string)
     assert_match(/mtc dap/, err.string)
+  end
+
+  def test_new_command_creates_project_scaffold_and_generated_entry_checks
+    Dir.mktmpdir("milk-tea-cli-new") do |dir|
+      project_root = File.join(dir, "hello-world")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["new", project_root], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/created #{Regexp.escape(project_root)}/, out.string)
+      assert_equal <<~TOML, File.read(File.join(project_root, "package.toml"))
+        [package]
+        name = "hello_world"
+        version = "0.1.0"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+      assert_equal <<~MT, File.read(File.join(project_root, "src", "main.mt"))
+        module hello_world
+
+        function main() -> int:
+            return 0
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["check", File.join(project_root, "src", "main.mt")], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/checked .*src\/main\.mt as hello_world/, out.string)
+    end
+  end
+
+  def test_new_command_normalizes_camel_case_project_name_for_package_and_module
+    Dir.mktmpdir("milk-tea-cli-new-camel-case") do |dir|
+      project_root = File.join(dir, "MyProject")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["new", project_root], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/created #{Regexp.escape(project_root)}/, out.string)
+      assert_match(/name = "my_project"/, File.read(File.join(project_root, "package.toml")))
+      assert_match(/module my_project/, File.read(File.join(project_root, "src", "main.mt")))
+    end
+  end
+
+  def test_new_command_without_name_prints_usage
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["new"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing project name/, err.string)
+    assert_match(/mtc new NAME/, err.string)
+  end
+
+  def test_new_command_rejects_existing_non_empty_directory
+    Dir.mktmpdir("milk-tea-cli-new-existing") do |dir|
+      project_root = File.join(dir, "hello-world")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["new", project_root], out:, err:)
+
+      assert_equal 0, status
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["new", project_root], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/project directory already exists and is not empty/, err.string)
+    end
+  end
+
+  def test_new_command_help_prints_command_help
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["new", "--help"], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/Usage: mtc new NAME/, out.string)
+    assert_match(/Create a new application package scaffold/, out.string)
+    assert_match(/normalized to\s+snake_case/, out.string)
   end
 
   def test_bindgen_command_without_args_prints_bindgen_help

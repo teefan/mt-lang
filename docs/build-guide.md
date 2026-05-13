@@ -9,6 +9,14 @@ Milk Tea builds either a single source file or a package directory.
 - A source build compiles one `.mt` file directly.
 - A package build reads `package.toml` from the target directory.
 
+Create a new application package scaffold with:
+
+```sh
+mtc new my-project
+```
+
+This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and writes the same normalized name into the generated `module ...` declaration. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `module my_project`.
+
 Minimal package example:
 
 ```toml
