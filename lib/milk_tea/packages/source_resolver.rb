@@ -116,7 +116,21 @@ module MilkTea
 
       def normalize_optional(value)
         text = value.to_s.strip
-        text.empty? ? nil : text
+        return nil if text.empty?
+        raise PackageSourceResolverError, "git source subdir cannot be absolute" if text.start_with?("/", "\\")
+        raise PackageSourceResolverError, "git source subdir cannot be absolute" if text.match?(/\A[A-Za-z]:[\\\/]/)
+
+        segments = text.split(/[\\\/]+/).reject(&:empty?)
+        normalized_segments = []
+        segments.each do |segment|
+          next if segment == "."
+          raise PackageSourceResolverError, "git source subdir cannot escape the repository root" if segment == ".."
+
+          normalized_segments << segment
+        end
+
+        normalized = normalized_segments.join("/")
+        normalized.empty? ? nil : normalized
       end
     end
 
@@ -140,10 +154,24 @@ module MilkTea
 
     ResolvedPackage = Data.define(:manifest, :source)
 
-    def initialize(source_cache: PackageSourceCache.new, remote_resolution: :reject, source_fetcher: nil)
+    def initialize(source_cache: PackageSourceCache.new, remote_resolution: :reject, source_fetcher: nil, resolved_registry_versions: nil)
       @source_cache = source_cache
       @remote_resolution = remote_resolution
       @source_fetcher = source_fetcher
+      @resolved_registry_versions = normalize_resolved_registry_versions(resolved_registry_versions)
+    end
+
+    def supports_dependency_solving?
+      @remote_resolution != :reject
+    end
+
+    def with_resolved_registry_versions(resolved_registry_versions)
+      self.class.new(
+        source_cache: @source_cache,
+        remote_resolution: @remote_resolution,
+        source_fetcher: @source_fetcher,
+        resolved_registry_versions:,
+      )
     end
 
     def source_for_manifest(manifest)
@@ -182,10 +210,11 @@ module MilkTea
     def resolve(dependency, parent_manifest:)
       if dependency.path
         manifest = PackageManifest.load(dependency.path)
+        validate_fixed_dependency_version_requirement!(dependency, manifest, parent_manifest:)
         return ResolvedPackage.new(manifest:, source: source_for_manifest(manifest))
       end
 
-      return resolve_registry_dependency(dependency, parent_manifest:) if dependency.version
+      return resolve_registry_dependency(dependency, parent_manifest:) if dependency.registry?
       return resolve_git_dependency(dependency, parent_manifest:) if dependency.git
 
       raise PackageSourceResolverError,
@@ -202,6 +231,22 @@ module MilkTea
     private
 
     def resolve_registry_dependency(dependency, parent_manifest:)
+      resolved_version = @resolved_registry_versions[dependency.name]
+      if resolved_version
+        unless dependency.version_req.matches?(resolved_version)
+          raise PackageSourceResolverError,
+                "dependency #{dependency.name} in #{parent_manifest.manifest_path} resolved version #{resolved_version.inspect}, which does not satisfy #{dependency.version_req}"
+        end
+
+        identity = RegistryIdentity.new(package_name: dependency.name, version: resolved_version)
+        return resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
+      end
+
+      unless dependency.exact_registry_version?
+        raise PackageSourceResolverError,
+              "dependency #{dependency.name} in #{parent_manifest.manifest_path} uses version requirement #{dependency.version_req}, but registry dependency solving is not implemented yet; use an exact version for now"
+      end
+
       identity = RegistryIdentity.new(package_name: dependency.name, version: dependency.version)
       resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
     end
@@ -252,6 +297,21 @@ module MilkTea
       raise PackageSourceResolverError, e.message
     end
 
+    def validate_fixed_dependency_version_requirement!(dependency, manifest, parent_manifest:)
+      return unless dependency.version_req
+
+      package_version = manifest.package_version
+      if package_version.nil?
+        raise PackageSourceResolverError,
+              "dependency #{dependency.name} in #{parent_manifest.manifest_path} requires version #{dependency.version_req}, but #{manifest.manifest_path} does not declare package.version"
+      end
+
+      return if dependency.version_req.matches?(package_version)
+
+      raise PackageSourceResolverError,
+            "dependency #{dependency.name} in #{parent_manifest.manifest_path} resolved version #{package_version.inspect} at #{manifest.manifest_path}, which does not satisfy #{dependency.version_req}"
+    end
+
     def source_for_identity(identity, context_label)
       local_root = if identity.is_a?(PathIdentity)
                      identity.path
@@ -269,6 +329,14 @@ module MilkTea
         identity:,
         local_root:,
       )
+    end
+
+    def normalize_resolved_registry_versions(versions)
+      return {} unless versions
+
+      versions.each_with_object({}) do |(package_name, version), resolved|
+        resolved[package_name.to_s] = version.to_s
+      end
     end
   end
 end

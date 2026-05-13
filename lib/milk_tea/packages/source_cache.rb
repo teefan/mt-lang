@@ -37,7 +37,14 @@ module MilkTea
 
       if identity.respond_to?(:subdir) && identity.subdir
         segments = identity.subdir.split(/[\\\/]+/).reject(&:empty?)
-        return File.join(base_path, *segments)
+        materialized_path = File.expand_path(File.join(base_path, *segments))
+        expanded_base_path = File.expand_path(base_path)
+        unless materialized_path == expanded_base_path || materialized_path.start_with?(expanded_base_path + File::SEPARATOR)
+          raise PackageSourceCacheError,
+                "git source subdir escapes the materialized package root: #{identity.subdir.inspect}"
+        end
+
+        return materialized_path
       end
 
       base_path

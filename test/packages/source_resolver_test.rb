@@ -54,7 +54,15 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       TOML
 
       root_manifest = MilkTea::PackageManifest.load(app_root)
-      dependency = MilkTea::PackageManifest::DependencyView.new("teefan.ui", "0.3.0", nil, nil, nil, nil)
+      dependency = MilkTea::PackageManifest::DependencyView.new(
+        "teefan.ui",
+        "0.3.0",
+        MilkTea::PackageVersionReq.parse("0.3.0"),
+        nil,
+        nil,
+        nil,
+        nil,
+      )
 
       error = assert_raises(MilkTea::PackageSourceResolverError) do
         MilkTea::PackageSourceResolver.new.resolve(dependency, parent_manifest: root_manifest)
@@ -63,6 +71,37 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       assert_match(/uses registry resolution/, error.message)
       assert_match(/--locked or --frozen/, error.message)
       assert_match(/teefan\.ui/, error.message)
+    end
+  end
+
+  def test_resolve_rejects_non_exact_registry_requirement_until_solver_exists
+    Dir.mktmpdir("milk-tea-package-source-resolver-range") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      FileUtils.mkdir_p(app_root)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+      TOML
+
+      root_manifest = MilkTea::PackageManifest.load(app_root)
+      dependency = MilkTea::PackageManifest::DependencyView.new(
+        "teefan.ui",
+        nil,
+        MilkTea::PackageVersionReq.parse("^1.2.3"),
+        nil,
+        nil,
+        nil,
+        nil,
+      )
+
+      error = assert_raises(MilkTea::PackageSourceResolverError) do
+        MilkTea::PackageSourceResolver.new.resolve(dependency, parent_manifest: root_manifest)
+      end
+
+      assert_match(/version requirement/, error.message)
+      assert_match(/solver/i, error.message)
+      assert_match(/exact version/, error.message)
     end
   end
 
@@ -80,6 +119,7 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       dependency = MilkTea::PackageManifest::DependencyView.new(
         "teefan.ui",
         nil,
+        nil,
         "https://example.invalid/teefan/ui.git",
         "deadbeef",
         nil,
@@ -93,6 +133,18 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       assert_match(/uses git resolution/, error.message)
       assert_match(/--locked or --frozen/, error.message)
     end
+  end
+
+  def test_git_identity_rejects_subdir_that_escapes_repository_root
+    error = assert_raises(MilkTea::PackageSourceResolverError) do
+      MilkTea::PackageSourceResolver::GitIdentity.new(
+        url: "https://example.invalid/teefan/ui.git",
+        revision: "deadbeef",
+        subdir: "../../outside",
+      )
+    end
+
+    assert_match(/cannot escape the repository root/, error.message)
   end
 
   def test_resolve_uses_materialized_cache_for_registry_dependency_when_remote_resolution_is_cache
@@ -118,7 +170,15 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       TOML
 
       root_manifest = MilkTea::PackageManifest.load(app_root)
-      dependency = MilkTea::PackageManifest::DependencyView.new("teefan.ui", "1.2.3", nil, nil, nil, nil)
+      dependency = MilkTea::PackageManifest::DependencyView.new(
+        "teefan.ui",
+        "1.2.3",
+        MilkTea::PackageVersionReq.parse("1.2.3"),
+        nil,
+        nil,
+        nil,
+        nil,
+      )
 
       resolved_package = MilkTea::PackageSourceResolver.new(
         source_cache: cache,
@@ -159,6 +219,7 @@ class MilkTeaPackageSourceResolverTest < Minitest::Test
       root_manifest = MilkTea::PackageManifest.load(app_root)
       dependency = MilkTea::PackageManifest::DependencyView.new(
         "teefan.ui",
+        nil,
         nil,
         identity.url,
         identity.revision,

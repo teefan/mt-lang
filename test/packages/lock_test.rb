@@ -123,4 +123,71 @@ class MilkTeaPackageLockTest < Minitest::Test
       assert_match(/package\.toml/, error.message)
     end
   end
+
+  def test_load_uses_materialized_manifest_metadata_instead_of_lockfile_paths
+    Dir.mktmpdir("milk-tea-package-lock-materialized-manifest") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      app_src_dir = File.join(app_root, "src")
+      cache_root = File.join(dir, "cache")
+      registry_root = File.join(cache_root, "registry", "teefan.ui@1.2.3")
+      bogus_manifest_path = File.join(dir, "bogus", "package.toml")
+      bogus_source_root = File.join(dir, "bogus", "src")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(File.join(registry_root, "src"))
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(registry_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_root, "package.lock"), <<~LOCK)
+        schema_version = 1
+        root_package = "snake_duel"
+
+        [[package]]
+        name = "snake_duel"
+        kind = "application"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{app_root.inspect}
+        manifest_path = #{File.join(app_root, "package.toml").inspect}
+        source_root = #{app_src_dir.inspect}
+        dependencies = ["teefan.ui"]
+
+        [[package]]
+        name = "teefan.ui"
+        kind = "library"
+        version = "1.2.3"
+        source_kind = "registry"
+        registry_package = "teefan.ui"
+        registry_version = "1.2.3"
+        manifest_path = #{bogus_manifest_path.inspect}
+        source_root = #{bogus_source_root.inspect}
+        dependencies = []
+      LOCK
+
+      source_resolver = MilkTea::PackageSourceResolver.new(
+        source_cache: MilkTea::PackageSourceCache.new(root: cache_root),
+      )
+
+      root = MilkTea::PackageLock.load(app_root, source_resolver:)
+      dependency_node = root.edges.fetch(0).node
+
+      assert_equal File.expand_path(File.join(registry_root, "package.toml")), dependency_node.manifest.manifest_path
+      assert_equal File.expand_path(File.join(registry_root, "src")), dependency_node.manifest.source_root
+      refute_equal File.expand_path(bogus_manifest_path), dependency_node.manifest.manifest_path
+      refute_equal File.expand_path(bogus_source_root), dependency_node.manifest.source_root
+    end
+  end
 end

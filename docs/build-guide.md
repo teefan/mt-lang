@@ -41,7 +41,7 @@ Relevant build keys:
 
 Application packages default to `build.entry = "src/main.mt"` when that file exists. Library packages do not have an executable entry point.
 
-## 2. Library Packages And Path Dependencies
+## 2. Library Packages, Version Requirements, And Dependency Commands
 
 Milk Tea packages can now depend on local reusable source packages.
 
@@ -66,8 +66,8 @@ version = "0.1.0"
 entry = "src/main.mt"
 
 [dependencies]
-"tetris.pieces" = { path = "packages/tetris_pieces" }
-"tetris.rules" = { path = "packages/tetris_rules" }
+"tetris.pieces" = { path = "packages/tetris_pieces", version = "0.1.0" }
+"tetris.rules" = { path = "packages/tetris_rules", version = "0.1.0" }
 ```
 
 Application package with a pinned git dependency:
@@ -92,7 +92,29 @@ version = "0.1.0"
 "teefan.ui" = "1.2.3"
 ```
 
+Application package with a ranged registry dependency:
+
+```toml
+[package]
+name = "tetris"
+version = "0.1.0"
+
+[dependencies]
+"teefan.ui" = "^1.2.3"
+```
+
 Dependency paths are resolved relative to the depending package root.
+
+Supported version requirement forms:
+
+- exact: `1.2.3`
+- lower bound: `>=1.2.3`
+- upper bound: `<2.0.0`
+- compatible release: `^1.2.3`
+- patch-compatible release: `~1.2.3`
+- conjunctions: `>=1.2.3, <2.0.0`
+
+For local `path` dependencies, `version = "..."` is optional. When present, the depending manifest records the expected local package version and resolution fails if the target package's `package.version` does not satisfy that requirement.
 
 Imported modules keep normal Milk Tea syntax:
 
@@ -103,15 +125,15 @@ import tetris.rules.scoring as scoring
 
 Current scope:
 
-- local `path` dependencies, pinned git dependencies (`git`, `rev`, optional `subdir`), and exact registry dependencies (`"name" = "1.2.3"` or `{ version = "1.2.3" }`) are supported in manifests
-- registry dependencies are exact-version only; version ranges and solver-style constraints are still rejected
+- local `path` dependencies, optional versioned `path` dependencies, pinned git dependencies (`git`, `rev`, optional `subdir`), and exact or ranged registry dependencies are supported in dependency-management flows
+- registry requirement solving is phase 1: the solver chooses one resolved version per package name across the entire graph, so incompatible ranges that require multiple versions of the same package still fail
 - dependency source roots are resolved recursively
 - packages can import their own modules, `std`, and declared direct dependencies only
 - transitive dependency packages are loaded for dependent packages, but they are not directly importable from the root application unless declared there too
 - package dependency cycles are rejected during graph construction
-- deterministic `package.lock` generation is supported for local path, pinned git, and exact registry dependency graphs
-- `deps tree` and `deps lock` are explicit dependency-management commands and may materialize pinned git or exact registry dependencies into the shared source cache while reading manifests
-- build, check, run, and live LSP dependency resolution stay fetch-free; git or registry manifests are meant to flow through `deps lock` plus `--locked` or `--frozen`
+- deterministic `package.lock` generation is supported for graphs that satisfy that one-package-name-per-graph rule
+- `deps tree`, `deps lock`, `deps add`, `deps remove`, `deps update`, and `deps fetch` are explicit dependency-management commands; commands that need git or registry sources may materialize them into the shared source cache while reading manifests
+- build, check, run, and live LSP dependency resolution stay fetch-free; git or registry manifests are meant to flow through `deps lock` plus `--locked` or `--frozen`, while live direct resolution continues to reject cache-backed dependencies
 - local registry publish and fetch flows now exist, and an optional upstream filesystem registry mirror is supported through `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM`; HTTP registry transport and update flows are still not implemented
 
 Inspect the current local package graph with:
@@ -123,6 +145,28 @@ mtc deps tree path/to/package
 When run inside a package directory, `mtc deps tree` defaults to the current directory.
 
 When pinned git or exact registry dependencies are present, `mtc deps tree` may materialize them into the shared source cache so it can read their manifests.
+
+Add or update a dependency in `package.toml` and refresh `package.lock` with:
+
+```sh
+mtc deps add path/to/package teefan.ui@^1.2.3
+mtc deps add path/to/package tetris.rules --path packages/tetris_rules --version 0.1.0
+mtc deps add path/to/package teefan.ui --git https://example.invalid/teefan/ui.git --rev deadbeef --subdir packages/ui
+```
+
+Remove a dependency and refresh `package.lock` with:
+
+```sh
+mtc deps remove path/to/package teefan.ui
+```
+
+Re-resolve the current manifest and refresh `package.lock` with:
+
+```sh
+mtc deps update path/to/package
+```
+
+`deps update` keeps the manifest requirements unchanged and picks the newest available versions that still satisfy them under the current phase-1 solver.
 
 Publish a versioned package into the local registry store with:
 
@@ -169,7 +213,7 @@ mtc deps lock path/to/package --check
 
 `--check` exits with status `0` when `package.lock` is current, and `1` when it is missing or out of date.
 
-For pinned git or exact registry dependencies, `mtc deps lock` and `mtc deps lock --check` may materialize cache-backed package sources while recomputing the expected graph. Exact registry dependencies may also mirror missing versions from `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM` into the local registry first.
+For pinned git or registry dependencies, `mtc deps lock` and `mtc deps lock --check` may materialize cache-backed package sources while recomputing the expected graph. Registry dependencies may also mirror missing versions from `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM` into the local registry first.
 
 The current lockfile records:
 
@@ -177,7 +221,7 @@ The current lockfile records:
 - the root package name
 - each resolved package's name, kind, version when present, manifest path, source root, source kind, source identity fields (`source_path` for path dependencies, `git_url` and `git_rev` plus optional `git_subdir` for git dependencies, `registry_package` and `registry_version` for registry dependencies), and direct dependency names
 
-The current lockfile is generated deterministically from local `path` dependencies, pinned git dependencies, and exact registry dependencies. It is safe to regenerate; cache-backed dependency-management commands may also refresh the shared source cache while resolving manifests.
+The current lockfile is generated deterministically from local `path` dependencies, pinned git dependencies, and solved registry dependencies. It is safe to regenerate; cache-backed dependency-management commands may also refresh the shared source cache while resolving manifests.
 
 You can opt into locked dependency resolution for the current compiler path with:
 
