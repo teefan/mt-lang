@@ -38,12 +38,15 @@ module MilkTea
       ].to_set.freeze
       DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
 
-      def self.semantic_tokens_for_path(path, module_roots: nil)
+      def self.semantic_tokens_for_path(path, module_roots: nil, package_graph: nil)
         expanded_path = File.expand_path(path)
         roots = module_roots || MilkTea::ModuleRoots.roots_for_path(expanded_path)
         source = File.read(expanded_path)
         tokens = MilkTea::Lexer.lex(source, path: expanded_path)
-        analysis = MilkTea::ModuleLoader.new(module_roots: roots).check_file(expanded_path)
+        analysis = MilkTea::ModuleLoader.new(
+          module_roots: roots,
+          package_graph: package_graph || load_package_graph(expanded_path),
+        ).check_file(expanded_path)
 
         helper = allocate
         entries = helper.send(:build_semantic_token_entries, tokens, analysis)
@@ -68,6 +71,13 @@ module MilkTea
           end,
         }
       end
+
+      def self.load_package_graph(path, locked: false)
+        PackageGraph.load(path, locked:)
+      rescue PackageManifestError
+        nil
+      end
+      private_class_method :load_package_graph
 
       def initialize(protocol: Protocol)
         @protocol = protocol
@@ -1957,6 +1967,14 @@ module MilkTea
             if token_index && (builtin_info = builtin_hover_info(name, tokens, token_index))
               signature = builtin_info[:signature]
               docs = builtin_info[:docs]
+            end
+          end
+
+          unless signature
+            if token_index && match_arm_binding_token?(tokens, token_index)
+              if (local_binding = resolve_as_binding_declaration_hover_binding(analysis, name, lsp_line + 1, lsp_char + 1))
+                signature = value_hover_signature(local_binding)
+              end
             end
           end
 
@@ -4269,6 +4287,21 @@ module MilkTea
 
         future_snapshot = same_line_future_completion_snapshot(frame, line, char)
         future_snapshot&.bindings&.dig(name)
+      end
+
+      def resolve_as_binding_declaration_hover_binding(analysis, name, line, char)
+        frame = enclosing_completion_frame(analysis, line)
+        return nil unless frame
+
+        Array(frame.snapshots).each do |snapshot|
+          next if snapshot.line < line
+          next if snapshot.line == line && snapshot.column <= char
+
+          binding = snapshot.bindings[name]
+          return binding if binding
+        end
+
+        nil
       end
 
       def resolve_local_hover_type(analysis, name, line, char)

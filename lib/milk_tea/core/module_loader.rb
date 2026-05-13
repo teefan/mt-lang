@@ -146,6 +146,9 @@ module MilkTea
     end
 
     def resolve_module_path(module_name, importer_path: nil)
+      package_candidate = resolve_package_module_path(module_name, importer_path:)
+      return package_candidate if package_candidate
+
       relative_path = File.join(*module_name.split(".")) + ".mt"
       blocked = false
       candidate = @module_roots.lazy.map { |root| File.join(root, relative_path) }.find do |path|
@@ -159,6 +162,44 @@ module MilkTea
       raise ModuleLoadError.new("module not found", path: module_name) unless candidate
 
       File.expand_path(candidate)
+    end
+
+    def resolve_package_module_path(module_name, importer_path: nil)
+      return nil unless @package_graph && importer_path
+
+      importer_package = @package_graph.package_for_path(importer_path)
+      return nil unless importer_package
+
+      relative_path = File.join(*module_name.split(".")) + ".mt"
+      candidates = []
+      if package_namespace_match?(module_name, importer_package.manifest.package_name)
+        candidates << [
+          importer_package.manifest.package_name,
+          File.join(importer_package.manifest.source_root, relative_path),
+        ]
+      end
+
+      importer_package.edges.each do |edge|
+        next unless edge.node && package_namespace_match?(module_name, edge.dependency.name)
+
+        candidates << [
+          edge.dependency.name,
+          File.join(edge.node.manifest.source_root, relative_path),
+        ]
+      end
+
+      return nil if candidates.empty?
+
+      best_namespace_length = candidates.map { |namespace, _path| namespace.length }.max
+      matching_candidates = candidates.select { |namespace, _path| namespace.length == best_namespace_length }
+      if matching_candidates.length > 1
+        raise ModuleLoadError.new("ambiguous package dependency import", path: module_name)
+      end
+
+      resolved_path = matching_candidates.first.last
+      raise ModuleLoadError.new("module not found", path: module_name) unless File.file?(resolved_path)
+
+      File.expand_path(resolved_path)
     end
 
     def import_allowed?(module_name, importer_path, candidate_path)

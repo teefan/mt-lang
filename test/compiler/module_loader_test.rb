@@ -193,6 +193,60 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
+  def test_check_program_prefers_more_specific_dependency_namespace_over_root_package_namespace
+    Dir.mktmpdir("milk-tea-module-loader-package-prefix") do |dir|
+      app_root = File.join(dir, "apps", "tetris")
+      pieces_root = File.join(app_root, "packages", "tetris_pieces")
+      app_src_dir = File.join(app_root, "src")
+      pieces_src_dir = File.join(pieces_root, "src", "tetris", "pieces")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(pieces_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "tetris"
+        version = "0.1.0"
+
+        [build]
+        entry = "src/main.mt"
+
+        [dependencies]
+        "tetris.pieces" = { path = "packages/tetris_pieces", version = "0.1.0" }
+      TOML
+
+      File.write(File.join(pieces_root, "package.toml"), <<~TOML)
+        [package]
+        name = "tetris.pieces"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      root_path = File.join(app_src_dir, "main.mt")
+      File.write(root_path, <<~MT)
+        module game_engine
+
+        import tetris.pieces.defs as pieces
+
+        function main() -> int:
+            return pieces.spawn_value()
+      MT
+
+      File.write(File.join(pieces_src_dir, "defs.mt"), <<~MT)
+        module tetris.pieces.defs
+
+        public function spawn_value() -> int:
+            return 4
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
+
+      assert_equal true, program.analyses_by_module_name.key?("tetris.pieces.defs")
+      assert_equal %w[spawn_value], program.root_analysis.imports.fetch("pieces").functions.keys.sort
+    end
+  end
+
   def test_check_program_allows_dependency_packages_to_import_their_own_direct_dependencies
     Dir.mktmpdir("milk-tea-module-loader-transitive-allowed") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")
@@ -264,6 +318,263 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       assert_equal true, program.analyses_by_module_name.key?("teefan.ui.layout")
       assert_equal true, program.analyses_by_module_name.key?("teefan.math.ops")
+    end
+  end
+
+  def test_check_program_locked_resolves_duplicate_package_names_by_exact_dependency_instance
+    Dir.mktmpdir("milk-tea-module-loader-locked-package-instances") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      overlay_root = File.join(dir, "libs", "overlay")
+      ui_v1_root = File.join(dir, "libs", "ui-v1")
+      ui_v2_root = File.join(dir, "libs", "ui-v2")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      overlay_src_dir = File.join(overlay_root, "src", "teefan", "overlay")
+      ui_v1_src_dir = File.join(ui_v1_root, "src", "teefan", "ui")
+      ui_v2_src_dir = File.join(ui_v2_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(overlay_src_dir)
+      FileUtils.mkdir_p(ui_v1_src_dir)
+      FileUtils.mkdir_p(ui_v2_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(overlay_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.overlay"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "2.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      root_path = File.join(app_src_dir, "main.mt")
+      File.write(root_path, <<~MT)
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+        import teefan.overlay.panel as panel
+
+        function main() -> int:
+            return layout.default_width() + panel.overlay_width()
+      MT
+
+      File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
+        module teefan.overlay.panel
+
+        import teefan.ui.layout as layout
+
+        public function overlay_width() -> int:
+            return layout.overlay_width()
+      MT
+
+      File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 20
+
+        public function overlay_width() -> int:
+            return 7
+      MT
+
+      File.write(File.join(app_root, "package.lock"), <<~LOCK)
+        schema_version = 2
+        root_package = "snake_duel"
+        root_package_id = "root"
+
+        [[package]]
+        instance_id = "root"
+        name = "snake_duel"
+        kind = "application"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{app_root.inspect}
+        manifest_path = #{File.join(app_root, "package.toml").inspect}
+        source_root = #{File.join(app_root, "src").inspect}
+        dependency_ids = ["overlay", "ui-v1"]
+
+        [[package]]
+        instance_id = "overlay"
+        name = "teefan.overlay"
+        kind = "library"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{overlay_root.inspect}
+        manifest_path = #{File.join(overlay_root, "package.toml").inspect}
+        source_root = #{File.join(overlay_root, "src").inspect}
+        dependency_ids = ["ui-v2"]
+
+        [[package]]
+        instance_id = "ui-v1"
+        name = "teefan.ui"
+        kind = "library"
+        version = "1.0.0"
+        source_kind = "path"
+        source_path = #{ui_v1_root.inspect}
+        manifest_path = #{File.join(ui_v1_root, "package.toml").inspect}
+        source_root = #{File.join(ui_v1_root, "src").inspect}
+        dependency_ids = []
+
+        [[package]]
+        instance_id = "ui-v2"
+        name = "teefan.ui"
+        kind = "library"
+        version = "2.0.0"
+        source_kind = "path"
+        source_path = #{ui_v2_root.inspect}
+        manifest_path = #{File.join(ui_v2_root, "package.toml").inspect}
+        source_root = #{File.join(ui_v2_root, "src").inspect}
+        dependency_ids = []
+      LOCK
+
+      program = MilkTea::ModuleLoader.new(
+        module_roots: MilkTea::ModuleRoots.roots_for_path(root_path, locked: true),
+        package_graph: MilkTea::PackageGraph.load(app_root, locked: true),
+      ).check_program(root_path)
+
+      overlay_analysis = program.analyses_by_path.fetch(File.join(overlay_src_dir, "panel.mt"))
+      ui_v1_path = File.join(ui_v1_src_dir, "layout.mt")
+      ui_v2_path = File.join(ui_v2_src_dir, "layout.mt")
+      assert program.analyses_by_path.key?(ui_v1_path)
+      assert program.analyses_by_path.key?(ui_v2_path)
+
+      assert_equal %w[default_width], program.root_analysis.imports.fetch("layout").functions.keys.sort
+      assert_equal %w[default_width overlay_width], overlay_analysis.imports.fetch("layout").functions.keys.sort
+    end
+  end
+
+  def test_check_program_live_resolves_duplicate_package_names_by_exact_dependency_instance
+    Dir.mktmpdir("milk-tea-module-loader-live-package-instances") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      overlay_root = File.join(dir, "libs", "overlay")
+      ui_v1_root = File.join(dir, "libs", "ui-v1")
+      ui_v2_root = File.join(dir, "libs", "ui-v2")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      overlay_src_dir = File.join(overlay_root, "src", "teefan", "overlay")
+      ui_v1_src_dir = File.join(ui_v1_root, "src", "teefan", "ui")
+      ui_v2_src_dir = File.join(ui_v2_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(overlay_src_dir)
+      FileUtils.mkdir_p(ui_v1_src_dir)
+      FileUtils.mkdir_p(ui_v2_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.overlay" = { path = "../../libs/overlay" }
+        "teefan.ui" = { path = "../../libs/ui-v1" }
+      TOML
+
+      File.write(File.join(overlay_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.overlay"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../ui-v2" }
+      TOML
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "2.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      root_path = File.join(app_src_dir, "main.mt")
+      File.write(root_path, <<~MT)
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+        import teefan.overlay.panel as panel
+
+        function main() -> int:
+            return layout.default_width() + panel.overlay_width()
+      MT
+
+      File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
+        module teefan.overlay.panel
+
+        import teefan.ui.layout as layout
+
+        public function overlay_width() -> int:
+            return layout.overlay_width()
+      MT
+
+      File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 20
+
+        public function overlay_width() -> int:
+            return 7
+      MT
+
+      program = MilkTea::ModuleLoader.new(
+        module_roots: MilkTea::ModuleRoots.roots_for_path(root_path),
+        package_graph: MilkTea::PackageGraph.load(root_path),
+      ).check_program(root_path)
+
+      overlay_analysis = program.analyses_by_path.fetch(File.join(overlay_src_dir, "panel.mt"))
+      ui_v1_path = File.join(ui_v1_src_dir, "layout.mt")
+      ui_v2_path = File.join(ui_v2_src_dir, "layout.mt")
+      assert program.analyses_by_path.key?(ui_v1_path)
+      assert program.analyses_by_path.key?(ui_v2_path)
+
+      assert_equal %w[default_width], program.root_analysis.imports.fetch("layout").functions.keys.sort
+      assert_equal %w[default_width overlay_width], overlay_analysis.imports.fetch("layout").functions.keys.sort
     end
   end
 

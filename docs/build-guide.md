@@ -24,7 +24,7 @@ default = "wasm"
 
 [build]
 entry = "src/main.mt"
-preload = "assets"
+assets = "assets"
 html_template = "web/shell.html"
 ```
 
@@ -34,7 +34,7 @@ Relevant build keys:
 - `package.source_root`: optional module root for the package. The default is the package root. Use `src` when your package modules live under `src/...`.
 - `build.entry`: entry source file, relative to the package root.
 - `build.output`: optional explicit output path.
-- `build.preload`: optional file or directory to bundle into a wasm build.
+- `build.assets`: optional runtime asset path or array of paths. Each entry may be a file or directory. wasm builds preload each entry into the virtual filesystem; native builds either stage each entry beside the executable or pack them into `assets.mtpack` for bundle/archive outputs.
 - `build.html_template`: optional HTML shell template for wasm builds.
 - `profile.default`: default profile when the CLI does not receive `--profile`.
 - `platform.default`: default platform when the CLI does not receive `--platform`.
@@ -126,15 +126,16 @@ import tetris.rules.scoring as scoring
 Current scope:
 
 - local `path` dependencies, optional versioned `path` dependencies, pinned git dependencies (`git`, `rev`, optional `subdir`), and exact or ranged registry dependencies are supported in dependency-management flows
-- registry requirement solving is phase 1: the solver chooses one resolved version per package name across the entire graph, so incompatible ranges that require multiple versions of the same package still fail
+- exact registry versions behave like fixed source identities in dependency-management and locked flows
+- ranged registry dependencies are now solved per dependency instance, so different transitive paths may resolve the same package namespace to different registry versions when required
 - dependency source roots are resolved recursively
 - packages can import their own modules, `std`, and declared direct dependencies only
 - transitive dependency packages are loaded for dependent packages, but they are not directly importable from the root application unless declared there too
 - package dependency cycles are rejected during graph construction
-- deterministic `package.lock` generation is supported for graphs that satisfy that one-package-name-per-graph rule
+- deterministic `package.lock` generation is supported for package-instance-aware graphs, including duplicate registry package namespaces
 - `deps tree`, `deps lock`, `deps add`, `deps remove`, `deps update`, and `deps fetch` are explicit dependency-management commands; commands that need git or registry sources may materialize them into the shared source cache while reading manifests
 - build, check, run, and live LSP dependency resolution stay fetch-free; git or registry manifests are meant to flow through `deps lock` plus `--locked` or `--frozen`, while live direct resolution continues to reject cache-backed dependencies
-- local registry publish and fetch flows now exist, and an optional upstream filesystem registry mirror is supported through `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM`; HTTP registry transport and update flows are still not implemented
+- local registry publish and fetch flows now exist, and `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM` may point either to another filesystem registry root or to a static HTTP mirror of the same published registry layout; `deps lock`, `deps update`, and `deps fetch` may sync missing registry versions from it
 
 Inspect the current local package graph with:
 
@@ -164,9 +165,16 @@ Re-resolve the current manifest and refresh `package.lock` with:
 
 ```sh
 mtc deps update path/to/package
+mtc deps update path/to/package teefan.ui
 ```
 
-`deps update` keeps the manifest requirements unchanged and picks the newest available versions that still satisfy them under the current phase-1 solver.
+`deps update` keeps the manifest requirements unchanged and picks the newest available versions that still satisfy them under the current instance-aware registry solver.
+
+When you pass one or more package names, `deps update` updates those packages and their currently locked transitive package-instance closure while keeping unrelated locked registry instances pinned to their existing versions.
+
+Named selective updates require a current `package.lock` that still matches the current manifest, because that locked graph defines which transitive packages are allowed to move. If the lockfile is missing or stale, run plain `mtc deps update path/to/package` or `mtc deps lock path/to/package` first.
+
+When `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM` is configured, `deps update` may also adopt a newer matching registry version from that upstream mirror and sync it into the local registry before materializing the shared source cache.
 
 Publish a versioned package into the local registry store with:
 
@@ -181,7 +189,8 @@ Publishing rules:
 - publishing is immutable; an existing `name + version` cannot be overwritten
 - the local registry root is `$MILK_TEA_PACKAGE_REGISTRY` when set, otherwise `$XDG_DATA_HOME/milk_tea/registry` or `~/.local/share/milk_tea/registry`
 - `--upstream` publishes into `$MILK_TEA_PACKAGE_REGISTRY_UPSTREAM` instead, when configured
-- upstream transport currently means mirroring against another filesystem registry root, not an HTTP registry server
+- publishing still requires a filesystem registry root; HTTP upstreams are read-only static mirrors
+- the static HTTP mirror contract is the published registry layout plus `packages/<name>/versions.txt` and `packages/<name>/<version>.tar.gz`, so any ordinary static file server can host it
 
 Materialize any cache-backed sources referenced by the current `package.lock` with:
 
@@ -219,7 +228,8 @@ The current lockfile records:
 
 - the schema version
 - the root package name
-- each resolved package's name, kind, version when present, manifest path, source root, source kind, source identity fields (`source_path` for path dependencies, `git_url` and `git_rev` plus optional `git_subdir` for git dependencies, `registry_package` and `registry_version` for registry dependencies), and direct dependency names
+- the root package instance id used to identify the root node inside the locked graph
+- each resolved package's name, kind, version when present, stable package instance id, manifest path, source root, source kind, source identity fields (`source_path` for path dependencies, `git_url` and `git_rev` plus optional `git_subdir` for git dependencies, `registry_package` and `registry_version` for registry dependencies), direct dependency names for readability, and dependency edges by package instance id
 
 The current lockfile is generated deterministically from local `path` dependencies, pinned git dependencies, and solved registry dependencies. It is safe to regenerate; cache-backed dependency-management commands may also refresh the shared source cache while resolving manifests.
 
@@ -244,18 +254,24 @@ mtc run path/to/package --frozen
 Current locked-resolution scope:
 
 - it uses `package.lock` for dependency graph resolution and direct dependency checks
+- it resolves package imports through the exact locked dependency edge, so `package.lock` can represent transitive duplicate package namespaces safely at analysis time
 - `--frozen` requires a current `package.lock` before compilation starts
 - `lint` uses the locked graph for sema-backed lint rules and fix-mode semantic assistance
 - the VS Code LSP supports `milkTea.lsp.dependencyResolution = auto|live|locked|frozen`, with `auto` using the lockfile when it is current and `frozen` surfacing stale-lock diagnostics in the editor
-- it still reads the root package manifest for build settings such as `build.entry`, output configuration, preload assets, and HTML templates
+- it still reads the root package manifest for build settings such as `build.entry`, output configuration, runtime assets, and HTML templates
 - it currently applies to path dependencies and cache-backed git or registry lock entries
+
+Current duplicate-version behavior:
+
+- `package.lock`, locked compiler/LSP flows, live local-path package graphs, exact registry identities, and ranged registry dependencies all resolve imports through package instances instead of flat root order, so transitive duplicate package namespaces are safe once the graph is resolved
+- direct duplicate dependency namespaces inside a single package manifest are still invalid, because Milk Tea imports target package namespaces rather than dependency aliases
 
 Planned registry and source-cache model:
 
 - dependency resolution should stay split in two phases: first resolve a dependency spec to a local package root, then build the package graph from that local source tree
 - the current code now already follows that shape internally: `PackageSourceResolver` resolves a dependency into a local source plus lockfile metadata, and `PackageGraph` only consumes the resolved local package tree
 - cache-backed dependencies should resolve into an immutable source cache keyed by the exact resolved source identity, such as package name plus exact version or git URL plus commit hash
-- the local registry store is now one concrete source of those identities; an optional upstream filesystem registry can mirror into it today, and HTTP registries can plug into the same model later without changing locked compiler behavior
+- the local registry store is now one concrete source of those identities; an optional upstream filesystem registry or static HTTP mirror can feed into it today without changing locked compiler behavior
 - the current cache root model is `$XDG_CACHE_HOME/milk_tea/package_sources` when `XDG_CACHE_HOME` is set, otherwise `~/.cache/milk_tea/package_sources`; path dependencies bypass that shared cache
 - cache-backed identities now also map to a deterministic materialized package root under that cache; git package roots append the configured `git_subdir`, while local path dependencies still bypass cache materialization entirely
 - locked loading now expects cache-backed entries to be materialized already; if the cached `package.toml` is missing, loading fails fast instead of silently constructing unusable package roots
@@ -289,6 +305,8 @@ Common options:
 - `--cc COMPILER`
 - `-o OUTPUT`
 - `--keep-c PATH`
+- `--bundle` for native package builds when you want a distributable app directory instead of a bare executable
+- `--archive` for native package builds when you also want a `.tar.gz` archive of the bundle; this implies `--bundle`
 
 The wasm platform also accepts the aliases `web`, `html5`, and `browser`.
 
@@ -300,6 +318,20 @@ Default package output paths are:
 build/bin/<platform>/<profile>/<package-name>
 ```
 
+Default native bundle output paths are:
+
+```text
+build/dist/<platform>/<profile>/<package-name>/
+```
+
+The bundle directory contains the entry executable named after the package plus an `assets.mtpack` file when `build.assets` is configured.
+
+When `--archive` is enabled, Milk Tea also writes a sibling archive file:
+
+```text
+build/dist/<platform>/<profile>/<package-name>.tar.gz
+```
+
 Platform-specific extensions are added automatically:
 
 - Linux: no extension
@@ -307,6 +339,8 @@ Platform-specific extensions are added automatically:
 - wasm: `.html`
 
 For direct source builds, the default output is the source path without `.mt`, except wasm builds, which default to a sibling `.html` file.
+
+When you pass `mtc build --bundle` or `mtc build --archive` for a native package build, `-o OUTPUT` becomes the bundle directory path instead of the executable file path.
 
 For wasm outputs:
 
@@ -318,11 +352,21 @@ When targeting wasm, Milk Tea emits an Emscripten bundle next to the HTML entry 
 - `<name>.html`
 - `<name>.js`
 - `<name>.wasm`
-- `<name>.data` when `build.preload` is used
+- `<name>.data` when `build.assets` is used
+
+When targeting linux or windows with `build.assets`, Milk Tea also stages each configured file or directory next to the output binary using its basename.
+
+When targeting linux or windows with `--bundle`, Milk Tea writes the executable into the bundle directory and packs `build.assets` into `assets.mtpack` beside it.
+
+When targeting linux or windows with `--archive`, Milk Tea also writes a `.tar.gz` archive of that bundle directory beside it.
 
 Depending on Emscripten flags and debug settings, extra side files such as worker scripts, symbol files, and source maps may also be generated.
 
-`mtc build --clean` removes the wasm HTML entry point and its sidecar bundle files.
+`mtc build --clean` removes generated output artifacts. For wasm that includes the HTML entry point and sidecar bundle files; for native explicit outputs it also removes staged `build.assets` entries beside the binary.
+
+`mtc build --clean --bundle` removes native bundle output directories. For the default package output it removes `build/dist`.
+
+`mtc build --clean --archive` removes both the native bundle directory and its `.tar.gz` archive output.
 
 ## 5. Compiler Selection
 
@@ -337,24 +381,50 @@ mtc build path/to/package --platform wasm
 mtc build path/to/package --platform wasm --cc "$EMCC"
 ```
 
-## 6. Preloading Files For wasm
+## 6. Runtime Assets
 
-Use `build.preload` to bundle a file or directory into the Emscripten virtual filesystem.
+Use `build.assets` to declare one runtime asset path or an array of asset paths.
 
 ```toml
 [build]
 entry = "src/main.mt"
-preload = "assets"
+assets = ["assets", "credits.txt"]
 ```
 
-The configured path is resolved relative to the package root and must already exist.
+Each configured path is resolved relative to the package root and must already exist. Array entries must have distinct basenames, because Milk Tea uses that basename as the wasm mount path and the staged native filename.
 
-Milk Tea mounts the preloaded path at `/<basename>`. For example:
+For wasm targets, Milk Tea passes each path to Emscripten `--preload-file` and mounts it at `/<basename>`. For example:
 
-- `preload = "assets"` becomes `/assets`
+- `assets = "assets"` becomes `/assets`
+- `assets = ["assets", "credits.txt"]` also mounts `/credits.txt`
 - runtime code can load `assets/tetris_tiles.png`
 
-If you need multiple runtime assets, put them under a single directory and preload that directory.
+For native targets without `--bundle`, Milk Tea copies each configured file or directory next to the final executable using the same basename. For example:
+
+- `assets = "assets"` becomes `<output-dir>/assets`
+- `assets = "data/game.db"` becomes `<output-dir>/game.db`
+- `assets = ["assets", "credits.txt"]` also stages `<output-dir>/credits.txt`
+
+For native `--bundle` and `--archive` package builds, Milk Tea writes one deterministic `assets.mtpack` file into the bundle root instead of copying raw files there. The pack keeps the same logical paths you would get from each source basename. For example:
+
+- `assets = "assets"` stores `assets/...` entries inside `<bundle-dir>/assets.mtpack`
+- `assets = ["assets", "credits.txt"]` also stores `credits.txt` inside the same pack
+- `std.asset_pack` is the generic MTAP reader; `std.raylib.packed_assets` wraps it with a single `rl_assets.Error` enum for raylib-facing code, including packed image, texture, wave, sound, and music loading. Apps that support both packed bundle/archive runs and unpacked dev runs can prefer `std.raylib.packed_assets.open_assets_pack_if_present()`, treat `Maybe.none` as the unpacked case, and fall back to `std.raylib.runtime.enter_assets_directory()` there
+- `std.raylib.packed_assets.load_music()` returns `rl_assets.PackedMusic`, which retains the packed source bytes for the lifetime of the raylib music stream; call `music.release()` when done instead of unloading the raw `rl.Music` handle directly
+
+`mtc run` also stages `build.assets` entries beside its temporary native binary before launch.
+
+If you want one asset-loading path to work for both wasm and native builds, resolve assets relative to the executable location on native builds instead of relying on the caller's working directory.
+
+For raylib-based apps, `std.raylib.runtime.enter_assets_directory()` is the standard helper for that pattern: it first tries the executable directory, then falls back to the current working directory.
+
+Using a single top-level asset directory is still the simplest layout, but it is no longer required when a few standalone files need to ship beside it.
+
+Current asset-pack scope:
+
+- the MTAP container and native bundle/archive flow are in place for packaged runtime assets
+- `std.raylib.packed_assets` currently supports packed image, texture, wave, sound, and music loading
+- packed music uses `rl_assets.PackedMusic` so the underlying bytes remain alive for the full stream lifetime instead of being released immediately after load
 
 ## 7. Custom HTML Templates
 

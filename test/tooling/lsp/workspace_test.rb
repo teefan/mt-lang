@@ -227,6 +227,119 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_open_document_live_resolves_transitive_duplicate_path_package_names
+    Dir.mktmpdir("lsp_workspace_live_package_instances") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      overlay_root = File.join(dir, "libs", "overlay")
+      ui_v1_root = File.join(dir, "libs", "ui-v1")
+      ui_v2_root = File.join(dir, "libs", "ui-v2")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      overlay_src_dir = File.join(overlay_root, "src", "teefan", "overlay")
+      ui_v1_src_dir = File.join(ui_v1_root, "src", "teefan", "ui")
+      ui_v2_src_dir = File.join(ui_v2_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(overlay_src_dir)
+      FileUtils.mkdir_p(ui_v1_src_dir)
+      FileUtils.mkdir_p(ui_v2_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.overlay" = { path = "../../libs/overlay" }
+        "teefan.ui" = { path = "../../libs/ui-v1" }
+      TOML
+
+      File.write(File.join(overlay_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.overlay"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../ui-v2" }
+      TOML
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "2.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      root_path = File.join(app_src_dir, "main.mt")
+      overlay_path = File.join(overlay_src_dir, "panel.mt")
+      root_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+        import teefan.overlay.panel as panel
+
+        function main() -> int:
+            return layout.default_width() + panel.overlay_width()
+      MT
+      overlay_source = <<~MT
+        module teefan.overlay.panel
+
+        import teefan.ui.layout as layout
+
+        public function overlay_width() -> int:
+            return layout.overlay_width()
+      MT
+
+      File.write(root_path, root_source)
+      File.write(overlay_path, overlay_source)
+
+      File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 20
+
+        public function overlay_width() -> int:
+            return 7
+      MT
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.dependency_resolution_mode = :live
+
+      root_uri = path_to_uri(root_path)
+      overlay_uri = path_to_uri(overlay_path)
+      workspace.open_document(root_uri, root_source)
+      workspace.open_document(overlay_uri, overlay_source)
+
+      root_analysis = workspace.get_analysis(root_uri)
+      overlay_analysis = workspace.get_analysis(overlay_uri)
+
+      assert_equal %w[default_width], root_analysis.imports.fetch("layout").functions.keys.sort
+      assert_equal %w[default_width overlay_width], overlay_analysis.imports.fetch("layout").functions.keys.sort
+      assert_equal [], workspace.collect_diagnostics(root_uri)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_populates_analysis_cache_for_open_documents
     Dir.mktmpdir("lsp_workspace_diagnostics_cache") do |dir|
       std_dir = File.join(dir, "std")
@@ -247,6 +360,35 @@ class LSPWorkspaceTest < Minitest::Test
       assert_equal [], workspace.collect_diagnostics(uri)
       refute_nil workspace.instance_variable_get(:@analysis_cache)[uri]
       refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_anchors_missing_import_to_import_path
+    Dir.mktmpdir("lsp_workspace_missing_import_anchor") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module demo.main
+
+        import demo.missing.lib as missing
+
+        function main() -> int:
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      missing_import = diagnostics.find { |diagnostic| diagnostic[:message] == "module not found: demo.missing.lib" }
+
+      refute_nil missing_import
+      assert_equal 2, missing_import.dig(:range, :start, :line)
+      assert_equal 7, missing_import.dig(:range, :start, :character)
+      assert_equal 23, missing_import.dig(:range, :end, :character)
     ensure
       workspace&.shutdown
     end

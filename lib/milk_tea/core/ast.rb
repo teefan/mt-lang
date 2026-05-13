@@ -93,8 +93,8 @@ module MilkTea
       def initialize(name:, type:, line: nil, column: nil) = super
     end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value, :else_body, :line, :column) do
-      def initialize(kind:, name:, type:, value:, else_body: nil, line: nil, column: nil) = super
+    LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column) do
+      def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super

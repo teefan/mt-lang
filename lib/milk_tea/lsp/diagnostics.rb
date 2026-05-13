@@ -28,6 +28,7 @@ module MilkTea
             resolution:,
             shared_module_cache: shared_module_cache,
             source_overrides: source_overrides,
+            content: content,
           )
 
           # Semantic analysis — collect errors from all functions, not just first.
@@ -61,19 +62,24 @@ module MilkTea
 
       private
 
-      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, shared_module_cache: nil, source_overrides: nil)
+      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, shared_module_cache: nil, source_overrides: nil, content: nil)
         path = uri_to_path(uri)
         return {} unless path && File.file?(path)
 
         loader = ModuleLoader.new(
           module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
-          package_graph: (resolution.locked ? PackageGraph.load(path, locked: true) : nil),
+          package_graph: load_package_graph(path, locked: resolution.locked),
           shared_cache: shared_module_cache,
           source_overrides: source_overrides,
         )
         loader.imported_modules_for_ast(ast, importer_path: path)
       rescue ModuleLoadError, PackageLockError => e
-        diagnostics << format_error(SemaError.new(e.message))
+        if e.is_a?(ModuleLoadError)
+          import = ast.imports.find { |candidate| candidate.path.to_s == e.path }
+          diagnostics << format_import_error(e, import, content: content)
+        else
+          diagnostics << format_error(SemaError.new(e.message))
+        end
         {}
       end
 
@@ -85,6 +91,13 @@ module MilkTea
       rescue URI::InvalidURIError
         nil
       end
+
+      def self.load_package_graph(path, locked: false)
+        PackageGraph.load(path, locked:)
+      rescue PackageManifestError
+        nil
+      end
+      private_class_method :load_package_graph
 
       def self.format_warning(warning, content: nil)
         line = warning.line.to_i
@@ -166,6 +179,46 @@ module MilkTea
           message: error.message.to_s,
           source: 'milk-tea'
         }
+      end
+
+      def self.format_import_error(error, import, content: nil)
+        return format_error(SemaError.new(error.message)) unless import
+
+        column, length = import_path_span(import, content)
+        line_index = [import.line.to_i - 1, 0].max
+        start_char = [column.to_i - 1, 0].max
+        end_char = start_char + [length.to_i, 1].max
+
+        {
+          range: {
+            start: {
+              line: line_index,
+              character: start_char,
+            },
+            end: {
+              line: line_index,
+              character: end_char,
+            }
+          },
+          severity: 1,
+          message: error.message.to_s,
+          source: 'milk-tea'
+        }
+      end
+
+      def self.import_path_span(import, content)
+        return [import.column || 1, import.length || 1] unless content && import.line
+
+        line_text = content.split("\n", -1)[import.line - 1]
+        return [import.column || 1, import.length || 1] unless line_text
+
+        path_text = import.path.to_s
+        index = line_text.index(path_text)
+        return [index + 1, path_text.length] if index
+
+        [import.column || 1, import.length || 1]
+      rescue StandardError
+        [import.column || 1, import.length || 1]
       end
 
       def self.extract_line(error)

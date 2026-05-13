@@ -75,6 +75,21 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_let_else_with_error_binding_like_source
+    source = <<~MT
+      module demo.pretty
+
+      function main(result: int) -> int:
+          let value = result else as error:
+              return error
+          return value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_extern_module_ast_like_source
     source = <<~MT
       external module std.c.sample:

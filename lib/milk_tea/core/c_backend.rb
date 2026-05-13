@@ -1050,7 +1050,7 @@ module MilkTea
       lines = []
       lines << "struct #{struct_decl.c_name} {"
       struct_decl.fields.each do |field|
-        lines << "#{INDENT}#{c_declaration(field.type, field.name)};"
+        lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
       end
       lines << "}#{struct_layout_attributes(struct_decl)};"
       lines
@@ -1060,7 +1060,7 @@ module MilkTea
       lines = []
       lines << "union #{union_decl.c_name} {"
       union_decl.fields.each do |field|
-        lines << "#{INDENT}#{c_declaration(field.type, field.name)};"
+        lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
       end
       lines << "};"
       lines
@@ -1075,7 +1075,7 @@ module MilkTea
       payload_arms.each do |arm|
         lines << "struct #{arm.c_name} {"
         arm.fields.each do |field|
-          lines << "#{INDENT}#{c_declaration(field.type, field.name)};"
+          lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
         end
         lines << "};"
         lines << "typedef struct #{arm.c_name} #{arm.c_name};"
@@ -1746,7 +1746,8 @@ module MilkTea
         expression.name
       when IR::Member
         operator = pointer_member_receiver?(expression.receiver) ? "->" : "."
-        "#{wrap_member_receiver(expression.receiver)}#{operator}#{expression.member}"
+        member = "#{wrap_member_receiver(expression.receiver)}#{operator}#{expression.member}"
+        expression.type.is_a?(Types::Primitive) && expression.type.void? ? "((void)(#{member}))" : member
       when IR::Index
         "#{wrap_index_receiver(expression.receiver)}[#{emit_expression(expression.index)}]"
       when IR::CheckedIndex
@@ -1848,7 +1849,7 @@ module MilkTea
       return emit_zero_initializer(expression.type) if expression.fields.empty?
 
       fields = expression.fields.map do |field|
-        ".#{field.name} = #{emit_initializer(field.value)}"
+        ".#{field.name} = #{emit_aggregate_field_initializer(expression.type, field)}"
       end.join(", ")
       "{ #{fields} }"
     end
@@ -1859,7 +1860,7 @@ module MilkTea
       if expression.fields.empty?
         "{ .kind = #{kind_constant} }"
       else
-        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_initializer(field.value)}" }.join(", ")
+        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
         "{ .kind = #{kind_constant}, .data.#{expression.arm_name} = { #{payload_fields} } }"
       end
     end
@@ -1872,7 +1873,7 @@ module MilkTea
       return emit_zero_expression(expression.type) if expression.fields.empty?
 
       fields = expression.fields.map do |field|
-        ".#{field.name} = #{emit_initializer(field.value)}"
+        ".#{field.name} = #{emit_aggregate_field_initializer(expression.type, field)}"
       end.join(", ")
       "(#{c_type(expression.type)}){ #{fields} }"
     end
@@ -1884,7 +1885,7 @@ module MilkTea
         "(#{outer_c}){ .kind = #{kind_constant} }"
       else
         arm_c = "#{outer_c}_#{expression.arm_name}"
-        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_initializer(field.value)}" }.join(", ")
+        payload_fields = expression.fields.map { |field| ".#{field.name} = #{emit_variant_field_initializer(expression.type, expression.arm_name, field)}" }.join(", ")
         "(#{outer_c}){ .kind = #{kind_constant}, .data.#{expression.arm_name} = (struct #{arm_c}){ #{payload_fields} } }"
       end
     end
@@ -1987,6 +1988,30 @@ module MilkTea
       return emit_zero_initializer(type) if type.is_a?(Types::EnumBase)
 
       "(#{c_declaration(type, '')}) #{emit_zero_initializer(type)}"
+    end
+
+    def aggregate_field_type(type, field_name)
+      return type.field(field_name) if type.respond_to?(:field)
+
+      raise LoweringError, "unsupported aggregate field lookup for #{type}"
+    end
+
+    def emit_aggregate_field_initializer(type, field)
+      field_type = aggregate_field_type(type, field.name)
+      void_storage_field?(field_type) ? emit_void_field_initializer(field.value) : emit_initializer(field.value)
+    end
+
+    def emit_variant_field_initializer(type, arm_name, field)
+      field_type = type.arm(arm_name).fetch(field.name)
+      void_storage_field?(field_type) ? emit_void_field_initializer(field.value) : emit_initializer(field.value)
+    end
+
+    def emit_void_field_initializer(expression)
+      "(#{emit_expression(expression)}, 0)"
+    end
+
+    def void_storage_field?(type)
+      type.is_a?(Types::Primitive) && type.void?
     end
 
     def emit_str_literal(expression)
@@ -2187,6 +2212,12 @@ module MilkTea
     def c_declaration(type, name)
       base, declarator = c_declaration_parts(type, name)
       declarator.empty? ? base : "#{base} #{declarator}"
+    end
+
+    def c_field_declaration(type, name)
+      return "uint8_t #{name}" if void_storage_field?(type)
+
+      c_declaration(type, name)
     end
 
     def c_function_declaration(return_type, name, params)
@@ -3018,7 +3049,6 @@ module MilkTea
       when Types::Span
         collect_generic_variant_type(type.element_type, generic_variant_types, visited)
       when Types::VariantInstance
-        generic_variant_types << type
         type.arguments.each do |argument|
           collect_generic_variant_type(argument, generic_variant_types, visited) unless argument.is_a?(Types::LiteralTypeArg)
         end
@@ -3027,6 +3057,7 @@ module MilkTea
             collect_generic_variant_type(field_type, generic_variant_types, visited)
           end
         end
+        generic_variant_types << type
       when Types::StructInstance
         type.arguments.each do |argument|
           collect_generic_variant_type(argument, generic_variant_types, visited) unless argument.is_a?(Types::LiteralTypeArg)

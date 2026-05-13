@@ -26,7 +26,7 @@ module MilkTea
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :editable_receiver_expression_ids)
     class FlowScope
       def initialize = (@bindings = {})
       def [](key) = @bindings[key]
@@ -162,6 +162,7 @@ module MilkTea
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
         @mutating_argument_identifier_ids = {}
+        @editable_receiver_expression_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @unsafe_statement_lines = []
@@ -1294,6 +1295,7 @@ module MilkTea
           case statement
           when AST::LocalDecl
             @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+            @preassigned_local_binding_ids[statement.else_binding.object_id] ||= allocate_binding_id if statement.else_binding
             preassign_local_binding_ids_in_statements(statement.else_body || [])
           when AST::IfStmt
             statement.branches.each { |branch| preassign_local_binding_ids_in_statements(branch.body || []) }
@@ -1338,6 +1340,7 @@ module MilkTea
           identifier_binding_ids: identifier_binding_ids,
           declaration_binding_ids: declaration_binding_ids,
           mutating_argument_identifier_ids: {},
+          editable_receiver_expression_ids: {},
         )
       end
 
@@ -1347,10 +1350,20 @@ module MilkTea
           case statement
           when AST::LocalDecl
             walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
-            walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
+            if statement.else_binding
+              else_scopes = block_scopes + [{}]
+              binding_id = @preassigned_local_binding_ids.fetch(statement.else_binding.object_id)
+              else_scopes.last[statement.else_binding.name] = binding_id
+              declaration_ids[statement.else_binding.object_id] = binding_id
+              walk_statements_for_precheck_resolution(statement.else_body || [], else_scopes, declaration_ids, identifier_ids)
+            else
+              walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
+            end
             binding_id = @preassigned_local_binding_ids.fetch(statement.object_id)
-            block_scopes.last[statement.name] = binding_id
-            declaration_ids[statement.object_id] = binding_id
+            unless let_else_discard_binding_syntax?(statement)
+              block_scopes.last[statement.name] = binding_id
+              declaration_ids[statement.object_id] = binding_id
+            end
           when AST::Assignment
             walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids)
             walk_assignment_target_reads_for_precheck_resolution(statement.target, statement.operator, block_scopes, identifier_ids)
@@ -1564,7 +1577,8 @@ module MilkTea
 
       def check_local_decl(statement, scopes:, return_type:, allow_return:)
         current_scope = current_actual_scope(scopes)
-        raise_sema_error("duplicate local #{statement.name}") if current_scope.key?(statement.name)
+        discard_binding = let_else_discard_binding_syntax?(statement)
+        raise_sema_error("duplicate local #{statement.name}") if !discard_binding && current_scope.key?(statement.name)
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
         if statement.value
@@ -1590,13 +1604,21 @@ module MilkTea
 
         if statement.else_body
           raise_sema_error("let-else is only allowed on let declarations") unless statement.kind == :let
-          raise_sema_error("let-else initializer for #{statement.name} must be nullable, got #{inferred_type}") unless inferred_type.is_a?(Types::Nullable)
+          success_type = let_else_success_type(inferred_type)
+          raise_sema_error("let-else initializer for #{statement.name} must be nullable or std.status.Status[T, E], got #{inferred_type}") unless success_type
+          error_type = let_else_error_type(inferred_type)
 
-          if declared_type&.is_a?(Types::Nullable)
-            raise_sema_error("let-else type annotation for #{statement.name} must be non-null, got #{declared_type}")
+          if discard_binding && declared_type
+            raise_sema_error("let-else discard binding _ cannot have a type annotation")
           end
 
-          success_type = inferred_type.base
+          if statement.else_binding && !error_type
+            raise_sema_error("let-else error binding for #{statement.name} requires std.status.Status[T, E], got #{inferred_type}")
+          end
+
+          if declared_type && let_else_source_type?(declared_type)
+            raise_sema_error("let-else type annotation for #{statement.name} must be the success type, got #{declared_type}")
+          end
 
           if declared_type
             validate_local_ref_type!(declared_type, statement.name)
@@ -1613,15 +1635,30 @@ module MilkTea
             )
             final_type = declared_type
           else
-            raise_sema_error("cannot bind void result to #{statement.name}") if success_type.void?
+            raise_sema_error("cannot bind void result to #{statement.name}") if success_type.void? && !discard_binding
 
             final_type = success_type
           end
 
-          validate_local_ref_type!(final_type, statement.name)
-          validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+          unless discard_binding
+            validate_local_ref_type!(final_type, statement.name)
+            validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+          end
 
-          check_block(statement.else_body, scopes:, return_type:, allow_return:)
+          else_scopes = scopes
+          if statement.else_binding
+            else_binding = value_binding(
+              name: statement.else_binding.name,
+              type: error_type,
+              mutable: false,
+              kind: :let,
+              id: @preassigned_local_binding_ids.fetch(statement.else_binding.object_id),
+            )
+            record_declaration_binding(statement.else_binding, else_binding)
+            else_scopes = scopes + [{ statement.else_binding.name => else_binding }]
+          end
+
+          check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:)
           raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
 
           storage_type = inferred_type
@@ -1655,16 +1692,18 @@ module MilkTea
           const_value = statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil
         end
 
-        current_scope[statement.name] = value_binding(
-          name: statement.name,
-          type: storage_type,
-          mutable: statement.kind == :var,
-          kind: statement.kind,
-          flow_type: final_type,
-          const_value:,
-          id: @preassigned_local_binding_ids[statement.object_id],
-        )
-        record_declaration_binding(statement, current_scope[statement.name])
+        unless discard_binding
+          current_scope[statement.name] = value_binding(
+            name: statement.name,
+            type: storage_type,
+            mutable: statement.kind == :var,
+            kind: statement.kind,
+            flow_type: final_type,
+            const_value:,
+            id: @preassigned_local_binding_ids[statement.object_id],
+          )
+          record_declaration_binding(statement, current_scope[statement.name])
+        end
       end
 
       def check_assignment(statement, scopes:)
@@ -1825,6 +1864,37 @@ module MilkTea
 
       def wildcard_pattern?(expression)
         expression.is_a?(AST::Identifier) && expression.name == "_"
+      end
+
+      def let_else_discard_binding_syntax?(statement)
+        statement.is_a?(AST::LocalDecl) && statement.else_body && statement.name == "_"
+      end
+
+      def let_else_source_type?(type)
+        type.is_a?(Types::Nullable) || status_let_else_type?(type)
+      end
+
+      def let_else_success_type(type)
+        return type.base if type.is_a?(Types::Nullable)
+        return unless status_let_else_type?(type)
+
+        type.arm("ok").fetch("value")
+      end
+
+      def let_else_error_type(type)
+        return unless status_let_else_type?(type)
+
+        type.arm("err").fetch("error")
+      end
+
+      def status_let_else_type?(type)
+        return false unless type.is_a?(Types::Variant)
+        return false unless type.module_name == "std.status" && type.name == "Status"
+
+        ok_fields = type.arm("ok")
+        err_fields = type.arm("err")
+        ok_fields && ok_fields.length == 1 && ok_fields.key?("value") &&
+          err_fields && err_fields.length == 1 && err_fields.key?("error")
       end
 
       def check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
@@ -2552,6 +2622,7 @@ module MilkTea
             scopes:,
             receiver_type: infer_method_receiver_type(receiver, scopes:, member_name: expression.callee.member),
           ) if callable.type_params.any?
+          record_editable_receiver_expression(receiver) if callable.type.receiver_mutable
           raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
@@ -2983,6 +3054,12 @@ module MilkTea
         @mutating_argument_identifier_ids[argument.value.object_id] = true
       end
 
+      def record_editable_receiver_expression(receiver)
+        return unless receiver
+
+        @editable_receiver_expression_ids[receiver.object_id] = true
+      end
+
       def check_format_string_literal(format_string, scopes:)
         format_string.parts.each do |part|
           next unless part.is_a?(AST::FormatExprPart)
@@ -3309,10 +3386,12 @@ module MilkTea
 
         case kind
         when :str_builder_clear
+          record_editable_receiver_expression(receiver)
           raise_sema_error("cannot call editable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_builder_assign, :str_builder_append
+          record_editable_receiver_expression(receiver)
           raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
@@ -5749,6 +5828,7 @@ module MilkTea
           identifier_binding_ids: @identifier_binding_ids.dup.freeze,
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
           mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
+          editable_receiver_expression_ids: @editable_receiver_expression_ids.dup.freeze,
         )
       end
 

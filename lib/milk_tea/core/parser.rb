@@ -782,12 +782,18 @@ module MilkTea
       name = name_token.lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = nil
+      else_binding = nil
       else_body = nil
 
       if match(:equal)
         value = parse_expression
         if match(:else)
           raise error(previous, "let-else is only allowed on let declarations") unless kind == :let
+
+          if match(:as)
+            binding_token = consume_name("expected error binding name after 'as'")
+            else_binding = AST::Identifier.new(name: binding_token.lexeme, line: binding_token.line, column: binding_token.column)
+          end
 
           else_body = parse_block
         else
@@ -799,7 +805,7 @@ module MilkTea
         consume_end_of_statement
       end
 
-      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_body:, line:, column: name_token.column)
+      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token.column)
     end
 
     def parse_if_stmt

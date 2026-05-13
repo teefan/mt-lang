@@ -8,6 +8,9 @@ public type VaList = c.va_list
 
 
 public const EOF: int = c.EOF
+public const SEEK_SET: int = c.SEEK_SET
+public const SEEK_CUR: int = c.SEEK_CUR
+public const SEEK_END: int = c.SEEK_END
 
 
 public foreign function print(format: str as cstr, ...) -> int = c.printf
@@ -24,6 +27,9 @@ public foreign function read_line(buffer: ptr[char], max_count: int, stream: Fil
 public foreign function write_string(text: str as cstr, stream: File?) -> int = c.fputs
 public foreign function read_bytes(buffer: ptr[void], element_size: ptr_uint, count: ptr_uint, stream: File?) -> ptr_uint = c.fread
 public foreign function write_bytes(buffer: const_ptr[void], element_size: ptr_uint, count: ptr_uint, stream: File?) -> ptr_uint = c.fwrite
+public foreign function seek(stream: File?, offset: ptr_int, whence: int) -> int = c.fseek
+public foreign function tell(stream: File?) -> ptr_int = c.ftell
+public foreign function rewind(stream: File?) -> void = c.rewind
 public foreign function end_of_file(stream: File?) -> int = c.feof
 public foreign function error(stream: File?) -> int = c.ferror
 public foreign function clear_error(stream: File?) -> void = c.clearerr

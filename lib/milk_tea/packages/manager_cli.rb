@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module MilkTea
   class PackageManagerCLI
     def self.start(argv = ARGV, out:, err:, help_printer:, services: PackageServices.new)
@@ -233,13 +235,10 @@ module MilkTea
 
     def deps_update_command
       path = deps_target_path_from_argv!
-      unless @argv.empty?
-        @err.puts("selective deps update is not implemented yet")
-        print_help
-        return 1
-      end
+      dependency_names = parse_update_dependency_names
+      return 1 if dependency_names.nil?
 
-      lock_result = PackageLock.write(path, source_resolver: @services.source_resolver(:materialize))
+      lock_result = PackageLock.write(path, source_resolver: selective_update_source_resolver(path, dependency_names))
       @out.puts("updated #{lock_result.lock_path}")
       emit_dependency_fetch_results(@services.source_fetcher.fetch_locked_sources(path), path)
       0
@@ -272,6 +271,115 @@ module MilkTea
       end
 
       [name.strip, requirement&.strip]
+    end
+
+    def parse_update_dependency_names
+      names = []
+      until @argv.empty?
+        arg = @argv.shift
+        if arg.start_with?("-")
+          @err.puts("unknown deps option #{arg}")
+          print_help
+          return nil
+        end
+
+        names << arg
+      end
+
+      names
+    end
+
+    def selective_update_source_resolver(path, dependency_names)
+      source_resolver = @services.source_resolver(:materialize)
+      return source_resolver if dependency_names.empty?
+
+      manifest = PackageManifest.load(path)
+      locked_packages = PackageLock.locked_packages(path)
+      ensure_selective_update_lock_current!(path, manifest, locked_packages, source_resolver)
+      known_package_names = manifest.dependencies.each_with_object(Set.new) do |dependency, names|
+        names << dependency.name
+      end
+      locked_packages.each { |package| known_package_names << package.package_name }
+
+      unknown_names = dependency_names.reject { |name| known_package_names.include?(name) }
+      unless unknown_names.empty?
+        raise PackageManifestEditorError,
+              "cannot selectively update unknown package #{unknown_names.first} in #{manifest.manifest_path}"
+      end
+
+      unlocked_package_ids = selective_update_package_instance_ids(locked_packages, dependency_names)
+      pinned_versions = locked_registry_dependency_versions(
+        locked_packages,
+        unlocked_instance_ids: unlocked_package_ids,
+      )
+
+      source_resolver.with_resolved_registry_versions(pinned_versions)
+    rescue PackageLockError => e
+      raise PackageManifestEditorError,
+            "selective deps update requires a current package.lock; run `mtc deps lock #{manifest.root_dir}` or `mtc deps update #{manifest.root_dir}` first (#{e.message})"
+    end
+
+    def ensure_selective_update_lock_current!(path, manifest, locked_packages, source_resolver)
+      pinned_versions = locked_registry_dependency_versions(locked_packages)
+
+      lock_check = PackageLock.check(
+        path,
+        source_resolver: source_resolver.with_resolved_registry_versions(pinned_versions),
+      )
+      return if lock_check.current?
+
+      raise PackageManifestEditorError,
+            "selective deps update requires a current package.lock that matches the current manifest; run `mtc deps lock #{manifest.root_dir}` or `mtc deps update #{manifest.root_dir}` first"
+    rescue PackageGraphError => e
+      raise PackageManifestEditorError,
+            "selective deps update requires a current package.lock that matches the current manifest; run `mtc deps lock #{manifest.root_dir}` or `mtc deps update #{manifest.root_dir}` first (#{e.message})"
+    end
+
+    def selective_update_package_instance_ids(locked_packages, requested_names)
+      packages_by_id = locked_packages.each_with_object({}) do |package, packages|
+        packages[package.instance_id] = package
+      end
+      selected_ids = Set.new
+      queue = locked_packages.select { |package| requested_names.include?(package.package_name) }
+                           .map(&:instance_id)
+
+      until queue.empty?
+        package_id = queue.shift
+        next if selected_ids.include?(package_id)
+
+        selected_ids << package_id
+        package = packages_by_id[package_id]
+        next unless package
+
+        package.dependency_ids.each do |dependency_id|
+          queue << dependency_id
+        end
+      end
+
+      selected_ids
+    end
+
+    def locked_registry_dependency_versions(locked_packages, unlocked_instance_ids: Set.new)
+      packages_by_id = locked_packages.each_with_object({}) do |package, packages|
+        packages[package.instance_id] = package
+      end
+
+      locked_packages.each_with_object({}) do |package, versions|
+        parent_source_key = PackageSourceResolver.source_key_for_identity(package.identity)
+
+        package.dependency_ids.each do |dependency_id|
+          dependency = packages_by_id[dependency_id]
+          next unless dependency
+          next unless dependency.identity.is_a?(PackageSourceResolver::RegistryIdentity)
+          next if unlocked_instance_ids.include?(dependency.instance_id)
+
+          key = PackageSourceResolver.registry_dependency_key(
+            parent_source_key:,
+            dependency_name: dependency.package_name,
+          )
+          versions[key] = dependency.identity.version
+        end
+      end
     end
 
     def parse_dependency_spec_for_add(dependency_name, inline_requirement)

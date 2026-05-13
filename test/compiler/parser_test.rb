@@ -97,8 +97,28 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::LocalDecl, local_decl
     assert_equal :let, local_decl.kind
     assert_instance_of MilkTea::AST::Identifier, local_decl.value
+    assert_nil local_decl.else_binding
     assert_equal 1, local_decl.else_body.length
     assert_instance_of MilkTea::AST::ReturnStmt, local_decl.else_body.first
+  end
+
+  def test_parses_let_else_status_error_binding
+    source = <<~MT
+      module demo.guard
+
+      function main(result: int) -> int:
+          let value = result else as error:
+              return error
+          return value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::Identifier, local_decl.else_binding
+    assert_equal "error", local_decl.else_binding.name
   end
 
   def test_rejects_var_else_local_declaration

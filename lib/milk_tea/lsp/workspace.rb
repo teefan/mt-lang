@@ -617,7 +617,7 @@ module MilkTea
                    # imports resolve consistently with CLI `mtc check`.
                    loader = MilkTea::ModuleLoader.new(
                      module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
-                     package_graph: (resolution.locked ? PackageGraph.load(path, locked: true) : nil),
+                     package_graph: package_graph_for_path(path, locked: resolution.locked),
                      shared_cache: @shared_module_cache,
                      source_overrides: file_backed_source_overrides,
                    )
@@ -632,6 +632,12 @@ module MilkTea
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"
         @last_good_analysis_cache[uri]
+      end
+
+      def package_graph_for_path(path, locked: false)
+        PackageGraph.load(path, locked:)
+      rescue PackageManifestError
+        nil
       end
 
       def open_document_uris

@@ -246,7 +246,10 @@ let value = expr else:
 Semantics:
 
 - if `expr` has type `T?`, the `else` block runs when the value is `null`; otherwise `value` is bound as non-null `T`
-- initial implementation should ship for `T?` first; `status.Status[T, E]` can follow once the nullable path is proven in real code
+- if `expr` has type `status.Status[T, E]`, the `else` block runs when the value is `err`; otherwise `value` is bound as `ok.value`
+- if the failure path needs the error value, `else as error:` binds `err.error` inside the `else` block
+- `let _ = expr else:` discards the success value and introduces no binding
+- `status.Status[void, E]` uses the same surface through `let _ = expr else:`
 - the `else` block must exit the current control-flow path via `return`, `break`, `continue`, or `fatal`
 
 Examples:
@@ -262,17 +265,21 @@ let texture = rl.load_texture(path) else:
     return 1
 ```
 
-Follow-up direction for status-style imported calls once the nullable form is in place:
+Status-returning code can use the same surface when the success path carries a value:
 
 ```mt
-let _ = sdl.init(sdl.INIT_VIDEO) else:
-    return 1
+let config = load_config() else as error:
+    return error
 
-let _ = sdl.set_app_metadata("game", "0.1.0", "dev.example.game") else:
-    return 1
+return config.version
 ```
 
-`let _ =` is acceptable here because status-only setup calls are a boundary concern, not the hot path of everyday gameplay code.
+If the failure path does not need the error payload, plain `else:` still works. When the success path has no value, use a discard binding:
+
+```mt
+let _ = initialize_runtime() else as error:
+    return error
+```
 
 ### Why not keep raw bool and nullable checks everywhere
 
@@ -357,7 +364,7 @@ Helper modules are acceptable only when they add real domain logic or policy, no
 
 1. Change imported-call sema and lowering so `in`, `out`, and `inout` are declaration-owned and disappear from ordinary call syntax.
 2. Extend imported-binding policy metadata so generated imported APIs can classify operational failure versus optional absence.
-3. Add `let value = expr else:` for nullable and `Result` success binding.
+3. Add `let value = expr else:` for nullable and `status.Status` success binding.
 4. Regenerate imported SDL3 and raylib surfaces toward the new defaults.
 5. Delete helper APIs that only existed to compensate for the old boundary limitations.
 

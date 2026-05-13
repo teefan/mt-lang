@@ -4,6 +4,86 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaPackageLockTest < Minitest::Test
+  def test_load_supports_duplicate_package_names_when_schema_uses_package_instance_ids
+    Dir.mktmpdir("milk-tea-package-lock-instance-ids") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_v1_root = File.join(dir, "libs", "ui-v1")
+      ui_v2_root = File.join(dir, "libs", "ui-v2")
+      app_src_dir = File.join(app_root, "src")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(File.join(ui_v1_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v2_root, "src"))
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "2.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_root, "package.lock"), <<~LOCK)
+        schema_version = 2
+        root_package = "snake_duel"
+        root_package_id = "root"
+
+        [[package]]
+        instance_id = "root"
+        name = "snake_duel"
+        kind = "application"
+        version = "0.1.0"
+        source_kind = "path"
+        source_path = #{app_root.inspect}
+        manifest_path = #{File.join(app_root, "package.toml").inspect}
+        source_root = #{app_src_dir.inspect}
+        dependency_ids = ["ui-v1", "ui-v2"]
+
+        [[package]]
+        instance_id = "ui-v1"
+        name = "teefan.ui"
+        kind = "library"
+        version = "1.0.0"
+        source_kind = "path"
+        source_path = #{ui_v1_root.inspect}
+        manifest_path = #{File.join(ui_v1_root, "package.toml").inspect}
+        source_root = #{File.join(ui_v1_root, "src").inspect}
+        dependency_ids = []
+
+        [[package]]
+        instance_id = "ui-v2"
+        name = "teefan.ui"
+        kind = "library"
+        version = "2.0.0"
+        source_kind = "path"
+        source_path = #{ui_v2_root.inspect}
+        manifest_path = #{File.join(ui_v2_root, "package.toml").inspect}
+        source_root = #{File.join(ui_v2_root, "src").inspect}
+        dependency_ids = []
+      LOCK
+
+      root = MilkTea::PackageLock.load(app_root)
+
+      assert_equal "snake_duel", root.manifest.package_name
+      assert_equal ["1.0.0", "2.0.0"], root.edges.map { |edge| edge.node.manifest.package_version }.sort
+    end
+  end
+
   def test_load_uses_materialized_cache_root_for_registry_source_entries
     Dir.mktmpdir("milk-tea-package-lock-cache-root") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")

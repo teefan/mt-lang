@@ -1953,6 +1953,116 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/window = NULL;/, generated)
   end
 
+  def test_generate_c_for_let_else_status_success_binding
+    source = <<~MT
+      module demo.main
+
+      import std.status as status
+
+      function parse(input: int) -> status.Status[int, int]:
+          if input < 0:
+              return status.Status[int, int].err(error= 7)
+          return status.Status[int, int].ok(value= input + 1)
+
+      function main() -> int:
+          let value = parse(4) else:
+              return 1
+          return value + 10
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/std_status_Status_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_status_Status_int_int_kind_err\)/, generated)
+    assert_match(/return 1;/, generated)
+    assert_match(/return value\.data\.ok\.value \+ 10;/, generated)
+  end
+
+  def test_generate_c_for_let_else_status_error_binding
+    source = <<~MT
+      module demo.main
+
+      import std.status as status
+
+      function parse(input: int) -> status.Status[int, int]:
+          if input < 0:
+              return status.Status[int, int].err(error= 7)
+          return status.Status[int, int].ok(value= input + 1)
+
+      function main() -> int:
+          let value = parse(4) else as error:
+              return error
+          return value + 10
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/std_status_Status_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_status_Status_int_int_kind_err\)/, generated)
+    assert_match(/return value\.data\.err\.error;/, generated)
+    assert_match(/return value\.data\.ok\.value \+ 10;/, generated)
+  end
+
+  def test_generate_c_for_let_else_status_void_discard_binding
+    source = <<~MT
+      module demo.main
+
+      import std.status as status
+
+      function done() -> void:
+          return
+
+      function parse(flag: int) -> status.Status[void, int]:
+          if flag < 0:
+              return status.Status[void, int].err(error= 7)
+          return status.Status[void, int].ok(value= done())
+
+      function main(flag: int) -> int:
+          let _ = parse(flag) else as error:
+              return error
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/struct std_status_Status_void_int_ok \{/, generated)
+    assert_match(/uint8_t value;/, generated)
+    assert_match(/\.value = \(demo_main_done\(\), 0\)/, generated)
+    assert_match(/std_status_Status_void_int __mt_let_else_discard_\d+ = demo_main_parse\(flag\);/, generated)
+    assert_match(/if \(__mt_let_else_discard_\d+\.kind == std_status_Status_void_int_kind_err\)/, generated)
+    assert_match(/return __mt_let_else_discard_\d+\.data\.err\.error;/, generated)
+  end
+
+  def test_generate_c_for_async_let_else_status_void_discard_binding
+    source = <<~MT
+      module demo.async_status_void_codegen
+
+      import std.async as aio
+      import std.status as status
+
+      function done() -> void:
+          return
+
+      async function parse(flag: int) -> status.Status[void, int]:
+          await aio.sleep(1)
+          if flag < 0:
+              return status.Status[void, int].err(error= 7)
+          return status.Status[void, int].ok(value= done())
+
+      async function main(flag: int) -> int:
+          let _ = await parse(flag) else as error:
+              return error
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_async_status_void_codegen___async_main__frame/, generated)
+    assert_match(/local_let_else_discard_\d+/, generated)
+    assert_match(/if \(.*kind == std_status_Status_void_int_kind_err\)/, generated)
+    assert_match(/data\.err\.error;/, generated)
+  end
+
   def test_generate_c_for_defer_expression_owned_foreign_release_calls
     source = <<~MT
       module demo.main

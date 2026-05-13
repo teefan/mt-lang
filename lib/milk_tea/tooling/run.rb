@@ -208,13 +208,13 @@ module MilkTea
       end
     end
 
-    Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform)
+    Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, profile: nil, platform: nil, browser_opener: nil, preview_server_class: nil, preview_started: nil)
-      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, profile:, platform:, browser_opener:, preview_server_class:, preview_started:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
+      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, profile: nil, platform: nil, browser_opener: nil, preview_server_class: nil, preview_started: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
       @input_path = File.expand_path(path)
       @project_root = File.directory?(@input_path) ? @input_path : File.dirname(@input_path)
       @output_path = output_path ? File.expand_path(output_path) : nil
@@ -224,6 +224,8 @@ module MilkTea
       @package_graph = package_graph
       @profile = profile
       @platform = platform
+      @bundle = bundle
+      @archive = archive
       @browser_opener = browser_opener || method(:open_browser)
       @preview_server_class = preview_server_class || WasmPreviewServer
       @preview_started = preview_started
@@ -247,7 +249,18 @@ module MilkTea
     private
 
     def run_binary(binary_path)
-      build_result = Build.build(@input_path, output_path: binary_path, cc: @cc, keep_c_path: @keep_c_path, module_roots: @module_roots, package_graph: @package_graph, profile: @profile, platform: @platform)
+      build_result = Build.build(
+        @input_path,
+        output_path: binary_path,
+        cc: @cc,
+        keep_c_path: @keep_c_path,
+        module_roots: @module_roots,
+        package_graph: @package_graph,
+        profile: @profile,
+        platform: @platform,
+        bundle: @bundle,
+        archive: @archive,
+      )
       return run_wasm_preview(build_result) if build_result.platform == :wasm
 
       unless build_result.platform == host_platform
@@ -265,6 +278,8 @@ module MilkTea
         compiler: build_result.compiler,
         link_flags: build_result.link_flags,
         platform: build_result.platform,
+        bundle_root: build_result.bundle_root,
+        archive_path: build_result.archive_path,
       )
     rescue Errno::ENOENT
       raise RunError, "built program not found: #{binary_path}"
@@ -295,6 +310,8 @@ module MilkTea
         compiler: build_result.compiler,
         link_flags: build_result.link_flags,
         platform: build_result.platform,
+        bundle_root: build_result.bundle_root,
+        archive_path: build_result.archive_path,
       )
     rescue StandardError
       preview_server&.stop if preview_server&.respond_to?(:stop)

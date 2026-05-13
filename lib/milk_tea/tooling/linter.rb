@@ -371,7 +371,10 @@ module MilkTea
         stmt.else_body&.each { |s| collect_names_from_statement(s, used) }
       when AST::MatchStmt
         collect_names_from_expr(stmt.expression, used)
-        stmt.arms.each { |arm| arm.body.each { |s| collect_names_from_statement(s, used) } }
+        stmt.arms.each do |arm|
+          collect_names_from_expr(arm.pattern, used)
+          arm.body.each { |s| collect_names_from_statement(s, used) }
+        end
       when AST::ForStmt
         stmt.iterables.each { |iterable| collect_names_from_expr(iterable, used) }
         stmt.body.each { |s| collect_names_from_statement(s, used) }
@@ -795,6 +798,7 @@ module MilkTea
           visit_expression(argument.value)
           mark_call_argument_mutated(argument.value)
         end
+        mark_call_receiver_mutated(expression)
       when AST::UnaryOp
         visit_expression(expression.operand)
       when AST::BinaryOp
@@ -921,6 +925,18 @@ module MilkTea
       return false unless expression.is_a?(AST::Identifier)
 
       @sema_analysis&.binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
+    end
+
+    def mark_call_receiver_mutated(expression)
+      return unless expression.is_a?(AST::Call)
+      return unless expression.callee.is_a?(AST::MemberAccess)
+      return unless editable_receiver_expression?(expression.callee.receiver)
+
+      mark_mutated(expression.callee.receiver)
+    end
+
+    def editable_receiver_expression?(expression)
+      @sema_analysis&.binding_resolution&.editable_receiver_expression_ids&.key?(expression.object_id)
     end
 
     def with_scope

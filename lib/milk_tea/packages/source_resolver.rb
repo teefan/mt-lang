@@ -6,6 +6,10 @@ module MilkTea
   class PackageSourceResolverError < StandardError; end
 
   class PackageSourceResolver
+    attr_reader :resolved_registry_versions
+
+    RegistryDependencyKey = Data.define(:parent_source_key, :dependency_name)
+
     class SourceIdentity
       def kind
         raise NotImplementedError, "#{self.class} must implement #kind"
@@ -154,6 +158,20 @@ module MilkTea
 
     ResolvedPackage = Data.define(:manifest, :source)
 
+    def self.source_key_for_identity(identity)
+      return "path:#{File.expand_path(identity.path)}" if identity.is_a?(PathIdentity)
+      return "#{identity.kind}:#{identity.cache_key}" if identity.cache_key
+
+      raise PackageSourceResolverError, "unsupported source identity #{identity.class} for registry dependency key"
+    end
+
+    def self.registry_dependency_key(parent_source_key:, dependency_name:)
+      RegistryDependencyKey.new(
+        parent_source_key: parent_source_key.to_s,
+        dependency_name: dependency_name.to_s,
+      )
+    end
+
     def initialize(source_cache: PackageSourceCache.new, remote_resolution: :reject, source_fetcher: nil, resolved_registry_versions: nil)
       @source_cache = source_cache
       @remote_resolution = remote_resolution
@@ -207,14 +225,14 @@ module MilkTea
       end
     end
 
-    def resolve(dependency, parent_manifest:)
+    def resolve(dependency, parent_manifest:, parent_source: nil)
       if dependency.path
         manifest = PackageManifest.load(dependency.path)
         validate_fixed_dependency_version_requirement!(dependency, manifest, parent_manifest:)
         return ResolvedPackage.new(manifest:, source: source_for_manifest(manifest))
       end
 
-      return resolve_registry_dependency(dependency, parent_manifest:) if dependency.registry?
+      return resolve_registry_dependency(dependency, parent_manifest:, parent_source:) if dependency.registry?
       return resolve_git_dependency(dependency, parent_manifest:) if dependency.git
 
       raise PackageSourceResolverError,
@@ -230,8 +248,15 @@ module MilkTea
 
     private
 
-    def resolve_registry_dependency(dependency, parent_manifest:)
-      resolved_version = @resolved_registry_versions[dependency.name]
+    def resolve_registry_dependency(dependency, parent_manifest:, parent_source: nil)
+      if dependency.exact_registry_version?
+        identity = RegistryIdentity.new(package_name: dependency.name, version: dependency.version)
+        return resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
+      end
+
+      parent_source_key = registry_dependency_parent_source_key(parent_manifest:, parent_source:)
+      dependency_key = self.class.registry_dependency_key(parent_source_key:, dependency_name: dependency.name)
+      resolved_version = @resolved_registry_versions[dependency_key] || @resolved_registry_versions[dependency.name]
       if resolved_version
         unless dependency.version_req.matches?(resolved_version)
           raise PackageSourceResolverError,
@@ -242,13 +267,8 @@ module MilkTea
         return resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
       end
 
-      unless dependency.exact_registry_version?
-        raise PackageSourceResolverError,
-              "dependency #{dependency.name} in #{parent_manifest.manifest_path} uses version requirement #{dependency.version_req}, but registry dependency solving is not implemented yet; use an exact version for now"
-      end
-
-      identity = RegistryIdentity.new(package_name: dependency.name, version: dependency.version)
-      resolve_cache_backed_dependency(identity, dependency:, parent_manifest:)
+      raise PackageSourceResolverError,
+        "dependency #{dependency.name} in #{parent_manifest.manifest_path} uses version requirement #{dependency.version_req}, but registry dependency solving is not implemented yet; use an exact version for now"
     end
 
     def resolve_git_dependency(dependency, parent_manifest:)
@@ -331,11 +351,38 @@ module MilkTea
       )
     end
 
+    def registry_dependency_parent_source_key(parent_manifest:, parent_source:)
+      identity = if parent_source
+                   parent_source.identity
+                 else
+                   source_for_manifest(parent_manifest).identity
+                 end
+
+      self.class.source_key_for_identity(identity)
+    end
+
     def normalize_resolved_registry_versions(versions)
       return {} unless versions
 
-      versions.each_with_object({}) do |(package_name, version), resolved|
-        resolved[package_name.to_s] = version.to_s
+      versions.each_with_object({}) do |(key, version), resolved|
+        normalized_key = case key
+                         when RegistryDependencyKey
+                           self.class.registry_dependency_key(
+                             parent_source_key: key.parent_source_key,
+                             dependency_name: key.dependency_name,
+                           )
+                         when Array
+                           if key.length != 2
+                             raise PackageSourceResolverError,
+                                   "registry dependency key must contain parent manifest path and dependency name"
+                           end
+
+                           self.class.registry_dependency_key(parent_source_key: key[0], dependency_name: key[1])
+                         else
+                           key.to_s
+                         end
+
+        resolved[normalized_key] = version.to_s
       end
     end
   end

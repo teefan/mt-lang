@@ -101,7 +101,11 @@ module MilkTea
 
       require "json"
 
-      payload = MilkTea::LSP::Server.semantic_tokens_for_path(path, module_roots: module_roots_for(path, locked: resolution[:locked]))
+      payload = MilkTea::LSP::Server.semantic_tokens_for_path(
+        path,
+        module_roots: module_roots_for(path, locked: resolution[:locked]),
+        package_graph: package_graph_for(path, locked: resolution[:locked]),
+      )
       @out.puts(JSON.pretty_generate(payload))
       0
     end
@@ -387,16 +391,23 @@ module MilkTea
       end
 
       if options.delete(:clean)
-        cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform])
+        cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
         @out.puts("cleaned #{cleaned_path}")
         return 0
       end
 
       ensure_current_lockfile!(path) if options.delete(:frozen)
       locked = options.delete(:locked)
+      bundle = options[:bundle]
       package_graph = package_graph_for(path, locked:)
       result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
-      @out.puts("built #{path} -> #{result.output_path}")
+      if bundle
+        @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
+        @out.puts("entry executable #{result.output_path}")
+        @out.puts("archive #{result.archive_path}") if result.archive_path
+      else
+        @out.puts("built #{path} -> #{result.output_path}")
+      end
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
     end
@@ -475,6 +486,8 @@ module MilkTea
         keep_c_path: nil,
         profile: nil,
         platform: nil,
+        bundle: false,
+        archive: false,
         locked: false,
         frozen: false,
       }
@@ -508,6 +521,11 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:platform] = value
+        when "--bundle"
+          options[:bundle] = true
+        when "--archive"
+          options[:bundle] = true
+          options[:archive] = true
         when "--locked"
           options[:locked] = true
         when "--frozen"
@@ -612,9 +630,11 @@ module MilkTea
     end
 
     def package_graph_for(path = nil, locked: false)
-      return nil unless locked && path
+      return nil unless path
 
-      PackageGraph.load(path, locked: true)
+      PackageGraph.load(path, locked:)
+    rescue PackageManifestError
+      nil
     end
 
     def package_services
@@ -755,6 +775,8 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
+            --bundle                     Package a native package build into a distributable directory.
+            --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             --clean                      Remove existing build outputs and exit.
@@ -847,14 +869,14 @@ module MilkTea
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")
       io.puts("       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]")
       io.puts("       mtc deps remove [PATH_OR_PACKAGE] NAME")
-      io.puts("       mtc deps update [PATH_OR_PACKAGE]")
+      io.puts("       mtc deps update [PATH_OR_PACKAGE] [NAME ...]")
       io.puts("       mtc deps tree [PATH_OR_PACKAGE]")
       io.puts("       mtc deps lock [PATH_OR_PACKAGE] [--check]")
       io.puts("       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")

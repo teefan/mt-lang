@@ -69,4 +69,28 @@ class MilkTeaPackageManifestTest < Minitest::Test
       assert_match(/semantic version format/, error.message)
     end
   end
+
+  def test_load_rejects_build_assets_with_duplicate_basenames
+    Dir.mktmpdir("milk-tea-package-manifest-assets-collision") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      FileUtils.mkdir_p(File.join(dir, "art", "assets"))
+      FileUtils.mkdir_p(File.join(dir, "ui", "assets"))
+      File.write(File.join(dir, "src", "main.mt"), "module snake_duel.main\n")
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+        assets = ["art/assets", "ui/assets"]
+      TOML
+
+      error = assert_raises(MilkTea::PackageManifestError) do
+        MilkTea::PackageManifest.load(dir)
+      end
+
+      assert_match(/build\.assets entries must have unique basenames: assets/, error.message)
+    end
+  end
 end

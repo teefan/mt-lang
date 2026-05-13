@@ -918,19 +918,22 @@ module MilkTea
           case statement
           when AST::LocalDecl
             type, storage_type = async_local_decl_types(statement, env:)
-            local_fields[statement.name] = { field_name: "local_#{statement.name}", type:, storage_type:, mutable: statement.kind == :var }
+            local_field_key = async_local_decl_field_key(statement)
+            local_fields[local_field_key] = { field_name: async_local_decl_field_name(statement), type:, storage_type:, mutable: statement.kind == :var }
             if statement.value.is_a?(AST::AwaitExpr)
               await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
             end
-            env[:scopes].last[statement.name] = local_binding(
-              type:,
-              storage_type:,
-              c_name: statement.name,
-              mutable: statement.kind == :var,
-              pointer: false,
-              const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
-            )
+            if bind_let_else_local?(statement)
+              env[:scopes].last[statement.name] = local_binding(
+                type:,
+                storage_type:,
+                c_name: statement.name,
+                mutable: statement.kind == :var,
+                pointer: false,
+                const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
+              )
+            end
             await_counter = analyze_async_statements!(statement.else_body, await_counter, env, param_fields, local_fields, await_fields) if statement.else_body
           when AST::Assignment
             next unless statement.value.is_a?(AST::AwaitExpr)
@@ -1013,19 +1016,22 @@ module MilkTea
           case statement
           when AST::LocalDecl
             type, storage_type = async_local_decl_types(statement, env:)
-            local_fields[statement.name] ||= { field_name: "local_#{statement.name}", type:, storage_type:, mutable: statement.kind == :var }
+            local_field_key = async_local_decl_field_key(statement)
+            local_fields[local_field_key] ||= { field_name: async_local_decl_field_name(statement), type:, storage_type:, mutable: statement.kind == :var }
             if statement.value.is_a?(AST::AwaitExpr)
               await_fields[statement.value.object_id] = build_async_await_field_info(statement.value, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
             end
-            env[:scopes].last[statement.name] = local_binding(
-              type:,
-              storage_type:,
-              c_name: statement.name,
-              mutable: statement.kind == :var,
-              pointer: false,
-              const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
-            )
+            if bind_let_else_local?(statement)
+              env[:scopes].last[statement.name] = local_binding(
+                type:,
+                storage_type:,
+                c_name: statement.name,
+                mutable: statement.kind == :var,
+                pointer: false,
+                const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env:) : nil,
+              )
+            end
             await_counter = analyze_async_statements!(statement.else_body, await_counter, env, param_fields, local_fields, await_fields) if statement.else_body
           when AST::Assignment
             if statement.value.is_a?(AST::AwaitExpr)
@@ -1098,7 +1104,7 @@ module MilkTea
                          infer_expression_type(statement.value, env:)
                        end
         type = if statement.else_body
-                 statement.type ? resolve_type_ref(statement.type) : storage_type.base
+                 statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
                else
                  storage_type
                end
@@ -1496,6 +1502,16 @@ module MilkTea
 
         if statement.else_body
           else_env = duplicate_env(env)
+          if statement.else_binding
+            current_actual_scope(else_env[:scopes])[statement.else_binding.name] = local_binding(
+              type: let_else_error_type(storage_type),
+              storage_type:,
+              c_name: async_frame_field_c_name(field_info[:field_name]),
+              mutable: false,
+              pointer: false,
+              projection: :status_err_error,
+            )
+          end
           else_body = if statements_contain_await?(statement.else_body, async_info)
             lower_async_cf_statements(
               statement.else_body,
@@ -1519,12 +1535,7 @@ module MilkTea
             )
           end
           lowered << IR::IfStmt.new(
-            condition: IR::Binary.new(
-              operator: "==",
-              left: target,
-              right: IR::NullLiteral.new(type: storage_type),
-              type: @types.fetch("bool"),
-            ),
+            condition: let_else_failure_condition(target, storage_type),
             then_body: else_body,
             else_body: nil,
           )
@@ -1566,15 +1577,18 @@ module MilkTea
               else_env = duplicate_env(env)
               normalize_async_statements(statement.else_body, counter, else_env, return_type:)
             end
-            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, else_body:, line: statement.line)
-            current_actual_scope(env[:scopes])[statement.name] = local_binding(
-              type: local_type,
-              storage_type:,
-              c_name: statement.name,
-              mutable: statement.kind == :var,
-              pointer: false,
-              const_value: statement.else_body ? nil : statement.kind == :let ? compile_time_const_value(statement.value, env:) : nil,
-            )
+            normalized = AST::LocalDecl.new(kind: statement.kind, name: statement.name, type: statement.type, value: value, else_binding: statement.else_binding, else_body:, line: statement.line)
+            if bind_let_else_local?(statement)
+              current_actual_scope(env[:scopes])[statement.name] = local_binding(
+                type: local_type,
+                storage_type:,
+                c_name: statement.name,
+                mutable: statement.kind == :var,
+                pointer: false,
+                projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
+                const_value: statement.else_body ? nil : statement.kind == :let ? compile_time_const_value(statement.value, env:) : nil,
+              )
+            end
             return setup + [normalized]
           end
 
@@ -1954,14 +1968,14 @@ module MilkTea
         statements.each do |statement|
           case statement
           when AST::LocalDecl
-            field_info = async_info[:local_fields].fetch(statement.name)
+            field_info = async_info[:local_fields].fetch(async_local_decl_field_key(statement))
             await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
               lowered.concat(lower_async_await_statement(statement, field_info:, await_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
             else
               lowered.concat(lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
             end
-            async_bind_local!(env, statement.name, field_info)
+            async_bind_local!(env, statement.name, field_info) if bind_let_else_local?(statement)
           when AST::Assignment
             await_info = async_info[:await_fields][statement.value&.object_id]
             if await_info
@@ -2877,6 +2891,16 @@ module MilkTea
           lowered << IR::ExpressionStmt.new(expression: release_call)
           if statement.else_body
             else_env = duplicate_env(env)
+            if statement.else_binding
+              current_actual_scope(else_env[:scopes])[statement.else_binding.name] = local_binding(
+                type: let_else_error_type(storage_type),
+                storage_type:,
+                c_name: async_frame_field_c_name(field_info[:field_name]),
+                mutable: false,
+                pointer: false,
+                projection: :status_err_error,
+              )
+            end
             else_body = if statements_contain_await?(statement.else_body, async_info)
               lower_async_cf_statements(
                 statement.else_body,
@@ -2900,12 +2924,7 @@ module MilkTea
               )
             end
             lowered << IR::IfStmt.new(
-              condition: IR::Binary.new(
-                operator: "==",
-                left: target,
-                right: IR::NullLiteral.new(type: storage_type),
-                type: @types.fetch("bool"),
-              ),
+              condition: let_else_failure_condition(target, storage_type),
               then_body: else_body,
               else_body: nil,
             )
@@ -3064,11 +3083,12 @@ module MilkTea
                              infer_expression_type(statement.value, env: local_env)
                            end
             type = if statement.else_body
-                     statement.type ? resolve_type_ref(statement.type) : storage_type.base
+                     statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
                    else
                      storage_type
                    end
-            c_name = c_local_name(statement.name)
+            c_name = let_else_storage_c_name(statement, local_env)
+            decl_name = bind_let_else_local?(statement) ? statement.name : c_name
             prepared_setup = []
             prepared_value = statement.value
             prepared_cleanups = []
@@ -3094,7 +3114,7 @@ module MilkTea
               raise LoweringError, "foreign call used to initialize #{statement.name} must return a value" if call_type == @types.fetch("void")
               raise LoweringError, "consuming foreign calls must return void" unless release_assignments.empty?
 
-              lowered << IR::LocalDecl.new(name: statement.name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path)
+              lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path)
               lowered.concat(cleanup_statements)
               emitted_decl = true
             elsif prepared_value.is_a?(AST::ProcExpr)
@@ -3110,21 +3130,38 @@ module MilkTea
             else
               value = IR::ZeroInit.new(type: storage_type)
             end
-            current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
-              type:,
-              storage_type:,
-              c_name:,
-              mutable: statement.kind == :var,
-              pointer: false,
-              cstr_backed: cstr_backed_storage_value?(storage_type, prepared_value, local_env),
-              cstr_list_backed: cstr_list_backed_storage_value?(storage_type, prepared_value, local_env),
-              const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
-            )
-            lowered << IR::LocalDecl.new(name: statement.name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
+            if bind_let_else_local?(statement)
+              current_actual_scope(local_env[:scopes])[statement.name] = local_binding(
+                type:,
+                storage_type:,
+                c_name:,
+                mutable: statement.kind == :var,
+                pointer: false,
+                projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
+                cstr_backed: cstr_backed_storage_value?(storage_type, prepared_value, local_env),
+                cstr_list_backed: cstr_list_backed_storage_value?(storage_type, prepared_value, local_env),
+                const_value: statement.else_body ? nil : statement.kind == :let && prepared_value ? compile_time_const_value(prepared_value, env: local_env) : nil,
+              )
+            end
+            lowered << IR::LocalDecl.new(name: decl_name, c_name:, type: storage_type, value:, line: statement.line, source_path: @current_analysis_path) unless emitted_decl
             if statement.else_body
+              else_env = if statement.else_binding
+                           duplicate_env(local_env).tap do |env_with_error|
+                             current_actual_scope(env_with_error[:scopes])[statement.else_binding.name] = local_binding(
+                               type: let_else_error_type(storage_type),
+                               storage_type:,
+                               c_name:,
+                               mutable: false,
+                               pointer: false,
+                               projection: :status_err_error,
+                             )
+                           end
+                         else
+                           local_env
+                         end
               else_body = lower_block(
                 statement.else_body,
-                env: local_env,
+                env: else_env,
                 active_defers: active_defers + local_defers + prepared_cleanups,
                 return_type:,
                 loop_flow: nested_loop_flow(loop_flow, local_defers),
@@ -3132,12 +3169,7 @@ module MilkTea
               )
               local_ref = IR::Name.new(name: c_name, type: storage_type, pointer: false)
               lowered << IR::IfStmt.new(
-                condition: IR::Binary.new(
-                  operator: "==",
-                  left: local_ref,
-                  right: IR::NullLiteral.new(type: storage_type),
-                  type: @types.fetch("bool"),
-                ),
+                condition: let_else_failure_condition(local_ref, storage_type),
                 then_body: else_body,
                 else_body: nil,
               )
@@ -4858,7 +4890,7 @@ module MilkTea
         when AST::Identifier
           binding = lookup_value(expression.name, env)
           if binding
-            IR::Name.new(name: binding[:c_name], type: binding[:type], pointer: binding[:pointer])
+            lower_bound_identifier(binding)
           elsif @functions.key?(expression.name)
             function_binding = @functions.fetch(expression.name)
             raise LoweringError, "generic function #{expression.name} cannot be used as a value" if function_binding.type_params.any?
@@ -6662,15 +6694,17 @@ module MilkTea
           case statement
           when AST::LocalDecl
             type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: simulated_env)
-            current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
-              type:,
-              c_name: c_local_name(statement.name),
-              mutable: statement.kind == :var,
-              pointer: false,
-              cstr_backed: cstr_backed_storage_value?(type, statement.value, simulated_env),
-              cstr_list_backed: cstr_list_backed_storage_value?(type, statement.value, simulated_env),
-              const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env: simulated_env) : nil,
-            )
+            unless let_else_discard_binding_syntax?(statement)
+              current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
+                type:,
+                c_name: c_local_name(statement.name),
+                mutable: statement.kind == :var,
+                pointer: false,
+                cstr_backed: cstr_backed_storage_value?(type, statement.value, simulated_env),
+                cstr_list_backed: cstr_list_backed_storage_value?(type, statement.value, simulated_env),
+                const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env: simulated_env) : nil,
+              )
+            end
           when AST::Assignment
             update_cstr_metadata_for_assignment!(statement, statement.value, simulated_env)
           when AST::IfStmt
@@ -8854,8 +8888,8 @@ module MilkTea
         declaration
       end
 
-      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
-        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, cstr_backed:, cstr_list_backed:, const_value: }
+      def local_binding(type:, c_name:, mutable:, pointer:, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false, const_value: nil)
+        { type:, storage_type: storage_type || type, c_name:, mutable:, pointer:, projection:, cstr_backed:, cstr_list_backed:, const_value: }
       end
 
       def callable_type?(type)
@@ -9202,6 +9236,117 @@ module MilkTea
 
       def duplicate_env(env)
         { scopes: env[:scopes].map(&:dup) + [{}], counter: env[:counter] }
+      end
+
+      def let_else_discard_binding_syntax?(statement)
+        statement.is_a?(AST::LocalDecl) && statement.else_body && statement.name == "_"
+      end
+
+      def bind_let_else_local?(statement)
+        !let_else_discard_binding_syntax?(statement)
+      end
+
+      def async_local_decl_field_key(statement)
+        return statement.name unless let_else_discard_binding_syntax?(statement)
+
+        "__let_else_discard_#{statement.object_id}"
+      end
+
+      def async_local_decl_field_name(statement)
+        return "local_#{statement.name}" unless let_else_discard_binding_syntax?(statement)
+
+        "local_let_else_discard_#{statement.object_id}"
+      end
+
+      def let_else_storage_c_name(statement, env)
+        return c_local_name(statement.name) unless let_else_discard_binding_syntax?(statement)
+
+        fresh_c_temp_name(env, "let_else_discard")
+      end
+
+      def let_else_success_type(type)
+        return type.base if type.is_a?(Types::Nullable)
+        return unless status_let_else_type?(type)
+
+        type.arm("ok").fetch("value")
+      end
+
+      def let_else_error_type(type)
+        return unless status_let_else_type?(type)
+
+        type.arm("err").fetch("error")
+      end
+
+      def let_else_binding_projection(type)
+        return :status_ok_value if status_let_else_type?(type)
+
+        nil
+      end
+
+      def status_let_else_type?(type)
+        return false unless type.is_a?(Types::Variant)
+        return false unless type.module_name == "std.status" && type.name == "Status"
+
+        ok_fields = type.arm("ok")
+        err_fields = type.arm("err")
+        ok_fields && ok_fields.length == 1 && ok_fields.key?("value") &&
+          err_fields && err_fields.length == 1 && err_fields.key?("error")
+      end
+
+      def let_else_failure_condition(storage_expr, storage_type)
+        if storage_type.is_a?(Types::Nullable)
+          return IR::Binary.new(
+            operator: "==",
+            left: storage_expr,
+            right: IR::NullLiteral.new(type: storage_type),
+            type: @types.fetch("bool"),
+          )
+        end
+
+        if status_let_else_type?(storage_type)
+          kind_type = @types.fetch("int")
+          return IR::Binary.new(
+            operator: "==",
+            left: IR::Member.new(receiver: storage_expr, member: "kind", type: kind_type),
+            right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_err", type: kind_type, pointer: false),
+            type: @types.fetch("bool"),
+          )
+        end
+
+        raise LoweringError, "unsupported let-else storage type #{storage_type}"
+      end
+
+      def lower_bound_identifier(binding)
+        storage_type = binding[:storage_type]
+        visible_type = binding[:type]
+        projection = binding[:projection]
+
+        if projection == :status_ok_value
+          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          return status_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+        end
+
+        if projection == :status_err_error
+          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          return status_binding_projection_expression(local_ref, storage_type, "err", "error", visible_type)
+        end
+
+        return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
+        return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
+
+        if status_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
+          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          return status_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+        end
+
+        IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
+      end
+
+      def status_binding_projection_expression(storage_expr, storage_type, arm_name, field_name, field_type)
+        payload_type = Types::VariantArmPayload.new(storage_type, arm_name, storage_type.arm(arm_name))
+        data_expr = IR::Member.new(receiver: storage_expr, member: "data", type: nil)
+        arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+        IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
       end
 
       def c_type_name(type)

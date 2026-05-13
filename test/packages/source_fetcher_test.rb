@@ -272,7 +272,7 @@ class MilkTeaPackageSourceFetcherTest < Minitest::Test
         fetcher.fetch_locked_sources(app_root)
       end
 
-      assert_match(/duplicate package teefan\.ui/, error.message)
+      assert_match(/duplicate package instance teefan\.ui/, error.message)
     end
   end
 

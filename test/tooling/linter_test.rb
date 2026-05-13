@@ -230,6 +230,30 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal [], warnings
   end
 
+  def test_no_prefer_let_when_var_is_mutated_via_editable_method
+    source = <<~MT
+      module demo.lint
+
+      struct Counter:
+          value: int
+
+      methods Counter:
+          editable function bump():
+              this.value += 1
+
+      function main() -> int:
+          var counter = Counter(value = 0)
+          counter.bump()
+          return counter.value
+    MT
+
+    ast = MilkTea::Parser.parse(source, path: "demo.mt")
+    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_analysis: analysis)
+
+    refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("counter") }
+  end
+
   def test_no_prefer_let_for_let_locals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
@@ -455,6 +479,24 @@ class MilkTeaLinterTest < Minitest::Test
 
       refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("string") }
     end
+  end
+
+  def test_does_not_report_import_used_in_match_arm_pattern
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      import std.maybe as maybe
+
+      function main() -> int:
+          let value = maybe.Maybe[int].none()
+          match value:
+              maybe.Maybe.none:
+                  return 0
+              maybe.Maybe.some as payload:
+                  return payload.value
+    MT
+
+    refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("maybe") }
   end
 
   def test_import_with_alias_uses_alias_name

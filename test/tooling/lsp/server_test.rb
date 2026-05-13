@@ -816,6 +816,50 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_shows_let_else_error_binding_declaration_type
+    source = <<~MT
+      module demo.main
+
+      import std.status as status
+
+      function load() -> status.Status[int, int]:
+          return status.Status[int, int].err(error = 1)
+
+      function main() -> int:
+          let value = load() else as error:
+              return error
+          return value
+    MT
+
+    Dir.mktmpdir("lsp_hover_let_else_error_decl") do |dir|
+      path = File.join(dir, "main.mt")
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = "file://#{path}"
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 8, "character" => 35 },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let error: int (immutable)"
+      end
+    end
+  end
+
   def test_hover_shows_parameter_type
     source = <<~MT
       function main(value: int) -> int:
