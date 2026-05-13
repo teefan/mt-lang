@@ -25,6 +25,19 @@ module MilkTea
     end
     DataView = Data.define(:root_dir, :manifest_path, :package_name, :package_version, :package_kind, :source_root, :source_path, :profile, :platform, :output_path, :assets_paths, :html_template_path, :dependencies)
 
+    def self.default_package_name_for_root(root_dir)
+      snake_case_identifier(File.basename(File.expand_path(root_dir)))
+    end
+
+    def self.snake_case_identifier(name)
+      name.to_s
+        .gsub(/([A-Z\d]+)([A-Z][a-z])/, '\1_\2')
+        .gsub(/([a-z\d])([A-Z])/, '\1_\2')
+        .tr("- ", "__")
+        .gsub(/_+/, "_")
+        .downcase
+    end
+
     def self.load(path)
       new(path).load
     end
@@ -45,7 +58,7 @@ module MilkTea
 
       package_name = package["name"]
       if package_name.nil? || package_name.empty?
-        package_name = File.basename(root_dir).tr("-", "_")
+        package_name = self.class.default_package_name_for_root(root_dir)
       end
       package_version = package["version"]
       package_version = package_version.to_s unless package_version.nil?
