@@ -150,25 +150,34 @@ module MilkTea
       end
 
       package_name = required_string(entry, "name", lock_path)
-      package_kind = normalize_package_kind(required_string(entry, "kind", lock_path), lock_path)
       source = @source_resolver.source_from_lock(entry, lock_path)
-      root_dir = source.local_root
-      manifest_path = File.expand_path(required_string(entry, "manifest_path", lock_path))
-      source_root = File.expand_path(required_string(entry, "source_root", lock_path))
-      package_version = optional_string(entry["version"])
+      manifest = PackageManifest.load(source.local_root)
+      if manifest.package_name != package_name
+        raise PackageLockError,
+              "package.lock entry #{package_name} resolved materialized package #{manifest.package_name} at #{manifest.manifest_path}"
+      end
+
+      if source.kind == :registry
+        expected_version = source.identity.version
+        if manifest.package_version != expected_version
+          raise PackageLockError,
+                "package.lock registry entry #{package_name} resolved version #{manifest.package_version.inspect} at #{manifest.manifest_path}; expected #{expected_version.inspect}"
+        end
+      end
+
       dependency_names = normalize_dependency_names(entry["dependencies"], lock_path)
 
       dependencies = dependency_names.map do |dependency_name|
-        PackageManifest::DependencyView.new(dependency_name, nil, nil, nil, nil, nil)
+        PackageManifest::DependencyView.new(dependency_name, nil, nil, nil, nil, nil, nil)
       end
 
       manifest = PackageManifest::DataView.new(
-        root_dir:,
-        manifest_path:,
-        package_name:,
-        package_version:,
-        package_kind:,
-        source_root:,
+        root_dir: manifest.root_dir,
+        manifest_path: manifest.manifest_path,
+        package_name: manifest.package_name,
+        package_version: manifest.package_version,
+        package_kind: manifest.package_kind,
+        source_root: manifest.source_root,
         source_path: nil,
         profile: nil,
         platform: nil,
@@ -179,7 +188,7 @@ module MilkTea
       )
 
       [manifest, source, dependency_names]
-    rescue PackageSourceResolverError => e
+    rescue PackageManifestError, PackageSourceResolverError => e
       raise PackageLockError, e.message
     end
 
@@ -214,7 +223,7 @@ module MilkTea
         dependency_record = records_by_name[dependency_name]
         raise PackageLockError, "package.lock missing dependency #{dependency_name} referenced by #{package_name}" unless dependency_record
 
-        dependency = PackageManifest::DependencyView.new(dependency_name, nil, nil, nil, nil, nil)
+        dependency = PackageManifest::DependencyView.new(dependency_name, nil, nil, nil, nil, nil, nil)
         node = build_locked_node(dependency_name, records_by_name, nodes_by_name, build_stack)
         PackageGraph::Edge.new(dependency:, node:)
       end

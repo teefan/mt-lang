@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+require_relative "packages/version"
+require_relative "packages/manifest"
+require_relative "packages/source_cache"
+require_relative "packages/registry_store"
+require_relative "packages/source_resolver"
+require_relative "packages/source_fetcher"
+require_relative "packages/registry_metadata_provider"
+require_relative "packages/dependency_solver"
+require_relative "packages/graph"
+require_relative "packages/lock"
+require_relative "packages/manifest_editor"
+require_relative "packages/services"
+require_relative "packages/manager_cli"

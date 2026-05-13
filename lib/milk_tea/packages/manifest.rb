@@ -6,7 +6,23 @@ module MilkTea
   class PackageManifestError < StandardError; end
 
   class PackageManifest
-    DependencyView = Data.define(:name, :version, :git, :git_rev, :git_subdir, :path)
+    DependencyView = Data.define(:name, :version, :version_req, :git, :git_rev, :git_subdir, :path) do
+      def path_dependency?
+        !path.nil?
+      end
+
+      def git_dependency?
+        !git.nil?
+      end
+
+      def registry?
+        !version_req.nil? && !path_dependency? && !git_dependency?
+      end
+
+      def exact_registry_version?
+        registry? && !version.nil?
+      end
+    end
     DataView = Data.define(:root_dir, :manifest_path, :package_name, :package_version, :package_kind, :source_root, :source_path, :profile, :platform, :output_path, :preload_path, :html_template_path, :dependencies)
 
     def self.load(path)
@@ -173,14 +189,7 @@ module MilkTea
     def parse_dependency(name, spec, root_dir:, manifest_path:)
       case spec
       when String
-        return DependencyView.new(
-          name.to_s,
-          normalize_registry_dependency_version(spec, name:, manifest_path:),
-          nil,
-          nil,
-          nil,
-          nil,
-        )
+        return registry_dependency(name, spec, manifest_path:)
       when Hash
         version = normalize_optional_dependency_value(spec["version"])
         git = normalize_optional_dependency_value(spec["git"])
@@ -196,10 +205,15 @@ module MilkTea
           raise PackageManifestError, "dependency #{name} in #{manifest_path} declares subdir without git"
         end
 
+        if version && git
+          raise PackageManifestError,
+                "dependency #{name} in #{manifest_path} cannot combine version with git resolution"
+        end
+
         declared_sources = []
-        declared_sources << "version" if version
         declared_sources << "git" if git
         declared_sources << "path" if path_value
+        declared_sources << "version" if version && !path_value && !git
 
         if declared_sources.empty?
           raise PackageManifestError, "dependency #{name} in #{manifest_path} must declare version, git, or path"
@@ -216,7 +230,9 @@ module MilkTea
             raise PackageManifestError, "dependency #{name} path not found: #{spec["path"]} (resolved to #{path})"
           end
 
-          return DependencyView.new(name.to_s, nil, nil, nil, nil, path)
+          version_req = version ? normalize_registry_dependency_requirement(version, name:, manifest_path:) : nil
+          exact_version = version_req&.exact_version&.to_s
+          return DependencyView.new(name.to_s, exact_version, version_req, nil, nil, nil, path)
         end
 
         if git
@@ -225,20 +241,20 @@ module MilkTea
                   "dependency #{name} in #{manifest_path} uses git resolution but is missing rev"
           end
 
-          return DependencyView.new(name.to_s, nil, git, git_rev, git_subdir, nil)
+          return DependencyView.new(name.to_s, nil, nil, git, git_rev, git_subdir, nil)
         end
 
-        DependencyView.new(
-          name.to_s,
-          normalize_registry_dependency_version(version, name:, manifest_path:),
-          nil,
-          nil,
-          nil,
-          nil,
-        )
+        registry_dependency(name, version, manifest_path:)
       else
         raise PackageManifestError, "dependency #{name} in #{manifest_path} has unsupported type #{spec.class}"
       end
+    end
+
+    def registry_dependency(name, raw_requirement, manifest_path:)
+      version_req = normalize_registry_dependency_requirement(raw_requirement, name:, manifest_path:)
+      exact_version = version_req.exact_version&.to_s
+
+      DependencyView.new(name.to_s, exact_version, version_req, nil, nil, nil, nil)
     end
 
     def normalize_optional_dependency_value(value)
@@ -246,18 +262,15 @@ module MilkTea
       text.empty? ? nil : text
     end
 
-    def normalize_registry_dependency_version(value, name:, manifest_path:)
+    def normalize_registry_dependency_requirement(value, name:, manifest_path:)
       text = normalize_optional_dependency_value(value)
       if text.nil?
         raise PackageManifestError, "dependency #{name} in #{manifest_path} must declare a version"
       end
 
-      if text.match?(/[<>=~^*,\s]/)
-        raise PackageManifestError,
-              "dependency #{name} in #{manifest_path} uses version range #{text.inspect}, but only exact registry versions are currently supported"
-      end
-
-      text
+      PackageVersionReq.parse(text, label: "dependency #{name} in #{manifest_path} version requirement")
+    rescue PackageVersionError => e
+      raise PackageManifestError, e.message
     end
 
     def normalize_package_kind(value)

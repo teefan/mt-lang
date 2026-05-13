@@ -13,12 +13,19 @@ module MilkTea
       @out = out
       @err = err
       @include_module_roots = []
+      @include_path_flags = []
       @ambient_module_roots = MilkTea::ModuleRoots.roots_for_path(Dir.pwd)
     end
 
     def start
       extract_include_paths!
       command = @argv.shift
+
+      if command && @include_module_roots.any? && !command_supports_include_paths?(command)
+        @err.puts("unknown option #{@include_path_flags.first} for #{command}")
+        print_usage(@err)
+        return 1
+      end
 
       if @argv.first == "--help" || @argv.first == "-h"
         @argv.shift
@@ -49,6 +56,8 @@ module MilkTea
         run_command
       when "dap"
         dap_command
+      when "toolchain"
+        toolchain_command
       when "deps"
         deps_command
       when "bindgen"
@@ -432,229 +441,22 @@ module MilkTea
     end
 
     def deps_command
-      subcommand = @argv.shift
+      PackageManagerCLI.start(
+        @argv,
+        out: @out,
+        err: @err,
+        help_printer: method(:print_deps_help),
+        services: package_services,
+      )
+    end
 
-      unless subcommand
-        @err.puts("missing deps subcommand")
-        print_usage(@err)
-        return 1
-      end
-
-      case subcommand
-      when "bootstrap"
-        if @argv.any?
-          @err.puts("unknown deps option #{@argv.first}")
-          print_usage(@err)
-          return 1
-        end
-
-        require_relative "../bindings"
-
-        results = UpstreamSources.bootstrap_all!
-        results.each do |result|
-          verb = result.status == :present ? "kept" : "bootstrapped"
-          @out.puts("#{verb} #{result.source.name} -> #{result.path}")
-        end
-        0
-      when "doctor"
-        if @argv.any?
-          @err.puts("unknown deps option #{@argv.first}")
-          print_usage(@err)
-          return 1
-        end
-
-        require_relative "../bindings"
-
-        cc = ENV.fetch("CC", "cc")
-        ar = ENV.fetch("AR", "ar")
-        checks = []
-
-        checks << ["ruby", true, RUBY_DESCRIPTION]
-        checks << ["cc", executable_available?(cc), cc]
-        checks << ["ar", executable_available?(ar), ar]
-        checks << ["bundle", executable_available?("bundle"), "bundle"]
-
-        raylib_ok = false
-        raylib_detail = "std.c.raylib binding missing"
-        if checks.assoc("cc")[1]
-          begin
-            registry = RawBindings.default_registry(root: MilkTea.root)
-            raylib_binding = registry.find_by_module_name("std.c.raylib")
-            if raylib_binding
-              raylib_binding.prepare!(cc: cc)
-              raylib_ok = true
-              raylib_detail = "std.c.raylib prepared"
-            end
-          rescue RawBindings::Error => e
-            raylib_ok = false
-            raylib_detail = e.message
-          end
-        else
-          raylib_detail = "skipped (missing C compiler)"
-        end
-        checks << ["raylib", raylib_ok, raylib_detail]
-
-        checks.each do |name, ok, detail|
-          @out.puts("#{ok ? 'ok' : 'fail'} #{name}: #{detail}")
-        end
-
-        checks.all? { |_, ok, _| ok } ? 0 : 1
-      when "tree"
-        path = nil
-        if @argv.first && !@argv.first.start_with?("-")
-          path = @argv.shift
-        end
-
-        unless path
-          if File.file?(File.join(Dir.pwd, "package.toml"))
-            path = Dir.pwd
-          else
-            @err.puts("missing package path")
-            print_usage(@err)
-            return 1
-          end
-        end
-
-        if @argv.any?
-          @err.puts("unknown deps option #{@argv.first}")
-          print_usage(@err)
-          return 1
-        end
-
-        @out.puts(PackageGraph.render_tree(path, source_resolver: dependency_source_resolver(:materialize)))
-        0
-      when "lock"
-        path = nil
-        check = false
-        until @argv.empty?
-          arg = @argv.shift
-          case arg
-          when "--check"
-            check = true
-          when /^-/
-            @err.puts("unknown deps option #{arg}")
-            print_usage(@err)
-            return 1
-          else
-            if path
-              @err.puts("unknown deps option #{arg}")
-              print_usage(@err)
-              return 1
-            end
-
-            path = arg
-          end
-        end
-
-        unless path
-          if File.file?(File.join(Dir.pwd, "package.toml"))
-            path = Dir.pwd
-          else
-            @err.puts("missing package path")
-            print_usage(@err)
-            return 1
-          end
-        end
-
-        if check
-          result = PackageLock.check(path, source_resolver: dependency_source_resolver(:materialize))
-          if result.current?
-            @out.puts("up to date #{result.lock_path}")
-            0
-          elsif result.missing?
-            @out.puts("missing #{result.lock_path}")
-            1
-          else
-            @out.puts("out of date #{result.lock_path}")
-            1
-          end
-        else
-          result = PackageLock.write(path, source_resolver: dependency_source_resolver(:materialize))
-          @out.puts("wrote #{result.lock_path}")
-          0
-        end
-      when "publish"
-        path = nil
-        upstream = false
-        until @argv.empty?
-          arg = @argv.shift
-          case arg
-          when "--upstream"
-            upstream = true
-          when /^-/
-            @err.puts("unknown deps option #{arg}")
-            print_usage(@err)
-            return 1
-          else
-            if path
-              @err.puts("unknown deps option #{arg}")
-              print_usage(@err)
-              return 1
-            end
-
-            path = arg
-          end
-        end
-
-        unless path
-          if File.file?(File.join(Dir.pwd, "package.toml"))
-            path = Dir.pwd
-          else
-            @err.puts("missing package path")
-            print_usage(@err)
-            return 1
-          end
-        end
-
-        result = dependency_registry_store.publish(path, target: upstream ? :upstream : :local)
-        @out.puts("published #{result.package_name}@#{result.version} -> #{result.path}")
-        0
-      when "fetch"
-        path = nil
-        until @argv.empty?
-          arg = @argv.shift
-          case arg
-          when /^-/
-            @err.puts("unknown deps option #{arg}")
-            print_usage(@err)
-            return 1
-          else
-            if path
-              @err.puts("unknown deps option #{arg}")
-              print_usage(@err)
-              return 1
-            end
-
-            path = arg
-          end
-        end
-
-        unless path
-          if File.file?(File.join(Dir.pwd, "package.toml"))
-            path = Dir.pwd
-          else
-            @err.puts("missing package path")
-            print_usage(@err)
-            return 1
-          end
-        end
-
-        results = dependency_source_fetcher.fetch_locked_sources(path)
-        if results.empty?
-          lock_path = File.join(PackageManifest.load(path).root_dir, "package.lock")
-          @out.puts("no cache-backed sources in #{lock_path}")
-        else
-          results.each do |result|
-            verb = result.status == :present ? "kept" : "materialized"
-            @out.puts("#{verb} #{result.package_name} -> #{result.path}")
-          end
-        end
-        0
-      else
-        @err.puts("unknown deps subcommand #{subcommand}")
-        print_usage(@err)
-        1
-      end
+    def toolchain_command
+      ToolchainCLI.start(
+        @argv,
+        out: @out,
+        err: @err,
+        help_printer: method(:print_toolchain_help),
+      )
     end
 
     def dap_command
@@ -663,41 +465,7 @@ module MilkTea
     end
 
     def bindgen_command
-      module_name = @argv.shift
-      header_path = @argv.shift
-      unless module_name && header_path
-        @err.puts("missing module name or header path")
-        print_usage(@err)
-        return 1
-      end
-
-      require_relative "../bindings"
-
-      options = parse_bindgen_options
-      return 1 unless options
-
-      output_path = options.delete(:output_path)
-      nullable_report_path = options.delete(:nullable_report_path)
-      if nullable_report_path
-        require "json"
-        result = Bindgen.generate_with_report(module_name:, header_path:, **options)
-        source = result.fetch(:source)
-        report_path = File.expand_path(nullable_report_path)
-        FileUtils.mkdir_p(File.dirname(report_path))
-        File.write(report_path, JSON.pretty_generate(result.fetch(:nullable_policy_report)))
-      else
-        source = Bindgen.generate(module_name:, header_path:, **options)
-      end
-      if output_path
-        FileUtils.mkdir_p(File.dirname(File.expand_path(output_path)))
-        File.write(output_path, source)
-        @out.puts("generated #{header_path} -> #{output_path}")
-        @out.puts("nullable report #{header_path} -> #{report_path}") if nullable_report_path
-      else
-        @out.write(source)
-        @err.puts("wrote nullable report #{report_path}") if nullable_report_path
-      end
-      0
+      BindgenCLI.start(@argv, out: @out, err: @err, help_printer: method(:print_bindgen_help))
     end
 
     def parse_build_options(allow_clean: false)
@@ -799,60 +567,6 @@ module MilkTea
       options
     end
 
-    def parse_bindgen_options
-      options = {
-        output_path: nil,
-        nullable_report_path: nil,
-        link_libraries: [],
-        include_directives: [],
-        clang: ENV.fetch("CLANG", "clang"),
-        clang_args: [],
-      }
-
-      until @argv.empty?
-        option = @argv.shift
-        case option
-        when "-o", "--output"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:output_path] = value
-        when "--link"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:link_libraries] << value
-        when "--include"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:include_directives] << value
-        when "--clang"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:clang] = value
-        when "--clang-arg"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:clang_args] << value
-        when "--nullable-report"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:nullable_report_path] = value
-        else
-          @err.puts("unknown bindgen option #{option}")
-          print_usage(@err)
-          return nil
-        end
-      end
-
-      options[:include_directives] = nil if options[:include_directives].empty?
-      options
-    end
-
     def missing_option_value(option)
       @err.puts("missing value for #{option}")
       print_usage(@err)
@@ -864,7 +578,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes
@@ -903,41 +617,8 @@ module MilkTea
       PackageGraph.load(path, locked: true)
     end
 
-    def dependency_source_cache
-      @dependency_source_cache ||= PackageSourceCache.new
-    end
-
-    def dependency_registry_store
-      @dependency_registry_store ||= PackageRegistryStore.new
-    end
-
-    def dependency_source_fetcher
-      @dependency_source_fetcher ||= PackageSourceFetcher.new(
-        source_cache: dependency_source_cache,
-        source_resolver: dependency_source_resolver(:reject),
-        registry_store: dependency_registry_store,
-      )
-    end
-
-    def dependency_source_resolver(mode)
-      @dependency_source_resolvers ||= {}
-      @dependency_source_resolvers[mode] ||= case mode
-                                             when :reject
-                                               PackageSourceResolver.new(source_cache: dependency_source_cache)
-                                             when :cache
-                                               PackageSourceResolver.new(
-                                                 source_cache: dependency_source_cache,
-                                                 remote_resolution: :cache,
-                                               )
-                                             when :materialize
-                                               PackageSourceResolver.new(
-                                                 source_cache: dependency_source_cache,
-                                                 remote_resolution: :materialize,
-                                                 source_fetcher: dependency_source_fetcher,
-                                               )
-                                             else
-                                               raise ArgumentError, "unknown dependency source resolution mode #{mode.inspect}"
-                                             end
+    def package_services
+      @package_services ||= PackageServices.new
     end
 
     def extract_resolution_flags!
@@ -961,7 +642,7 @@ module MilkTea
     end
 
     def ensure_current_lockfile!(path)
-      result = PackageLock.check(path, source_resolver: dependency_source_resolver(:cache))
+      result = PackageLock.check(path, source_resolver: package_services.source_resolver(:cache))
       return if result.current?
 
       message = if result.missing?
@@ -976,7 +657,7 @@ module MilkTea
       checked = {}
 
       paths.each do |path|
-        result = PackageLock.check(path, source_resolver: dependency_source_resolver(:cache))
+        result = PackageLock.check(path, source_resolver: package_services.source_resolver(:cache))
         next if checked[result.lock_path]
 
         checked[result.lock_path] = true
@@ -1006,6 +687,7 @@ module MilkTea
         if @argv[i] == "-I" || @argv[i] == "--include-path"
           value = @argv[i + 1]
           if value && !value.start_with?("-")
+            @include_path_flags << @argv[i]
             @include_module_roots << File.expand_path(value)
             i += 2
           else
@@ -1020,19 +702,14 @@ module MilkTea
       @argv = remaining
     end
 
-    def executable_available?(program)
-      return File.executable?(program) if program.include?(File::SEPARATOR)
-
-      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
-        candidate = File.join(entry, program)
-        File.file?(candidate) && File.executable?(candidate)
-      end
+    def command_supports_include_paths?(command)
+      %w[semantic-tokens parse lint check lower emit-c build run].include?(command)
     end
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
-      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen]\n\n  Emit LSP-style semantic token data for a source file as JSON.",
-      "parse"           => "Usage: mtc parse PATH [--locked] [--frozen]\n\n  Parse a source file and print the AST.",
+      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit LSP-style semantic token data for a source file as JSON.",
+      "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
       "fmt"             => <<~HELP,
         Usage: mtc fmt PATH|DIR [OPTIONS]
 
@@ -1051,18 +728,21 @@ module MilkTea
         Usage: mtc lint PATH|DIR [OPTIONS]
 
           Lint Milk Tea source files and report warnings.
+          Some rules and auto-fixes are semantic/import-aware, so lint can use
+          the same dependency resolution mode as check/build.
 
           Options:
             --select RULES          Comma-separated list of rule codes to enable.
             --ignore RULES          Comma-separated list of rule codes to suppress.
             --fix                   Apply auto-fixable changes in place.
             --output-format FORMAT  Output format: text (default) or json.
-            --locked                Resolve package dependencies from package.lock.
-            --frozen                Require a current package.lock and use locked resolution.
+            --locked                Use package.lock for semantic dependency resolution.
+            --frozen                Require a current package.lock before semantic dependency resolution.
+            -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
-      "check"           => "Usage: mtc check PATH [--locked] [--frozen]\n\n  Run semantic analysis on a source file and report errors.",
-      "lower"           => "Usage: mtc lower PATH [--locked] [--frozen]\n\n  Lower a source file to IR and print it.",
-      "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen]\n\n  Compile a source file to C and print the output.",
+      "check"           => "Usage: mtc check PATH [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on a source file and report errors.",
+      "lower"           => "Usage: mtc lower PATH [--locked] [--frozen] [-I PATH]\n\n  Lower a source file to IR and print it.",
+      "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen] [-I PATH]\n\n  Compile a source file to C and print the output.",
       "build"           => <<~HELP,
         Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -1078,7 +758,7 @@ module MilkTea
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             --clean                      Remove existing build outputs and exit.
-            -I PATH                      Add an extra module root.
+            -I, --include-path PATH      Add an extra module root.
         HELP
       "run"             => <<~HELP,
         Usage: mtc run [PATH_OR_PACKAGE] [OPTIONS]
@@ -1096,17 +776,27 @@ module MilkTea
             --platform PLATFORM          linux (default) | windows | wasm.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
-            -I PATH                      Add an extra module root.
+            -I, --include-path PATH      Add an extra module root.
         HELP
       "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
-      "deps"            => <<~HELP,
-        Usage: mtc deps SUBCOMMAND
+      "toolchain"       => <<~HELP,
+        Usage: mtc toolchain SUBCOMMAND
 
-          Manage toolchain and package dependencies.
+          Manage the local native toolchain and upstream native library checkouts.
 
           Subcommands:
             bootstrap    Download and prepare all upstream native libraries.
             doctor       Check that all required tools and libraries are available.
+        HELP
+      "deps"            => <<~HELP,
+        Usage: mtc deps SUBCOMMAND
+
+          Manage package dependencies and package.lock state.
+
+          Subcommands:
+            add          Add or update a package dependency and refresh package.lock.
+            remove       Remove a package dependency and refresh package.lock.
+            update       Re-resolve dependencies and refresh package.lock.
             tree         Print the package dependency tree for a local package.
             lock         Write or verify a deterministic package.lock for a local package.
             publish      Publish an exact-version package into the local or configured upstream registry store.
@@ -1136,25 +826,40 @@ module MilkTea
       end
     end
 
+    def print_toolchain_help(io)
+      print_command_help("toolchain", io)
+    end
+
+    def print_deps_help(io)
+      print_command_help("deps", io)
+    end
+
+    def print_bindgen_help(io)
+      print_command_help("bindgen", io)
+    end
+
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
-      io.puts("       mtc semantic-tokens PATH [--locked] [--frozen]")
-      io.puts("       mtc parse PATH [--locked] [--frozen]")
+      io.puts("       mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc fmt PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
-      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen]")
-      io.puts("       mtc check PATH [--locked] [--frozen]")
-      io.puts("       mtc lower PATH [--locked] [--frozen]")
-      io.puts("       mtc emit-c PATH [--locked] [--frozen]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
-      io.puts("       mtc deps bootstrap")
-      io.puts("       mtc deps doctor")
+      io.puts("       mtc toolchain bootstrap")
+      io.puts("       mtc toolchain doctor")
+      io.puts("       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]")
+      io.puts("       mtc deps remove [PATH_OR_PACKAGE] NAME")
+      io.puts("       mtc deps update [PATH_OR_PACKAGE]")
       io.puts("       mtc deps tree [PATH_OR_PACKAGE]")
       io.puts("       mtc deps lock [PATH_OR_PACKAGE] [--check]")
       io.puts("       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
       io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
-      io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
+      io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
     end
   end
 end

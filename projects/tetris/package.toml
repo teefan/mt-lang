@@ -14,5 +14,5 @@ preload = "assets"
 html_template = "web/shell.html"
 
 [dependencies]
-"tetris.pieces" = { path = "packages/tetris_pieces" }
-"tetris.rules" = { path = "packages/tetris_rules" }
+"tetris.pieces" = { path = "packages/tetris_pieces", version = "0.1.0" }
+"tetris.rules" = { path = "packages/tetris_rules", version = "0.1.0" }

@@ -647,7 +647,7 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_deps_bootstrap_command_reports_results
+  def test_toolchain_bootstrap_command_reports_results
     require_relative "../../lib/milk_tea/bindings"
 
     upstream_sources_singleton = class << MilkTea::UpstreamSources
@@ -673,7 +673,7 @@ class MilkTeaCliTest < Minitest::Test
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["deps", "bootstrap"], out:, err:)
+    status = MilkTea::CLI.start(["toolchain", "bootstrap"], out:, err:)
 
     assert_equal 0, status
     assert_equal "", err.string
@@ -683,6 +683,34 @@ class MilkTeaCliTest < Minitest::Test
       upstream_sources_singleton.send(:remove_method, :bootstrap_all!)
       upstream_sources_singleton.send(:define_method, :bootstrap_all!, original)
     end
+  end
+
+  def test_deps_command_without_subcommand_prints_deps_help
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["deps"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing deps subcommand/, err.string)
+    assert_match(/Usage: mtc deps SUBCOMMAND/, err.string)
+    refute_match(/Usage: mtc lex PATH/, err.string)
+    refute_match(/mtc toolchain bootstrap/, err.string)
+  end
+
+  def test_toolchain_command_without_subcommand_prints_toolchain_help
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["toolchain"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing toolchain subcommand/, err.string)
+    assert_match(/Usage: mtc toolchain SUBCOMMAND/, err.string)
+    refute_match(/Usage: mtc lex PATH/, err.string)
+    refute_match(/mtc deps add/, err.string)
   end
 
   def test_deps_tree_command_prints_local_path_dependency_graph
@@ -751,7 +779,314 @@ class MilkTeaCliTest < Minitest::Test
 
         assert_equal 1, status
         assert_equal "", out.string
-        assert_match(/registry package teefan\.ui version 0\.3\.0 not found/i, err.string)
+        assert_match(/no registry version for teefan\.ui satisfies .*0\.3\.0/i, err.string)
+      end
+    end
+  end
+
+  def test_deps_tree_command_solves_non_exact_registry_requirements_to_highest_matching_version
+    Dir.mktmpdir("milk-tea-cli-deps-tree-range") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_v1_root = File.join(dir, "ui-v1")
+      ui_v2_root = File.join(dir, "ui-v2")
+      registry_root = File.join(dir, "registry")
+      cache_home = File.join(dir, "cache-home")
+      FileUtils.mkdir_p(File.join(app_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v1_root, "src", "teefan", "ui"))
+      FileUtils.mkdir_p(File.join(ui_v2_root, "src", "teefan", "ui"))
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.4.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root) do
+        MilkTea::PackageRegistryStore.new.publish(ui_v1_root)
+        MilkTea::PackageRegistryStore.new.publish(ui_v2_root)
+      end
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+
+        [dependencies]
+        "teefan.ui" = "^1.2.3"
+      TOML
+
+      out = StringIO.new
+      err = StringIO.new
+
+      identity = MilkTea::PackageSourceResolver::RegistryIdentity.new(package_name: "teefan.ui", version: "1.4.0")
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root, "XDG_CACHE_HOME" => cache_home) do
+        status = MilkTea::CLI.start(["deps", "tree", app_root], out:, err:)
+
+        assert_equal 0, status
+        assert_equal "", err.string
+        assert_equal ["snake_duel", "  teefan.ui"], out.string.lines(chomp: true)
+        cache = MilkTea::PackageSourceCache.new(root: File.join(cache_home, "milk_tea", "package_sources"))
+        assert File.file?(cache.manifest_path_for(identity))
+      end
+    end
+  end
+
+  def test_deps_lock_backtracks_registry_versions_to_satisfy_global_requirements
+    Dir.mktmpdir("milk-tea-cli-deps-lock-range") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_v1_root = File.join(dir, "ui-v1")
+      ui_v2_root = File.join(dir, "ui-v2")
+      theme_v1_root = File.join(dir, "theme-v1")
+      theme_v2_root = File.join(dir, "theme-v2")
+      registry_root = File.join(dir, "registry")
+      cache_home = File.join(dir, "cache-home")
+
+      FileUtils.mkdir_p(File.join(app_root, "src"))
+      [ui_v1_root, ui_v2_root, theme_v1_root, theme_v2_root].each do |root|
+        FileUtils.mkdir_p(File.join(root, "src"))
+      end
+
+      File.write(File.join(theme_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.theme"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(theme_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.theme"
+        version = "1.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.0.0"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.theme" = ">=1.0.0, <1.1.0"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.1.0"
+        kind = "library"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.theme" = ">=1.1.0, <2.0.0"
+      TOML
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root) do
+        store = MilkTea::PackageRegistryStore.new
+        store.publish(theme_v1_root)
+        store.publish(theme_v2_root)
+        store.publish(ui_v1_root)
+        store.publish(ui_v2_root)
+      end
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = "^1.0.0"
+        "teefan.theme" = "1.0.0"
+      TOML
+
+      out = StringIO.new
+      err = StringIO.new
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root, "XDG_CACHE_HOME" => cache_home) do
+        status = MilkTea::CLI.start(["deps", "lock", app_root], out:, err:)
+
+        assert_equal 0, status
+        assert_equal "", err.string
+        lock_contents = File.read(File.join(app_root, "package.lock"))
+        assert_match(/name = "teefan\.ui"\nkind = "library"\nversion = "1\.0\.0"/m, lock_contents)
+        refute_match(/name = "teefan\.ui"\nkind = "library"\nversion = "1\.1\.0"/m, lock_contents)
+      end
+    end
+  end
+
+  def test_deps_add_command_updates_manifest_and_lockfile_for_registry_requirement
+    Dir.mktmpdir("milk-tea-cli-deps-add") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_v1_root = File.join(dir, "ui-v1")
+      ui_v2_root = File.join(dir, "ui-v2")
+      registry_root = File.join(dir, "registry")
+      cache_home = File.join(dir, "cache-home")
+
+      FileUtils.mkdir_p(File.join(app_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v1_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v2_root, "src"))
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.4.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root) do
+        store = MilkTea::PackageRegistryStore.new
+        store.publish(ui_v1_root)
+        store.publish(ui_v2_root)
+      end
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+      TOML
+
+      out = StringIO.new
+      err = StringIO.new
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root, "XDG_CACHE_HOME" => cache_home) do
+        status = MilkTea::CLI.start(["deps", "add", app_root, "teefan.ui@^1.2.3"], out:, err:)
+
+        assert_equal 0, status
+        assert_equal "", err.string
+        manifest_source = File.read(File.join(app_root, "package.toml"))
+        assert_match(/"teefan\.ui" = "\^1\.2\.3"/, manifest_source)
+        lock_contents = File.read(File.join(app_root, "package.lock"))
+        assert_match(/name = "teefan\.ui"\nkind = "library"\nversion = "1\.4\.0"/m, lock_contents)
+      end
+    end
+  end
+
+  def test_deps_remove_command_updates_manifest_and_lockfile
+    Dir.mktmpdir("milk-tea-cli-deps-remove") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+
+      FileUtils.mkdir_p(File.join(app_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_root, "src"))
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["deps", "remove", app_root, "teefan.ui"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      manifest_source = File.read(File.join(app_root, "package.toml"))
+      refute_match(/teefan\.ui/, manifest_source)
+      lock_contents = File.read(File.join(app_root, "package.lock"))
+      assert_match(/dependencies = \[\]/, lock_contents)
+    end
+  end
+
+  def test_deps_update_command_refreshes_lockfile_to_newest_matching_registry_version
+    Dir.mktmpdir("milk-tea-cli-deps-update") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_v1_root = File.join(dir, "ui-v1")
+      ui_v2_root = File.join(dir, "ui-v2")
+      registry_root = File.join(dir, "registry")
+      cache_home = File.join(dir, "cache-home")
+
+      FileUtils.mkdir_p(File.join(app_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v1_root, "src"))
+      FileUtils.mkdir_p(File.join(ui_v2_root, "src"))
+
+      File.write(File.join(ui_v1_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_v2_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.4.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root) do
+        store = MilkTea::PackageRegistryStore.new
+        store.publish(ui_v1_root)
+      end
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = "^1.2.3"
+      TOML
+
+      out = StringIO.new
+      err = StringIO.new
+
+      with_env("MILK_TEA_PACKAGE_REGISTRY" => registry_root, "XDG_CACHE_HOME" => cache_home) do
+        status = MilkTea::CLI.start(["deps", "lock", app_root], out:, err:)
+        assert_equal 0, status
+
+        lock_contents = File.read(File.join(app_root, "package.lock"))
+        assert_match(/version = "1\.2\.3"/, lock_contents)
+
+        MilkTea::PackageRegistryStore.new.publish(ui_v2_root)
+
+        out = StringIO.new
+        err = StringIO.new
+        status = MilkTea::CLI.start(["deps", "update", app_root], out:, err:)
+
+        assert_equal 0, status
+        assert_equal "", err.string
+        lock_contents = File.read(File.join(app_root, "package.lock"))
+        assert_match(/version = "1\.4\.0"/, lock_contents)
       end
     end
   end
@@ -1632,21 +1967,65 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
-    assert_match(/mtc parse PATH/, err.string)
+    assert_match(/mtc semantic-tokens PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc parse PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc fmt PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
-    assert_match(/mtc check PATH/, err.string)
-    assert_match(/mtc lower PATH/, err.string)
-    assert_match(/mtc emit-c PATH/, err.string)
+    assert_match(/mtc lint PATH\|DIR .*\[-I PATH\]/, err.string)
+    assert_match(/mtc check PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc lower PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc emit-c PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc run \[PATH_OR_PACKAGE\]/, err.string)
     refute_match(/mtc stop-preview \[PATH_OR_PACKAGE\]/, err.string)
-    assert_match(/mtc deps bootstrap/, err.string)
+    assert_match(/mtc toolchain bootstrap/, err.string)
+    assert_match(/mtc toolchain doctor/, err.string)
+    refute_match(/mtc deps bootstrap/, err.string)
     assert_match(/mtc deps tree \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc deps lock \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc deps publish \[PATH_OR_PACKAGE\] \[--upstream\]/, err.string)
     assert_match(/mtc deps fetch \[PATH_OR_PACKAGE\]/, err.string)
-    assert_match(/mtc bindgen MODULE HEADER/, err.string)
+    assert_match(/mtc bindgen MODULE HEADER .*--nullable-report PATH/, err.string)
     assert_match(/mtc dap/, err.string)
+  end
+
+  def test_bindgen_command_without_args_prints_bindgen_help
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["bindgen"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing module name or header path/, err.string)
+    assert_match(/Usage: mtc bindgen MODULE HEADER \[OPTIONS\]/, err.string)
+    assert_match(/--nullable-report PATH/, err.string)
+    refute_match(/Usage: mtc lex PATH/, err.string)
+  end
+
+  def test_toolchain_command_rejects_leading_include_path_flag
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["-I", __dir__, "toolchain", "doctor"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/unknown option -I for toolchain/, err.string)
+    assert_match(/Usage: mtc lex PATH/, err.string)
+  end
+
+  def test_lint_help_explains_locked_and_frozen_semantic_resolution
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["lint", "--help"], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/semantic\/import-aware/, out.string)
+    assert_match(/Use package\.lock for semantic dependency resolution/, out.string)
+    assert_match(/Require a current package\.lock before semantic dependency resolution/, out.string)
+    assert_match(/-I, --include-path PATH\s+Add an extra module root for semantic resolution/, out.string)
   end
 
   def test_parse_command_reports_loader_errors

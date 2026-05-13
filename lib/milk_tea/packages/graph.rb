@@ -7,15 +7,17 @@ module MilkTea
     Edge = Data.define(:dependency, :node)
     Node = Data.define(:manifest, :source, :edges)
 
-    def self.load(path, locked: false, source_resolver: PackageSourceResolver.new)
+    def self.load(path, locked: false, source_resolver: PackageSourceResolver.new, registry_metadata_provider: PackageRegistryMetadataProvider.new)
       return PackageLock.load(path, source_resolver:) if locked
 
-      new(path, source_resolver:).load
+      new(path, source_resolver:, registry_metadata_provider:).load
     end
 
-    def initialize(path, source_resolver: PackageSourceResolver.new)
+    def initialize(path, source_resolver: PackageSourceResolver.new, registry_metadata_provider: PackageRegistryMetadataProvider.new)
       @path = File.expand_path(path)
       @source_resolver = source_resolver
+      @graph_source_resolver = source_resolver
+      @registry_metadata_provider = registry_metadata_provider
       @nodes_by_manifest_path = {}
       @manifest_paths_by_package_name = {}
       @build_stack = []
@@ -23,11 +25,12 @@ module MilkTea
 
     def load
       root_manifest = PackageManifest.load(@path)
-      build_node(root_manifest, source: @source_resolver.source_for_manifest(root_manifest))
+      @graph_source_resolver = resolve_graph_source_resolver(root_manifest)
+      build_node(root_manifest, source: @graph_source_resolver.source_for_manifest(root_manifest))
     end
 
-    def self.render_tree(path, source_resolver: PackageSourceResolver.new)
-      load(path, source_resolver:).tree_lines.join("\n")
+    def self.render_tree(path, source_resolver: PackageSourceResolver.new, registry_metadata_provider: PackageRegistryMetadataProvider.new)
+      load(path, source_resolver:, registry_metadata_provider:).tree_lines.join("\n")
     end
 
     class Node
@@ -101,7 +104,7 @@ module MilkTea
 
       @build_stack << manifest.manifest_path
       edges = manifest.dependencies.map do |dependency|
-        resolved_package = @source_resolver.resolve(dependency, parent_manifest: manifest)
+        resolved_package = @graph_source_resolver.resolve(dependency, parent_manifest: manifest)
         edge_node = build_node(resolved_package.manifest, source: resolved_package.source)
         Edge.new(dependency:, node: edge_node)
       end
@@ -128,6 +131,19 @@ module MilkTea
       PackageManifest.load(manifest_path).package_name
     rescue PackageManifestError
       manifest_path
+    end
+
+    def resolve_graph_source_resolver(root_manifest)
+      return @source_resolver unless @source_resolver.supports_dependency_solving?
+
+      solution = PackageDependencySolver.new(
+        source_resolver: @source_resolver,
+        registry_metadata_provider: @registry_metadata_provider,
+      ).solve(root_manifest)
+
+      @source_resolver.with_resolved_registry_versions(solution.registry_versions)
+    rescue PackageDependencySolverError => e
+      raise PackageGraphError, e.message
     end
   end
 end

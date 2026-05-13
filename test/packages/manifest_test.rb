@@ -1,0 +1,72 @@
+# frozen_string_literal: true
+
+require "tmpdir"
+require_relative "../test_helper"
+
+class MilkTeaPackageManifestTest < Minitest::Test
+  def test_load_parses_exact_registry_dependency_as_exact_requirement
+    Dir.mktmpdir("milk-tea-package-manifest") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = "1.2.3"
+      TOML
+
+      manifest = MilkTea::PackageManifest.load(dir)
+      dependency = manifest.dependencies.fetch(0)
+
+      assert_equal "teefan.ui", dependency.name
+      assert dependency.registry?
+      assert dependency.exact_registry_version?
+      assert_equal "1.2.3", dependency.version
+      assert_equal "1.2.3", dependency.version_req.exact_version.to_s
+    end
+  end
+
+  def test_load_parses_ranged_registry_dependency_requirement
+    Dir.mktmpdir("milk-tea-package-manifest-range") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { version = ">=1.2.3, <2.0.0" }
+      TOML
+
+      manifest = MilkTea::PackageManifest.load(dir)
+      dependency = manifest.dependencies.fetch(0)
+
+      assert dependency.registry?
+      refute dependency.exact_registry_version?
+      assert_nil dependency.version
+      assert dependency.version_req.matches?("1.5.0")
+      refute dependency.version_req.matches?("2.0.0")
+    end
+  end
+
+  def test_load_rejects_invalid_registry_dependency_requirement
+    Dir.mktmpdir("milk-tea-package-manifest-invalid-range") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = "^banana"
+      TOML
+
+      error = assert_raises(MilkTea::PackageManifestError) do
+        MilkTea::PackageManifest.load(dir)
+      end
+
+      assert_match(/semantic version format/, error.message)
+    end
+  end
+end
