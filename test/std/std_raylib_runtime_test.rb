@@ -30,7 +30,7 @@ class MilkTeaStdRaylibRuntimeTest < Minitest::Test
     assert_nil result.output_path
     assert_nil result.c_path
     assert_equal compiler, result.compiler
-    assert_equal [], result.link_flags
+    assert_includes result.link_flags, "-lraylib"
   end
 
   def run_program(source, compiler:)

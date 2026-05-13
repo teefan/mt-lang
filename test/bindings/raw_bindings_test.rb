@@ -367,8 +367,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_binding_uses_vendored_library_for_link_flags_and_prepare
     invoked = []
     vendored_library = Object.new
-    vendored_library.define_singleton_method(:link_flags) { ["-L/tmp/vendored", "-lvendored"] }
-    vendored_library.define_singleton_method(:prepare!) do |env:, cc:|
+    vendored_library.define_singleton_method(:link_flags) { |platform: nil| ["-L/tmp/vendored", "-lvendored"] }
+    vendored_library.define_singleton_method(:prepare!) do |env:, cc:, platform: nil|
       invoked << [env.fetch("MARKER"), cc]
     end
 
@@ -391,8 +391,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_prepare_hook_runs_before_vendored_library_prepare
     invoked = []
     vendored_library = Object.new
-    vendored_library.define_singleton_method(:link_flags) { [] }
-    vendored_library.define_singleton_method(:prepare!) do |env:, cc:|
+    vendored_library.define_singleton_method(:link_flags) { |platform: nil| [] }
+    vendored_library.define_singleton_method(:prepare!) do |env:, cc:, platform: nil|
       invoked << [:vendored, env.fetch("MARKER"), cc]
     end
 
@@ -419,8 +419,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
 
       vendored_library = Object.new
       prepared = []
-      vendored_library.define_singleton_method(:link_flags) { [] }
-      vendored_library.define_singleton_method(:prepare!) do |env:, cc:|
+      vendored_library.define_singleton_method(:link_flags) { |platform: nil| [] }
+      vendored_library.define_singleton_method(:prepare!) do |env:, cc:, platform: nil|
         prepared << [env.fetch("MARKER"), cc]
         File.write(header_path, "")
       end

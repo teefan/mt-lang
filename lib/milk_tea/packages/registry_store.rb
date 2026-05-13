@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "cgi"
+require "cgi/escape"
 require "fileutils"
 require "net/http"
 require "rubygems/package"
