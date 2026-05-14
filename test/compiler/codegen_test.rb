@@ -1286,6 +1286,38 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/PairSum\(/, generated)
   end
 
+  def test_generate_c_for_foreign_mapping_call_member_access
+    source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main() -> int:
+          return sample.project(7)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            struct Pair:
+                value: int
+
+            external function MakePair(value: int) -> Pair
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public foreign function project(value: int) -> int = c.MakePair(value).value
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/return \(MakePair\(7\)\)\.value;/, generated)
+  end
+
   def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
     source = <<~MT
       module demo.main
