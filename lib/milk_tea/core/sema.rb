@@ -4448,13 +4448,19 @@ module MilkTea
       def pointer_cast_type?(type)
         return typed_null_target_type?(type.target_type) if type.is_a?(Types::Null)
         return true if type == @types.fetch("cstr")
-        return pointer_type?(type.base) if type.is_a?(Types::Nullable)
+        if type.is_a?(Types::Nullable)
+          return true if function_pointer_type?(type.base)
+
+          return pointer_type?(type.base)
+        end
+
+        return true if function_pointer_type?(type)
 
         pointer_type?(type)
       end
 
       def typed_null_target_type?(type)
-        type == @types.fetch("cstr") || pointer_type?(type)
+        type == @types.fetch("cstr") || pointer_type?(type) || function_pointer_type?(type)
       end
 
       def pointer_type?(type)
@@ -4467,6 +4473,10 @@ module MilkTea
 
       def const_pointer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
+      end
+
+      def function_pointer_type?(type)
+        type.is_a?(Types::Function)
       end
 
       def ref_type?(type)
@@ -5659,12 +5669,25 @@ module MilkTea
       end
 
       def foreign_mapping_expression(decl)
-        return decl.mapping if decl.mapping.is_a?(AST::Call)
+        return decl.mapping unless foreign_mapping_auto_call_shorthand?(decl.mapping)
 
         AST::Call.new(
           callee: decl.mapping,
           arguments: decl.params.map { |param| AST::Argument.new(name: nil, value: AST::Identifier.new(name: param.name)) },
         )
+      end
+
+      def foreign_mapping_auto_call_shorthand?(expression)
+        case expression
+        when AST::Identifier
+          true
+        when AST::MemberAccess
+          foreign_mapping_auto_call_shorthand?(expression.receiver)
+        when AST::Specialization
+          foreign_mapping_auto_call_shorthand?(expression.callee)
+        else
+          false
+        end
       end
 
       def foreign_argument_expression(argument)

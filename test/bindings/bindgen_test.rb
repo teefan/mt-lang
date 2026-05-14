@@ -773,6 +773,60 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_can_exclude_selected_declarations
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-excluded-declarations") do |dir|
+      header_path = File.join(dir, "sample.h")
+
+      File.write(header_path, <<~C)
+        typedef double double_t;
+        double SampleValue(void);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        excluded_declaration_names: ["double_t"],
+      )
+
+      refute_match(/^\s*type double_t = double$/, generated)
+      assert_match(/external function SampleValue\(\) -> double/, generated)
+    end
+  end
+
+  def test_generate_can_rename_selected_types
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-type-name-overrides") do |dir|
+      header_path = File.join(dir, "sample.h")
+
+      File.write(header_path, <<~C)
+        typedef struct float3 {
+            float v[3];
+        } float3;
+
+        float3 SampleValue(void);
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+        type_name_overrides: { "float3" => "Float3Array" },
+      )
+
+      assert_match(/^\s*struct Float3Array = c"float3":$/, generated)
+      assert_match(/external function SampleValue\(\) -> Float3Array/, generated)
+      refute_match(/^\s*struct float3:$/, generated)
+    end
+  end
+
   private
 
   def executable_available?(program)

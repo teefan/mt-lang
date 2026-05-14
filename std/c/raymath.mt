@@ -6,13 +6,11 @@ external module std.c.raymath:
     include "raylib.h"
     include "raymath.h"
 
-    struct float3:
+    struct Float3Array = c"float3":
         v: array[float, 3]
 
-    struct float16:
+    struct Float16Array = c"float16":
         v: array[float, 16]
-
-    type double_t = double
 
     external function Clamp(value: float, min: float, max: float) -> float
     external function Lerp(start: float, end: float, amount: float) -> float
@@ -84,7 +82,7 @@ external module std.c.raymath:
     external function Vector3Max(v1: rl.Vector3, v2: rl.Vector3) -> rl.Vector3
     external function Vector3Barycenter(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3) -> rl.Vector3
     external function Vector3Unproject(source: rl.Vector3, projection: rl.Matrix, view: rl.Matrix) -> rl.Vector3
-    external function Vector3ToFloatV(v: rl.Vector3) -> float3
+    external function Vector3ToFloatV(v: rl.Vector3) -> Float3Array
     external function Vector3Invert(v: rl.Vector3) -> rl.Vector3
     external function Vector3Clamp(v: rl.Vector3, min: rl.Vector3, max: rl.Vector3) -> rl.Vector3
     external function Vector3ClampValue(v: rl.Vector3, min: float, max: float) -> rl.Vector3
@@ -133,7 +131,7 @@ external module std.c.raymath:
     external function MatrixPerspective(fovY: double, aspect: double, nearPlane: double, farPlane: double) -> rl.Matrix
     external function MatrixOrtho(left: double, right: double, bottom: double, top: double, nearPlane: double, farPlane: double) -> rl.Matrix
     external function MatrixLookAt(eye: rl.Vector3, target: rl.Vector3, up: rl.Vector3) -> rl.Matrix
-    external function MatrixToFloatV(mat: rl.Matrix) -> float16
+    external function MatrixToFloatV(mat: rl.Matrix) -> Float16Array
     external function QuaternionAdd(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion
     external function QuaternionAddValue(q: rl.Vector4, add: float) -> rl.Quaternion
     external function QuaternionSubtract(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion

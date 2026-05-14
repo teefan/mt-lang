@@ -49,13 +49,14 @@ module MilkTea
       "double" => "double",
     }.freeze
 
-    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
+    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
       generate_with_report(
         module_name:,
         header_path:,
         tracked_header_paths:,
         tracked_header_prefixes:,
         declaration_name_prefixes:,
+        excluded_declaration_names:,
         link_libraries:,
         include_directives:,
         bindgen_defines:,
@@ -63,6 +64,7 @@ module MilkTea
         module_imports:,
         clang:,
         clang_args:,
+        type_name_overrides:,
         type_overrides:,
         function_param_type_overrides:,
         function_return_type_overrides:,
@@ -71,13 +73,14 @@ module MilkTea
       ).fetch(:source)
     end
 
-    def self.generate_with_report(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
+    def self.generate_with_report(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
       Generator.new(
         module_name:,
         header_path:,
         tracked_header_paths:,
         tracked_header_prefixes:,
         declaration_name_prefixes:,
+        excluded_declaration_names:,
         link_libraries:,
         include_directives:,
         bindgen_defines:,
@@ -85,6 +88,7 @@ module MilkTea
         module_imports:,
         clang:,
         clang_args:,
+        type_name_overrides:,
         type_overrides:,
         function_param_type_overrides:,
         function_return_type_overrides:,
@@ -94,12 +98,13 @@ module MilkTea
     end
 
     class Generator
-      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:, allow_static_inline_functions:)
+      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, excluded_declaration_names:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_name_overrides:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:, allow_static_inline_functions:)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
         @tracked_header_paths = ([header_path] + tracked_header_paths).map { |path| File.expand_path(path) }.uniq.freeze
         @tracked_header_prefixes = tracked_header_prefixes.map { |path| File.expand_path(path) }.uniq.freeze
         @declaration_name_prefixes = declaration_name_prefixes.dup.freeze
+        @excluded_declaration_names = excluded_declaration_names.map(&:to_s).freeze
         @link_libraries = link_libraries.dup
         @include_directives = include_directives&.dup
         @bindgen_defines = bindgen_defines.dup.freeze
@@ -107,6 +112,7 @@ module MilkTea
         @module_imports = normalize_module_imports(module_imports)
         @clang = clang
         @clang_args = clang_args.dup
+        @type_name_overrides = normalize_type_name_overrides(type_name_overrides)
         @type_overrides = normalize_type_overrides(type_overrides)
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = normalize_function_return_type_overrides(function_return_type_overrides)
@@ -300,8 +306,9 @@ module MilkTea
       end
 
       def allowed_declaration_name?(name)
-        return true if @declaration_name_prefixes.empty?
         return false unless name
+        return false if @excluded_declaration_names.include?(name)
+        return true if @declaration_name_prefixes.empty?
 
         @declaration_name_prefixes.any? { |prefix| name.start_with?(prefix) }
       end
@@ -542,7 +549,7 @@ module MilkTea
         selected = {}
 
         nodes.each_with_index do |node, index|
-          record_node, visible_name = case node["kind"]
+          record_node, original_name = case node["kind"]
           when "RecordDecl"
             [node, @record_aliases[node["id"]] || node["name"]]
           when "TypedefDecl"
@@ -559,8 +566,10 @@ module MilkTea
 
           next unless %w[struct union].include?(record_node["tagUsed"])
 
-          next unless visible_name
-          next unless allowed_declaration_name?(visible_name)
+          next unless original_name
+          next unless allowed_declaration_name?(original_name)
+
+          visible_name = visible_type_name(original_name)
 
           candidate = {
             index:,
@@ -598,9 +607,11 @@ module MilkTea
         nodes.each_with_index do |node, index|
           next unless node["kind"] == "EnumDecl"
 
-          visible_name = @enum_aliases[node["id"]] || node["name"]
-          next unless visible_name
-          next unless allowed_declaration_name?(visible_name)
+          original_name = @enum_aliases[node["id"]] || node["name"]
+          next unless original_name
+          next unless allowed_declaration_name?(original_name)
+
+          visible_name = visible_type_name(original_name)
 
           selected[visible_name] = { index:, kind: enum_kind(node), name: visible_name, node: }
         end
@@ -634,7 +645,7 @@ module MilkTea
           {
             index:,
             kind: "type_alias",
-            name: node["name"],
+            name: visible_type_name(node["name"]),
             mapped_type:,
           }
         rescue BindgenError
@@ -1262,6 +1273,22 @@ module MilkTea
         end.freeze
       end
 
+      def normalize_type_name_overrides(overrides)
+        return {} if overrides.nil?
+        raise BindgenError, "type_name_overrides must be a hash" unless overrides.is_a?(Hash)
+
+        overrides.each_with_object({}) do |(type_name, visible_name), normalized|
+          unless type_name.is_a?(String) || type_name.is_a?(Symbol)
+            raise BindgenError, "type_name_overrides type names must be strings or symbols"
+          end
+          unless visible_name.is_a?(String) && !visible_name.empty?
+            raise BindgenError, "type_name_overrides for #{type_name} must be a non-empty string"
+          end
+
+          normalized[type_name.to_s] = visible_name
+        end.freeze
+      end
+
       def normalize_function_return_type_overrides(overrides)
         return {} if overrides.nil?
 
@@ -1325,7 +1352,7 @@ module MilkTea
                             end
                           elsif unqualified.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
                             if known_generated_type_name?(unqualified, @visible_typedef_names)
-                              unqualified
+                              visible_type_name(unqualified)
                             else
                               raise BindgenError, "unknown referenced C type #{unqualified.inspect} for #{context}"
                             end
@@ -1448,7 +1475,7 @@ module MilkTea
 
         if alias_name && preserve_typedef_name?(alias_name) && direct_typedef_surface?(node, alias_name)
           synthesize_typedef_dependency(alias_name)
-          return alias_name
+          return visible_type_name(alias_name)
         end
 
         qual_type = type_qual_type(node)
@@ -1769,7 +1796,8 @@ module MilkTea
         return if @record_visible_names.key?(tag_name) || @record_visible_names.value?(tag_name)
 
         record_node = @referenceable_record_declarations[tag_name]
-        visible_name = record_node ? (@record_aliases[record_node["id"]] || tag_name) : tag_name
+        original_name = record_node ? (@record_aliases[record_node["id"]] || tag_name) : tag_name
+        visible_name = visible_type_name(original_name)
         return if @synthetic_declarations.any? { |declaration| declaration[:name] == visible_name }
 
         @record_visible_names[tag_name] = visible_name
@@ -1790,6 +1818,10 @@ module MilkTea
           name: visible_name,
           c_name: "#{kind} #{tag_name}",
         }
+      end
+
+      def visible_type_name(name)
+        @type_name_overrides.fetch(name, name)
       end
     end
   end

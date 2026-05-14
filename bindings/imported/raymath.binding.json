@@ -2,7 +2,9 @@
   "module_name": "std.raymath",
   "raw_module_name": "std.c.raymath",
   "raw_import_alias": "c",
-  "types": {},
+  "types": {
+    "exclude": ["Float3Array", "Float16Array"]
+  },
   "constants": {},
   "functions": {
     "overrides": [
@@ -29,6 +31,16 @@
           { "name": "rotation", "mode": "out", "type": "rl.Quaternion" },
           { "name": "scale", "mode": "out", "type": "rl.Vector3" }
         ]
+      },
+      {
+        "raw": "Vector3ToFloatV",
+        "return_type": "array[float, 3]",
+        "mapping": "c.Vector3ToFloatV(v).v"
+      },
+      {
+        "raw": "MatrixToFloatV",
+        "return_type": "array[float, 16]",
+        "mapping": "c.MatrixToFloatV(mat).v"
       }
     ]
   }

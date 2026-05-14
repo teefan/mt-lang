@@ -254,6 +254,19 @@ class MilkTeaLinterTest < Minitest::Test
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("counter") }
   end
 
+  def test_no_prefer_let_when_var_is_exposed_through_ptr_of_alias
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      function main() -> int:
+          var data = array[int, 1](0)
+          let alias_ptr = ptr_of(data[0])
+          return data[0]
+    MT
+
+    refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("data") }
+  end
+
   def test_no_prefer_let_for_let_locals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       module demo.lint
@@ -479,6 +492,29 @@ class MilkTeaLinterTest < Minitest::Test
 
       refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("string") }
     end
+  end
+
+  def test_does_not_report_import_used_only_in_foreign_mapping
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      module demo.lint
+
+      import std.c.string as c
+
+      public foreign function compare(left: str as cstr, right: str as cstr) -> int = c.mt_string_strcmp
+    MT
+
+    refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("c") }
+  end
+
+  def test_does_not_report_import_used_only_in_extern_function_signature
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "extern.mt")
+      external module demo.raw:
+          import std.c.raylib as rl
+
+          external function scale(v: rl.Vector2) -> rl.Vector2
+    MT
+
+    refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("rl") }
   end
 
   def test_does_not_report_import_used_in_match_arm_pattern
@@ -1657,8 +1693,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
       warnings = MilkTea::Linter.lint_source(
         source,
         path:,
-        ignore: Set["unused-local"],
-        sema_analysis: MilkTea::Linter.best_effort_sema_analysis(source, path:)
+        ignore: Set["unused-local"]
       )
 
       refute warnings.any? { |w| w.code == "constant-condition" }
