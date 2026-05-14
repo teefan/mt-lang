@@ -3926,6 +3926,104 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/demo\.lib\.Counter\.times_two is private to module demo\.lib/, error.message)
   end
 
+  def test_rejects_ambiguous_imported_extension_method_calls
+    source = <<~MT
+      module demo.main
+
+      import demo.dep as dep
+      import demo.a as a
+      import demo.b as b
+
+      function main(value: dep.Counter) -> int:
+          value.tag()
+          return 0
+    MT
+
+    imported = {
+      "demo/dep.mt" => <<~MT,
+        module demo.dep
+
+        public struct Counter:
+            value: int
+      MT
+      "demo/a.mt" => <<~MT,
+        module demo.a
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function tag() -> int:
+                return 1
+      MT
+      "demo/b.mt" => <<~MT,
+        module demo.b
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function tag() -> int:
+                return 2
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/ambiguous imported method demo\.dep\.Counter\.tag; found in modules demo\.a, demo\.b/, error.message)
+    assert_equal 8, error.line
+    assert_equal 11, error.column
+  end
+
+  def test_rejects_ambiguous_imported_extension_associated_function_calls
+    source = <<~MT
+      module demo.main
+
+      import demo.dep as dep
+      import demo.a as a
+      import demo.b as b
+
+      function main() -> int:
+          dep.Counter.zero()
+          return 0
+    MT
+
+    imported = {
+      "demo/dep.mt" => <<~MT,
+        module demo.dep
+
+        public struct Counter:
+            value: int
+      MT
+      "demo/a.mt" => <<~MT,
+        module demo.a
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public static function zero() -> dep.Counter:
+                return dep.Counter(value = 1)
+      MT
+      "demo/b.mt" => <<~MT,
+        module demo.b
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public static function zero() -> dep.Counter:
+                return dep.Counter(value = 2)
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/ambiguous imported method demo\.dep\.Counter\.zero; found in modules demo\.a, demo\.b/, error.message)
+    assert_equal 8, error.line
+    assert_equal 17, error.column
+  end
+
   def test_rejects_import_of_private_type_constructor
     source = <<~MT
       module demo.main
