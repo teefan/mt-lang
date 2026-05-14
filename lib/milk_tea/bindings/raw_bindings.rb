@@ -933,6 +933,18 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "math",
+          module_name: "std.c.math",
+          binding_path: root.join("std/c/math.mt"),
+          declaration_name_prefixes: ["mt_math_"],
+          include_directives: ["math_bindgen.h"],
+          allow_static_inline_functions: true,
+          link_libraries: ["m"],
+          header_candidates: [
+            root.join("std/c/math_bindgen.h").to_s,
+          ],
+        ),
+        Binding.new(
           name: "sdl3",
           module_name: "std.c.sdl3",
           binding_path: root.join("std/c/sdl3.mt"),
