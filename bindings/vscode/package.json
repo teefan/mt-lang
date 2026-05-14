@@ -543,14 +543,16 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p .",
-    "watch": "tsc -p . --watch",
+    "typecheck": "tsc -p . --noEmit",
+    "bundle": "node ./scripts/build-extension.js",
+    "compile": "npm run typecheck && npm run bundle",
+    "watch": "node ./scripts/build-extension.js --watch",
     "check:tm-sync": "node ./scripts/check-tm-grammar-sync.js",
     "snapshot:tm": "node ./scripts/snapshot-textmate.js",
     "package": "npm run compile && vsce package --allow-missing-repository --skip-license",
     "vsix:build": "npm run package",
     "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",
-    "vscode:uninstall": "code --uninstall-extension milk-tea-lang.milk-tea-lang",
+    "vscode:uninstall": "node ./scripts/uninstall-extension.js",
     "vscode:reinstall": "npm run vscode:uninstall && npm run vsix:build && npm run vscode:install"
   },
   "dependencies": {
@@ -560,8 +562,12 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.82.0",
     "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.25.4",
     "typescript": "^5.3.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
+  },
+  "vsce": {
+    "dependencies": false
   }
 }

@@ -7,7 +7,10 @@ Language support, LSP, and DAP integration for Milk Tea (`.mt`) files.
 ```bash
 npm install
 npm run compile
+npm run watch
 ```
+
+`npm run compile` type-checks the extension and emits a bundled `dist/extension.js` for packaging.
 
 ## Settings
 
@@ -30,7 +33,7 @@ Install the built extension into VS Code (uses `code --install-extension`):
 npm run vscode:install
 ```
 
-Uninstall the extension from VS Code (uses `code --uninstall-extension`):
+Uninstall the extension from VS Code (skips cleanly when it is already absent):
 
 ```bash
 npm run vscode:uninstall
@@ -46,3 +49,5 @@ npm run vscode:reinstall
 
 - The install script expects a VSIX named `<package-name>-<package-version>.vsix` in this folder.
 - The uninstall target is `milk-tea-lang.milk-tea-lang`.
+- VSIX packaging uses the bundled `dist/extension.js` output and skips `node_modules`.
+- This is intentional: an externalized `vscode-languageclient` packaging experiment reduced `dist/extension.js`, but regressed the VSIX to 214 files / 165 JavaScript files / 307.53 KB and brought back `vsce`'s bundling warning.
