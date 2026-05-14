@@ -2334,6 +2334,10 @@ module MilkTea
         return c_declaration_parts(array_element_type(type), "#{declarator}[#{array_length(type)}]")
       end
 
+      if type.is_a?(Types::Nullable) && type.base.is_a?(Types::Function)
+        return c_declaration_parts(type.base, name)
+      end
+
       if type.is_a?(Types::Function)
         params = []
         params << array_out_param_declaration(type.return_type, ARRAY_OUT_PARAM_NAME) if array_type?(type.return_type)
@@ -2371,6 +2375,8 @@ module MilkTea
     def c_type(type, pointer: false)
       case type
       when Types::Nullable
+        return c_type(type.base, pointer:) if type.base.is_a?(Types::Function)
+
         base = c_type(type.base)
         base.end_with?("*") ? base : "#{base}*"
       when Types::StringView
@@ -2387,6 +2393,9 @@ module MilkTea
         pointer ? "#{base}*" : base
       when Types::Proc
         base = proc_type_name(type)
+        pointer ? "#{base}*" : base
+      when Types::Function
+        base = c_declaration(type, "")
         pointer ? "#{base}*" : base
       when Types::GenericInstance
         base = generic_c_type(type)

@@ -7,9 +7,9 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library
+      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :excluded_declaration_names, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_name_overrides, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil, generator: nil, allow_static_inline_functions: false)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil, generator: nil, allow_static_inline_functions: false)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -17,6 +17,7 @@ module MilkTea
         @tracked_header_paths = tracked_header_paths.map { |path| File.expand_path(path) }.freeze
         @tracked_header_prefixes = tracked_header_prefixes.map { |path| File.expand_path(path) }.freeze
         @declaration_name_prefixes = declaration_name_prefixes.dup.freeze
+        @excluded_declaration_names = excluded_declaration_names.map(&:to_s).freeze
         @include_directives = include_directives&.dup&.freeze
         @bindgen_defines = bindgen_defines.dup.freeze
         @bindgen_include_directives = bindgen_include_directives.dup.freeze
@@ -28,6 +29,7 @@ module MilkTea
         @compiler_flags = compiler_flags.dup.freeze
         @implementation_defines = implementation_defines.dup.freeze
         @module_imports = module_imports.dup.freeze
+        @type_name_overrides = type_name_overrides.transform_keys(&:to_s).transform_values(&:to_s).freeze
         @type_overrides = type_overrides.transform_keys(&:to_s).freeze
         @function_param_type_overrides = normalize_function_param_type_overrides(function_param_type_overrides)
         @function_return_type_overrides = function_return_type_overrides.transform_keys(&:to_s).freeze
@@ -185,6 +187,7 @@ module MilkTea
           module_imports:,
           clang: resolved_clang(env),
           clang_args:,
+          type_name_overrides:,
           type_overrides:,
           function_param_type_overrides:,
           function_return_type_overrides:,
@@ -193,6 +196,7 @@ module MilkTea
         kwargs[:tracked_header_paths] = tracked_header_paths unless tracked_header_paths.empty?
         kwargs[:tracked_header_prefixes] = tracked_header_prefixes unless tracked_header_prefixes.empty?
         kwargs[:declaration_name_prefixes] = declaration_name_prefixes unless declaration_name_prefixes.empty?
+        kwargs[:excluded_declaration_names] = excluded_declaration_names unless excluded_declaration_names.empty?
         kwargs[:allow_static_inline_functions] = true if @allow_static_inline_functions
         kwargs
       end
@@ -264,6 +268,59 @@ module MilkTea
         "Mesh" => { "indices" => "ptr[ushort]?" },
       }.freeze
 
+      libuv_fs_callback_functions = %w[
+        uv_fs_close
+        uv_fs_open
+        uv_fs_read
+        uv_fs_unlink
+        uv_fs_write
+        uv_fs_copyfile
+        uv_fs_mkdir
+        uv_fs_mkdtemp
+        uv_fs_mkstemp
+        uv_fs_rmdir
+        uv_fs_scandir
+        uv_fs_opendir
+        uv_fs_readdir
+        uv_fs_closedir
+        uv_fs_stat
+        uv_fs_fstat
+        uv_fs_rename
+        uv_fs_fsync
+        uv_fs_fdatasync
+        uv_fs_ftruncate
+        uv_fs_sendfile
+        uv_fs_access
+        uv_fs_chmod
+        uv_fs_utime
+        uv_fs_futime
+        uv_fs_lutime
+        uv_fs_lstat
+        uv_fs_link
+        uv_fs_symlink
+        uv_fs_readlink
+        uv_fs_realpath
+        uv_fs_fchmod
+        uv_fs_chown
+        uv_fs_fchown
+        uv_fs_lchown
+        uv_fs_statfs
+      ].freeze
+
+      libuv_fs_param_overrides = libuv_fs_callback_functions.each_with_object({}) do |function_name, overrides|
+        overrides[function_name] = {
+          "loop" => "ptr[uv_loop_t]?",
+          "cb" => "uv_fs_cb?",
+        }
+      end.freeze
+
+      libuv_field_type_overrides = {
+        "uv_fs_s" => {
+          "loop" => "ptr[uv_loop_t]?",
+          "cb" => "uv_fs_cb?",
+        },
+      }.freeze
+
       libuv_function_param_overrides = {
         "uv_getaddrinfo" => {
           "node" => "cstr?",
@@ -271,7 +328,7 @@ module MilkTea
           "hints" => "const_ptr[addrinfo]?",
         },
         "uv_freeaddrinfo" => { "ai" => "ptr[addrinfo]?" },
-      }.freeze
+      }.merge(libuv_fs_param_overrides).freeze
 
       libuv_function_return_overrides = {
         "uv_default_loop" => "ptr[uv_loop_t]?",
@@ -823,6 +880,11 @@ module MilkTea
           link_libraries: ["m"],
           clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
           compiler_flags: ["-DRAYMATH_STATIC_INLINE"],
+          excluded_declaration_names: ["double_t"],
+          type_name_overrides: {
+            "float3" => "Float3Array",
+            "float16" => "Float16Array",
+          },
           type_overrides: {
             "Vector2" => "rl.Vector2",
             "Vector3" => "rl.Vector3",
@@ -942,6 +1004,23 @@ module MilkTea
           link_libraries: ["m"],
           header_candidates: [
             root.join("std/c/math_bindgen.h").to_s,
+          ],
+        ),
+        Binding.new(
+          name: "string",
+          module_name: "std.c.string",
+          binding_path: root.join("std/c/string.mt"),
+          declaration_name_prefixes: ["mt_string_"],
+          include_directives: ["string_bindgen.h"],
+          allow_static_inline_functions: true,
+          function_return_type_overrides: {
+            "mt_string_memchr" => "ptr[void]?",
+            "mt_string_strchr" => "ptr[char]?",
+            "mt_string_strrchr" => "ptr[char]?",
+            "mt_string_strstr" => "ptr[char]?",
+          },
+          header_candidates: [
+            root.join("std/c/string_bindgen.h").to_s,
           ],
         ),
         Binding.new(
@@ -1073,6 +1152,7 @@ module MilkTea
           },
           function_param_type_overrides: libuv_function_param_overrides,
           function_return_type_overrides: libuv_function_return_overrides,
+          field_type_overrides: libuv_field_type_overrides,
           header_candidates: [
             vendored_libuv.header_path(root:).to_s,
           ],

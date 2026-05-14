@@ -1213,7 +1213,7 @@ methods Vector3:
         return math.vector3_unproject(this, projection, view)
 
 
-    public function to_float_v() -> math.float3:
+    public function to_float_v() -> array[float, 3]:
         return math.vector3_to_float_v(this)
 
 
@@ -1411,7 +1411,7 @@ methods Matrix:
         return math.matrix_look_at(eye, target, up)
 
 
-    public function to_float_v() -> math.float16:
+    public function to_float_v() -> array[float, 16]:
         return math.matrix_to_float_v(this)
 
 

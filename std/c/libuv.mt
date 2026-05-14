@@ -1145,8 +1145,8 @@ external module std.c.libuv:
         type_: uv_req_type
         reserved: array[ptr[void], 6]
         fs_type: uv_fs_type
-        loop: ptr[uv_loop_t]
-        cb: fn(arg0: ptr[uv_fs_t]) -> void
+        loop: ptr[uv_loop_t]?
+        cb: uv_fs_cb?
         result: ptr_int
         ptr: ptr[void]
         path: cstr
@@ -1172,43 +1172,43 @@ external module std.c.libuv:
     external function uv_fs_get_path(arg0: const_ptr[uv_fs_t]) -> cstr
     external function uv_fs_get_statbuf(arg0: ptr[uv_fs_t]) -> ptr[uv_stat_t]
     external function uv_fs_req_cleanup(req: ptr[uv_fs_t]) -> void
-    external function uv_fs_close(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_open(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flags_: int, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_read(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_unlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_write(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_copyfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flags_: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_mkdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_mkdtemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_mkstemp(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], tpl: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_rmdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_scandir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, flags_: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    external function uv_fs_close(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_open(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, flags_: int, mode: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_read(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: uv_fs_cb?) -> int
+    external function uv_fs_unlink(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_write(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, bufs: const_ptr[uv_buf_t], nbufs: uint, offset: ptr_int, cb: uv_fs_cb?) -> int
+    external function uv_fs_copyfile(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, new_path: cstr, flags_: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_mkdir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, mode: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_mkdtemp(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], tpl: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_mkstemp(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], tpl: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_rmdir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_scandir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, flags_: int, cb: uv_fs_cb?) -> int
     external function uv_fs_scandir_next(req: ptr[uv_fs_t], ent: ptr[uv_dirent_t]) -> int
-    external function uv_fs_opendir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_readdir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_closedir(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_stat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_fstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_rename(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_fsync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_fdatasync(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_ftruncate(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, offset: ptr_int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_sendfile(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], out_fd: int, in_fd: int, in_offset: ptr_int, length: ptr_uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_access(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_chmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_utime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_futime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_lutime(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_lstat(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_link(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_symlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, new_path: cstr, flags_: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_readlink(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_realpath(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_fchmod(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, mode: int, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_chown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_fchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], file: int, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_lchown(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
-    external function uv_fs_statfs(loop: ptr[uv_loop_t], req: ptr[uv_fs_t], path: cstr, cb: fn(arg0: ptr[uv_fs_t]) -> void) -> int
+    external function uv_fs_opendir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_readdir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: uv_fs_cb?) -> int
+    external function uv_fs_closedir(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], dir: ptr[uv_dir_t], cb: uv_fs_cb?) -> int
+    external function uv_fs_stat(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_fstat(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_rename(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_fsync(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_fdatasync(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_ftruncate(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, offset: ptr_int, cb: uv_fs_cb?) -> int
+    external function uv_fs_sendfile(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], out_fd: int, in_fd: int, in_offset: ptr_int, length: ptr_uint, cb: uv_fs_cb?) -> int
+    external function uv_fs_access(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, mode: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_chmod(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, mode: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_utime(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: uv_fs_cb?) -> int
+    external function uv_fs_futime(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, atime: double, mtime: double, cb: uv_fs_cb?) -> int
+    external function uv_fs_lutime(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, atime: double, mtime: double, cb: uv_fs_cb?) -> int
+    external function uv_fs_lstat(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_link(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, new_path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_symlink(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, new_path: cstr, flags_: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_readlink(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_realpath(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
+    external function uv_fs_fchmod(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, mode: int, cb: uv_fs_cb?) -> int
+    external function uv_fs_chown(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: uv_fs_cb?) -> int
+    external function uv_fs_fchown(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], file: int, uid: uint, gid: uint, cb: uv_fs_cb?) -> int
+    external function uv_fs_lchown(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, uid: uint, gid: uint, cb: uv_fs_cb?) -> int
+    external function uv_fs_statfs(loop: ptr[uv_loop_t]?, req: ptr[uv_fs_t], path: cstr, cb: uv_fs_cb?) -> int
 
     flags uv_fs_event: int
         UV_RENAME = 1

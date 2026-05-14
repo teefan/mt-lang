@@ -2040,6 +2040,37 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_foreign_mapping_expression_that_already_references_params
+    root_source = <<~MT
+      module demo.main
+
+      import std.sample as sample
+
+      function main() -> int:
+          return sample.pair_sum_plus_one(3)
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        external module std.c.sample:
+            external function PairSum(left: int, right: int) -> int
+      MT
+      "std/sample.mt" => <<~MT,
+        module std.sample
+
+        import std.c.sample as c
+
+        public foreign function pair_sum_plus_one(value: int) -> int = c.PairSum(value, value) + 1
+      MT
+    }
+
+    program = check_program_source(root_source, imported_sources)
+    result = program.root_analysis
+
+    assert_equal true, result.imports.key?("sample")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_foreign_defs_with_str_to_ptr_char_boundary
     root_source = <<~MT
       module demo.main

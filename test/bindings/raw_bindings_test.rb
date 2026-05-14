@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math sdl3 box2d cjson libuv steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -25,6 +25,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["RAYMATH_STATIC_INLINE"], registry.fetch("raymath").bindgen_defines
     assert_equal ["raylib.h"], registry.fetch("raymath").bindgen_include_directives
     assert_includes registry.fetch("raymath").compiler_flags, "-DRAYMATH_STATIC_INLINE"
+    assert_equal ["double_t"], registry.fetch("raymath").excluded_declaration_names
+    assert_equal({ "float3" => "Float3Array", "float16" => "Float16Array" }, registry.fetch("raymath").type_name_overrides)
     assert_equal [{ module_name: "std.c.raylib", alias: "rl" }], registry.fetch("raymath").module_imports
     assert_equal "rl.Vector3", registry.fetch("raymath").type_overrides.fetch("Vector3")
     assert_equal "rl.Quaternion", registry.fetch("raymath").type_overrides.fetch("Quaternion")
@@ -176,6 +178,11 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["uv_", "UV_"], registry.fetch("libuv").declaration_name_prefixes
     assert_equal({ "node" => "cstr?", "service" => "cstr?", "hints" => "const_ptr[addrinfo]?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_getaddrinfo"))
     assert_equal({ "ai" => "ptr[addrinfo]?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_freeaddrinfo"))
+    assert_equal({ "loop" => "ptr[uv_loop_t]?", "cb" => "uv_fs_cb?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_fs_access"))
+    assert_equal({ "loop" => "ptr[uv_loop_t]?", "cb" => "uv_fs_cb?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_fs_copyfile"))
+    assert_equal({ "loop" => "ptr[uv_loop_t]?", "cb" => "uv_fs_cb?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_fs_stat"))
+    assert_equal({ "loop" => "ptr[uv_loop_t]?", "cb" => "uv_fs_cb?" }, registry.fetch("libuv").function_param_type_overrides.fetch("uv_fs_scandir"))
+    assert_equal({ "loop" => "ptr[uv_loop_t]?", "cb" => "uv_fs_cb?" }, registry.fetch("libuv").field_type_overrides.fetch("uv_fs_s"))
     assert_equal "ptr[uv_loop_t]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_default_loop")
     assert_equal "ptr[uv_loop_t]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_new")
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_handle_get_data")
@@ -205,6 +212,12 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["m"], registry.fetch("math").link_libraries
     assert_equal "bindgen:check:math", registry.fetch("math").check_task_name
     assert_includes registry.fetch("math").header_candidates.first, "/std/c/math_bindgen.h"
+    assert_equal "std.c.string", registry.fetch("string").module_name
+    assert_equal ["mt_string_"], registry.fetch("string").declaration_name_prefixes
+    assert_equal "ptr[void]?", registry.fetch("string").function_return_type_overrides.fetch("mt_string_memchr")
+    assert_equal "ptr[char]?", registry.fetch("string").function_return_type_overrides.fetch("mt_string_strstr")
+    assert_equal "bindgen:check:string", registry.fetch("string").check_task_name
+    assert_includes registry.fetch("string").header_candidates.first, "/std/c/string_bindgen.h"
     assert_equal "bindgen:check_raylib", registry.fetch("raylib").legacy_check_task_name
   end
 
@@ -284,6 +297,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
           clang: "clang-custom",
           clang_args: ["-I#{dir}"],
           allow_static_inline_functions: true,
+          type_name_overrides: {},
           type_overrides: {},
           function_param_type_overrides: { "sample_function" => { "data" => "ptr[ubyte]?" } },
           function_return_type_overrides: {},

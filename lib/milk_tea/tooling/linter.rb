@@ -27,6 +27,7 @@ module MilkTea
     )
 
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil)
+      sema_analysis ||= best_effort_sema_analysis(source, path:)
       ast = sema_analysis&.ast || Parser.parse(source, path:)
       trivia = Lexer.lex_with_trivia(source, path:).trivia
       suppressions = parse_suppressions(trivia)
@@ -349,9 +350,13 @@ module MilkTea
       when AST::ConstDecl, AST::VarDecl
         collect_names_from_type(decl.type, used) if decl.type
         collect_names_from_expr(decl.value, used) if decl.value
+      when AST::ExternFunctionDecl
+        decl.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
+        collect_names_from_type(decl.return_type, used) if decl.return_type
       when AST::ForeignFunctionDecl
         decl.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
         collect_names_from_type(decl.return_type, used) if decl.return_type
+        collect_names_from_expr(decl.mapping, used) if decl.mapping
       end
     end
 
@@ -798,6 +803,7 @@ module MilkTea
           visit_expression(argument.value)
           mark_call_argument_mutated(argument.value)
         end
+        mark_alias_source_mutated(expression)
         mark_call_receiver_mutated(expression)
       when AST::UnaryOp
         visit_expression(expression.operand)
@@ -933,6 +939,15 @@ module MilkTea
       return unless editable_receiver_expression?(expression.callee.receiver)
 
       mark_mutated(expression.callee.receiver)
+    end
+
+    def mark_alias_source_mutated(expression)
+      return unless expression.is_a?(AST::Call)
+      return unless expression.callee.is_a?(AST::Identifier)
+      return unless %w[ref_of ptr_of].include?(expression.callee.name)
+      return unless expression.arguments.length == 1
+
+      mark_mutated(expression.arguments.first.value)
     end
 
     def editable_receiver_expression?(expression)

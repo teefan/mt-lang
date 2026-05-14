@@ -4,10 +4,6 @@ module std.raymath
 import std.c.raymath as c
 import std.c.raylib as rl
 
-public type float3 = c.float3
-public type float16 = c.float16
-public type double_t = c.double_t
-
 public const EPSILON: float = c.EPSILON
 
 public foreign function clamp(value: float, min: float, max: float) -> float = c.Clamp
@@ -80,7 +76,7 @@ public foreign function vector3_min(v1: rl.Vector3, v2: rl.Vector3) -> rl.Vector
 public foreign function vector3_max(v1: rl.Vector3, v2: rl.Vector3) -> rl.Vector3 = c.Vector3Max
 public foreign function vector3_barycenter(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3) -> rl.Vector3 = c.Vector3Barycenter
 public foreign function vector3_unproject(source: rl.Vector3, projection: rl.Matrix, view: rl.Matrix) -> rl.Vector3 = c.Vector3Unproject
-public foreign function vector3_to_float_v(v: rl.Vector3) -> float3 = c.Vector3ToFloatV
+public foreign function vector3_to_float_v(v: rl.Vector3) -> array[float, 3] = c.Vector3ToFloatV(v).v
 public foreign function vector3_invert(v: rl.Vector3) -> rl.Vector3 = c.Vector3Invert
 public foreign function vector3_clamp(v: rl.Vector3, min: rl.Vector3, max: rl.Vector3) -> rl.Vector3 = c.Vector3Clamp
 public foreign function vector3_clamp_value(v: rl.Vector3, min: float, max: float) -> rl.Vector3 = c.Vector3ClampValue
@@ -129,7 +125,7 @@ public foreign function matrix_frustum(left: double, right: double, bottom: doub
 public foreign function matrix_perspective(fov_y: double, aspect: double, near_plane: double, far_plane: double) -> rl.Matrix = c.MatrixPerspective
 public foreign function matrix_ortho(left: double, right: double, bottom: double, top: double, near_plane: double, far_plane: double) -> rl.Matrix = c.MatrixOrtho
 public foreign function matrix_look_at(eye: rl.Vector3, target: rl.Vector3, up: rl.Vector3) -> rl.Matrix = c.MatrixLookAt
-public foreign function matrix_to_float_v(mat: rl.Matrix) -> float16 = c.MatrixToFloatV
+public foreign function matrix_to_float_v(mat: rl.Matrix) -> array[float, 16] = c.MatrixToFloatV(mat).v
 public foreign function quaternion_add(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion = c.QuaternionAdd
 public foreign function quaternion_add_value(q: rl.Vector4, add: float) -> rl.Quaternion = c.QuaternionAddValue
 public foreign function quaternion_subtract(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion = c.QuaternionSubtract
