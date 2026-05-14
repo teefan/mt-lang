@@ -1115,8 +1115,13 @@ module MilkTea
 
       loop do
         if match(:dot)
-          member = consume_name("expected member name after '.'").lexeme
-          expression = AST::MemberAccess.new(receiver: expression, member:)
+          member_token = consume_name("expected member name after '.'")
+          expression = AST::MemberAccess.new(
+            receiver: expression,
+            member: member_token.lexeme,
+            line: member_token.line,
+            column: member_token.column,
+          )
         elsif check(:lbracket)
           if (specialization = try_parse_specialization(expression))
             expression = specialization

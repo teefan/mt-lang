@@ -3933,6 +3933,76 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_document_diagnostic_reports_ambiguous_imported_extension_method_at_member_token
+    Dir.mktmpdir("milk-tea-lsp-ambiguous-extension") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+      demo_dir = File.join(dir, "demo")
+      FileUtils.mkdir_p(demo_dir)
+
+      File.write(File.join(demo_dir, "dep.mt"), <<~MT)
+        module demo.dep
+
+        public struct Counter:
+            value: int
+      MT
+
+      File.write(File.join(demo_dir, "a.mt"), <<~MT)
+        module demo.a
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function tag() -> int:
+                return 1
+      MT
+
+      File.write(File.join(demo_dir, "b.mt"), <<~MT)
+        module demo.b
+
+        import demo.dep as dep
+
+        methods dep.Counter:
+            public function tag() -> int:
+                return 2
+      MT
+
+      main_path = File.join(demo_dir, "main.mt")
+      source = <<~MT
+        module demo.main
+
+        import demo.dep as dep
+        import demo.a as a
+        import demo.b as b
+
+        function main(value: dep.Counter) -> int:
+            value.tag()
+            return 0
+      MT
+      File.write(main_path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
+        items = response.fetch("result").fetch("items")
+        diagnostic = items.find do |item|
+          item.fetch("message").include?("ambiguous imported method demo.dep.Counter.tag")
+        end
+
+        refute_nil diagnostic, "expected ambiguous imported method diagnostic, got #{items.map { |item| item['message'] }.inspect}"
+        assert_equal 7, diagnostic.dig("range", "start", "line")
+        assert_equal 10, diagnostic.dig("range", "start", "character")
+        assert_equal 11, diagnostic.dig("range", "end", "character")
+      end
+    end
+  end
+
   def test_semantic_tokens_classify_imported_module_function_reference_as_function
     Dir.mktmpdir("mt_lsp_semantic_tokens") do |dir|
       c_dir = File.join(dir, "std", "c")

@@ -154,7 +154,9 @@ module MilkTea
     Identifier = Data.define(:name, :line, :column) do
       def initialize(name:, line: nil, column: nil) = super
     end
-    MemberAccess = Data.define(:receiver, :member)
+    MemberAccess = Data.define(:receiver, :member, :line, :column) do
+      def initialize(receiver:, member:, line: nil, column: nil) = super
+    end
     IndexAccess = Data.define(:receiver, :index)
     Specialization = Data.define(:callee, :arguments)
     Call = Data.define(:callee, :arguments)

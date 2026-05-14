@@ -3464,16 +3464,25 @@ module MilkTea
         method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
         return method if method
 
-        @imports.each_value do |module_binding|
-          imported_methods = module_binding.methods[receiver_type]
-          imported_methods ||= module_binding.methods[dispatch_receiver_type] unless dispatch_receiver_type == receiver_type
-          next unless imported_methods
+        imported_candidates = []
 
-          imported_method = imported_methods[name]
-          return imported_method if imported_method
+        @imports.each_value do |module_binding|
+          imported_method = module_binding.methods.fetch(receiver_type, {})[name]
+          if imported_method.nil? && dispatch_receiver_type != receiver_type
+            imported_method = module_binding.methods.fetch(dispatch_receiver_type, {})[name]
+          end
+
+          imported_candidates << [module_binding, imported_method] if imported_method
         end
 
-        nil
+        return nil if imported_candidates.empty?
+
+        if imported_candidates.length > 1
+          modules = imported_candidates.map { |module_binding, _binding| module_binding.name }.join(", ")
+          raise_sema_error("ambiguous imported method #{receiver_type}.#{name}; found in modules #{modules}")
+        end
+
+        imported_candidates.first.last
       end
 
       def char_array_removed_text_method?(receiver_type, name)
