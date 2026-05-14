@@ -79,6 +79,7 @@ build-iPhoneSimulator/
 .idea/
 .vscode/
 .env
+*.code-workspace
 .github/copilot-instructions.md
 AGENTS.md
 examples/**/*.bmp
