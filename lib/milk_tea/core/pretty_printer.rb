@@ -217,17 +217,16 @@ module MilkTea
         declaration.is_a?(AST::StructDecl) ||
           declaration.is_a?(AST::UnionDecl) ||
           declaration.is_a?(AST::EnumDecl) ||
-          declaration.is_a?(AST::FlagsDecl) ||
-          declaration.is_a?(AST::VariantDecl)
+          declaration.is_a?(AST::FlagsDecl)
       end
 
       def raw_module_declaration_group(declaration)
         case declaration
         when AST::OpaqueDecl, AST::TypeAliasDecl
           :types
-        when AST::ConstDecl, AST::VarDecl
+        when AST::ConstDecl
           :values
-        when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+        when AST::ExternFunctionDecl
           :functions
         else
           declaration.class.name

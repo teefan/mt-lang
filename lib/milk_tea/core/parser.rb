@@ -82,7 +82,7 @@ module MilkTea
         module_kind = :raw_module
         consume(:newline, "expected newline after external") unless eof?
         skip_newlines
-        imports, directives, declarations = parse_raw_module_body
+        imports, directives, declarations = parse_raw_module_body(errors:)
         skip_newlines
         raise error(peek, "expected end of file after external declarations") unless eof?
 
@@ -187,23 +187,47 @@ module MilkTea
       end
     end
 
-    def parse_raw_module_body
+    def parse_raw_module_body(errors: nil)
       imports = []
       directives = []
       declarations = []
 
       while match(:import)
-        imports << parse_import
+        if errors
+          begin
+            imports << parse_import
+          rescue ParseError => e
+            errors << e
+            synchronize_to_top_level_boundary
+          end
+        else
+          imports << parse_import
+        end
+        skip_newlines
+      end
+
+      while raw_module_directive_start?
+        if errors
+          begin
+            directives << parse_raw_module_directive
+          rescue ParseError => e
+            errors << e
+            synchronize_to_top_level_boundary
+          end
+        else
+          directives << parse_raw_module_directive
+        end
         skip_newlines
       end
 
       until eof?
-        if match(:link)
-          directives << parse_link_directive
-        elsif match(:include)
-          directives << parse_include_directive
-        elsif match(:compiler_flag)
-          directives << parse_compiler_flag_directive
+        if errors
+          begin
+            declarations << parse_raw_module_declaration
+          rescue ParseError => e
+            errors << e
+            synchronize_to_top_level_boundary
+          end
         else
           declarations << parse_raw_module_declaration
         end
@@ -211,6 +235,22 @@ module MilkTea
       end
 
       [imports, directives, declarations]
+    end
+
+    def raw_module_directive_start?
+      check(:link) || check(:include) || check(:compiler_flag)
+    end
+
+    def parse_raw_module_directive
+      if match(:link)
+        parse_link_directive
+      elsif match(:include)
+        parse_include_directive
+      elsif match(:compiler_flag)
+        parse_compiler_flag_directive
+      else
+        raise error(peek, "expected external directive")
+      end
     end
 
     def parse_link_directive
@@ -235,21 +275,21 @@ module MilkTea
       if match(:public)
         raise error(previous, "public is not allowed in external files")
       elsif check(:packed) || check(:align)
-        parse_struct_decl_with_layout(visibility: :public)
+        parse_struct_decl_with_layout(visibility: nil)
       elsif match(:const)
-        parse_const_decl(visibility: :public)
+        parse_const_decl(visibility: nil)
       elsif match(:type)
-        parse_type_alias_decl(visibility: :public)
+        parse_type_alias_decl(visibility: nil)
       elsif match(:struct)
-        parse_struct_decl(visibility: :public)
+        parse_struct_decl(visibility: nil)
       elsif match(:union)
-        parse_union_decl(visibility: :public)
+        parse_union_decl(visibility: nil)
       elsif match(:enum)
-        parse_enum_decl(AST::EnumDecl, visibility: :public)
+        parse_enum_decl(AST::EnumDecl, visibility: nil)
       elsif match(:flags)
-        parse_enum_decl(AST::FlagsDecl, visibility: :public)
+        parse_enum_decl(AST::FlagsDecl, visibility: nil)
       elsif match(:opaque)
-        parse_opaque_decl(visibility: :public)
+        parse_opaque_decl(visibility: nil)
       elsif match(:external)
         parse_extern_decl
       else
