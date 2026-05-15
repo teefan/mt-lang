@@ -1488,6 +1488,7 @@ class MilkTeaParserTest < Minitest::Test
       %w[StructDecl ConstDecl EnumDecl FlagsDecl UnionDecl OpaqueDecl ExternFunctionDecl],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
+    assert_equal [nil, nil, nil, nil, nil, nil], ast.declarations.first(6).map(&:visibility)
 
     const_decl = ast.declarations[1]
     assert_equal "BLACK", const_decl.name
@@ -1521,6 +1522,23 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "printf", extern_def.name
     assert_equal ["format"], extern_def.params.map(&:name)
     assert_equal true, extern_def.variadic
+  end
+
+  def test_rejects_raw_module_directives_after_declarations
+    source = <<~MT
+      external
+
+      struct Foo:
+          value: int
+
+      include "foo.h"
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/expected external declaration/, error.message)
   end
 
   def test_parses_foreign_function_declarations_and_calls
@@ -1652,6 +1670,30 @@ class MilkTeaParserTest < Minitest::Test
     refute_nil result.ast
     assert_equal ["board_width", "board_height", "board_cells", "main"], result.ast.declarations.map(&:name)
     assert_instance_of MilkTea::AST::ErrorExpr, result.ast.declarations[1].value
+  end
+
+  def test_parse_collecting_errors_recovers_after_invalid_raw_module_declaration
+    source = <<~MT
+      external
+
+      include "foo.h"
+
+      struct Foo:
+          value: int
+
+      function nope() -> void:
+          return
+
+      opaque Handle
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected external declaration/, result.errors.first.message)
+    refute_nil result.ast
+    assert_equal :raw_module, result.ast.module_kind
+    assert_equal ["Foo", "Handle"], result.ast.declarations.map(&:name)
   end
 
   def test_parse_collecting_errors_recovers_after_invalid_statement_in_block
