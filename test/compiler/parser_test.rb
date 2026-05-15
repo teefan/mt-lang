@@ -1538,7 +1538,7 @@ class MilkTeaParserTest < Minitest::Test
       MilkTea::Parser.parse(source)
     end
 
-    assert_match(/expected external declaration/, error.message)
+    assert_match(/include directives must appear before external declarations/, error.message)
   end
 
   def test_rejects_methods_blocks_in_raw_modules
@@ -1554,7 +1554,46 @@ class MilkTeaParserTest < Minitest::Test
       MilkTea::Parser.parse(source)
     end
 
-    assert_match(/expected external declaration/, error.message)
+    assert_match(/methods is not allowed in external files/, error.message)
+  end
+
+  def test_rejects_late_imports_in_raw_modules
+    source = <<~MT
+      external
+
+      include "foo.h"
+
+      import std.c.dep
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/imports must appear before external directives and declarations/, error.message)
+  end
+
+  def test_rejects_ordinary_only_declarations_in_raw_modules
+    cases = {
+      "var counter: int = 0\n" => /var is not allowed in external files/,
+      "variant Token:\n    eof\n" => /variant is not allowed in external files/,
+      "interface Damageable:\n    function hit() -> void\n" => /interface is not allowed in external files/,
+      "foreign function init() -> void = c.Init\n" => /foreign is not allowed in external files/,
+      "function init() -> void:\n    return\n" => /function is not allowed in external files/,
+      "async function init() -> void:\n    return\n" => /async function is not allowed in external files/,
+      "static_assert(true, \"ok\")\n" => /static_assert is not allowed in external files/,
+      "public const MAGIC: int = 1\n" => /public is not allowed in external files/,
+    }
+
+    cases.each do |declaration_source, expected_message|
+      source = "external\n\n#{declaration_source}"
+
+      error = assert_raises(MilkTea::ParseError) do
+        MilkTea::Parser.parse(source)
+      end
+
+      assert_match(expected_message, error.message, declaration_source)
+    end
   end
 
   def test_parses_foreign_function_declarations_and_calls
@@ -1706,7 +1745,7 @@ class MilkTeaParserTest < Minitest::Test
     result = MilkTea::Parser.parse_collecting_errors(source)
 
     assert_equal 1, result.errors.length
-    assert_match(/expected external declaration/, result.errors.first.message)
+    assert_match(/function is not allowed in external files/, result.errors.first.message)
     refute_nil result.ast
     assert_equal :raw_module, result.ast.module_kind
     assert_equal ["Foo", "Handle"], result.ast.declarations.map(&:name)

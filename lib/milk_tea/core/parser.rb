@@ -293,7 +293,24 @@ module MilkTea
       elsif match(:external)
         parse_extern_decl
       else
-        raise error(peek, "expected external declaration")
+        raise error(peek, raw_module_declaration_error_message(peek))
+      end
+    end
+
+    def raw_module_declaration_error_message(token)
+      case token.type
+      when :import
+        "imports must appear before external directives and declarations"
+      when :link, :include, :compiler_flag
+        "#{token.lexeme} directives must appear before external declarations"
+      when :var, :variant, :interface, :methods, :foreign, :function, :static_assert
+        "#{token.lexeme} is not allowed in external files"
+      when :async
+        "async function is not allowed in external files"
+      when :module
+        "module headers are not allowed in external files"
+      else
+        "expected external declaration"
       end
     end
 
