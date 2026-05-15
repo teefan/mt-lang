@@ -10,7 +10,11 @@ module MilkTea
 
     class Lowerer
       ExplicitDefaultBinding = Data.define(:binding, :callee_name)
+      ExplicitHashBinding = Data.define(:binding, :callee_name)
+      ExplicitEqualBinding = Data.define(:binding, :callee_name)
       DefaultResolution = Data.define(:target_type, :binding, :callee_name)
+      HashResolution = Data.define(:target_type, :binding, :callee_name)
+      EqualResolution = Data.define(:target_type, :binding, :callee_name)
 
       def initialize(program)
         @program = program
@@ -5175,6 +5179,26 @@ module MilkTea
             expression: lower_expression(argument.value, env:, expected_type: source_type),
             type:,
           )
+        when :hash
+          resolution = resolve_hash_specialization(expression.callee, env:)
+          argument = expression.arguments.fetch(0)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [lower_hash_operation_argument(argument.value, env:, target_type: resolution.target_type)],
+            type:,
+          )
+        when :equal
+          resolution = resolve_equal_specialization(expression.callee, env:)
+          left = expression.arguments.fetch(0)
+          right = expression.arguments.fetch(1)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [
+              lower_hash_operation_argument(left.value, env:, target_type: resolution.target_type),
+              lower_hash_operation_argument(right.value, env:, target_type: resolution.target_type),
+            ],
+            type:,
+          )
         when :zero
           IR::ZeroInit.new(type:)
         when :fatal
@@ -5245,6 +5269,20 @@ module MilkTea
         end
 
         IR::AddressOf.new(expression: lowered_expression, type: target_type)
+      end
+
+      def lower_hash_operation_argument(expression, env:, target_type:)
+        actual_type = infer_expression_type(expression, env:)
+        lowered_expression = lower_expression(expression, env:)
+        pointer_type = const_pointer_to(target_type)
+
+        if pointer_type?(actual_type) || ref_type?(actual_type)
+          return cast_expression(lowered_expression, pointer_type)
+        end
+
+        return cast_expression(lowered_expression.operand, pointer_type) if lowered_expression.is_a?(IR::Unary) && lowered_expression.operator == "*"
+
+        IR::AddressOf.new(expression: lowered_expression, type: pointer_type)
       end
 
       def lower_call_arguments(arguments, callee_type, env:)
@@ -5933,6 +5971,50 @@ module MilkTea
             ),
             type:,
           )
+        when :hash
+          resolution = with_analysis_context(owner_analysis) do
+            resolve_hash_specialization(expression.callee, env: mapping_env)
+          end
+          argument = expression.arguments.fetch(0)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [
+              lower_inline_hash_operation_argument(
+                argument.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+                target_type: resolution.target_type,
+              ),
+            ],
+            type:,
+          )
+        when :equal
+          resolution = with_analysis_context(owner_analysis) do
+            resolve_equal_specialization(expression.callee, env: mapping_env)
+          end
+          left = expression.arguments.fetch(0)
+          right = expression.arguments.fetch(1)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [
+              lower_inline_hash_operation_argument(
+                left.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+                target_type: resolution.target_type,
+              ),
+              lower_inline_hash_operation_argument(
+                right.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+                target_type: resolution.target_type,
+              ),
+            ],
+            type:,
+          )
         when :zero
           IR::ZeroInit.new(type:)
         when :ref_of
@@ -6008,6 +6090,27 @@ module MilkTea
         else
           raise LoweringError, "unsupported inline foreign mapping call kind #{kind}"
         end
+      end
+
+      def lower_inline_hash_operation_argument(expression, mapping_env:, replacements:, owner_analysis:, target_type:)
+        actual_type = with_analysis_context(owner_analysis) do
+          infer_expression_type(expression, env: mapping_env)
+        end
+        lowered_expression = lower_inline_foreign_mapping_expression(
+          expression,
+          mapping_env:,
+          replacements:,
+          owner_analysis:,
+        )
+        pointer_type = const_pointer_to(target_type)
+
+        if pointer_type?(actual_type) || ref_type?(actual_type)
+          return cast_expression(lowered_expression, pointer_type)
+        end
+
+        return cast_expression(lowered_expression.operand, pointer_type) if lowered_expression.is_a?(IR::Unary) && lowered_expression.operator == "*"
+
+        IR::AddressOf.new(expression: lowered_expression, type: pointer_type)
       end
 
       def foreign_mapping_uses_inline_replacement?(expression, replacements)
@@ -7068,6 +7171,20 @@ module MilkTea
             return [:zero, nil, nil, Types::Function.new("zero", params: [], return_type: target_type)]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "hash"
+            resolution = resolve_hash_specialization(callee, env:)
+            return [:hash, resolution.callee_name, nil, Types::Function.new("hash", params: [Types::Parameter.new("value", resolution.target_type)], return_type: @types.fetch("uint")), resolution.binding]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
+            resolution = resolve_equal_specialization(callee, env:)
+            params = [
+              Types::Parameter.new("left", resolution.target_type),
+              Types::Parameter.new("right", resolution.target_type),
+            ]
+            return [:equal, resolution.callee_name, nil, Types::Function.new("equal", params:, return_type: @types.fetch("bool")), resolution.binding]
+          end
+
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
             callable_kind, function_binding, receiver = callable_resolution
             if callable_kind == :method
@@ -7237,6 +7354,9 @@ module MilkTea
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :zero
+            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
+            function_type.return_type
+          when :hash, :equal
             _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
             function_type.return_type
           when :variant_arm_ctor
@@ -7695,6 +7815,22 @@ module MilkTea
         DefaultResolution.new(target_type:, binding: nil, callee_name: nil)
       end
 
+      def resolve_hash_specialization(expression, env:)
+        target_type = resolve_type_ref(expression.arguments.fetch(0).value)
+        explicit_hash = resolve_explicit_hash_binding(target_type, context: "hash[#{target_type}]")
+        raise LoweringError, "hash[#{target_type}] requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint" unless explicit_hash
+
+        HashResolution.new(target_type:, binding: explicit_hash.binding, callee_name: explicit_hash.callee_name)
+      end
+
+      def resolve_equal_specialization(expression, env:)
+        target_type = resolve_type_ref(expression.arguments.fetch(0).value)
+        explicit_equal = resolve_explicit_equal_binding(target_type, context: "equal[#{target_type}]")
+        raise LoweringError, "equal[#{target_type}] requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool" unless explicit_equal
+
+        EqualResolution.new(target_type:, binding: explicit_equal.binding, callee_name: explicit_equal.callee_name)
+      end
+
       def resolve_explicit_default_binding(target_type, context:)
         dispatch_receiver_type = method_dispatch_receiver_type(target_type)
         method_entry_receiver_type = target_type
@@ -7721,6 +7857,67 @@ module MilkTea
                         function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
                       end
         ExplicitDefaultBinding.new(binding: method_binding, callee_name:)
+      end
+
+      def resolve_explicit_hash_binding(target_type, context:)
+        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
+        method_entry_receiver_type = target_type
+        method_entry = @method_definitions[[target_type, "hash"]]
+        unless method_entry || dispatch_receiver_type == target_type
+          method_entry_receiver_type = dispatch_receiver_type
+          method_entry = @method_definitions[[dispatch_receiver_type, "hash"]]
+        end
+        return nil unless method_entry
+
+        method_analysis, method_ast = method_entry
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        raise LoweringError, "#{context} requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint" unless method_binding.type.receiver_type.nil?
+
+        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
+        unless method_binding.type.params.map(&:type) == [const_pointer_to(target_type)]
+          raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
+        end
+        unless method_binding.type.return_type == @types.fetch("uint")
+          raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}"
+        end
+
+        callee_name = if method_binding.external
+                        method_binding.name
+                      else
+                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
+                      end
+        ExplicitHashBinding.new(binding: method_binding, callee_name:)
+      end
+
+      def resolve_explicit_equal_binding(target_type, context:)
+        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
+        method_entry_receiver_type = target_type
+        method_entry = @method_definitions[[target_type, "equal"]]
+        unless method_entry || dispatch_receiver_type == target_type
+          method_entry_receiver_type = dispatch_receiver_type
+          method_entry = @method_definitions[[dispatch_receiver_type, "equal"]]
+        end
+        return nil unless method_entry
+
+        method_analysis, method_ast = method_entry
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        raise LoweringError, "#{context} requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool" unless method_binding.type.receiver_type.nil?
+
+        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
+        expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
+        unless method_binding.type.params.map(&:type) == expected_param_types
+          raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
+        end
+        unless method_binding.type.return_type == @types.fetch("bool")
+          raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}"
+        end
+
+        callee_name = if method_binding.external
+                        method_binding.name
+                      else
+                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
+                      end
+        ExplicitEqualBinding.new(binding: method_binding, callee_name:)
       end
 
       def default_zero_fallback_type?(type)
@@ -7976,11 +8173,23 @@ module MilkTea
             raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
           end
 
-          next unless constraints.requires_default
+          if constraints.requires_default
+            unless resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+              raise LoweringError, "type #{actual_type} does not satisfy defaults constraint for function #{binding.name}"
+            end
+          end
 
-          next if resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+          if constraints.requires_hash
+            unless resolve_explicit_hash_binding(actual_type, context: "hashes constraint on type parameter #{name} for function #{binding.name}")
+              raise LoweringError, "type #{actual_type} does not satisfy hashes constraint for function #{binding.name}"
+            end
+          end
 
-          raise LoweringError, "type #{actual_type} does not satisfy defaults constraint for function #{binding.name}"
+          next unless constraints.requires_equality
+
+          next if resolve_explicit_equal_binding(actual_type, context: "equates constraint on type parameter #{name} for function #{binding.name}")
+
+          raise LoweringError, "type #{actual_type} does not satisfy equates constraint for function #{binding.name}"
         end
       end
 

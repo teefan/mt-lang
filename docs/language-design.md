@@ -331,6 +331,15 @@ function spawn_state[T defaults and implements ScreenState]() -> T:
 	return default[T]
 ```
 
+`hashes` and `equates` are dedicated constraint kinds for container-style generic APIs that need canonical hash and equality hooks without turning interfaces into a trait solver:
+
+```mt
+function same_bucket[T hashes and equates](left: T, right: T) -> bool:
+	return hash[T](left) == hash[T](right) and equal[T](left, right)
+```
+
+The canonical implementation hooks are associated functions `T.hash(value: const_ptr[T]) -> uint` and `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. The built-in `hash[T](...)` and `equal[T](...)` forms just lower to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
+
 Constraint checking happens after type inference and specialization, and constrained calls still lower to ordinary static method calls in generated C.
 There is no witness table or vtable for constrained generics.
 

@@ -283,6 +283,82 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/method kind does not match/, error.message)
   end
 
+  def test_type_checks_hashes_and_equates_constraints_with_canonical_builtins
+    source = <<~MT
+      # module demo.hash_equates
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function hash(value: const_ptr[Key]) -> uint:
+              return uint<-0
+
+          static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+              return true
+
+      function same_key[T hashes and equates](left: T, right: T) -> bool:
+          return hash[T](left) == hash[T](right) and equal[T](left, right)
+
+      function main() -> bool:
+          let left = Key(value = 5)
+          let right = Key(value = 5)
+          return same_key[Key](left, right)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_hashes_constraint_without_canonical_associated_hash_function
+    source = <<~MT
+      # module demo.hash_constraint_bad
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function hash(value: Key) -> uint:
+              return uint<-value.value
+
+      function read_hash[T hashes](value: T) -> uint:
+          return hash[T](value)
+
+      function main() -> uint:
+          let key = Key(value = 1)
+          return read_hash[Key](key)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires demo\.hash_constraint_bad\.Key\.hash\(value: const_ptr\[demo\.hash_constraint_bad\.Key\]\) -> uint/, error.message)
+  end
+
+  def test_rejects_hash_builtin_on_non_addressable_temporary_values
+    source = <<~MT
+      # module demo.hash_temporary_bad
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function hash(value: const_ptr[Key]) -> uint:
+              return uint<-0
+
+      function main() -> uint:
+          return hash[Key](Key(value = 1))
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/hash\[demo\.hash_temporary_bad\.Key\] expects a safe/, error.message)
+  end
+
   def test_type_checks_generic_struct_constraints_through_nested_generic_fields
     source = <<~MT
       # module demo.generic_type_constraints

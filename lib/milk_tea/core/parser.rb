@@ -789,30 +789,41 @@ module MilkTea
       constraints = []
       interface_constraint_mode = false
 
-      if match(:implements)
-        interface_constraint_mode = true
-        constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
-      elsif match(:defaults)
-        constraints << AST::TypeParamConstraint.new(kind: :defaults)
-      else
-        return constraints
-      end
+      constraint, interface_constraint_mode = parse_type_param_constraint(interface_constraint_mode)
+      return constraints unless constraint
+
+      constraints << constraint
 
       while match(:and)
-        if match(:implements)
-          interface_constraint_mode = true
-          constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
-        elsif match(:defaults)
-          interface_constraint_mode = false
-          constraints << AST::TypeParamConstraint.new(kind: :defaults)
-        elsif interface_constraint_mode
-          constraints << AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name)
-        else
-          raise error(peek, "expected constraint after 'and'")
-        end
+        constraint, interface_constraint_mode = parse_type_param_constraint(interface_constraint_mode)
+        raise error(peek, "expected constraint after 'and'") unless constraint
+
+        constraints << constraint
       end
 
       constraints
+    end
+
+    def parse_type_param_constraint(interface_constraint_mode)
+      if match(:implements)
+        return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true]
+      end
+
+      if match(:defaults)
+        return [AST::TypeParamConstraint.new(kind: :defaults), false]
+      end
+
+      if match(:hashes)
+        return [AST::TypeParamConstraint.new(kind: :hashes), false]
+      end
+
+      if match(:equates)
+        return [AST::TypeParamConstraint.new(kind: :equates), false]
+      end
+
+      return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true] if interface_constraint_mode
+
+      [nil, interface_constraint_mode]
     end
 
     def parse_implements_clause

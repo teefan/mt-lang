@@ -2616,6 +2616,38 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return demo_static_interface_codegen_Counter_tag\(\);/, generated)
   end
 
+  def test_generate_c_for_hashes_and_equates_constraints_with_canonical_builtins
+    source = [
+      "# module demo.hash_codegen",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function hash(value: const_ptr[Key]) -> uint:",
+      "        return uint<-0",
+      "",
+      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
+      "        return true",
+      "",
+      "function same_key[T hashes and equates](left: T, right: T) -> bool:",
+      "    return hash[T](left) == hash[T](right) and equal[T](left, right)",
+      "",
+      "function main() -> bool:",
+      "    let left = Key(value = 1)",
+      "    let right = Key(value = 1)",
+      "    return same_key[Key](left, right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static uint32_t demo_hash_codegen_Key_hash\(const demo_hash_codegen_Key\* value\)/, generated)
+    assert_match(/static bool demo_hash_codegen_Key_equal\(const demo_hash_codegen_Key\* left, const demo_hash_codegen_Key\* right\)/, generated)
+    assert_match(/demo_hash_codegen_Key_hash\(&left\)/, generated)
+    assert_match(/demo_hash_codegen_Key_equal\(&left, &right\)/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",

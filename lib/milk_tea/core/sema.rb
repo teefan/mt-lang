@@ -56,10 +56,12 @@ module MilkTea
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
     FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
-    TypeParamConstraintBinding = Data.define(:interfaces, :requires_default) do
-      def initialize(interfaces: [], requires_default: false) = super
+    TypeParamConstraintBinding = Data.define(:interfaces, :requires_default, :requires_hash, :requires_equality) do
+      def initialize(interfaces: [], requires_default: false, requires_hash: false, requires_equality: false) = super
     end
     DefaultResolution = Data.define(:target_type, :binding)
+    HashResolution = Data.define(:target_type, :binding)
+    EqualResolution = Data.define(:target_type, :binding)
     ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
@@ -757,6 +759,8 @@ module MilkTea
           resolved_interfaces = []
           seen_interfaces = {}
           requires_default = false
+          requires_hash = false
+          requires_equality = false
 
           type_param.constraints.each do |constraint|
             case constraint.kind
@@ -770,6 +774,14 @@ module MilkTea
               raise_sema_error("duplicate defaults constraint #{type_param.name} defaults") if requires_default
 
               requires_default = true
+            when :hashes
+              raise_sema_error("duplicate hashes constraint #{type_param.name} hashes") if requires_hash
+
+              requires_hash = true
+            when :equates
+              raise_sema_error("duplicate equates constraint #{type_param.name} equates") if requires_equality
+
+              requires_equality = true
             else
               raise_sema_error("unsupported type parameter constraint #{constraint.kind}")
             end
@@ -778,6 +790,8 @@ module MilkTea
           constraints[type_param.name] = TypeParamConstraintBinding.new(
             interfaces: resolved_interfaces.freeze,
             requires_default: requires_default,
+            requires_hash: requires_hash,
+            requires_equality: requires_equality,
           )
         end
       end
@@ -2825,6 +2839,10 @@ module MilkTea
           check_cast_call(callable, expression.arguments, scopes:)
         when :reinterpret
           check_reinterpret_call(callable, expression.arguments, scopes:)
+        when :hash
+          check_hash_call(callable, expression.arguments, scopes:)
+        when :equal
+          check_equal_call(callable, expression.arguments, scopes:)
         when :zero
           raise_sema_error("zero[T]() is no longer supported; use zero[T]")
         when :default
@@ -3182,6 +3200,14 @@ module MilkTea
             return [:default, resolve_default_specialization(callee), nil]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "hash"
+            return [:hash, resolve_hash_specialization(callee), nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
+            return [:equal, resolve_equal_specialization(callee), nil]
+          end
+
           if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
             return callable_resolution
           end
@@ -3526,6 +3552,32 @@ module MilkTea
         )
       end
 
+      def resolve_hash_specialization(callee)
+        raise_sema_error("hash requires exactly one type argument") unless callee.arguments.length == 1
+
+        type_arg = callee.arguments.first.value
+        raise_sema_error("hash type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+        target_type = resolve_type_ref(type_arg)
+        HashResolution.new(
+          target_type:,
+          binding: resolve_explicit_hash_binding(target_type, context: "hash[#{target_type}]"),
+        )
+      end
+
+      def resolve_equal_specialization(callee)
+        raise_sema_error("equal requires exactly one type argument") unless callee.arguments.length == 1
+
+        type_arg = callee.arguments.first.value
+        raise_sema_error("equal type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+        target_type = resolve_type_ref(type_arg)
+        EqualResolution.new(
+          target_type:,
+          binding: resolve_explicit_equal_binding(target_type, context: "equal[#{target_type}]"),
+        )
+      end
+
       def resolve_explicit_default_binding(target_type, context:)
         method = lookup_method(target_type, "default")
         if method
@@ -3547,9 +3599,85 @@ module MilkTea
         nil
       end
 
+      def resolve_explicit_hash_binding(target_type, context:)
+        method = lookup_method(target_type, "hash")
+        if method
+          raise_sema_error("#{context} requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint") unless method.type.receiver_type.nil?
+
+          method = instantiate_function_binding_with_receiver(method, [], receiver_type: target_type) if method.type_params.any?
+          unless method.type.params.map(&:type) == [const_pointer_to(target_type)]
+            raise_sema_error("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint")
+          end
+          unless method.type.return_type == @types.fetch("uint")
+            raise_sema_error("#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method.type.return_type}")
+          end
+
+          return method
+        end
+
+        if (imported_module = imported_module_with_private_method(target_type, "hash"))
+          raise_sema_error("#{target_type}.hash is private to module #{imported_module.name}")
+        end
+
+        nil
+      end
+
+      def resolve_explicit_equal_binding(target_type, context:)
+        method = lookup_method(target_type, "equal")
+        if method
+          raise_sema_error("#{context} requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool") unless method.type.receiver_type.nil?
+
+          method = instantiate_function_binding_with_receiver(method, [], receiver_type: target_type) if method.type_params.any?
+          expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
+          unless method.type.params.map(&:type) == expected_param_types
+            raise_sema_error("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool")
+          end
+          unless method.type.return_type == @types.fetch("bool")
+            raise_sema_error("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method.type.return_type}")
+          end
+
+          return method
+        end
+
+        if (imported_module = imported_module_with_private_method(target_type, "equal"))
+          raise_sema_error("#{target_type}.equal is private to module #{imported_module.name}")
+        end
+
+        nil
+      end
+
       def default_zero_fallback_type?(target_type, expected_type:)
         check_zero_call(target_type, [], expected_type:, operation: "default")
         true
+      end
+
+      def check_hash_call(resolution, arguments, scopes:)
+        raise_sema_error("hash does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("hash expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        validate_hash_operation_argument!(arguments.first.value, resolution.target_type, scopes:, operation: "hash")
+        @types.fetch("uint")
+      end
+
+      def check_equal_call(resolution, arguments, scopes:)
+        raise_sema_error("equal does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("equal expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        arguments.each do |argument|
+          validate_hash_operation_argument!(argument.value, resolution.target_type, scopes:, operation: "equal")
+        end
+
+        @types.fetch("bool")
+      end
+
+      def validate_hash_operation_argument!(expression, target_type, scopes:, operation:)
+        actual_type = infer_expression(expression, scopes:)
+        expected_pointer_type = const_pointer_to(target_type)
+        return if argument_types_compatible?(actual_type, expected_pointer_type, external: false, expression:, scopes:)
+        return if ref_type?(actual_type) && types_compatible?(referenced_type(actual_type), target_type, expression:, scopes:)
+        return if safe_reference_source_expression?(expression, scopes:) && types_compatible?(actual_type, target_type, expression:, scopes:)
+
+        raise_sema_error("#{operation}[#{target_type}] expects a safe #{target_type} lvalue, ref[#{target_type}], ptr[#{target_type}], or const_ptr[#{target_type}], got #{actual_type}")
       end
 
       def check_str_builder_method_call(kind, receiver, arguments, scopes:)
@@ -3753,6 +3881,24 @@ module MilkTea
         !!resolve_explicit_default_binding(type, context:)
       end
 
+      def type_satisfies_hashes_constraint?(type, context:, available_type_param_constraints: current_type_param_constraints)
+        if type.is_a?(Types::TypeVar)
+          constraint = available_type_param_constraints[type.name]
+          return constraint && constraint.requires_hash
+        end
+
+        !!resolve_explicit_hash_binding(type, context:)
+      end
+
+      def type_satisfies_equates_constraint?(type, context:, available_type_param_constraints: current_type_param_constraints)
+        if type.is_a?(Types::TypeVar)
+          constraint = available_type_param_constraints[type.name]
+          return constraint && constraint.requires_equality
+        end
+
+        !!resolve_explicit_equal_binding(type, context:)
+      end
+
       def validate_generic_type_param_constraints!(generic_type, arguments, context:, available_type_param_constraints: current_type_param_constraints)
         return if generic_type.type_param_constraints.empty?
 
@@ -3766,11 +3912,23 @@ module MilkTea
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for #{context}")
           end
 
-          next unless constraints.requires_default
+          if constraints.requires_default
+            unless type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+              raise_sema_error("type #{actual_type} does not satisfy defaults constraint for #{context}")
+            end
+          end
 
-          next if type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+          if constraints.requires_hash
+            unless type_satisfies_hashes_constraint?(actual_type, context: "hashes constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+              raise_sema_error("type #{actual_type} does not satisfy hashes constraint for #{context}")
+            end
+          end
 
-          raise_sema_error("type #{actual_type} does not satisfy defaults constraint for #{context}")
+          next unless constraints.requires_equality
+
+          next if type_satisfies_equates_constraint?(actual_type, context: "equates constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+
+          raise_sema_error("type #{actual_type} does not satisfy equates constraint for #{context}")
         end
       end
 
@@ -5379,11 +5537,23 @@ module MilkTea
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
           end
 
-          next unless constraints.requires_default
+          if constraints.requires_default
+            unless type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+              raise_sema_error("type #{actual_type} does not satisfy defaults constraint for function #{binding.name}")
+            end
+          end
 
-          next if type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+          if constraints.requires_hash
+            unless type_satisfies_hashes_constraint?(actual_type, context: "hashes constraint on type parameter #{name} for function #{binding.name}")
+              raise_sema_error("type #{actual_type} does not satisfy hashes constraint for function #{binding.name}")
+            end
+          end
 
-          raise_sema_error("type #{actual_type} does not satisfy defaults constraint for function #{binding.name}")
+          next unless constraints.requires_equality
+
+          next if type_satisfies_equates_constraint?(actual_type, context: "equates constraint on type parameter #{name} for function #{binding.name}")
+
+          raise_sema_error("type #{actual_type} does not satisfy equates constraint for function #{binding.name}")
         end
       end
 

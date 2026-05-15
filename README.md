@@ -210,7 +210,7 @@ Ordinary functions:
 - Parameters are non-rebindable.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may use `implements` and `defaults` constraints.
+- Generic function and method type parameters may use `implements`, `defaults`, `hashes`, and `equates` constraints.
 
 External functions:
 
@@ -397,9 +397,11 @@ Nullability:
 Generics:
 
 - Generic structs, variants, functions, methods, and foreign functions are supported.
-- Generic type parameter constraints use `implements` and `defaults` on structs, variants, functions, and methods.
+- Generic type parameter constraints use `implements`, `defaults`, `hashes`, and `equates` on structs, variants, functions, and methods.
 - Multiple interface constraints are joined with `and`.
 - `defaults` requires an accessible zero-argument `T.default() -> T`.
+- `hashes` requires an accessible `T.hash(value: const_ptr[T]) -> uint` associated function.
+- `equates` requires an accessible `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` associated function.
 - Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
 
 ## 11. Built-In Callable Surface
@@ -416,6 +418,8 @@ Special recognized callables:
 - `reinterpret[T](value)`
 - `zero[T]`
 - `default[T]`
+- `hash[T](value)`
+- `equal[T](left, right)`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
@@ -424,6 +428,7 @@ Reference and pointer notes:
 - `read(ref_value)` explicitly projects the referent value.
 - Member access and method calls auto-dereference `ref[T]` receivers.
 - Passing a mutable addressable `T` to a parameter of type `ref[T]` implicitly borrows it.
+- `hash[T](value)` and `equal[T](left, right)` lower to `T.hash(...)` and `T.equal(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
 
 ## 12. Strings, Text, And Builders
 

@@ -318,7 +318,7 @@ Rules:
 - Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may declare constraints with `implements` and `defaults`.
+- Generic function and method type parameters may declare constraints with `implements`, `defaults`, `hashes`, and `equates`.
 
 Examples:
 
@@ -619,8 +619,10 @@ Rules:
 - Constraints are supported on generic structs, variants, functions, and methods.
 - Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
 - `defaults` requires an accessible zero-argument associated function `T.default()` that returns `T`.
+- `hashes` requires an accessible associated function `T.hash(value: const_ptr[T]) -> uint`.
+- `equates` requires an accessible associated function `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`.
 - Current type parameters may be used as type expressions for associated function calls in generic bodies, such as `T.default()` or `T.tag()`.
-- Constraint kinds compose with `and`: `T defaults and implements ScreenState` and `T implements Named and defaults` are both valid.
+- Constraint kinds compose with `and`: `T defaults and implements ScreenState`, `T hashes and equates`, and `T implements Named and defaults` are all valid.
 
 Type arguments can be:
 
@@ -642,10 +644,14 @@ Special recognized callables:
 - `reinterpret[T](value)`
 - `zero[T]`
 - `default[T]`
+- `hash[T](value)`
+- `equal[T](left, right)`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
 `default[T]` first looks for an accessible zero-argument associated function `T.default()` that returns `T`. If none exists, it falls back to the same raw initialization contract as `zero[T]`.
+
+`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint`, and `equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. Each argument must already be a `ref[T]`, `ptr[T]`, or `const_ptr[T]`, or be a safe stored `T` lvalue that can be borrowed implicitly.
 
 When a generic API needs an explicit semantic default instead of that fallback behavior, add a `defaults` constraint to the type parameter. `T defaults` requires an accessible zero-argument `T.default()` that returns `T`.
 
