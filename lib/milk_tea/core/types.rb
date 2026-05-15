@@ -211,6 +211,22 @@ module MilkTea
       end
     end
 
+    class Error < Base
+      def eql?(other)
+        other.is_a?(Error)
+      end
+
+      alias == eql?
+
+      def hash
+        self.class.hash
+      end
+
+      def to_s
+        "<error>"
+      end
+    end
+
     class Nullable < Base
       attr_reader :base
 

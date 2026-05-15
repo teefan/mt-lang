@@ -3105,6 +3105,858 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_and_completion_still_work_for_resolved_imports_when_another_import_is_missing
+    Dir.mktmpdir("milk-tea-lsp-missing-import-partial-analysis") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      main_path = File.join(app_src_dir, "main.mt")
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+        import test
+
+        function main() -> int:
+            return layout.default_width()
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+      dot_source = main_source.sub("return layout.default_width()", "return layout.")
+      dot_line = dot_source.lines.index { |line| line.include?("return layout.") }
+      dot_char = dot_source.lines.fetch(dot_line).chomp.length
+      hover_line = main_source.lines.index { |line| line.include?("layout.default_width") }
+      hover_char = main_source.lines.fetch(hover_line).index("layout") + 1
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source,
+          }
+        })
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "module teefan.ui.layout"
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => main_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => dot_source }],
+        })
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "default_width"
+      end
+    end
+  end
+
+  def test_hover_and_completion_still_work_after_invalid_top_level_declaration
+    Dir.mktmpdir("milk-tea-lsp-top-level-parse-recovery") do |dir|
+      app_root = File.join(dir, "apps", "snake-duel")
+      ui_root = File.join(dir, "libs", "ui")
+      app_src_dir = File.join(app_root, "src", "snake_duel")
+      ui_src_dir = File.join(ui_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(app_src_dir)
+      FileUtils.mkdir_p(ui_src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "snake_duel"
+        version = "0.1.0"
+        source_root = "src"
+
+        [dependencies]
+        "teefan.ui" = { path = "../../libs/ui" }
+      TOML
+
+      File.write(File.join(ui_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "0.1.0"
+        kind = "library"
+        source_root = "src"
+      TOML
+
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
+        module teefan.ui.layout
+
+        public function default_width() -> int:
+            return 10
+      MT
+
+      main_path = File.join(app_src_dir, "main.mt")
+      main_source = <<~MT
+        module snake_duel.main
+
+        import teefan.ui.layout as layout
+
+        const board_height: int = 20a
+        const board_cells: int = 200
+
+        function main() -> int:
+        return layout.default_width() + board_height + board_cells
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+      dot_source = main_source.sub("return layout.default_width() + board_height + board_cells", "return layout.")
+      dot_line = dot_source.lines.index { |line| line.include?("return layout.") }
+      dot_char = dot_source.lines.fetch(dot_line).chomp.length
+      hover_line = main_source.lines.index { |line| line.include?("layout.default_width") }
+      hover_char = main_source.lines.fetch(hover_line).index("layout") + 1
+      board_height_char = main_source.lines.fetch(hover_line).index("board_height") + 1
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source,
+          }
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert_includes messages, "expected end of statement at #{main_uri}:5:29"
+
+        board_height_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => hover_line, "character" => board_height_char },
+        })
+        board_height_hover_value = board_height_hover.dig("result", "contents", "value")
+        assert_includes board_height_hover_value, "const board_height: int (immutable)"
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "module teefan.ui.layout"
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => main_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => dot_source }],
+        })
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "default_width"
+      end
+    end
+  end
+
+  def test_hover_still_works_after_invalid_statement_in_block
+    Dir.mktmpdir("milk-tea-lsp-block-parse-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        function main() -> int:
+            let value = 1
+            let broken = 20a
+            return value
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert_includes messages, "expected end of statement at #{uri}:5:20"
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 5, "character" => 11 },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let value: int (immutable)"
+      end
+    end
+  end
+
+  def test_hover_still_works_after_invalid_typed_local_declaration
+    Dir.mktmpdir("milk-tea-lsp-typed-local-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            function length() -> int:
+                return this.x + this.y
+
+        function main() -> int:
+            let p: Point = 20a
+            return p.x
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert_includes messages, "expected end of statement at #{uri}:10:22"
+
+        hover_line = source.lines.index { |line| line.include?("return p.x") }
+        p_char = source.lines.fetch(hover_line).index("p")
+        x_char = source.lines.fetch(hover_line).index("x")
+
+        p_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => p_char },
+        })
+        p_hover_value = p_hover.dig("result", "contents", "value")
+        assert_includes p_hover_value, "let p: Point (immutable)"
+
+        x_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => x_char },
+        })
+        x_hover_value = x_hover.dig("result", "contents", "value")
+        assert_includes x_hover_value, "field x: int"
+      end
+    end
+  end
+
+  def test_hover_still_works_after_invalid_untyped_local_declaration
+    Dir.mktmpdir("milk-tea-lsp-untyped-local-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        function main() -> int:
+            let value = 20a
+            return value
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert_includes messages, "expected end of statement at #{uri}:2:19"
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => 2, "character" => 11 },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let value: <error> (immutable)"
+      end
+    end
+  end
+
+  def test_hover_still_works_after_invalid_let_else_declaration
+    Dir.mktmpdir("milk-tea-lsp-let-else-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        function main(handle: ptr[int]?) -> int:
+            let value = handle else as error
+                return 1
+            unsafe:
+                return read(value)
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' before block") }
+
+        hover_line = source.lines.index { |line| line.include?("read(value)") }
+        hover_char = source.lines.fetch(hover_line).index("value")
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let value: ptr[int] (immutable)"
+      end
+    end
+  end
+
+  def test_completion_works_for_file_backed_local_value_receiver_after_invalid_last_statement
+    Dir.mktmpdir("milk-tea-lsp-file-backed-error-stmt-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+            y: int
+
+        methods Point:
+            function length() -> int:
+                return this.x + this.y
+
+        function main() -> int:
+            let p = Point(x = 1, y = 2)
+            return p.
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected member name after '.'") }
+
+        dot_line = source.lines.index { |line| line.include?("return p.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        items = completion.fetch("result").fetch("items")
+        labels = items.map { |item| item.fetch("label") }
+        kinds_by_label = items.to_h { |item| [item.fetch("label"), item.fetch("kind")] }
+
+        assert_includes labels, "x"
+        assert_includes labels, "y"
+        assert_includes labels, "length"
+        assert_equal 10, kinds_by_label["x"]
+        assert_equal 2, kinds_by_label["length"]
+      end
+    end
+  end
+
+  def test_hover_works_inside_invalid_block_header_body
+    Dir.mktmpdir("milk-tea-lsp-error-block-hover") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        function main() -> int:
+            let value = 1
+            unsafe
+                let inner = value
+                return inner
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' after unsafe") }
+
+        hover_line = source.lines.index { |line| line.include?("return inner") }
+        hover_char = source.lines.fetch(hover_line).index("inner")
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let inner: int (immutable)"
+      end
+    end
+  end
+
+  def test_diagnostics_do_not_report_unsafe_requirement_inside_invalid_unsafe_block
+    Dir.mktmpdir("milk-tea-lsp-invalid-unsafe-diagnostics") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Counter:
+            value: int
+
+        function main() -> int:
+            var counter = Counter(value = 3)
+            let counter_ptr = ptr_of(counter)
+            unsafe
+                return read(counter_ptr).value
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+
+        assert messages.any? { |message| message.include?("expected ':' after unsafe") }
+        refute messages.any? { |message| message.include?("raw pointer dereference requires unsafe") }
+      end
+    end
+  end
+
+  def test_completion_uses_flow_refined_type_inside_invalid_if_block
+    Dir.mktmpdir("milk-tea-lsp-invalid-if-flow-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            var p: Point? = null
+            if p != null
+                return p.
+            return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' before block") }
+
+        dot_line = source.lines.index { |line| line.include?("return p.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "x"
+      end
+    end
+  end
+
+  def test_completion_uses_flow_refined_type_inside_invalid_while_block
+    Dir.mktmpdir("milk-tea-lsp-invalid-while-flow-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            var p: Point? = Point(x = 1)
+            while p != null
+                return p.
+            return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' before block") }
+
+        dot_line = source.lines.index { |line| line.include?("return p.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "x"
+      end
+    end
+  end
+
+  def test_completion_uses_for_binding_inside_invalid_for_block
+    Dir.mktmpdir("milk-tea-lsp-invalid-for-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            let items = array[Point, 1](Point(x = 1))
+            for item in items
+                return item.
+            return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' before block") }
+
+        dot_line = source.lines.index { |line| line.include?("return item.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "x"
+      end
+    end
+  end
+
+  def test_completion_works_inside_if_block_without_condition
+    Dir.mktmpdir("milk-tea-lsp-headerless-if-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            let p = Point(x = 1)
+            if:
+                return p.
+            return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected expression") }
+
+        dot_line = source.lines.index { |line| line.include?("return p.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "x"
+      end
+    end
+  end
+
+  def test_completion_uses_match_binding_inside_invalid_match_arm
+    Dir.mktmpdir("milk-tea-lsp-invalid-match-arm-completion") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        variant MaybePoint:
+            some(value: Point)
+            none
+
+        function main(value: MaybePoint) -> int:
+            match value:
+                MaybePoint.some as payload
+                    return payload.
+                MaybePoint.none:
+                    return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected ':' before block") }
+
+        dot_line = source.lines.index { |line| line.include?("return payload.") }
+        dot_char = source.lines.fetch(dot_line).chomp.length
+
+        completion = client.send_request("textDocument/completion", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => dot_line, "character" => dot_char },
+        })
+        labels = completion.fetch("result").fetch("items").map { |item| item.fetch("label") }
+
+        assert_includes labels, "value"
+      end
+    end
+  end
+
+  def test_hover_uses_error_type_for_match_binding_when_scrutinee_is_missing
+    Dir.mktmpdir("milk-tea-lsp-invalid-match-scrutinee-hover") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        variant MaybePoint:
+            some(value: Point)
+            none
+
+        function main() -> int:
+            match:
+                MaybePoint.some as payload:
+                    return payload
+                MaybePoint.none:
+                    return 0
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("expected expression") }
+
+        hover_line = source.lines.index { |line| line.include?("return payload") }
+        hover_char = source.lines.fetch(hover_line).index("payload")
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "local payload: <error> (immutable)"
+      end
+    end
+  end
+
   def test_semantic_tokens_locked_uses_package_lock_when_manifest_dependencies_drift
     Dir.mktmpdir("milk-tea-lsp-locked-semantic-tokens") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")
@@ -3890,7 +4742,7 @@ class LSPServerTest < Minitest::Test
         "position" => { "line" => line, "character" => snapshot_character }
       })
       snapshot_hover_value = snapshot_hover.dig("result", "contents", "value")
-      assert_includes snapshot_hover_value, "field snapshot: game_engine.Game"
+      assert_includes snapshot_hover_value, "field snapshot: main.Game"
 
       snapshot_definition = client.send_request("textDocument/definition", {
         "textDocument" => { "uri" => uri },

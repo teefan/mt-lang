@@ -14,11 +14,20 @@ module MilkTea
   end
 
   class Parser
+    ParseRecoveryResult = Data.define(:ast, :errors) do
+      def initialize(ast:, errors: []) = super
+    end
+
     BUILTIN_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES
 
     def self.parse(source = nil, path: nil, tokens: nil)
       token_stream = tokens || Lexer.lex(source, path: path)
       new(token_stream, path: path).parse
+    end
+
+    def self.parse_collecting_errors(source = nil, path: nil, tokens: nil)
+      token_stream = tokens || Lexer.lex(source, path: path)
+      new(token_stream, path: path).parse_collecting_errors
     end
 
     def initialize(tokens, path: nil)
@@ -33,10 +42,36 @@ module MilkTea
     end
 
     def parse
+      parse_source_file
+    end
+
+    def parse_collecting_errors
+      errors = []
+      previous_recovery_errors = @recovery_errors
+      @recovery_errors = errors
+      ast = parse_source_file(errors:)
+      ParseRecoveryResult.new(ast:, errors:)
+    rescue ParseError => e
+      errors ||= []
+      errors << e
+      ParseRecoveryResult.new(ast: nil, errors:)
+    ensure
+      @recovery_errors = previous_recovery_errors
+    end
+
+    private
+
+    TOP_LEVEL_RECOVERY_START_TYPES = %i[
+      module import public packed align const var type struct union enum flags variant interface
+      opaque methods foreign async function external static_assert link include compiler_flag
+    ].freeze
+
+    def parse_source_file(errors: nil)
       skip_newlines
 
       module_name = nil
       module_kind = nil
+      module_line = nil
       imports = []
       directives = []
       declarations = []
@@ -44,11 +79,29 @@ module MilkTea
       if match(:module)
         module_kind = :module
         module_line = previous.line
-        module_name = parse_module_name
+        if errors
+          begin
+            module_name = parse_module_name
+          rescue ParseError => e
+            errors << e
+            synchronize_to_top_level_boundary
+          end
+        else
+          module_name = parse_module_name
+        end
 
         skip_newlines
         while match(:import)
-          imports << parse_import
+          if errors
+            begin
+              imports << parse_import
+            rescue ParseError => e
+              errors << e
+              synchronize_to_top_level_boundary
+            end
+          else
+            imports << parse_import
+          end
           skip_newlines
         end
       elsif match(:external)
@@ -64,14 +117,21 @@ module MilkTea
       end
 
       until eof?
-        declarations << parse_declaration
+        if errors
+          begin
+            declarations << parse_declaration
+          rescue ParseError => e
+            errors << e
+            synchronize_to_top_level_boundary
+          end
+        else
+          declarations << parse_declaration
+        end
         skip_newlines
       end
 
       AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
     end
-
-    private
 
     def parse_module_name
       name = parse_qualified_name
@@ -223,6 +283,8 @@ module MilkTea
 
     def parse_const_decl(visibility: :private)
       line = previous.line
+      name = nil
+      type = nil
       name = consume_name("expected constant name").lexeme
       consume(:colon, "expected ':' after constant name")
       type = parse_type_ref
@@ -230,10 +292,18 @@ module MilkTea
       value = parse_expression
       consume_end_of_statement
       AST::ConstDecl.new(name:, type:, value:, visibility:, line:)
+    rescue ParseError => e
+      raise unless @recovery_errors && name && type
+
+      @recovery_errors << e
+      synchronize_to_statement_boundary
+      AST::ConstDecl.new(name:, type:, value: recovery_error_expr(e), visibility:, line:)
     end
 
     def parse_var_decl(visibility: :private)
       line = previous.line
+      name = nil
+      var_type = nil
       name = consume_name("expected variable name").lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = if match(:equal)
@@ -245,6 +315,12 @@ module MilkTea
               end
       consume_end_of_statement
       AST::VarDecl.new(name:, type: var_type, value:, visibility:, line:)
+    rescue ParseError => e
+      raise unless @recovery_errors && name && var_type
+
+      @recovery_errors << e
+      synchronize_to_statement_boundary
+      AST::VarDecl.new(name:, type: var_type, value: recovery_error_expr(e), visibility:, line:)
     end
 
     def parse_type_alias_decl(visibility: :private)
@@ -719,14 +795,34 @@ module MilkTea
       consume(:newline, "expected newline before block")
       consume(:indent, "expected indented block")
 
+      statements = parse_statement_block_body
+
+      consume(:dedent, "expected end of block")
+      statements
+    end
+
+    def parse_statement_block_body
       statements = []
       skip_newlines
       until check(:dedent) || eof?
-        statements << parse_statement
+        if @recovery_errors
+          begin
+            statements << parse_statement
+          rescue ParseError => e
+            @recovery_errors << e
+            header_type = recovery_statement_header_type(e)
+            recovered_body = synchronize_to_statement_boundary
+            statements << if recovered_body
+                            recovery_error_block_stmt(e, recovered_body, header_type:)
+                          else
+                            recovery_error_stmt(e)
+                          end
+          end
+        else
+          statements << parse_statement
+        end
         skip_newlines
       end
-
-      consume(:dedent, "expected end of block")
       statements
     end
 
@@ -778,16 +874,21 @@ module MilkTea
 
     def parse_local_decl(kind)
       line = previous.line
+      name_token = nil
+      name = nil
+      var_type = nil
       name_token = consume_name("expected local variable name")
       name = name_token.lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = nil
       else_binding = nil
       else_body = nil
+      else_started = false
 
       if match(:equal)
         value = parse_expression
         if match(:else)
+          else_started = true
           raise error(previous, "let-else is only allowed on let declarations") unless kind == :let
 
           if match(:as)
@@ -806,29 +907,44 @@ module MilkTea
       end
 
       AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token.column)
+    rescue ParseError => e
+      raise unless @recovery_errors && name
+
+      @recovery_errors << e
+      synchronize_to_statement_boundary
+
+      if else_started
+        return AST::LocalDecl.new(
+          kind:,
+          name:,
+          type: var_type,
+          value: value,
+          else_binding:,
+          else_body: nil,
+          line:,
+          column: name_token.column,
+          recovered_else: true,
+        )
+      end
+
+      AST::LocalDecl.new(
+        kind:,
+        name:,
+        type: var_type,
+        value: recovery_error_expr(e),
+        else_binding: nil,
+        else_body: nil,
+        line:,
+        column: name_token.column,
+      )
     end
 
     def parse_if_stmt
       line = previous.line
-      branches = []
-      branch_token = previous
-      branches << AST::IfBranch.new(
-        condition: parse_expression,
-        body: parse_block,
-        line: branch_token.line,
-        column: branch_token.column,
-        length: branch_token.lexeme.length,
-      )
+      branches = [parse_if_branch(previous)]
 
       while match(:elif)
-        branch_token = previous
-        branches << AST::IfBranch.new(
-          condition: parse_expression,
-          body: parse_block,
-          line: branch_token.line,
-          column: branch_token.column,
-          length: branch_token.lexeme.length,
-        )
+        branches << parse_if_branch(previous)
       end
 
       else_line = nil
@@ -836,32 +952,121 @@ module MilkTea
       else_body = if match(:else)
                     else_line = previous.line
                     else_column = previous.column
-                    parse_block
+                    parse_else_branch_body
                   end
       AST::IfStmt.new(branches:, else_body:, line:, else_line:, else_column:)
+    end
+
+    def parse_if_branch(token)
+      condition = nil
+      condition = parse_expression
+      body = parse_block
+      AST::IfBranch.new(
+        condition:,
+        body:,
+        line: token.line,
+        column: token.column,
+        length: token.lexeme.length,
+      )
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      raise unless recovered_body
+
+      AST::IfBranch.new(
+        condition: condition || recovery_error_expr(e),
+        body: recovered_body,
+        line: token.line,
+        column: token.column,
+        length: token.lexeme.length,
+      )
+    end
+
+    def parse_else_branch_body
+      parse_block
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      raise unless recovered_body
+
+      recovered_body
     end
 
     def parse_match_stmt
       token = previous
       line = token.line
+      expression = nil
+      arms = []
       expression = parse_expression
-      arms = parse_named_block do
-        pattern = parse_expression
-        binding_token = nil
-        binding_name = if match(:as)
-                         binding_token = consume_name("expected binding name after 'as'")
-                         binding_token.lexeme
-                       end
-        body = parse_block
-        AST::MatchArm.new(
-          pattern:,
-          binding_name:,
-          binding_line: binding_token&.line,
-          binding_column: binding_token&.column,
-          body:,
-        )
-      end
+      arms = parse_match_arms(arms)
       AST::MatchStmt.new(expression:, arms:, line:, column: token.column, length: token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_arms = synchronize_to_match_arm_boundary
+      return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, line:, column: token.column, length: token.lexeme.length) if recovered_arms
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_match_arms(arms = [])
+      consume(:colon, "expected ':' before block")
+      consume(:newline, "expected newline before block")
+      consume(:indent, "expected indented block")
+
+      parse_match_arm_body(arms)
+
+      consume(:dedent, "expected end of block")
+      arms
+    end
+
+    def parse_match_arm_body(arms = [])
+      skip_newlines
+      until check(:dedent) || eof?
+        arms << parse_match_arm
+        skip_newlines
+      end
+
+      arms
+    end
+
+    def parse_match_arm
+      pattern = nil
+      binding_token = nil
+      binding_name = nil
+
+      pattern = parse_expression
+      binding_name = if match(:as)
+                       binding_token = consume_name("expected binding name after 'as'")
+                       binding_token.lexeme
+                     end
+      body = parse_block
+      AST::MatchArm.new(
+        pattern:,
+        binding_name:,
+        binding_line: binding_token&.line,
+        binding_column: binding_token&.column,
+        body:,
+      )
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return AST::MatchArm.new(
+        pattern: pattern || recovery_error_expr(e),
+        binding_name:,
+        binding_line: binding_token&.line,
+        binding_column: binding_token&.column,
+        body: recovered_body,
+      ) if recovered_body
+
+      raise
     end
 
     def parse_unsafe_stmt
@@ -870,13 +1075,7 @@ module MilkTea
       body = if match(:newline)
                consume(:indent, "expected indented block")
 
-               statements = []
-               skip_newlines
-               until check(:dedent) || eof?
-                 statements << parse_statement
-                 skip_newlines
-               end
-
+               statements = parse_statement_block_body
                consume(:dedent, "expected end of block")
                statements
              else
@@ -902,6 +1101,7 @@ module MilkTea
     def parse_for_stmt
       line = previous.line
       bindings = []
+      iterables = nil
       loop do
         name_token = consume_name("expected loop variable name")
         bindings << AST::ForBinding.new(name: name_token.lexeme, line: name_token.line, column: name_token.column)
@@ -912,6 +1112,20 @@ module MilkTea
       iterables << parse_expression while match(:comma)
       body = parse_block
       AST::ForStmt.new(bindings:, iterables:, body:, line:, column: bindings.first.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(
+        e,
+        recovered_body,
+        header_type: :for,
+        header_bindings: bindings.empty? ? nil : bindings,
+        header_iterables: iterables&.any? ? iterables : nil,
+      ) if recovered_body
+
+      recovery_error_stmt(e)
     end
 
     def parse_while_stmt
@@ -920,6 +1134,20 @@ module MilkTea
       condition = parse_expression
       body = parse_block
       AST::WhileStmt.new(condition:, body:, line:, column: token.column, length: token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return AST::WhileStmt.new(
+        condition: condition || recovery_error_expr(e),
+        body: recovered_body,
+        line:,
+        column: token.column,
+        length: token.lexeme.length,
+      ) if recovered_body
+
+      recovery_error_stmt(e)
     end
 
     def parse_break_stmt
@@ -1388,6 +1616,122 @@ module MilkTea
 
     def consume_end_of_statement
       consume(:newline, "expected end of statement")
+    end
+
+    def synchronize_to_top_level_boundary
+      seen_newline = false
+
+      until eof?
+        token = peek
+
+        if token.type == :newline
+          seen_newline = true
+          advance
+          next
+        end
+
+        if [:indent, :dedent].include?(token.type)
+          advance
+          next
+        end
+
+        break if seen_newline && top_level_recovery_start?(token)
+
+        advance
+      end
+    end
+
+    def synchronize_to_statement_boundary
+      until eof?
+        return nil if check(:dedent)
+
+        if check(:newline)
+          advance
+          return recover_statement_block_body if check(:indent)
+          return nil
+        end
+
+        advance
+      end
+
+      nil
+    end
+
+    def synchronize_to_match_arm_boundary
+      until eof?
+        return nil if check(:dedent)
+
+        if check(:newline)
+          advance
+          return recover_match_arm_block if check(:indent)
+          return nil
+        end
+
+        advance
+      end
+
+      nil
+    end
+
+    def recover_statement_block_body
+      advance if check(:indent)
+
+      statements = parse_statement_block_body
+      advance if check(:dedent)
+      statements
+    end
+
+    def recover_match_arm_block
+      advance if check(:indent)
+
+      arms = parse_match_arm_body([])
+      advance if check(:dedent)
+      arms
+    end
+
+    def recovery_error_expr(error)
+      token = error.token
+      AST::ErrorExpr.new(
+        line: token&.line,
+        column: token&.column,
+        length: token&.lexeme&.length,
+        message: error.message,
+      )
+    end
+
+    def recovery_error_stmt(error)
+      token = error.token
+      AST::ErrorStmt.new(
+        line: token&.line,
+        column: token&.column,
+        length: token&.lexeme&.length,
+        message: error.message,
+      )
+    end
+
+    def recovery_error_block_stmt(error, body, header_type: nil, header_expression: nil, header_bindings: nil, header_iterables: nil)
+      token = error.token
+      AST::ErrorBlockStmt.new(
+        body:,
+        line: token&.line,
+        column: token&.column,
+        length: token&.lexeme&.length,
+        message: error.message,
+        header_type:,
+        header_expression:,
+        header_bindings:,
+        header_iterables:,
+      )
+    end
+
+    def recovery_statement_header_type(error)
+      return :unsafe if previous&.type == :unsafe && error.message.include?("after unsafe")
+
+      nil
+    end
+
+    def top_level_recovery_start?(token)
+      token.column.to_i <= 1 && TOP_LEVEL_RECOVERY_START_TYPES.include?(token.type)
     end
 
     def skip_newlines

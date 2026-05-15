@@ -1768,6 +1768,456 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal({ kind: :precision, value: 0 }, expr_part2.format_spec)
   end
 
+  def test_parse_collecting_errors_recovers_after_invalid_top_level_declaration
+    source = <<~MT
+      module demo.recovery
+
+      const board_width: int = 10
+      const board_height: int = 20a
+      const board_cells: int = 200
+
+      function main() -> int:
+          return board_cells
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected end of statement/, result.errors.first.message)
+    refute_nil result.ast
+    assert_equal ["board_width", "board_height", "board_cells", "main"], result.ast.declarations.map(&:name)
+    assert_instance_of MilkTea::AST::ErrorExpr, result.ast.declarations[1].value
+  end
+
+  def test_parse_collecting_errors_recovers_after_invalid_statement_in_block
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          let width = 10
+          let height = 20a
+          return width
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected end of statement/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_equal 3, function_def.body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[0]
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[1]
+    assert_instance_of MilkTea::AST::ErrorExpr, function_def.body[1].value
+    assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[2]
+  end
+
+  def test_parse_collecting_errors_preserves_typed_local_declaration_with_invalid_initializer
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          let height: int = 20a
+          return height
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected end of statement/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_equal 2, function_def.body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[0]
+    assert_instance_of MilkTea::AST::ErrorExpr, function_def.body[0].value
+    assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[1]
+  end
+
+  def test_parse_collecting_errors_preserves_untyped_local_declaration_with_invalid_initializer
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          let value = 20a
+          return value
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected end of statement/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_equal 2, function_def.body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[0]
+    assert_nil function_def.body[0].type
+    assert_instance_of MilkTea::AST::ErrorExpr, function_def.body[0].value
+    assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[1]
+  end
+
+  def test_parse_collecting_errors_preserves_let_else_after_invalid_else_block
+    source = <<~MT
+      module demo.guard
+
+      function main(handle: ptr[int]?) -> int:
+          let value = handle else as error
+              return 1
+          unsafe:
+              return read(value)
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    local_decl = function_def.body.first
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::Identifier, local_decl.value
+    assert_equal "error", local_decl.else_binding.name
+    assert_nil local_decl.else_body
+    assert_equal true, local_decl.recovered_else
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_non_declaration_statement
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          let value = 1
+          unsafe
+              value += 1
+          return value
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' after unsafe/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_equal 3, function_def.body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[0]
+    assert_instance_of MilkTea::AST::ErrorBlockStmt, function_def.body[1]
+    assert_equal 1, function_def.body[1].body.length
+    assert_instance_of MilkTea::AST::Assignment, function_def.body[1].body[0]
+    assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[2]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_block_header_body
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          let value = 1
+          unsafe
+              let inner = value
+              return inner
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' after unsafe/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_equal 2, function_def.body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[0]
+    assert_instance_of MilkTea::AST::ErrorBlockStmt, function_def.body[1]
+    assert_equal :unsafe, function_def.body[1].header_type
+    assert_equal 2, function_def.body[1].body.length
+    assert_instance_of MilkTea::AST::LocalDecl, function_def.body[1].body[0]
+    assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[1].body[1]
+  end
+
+  def test_parse_collecting_errors_marks_invalid_unsafe_block_header_type
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          unsafe
+              return 1
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' after unsafe/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    assert_instance_of MilkTea::AST::ErrorBlockStmt, function_def.body[0]
+    assert_equal :unsafe, function_def.body[0].header_type
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_if_block_header_condition
+    source = <<~MT
+      module demo.recovery
+
+      struct Point:
+          x: int
+
+      function main() -> int:
+          var p: Point? = null
+          if p != null
+              return p.x
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    recovered_if = function_def.body[1]
+    assert_instance_of MilkTea::AST::IfStmt, recovered_if
+    assert_equal 1, recovered_if.branches.length
+    assert_instance_of MilkTea::AST::BinaryOp, recovered_if.branches[0].condition
+    assert_equal "!=", recovered_if.branches[0].condition.operator
+    assert_equal 1, recovered_if.branches[0].body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_if.branches[0].body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_while_block_header_condition
+    source = <<~MT
+      module demo.recovery
+
+      struct Point:
+          x: int
+
+      function main() -> int:
+          var p: Point? = Point(x = 1)
+          while p != null
+              return p.x
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    recovered_while = function_def.body[1]
+    assert_instance_of MilkTea::AST::WhileStmt, recovered_while
+    assert_instance_of MilkTea::AST::BinaryOp, recovered_while.condition
+    assert_equal "!=", recovered_while.condition.operator
+    assert_equal 1, recovered_while.body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_while.body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_for_block_header_bindings_and_iterables
+    source = <<~MT
+      module demo.recovery
+
+      function main(items: array[int, 2]) -> int:
+          for item in items
+              return item
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    recovered_for = function_def.body[0]
+    assert_instance_of MilkTea::AST::ErrorBlockStmt, recovered_for
+    assert_equal :for, recovered_for.header_type
+    assert_equal ["item"], recovered_for.header_bindings.map(&:name)
+    assert_equal 1, recovered_for.header_iterables.length
+    assert_instance_of MilkTea::AST::Identifier, recovered_for.header_iterables[0]
+    assert_equal 1, recovered_for.body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_for.body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_if_block_body_without_condition
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          if:
+              return 1
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+
+    function_def = result.ast.declarations.last
+    recovered_if = function_def.body[0]
+    assert_instance_of MilkTea::AST::IfStmt, recovered_if
+    assert_equal 1, recovered_if.branches.length
+    assert_instance_of MilkTea::AST::ErrorExpr, recovered_if.branches[0].condition
+    assert_equal 1, recovered_if.branches[0].body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_if.branches[0].body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_while_block_body_without_condition
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          while:
+              continue
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+
+    function_def = result.ast.declarations.last
+    recovered_while = function_def.body[0]
+    assert_instance_of MilkTea::AST::WhileStmt, recovered_while
+    assert_instance_of MilkTea::AST::ErrorExpr, recovered_while.condition
+    assert_equal 1, recovered_while.body.length
+    assert_instance_of MilkTea::AST::ContinueStmt, recovered_while.body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_for_block_body_without_header
+    source = <<~MT
+      module demo.recovery
+
+      function main() -> int:
+          for:
+              continue
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+
+    function_def = result.ast.declarations.last
+    recovered_for = function_def.body[0]
+    assert_instance_of MilkTea::AST::ErrorBlockStmt, recovered_for
+    assert_equal :for, recovered_for.header_type
+    assert_nil recovered_for.header_bindings
+    assert_nil recovered_for.header_iterables
+    assert_equal 1, recovered_for.body.length
+    assert_instance_of MilkTea::AST::ContinueStmt, recovered_for.body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_match_arms_after_invalid_match_header
+    source = <<~MT
+      module demo.recovery
+
+      variant MaybePoint:
+          some(value: int)
+          none
+
+      function main(value: MaybePoint) -> int:
+          match value
+              MaybePoint.some as payload:
+                  return payload.value
+              MaybePoint.none:
+                  return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    recovered_match = function_def.body[0]
+    assert_instance_of MilkTea::AST::MatchStmt, recovered_match
+    assert_instance_of MilkTea::AST::Identifier, recovered_match.expression
+    assert_equal "value", recovered_match.expression.name
+    assert_equal 2, recovered_match.arms.length
+    assert_equal "payload", recovered_match.arms[0].binding_name
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
+    assert_nil recovered_match.arms[1].binding_name
+  end
+
+  def test_parse_collecting_errors_preserves_match_arms_after_missing_match_expression
+    source = <<~MT
+      module demo.recovery
+
+      variant MaybePoint:
+          some(value: int)
+          none
+
+      function main() -> int:
+          match:
+              MaybePoint.some as payload:
+                  return payload.value
+              MaybePoint.none:
+                  return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+
+    function_def = result.ast.declarations.last
+    recovered_match = function_def.body[0]
+    assert_instance_of MilkTea::AST::MatchStmt, recovered_match
+    assert_instance_of MilkTea::AST::ErrorExpr, recovered_match.expression
+    assert_equal 2, recovered_match.arms.length
+    assert_equal "payload", recovered_match.arms[0].binding_name
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_match_arm_header_body
+    source = <<~MT
+      module demo.recovery
+
+      variant MaybePoint:
+          some(value: int)
+          none
+
+      function main(value: MaybePoint) -> int:
+          match value:
+              MaybePoint.some as payload
+                  return payload.value
+              MaybePoint.none:
+                  return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+    assert_match(/expected ':' before block/, result.errors.first.message)
+
+    function_def = result.ast.declarations.last
+    recovered_match = function_def.body[0]
+    assert_instance_of MilkTea::AST::MatchStmt, recovered_match
+    assert_equal 2, recovered_match.arms.length
+    assert_equal "payload", recovered_match.arms[0].binding_name
+    assert_equal 1, recovered_match.arms[0].body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
+  end
+
+  def test_parse_collecting_errors_preserves_invalid_match_arm_body_without_pattern
+    source = <<~MT
+      module demo.recovery
+
+      function main(value: int) -> int:
+          match value:
+              :
+                  return 1
+              _:
+                  return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 1, result.errors.length
+
+    function_def = result.ast.declarations.last
+    recovered_match = function_def.body[0]
+    assert_instance_of MilkTea::AST::MatchStmt, recovered_match
+    assert_equal 2, recovered_match.arms.length
+    assert_instance_of MilkTea::AST::ErrorExpr, recovered_match.arms[0].pattern
+    assert_equal 1, recovered_match.arms[0].body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
+  end
+
   private
 
   def language_fixture_path

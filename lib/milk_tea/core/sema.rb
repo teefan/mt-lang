@@ -113,8 +113,8 @@ module MilkTea
 
     BUILTIN_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES
 
-    def self.check(ast, imported_modules: {})
-      Checker.new(ast, imported_modules:).check
+    def self.check(ast, imported_modules: {}, allow_missing_imports: false)
+      Checker.new(ast, imported_modules:, allow_missing_imports:).check
     end
 
     # LSP-oriented entry point: runs all sema phases and collects errors from
@@ -122,8 +122,8 @@ module MilkTea
     # Returns { analysis: Analysis|nil, errors: [SemaError] }.
     # Structural errors (bad imports, unknown types) still abort early with a
     # single error; only function-body errors are collected in bulk.
-    def self.check_collecting_errors(ast, imported_modules: {})
-      Checker.new(ast, imported_modules:).check_collecting_errors
+    def self.check_collecting_errors(ast, imported_modules: {}, allow_missing_imports: false)
+      Checker.new(ast, imported_modules:, allow_missing_imports:).check_collecting_errors
     rescue SemaError => e
       { analysis: nil, errors: [e] }
     end
@@ -131,9 +131,10 @@ module MilkTea
     class Checker
       attr_reader :module_name
 
-      def initialize(ast, imported_modules: {})
+      def initialize(ast, imported_modules: {}, allow_missing_imports: false)
         @ast = ast
         @imported_modules = imported_modules
+        @allow_missing_imports = allow_missing_imports
         @module_name = ast.module_name&.to_s
         @module_kind = ast.module_kind
         @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }
@@ -145,6 +146,7 @@ module MilkTea
         @methods = Hash.new { |hash, key| hash[key] = {} }
         @implemented_interfaces = Hash.new { |hash, key| hash[key] = [] }
         @null_type = Types::Null.new
+        @error_type = Types::Error.new
         @loop_depth = 0
         @unsafe_depth = 0
         @foreign_mapping_depth = 0
@@ -294,6 +296,7 @@ module MilkTea
             raise_sema_error("duplicate import alias #{alias_name}") if @imports.key?(alias_name)
 
             module_binding = @imported_modules[import.path.to_s]
+            next if @allow_missing_imports && module_binding.nil?
             raise_sema_error("unknown import #{import.path}") unless module_binding
 
             @imports[alias_name] = module_binding
@@ -813,6 +816,8 @@ module MilkTea
 
       def validate_static_storage_initializer!(expression, scopes:)
         case expression
+        when AST::ErrorExpr
+          return
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral,
              AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
           return
@@ -932,6 +937,11 @@ module MilkTea
         raise_sema_error("cyclic constant value dependency involving #{name}") if @evaluating_const_values.include?(name)
 
         decl = @const_declarations.fetch(name)
+        if decl.value.is_a?(AST::ErrorExpr)
+          @evaluated_const_values[name] = true
+          return nil
+        end
+
         @evaluating_const_values << name
         value = evaluate_compile_time_const_value(decl.value)
         @evaluating_const_values.pop
@@ -952,6 +962,8 @@ module MilkTea
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
         case expression
+        when AST::ErrorExpr
+          nil
         when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
           expression.value
         when AST::StringLiteral
@@ -1323,9 +1335,16 @@ module MilkTea
       def preassign_local_binding_ids_in_statements(statements)
         statements.each do |statement|
           case statement
+          when AST::ErrorBlockStmt
+            Array(statement.header_bindings).each do |binding|
+              @preassigned_local_binding_ids[binding.object_id] ||= allocate_binding_id
+            end if statement.header_type == :for
+            preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::LocalDecl
             @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
-            @preassigned_local_binding_ids[statement.else_binding.object_id] ||= allocate_binding_id if statement.else_binding
+            if statement.else_binding && (statement.else_body || statement.recovered_else)
+              @preassigned_local_binding_ids[statement.else_binding.object_id] ||= allocate_binding_id
+            end
             preassign_local_binding_ids_in_statements(statement.else_body || [])
           when AST::IfStmt
             statement.branches.each { |branch| preassign_local_binding_ids_in_statements(branch.body || []) }
@@ -1378,9 +1397,25 @@ module MilkTea
         block_scopes = scopes + [{}]
         statements.each do |statement|
           case statement
+          when AST::ErrorBlockStmt
+            if statement.header_type == :for
+              Array(statement.header_iterables).each do |iterable|
+                walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids)
+              end
+              for_scopes = block_scopes + [{}]
+              Array(statement.header_bindings).each do |binding|
+                binding_id = @preassigned_local_binding_ids.fetch(binding.object_id)
+                for_scopes.last[binding.name] = binding_id
+                declaration_ids[binding.object_id] = binding_id
+              end
+              walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
+            else
+              walk_expression_for_precheck_resolution(statement.header_expression, block_scopes, identifier_ids) if statement.header_expression
+              walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
+            end
           when AST::LocalDecl
             walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
-            if statement.else_binding
+            if statement.else_binding && (statement.else_body || statement.recovered_else)
               else_scopes = block_scopes + [{}]
               binding_id = @preassigned_local_binding_ids.fetch(statement.else_binding.object_id)
               else_scopes.last[statement.else_binding.name] = binding_id
@@ -1524,8 +1559,46 @@ module MilkTea
       def check_statement(statement, scopes:, return_type:, allow_return: true)
         with_error_node(statement) do
           case statement
+          when AST::ErrorBlockStmt
+            if statement.header_type == :unsafe
+              @unsafe_statement_lines << statement.line
+              begin
+                with_unsafe do
+                  check_block(statement.body, scopes:, return_type:, allow_return:)
+                end
+              ensure
+                @unsafe_statement_lines.pop
+              end
+            elsif statement.header_type == :if && statement.header_expression
+              validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
+              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
+              ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
+              true_refinements = flow_refinements(statement.header_expression, truthy: true, scopes:)
+              check_block(statement.body, scopes: scopes_with_refinements(scopes, true_refinements), return_type:, allow_return:)
+              return flow_refinements(statement.header_expression, truthy: false, scopes:) if cfg_block_always_terminates?(statement.body)
+            elsif statement.header_type == :while && statement.header_expression
+              validate_consuming_foreign_expression!(statement.header_expression, scopes:, root_allowed: false)
+              condition_type = infer_expression(statement.header_expression, scopes:, expected_type: @types.fetch("bool"))
+              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
+              with_loop do
+                body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.header_expression, truthy: true, scopes:))
+                check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
+              end
+            elsif statement.header_type == :for
+              if statement.header_bindings && statement.header_iterables
+                check_for_stmt(recovered_for_statement(statement), scopes:, return_type:, allow_return:)
+              else
+                with_loop do
+                  check_block(statement.body, scopes:, return_type:, allow_return:)
+                end
+              end
+            else
+              check_block(statement.body, scopes:, return_type:, allow_return:)
+            end
           when AST::LocalDecl
             check_local_decl(statement, scopes:, return_type:, allow_return:)
+          when AST::ErrorStmt
+            nil
           when AST::Assignment
             check_assignment(statement, scopes:)
           when AST::IfStmt
@@ -1533,6 +1606,12 @@ module MilkTea
             branch_bodies_terminate = []
             statement.branches.each do |branch|
               branch_scopes = scopes_with_refinements(scopes, false_refinements)
+              if branch.condition.is_a?(AST::ErrorExpr)
+                check_block(branch.body, scopes: branch_scopes, return_type:, allow_return:)
+                branch_bodies_terminate << cfg_block_always_terminates?(branch.body)
+                next
+              end
+
               validate_consuming_foreign_expression!(branch.condition, scopes: branch_scopes, root_allowed: false)
               condition_type = infer_expression(branch.condition, scopes: branch_scopes, expected_type: @types.fetch("bool"))
               ensure_assignable!(condition_type, @types.fetch("bool"), "if condition must be bool, got #{condition_type}")
@@ -1559,12 +1638,18 @@ module MilkTea
           when AST::ForStmt
             check_for_stmt(statement, scopes:, return_type:, allow_return:)
           when AST::WhileStmt
-            validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
-            condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
-            ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
-            with_loop do
-              body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
-              check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
+            if statement.condition.is_a?(AST::ErrorExpr)
+              with_loop do
+                check_block(statement.body, scopes:, return_type:, allow_return:)
+              end
+            else
+              validate_consuming_foreign_expression!(statement.condition, scopes:, root_allowed: false)
+              condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
+              ensure_assignable!(condition_type, @types.fetch("bool"), "while condition must be bool, got #{condition_type}")
+              with_loop do
+                body_scopes = scopes_with_refinements(scopes, flow_refinements(statement.condition, truthy: true, scopes:))
+                check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
+              end
             end
           when AST::BreakStmt
             raise_sema_error("break must be inside a loop") unless inside_loop?
@@ -1632,11 +1717,17 @@ module MilkTea
           inferred_type = declared_type
         end
 
-        if statement.else_body
+        if statement.else_body || statement.recovered_else
           raise_sema_error("let-else is only allowed on let declarations") unless statement.kind == :let
           success_type = let_else_success_type(inferred_type)
-          raise_sema_error("let-else initializer for #{statement.name} must be nullable or std.status.Status[T, E], got #{inferred_type}") unless success_type
           error_type = let_else_error_type(inferred_type)
+
+          if statement.recovered_else
+            success_type ||= declared_type || @error_type
+            error_type ||= @error_type if statement.else_binding
+          else
+            raise_sema_error("let-else initializer for #{statement.name} must be nullable or std.status.Status[T, E], got #{inferred_type}") unless success_type
+          end
 
           if discard_binding && declared_type
             raise_sema_error("let-else discard binding _ cannot have a type annotation")
@@ -1688,8 +1779,10 @@ module MilkTea
             else_scopes = scopes + [{ statement.else_binding.name => else_binding }]
           end
 
-          check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:)
-          raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
+          check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:) if statement.else_body
+          if statement.else_body && !statement.recovered_else
+            raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
+          end
 
           storage_type = inferred_type
           const_value = nil
@@ -1827,7 +1920,9 @@ module MilkTea
       def check_match_stmt(statement, scopes:, return_type:, allow_return:)
         validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: false)
         scrutinee_type = infer_expression(statement.expression, scopes:)
-        if scrutinee_type.is_a?(Types::Enum)
+        if error_type?(scrutinee_type)
+          check_recovered_match_stmt(statement, scopes:, return_type:, allow_return:)
+        elsif scrutinee_type.is_a?(Types::Enum)
           check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
         elsif scrutinee_type.is_a?(Types::Variant)
           check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
@@ -1842,6 +1937,11 @@ module MilkTea
         covered_members = {}
         wildcard_seen = false
         statement.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            next
+          end
+
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
@@ -1876,6 +1976,11 @@ module MilkTea
         covered_values = {}
         wildcard_seen = false
         statement.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            next
+          end
+
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
@@ -1897,7 +2002,7 @@ module MilkTea
       end
 
       def let_else_discard_binding_syntax?(statement)
-        statement.is_a?(AST::LocalDecl) && statement.else_body && statement.name == "_"
+        statement.is_a?(AST::LocalDecl) && (statement.else_body || statement.recovered_else) && statement.name == "_"
       end
 
       def let_else_source_type?(type)
@@ -1905,6 +2010,7 @@ module MilkTea
       end
 
       def let_else_success_type(type)
+        return @error_type if error_type?(type)
         return type.base if type.is_a?(Types::Nullable)
         return unless status_let_else_type?(type)
 
@@ -1912,6 +2018,7 @@ module MilkTea
       end
 
       def let_else_error_type(type)
+        return @error_type if error_type?(type)
         return unless status_let_else_type?(type)
 
         type.arm("err").fetch("error")
@@ -1931,6 +2038,11 @@ module MilkTea
         covered_arms = {}
         wildcard_seen = false
         statement.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            next
+          end
+
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
@@ -1974,6 +2086,28 @@ module MilkTea
         return if missing_arms.empty?
 
         raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}")
+      end
+
+      def check_recovered_match_stmt(statement, scopes:, return_type:, allow_return:)
+        statement.arms.each do |arm|
+          check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+        arm_scopes = scopes.dup
+        if arm.binding_name
+          binding = value_binding(
+            name: arm.binding_name,
+            type: @error_type,
+            mutable: false,
+            kind: :local,
+            id: @preassigned_local_binding_ids.fetch(arm.object_id),
+          )
+          arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
+          record_declaration_binding(arm, binding)
+        end
+        check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
       end
 
       def variant_match_arm_name(pattern, scrutinee_type)
@@ -2230,6 +2364,8 @@ module MilkTea
       def infer_expression(expression, scopes:, expected_type: nil)
         with_error_node(expression) do
           case expression
+          when AST::ErrorExpr
+            expected_type || @error_type
           when AST::IntegerLiteral
             infer_integer_literal(expected_type)
           when AST::FloatLiteral
@@ -2363,6 +2499,8 @@ module MilkTea
       def infer_member_access(expression, scopes:, expected_type: nil)
         type = resolve_type_expression(expression.receiver)
         if type
+          return @error_type if error_type?(type)
+
           member_type = resolve_type_member(type, expression.member)
           return member_type if member_type
 
@@ -2407,6 +2545,8 @@ module MilkTea
 
         field_receiver_type = infer_field_receiver_type(expression.receiver, scopes:)
         method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:, member_name: expression.member)
+        return @error_type if error_type?(field_receiver_type) || error_type?(method_receiver_type)
+
         if char_array_removed_text_method?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
         end
@@ -2694,6 +2834,7 @@ module MilkTea
 
       def validate_consuming_foreign_expression!(expression, scopes:, root_allowed: false)
         return unless expression
+        return if expression.is_a?(AST::ErrorExpr)
 
         if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && foreign_call_consumes_binding?(foreign_call[:binding])
           raise_sema_error("consuming foreign calls must be top-level expression statements") unless root_allowed
@@ -2735,6 +2876,7 @@ module MilkTea
 
       def validate_hoistable_foreign_expression!(expression, scopes:, root_hoistable: false)
         return unless expression
+        return if expression.is_a?(AST::ErrorExpr)
 
         if (foreign_call = resolve_foreign_call_expression(expression, scopes:)) && (message = inline_foreign_call_requires_hoisting_message(foreign_call, scopes:))
           raise_sema_error(message) unless root_hoistable
@@ -3807,6 +3949,7 @@ module MilkTea
       end
 
       def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, contextual_int_to_float: false)
+        return true if error_type?(actual_type) || error_type?(expected_type)
         return true if actual_type == expected_type
         return true if null_assignable_to?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
@@ -4283,6 +4426,22 @@ module MilkTea
 
       def validate_async_statement!(statement)
         case statement
+        when AST::ErrorBlockStmt
+          if statement.header_expression
+            context = case statement.header_type
+                      when :if then "if conditions"
+                      when :while then "while conditions"
+                      end
+            validate_async_expression_support!(statement.header_expression, context:) if context
+          end
+          if statement.header_type == :for
+            Array(statement.header_iterables).each do |iterable|
+              validate_async_expression_support!(iterable, context: "for iterables")
+            end
+          end
+          statement.body.each { |s| validate_async_statement!(s) }
+        when AST::ErrorStmt
+          nil
         when AST::LocalDecl
           validate_async_expression_support!(statement.value, context: "local initializer") if statement.value
           statement.else_body&.each { |s| validate_async_statement!(s) }
@@ -4368,6 +4527,10 @@ module MilkTea
 
       def statement_contains_await?(statement)
         case statement
+        when AST::ErrorBlockStmt
+          (statement.header_expression && expression_contains_await?(statement.header_expression)) ||
+            Array(statement.header_iterables).any? { |iterable| expression_contains_await?(iterable) } ||
+            statements_contain_await?(statement.body)
         when AST::LocalDecl
           (statement.value && expression_contains_await?(statement.value)) ||
             (statement.else_body && statements_contain_await?(statement.else_body))
@@ -5570,6 +5733,10 @@ module MilkTea
         raise_sema_error("local #{local_name} uses unsupported proc nesting") unless proc_storage_supported_type?(type)
       end
 
+      def error_type?(type)
+        type.is_a?(Types::Error)
+      end
+
       def validate_consuming_foreign_parameter!(type, function_name:, parameter_name:)
         if type.is_a?(Types::Nullable) || !(opaque_type?(type) || pointer_type?(type))
           raise_sema_error("consuming parameter #{parameter_name} of #{function_name} must use a non-null opaque or ptr[...] type")
@@ -6079,6 +6246,8 @@ module MilkTea
         lines = [statement.respond_to?(:line) ? statement.line : nil]
 
         case statement
+        when AST::ErrorBlockStmt
+          lines.concat(statement_list_lines(statement.body))
         when AST::IfStmt
           statement.branches.each do |branch|
             lines.concat(statement_list_lines(branch.body))
@@ -6104,6 +6273,16 @@ module MilkTea
           end_line = statement_end_line(stmt)
           lines << end_line if end_line
         end
+      end
+
+      def recovered_for_statement(statement)
+        AST::ForStmt.new(
+          bindings: Array(statement.header_bindings),
+          iterables: Array(statement.header_iterables),
+          body: statement.body,
+          line: statement.line,
+          column: statement.column,
+        )
       end
 
       def null_test_refinements(expression, truthy:, scopes:)

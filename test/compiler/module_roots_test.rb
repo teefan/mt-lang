@@ -4,18 +4,18 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaModuleRootsTest < Minitest::Test
-  def test_roots_for_path_defaults_to_nearest_package_root
+  def test_roots_for_path_defaults_to_nearest_package_source_root
     Dir.mktmpdir("milk-tea-module-roots") do |dir|
       package_root = File.join(dir, "projects", "snake-duel")
       src_dir = File.join(package_root, "src")
       FileUtils.mkdir_p(src_dir)
       File.write(File.join(package_root, "package.toml"), "[package]\nname = \"snake_duel\"\n")
       source_path = File.join(src_dir, "main.mt")
-      File.write(source_path, "module demo.main\n")
+      File.write(source_path, "module main\n")
 
       roots = MilkTea::ModuleRoots.roots_for_path(source_path)
 
-      assert_includes roots, File.expand_path(package_root)
+      assert_includes roots, File.expand_path(src_dir)
     end
   end
 

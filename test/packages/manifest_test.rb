@@ -9,7 +9,7 @@ class MilkTeaPackageManifestTest < Minitest::Test
       project_root = File.join(dir, "MyProject")
       FileUtils.mkdir_p(File.join(project_root, "src"))
       File.write(File.join(project_root, "src", "main.mt"), <<~MT)
-        module my_project
+        module main
       MT
       File.write(File.join(project_root, "package.toml"), <<~TOML)
         [package]
@@ -22,6 +22,20 @@ class MilkTeaPackageManifestTest < Minitest::Test
       manifest = MilkTea::PackageManifest.load(project_root)
 
       assert_equal "my_project", manifest.package_name
+      assert_equal File.expand_path(File.join(project_root, "src")), manifest.source_root
+    end
+  end
+
+  def test_load_defaults_source_root_to_package_root_when_src_directory_is_absent
+    Dir.mktmpdir("milk-tea-package-manifest-default-root") do |dir|
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "flat_app"
+      TOML
+
+      manifest = MilkTea::PackageManifest.load(dir)
+
+      assert_equal File.expand_path(dir), manifest.source_root
     end
   end
 
@@ -96,7 +110,7 @@ class MilkTeaPackageManifestTest < Minitest::Test
       FileUtils.mkdir_p(File.join(dir, "src"))
       FileUtils.mkdir_p(File.join(dir, "art", "assets"))
       FileUtils.mkdir_p(File.join(dir, "ui", "assets"))
-      File.write(File.join(dir, "src", "main.mt"), "module snake_duel.main\n")
+      File.write(File.join(dir, "src", "main.mt"), "module main\n")
       File.write(File.join(dir, "package.toml"), <<~TOML)
         [package]
         name = "snake_duel"

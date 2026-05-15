@@ -550,6 +550,27 @@ class MilkTeaLinterTest < Minitest::Test
     assert_match(/unused import 's'/, w.message)
   end
 
+  def test_does_not_report_unresolved_import_as_unused
+    Dir.mktmpdir("linter_unresolved_import") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        module main
+
+        import std.maybe as maybe
+        import test
+
+        function main() -> int:
+            let value = maybe.Maybe[int].some(7)
+            return value.value
+      MT
+      File.write(path, source)
+
+      warnings = MilkTea::Linter.lint_source(source, path: path)
+
+      refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("test") }
+    end
+  end
+
   # ── dead-assignment ────────────────────────────────────────────────────
 
   def test_dead_assignment_value_overwritten

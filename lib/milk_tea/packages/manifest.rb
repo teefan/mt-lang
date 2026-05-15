@@ -173,6 +173,9 @@ module MilkTea
     end
 
     def default_source_root(root_dir)
+      conventional_source_root = File.join(root_dir, "src")
+      return "src" if File.directory?(conventional_source_root)
+
       "."
     end
 

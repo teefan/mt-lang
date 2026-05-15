@@ -12,6 +12,8 @@ module MilkTea
 
   class ModuleLoader
     Program = Data.define(:root_path, :root_analysis, :analyses_by_path, :analyses_by_module_name)
+    ImportResolutionError = Data.define(:import, :error)
+    ImportResolution = Data.define(:modules, :errors)
     PLATFORM_SUFFIXES = {
       "linux" => :linux,
       "windows" => :windows,
@@ -145,14 +147,33 @@ module MilkTea
     end
 
     def imported_modules_for_ast(ast, importer_path: nil)
-      modules = ast.imports.each_with_object({}) do |import, modules_acc|
-        import_path = resolve_module_path(import.path.to_s, importer_path:)
-        import_analysis = check_path(import_path)
-        modules_acc[import.path.to_s] = module_binding(import_analysis)
+      resolution = imported_modules_for_ast_collecting_errors(ast, importer_path:)
+      raise resolution.errors.first.error if resolution.errors.any?
+
+      resolution.modules
+    end
+
+    def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
+      modules = {}
+      errors = []
+
+      ast.imports.each do |import|
+        begin
+          import_path = resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
+          import_analysis = check_path(import_path)
+          modules[import.path.to_s] = module_binding(import_analysis)
+        rescue ModuleLoadError, PackageLockError => e
+          errors << ImportResolutionError.new(import:, error: e)
+        end
       end
 
-      install_async_runtime_dependency!(ast, modules, importer_path:)
-      modules
+      begin
+        install_async_runtime_dependency!(ast, modules, importer_path:)
+      rescue ModuleLoadError, PackageLockError => e
+        errors << ImportResolutionError.new(import: nil, error: e)
+      end
+
+      ImportResolution.new(modules: modules.freeze, errors: errors.freeze)
     end
 
     private
@@ -192,6 +213,7 @@ module MilkTea
 
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
+      validate_declared_module_name!(ast.module_name.to_s, resolved_path)
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
       analysis = Sema.check(ast, imported_modules:)
@@ -225,11 +247,48 @@ module MilkTea
       end
     end
 
+    def validate_declared_module_name!(module_name, resolved_path)
+      valid_names, scope_description = valid_declared_module_names_for_path(resolved_path)
+      return if valid_names.empty? || valid_names.include?(module_name)
+
+      expected_names = valid_names.map { |name| "'#{name}'" }.join(" or ")
+      message = "declared module '#{module_name}' does not match source path; expected #{expected_names}"
+      message += " relative to #{scope_description}" if scope_description
+      raise ModuleLoadError.new(message, path: resolved_path)
+    end
+
+    def valid_declared_module_names_for_path(resolved_path)
+      manifest = begin
+        PackageManifest.load(resolved_path)
+      rescue PackageManifestError
+        nil
+      end
+
+      if manifest && path_within_root?(resolved_path, manifest.source_root)
+        return [[module_name_for_path(resolved_path, manifest.source_root)], "package.source_root '#{manifest.source_root}'"]
+      end
+
+      [[], nil]
+    end
+
+    def module_name_for_path(path, root)
+      relative_path = path.delete_prefix(File.expand_path(root) + File::SEPARATOR)
+      relative_path = File.basename(path) if relative_path == path
+      relative_path = relative_path.sub(/\.(linux|windows|wasm)\.mt\z/, '.mt')
+      relative_path.sub(/\.mt\z/, '').split(File::SEPARATOR).join('.')
+    end
+
+    def path_within_root?(path, root)
+      normalized_path = File.expand_path(path)
+      normalized_root = File.expand_path(root)
+      normalized_path == normalized_root || normalized_path.start_with?(normalized_root + File::SEPARATOR)
+    end
+
     def use_shared_cache?
       @shared_cache && @source_overrides.empty?
     end
 
-    def resolve_module_path(module_name, importer_path: nil)
+    def resolve_module_path(module_name, importer_path: nil, importer_module_name: nil)
       package_candidate = resolve_package_module_path(module_name, importer_path:)
       return package_candidate if package_candidate
 
@@ -243,9 +302,32 @@ module MilkTea
         allowed
       end
       raise ModuleLoadError.new("package dependency not declared", path: module_name) if blocked
-      raise ModuleLoadError.new("module not found", path: module_name) unless candidate
+      unless candidate
+        message = namespace_hint_for_missing_module(module_name, importer_path:, importer_module_name:) || "module not found"
+        raise ModuleLoadError.new(message, path: module_name)
+      end
 
       File.expand_path(candidate)
+    end
+
+    def namespace_hint_for_missing_module(module_name, importer_path:, importer_module_name:)
+      return nil unless importer_path && importer_module_name
+      return nil unless entry_module_namespace_like?(importer_path, importer_module_name)
+      return nil unless module_name.start_with?("#{importer_module_name}.")
+
+      sibling_import = module_name.delete_prefix("#{importer_module_name}.")
+      sibling_path = File.join(File.dirname(importer_path), *sibling_import.split(".")) + ".mt"
+      resolved_sibling_path = self.class.resolve_source_path(sibling_path, platform: @platform)
+      return nil unless File.file?(resolved_sibling_path)
+
+      namespaced_path = File.join(File.dirname(importer_path), importer_module_name, *sibling_import.split(".")) + ".mt"
+      "module not found; entry module '#{importer_module_name}' does not create an import namespace for sibling files. Import '#{sibling_import}' instead, or move the module to #{namespaced_path}"
+    end
+
+    def entry_module_namespace_like?(importer_path, importer_module_name)
+      return false if importer_module_name.include?(".")
+
+      File.basename(importer_path).match?(/\Amain(?:\.(linux|windows|wasm))?\.mt\z/)
     end
 
     def resolve_package_module_path(module_name, importer_path: nil)

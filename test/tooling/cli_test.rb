@@ -559,7 +559,7 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module projects.desktop_demo.main
+        module main
 
         function main() -> int:
             return 0
@@ -616,7 +616,7 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module projects.desktop_demo.main
+        module main
 
         function main() -> int:
             return 0
@@ -682,7 +682,7 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module projects.desktop_demo.main
+        module main
 
         function main() -> int:
             return 0
@@ -2223,7 +2223,7 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
+        module main
 
         import teefan.ui.layout as layout
 
@@ -2336,7 +2336,7 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
+        module main
 
         import teefan.ui.layout as layout
 
@@ -2761,7 +2761,7 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
+        module main
 
         import teefan.ui.layout as layout
 
@@ -2873,7 +2873,7 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
+        module main
 
         import teefan.ui.layout as layout
 
@@ -3019,6 +3019,52 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 0, status
       assert_equal "", err.string
       assert_match(/checked .* as snake_duel\.main/, out.string)
+    end
+  end
+
+  def test_check_command_reports_entry_module_namespace_trap_for_missing_sibling_import
+    Dir.mktmpdir("milk-tea-cli-check-entry-namespace-trap") do |dir|
+      app_root = File.join(dir, "apps", "tetris")
+      src_dir = File.join(app_root, "src")
+      source_path = File.join(src_dir, "main.mt")
+
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(app_root, "package.toml"), <<~TOML)
+        [package]
+        name = "tetris"
+        version = "0.1.0"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      File.write(source_path, <<~MT)
+        module main
+
+        import main.platform_info as platform_info
+
+        function main() -> int:
+            return 0
+      MT
+
+      File.write(File.join(src_dir, "platform_info.mt"), <<~MT)
+        module platform_info
+
+        public function label() -> str:
+            return "Build: Shared"
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["check", source_path], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/entry module 'main' does not create an import namespace for sibling files/, err.string)
+      assert_match(/Import 'platform_info' instead/, err.string)
     end
   end
 
@@ -3273,12 +3319,13 @@ class MilkTeaCliTest < Minitest::Test
         [package]
         name = "hello_world"
         version = "0.1.0"
+        source_root = "src"
 
         [build]
         entry = "src/main.mt"
       TOML
       assert_equal <<~MT, File.read(File.join(project_root, "src", "main.mt"))
-        module hello_world
+        module main
 
         function main() -> int:
             return 0
@@ -3291,7 +3338,7 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 0, status
       assert_equal "", err.string
-      assert_match(/checked .*src\/main\.mt as hello_world/, out.string)
+      assert_match(/checked .*src\/main\.mt as main/, out.string)
     end
   end
 
@@ -3307,7 +3354,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "", err.string
       assert_match(/created #{Regexp.escape(project_root)}/, out.string)
       assert_match(/name = "my_project"/, File.read(File.join(project_root, "package.toml")))
-      assert_match(/module my_project/, File.read(File.join(project_root, "src", "main.mt")))
+      assert_match(/module main/, File.read(File.join(project_root, "src", "main.mt")))
     end
   end
 

@@ -15,7 +15,8 @@ Create a new application package scaffold with:
 mtc new my-project
 ```
 
-This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and writes the same normalized name into the generated `module ...` declaration. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `module my_project`.
+This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and generates `module main` for the entry file. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `src/main.mt` with `module main`.
+The generated manifest also writes `package.source_root = "src"` explicitly so imports resolve from `src/` without requiring a `src.` prefix.
 
 Minimal package example:
 
@@ -23,6 +24,7 @@ Minimal package example:
 [package]
 name = "game_engine"
 version = "0.1.0"
+source_root = "src"
 
 [profile]
 default = "debug"
@@ -39,7 +41,8 @@ html_template = "web/shell.html"
 Relevant build keys:
 
 - `package.kind`: optional package kind. The default is `application`. Use `library` for reusable source packages.
-- `package.source_root`: optional module root for the package. The default is the package root. Use `src` when your package modules live under `src/...`.
+- `package.source_root`: optional module root for the package. When a package contains a `src/` directory, the default is `src`; otherwise the default is the package root.
+- Module headers inside a package are interpreted relative to `package.source_root`, so `src/main.mt` declares `module main` and `src/game/player.mt` declares `module game.player`.
 - `build.entry`: entry source file, relative to the package root.
 - `build.output`: optional explicit output path.
 - `build.assets`: optional runtime asset path or array of paths. Each entry may be a file or directory. wasm builds preload each entry into the virtual filesystem; native builds either stage each entry beside the executable or pack them into `assets.mtpack` for bundle/archive outputs.
@@ -47,7 +50,7 @@ Relevant build keys:
 - `profile.default`: default profile when the CLI does not receive `--profile`.
 - `platform.default`: default platform when the CLI does not receive `--platform`.
 
-Application packages default to `build.entry = "src/main.mt"` when that file exists. Library packages do not have an executable entry point.
+Packages default to `build.entry = "src/main.mt"` when that file exists. Library packages do not have an executable entry point.
 
 ### 1.1 Platform-specific source file variants
 
