@@ -33,7 +33,7 @@ module MilkTea
 
       def lower
         if @program.root_analysis.module_kind == :raw_module
-          raise LoweringError, "cannot emit C for external module #{@program.root_analysis.module_name}"
+          raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
         end
 
         includes = collect_includes

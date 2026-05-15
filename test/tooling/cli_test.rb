@@ -332,7 +332,7 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 1, status
     assert_equal "", out.string
-    assert_match(/cannot emit C for external module std\.c\.raylib/, err.string)
+    assert_match(/cannot emit C for external file std\.c\.raylib/, err.string)
   end
 
   def test_build_command_compiles_with_fake_compiler
