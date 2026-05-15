@@ -226,7 +226,7 @@ module MilkTea
       end
 
       def validate_raw_module!(raw_ast)
-        unless raw_ast.module_kind == :extern_module && raw_ast.module_name&.to_s == @raw_module_name
+        unless raw_ast.module_kind == :raw_module && raw_ast.module_name&.to_s == @raw_module_name
           raise Error, "expected #{@raw_module_path} to be external file #{@raw_module_name}"
         end
       end
@@ -326,7 +326,7 @@ module MilkTea
       end
 
       def visible_from_method_source?(declaration, module_kind:)
-        return true if module_kind == :extern_module
+        return true if module_kind == :raw_module
 
         declaration.respond_to?(:visibility) && declaration.visibility == :public
       end

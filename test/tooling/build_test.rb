@@ -1234,7 +1234,7 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
-  def test_build_includes_raw_binding_compiler_flags_for_imported_extern_modules
+  def test_build_includes_raw_binding_compiler_flags_for_imported_raw_modules
     Dir.mktmpdir("milk-tea-build-raw-binding-flags") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)
@@ -1271,7 +1271,7 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
-  def test_build_runs_raw_binding_prepare_hook_for_imported_extern_modules
+  def test_build_runs_raw_binding_prepare_hook_for_imported_raw_modules
     Dir.mktmpdir("milk-tea-build-raw-binding-prepare") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       compiler_path = write_fake_compiler(dir, compiler_log)

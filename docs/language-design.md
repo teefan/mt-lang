@@ -975,6 +975,8 @@ Milk Tea needs a dedicated `external` file form for ABI-exact bindings.
 
 Direct `external function` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `external` files so the raw surface stays grouped, auditable, and easy to regenerate.
 
+That dedicated file form is intentional. Raw binding modules carry module-level `include`, `link`, and `compiler_flag` directives and act as the exact ABI layer, while ordinary headerless files remain the normal policy-oriented module form. The distinction is there to keep raw ABI and build-surface concerns grouped instead of smearing them across ordinary modules.
+
 ```mt
 external
 

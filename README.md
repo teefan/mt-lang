@@ -11,13 +11,15 @@ Package manifests, build workflow, and run workflow are documented separately in
 ## 1. File Kinds And Layout
 
 - Source files use the `.mt` extension.
-- A file is either an ordinary source file or an external file.
-- Ordinary files have no module header; module identity is inferred from the file path.
-- External file header: `external`
+- Ordinary files are the normal source form. They have no module header; module identity is inferred from the file path.
+- Raw ABI binding files use a leading `external` header.
+- External files are the dedicated raw ABI surface, usually for generated or low-level `std.c.*` bindings.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
 - Inside a package, the file path relative to `package.source_root` defines the module name; platform-specific files such as `name.linux.mt` still map to module `name`.
 - In ordinary files, `import` statements appear only at the top.
 - In external files, leading `import` statements are allowed after `external`.
+- Only external files accept `include`, `link`, and `compiler_flag` directives.
+- After those imports and directives, external files stay narrow: they contain raw ABI declarations, not ordinary module logic.
 
 Blocks are indentation-based:
 
@@ -79,6 +81,11 @@ Supported top-level declarations:
 - `external function`
 - `foreign function`
 - `static_assert(...)`
+
+File-kind note:
+
+- Ordinary files may use the full declaration surface above.
+- External files are intentionally narrower: after optional imports and directives, they allow only `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`, plus `packed` / `align(...)` struct forms.
 
 Visibility:
 
@@ -212,6 +219,8 @@ External functions:
 external function printf(format: cstr, ...) -> int
 ```
 
+Raw `std.c.*` modules usually group many `external function` declarations inside an external file, but `external function` is also allowed in ordinary files for small manual ABI bridges.
+
 Rules:
 
 - No body.
@@ -219,6 +228,8 @@ Rules:
 - Cannot be generic.
 - Cannot be async.
 - Cannot take arrays.
+- Cannot take `ref` parameters.
+- Cannot take `proc` parameters.
 - Cannot return arrays.
 
 Foreign functions:

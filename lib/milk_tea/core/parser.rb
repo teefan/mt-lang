@@ -79,10 +79,10 @@ module MilkTea
       if external_file_header?
         advance
         module_line = previous.line
-        module_kind = :extern_module
+        module_kind = :raw_module
         consume(:newline, "expected newline after external") unless eof?
         skip_newlines
-        imports, directives, declarations = parse_extern_module_body
+        imports, directives, declarations = parse_raw_module_body
         skip_newlines
         raise error(peek, "expected end of file after external declarations") unless eof?
 
@@ -174,7 +174,7 @@ module MilkTea
       elsif match(:function)
         parse_function_def(visibility:)
       elsif match(:external)
-        raise error(visibility_token, "public is not allowed on external declarations yet") if visibility == :public
+        raise error(visibility_token, "public is not allowed on external declarations") if visibility == :public
 
         parse_extern_decl
       elsif match(:static_assert)
@@ -187,7 +187,7 @@ module MilkTea
       end
     end
 
-    def parse_extern_module_body
+    def parse_raw_module_body
       imports = []
       directives = []
       declarations = []
@@ -205,7 +205,7 @@ module MilkTea
         elsif match(:compiler_flag)
           directives << parse_compiler_flag_directive
         else
-          declarations << parse_extern_module_declaration
+          declarations << parse_raw_module_declaration
         end
         skip_newlines
       end
@@ -231,7 +231,7 @@ module MilkTea
       AST::CompilerFlagDirective.new(value:)
     end
 
-    def parse_extern_module_declaration
+    def parse_raw_module_declaration
       if match(:public)
         raise error(previous, "public is not allowed in external files")
       elsif check(:packed) || check(:align)

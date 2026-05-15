@@ -38,7 +38,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     assert_includes loaded_modules, "test.fixtures.language_fixture.types"
     assert_includes loaded_modules, "std.status"
     assert_equal :module, program.analyses_by_module_name.fetch("std.status").module_kind
-    assert_equal :extern_module, program.analyses_by_module_name.fetch("test.fixtures.language_fixture.external_runtime").module_kind
+    assert_equal :raw_module, program.analyses_by_module_name.fetch("test.fixtures.language_fixture.external_runtime").module_kind
   end
 
   def test_check_program_does_not_auto_load_std_fmt_for_plain_format_strings
@@ -698,7 +698,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
-  def test_check_program_resolves_extern_module_imported_types
+  def test_check_program_resolves_raw_module_imported_types
     Dir.mktmpdir("milk-tea-module-loader-extern-imports") do |dir|
       dep_path = File.join(dir, "std", "c", "dep.mt")
       helper_path = File.join(dir, "std", "c", "helper.mt")
@@ -729,7 +729,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(helper_path)
 
       assert_equal %w[std.c.dep std.c.helper], program.analyses_by_module_name.keys.sort
-      assert_equal :extern_module, program.root_analysis.module_kind
+      assert_equal :raw_module, program.root_analysis.module_kind
       assert_equal true, program.root_analysis.types.key?("Holder")
       assert_equal true, program.root_analysis.functions.key?("wrap")
       assert_equal true, program.root_analysis.imports.key?("dep")

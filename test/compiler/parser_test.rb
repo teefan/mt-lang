@@ -268,7 +268,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "struct timespec", struct_decl.c_name
   end
 
-  def test_parses_leading_imports_inside_extern_modules
+  def test_parses_leading_imports_inside_raw_modules
     source = <<~MT
       external
 
@@ -282,7 +282,7 @@ class MilkTeaParserTest < Minitest::Test
 
     ast = MilkTea::Parser.parse(source)
 
-    assert_equal :extern_module, ast.module_kind
+    assert_equal :raw_module, ast.module_kind
     assert_equal 1, ast.imports.length
     assert_equal "std.c.dep", ast.imports.first.path.to_s
     assert_equal "dep", ast.imports.first.alias_name
@@ -1449,7 +1449,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/expected ':' and parameter type/, error.message)
   end
 
-  def test_parses_extern_module_declarations
+  def test_parses_raw_module_declarations
     source = <<~MT
       external
 
@@ -1481,7 +1481,7 @@ class MilkTeaParserTest < Minitest::Test
 
     ast = MilkTea::Parser.parse(source)
 
-    assert_equal :extern_module, ast.module_kind
+    assert_equal :raw_module, ast.module_kind
     assert_nil ast.module_name
     assert_equal %w[LinkDirective IncludeDirective], ast.directives.map { |node| node.class.name.split("::").last }
     assert_equal(
