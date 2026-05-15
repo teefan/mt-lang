@@ -874,7 +874,7 @@ span[T] is conceptually:
 
 `span[T]` is the many-element view. `ref[T]` is the safe writable single-object alias, while `const_ptr[T]` is the raw read-only single-object pointer form.
 
-For frequent pointer-plus-length construction in game code, use `std.span` helpers such as `sp.from_ptr[T](ptr, len)` instead of repeating `span[T](data = ..., len = ...)` literals.
+For frequent pointer-plus-length construction in game code, construct spans directly with `span[T](data = ..., len = ...)`. If a project wants a shorter spelling, it should define a project-local helper instead of assuming a standard helper module.
 
 ### Standard library foundation
 
