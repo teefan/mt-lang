@@ -184,9 +184,8 @@ public interface Damageable:
 
 Interface rules:
 
-- Interface bodies contain instance method signatures only.
-- Interface methods may be `function` or `editable function`.
-- Interface methods may not be `static`, `async`, or generic.
+- Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
 - Bare interface names are not runtime storage types.
 - Interfaces are used by `implements` and constrained generics, not as runtime value types.
@@ -398,10 +397,10 @@ Nullability:
 Generics:
 
 - Generic structs, variants, functions, methods, and foreign functions are supported.
-- Generic function and method constraints use `implements` and `defaults`.
+- Generic type parameter constraints use `implements` and `defaults` on structs, variants, functions, and methods.
 - Multiple interface constraints are joined with `and`.
 - `defaults` requires an accessible zero-argument `T.default() -> T`.
-- Interface constraints are not supported on generic struct or variant type parameters.
+- Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
 
 ## 11. Built-In Callable Surface
 
@@ -511,9 +510,8 @@ Supported `await` contexts include:
 
 Current implementation rejects:
 
-- interface methods with `static`, `async`, or generic signatures
+- interface methods with `async` or generic signatures
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
-- interface constraints on generic struct or variant type parameters
 - legacy `in` / `out` / `inout` markers at call sites
 - consuming foreign calls used inside larger expressions
 - external functions that are generic, async, or array-taking / array-returning

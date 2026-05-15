@@ -2557,6 +2557,65 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/Damageable/, generated)
   end
 
+  def test_generate_c_for_generic_struct_with_interface_constraints
+    source = [
+      "# module demo.generic_struct_constraints",
+      "",
+      "interface Damageable:",
+      "    function hp() -> int",
+      "",
+      "struct NPC implements Damageable:",
+      "    value: int",
+      "",
+      "methods NPC:",
+      "    function hp() -> int:",
+      "        return this.value",
+      "",
+      "struct Holder[T implements Damageable]:",
+      "    value: T",
+      "",
+      "function main() -> int:",
+      "    let holder = Holder[NPC](value = NPC(value = 9))",
+      "    return holder.value.hp()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct demo_generic_struct_constraints_Holder_demo_generic_struct_constraints_NPC demo_generic_struct_constraints_Holder_demo_generic_struct_constraints_NPC;/, generated)
+    assert_match(/struct demo_generic_struct_constraints_Holder_demo_generic_struct_constraints_NPC \{/, generated)
+    refute_match(/Damageable/, generated)
+  end
+
+  def test_generate_c_for_static_interface_requirements_and_specialized_associated_calls
+    source = [
+      "# module demo.static_interface_codegen",
+      "",
+      "interface Tagged:",
+      "    static function tag() -> int",
+      "",
+      "struct Counter implements Tagged:",
+      "    value: int",
+      "",
+      "methods Counter:",
+      "    static function tag() -> int:",
+      "        return 33",
+      "",
+      "function tag_of[T implements Tagged]() -> int:",
+      "    return T.tag()",
+      "",
+      "function main() -> int:",
+      "    return tag_of[Counter]()",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_static_interface_codegen_Counter_tag\(void\)/, generated)
+    assert_match(/static int32_t demo_static_interface_codegen_tag_of_demo_static_interface_codegen_Counter\(void\)/, generated)
+    assert_match(/return demo_static_interface_codegen_Counter_tag\(\);/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",

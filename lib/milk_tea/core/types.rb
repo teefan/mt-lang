@@ -468,11 +468,12 @@ module MilkTea
     end
 
     class GenericStructDefinition < Base
-      attr_reader :name, :type_params, :module_name, :external, :packed, :alignment, :c_name
+      attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name
 
       def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil)
         @name = name
         @type_params = type_params.freeze
+        @type_param_constraints = {}.freeze
         @module_name = module_name
         @external = external
         @packed = packed
@@ -484,6 +485,11 @@ module MilkTea
 
       def define_fields(fields)
         @fields = fields.freeze
+        self
+      end
+
+      def define_type_param_constraints(type_param_constraints)
+        @type_param_constraints = type_param_constraints.freeze
         self
       end
 
@@ -631,11 +637,12 @@ module MilkTea
     end
 
     class GenericVariantDefinition < Base
-      attr_reader :name, :type_params, :module_name
+      attr_reader :name, :type_params, :type_param_constraints, :module_name
 
       def initialize(name, type_params, module_name: nil)
         @name = name
         @type_params = type_params.freeze
+        @type_param_constraints = {}.freeze
         @module_name = module_name
         @arms = {}
         @instances = {}
@@ -648,6 +655,11 @@ module MilkTea
 
       def arms
         @arms
+      end
+
+      def define_type_param_constraints(type_param_constraints)
+        @type_param_constraints = type_param_constraints.freeze
+        self
       end
 
       def instantiate(arguments)

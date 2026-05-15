@@ -271,9 +271,8 @@ public interface Damageable:
 
 Rules:
 
-- Interface bodies contain instance method signatures only.
-- Interface methods may be `function` or `editable function`.
-- Interface methods may not be `static`, `async`, or generic.
+- Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
 - `public` is allowed on the interface declaration, not on individual interface methods.
 - Bare interface names are not runtime storage types; they are contracts used by `implements` and constrained generics.
@@ -617,11 +616,11 @@ Supported:
 
 Rules:
 
-- Constraints are supported on generic functions and generic methods.
+- Constraints are supported on generic structs, variants, functions, and methods.
 - Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
 - `defaults` requires an accessible zero-argument associated function `T.default()` that returns `T`.
+- Current type parameters may be used as type expressions for associated function calls in generic bodies, such as `T.default()` or `T.tag()`.
 - Constraint kinds compose with `and`: `T defaults and implements ScreenState` and `T implements Named and defaults` are both valid.
-- Constraints are not supported on generic struct or variant type parameters.
 
 Type arguments can be:
 
@@ -801,9 +800,8 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 
 Current implementation rejects:
 
-- interface methods with `static`, `async`, or generic signatures
+- interface methods with `async` or generic signatures
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
-- interface constraints on generic struct or variant type parameters
 
 ## 13. Example
 

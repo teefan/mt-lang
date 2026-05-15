@@ -232,6 +232,137 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_static_interface_requirements_and_associated_calls_on_specialized_type_params
+    source = <<~MT
+      # module demo.static_interface_requirements
+
+      interface Tagged:
+          static function tag() -> int
+
+      struct Counter implements Tagged:
+          value: int
+
+      methods Counter:
+          static function tag() -> int:
+              return 17
+
+      function read_tag[T implements Tagged]() -> int:
+          return T.tag()
+
+      function main() -> int:
+          return read_tag[Counter]()
+    MT
+
+    result = check_source(source)
+    counter_type = result.types.fetch("Counter")
+    methods = result.methods.fetch(counter_type)
+
+    assert_nil methods.fetch("tag").type.receiver_type
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_static_interface_requirement_implemented_by_instance_method
+    source = <<~MT
+      # module demo.static_interface_mismatch
+
+      interface Tagged:
+          static function tag() -> int
+
+      struct Counter implements Tagged:
+          value: int
+
+      methods Counter:
+          function tag() -> int:
+              return this.value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/method kind does not match/, error.message)
+  end
+
+  def test_type_checks_generic_struct_constraints_through_nested_generic_fields
+    source = <<~MT
+      # module demo.generic_type_constraints
+
+      interface Damageable:
+          function hp() -> int
+
+      struct NPC implements Damageable:
+          value: int
+
+      methods NPC:
+          function hp() -> int:
+              return this.value
+
+      struct Holder[T implements Damageable]:
+          value: T
+
+      struct Wrapper[U implements Damageable]:
+          holder: Holder[U]
+
+      function main() -> int:
+          let wrapper = Wrapper[NPC](holder = Holder[NPC](value = NPC(value = 7)))
+          return wrapper.holder.value.hp()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_nested_generic_struct_constraint_without_matching_outer_constraint
+    source = <<~MT
+      # module demo.generic_type_constraints_bad
+
+      interface Damageable:
+          function hp() -> int
+
+      struct Holder[T implements Damageable]:
+          value: T
+
+      struct Wrapper[U]:
+          holder: Holder[U]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type U does not implement interface Damageable/, error.message)
+    assert_match(/type demo\.generic_type_constraints_bad\.Holder/, error.message)
+  end
+
+  def test_rejects_generic_variant_defaults_constraint_without_explicit_default_provider
+    source = <<~MT
+      # module demo.generic_variant_defaults_bad
+
+      struct Plain:
+          value: int
+
+      variant Slot[T defaults]:
+          some(value: T)
+          none
+
+      function main() -> int:
+          let slot = Slot[Plain].none
+          match slot:
+              case .none:
+                  return 0
+              case .some as some:
+                  return some.value.value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type demo\.generic_variant_defaults_bad\.Plain does not satisfy defaults constraint/, error.message)
+    assert_match(/type demo\.generic_variant_defaults_bad\.Slot/, error.message)
+  end
+
   def test_rejects_defaults_constraint_without_explicit_default_provider
     source = <<~MT
       # module demo.defaults_bad
