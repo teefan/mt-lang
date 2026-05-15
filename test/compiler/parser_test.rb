@@ -1541,6 +1541,22 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/expected external declaration/, error.message)
   end
 
+  def test_rejects_methods_blocks_in_raw_modules
+    source = <<~MT
+      external
+
+      methods Counter:
+          function read() -> int:
+              return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/expected external declaration/, error.message)
+  end
+
   def test_parses_foreign_function_declarations_and_calls
     source = <<~MT
       import std.c.raylib as c

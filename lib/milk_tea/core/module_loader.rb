@@ -494,10 +494,6 @@ module MilkTea
     end
 
     def exported_methods(analysis, exported_types)
-      if analysis.module_kind == :raw_module
-        return [analysis.methods.transform_values(&:dup), {}]
-      end
-
       methods = {}
       private_methods = {}
 
