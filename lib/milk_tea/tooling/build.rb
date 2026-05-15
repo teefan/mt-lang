@@ -313,7 +313,7 @@ module MilkTea
     def prepare_bindings(program)
       program.analyses_by_module_name.keys.sort.each do |module_name|
         analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :extern_module
+        next unless analysis.module_kind == :raw_module
 
         binding = @raw_bindings.find_by_module_name(module_name)
         next unless binding
@@ -348,7 +348,7 @@ module MilkTea
     def collect_link_flags(program)
       program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
         analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :extern_module
+        next unless analysis.module_kind == :raw_module
 
         binding = @raw_bindings.find_by_module_name(module_name)
         if binding
@@ -375,7 +375,7 @@ module MilkTea
 
       program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
         analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :extern_module
+        next unless analysis.module_kind == :raw_module
 
         if module_name.start_with?("std.c.")
           flags << std_c_include_flag unless flags.include?(std_c_include_flag)

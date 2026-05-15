@@ -317,7 +317,7 @@ module MilkTea
                                     Types::Struct.new(
                                       decl.name,
                                       module_name: @module_name,
-                                      external: external_module?,
+                                      external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
                                       c_name: decl.c_name,
@@ -327,7 +327,7 @@ module MilkTea
                                       decl.name,
                                       decl.type_params.map(&:name),
                                       module_name: @module_name,
-                                      external: external_module?,
+                                      external: raw_module?,
                                       packed: decl.packed,
                                       alignment: decl.alignment,
                                       c_name: decl.c_name,
@@ -336,7 +336,7 @@ module MilkTea
             when AST::UnionDecl
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: external_module?, c_name: decl.c_name)
+              @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: raw_module?, c_name: decl.c_name)
             when AST::VariantDecl
               validate_disallowed_type_param_constraints!(decl, "variant #{decl.name}")
               ensure_available_type_name!(decl.name)
@@ -351,16 +351,16 @@ module MilkTea
                                   end
             when AST::EnumDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: external_module?)
+              @types[decl.name] = Types::Enum.new(decl.name, module_name: @module_name, external: raw_module?)
             when AST::FlagsDecl
               ensure_available_type_name!(decl.name)
-              @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: external_module?)
+              @types[decl.name] = Types::Flags.new(decl.name, module_name: @module_name, external: raw_module?)
             when AST::OpaqueDecl
               ensure_available_type_name!(decl.name)
               @types[decl.name] = Types::Opaque.new(
                 decl.name,
                 module_name: @module_name,
-                external: external_module?,
+                external: raw_module?,
                 c_name: decl.c_name,
               )
             when AST::InterfaceDecl
@@ -445,7 +445,7 @@ module MilkTea
       def validate_explicit_aggregate_c_name!(decl)
         return unless decl.c_name
 
-        raise_sema_error("explicit C names are only allowed on external structs and unions") unless external_module?
+        raise_sema_error("explicit C names are only allowed on external structs and unions") unless raw_module?
         return if !decl.respond_to?(:type_params) || decl.type_params.empty?
 
         raise_sema_error("explicit C names are not supported on generic external structs")
@@ -6019,8 +6019,8 @@ module MilkTea
         expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "read"
       end
 
-      def external_module?
-        @module_kind == :extern_module
+      def raw_module?
+        @module_kind == :raw_module
       end
 
       def assignable_receiver?(receiver_expression, scopes)

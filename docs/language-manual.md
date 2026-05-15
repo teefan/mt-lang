@@ -10,8 +10,8 @@ Milk Tea source files use the `.mt` extension.
 
 A file can be either:
 
-- an ordinary source file (no header; module name comes from the path)
-- an external file (`external`)
+- an ordinary source file (the normal source form; no header; module name comes from the path)
+- an external file (`external`) for raw ABI bindings
 
 ### 1.1 Ordinary file
 
@@ -41,6 +41,9 @@ Rules:
 
 - In ordinary files, `import` statements are parsed only at the top.
 - In external files, leading `import` statements are allowed after `external`.
+- Only external files accept `include`, `link`, and `compiler_flag` directives.
+- External files are the dedicated raw ABI surface, usually for `std.c.*` bindings and bindgen output.
+- After leading imports and directives, external files are intentionally narrow: they contain raw ABI declarations, not ordinary module logic.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
 - Module identity is inferred from the resolved source path.
 - Platform-specific file variants are a compiler resolution rule, not a source-language import feature.
@@ -135,6 +138,11 @@ Top-level declarations:
 - `external function`
 - `foreign function`
 - `static_assert(...)`
+
+File-kind note:
+
+- Ordinary files may use the full declaration surface above.
+- External files use a restricted declaration surface: `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`, plus `packed` / `align(...)` struct forms.
 
 ### 3.1 Visibility
 
@@ -336,12 +344,16 @@ function boot_screen[T defaults and implements ScreenState]() -> T:
 external function printf(format: cstr, ...) -> int
 ```
 
+Raw `std.c.*` modules usually group many `external function` declarations inside an external file, but `external function` is also allowed in ordinary files for small manual ABI bridges.
+
 Rules:
 
 - no body
 - variadic `...` supported
 - cannot be generic
 - cannot be async
+- cannot take `ref` parameters
+- cannot take `proc` parameters
 - cannot take or return arrays
 
 ### 3.9 Foreign functions

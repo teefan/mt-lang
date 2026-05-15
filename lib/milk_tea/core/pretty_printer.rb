@@ -130,7 +130,7 @@ module MilkTea
 
       def emit_source_file(source_file)
         @current_module_kind = source_file.module_kind
-        if source_file.module_kind == :extern_module
+        if source_file.module_kind == :raw_module
           flush_leading_comments_before(source_file.line) if source_file.line
           line("external")
           if source_file.line && @comment_map.key?(source_file.line)
@@ -200,20 +200,20 @@ module MilkTea
       end
 
       def declaration_separator_required?(declaration, next_decl)
-        if @current_module_kind == :extern_module
-          return extern_module_separator_required?(declaration, next_decl)
+        if @current_module_kind == :raw_module
+          return raw_module_separator_required?(declaration, next_decl)
         end
 
         block_declaration?(declaration) || block_declaration?(next_decl)
       end
 
-      def extern_module_separator_required?(declaration, next_decl)
-        return true if extern_module_block_declaration?(declaration) || extern_module_block_declaration?(next_decl)
+      def raw_module_separator_required?(declaration, next_decl)
+        return true if raw_module_block_declaration?(declaration) || raw_module_block_declaration?(next_decl)
 
-        extern_module_declaration_group(declaration) != extern_module_declaration_group(next_decl)
+        raw_module_declaration_group(declaration) != raw_module_declaration_group(next_decl)
       end
 
-      def extern_module_block_declaration?(declaration)
+      def raw_module_block_declaration?(declaration)
         declaration.is_a?(AST::StructDecl) ||
           declaration.is_a?(AST::UnionDecl) ||
           declaration.is_a?(AST::EnumDecl) ||
@@ -221,7 +221,7 @@ module MilkTea
           declaration.is_a?(AST::VariantDecl)
       end
 
-      def extern_module_declaration_group(declaration)
+      def raw_module_declaration_group(declaration)
         case declaration
         when AST::OpaqueDecl, AST::TypeAliasDecl
           :types
@@ -365,7 +365,7 @@ module MilkTea
       end
 
       def visibility_prefix(declaration_or_visibility)
-        return "" if @current_module_kind == :extern_module
+        return "" if @current_module_kind == :raw_module
 
         visibility = if declaration_or_visibility.is_a?(Symbol)
                        declaration_or_visibility

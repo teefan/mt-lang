@@ -487,14 +487,14 @@ module MilkTea
     end
 
     def exported_declaration?(analysis, declaration)
-      return true if analysis.module_kind == :extern_module
+      return true if analysis.module_kind == :raw_module
       return false unless declaration.respond_to?(:visibility)
 
       declaration.visibility == :public
     end
 
     def exported_methods(analysis, exported_types)
-      if analysis.module_kind == :extern_module
+      if analysis.module_kind == :raw_module
         return [analysis.methods.transform_values(&:dup), {}]
       end
 

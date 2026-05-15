@@ -6,7 +6,7 @@ require_relative "../test_helper"
 require_relative "../../lib/milk_tea/bindings"
 
 class MilkTeaBindgenTest < Minitest::Test
-  def test_generate_emits_parseable_extern_module_for_sample_header
+  def test_generate_emits_parseable_raw_module_for_sample_header
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)
 
@@ -152,7 +152,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.values.keys, "MAGIC"
       assert_includes analysis.values.keys, "HOME"
@@ -274,7 +274,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.values.keys, "EMPTY"
     end
@@ -306,7 +306,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "HiddenNode"
       assert_includes analysis.types.keys, "Holder"
@@ -343,7 +343,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "Holder"
       assert analysis.types.keys.any? { |name| name.start_with?("Holder_anonymous_union_") }
@@ -378,7 +378,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "FrictionCallback"
       assert_includes analysis.types.keys, "WorldDef"
@@ -414,7 +414,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "WindowHandle"
       assert_includes analysis.types.keys, "WindowCallback"
@@ -486,7 +486,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "PlainStruct"
       assert_includes analysis.types.keys, "AliasedUnion"
@@ -522,7 +522,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_equal "std.c.sample", analysis.module_name
       assert_includes analysis.types.keys, "ulong_alias"
     end
@@ -607,7 +607,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_includes analysis.functions.keys, "use_keywords"
     end
   end
@@ -639,7 +639,7 @@ class MilkTeaBindgenTest < Minitest::Test
       File.write(output_path, generated)
       analysis = check_generated_output(dir, output_path)
 
-      assert_equal :extern_module, analysis.module_kind
+      assert_equal :raw_module, analysis.module_kind
       assert_includes analysis.types.keys, "KeywordFields"
     end
   end

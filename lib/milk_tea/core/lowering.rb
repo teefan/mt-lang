@@ -32,7 +32,7 @@ module MilkTea
       end
 
       def lower
-        if @program.root_analysis.module_kind == :extern_module
+        if @program.root_analysis.module_kind == :raw_module
           raise LoweringError, "cannot emit C for external module #{@program.root_analysis.module_name}"
         end
 
@@ -48,7 +48,7 @@ module MilkTea
         functions = []
 
         @program.analyses_by_path.each_pair do |path, analysis|
-          next if analysis.module_kind == :extern_module
+          next if analysis.module_kind == :raw_module
 
           prepare_analysis(analysis, source_path: path)
           collect_structs
@@ -68,7 +68,7 @@ module MilkTea
           pending_functions = false
 
           @program.analyses_by_path.each_pair do |path, analysis|
-            next if analysis.module_kind == :extern_module
+            next if analysis.module_kind == :raw_module
 
             prepare_analysis(analysis, source_path: path)
             newly_lowered = lower_functions
@@ -122,7 +122,7 @@ module MilkTea
         end
 
         @program.analyses_by_module_name.each_value do |analysis|
-          next unless analysis.module_kind == :extern_module
+          next unless analysis.module_kind == :raw_module
 
           analysis.directives.grep(AST::IncludeDirective).each do |directive|
             headers << normalized_include_header(directive.value)
@@ -323,7 +323,7 @@ module MilkTea
 
       def lower_imported_external_opaques
         @program.analyses_by_module_name.each_value.flat_map do |analysis|
-          next [] unless analysis.module_kind == :extern_module
+          next [] unless analysis.module_kind == :raw_module
 
           analysis.ast.declarations.grep(AST::OpaqueDecl).filter_map do |decl|
             opaque_type = analysis.types.fetch(decl.name)
@@ -9526,7 +9526,7 @@ module MilkTea
 
       def imported_value_c_name(imported_module, name)
         imported_analysis = analysis_for_module(imported_module.name)
-        return name if imported_analysis.module_kind == :extern_module
+        return name if imported_analysis.module_kind == :raw_module
 
         module_value_c_name(imported_module.name, name)
       end

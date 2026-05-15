@@ -80,7 +80,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_extern_module_ast_like_source
+  def test_formats_raw_module_ast_like_source
     source = <<~MT
       external
 
@@ -95,7 +95,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_extern_module_imports_like_source
+  def test_formats_raw_module_imports_like_source
     source = <<~MT
       external
 
@@ -149,7 +149,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_variadic_extern_module_ast_like_source
+  def test_formats_variadic_raw_module_ast_like_source
     source = <<~MT
       external
 
@@ -189,7 +189,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_extern_module_groups_simple_declarations_by_kind
+  def test_formats_raw_module_groups_simple_declarations_by_kind
     source = <<~MT
       external
 

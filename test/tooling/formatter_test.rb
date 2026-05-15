@@ -216,7 +216,7 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_includes formatted, "\nconst path: cstr = c\"../resources/DotGothic16-Regular.ttf\""
   end
 
-  def test_canonical_groups_extern_module_simple_declarations_by_kind
+  def test_canonical_groups_raw_module_simple_declarations_by_kind
     source = <<~MT
       external
 
