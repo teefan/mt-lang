@@ -65,6 +65,7 @@ module MilkTea
         [package]
         name = "#{package_name}"
         version = "0.1.0"
+        source_root = "src"
 
         [build]
         entry = "src/main.mt"
@@ -73,7 +74,7 @@ module MilkTea
 
     def render_entry_source
       <<~MT
-        module #{package_name}
+        module main
 
         function main() -> int:
             return 0

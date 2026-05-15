@@ -1,6 +1,7 @@
-module game_engine
+module main
 
 import std.maybe as maybe
+import platform_info as platform_info
 import std.raylib as rl
 import std.raylib.packed_assets as rl_assets
 import std.raylib.runtime as rl_runtime
@@ -498,6 +499,7 @@ methods Game:
     function draw_sidebar() -> void:
         rl.draw_text("MILK TEA", preview_left, 320, 34, rl.RAYWHITE)
         rl.draw_text("TETRIS", preview_left, 356, 34, rl.GOLD)
+        rl.draw_text(platform_info.label(), preview_left, 392, 18, rl.GRAY)
         rl.draw_text(f"Score  #{this.score}", preview_left, 420, 24, rl.SKYBLUE)
         rl.draw_text(f"Lines  #{this.lines}", preview_left, 452, 24, rl.LIME)
         rl.draw_text(f"Level  #{this.level}", preview_left, 484, 24, rl.ORANGE)

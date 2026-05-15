@@ -10,13 +10,22 @@ module MilkTea
       def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil)
         diagnostics = []
         sema_analysis = nil
+        unresolved_import_paths = []
         path = uri_to_path(uri)
         resolution = DependencyResolution.resolve(path, mode: dependency_resolution_mode)
         effective_platform = effective_platform_for_path(path, platform_override:)
 
         # Parse
         begin
-          ast = Parser.parse(content, path: uri)
+          ast = if path && File.file?(path)
+                  parse_result = Parser.parse_collecting_errors(content, path: uri)
+                  parse_result.errors.each { |error| diagnostics << format_error(error) }
+                  parse_result.ast
+                else
+                  Parser.parse(content, path: uri)
+                end
+          return { diagnostics: diagnostics, analysis: sema_analysis } unless ast
+
           if resolution.error_message
             diagnostics << format_error(SemaError.new(resolution.error_message, line: 1, column: 1))
             return { diagnostics: diagnostics, analysis: sema_analysis }
@@ -38,18 +47,18 @@ module MilkTea
             source_overrides: source_overrides,
             content: content,
           )
+          unresolved_import_paths = imported_modules.fetch(:unresolved_import_paths)
 
           # Semantic analysis — collect errors from all functions, not just first.
           begin
-            result = Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+            result = Sema.check_collecting_errors(ast, imported_modules: imported_modules.fetch(:modules))
             sema_analysis = result[:analysis]
-            result[:errors].each { |e| diagnostics << format_error(e) }
+            result[:errors].reject { |e| redundant_unknown_import_error?(e, unresolved_import_paths) }
+                           .each { |e| diagnostics << format_error(e) }
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
           end
         rescue MilkTea::LexError => e
-          diagnostics << format_error(e)
-        rescue MilkTea::ParseError => e
           diagnostics << format_error(e)
         rescue StandardError => e
           warn "Error collecting diagnostics: #{e.message}"
@@ -57,7 +66,9 @@ module MilkTea
 
         # Lint warnings (severity: 2 = Warning)
         begin
-          Linter.lint_source(content, path: uri, sema_analysis: sema_analysis).each { |w| diagnostics << format_warning(w, content: content) }
+          Linter.lint_source(content, path: uri, sema_analysis: sema_analysis, unresolved_import_paths: unresolved_import_paths).each do |w|
+            diagnostics << format_warning(w, content: content)
+          end
         rescue MilkTea::LexError, MilkTea::ParseError
           # Best-effort only while the user is mid-edit; lex/parse failures are
           # already reported by the main diagnostics path.
@@ -72,7 +83,7 @@ module MilkTea
 
       def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, content: nil)
         path = uri_to_path(uri)
-        return {} unless path && File.file?(path)
+        return { modules: {}, unresolved_import_paths: [] } unless path && File.file?(path)
 
         loader = ModuleLoader.new(
           module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
@@ -81,7 +92,19 @@ module MilkTea
           source_overrides: source_overrides,
           platform: effective_platform,
         )
-        loader.imported_modules_for_ast(ast, importer_path: path)
+        resolution_result = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
+        unresolved_import_paths = []
+
+        resolution_result.errors.each do |entry|
+          if entry.error.is_a?(ModuleLoadError)
+            diagnostics << format_import_error(entry.error, entry.import, content: content)
+            unresolved_import_paths << entry.import.path.to_s if entry.import
+          else
+            diagnostics << format_error(SemaError.new(entry.error.message))
+          end
+        end
+
+        { modules: resolution_result.modules, unresolved_import_paths: unresolved_import_paths.uniq }
       rescue ModuleLoadError, PackageLockError => e
         if e.is_a?(ModuleLoadError)
           import = ast.imports.find { |candidate| candidate.path.to_s == e.path }
@@ -89,7 +112,14 @@ module MilkTea
         else
           diagnostics << format_error(SemaError.new(e.message))
         end
-        {}
+        { modules: {}, unresolved_import_paths: [] }
+      end
+
+      def self.redundant_unknown_import_error?(error, unresolved_import_paths)
+        return false unless error.is_a?(SemaError)
+        return false unless error.message.start_with?("unknown import ")
+
+        unresolved_import_paths.include?(error.message.delete_prefix("unknown import "))
       end
 
       def self.uri_to_path(uri)

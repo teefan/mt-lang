@@ -452,6 +452,607 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_collect_diagnostics_reports_entry_module_namespace_trap_for_missing_sibling_import
+    Dir.mktmpdir("lsp_workspace_entry_namespace_trap") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        import main.platform_info as platform_info
+
+        function main() -> int:
+            return 0
+      MT
+      File.write(path, content)
+      File.write(File.join(dir, "platform_info.mt"), <<~MT)
+        module platform_info
+
+        public function label() -> str:
+            return "Build: Shared"
+      MT
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      missing_import = diagnostics.find do |diagnostic|
+        diagnostic[:message].include?("entry module 'main' does not create an import namespace for sibling files")
+      end
+
+      refute_nil missing_import
+      assert_includes missing_import[:message], "Import 'platform_info' instead"
+      assert_equal 2, missing_import.dig(:range, :start, :line)
+      assert_equal 7, missing_import.dig(:range, :start, :character)
+      assert_equal 25, missing_import.dig(:range, :end, :character)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_keeps_resolved_imports_and_skips_unused_warning_for_missing_imports
+    Dir.mktmpdir("lsp_workspace_partial_import_resolution") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        import std.maybe as maybe
+        import test # fake import for diagnostics coverage
+
+        function main() -> int:
+            let value = maybe.Maybe[int].some(7)
+            return value.value
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+
+      assert_includes messages, "module not found: test"
+      refute_includes messages, "unknown import std.maybe"
+      refute_includes messages, "unknown import test"
+      refute_includes messages, "unused import 'test'"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_recover_after_invalid_top_level_declaration
+    Dir.mktmpdir("lsp_workspace_top_level_parse_recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module demo.main
+
+        const board_width: int = 10
+        const board_height: int = 20a
+        const board_cells: int = 200
+
+        function main() -> int:
+            return board_cells
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert_includes messages, "expected end of statement at #{uri}:4:29"
+      refute_nil analysis
+      assert_equal %w[board_cells board_height board_width], analysis.values.keys.sort
+      assert_equal "int", analysis.values.fetch("board_height").type.to_s
+      assert_includes analysis.functions.keys, "main"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_recover_after_invalid_statement_in_block
+    Dir.mktmpdir("lsp_workspace_block_parse_recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            let width = 10
+            let height = 20a
+            return width
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert_includes messages, "expected end of statement at #{uri}:5:20"
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_operator analysis.local_completion_frames.length, :>, 0
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_preserve_typed_local_declaration_with_invalid_initializer
+    Dir.mktmpdir("lsp_workspace_typed_local_recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            let height: int = 20a
+            return height
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      binding_names = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.flat_map { |snapshot| snapshot.bindings.keys }
+      end
+
+      assert_includes messages, "expected end of statement at #{uri}:4:25"
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_names, "height"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_preserve_untyped_local_declaration_with_invalid_initializer
+    Dir.mktmpdir("lsp_workspace_untyped_local_recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            let value = 20a
+            return value
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      binding_types = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map { |snapshot| snapshot.bindings["value"]&.type&.to_s }
+      end
+
+      assert_includes messages, "expected end of statement at #{uri}:4:19"
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_types, "<error>"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_preserve_recovered_let_else_declaration
+    Dir.mktmpdir("lsp_workspace_let_else_recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main(handle: ptr[int]?) -> int:
+            let value = handle else as error
+                return 1
+            unsafe:
+                return read(value)
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      binding_types = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map { |snapshot| snapshot.bindings["value"]&.type&.to_s }
+      end
+
+      assert messages.any? { |message| message.include?("expected ':' before block") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_types, "ptr[int]"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_keep_completion_frame_on_invalid_last_statement
+    Dir.mktmpdir("lsp_workspace_error_stmt_frame") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+            y: int
+
+        function main() -> int:
+            let p = Point(x = 1, y = 2)
+            return p.
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      main_frame = analysis.local_completion_frames.find { |frame| frame.function_name == "main" }
+
+      assert messages.any? { |message| message.include?("expected member name after '.'") }
+      refute_nil analysis
+      refute_nil main_frame
+      assert_equal content.lines.length, main_frame.end_line
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_preserve_bindings_inside_invalid_block_header_body
+    Dir.mktmpdir("lsp_workspace_error_block_body") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            let value = 1
+            unsafe
+                let inner = value
+                return inner
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      binding_names = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.flat_map { |snapshot| snapshot.bindings.keys }
+      end
+
+      assert messages.any? { |message| message.include?("expected ':' after unsafe") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_names, "inner"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_treat_invalid_unsafe_block_body_as_unsafe
+    Dir.mktmpdir("lsp_workspace_invalid_unsafe_semantics") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Counter:
+            value: int
+
+        function main() -> int:
+            var counter = Counter(value = 3)
+            let counter_ptr = ptr_of(counter)
+            unsafe
+                return read(counter_ptr).value
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert messages.any? { |message| message.include?("expected ':' after unsafe") }
+      refute messages.any? { |message| message.include?("raw pointer dereference requires unsafe") }
+      refute_nil analysis
+      assert_includes analysis.required_unsafe_lines, 9
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_refine_nullable_binding_inside_invalid_if_block
+    Dir.mktmpdir("lsp_workspace_invalid_if_flow") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            var p: Point? = null
+            if p != null
+                return p.x
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      return_line = content.lines.index { |line| line.include?("return p.x") } + 1
+      binding_types = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map do |snapshot|
+          next unless snapshot.line == return_line
+
+          snapshot.bindings["p"]&.type&.to_s
+        end
+      end
+
+      assert messages.any? { |message| message.include?("expected ':' before block") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_types, "main.Point"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_treat_continue_inside_invalid_while_block_as_loop_control
+    Dir.mktmpdir("lsp_workspace_invalid_while_loop") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            var p: Point? = Point(x = 1)
+            while p != null
+                continue
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert messages.any? { |message| message.include?("expected ':' before block") }
+      refute messages.any? { |message| message.include?("continue must be inside a loop") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_recover_for_binding_inside_invalid_for_block
+    Dir.mktmpdir("lsp_workspace_invalid_for_loop") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        function main() -> int:
+            let items = array[Point, 1](Point(x = 1))
+            for item in items
+                continue
+                return item.x
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      binding_types = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map { |snapshot| snapshot.bindings["item"]&.type&.to_s }
+      end
+
+      assert messages.any? { |message| message.include?("expected ':' before block") }
+      refute messages.any? { |message| message.include?("continue must be inside a loop") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_types, "ref[main.Point]"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_treat_continue_inside_headerless_while_block_as_loop_control
+    Dir.mktmpdir("lsp_workspace_headerless_while_loop") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            while:
+                continue
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert messages.any? { |message| message.include?("expected expression") }
+      refute messages.any? { |message| message.include?("continue must be inside a loop") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_treat_continue_inside_headerless_for_block_as_loop_control
+    Dir.mktmpdir("lsp_workspace_headerless_for_loop") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        function main() -> int:
+            for:
+                continue
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+
+      assert messages.any? { |message| message.include?("expected loop variable name") }
+      refute messages.any? { |message| message.include?("continue must be inside a loop") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_recover_match_binding_inside_invalid_match_arm
+    Dir.mktmpdir("lsp_workspace_invalid_match_arm") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        variant MaybePoint:
+            some(value: Point)
+            none
+
+        function main(value: MaybePoint) -> int:
+            match value:
+                MaybePoint.some as payload
+                    return payload.value.x
+                MaybePoint.none:
+                    return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      target_line = content.lines.index { |line| line.include?("return payload.value.x") } + 1
+      binding_names = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map do |snapshot|
+          next unless snapshot.line == target_line
+
+          snapshot.bindings.key?("payload") ? "payload" : nil
+        end
+      end
+
+      assert messages.any? { |message| message.include?("expected ':' before block") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_names, "payload"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_collect_diagnostics_and_analysis_bind_missing_match_scrutinee_payload_as_error
+    Dir.mktmpdir("lsp_workspace_invalid_match_scrutinee") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        module main
+
+        struct Point:
+            x: int
+
+        variant MaybePoint:
+            some(value: Point)
+            none
+
+        function main() -> int:
+            match:
+                MaybePoint.some as payload:
+                    return payload
+                MaybePoint.none:
+                    return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+      analysis = workspace.get_analysis(uri)
+      target_line = content.lines.index { |line| line.include?("return payload") } + 1
+      binding_types = analysis.local_completion_frames.flat_map do |frame|
+        frame.snapshots.filter_map do |snapshot|
+          next unless snapshot.line == target_line
+
+          snapshot.bindings["payload"]&.type&.to_s
+        end
+      end
+
+      assert messages.any? { |message| message.include?("expected expression") }
+      refute_nil analysis
+      assert_includes analysis.functions.keys, "main"
+      assert_includes binding_types, "<error>"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_does_not_report_method_only_import_as_unused
     Dir.mktmpdir("lsp_workspace_method_only_import") do |dir|
       std_dir = File.join(dir, "std")

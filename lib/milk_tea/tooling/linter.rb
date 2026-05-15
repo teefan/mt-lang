@@ -26,12 +26,18 @@ module MilkTea
       keyword_init: true
     )
 
-    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil)
-      sema_analysis ||= best_effort_sema_analysis(source, path:)
-      ast = sema_analysis&.ast || Parser.parse(source, path:)
+    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil)
+      context = nil
+      if sema_analysis.nil? || unresolved_import_paths.nil?
+        context = best_effort_lint_context(source, path:)
+        sema_analysis ||= context[:analysis]
+        unresolved_import_paths ||= context[:unresolved_import_paths]
+      end
+
+      ast = sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
       trivia = Lexer.lex_with_trivia(source, path:).trivia
       suppressions = parse_suppressions(trivia)
-      warnings = new(path:, sema_analysis:, source:).lint(ast)
+      warnings = new(path:, sema_analysis:, source:, unresolved_import_paths:).lint(ast)
       warnings = apply_suppressions(warnings, suppressions)
 
       # Layer in config-file defaults before per-call overrides
@@ -182,19 +188,33 @@ module MilkTea
       lines.join
     end
 
-    def self.best_effort_sema_analysis(source, path: nil)
+    def self.best_effort_lint_context(source, path: nil)
       ast = Parser.parse(source, path:)
       imported_modules = {}
+      unresolved_import_paths = Set.new
 
       resolved_path = resolve_lint_path(path)
       if resolved_path && File.file?(resolved_path)
-        loader = ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path))
-        imported_modules = loader.imported_modules_for_ast(ast, importer_path: resolved_path)
+        loader = ModuleLoader.new(
+          module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path),
+          package_graph: load_lint_package_graph(resolved_path),
+        )
+        resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path)
+        imported_modules = resolution.modules
+        unresolved_import_paths.merge(resolution.errors.filter_map { |entry| entry.import&.path&.to_s })
       end
 
-      Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
+      {
+        ast: ast,
+        analysis: Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis],
+        unresolved_import_paths: unresolved_import_paths,
+      }
     rescue StandardError
-      nil
+      { ast: nil, analysis: nil, unresolved_import_paths: Set.new }
+    end
+
+    def self.best_effort_sema_analysis(source, path: nil)
+      best_effort_lint_context(source, path:).fetch(:analysis)
     end
 
     def self.resolve_lint_path(path)
@@ -206,6 +226,12 @@ module MilkTea
         File.expand_path(path)
       end
     rescue StandardError
+      nil
+    end
+
+    def self.load_lint_package_graph(path)
+      PackageGraph.load(path)
+    rescue PackageManifestError, PackageLockError
       nil
     end
 
@@ -244,9 +270,10 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_analysis: nil, source: nil)
+    def initialize(path: nil, sema_analysis: nil, source: nil, unresolved_import_paths: nil)
       @path = path
       @sema_analysis = sema_analysis
+      @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
       @warnings = []
       @scopes = []
@@ -290,6 +317,8 @@ module MilkTea
       used = collect_used_names(source_file)
       used.merge(collect_method_only_import_uses(source_file))
       source_file.imports.each do |import|
+        next if @unresolved_import_paths.include?(import.path.to_s)
+
         local_name = import.alias_name || import.path.parts.last
         next if ignored_binding_name?(local_name)
         next if used.include?(local_name)

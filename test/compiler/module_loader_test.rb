@@ -86,6 +86,72 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     File.delete(source_path) if source_path && File.exist?(source_path)
   end
 
+  def test_check_program_rejects_package_module_name_that_is_not_relative_to_source_root
+    Dir.mktmpdir("milk-tea-module-loader-package-module-path-mismatch") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "tetris"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      root_path = File.join(dir, "src", "main.mt")
+      File.write(root_path, <<~MT)
+        module game_engine
+
+        function main() -> int:
+            return 0
+      MT
+
+      error = assert_raises(MilkTea::ModuleLoadError) do
+        MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
+      end
+
+      assert_match(/declared module 'game_engine' does not match source path; expected 'main'/, error.message)
+      assert_match(/relative to package\.source_root/, error.message)
+    end
+  end
+
+  def test_check_program_reports_entry_module_namespace_trap_for_missing_sibling_import
+    Dir.mktmpdir("milk-tea-module-loader-entry-namespace-trap") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "src"))
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "tetris"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      root_path = File.join(dir, "src", "main.mt")
+      File.write(root_path, <<~MT)
+        module main
+
+        import main.platform_info as platform_info
+
+        function main() -> int:
+            return 0
+      MT
+
+      File.write(File.join(dir, "src", "platform_info.mt"), <<~MT)
+        module platform_info
+
+        public function label() -> str:
+            return "Build: Shared"
+      MT
+
+      error = assert_raises(MilkTea::ModuleLoadError) do
+        MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
+      end
+
+      assert_match(/entry module 'main' does not create an import namespace for sibling files/, error.message)
+      assert_match(/Import 'platform_info' instead/, error.message)
+    end
+  end
+
   def test_check_program_exports_only_public_declarations_from_imports
     Dir.mktmpdir("milk-tea-module-loader-visibility") do |dir|
       root_path = File.join(dir, "demo", "main.mt")
@@ -225,7 +291,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(app_src_dir, "main.mt")
       File.write(root_path, <<~MT)
-        module game_engine
+        module main
 
         import tetris.pieces.defs as pieces
 

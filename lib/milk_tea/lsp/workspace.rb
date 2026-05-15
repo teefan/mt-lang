@@ -607,32 +607,42 @@ module MilkTea
       def compute_analysis_for_content(uri, content)
         path = uri_to_path(uri)
         if path && File.file?(path)
+          parse_result = MilkTea::Parser.parse_collecting_errors(content, path: uri)
+          ast = parse_result.ast
+          return nil unless ast
+
           effective_platform = effective_platform_for_path(path)
           ensure_root_platform_compatible!(path, effective_platform)
-          ast = MilkTea::Parser.parse(content, path: uri)
           loader = MilkTea::ModuleLoader.new(
             module_roots: MilkTea::ModuleRoots.roots_for_path(path),
+            package_graph: package_graph_for_path(path),
             shared_cache: @shared_module_cache,
             source_overrides: file_backed_source_overrides,
             platform: effective_platform,
           )
-          MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast, importer_path: path))
+          import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
+          MilkTea::Sema.check_collecting_errors(
+            ast,
+            imported_modules: import_resolution.modules,
+            allow_missing_imports: true,
+          )[:analysis]
         else
           ast = MilkTea::Parser.parse(content, path: uri)
           MilkTea::Sema.check(ast)
         end
-      rescue MilkTea::SemaError, ModuleLoadError
+      rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError
         nil
       end
 
       def analyze_document(uri)
-        ast = get_ast(uri)
-        # Fall back to the last successful analysis so completions/hover still
-        # work when the user is mid-edit and the file does not parse/check.
-        return @last_good_analysis_cache[uri] if ast.nil?
-
         path = uri_to_path(uri)
         result = if path && File.file?(path)
+                   parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
+                   ast = parse_result.ast
+                   # Fall back to the last successful analysis so completions/hover still
+                   # work when the user is mid-edit and the file does not parse/check.
+                   return @last_good_analysis_cache[uri] if ast.nil?
+
                    resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
                    return nil unless resolution.ok?
                    effective_platform = effective_platform_for_path(path)
@@ -645,13 +655,21 @@ module MilkTea
                      source_overrides: file_backed_source_overrides,
                      platform: effective_platform,
                    )
-                   MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast, importer_path: path))
+                   import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
+                   MilkTea::Sema.check_collecting_errors(
+                     ast,
+                     imported_modules: import_resolution.modules,
+                     allow_missing_imports: true,
+                   )[:analysis]
                  else
+                   ast = get_ast(uri)
+                   return @last_good_analysis_cache[uri] if ast.nil?
+
                    MilkTea::Sema.check(ast)
                  end
         @last_good_analysis_cache[uri] = result
         result
-      rescue MilkTea::SemaError, ModuleLoadError, PackageLockError
+      rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
         @last_good_analysis_cache[uri]
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"

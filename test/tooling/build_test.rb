@@ -129,14 +129,14 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(shared_entry_path, <<~MT)
-        module platform_demo.main
+        module main
 
         function main() -> int:
             return 1
       MT
 
       File.write(windows_entry_path, <<~MT)
-        module platform_demo.main
+        module main
 
         function main() -> int:
             return 2
@@ -214,7 +214,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -277,7 +277,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -327,7 +327,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -367,7 +367,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -410,7 +410,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -455,7 +455,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -500,7 +500,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -548,7 +548,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -593,7 +593,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -653,7 +653,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -699,7 +699,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -737,7 +737,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -789,7 +789,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.desktop_demo.main",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -1077,7 +1077,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "game_types.mt"), [
-        "module src.game_types",
+        "module game_types",
         "",
         "public function value() -> int:",
         "    return 41",
@@ -1086,10 +1086,10 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module projects.snake_duel",
+        "module main",
         "",
         "import std.maybe as maybe",
-        "import src.game_types as gt",
+        "import game_types as gt",
         "",
         "function main() -> int:",
         "    return gt.value() + 1",
@@ -1189,7 +1189,7 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module projects.web_demo",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -1223,7 +1223,7 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module projects.snake_duel",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",

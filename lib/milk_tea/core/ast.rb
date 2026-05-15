@@ -93,8 +93,8 @@ module MilkTea
       def initialize(name:, type:, line: nil, column: nil) = super
     end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column) do
-      def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil) = super
+    LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else) do
+      def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil, recovered_else: false) = super
     end
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super
@@ -146,6 +146,15 @@ module MilkTea
     end
     DeferStmt = Data.define(:expression, :body, :line, :column, :length) do
       def initialize(expression:, body:, line: nil, column: nil, length: nil) = super
+    end
+    ErrorBlockStmt = Data.define(:body, :line, :column, :length, :message, :header_type, :header_expression, :header_bindings, :header_iterables) do
+      def initialize(body:, line: nil, column: nil, length: nil, message: nil, header_type: nil, header_expression: nil, header_bindings: nil, header_iterables: nil) = super
+    end
+    ErrorStmt = Data.define(:line, :column, :length, :message) do
+      def initialize(line: nil, column: nil, length: nil, message: nil) = super
+    end
+    ErrorExpr = Data.define(:line, :column, :length, :message) do
+      def initialize(line: nil, column: nil, length: nil, message: nil) = super
     end
     ExpressionStmt = Data.define(:expression, :line) do
       def initialize(expression:, line: nil) = super

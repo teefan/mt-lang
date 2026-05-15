@@ -121,7 +121,7 @@ class MilkTeaRunTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module projects.snake_duel",
+        "module main",
         "",
         "function main() -> int:",
         "    return 0",
@@ -161,7 +161,7 @@ class MilkTeaRunTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module projects.desktop_demo.main
+        module main
 
         function main() -> int:
             return 0

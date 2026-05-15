@@ -15,6 +15,7 @@ Package manifests, build workflow, and run workflow are documented separately in
 - Ordinary module header: `module a.b.c`
 - External module header: `external module a.b.c:`
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
+- Inside a package, a module header must match the file path relative to `package.source_root`; platform-specific files such as `name.linux.mt` still declare `module name`.
 - In ordinary modules, `import` statements appear only at the top after `module`.
 - In external modules, leading `import` statements are allowed inside the external-module body.
 
