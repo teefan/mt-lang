@@ -1751,6 +1751,33 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal ["Foo", "Handle"], result.ast.declarations.map(&:name)
   end
 
+  def test_parse_collecting_errors_recovers_after_multiple_invalid_raw_module_entries
+    source = <<~MT
+      external
+
+      include "foo.h"
+
+      struct Foo:
+          value: int
+
+      function nope() -> void:
+          return
+
+      import std.c.dep
+
+      opaque Handle
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source)
+
+    assert_equal 2, result.errors.length
+    assert_match(/function is not allowed in external files/, result.errors[0].message)
+    assert_match(/imports must appear before external directives and declarations/, result.errors[1].message)
+    refute_nil result.ast
+    assert_equal :raw_module, result.ast.module_kind
+    assert_equal ["Foo", "Handle"], result.ast.declarations.map(&:name)
+  end
+
   def test_parse_collecting_errors_recovers_after_invalid_statement_in_block
     source = <<~MT
       function main() -> int:
