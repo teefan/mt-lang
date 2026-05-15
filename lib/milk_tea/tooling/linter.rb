@@ -417,10 +417,10 @@ module MilkTea
         when AST::ForeignFunctionDecl
           surface << render_callable_surface("foreign function", declaration, variadic: declaration.variadic) if exported_declaration?(source_file, declaration)
         when AST::MethodsBlock
-          next unless source_file.module_kind == :raw_module || exported_type_names.include?(declaration.type_name.to_s)
+          next unless exported_type_names.include?(declaration.type_name.to_s)
 
           declaration.methods.each do |method|
-            next unless source_file.module_kind == :raw_module || method.visibility == :public
+            next unless method.visibility == :public
 
             surface << render_method_surface(declaration.type_name.to_s, method)
           end
