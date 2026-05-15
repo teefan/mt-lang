@@ -43,6 +43,11 @@ Rules:
 - In ordinary modules, `import` statements are parsed only at the top after `module`.
 - In external modules, leading `import` statements are allowed inside the external-module body.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
+- Platform-specific file variants are a compiler resolution rule, not a source-language import feature.
+- For an active target platform `P`, the compiler resolves `a.b.c` by preferring `a/b/c.P.mt` and falling back to `a/b/c.mt`.
+- Valid platform filename suffixes are `linux`, `windows`, and `wasm`.
+- The platform suffix is not part of the module name. `import a.b.c` stays the same on every target.
+- Milk Tea does not have a source-level conditional compilation syntax such as `#if`, `#ifdef`, or per-declaration platform attributes.
 
 ## 2. Lexical Rules
 
@@ -752,6 +757,7 @@ mtc lint --ignore shadow file.mt
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |
 | `borrow-and-mutate` | warning | — | Variable is borrowed via `ref_of` or `ptr_of` and also directly mutated |
 | `constant-condition` | warning | — | `if` condition is always `true` or always `false` |
+| `platform-api-drift` | warning | — | Public API differs across sibling platform-specific source variants of the same module |
 | `redundant-null-check` | warning | — | Null check on a value already known to be non-null by flow analysis |
 | `loop-single-iteration` | warning | — | `while` loop that always exits after at most one iteration |
 

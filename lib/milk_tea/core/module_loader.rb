@@ -12,17 +12,83 @@ module MilkTea
 
   class ModuleLoader
     Program = Data.define(:root_path, :root_analysis, :analyses_by_path, :analyses_by_module_name)
+    PLATFORM_SUFFIXES = {
+      "linux" => :linux,
+      "windows" => :windows,
+      "wasm" => :wasm,
+    }.freeze
 
-    def self.load_file(path)
-      new.load_file(path)
+    def self.load_file(path, platform: nil)
+      new(platform:).load_file(path)
     end
 
-    def self.check_file(path)
-      new.check_file(path)
+    def self.check_file(path, platform: nil)
+      new(platform:).check_file(path)
     end
 
-    def self.check_program(path)
-      new.check_program(path)
+    def self.check_program(path, platform: nil)
+      new(platform:).check_program(path)
+    end
+
+    def self.normalize_platform_name(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      case value.to_s.strip.downcase
+      when "linux"
+        :linux
+      when "windows", "win", "win32"
+        :windows
+      when "wasm", "web", "html5", "browser"
+        :wasm
+      else
+        raise ArgumentError, "unknown platform #{value}; expected linux|windows|wasm"
+      end
+    end
+
+    def self.platform_suffix_for_path(path)
+      match = File.basename(path.to_s).match(/\.(linux|windows|wasm)\.mt\z/)
+      return nil unless match
+
+      PLATFORM_SUFFIXES.fetch(match[1])
+    end
+
+    def self.effective_platform_for_path(path, platform_override: nil, host_platform: nil)
+      normalized_override = normalize_platform_name(platform_override)
+      return normalized_override if normalized_override
+
+      suffix_platform = platform_suffix_for_path(path)
+      return suffix_platform if suffix_platform
+
+      manifest_platform = PackageManifest.load(path).platform
+      return manifest_platform if manifest_platform
+
+      normalize_platform_name(host_platform || default_host_platform)
+    rescue PackageManifestError
+      normalize_platform_name(host_platform || default_host_platform)
+    end
+
+    def self.resolve_source_path(path, platform: nil, error_class: nil)
+      expanded_path = File.expand_path(path.to_s)
+      normalized_platform = platform.nil? ? nil : normalize_platform_name(platform)
+      pinned_platform = platform_suffix_for_path(expanded_path)
+
+      if pinned_platform
+        if normalized_platform && normalized_platform != pinned_platform
+          raise_platform_conflict!(expanded_path, pinned_platform, normalized_platform, error_class:)
+        end
+        return expanded_path
+      end
+
+      return expanded_path unless normalized_platform && expanded_path.end_with?(".mt")
+
+      variant_path = expanded_path.sub(/\.mt\z/, ".#{normalized_platform}.mt")
+      return variant_path if File.file?(variant_path)
+
+      expanded_path
+    end
+
+    def self.default_host_platform
+      /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
     end
 
     # +shared_cache+ is an optional Hash owned by the caller (e.g. the LSP Workspace)
@@ -34,11 +100,12 @@ module MilkTea
     # +source_overrides+ is an optional path => source hash used by the LSP for
     # unsaved open documents. When any override is present the shared cache is
     # bypassed so dependent analyses never reuse bindings built from stale disk state.
-    def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil)
+    def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil, platform: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
       @analysis_cache = {}
       @checking_paths = []
+      @platform = self.class.normalize_platform_name(platform)
       @package_graph = package_graph
       @package_manifest_cache = {}
       @shared_cache = shared_cache # Hash or nil; mutated in-place to persist across calls
@@ -46,8 +113,8 @@ module MilkTea
     end
 
     def load_file(path)
-      expanded_path = File.expand_path(path)
-      @ast_cache[expanded_path] ||= parse_file(expanded_path)
+      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+      @ast_cache[resolved_path] ||= parse_file(resolved_path)
     end
 
     def check_file(path)
@@ -55,7 +122,10 @@ module MilkTea
     end
 
     def check_program(path)
-      root_path = File.expand_path(path)
+      requested_path = File.expand_path(path)
+      previous_platform = @platform
+      @platform ||= self.class.platform_suffix_for_path(requested_path)
+      root_path = self.class.resolve_source_path(requested_path, platform: @platform, error_class: ModuleLoadError)
       root_analysis = check_path(root_path)
 
       analyses_by_module_name = @analysis_cache.each_value.each_with_object({}) do |analysis, modules|
@@ -70,6 +140,8 @@ module MilkTea
         analyses_by_path: @analysis_cache.dup.freeze,
         analyses_by_module_name: analyses_by_module_name.freeze,
       )
+    ensure
+      @platform = previous_platform
     end
 
     def imported_modules_for_ast(ast, importer_path: nil)
@@ -85,43 +157,55 @@ module MilkTea
 
     private
 
+    def self.raise_platform_conflict!(path, pinned_platform, active_platform, error_class: nil)
+      if error_class == ModuleLoadError
+        raise ModuleLoadError.new("source file targets platform #{pinned_platform}; active platform is #{active_platform}", path:)
+      end
+
+      message = "source file #{path} targets platform #{pinned_platform}; active platform is #{active_platform}"
+      raise(error_class || ArgumentError, message)
+    end
+    private_class_method :raise_platform_conflict!
+
     def check_path(path)
+      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+
       # 1. Instance-local cache (within a single check_program call, prevents re-entrant work)
-      return @analysis_cache[path] if @analysis_cache.key?(path)
+      return @analysis_cache[resolved_path] if @analysis_cache.key?(resolved_path)
 
       # 2. Shared cross-request cache (owned by the LSP Workspace): reuse if the
       #    file has not changed on disk since it was last analyzed.
       if use_shared_cache?
-        entry = @shared_cache[path]
+        entry = @shared_cache[resolved_path]
         if entry
-          current_mtime = File.mtime(path).to_f rescue nil
+          current_mtime = File.mtime(resolved_path).to_f rescue nil
           if current_mtime && entry[:mtime] == current_mtime
-            @analysis_cache[path] = entry[:analysis]
+            @analysis_cache[resolved_path] = entry[:analysis]
             return entry[:analysis]
           end
         end
       end
 
-      if @checking_paths.include?(path)
-        raise ModuleLoadError.new("cyclic import detected", path: path)
+      if @checking_paths.include?(resolved_path)
+        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
       end
 
-      @checking_paths << path
-      ast = load_file(path)
-      imported_modules = imported_modules_for_ast(ast, importer_path: path)
+      @checking_paths << resolved_path
+      ast = load_file(resolved_path)
+      imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
       analysis = Sema.check(ast, imported_modules:)
-      @analysis_cache[path] = analysis
+      @analysis_cache[resolved_path] = analysis
 
       # Populate shared cache with current mtime so subsequent requests skip re-analysis.
       if use_shared_cache?
-        mtime = File.mtime(path).to_f rescue nil
-        @shared_cache[path] = { mtime: mtime, analysis: analysis } if mtime
+        mtime = File.mtime(resolved_path).to_f rescue nil
+        @shared_cache[resolved_path] = { mtime: mtime, analysis: analysis } if mtime
       end
 
       analysis
     ensure
-      @checking_paths.pop if @checking_paths.last == path
+      @checking_paths.pop if @checking_paths.last == resolved_path
     end
 
     def parse_file(path)
@@ -151,7 +235,7 @@ module MilkTea
 
       relative_path = File.join(*module_name.split(".")) + ".mt"
       blocked = false
-      candidate = @module_roots.lazy.map { |root| File.join(root, relative_path) }.find do |path|
+      candidate = @module_roots.lazy.map { |root| self.class.resolve_source_path(File.join(root, relative_path), platform: @platform) }.find do |path|
         next false unless File.file?(path)
 
         allowed = import_allowed?(module_name, importer_path, path)
@@ -196,7 +280,7 @@ module MilkTea
         raise ModuleLoadError.new("ambiguous package dependency import", path: module_name)
       end
 
-      resolved_path = matching_candidates.first.last
+      resolved_path = self.class.resolve_source_path(matching_candidates.first.last, platform: @platform)
       raise ModuleLoadError.new("module not found", path: module_name) unless File.file?(resolved_path)
 
       File.expand_path(resolved_path)

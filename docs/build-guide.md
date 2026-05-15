@@ -49,6 +49,37 @@ Relevant build keys:
 
 Application packages default to `build.entry = "src/main.mt"` when that file exists. Library packages do not have an executable entry point.
 
+### 1.1 Platform-specific source file variants
+
+Milk Tea supports platform-specific full-file replacements for ordinary source files.
+
+Canonical filename forms are:
+
+- shared file: `name.mt`
+- Linux variant: `name.linux.mt`
+- Windows variant: `name.windows.mt`
+- wasm variant: `name.wasm.mt`
+
+Resolution is deterministic:
+
+1. choose the active target platform from `--platform`, otherwise `platform.default`, otherwise the host platform
+2. when resolving `name.mt`, prefer `name.<platform>.mt`
+3. fall back to `name.mt` when the platform-specific file does not exist
+
+This applies to both imports and package entry files. For example, if `build.entry = "src/main.mt"` and the active target is `windows`, Milk Tea first tries `src/main.windows.mt` and falls back to `src/main.mt`.
+
+Imports keep the ordinary logical module name:
+
+```mt
+import tetris.rules.scoring as scoring
+```
+
+The importer never spells the platform in the import path. `tetris.rules.scoring` may resolve to either `tetris/rules/scoring.mt` or `tetris/rules/scoring.<platform>.mt` depending on the active target.
+
+Only the canonical suffixes `linux`, `windows`, and `wasm` are valid in source filenames. CLI and manifest aliases such as `web` and `browser` still normalize to `wasm`, but source files should use `*.wasm.mt`.
+
+If you directly target a suffixed source file such as `src/main.windows.mt`, that file pins the target platform. Passing a conflicting explicit platform is an error.
+
 ## 2. Library Packages, Version Requirements, And Dependency Commands
 
 Milk Tea packages can now depend on local reusable source packages.
@@ -317,6 +348,11 @@ Common options:
 - `--archive` for native package builds when you also want a `.tar.gz` archive of the bundle; this implies `--bundle`
 
 The wasm platform also accepts the aliases `web`, `html5`, and `browser`.
+
+For editor tooling, the Milk Tea VS Code extension also accepts `milkTea.lsp.platform = auto|linux|windows|wasm`.
+
+- `auto`: use the open file suffix when present, otherwise the owning package default platform, otherwise the host platform
+- `linux|windows|wasm`: force that platform for platform-specific import resolution in the language server
 
 ## 4. Output Paths
 

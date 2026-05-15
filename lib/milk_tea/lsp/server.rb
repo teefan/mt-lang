@@ -84,6 +84,7 @@ module MilkTea
         @workspace = Workspace.new
         @format_mode = :tidy
         @dependency_resolution_mode = :auto
+        @platform_override = nil
         @handlers = {}
         @diagnostic_report_cache = {}
         @semantic_tokens_cache = {}
@@ -862,6 +863,9 @@ module MilkTea
 
         dependency_resolution_mode = dependency_resolution_mode_from_settings(settings)
         apply_dependency_resolution_mode(dependency_resolution_mode) if dependency_resolution_mode
+
+        platform_provided, platform_override = platform_override_from_settings(settings)
+        apply_platform_override(platform_override) if platform_provided
       end
 
       def formatter_mode_from_settings(settings)
@@ -894,12 +898,43 @@ module MilkTea
         nil
       end
 
+      def platform_override_from_settings(settings)
+        return [false, nil] unless settings.is_a?(Hash)
+
+        value =
+          settings.dig('milkTea', 'lsp', 'platform') ||
+          settings.dig('milk_tea', 'lsp', 'platform') ||
+          settings.dig('lsp', 'platform')
+        return [false, nil] if value.nil?
+
+        normalized = value.to_s.strip.downcase
+        return [true, nil] if normalized.empty? || normalized == 'auto'
+
+        [true, ModuleLoader.normalize_platform_name(normalized)]
+      rescue ArgumentError
+        [false, nil]
+      end
+
       def apply_dependency_resolution_mode(mode)
         normalized = DependencyResolution.normalize_mode(mode)
         return if @dependency_resolution_mode == normalized
 
         @dependency_resolution_mode = normalized
         @workspace.dependency_resolution_mode = normalized
+        @diagnostic_report_cache.clear
+        open_uris = @workspace.open_document_uris
+        invalidate_document_caches_for(open_uris)
+        open_uris.each do |uri|
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+        end
+      end
+
+      def apply_platform_override(platform)
+        normalized = platform.nil? ? nil : ModuleLoader.normalize_platform_name(platform)
+        return if @platform_override == normalized
+
+        @platform_override = normalized
+        @workspace.platform_override = normalized
         @diagnostic_report_cache.clear
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)

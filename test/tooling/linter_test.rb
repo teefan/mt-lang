@@ -1148,6 +1148,73 @@ module LintHelpers
   end
 end
 
+class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
+  include LintHelpers
+
+  def test_warns_when_public_methods_drift_between_platform_variants
+    Dir.mktmpdir("mt-lint-platform-api") do |dir|
+      path = File.join(dir, "counter.mt")
+      File.write(path, <<~MT)
+        module demo.counter
+
+        public struct Counter:
+            value: int
+
+        methods Counter:
+            public function read() -> int:
+                return this.value
+      MT
+      File.write(File.join(dir, "counter.windows.mt"), <<~MT)
+        module demo.counter
+
+        public struct Counter:
+            value: str
+
+        methods Counter:
+            public function read() -> str:
+                return this.value
+      MT
+
+      warnings = MilkTea::Linter.lint_source(File.read(path), path: path)
+
+      warning = warnings.find { |entry| entry.code == "platform-api-drift" }
+      assert warning, "expected platform-api-drift warning"
+      assert_equal 1, warning.line
+      assert_match(/counter\.windows\.mt/, warning.message)
+      assert_match(/struct Counter \{ value: str \}/, warning.message)
+      assert_match(/method Counter\.read\(\) -> str/, warning.message)
+    end
+  end
+
+  def test_does_not_warn_when_only_private_declarations_differ_between_variants
+    Dir.mktmpdir("mt-lint-platform-private") do |dir|
+      path = File.join(dir, "helpers.mt")
+      File.write(path, <<~MT)
+        module demo.helpers
+
+        function helper() -> int:
+            return 1
+
+        public function read() -> int:
+            return helper()
+      MT
+      File.write(File.join(dir, "helpers.windows.mt"), <<~MT)
+        module demo.helpers
+
+        function helper() -> int:
+            return 2
+
+        public function read() -> int:
+            return helper()
+      MT
+
+      warnings = MilkTea::Linter.lint_source(File.read(path), path: path)
+
+      refute_any(warnings, "platform-api-drift")
+    end
+  end
+end
+
 # ── Config file support ────────────────────────────────────────────────────
 
 class MilkTeaLinterConfigTest < Minitest::Test

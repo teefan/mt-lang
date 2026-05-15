@@ -2860,6 +2860,149 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_document_diagnostic_platform_override_uses_platform_specific_import_variant_from_initialize
+    Dir.mktmpdir("milk-tea-lsp-platform-diagnostics") do |dir|
+      main_path = File.join(dir, "main.mt")
+      support_path = File.join(dir, "support.mt")
+      support_windows_path = File.join(dir, "support.windows.mt")
+
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+      TOML
+
+      main_source = <<~MT
+        module demo.main
+
+        import support
+
+        function main() -> int:
+            return support.value()
+      MT
+
+      File.write(main_path, main_source)
+      File.write(support_path, <<~MT)
+        module support
+      MT
+      File.write(support_windows_path, <<~MT)
+        module support
+
+        public function value() -> int:
+            return 2
+      MT
+
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => path_to_uri(dir),
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "platform" => "windows"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        items = response.fetch("result").fetch("items")
+        messages = items.map { |item| item["message"] }
+
+        refute messages.any? { |message| message.match?(/function not found|value/) },
+               "expected windows platform override to resolve support.windows.mt, got: #{messages.inspect}"
+      end
+    end
+  end
+
+  def test_document_diagnostic_platform_override_updates_live_via_did_change_configuration
+    Dir.mktmpdir("milk-tea-lsp-platform-live-change") do |dir|
+      main_path = File.join(dir, "main.mt")
+      support_path = File.join(dir, "support.mt")
+      support_windows_path = File.join(dir, "support.windows.mt")
+
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+      TOML
+
+      main_source = <<~MT
+        module demo.main
+
+        import support
+
+        function main() -> int:
+            return support.value()
+      MT
+
+      File.write(main_path, main_source)
+      File.write(support_path, <<~MT)
+        module support
+      MT
+      File.write(support_windows_path, <<~MT)
+        module support
+
+        public function value() -> int:
+            return 2
+      MT
+
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => path_to_uri(dir),
+          "capabilities" => {}
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        initial_response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        initial_messages = initial_response.fetch("result").fetch("items").map { |item| item["message"] }
+        assert initial_messages.any? { |message| message.match?(/function not found|value/) },
+               "expected shared-platform diagnostics before override, got: #{initial_messages.inspect}"
+
+        client.send_notification("workspace/didChangeConfiguration", {
+          "settings" => {
+            "milkTea" => {
+              "lsp" => {
+                "platform" => "windows"
+              }
+            }
+          }
+        })
+
+        updated_response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        updated_messages = updated_response.fetch("result").fetch("items").map { |item| item["message"] }
+
+        refute updated_messages.any? { |message| message.match?(/function not found|value/) },
+               "expected live platform override to invalidate diagnostics caches, got: #{updated_messages.inspect}"
+      end
+    end
+  end
+
   def test_completion_locked_uses_package_lock_when_manifest_dependencies_drift
     Dir.mktmpdir("milk-tea-lsp-locked-completion") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")

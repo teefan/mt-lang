@@ -173,6 +173,23 @@
           "default": "auto",
           "description": "Controls how the Milk Tea LSP resolves package dependencies for diagnostics, semantic tokens, and other semantic features."
         },
+        "milkTea.lsp.platform": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "linux",
+            "windows",
+            "wasm"
+          ],
+          "enumDescriptions": [
+            "Use the opened file suffix when present, otherwise the owning package default platform, otherwise the host platform.",
+            "Force Linux semantics for platform-specific module resolution.",
+            "Force Windows semantics for platform-specific module resolution.",
+            "Force wasm semantics for platform-specific module resolution."
+          ],
+          "default": "auto",
+          "description": "Controls the active platform the Milk Tea LSP uses for platform-specific module resolution."
+        },
         "milkTea.lsp.retry.enabled": {
           "type": "boolean",
           "default": true,
