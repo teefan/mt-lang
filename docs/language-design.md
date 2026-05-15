@@ -296,14 +296,13 @@ That keeps the contract visible at the owning type and avoids import-sensitive s
 
 Rules for interfaces in v1:
 
-- `interface` bodies contain instance method signatures only.
-- Interface requirements may be `function` or `editable function`, but not `static function`.
+- `interface` bodies contain `function`, `editable function`, or `static function` signatures.
 - Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance in v1.
 - Interface methods may not be generic or async in v1.
 - `struct` and `opaque` declarations may implement zero or more interfaces.
 - Multiple interfaces are allowed: `struct Boss implements Damageable, Drawable:`.
 - A type implements an interface only when its declaration says so explicitly.
-- Conformance matching uses method name, receiver mutability, parameter types, return type, and asyncness.
+- Conformance matching uses method kind, receiver mutability when applicable, parameter types, return type, and asyncness.
 - An `editable function` requirement must be satisfied by an editable method exactly.
 - If two interfaces require the same method with the same signature, one implementation satisfies both. If the signatures differ, the declaration is rejected.
 - Interface conformance is a compile-time fact, not a storage type.

@@ -7599,6 +7599,8 @@ module MilkTea
       def resolve_type_expression(expression)
         case expression
         when AST::Identifier
+          return current_type_params[expression.name] if current_type_params.key?(expression.name)
+
           @types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)

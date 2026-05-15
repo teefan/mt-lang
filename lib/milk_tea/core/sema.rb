@@ -177,6 +177,7 @@ module MilkTea
         install_builtin_types
         install_imports
         declare_named_types
+        resolve_generic_type_param_constraints
         resolve_type_aliases
         resolve_aggregate_fields
         resolve_enum_members
@@ -217,6 +218,7 @@ module MilkTea
         install_builtin_types
         install_imports
         declare_named_types
+        resolve_generic_type_param_constraints
         resolve_type_aliases
         resolve_aggregate_fields
         resolve_enum_members
@@ -309,7 +311,6 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::StructDecl
-              validate_disallowed_type_param_constraints!(decl, "struct #{decl.name}")
               validate_struct_layout!(decl)
               validate_explicit_aggregate_c_name!(decl)
               ensure_available_type_name!(decl.name)
@@ -338,7 +339,6 @@ module MilkTea
               ensure_available_type_name!(decl.name)
               @types[decl.name] = Types::Union.new(decl.name, module_name: @module_name, external: raw_module?, c_name: decl.c_name)
             when AST::VariantDecl
-              validate_disallowed_type_param_constraints!(decl, "variant #{decl.name}")
               ensure_available_type_name!(decl.name)
               @types[decl.name] = if decl.type_params.empty?
                                     Types::Variant.new(decl.name, module_name: @module_name)
@@ -371,18 +371,22 @@ module MilkTea
         end
       end
 
+      def resolve_generic_type_param_constraints
+        @ast.declarations.each do |decl|
+          with_error_node(decl) do
+            next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::VariantDecl)
+            next if decl.type_params.empty?
+
+            @types.fetch(decl.name).define_type_param_constraints(resolve_type_param_constraints(decl.type_params))
+          end
+        end
+      end
+
       def resolve_type_aliases
         @ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
           ensure_available_type_name!(decl.name)
           @types[decl.name] = resolve_type_ref(decl.target)
         end
-      end
-
-      def validate_disallowed_type_param_constraints!(decl, context)
-        return unless decl.respond_to?(:type_params)
-        return unless decl.type_params.any? { |type_param| type_param.constraints.any? }
-
-        raise_sema_error("#{context} does not support constraints on type parameters")
       end
 
       def declare_interface_binding(decl)
@@ -405,7 +409,6 @@ module MilkTea
 
       def resolve_interface_method_binding(method_decl)
         raise_sema_error("interface method #{method_decl.name} cannot be async") if method_decl.async
-        raise_sema_error("interface method #{method_decl.name} cannot be static") if method_decl.kind == :static
 
         params = []
         seen = {}
@@ -468,12 +471,13 @@ module MilkTea
                           else
                             {}
                           end
+            type_param_constraints = struct_type.is_a?(Types::GenericStructDefinition) ? struct_type.type_param_constraints : {}
             fields = {}
 
             decl.fields.each do |field|
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
 
-              field_type = resolve_type_ref(field.type, type_params:)
+              field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
               validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
               unless proc_storage_supported_type?(field_type)
                 raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
@@ -531,6 +535,7 @@ module MilkTea
                           else
                             {}
                           end
+            type_param_constraints = variant_type.is_a?(Types::GenericVariantDefinition) ? variant_type.type_param_constraints : {}
             seen_arms = []
             arms_hash = {}
             decl.arms.each do |arm|
@@ -543,7 +548,7 @@ module MilkTea
                 raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
 
                 seen_fields << field.name
-                field_types[field.name] = resolve_type_ref(field.type, type_params:)
+                field_types[field.name] = resolve_type_ref(field.type, type_params:, type_param_constraints:)
               end
               arms_hash[arm.name] = field_types
             end
@@ -600,7 +605,7 @@ module MilkTea
               ensure_available_value_name!(decl.name)
               @top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::MethodsBlock
-              dispatch_receiver_type, receiver_type, receiver_type_param_names = resolve_methods_receiver_target(decl.type_name)
+              dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
               decl.methods.each do |method|
                 binding = declare_function_binding(
@@ -608,6 +613,7 @@ module MilkTea
                   receiver_type:,
                   declared_receiver_type: receiver_type,
                   receiver_type_param_names:,
+                  receiver_type_param_constraints:,
                 )
                 raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
 
@@ -618,11 +624,11 @@ module MilkTea
         end
       end
 
-      def declare_function_binding(decl, receiver_type: nil, declared_receiver_type: nil, receiver_type_param_names: [], external: false)
+      def declare_function_binding(decl, receiver_type: nil, declared_receiver_type: nil, receiver_type_param_names: [], receiver_type_param_constraints: {}, external: false)
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
         type_param_names = receiver_type_param_names + decl.type_params.map(&:name)
-        type_param_constraints = resolve_type_param_constraints(decl.type_params)
+        type_param_constraints = receiver_type_param_constraints.merge(resolve_type_param_constraints(decl.type_params))
         raise_sema_error("external function #{decl.name} cannot be generic") if external && type_param_names.any?
         raise_sema_error("main cannot be generic") if decl.name == "main" && type_param_names.any?
         raise_sema_error("external function #{decl.name} cannot be async") if external && async_function
@@ -650,7 +656,7 @@ module MilkTea
 
         public_params = []
         decl.params.each do |param|
-          type = resolve_type_ref(param.type, type_params:)
+          type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
           validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
           validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
 
@@ -662,7 +668,7 @@ module MilkTea
             raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
             validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
 
-            boundary_type = foreign_parameter_boundary_type(param, type, type_params:)
+            boundary_type = foreign_parameter_boundary_type(param, type, type_params:, type_param_constraints:)
             validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type && param.mode != :in
             validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.mode == :in
             param_binding = value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
@@ -702,7 +708,7 @@ module MilkTea
           seen[param.name] = true
         end
 
-        body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:) : @types.fetch("void")
+        body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:, type_param_constraints:) : @types.fetch("void")
         validate_return_ref_type!(body_return_type, function_name: decl.name)
         validate_return_proc_type!(body_return_type, function_name: decl.name)
         if decl.name == "main" && async_function && body_return_type != @types.fetch("int") && body_return_type != @types.fetch("void")
@@ -1131,10 +1137,16 @@ module MilkTea
           raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: interface methods cannot be implemented by generic methods")
         end
 
-        expected_mutable = interface_method.kind == :editable
-        actual_mutable = method.type.receiver_mutable
-        if actual_mutable != expected_mutable
-          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver mutability does not match")
+        if interface_method.kind == :static
+          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: method kind does not match") unless method.type.receiver_type.nil?
+        else
+          raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: method kind does not match") if method.type.receiver_type.nil?
+
+          expected_mutable = interface_method.kind == :editable
+          actual_mutable = method.type.receiver_mutable
+          if actual_mutable != expected_mutable
+            raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver mutability does not match")
+          end
         end
 
         method_params = method.type.params.map(&:type)
@@ -3678,6 +3690,10 @@ module MilkTea
         @current_type_substitutions || {}
       end
 
+      def current_type_param_constraints
+        @current_type_param_constraints || {}
+      end
+
       def resolve_interface_ref(interface_ref)
         parts = interface_ref.parts
 
@@ -3719,8 +3735,47 @@ module MilkTea
         false
       end
 
-      def resolve_type_ref(type_ref, type_params: current_type_params)
-        base = resolve_non_nullable_type(type_ref, type_params:)
+      def type_satisfies_interface_constraint?(type, interface, available_type_param_constraints: current_type_param_constraints)
+        if type.is_a?(Types::TypeVar)
+          constraint = available_type_param_constraints[type.name]
+          return constraint && constraint.interfaces.include?(interface)
+        end
+
+        type_implements_interface?(type, interface)
+      end
+
+      def type_satisfies_defaults_constraint?(type, context:, available_type_param_constraints: current_type_param_constraints)
+        if type.is_a?(Types::TypeVar)
+          constraint = available_type_param_constraints[type.name]
+          return constraint && constraint.requires_default
+        end
+
+        !!resolve_explicit_default_binding(type, context:)
+      end
+
+      def validate_generic_type_param_constraints!(generic_type, arguments, context:, available_type_param_constraints: current_type_param_constraints)
+        return if generic_type.type_param_constraints.empty?
+
+        generic_type.type_params.zip(arguments).each do |name, actual_type|
+          constraints = generic_type.type_param_constraints[name]
+          next unless constraints
+
+          constraints.interfaces.each do |interface|
+            next if type_satisfies_interface_constraint?(actual_type, interface, available_type_param_constraints:)
+
+            raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for #{context}")
+          end
+
+          next unless constraints.requires_default
+
+          next if type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+
+          raise_sema_error("type #{actual_type} does not satisfy defaults constraint for #{context}")
+        end
+      end
+
+      def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
+        base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:)
         return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType)
 
         raise_sema_error("ref types are non-null and cannot be nullable") if type_ref.nullable && ref_type?(base)
@@ -3728,26 +3783,26 @@ module MilkTea
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
 
-      def resolve_non_nullable_type(type_ref, type_params: {})
+      def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {})
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
           end
-          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
         end
 
         if type_ref.is_a?(AST::ProcType)
           params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
           end
-          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
         end
 
         parts = type_ref.name.parts
 
         if type_ref.arguments.any?
           name = parts.join(".")
-          arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
+          arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
 
           if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
             raise_sema_error("ref types cannot be nested inside #{name}")
@@ -3760,6 +3815,7 @@ module MilkTea
 
           if (generic_type = resolve_named_generic_type(parts))
             begin
+              validate_generic_type_param_constraints!(generic_type, arguments, context: "type #{generic_type}", available_type_param_constraints: type_param_constraints)
               return generic_type.instantiate(arguments)
             rescue ArgumentError => error
               raise_sema_error(error.message)
@@ -3797,12 +3853,12 @@ module MilkTea
         raise_sema_error("unknown type #{type_ref.name}")
       end
 
-      def resolve_type_argument(argument, type_params: current_type_params)
+      def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
         case argument
         when AST::TypeRef
-          resolve_type_argument_ref(argument, type_params:)
+          resolve_type_argument_ref(argument, type_params:, type_param_constraints:)
         when AST::FunctionType
-          resolve_type_ref(argument, type_params:)
+          resolve_type_ref(argument, type_params:, type_param_constraints:)
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
         else
@@ -3810,10 +3866,10 @@ module MilkTea
         end
       end
 
-      def resolve_type_argument_ref(type_ref, type_params:)
-        return resolve_type_ref(type_ref, type_params:) unless literal_type_argument_name_candidate?(type_ref)
+      def resolve_type_argument_ref(type_ref, type_params:, type_param_constraints:)
+        return resolve_type_ref(type_ref, type_params:, type_param_constraints:) unless literal_type_argument_name_candidate?(type_ref)
 
-        resolve_type_ref(type_ref, type_params:)
+        resolve_type_ref(type_ref, type_params:, type_param_constraints:)
       rescue SemaError => error
         literal_type_argument = resolve_named_literal_type_argument(type_ref)
         return literal_type_argument if literal_type_argument
@@ -5004,6 +5060,8 @@ module MilkTea
       def resolve_type_expression(expression)
         case expression
         when AST::Identifier
+          return current_type_params[expression.name] if current_type_params.key?(expression.name)
+
           @types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
@@ -5056,8 +5114,9 @@ module MilkTea
           if generic_type.is_a?(Types::GenericStructDefinition)
             receiver_type_param_names = validate_methods_receiver_type_arguments!(type_ref, generic_type)
             receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
-            receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params)
-            return [generic_type, receiver_type, receiver_type_param_names]
+            receiver_type_param_constraints = generic_type.type_param_constraints
+            receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params, type_param_constraints: receiver_type_param_constraints)
+            return [generic_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints]
           end
 
           begin
@@ -5066,14 +5125,14 @@ module MilkTea
               raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
             end
 
-            return [receiver_type, receiver_type, []]
+            return [receiver_type, receiver_type, [], {}]
           rescue MilkTea::SemaError => error
             receiver_type_param_names = methods_receiver_type_argument_names!(type_ref)
             raise error if receiver_type_param_names.empty?
 
             receiver_type_params = receiver_type_param_names.to_h { |name| [name, Types::TypeVar.new(name)] }
             receiver_type = resolve_type_ref(type_ref, type_params: receiver_type_params)
-            return [method_dispatch_receiver_type(receiver_type), receiver_type, receiver_type_param_names]
+            return [method_dispatch_receiver_type(receiver_type), receiver_type, receiver_type_param_names, {}]
           end
         end
 
@@ -5082,7 +5141,7 @@ module MilkTea
           raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
         end
 
-        [receiver_type, receiver_type, []]
+        [receiver_type, receiver_type, [], {}]
       end
 
       def methods_receiver_type_argument_names!(type_ref)
@@ -5315,14 +5374,14 @@ module MilkTea
           raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless actual_type
 
           constraints.interfaces.each do |interface|
-            next if type_implements_interface?(actual_type, interface)
+            next if type_satisfies_interface_constraint?(actual_type, interface)
 
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
           end
 
           next unless constraints.requires_default
 
-          next if resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
+          next if type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
 
           raise_sema_error("type #{actual_type} does not satisfy defaults constraint for function #{binding.name}")
         end
@@ -5783,8 +5842,8 @@ module MilkTea
         false
       end
 
-      def foreign_parameter_boundary_type(param, public_type, type_params:)
-        return resolve_type_ref(param.boundary_type, type_params:) if param.boundary_type
+      def foreign_parameter_boundary_type(param, public_type, type_params:, type_param_constraints: current_type_param_constraints)
+        return resolve_type_ref(param.boundary_type, type_params:, type_param_constraints:) if param.boundary_type
         return const_pointer_to(public_type) if param.mode == :in
         return pointer_to(foreign_slot_boundary_value_type(public_type)) if [:out, :inout].include?(param.mode)
 
