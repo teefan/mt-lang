@@ -21,6 +21,7 @@ module MilkTea
       def initialize(error_output: nil)
         @error_output = error_output
         @dependency_resolution_mode = :auto
+        @platform_override = nil
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @document_sources = {} # uri -> source string from the editor client
@@ -70,6 +71,23 @@ module MilkTea
         @dependency_resolution_mode
       end
 
+      def platform_override=(platform)
+        normalized = platform.nil? ? nil : ModuleLoader.normalize_platform_name(platform)
+        return if @platform_override == normalized
+
+        @platform_override = normalized
+        @analysis_state_mutex.synchronize do
+          @shared_module_cache.clear
+          @analysis_cache.clear
+          @diagnostics_cache.clear
+          @last_good_analysis_cache.clear
+        end
+      end
+
+      def platform_override
+        @platform_override
+      end
+
       def set_document_source(uri, source)
         normalized = source.to_s
         raise ArgumentError, "invalid document source #{source.inspect}" unless DOCUMENT_SOURCES.include?(normalized)
@@ -107,6 +125,7 @@ module MilkTea
             shared_module_cache: @shared_module_cache,
             source_overrides: file_backed_source_overrides,
             dependency_resolution_mode: @dependency_resolution_mode,
+            platform_override: @platform_override,
           )
           diagnostics = result[:diagnostics]
           analysis = result[:analysis]
@@ -588,12 +607,16 @@ module MilkTea
       def compute_analysis_for_content(uri, content)
         path = uri_to_path(uri)
         if path && File.file?(path)
+          effective_platform = effective_platform_for_path(path)
+          ensure_root_platform_compatible!(path, effective_platform)
+          ast = MilkTea::Parser.parse(content, path: uri)
           loader = MilkTea::ModuleLoader.new(
             module_roots: MilkTea::ModuleRoots.roots_for_path(path),
             shared_cache: @shared_module_cache,
             source_overrides: file_backed_source_overrides,
+            platform: effective_platform,
           )
-          loader.check_file(path)
+          MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast, importer_path: path))
         else
           ast = MilkTea::Parser.parse(content, path: uri)
           MilkTea::Sema.check(ast)
@@ -612,16 +635,17 @@ module MilkTea
         result = if path && File.file?(path)
                    resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
                    return nil unless resolution.ok?
+                   effective_platform = effective_platform_for_path(path)
+                   ensure_root_platform_compatible!(path, effective_platform)
 
-                   # Use the full module loader for file-backed documents so
-                   # imports resolve consistently with CLI `mtc check`.
                    loader = MilkTea::ModuleLoader.new(
                      module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
                      package_graph: package_graph_for_path(path, locked: resolution.locked),
                      shared_cache: @shared_module_cache,
                      source_overrides: file_backed_source_overrides,
+                     platform: effective_platform,
                    )
-                   loader.check_file(path)
+                   MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast, importer_path: path))
                  else
                    MilkTea::Sema.check(ast)
                  end
@@ -638,6 +662,16 @@ module MilkTea
         PackageGraph.load(path, locked:)
       rescue PackageManifestError
         nil
+      end
+
+      def effective_platform_for_path(path)
+        ModuleLoader.effective_platform_for_path(path, platform_override: @platform_override)
+      end
+
+      def ensure_root_platform_compatible!(path, effective_platform)
+        return unless ModuleLoader.platform_suffix_for_path(path)
+
+        ModuleLoader.resolve_source_path(path, platform: effective_platform, error_class: ModuleLoadError)
       end
 
       def open_document_uris

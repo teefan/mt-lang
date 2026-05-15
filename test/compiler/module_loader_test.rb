@@ -247,6 +247,45 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
+  def test_check_program_prefers_platform_specific_module_variant_over_shared_module
+    Dir.mktmpdir("milk-tea-module-loader-platform-variant") do |dir|
+      root_path = File.join(dir, "demo", "main.mt")
+      shared_path = File.join(dir, "demo", "support.mt")
+      windows_path = File.join(dir, "demo", "support.windows.mt")
+
+      FileUtils.mkdir_p(File.dirname(root_path))
+
+      File.write(root_path, <<~MT)
+        module demo.main
+
+        import demo.support as support
+
+        function main() -> int:
+            return support.value()
+      MT
+
+      File.write(shared_path, <<~MT)
+        module demo.support
+
+        public function value() -> int:
+            return 1
+      MT
+
+      File.write(windows_path, <<~MT)
+        module demo.support
+
+        public function value() -> int:
+            return 2
+      MT
+
+      program = MilkTea::ModuleLoader.new(module_roots: [dir], platform: :windows).check_program(root_path)
+
+      assert_includes program.analyses_by_path.keys, File.expand_path(windows_path)
+      refute_includes program.analyses_by_path.keys, File.expand_path(shared_path)
+      assert_equal %w[value], program.root_analysis.imports.fetch("support").functions.keys.sort
+    end
+  end
+
   def test_check_program_allows_dependency_packages_to_import_their_own_direct_dependencies
     Dir.mktmpdir("milk-tea-module-loader-transitive-allowed") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")

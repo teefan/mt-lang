@@ -84,7 +84,10 @@ export class MilkTeaLspClient {
       initializationOptions: {
         milkTea: {
           format: { mode: getConfig().format.mode },
-          lsp: { dependencyResolution: getConfig().lsp.dependencyResolution },
+          lsp: {
+            dependencyResolution: getConfig().lsp.dependencyResolution,
+            platform: getConfig().lsp.platform,
+          },
         },
       },
     };
@@ -184,6 +187,14 @@ export class MilkTeaLspClient {
     const dependencyResolution = getConfig().lsp.dependencyResolution;
     await this.client.sendNotification('workspace/didChangeConfiguration', {
       settings: { milkTea: { lsp: { dependencyResolution } } },
+    });
+  }
+
+  async syncPlatform(): Promise<void> {
+    if (!this.client) { return; }
+    const platform = getConfig().lsp.platform;
+    await this.client.sendNotification('workspace/didChangeConfiguration', {
+      settings: { milkTea: { lsp: { platform } } },
     });
   }
 

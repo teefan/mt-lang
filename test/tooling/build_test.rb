@@ -104,6 +104,80 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_uses_platform_specific_package_entry_variant_when_present
+    Dir.mktmpdir("milk-tea-build-platform-entry") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      package_root = File.join(dir, "platform-demo")
+      src_dir = File.join(package_root, "src")
+      shared_entry_path = File.join(src_dir, "main.mt")
+      windows_entry_path = File.join(src_dir, "main.windows.mt")
+      captured_paths = []
+      real_new = MilkTea::ModuleLoader.method(:new)
+
+      FileUtils.mkdir_p(src_dir)
+
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "platform_demo"
+
+        [platform]
+        default = "windows"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+
+      File.write(shared_entry_path, <<~MT)
+        module platform_demo.main
+
+        function main() -> int:
+            return 1
+      MT
+
+      File.write(windows_entry_path, <<~MT)
+        module platform_demo.main
+
+        function main() -> int:
+            return 2
+      MT
+
+      with_singleton_method_override(MilkTea::ModuleLoader, :new, lambda do |**kwargs|
+        loader = real_new.call(**kwargs)
+
+        Object.new.tap do |wrapper|
+          wrapper.define_singleton_method(:check_program) do |path|
+            captured_paths << path
+            loader.check_program(path)
+          end
+        end
+      end) do
+        MilkTea::Build.build(package_root, cc: compiler_path)
+      end
+
+      assert_equal [File.expand_path(windows_entry_path)], captured_paths
+    end
+  end
+
+  def test_build_rejects_conflicting_platform_for_platform_specific_source_path
+    Dir.mktmpdir("milk-tea-build-platform-mismatch") do |dir|
+      source_path = File.join(dir, "main.windows.mt")
+
+      File.write(source_path, <<~MT)
+        module demo.main
+
+        function main() -> int:
+            return 0
+      MT
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(source_path, platform: :linux)
+      end
+
+      assert_match(/targets platform windows; active platform is linux/, error.message)
+    end
+  end
+
   def test_default_wasm_shell_template_contains_required_placeholders
     assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_CANVAS_PLACEHOLDER
     assert_includes MilkTea::Build::WASM_SHELL_TEMPLATE, MilkTea::Build::WASM_SHELL_OUTPUT_PLACEHOLDER

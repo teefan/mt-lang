@@ -104,6 +104,7 @@ module MilkTea
       end
       @profile = normalize_profile(profile || manifest.profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || manifest.platform || host_platform)
+      @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
       validate_bundle_mode!
       @manifest_output_path = manifest.output_path
       @explicit_output_path = !output_path.nil?
@@ -134,6 +135,7 @@ module MilkTea
       @bundle = bundle || archive
       @profile = normalize_profile(profile || (debug ? :debug : :debug))
       @platform = normalize_platform(platform || host_platform)
+      @resolved_source_path = ModuleLoader.resolve_source_path(@source_path, platform: @platform, error_class: BuildError)
       validate_bundle_mode!
       @manifest_output_path = nil
       @explicit_output_path = !output_path.nil?
@@ -164,7 +166,7 @@ module MilkTea
 
     def build
       ensure_compiler_available!
-      program = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph).check_program(@source_path)
+      program = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform).check_program(@resolved_source_path)
       prepare_bindings(program)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
       ensure_program_has_entrypoint!(program, ir_program)

@@ -261,6 +261,7 @@ module MilkTea
 
     def visit_source_file(source_file)
       check_unused_imports(source_file)
+      check_platform_api_drift(source_file)
       source_file.declarations.each do |declaration|
         case declaration
         when AST::FunctionDef, AST::MethodDef
@@ -303,6 +304,273 @@ module MilkTea
           symbol_name: local_name
         )
       end
+    end
+
+    def check_platform_api_drift(source_file)
+      resolved_path = self.class.resolve_lint_path(@path)
+      return unless resolved_path&.end_with?(".mt")
+
+      sibling_paths = platform_variant_sibling_paths(resolved_path)
+      return if sibling_paths.empty?
+
+      current_surface = exported_api_surface(source_file)
+      sibling_paths.each do |sibling_path|
+        sibling_source_file = load_sibling_source_file(sibling_path)
+        next unless sibling_source_file
+        next unless sibling_source_file.module_name.to_s == source_file.module_name.to_s
+
+        sibling_surface = exported_api_surface(sibling_source_file)
+        next if sibling_surface == current_surface
+
+        missing = (sibling_surface - current_surface).to_a.sort
+        extra = (current_surface - sibling_surface).to_a.sort
+        @warnings << Warning.new(
+          path: @path,
+          line: source_file.line || 1,
+          column: 1,
+          length: 1,
+          code: "platform-api-drift",
+          message: platform_api_drift_message(sibling_path, missing:, extra:)
+        )
+      end
+    end
+
+    def platform_variant_sibling_paths(path)
+      current_platform = ModuleLoader.platform_suffix_for_path(path)
+      shared_path = if current_platform
+        path.sub(/\.#{Regexp.escape(current_platform.to_s)}\.mt\z/, ".mt")
+      else
+        path
+      end
+
+      [
+        shared_path,
+        *ModuleLoader::PLATFORM_SUFFIXES.keys.map { |platform_name| shared_path.delete_suffix(".mt") + ".#{platform_name}.mt" }
+      ].uniq.select { |candidate| candidate != path && File.file?(candidate) }
+    end
+
+    def load_sibling_source_file(path)
+      Parser.parse(File.read(path), path: path)
+    rescue StandardError
+      nil
+    end
+
+    def exported_api_surface(source_file)
+      exported_type_names = exported_type_names(source_file)
+      source_file.declarations.each_with_object(Set.new) do |declaration, surface|
+        case declaration
+        when AST::ConstDecl
+          surface << render_value_surface("const", declaration) if exported_declaration?(source_file, declaration)
+        when AST::VarDecl
+          surface << render_value_surface("var", declaration) if exported_declaration?(source_file, declaration)
+        when AST::TypeAliasDecl
+          surface << "type #{declaration.name} = #{render_type_surface(declaration.target)}" if exported_declaration?(source_file, declaration)
+        when AST::StructDecl
+          surface << render_struct_surface(declaration) if exported_declaration?(source_file, declaration)
+        when AST::UnionDecl
+          surface << render_union_surface(declaration) if exported_declaration?(source_file, declaration)
+        when AST::EnumDecl
+          surface << render_enum_surface("enum", declaration) if exported_declaration?(source_file, declaration)
+        when AST::FlagsDecl
+          surface << render_enum_surface("flags", declaration) if exported_declaration?(source_file, declaration)
+        when AST::OpaqueDecl
+          surface << render_opaque_surface(declaration) if exported_declaration?(source_file, declaration)
+        when AST::InterfaceDecl
+          surface << render_interface_surface(declaration) if exported_declaration?(source_file, declaration)
+        when AST::VariantDecl
+          surface << render_variant_surface(declaration) if exported_declaration?(source_file, declaration)
+        when AST::FunctionDef
+          surface << render_callable_surface("function", declaration) if exported_declaration?(source_file, declaration)
+        when AST::ExternFunctionDecl
+          surface << render_callable_surface("external function", declaration, variadic: declaration.variadic) if exported_declaration?(source_file, declaration)
+        when AST::ForeignFunctionDecl
+          surface << render_callable_surface("foreign function", declaration, variadic: declaration.variadic) if exported_declaration?(source_file, declaration)
+        when AST::MethodsBlock
+          next unless source_file.module_kind == :extern_module || exported_type_names.include?(declaration.type_name.to_s)
+
+          declaration.methods.each do |method|
+            next unless source_file.module_kind == :extern_module || method.visibility == :public
+
+            surface << render_method_surface(declaration.type_name.to_s, method)
+          end
+        end
+      end
+    end
+
+    def exported_type_names(source_file)
+      source_file.declarations.each_with_object(Set.new) do |declaration, names|
+        next unless declaration.respond_to?(:name)
+        next unless declaration.is_a?(AST::TypeAliasDecl) || declaration.is_a?(AST::StructDecl) ||
+                    declaration.is_a?(AST::UnionDecl) || declaration.is_a?(AST::EnumDecl) ||
+                    declaration.is_a?(AST::FlagsDecl) || declaration.is_a?(AST::OpaqueDecl) ||
+                    declaration.is_a?(AST::InterfaceDecl) || declaration.is_a?(AST::VariantDecl)
+        next unless exported_declaration?(source_file, declaration)
+
+        names << declaration.name
+      end
+    end
+
+    def exported_declaration?(source_file, declaration)
+      return true if source_file.module_kind == :extern_module
+
+      declaration.respond_to?(:visibility) && declaration.visibility == :public
+    end
+
+    def render_value_surface(kind, declaration)
+      return "#{kind} #{declaration.name}" unless declaration.type
+
+      "#{kind} #{declaration.name}: #{render_type_surface(declaration.type)}"
+    end
+
+    def render_struct_surface(declaration)
+      prefix = declaration.packed ? "packed struct" : "struct"
+      suffix = declaration.alignment ? " align(#{declaration.alignment})" : ""
+      "#{prefix} #{declaration.name}#{render_type_params_surface(declaration.type_params)}#{render_implements_surface(declaration.implements)}#{suffix} { #{render_fields_surface(declaration.fields)} }"
+    end
+
+    def render_union_surface(declaration)
+      "union #{declaration.name} { #{render_fields_surface(declaration.fields)} }"
+    end
+
+    def render_enum_surface(kind, declaration)
+      members = declaration.members.map(&:name).join(", ")
+      "#{kind} #{declaration.name}: #{render_type_surface(declaration.backing_type)} { #{members} }"
+    end
+
+    def render_opaque_surface(declaration)
+      "opaque #{declaration.name}#{render_implements_surface(declaration.implements)}"
+    end
+
+    def render_interface_surface(declaration)
+      methods = declaration.methods.map { |method| render_interface_method_surface(declaration.name, method) }.sort.join(", ")
+      "interface #{declaration.name} { #{methods} }"
+    end
+
+    def render_variant_surface(declaration)
+      arms = declaration.arms.map { |arm| render_variant_arm_surface(arm) }.join(", ")
+      "variant #{declaration.name}#{render_type_params_surface(declaration.type_params)} { #{arms} }"
+    end
+
+    def render_variant_arm_surface(arm)
+      return arm.name if arm.fields.empty?
+
+      "#{arm.name}(#{arm.fields.map { |field| render_type_surface(field.respond_to?(:type) ? field.type : field) }.join(', ')})"
+    end
+
+    def render_method_surface(receiver_name, declaration)
+      prefix = declaration.kind == :static ? "static method" : "method"
+      render_callable_surface("#{prefix} #{receiver_name}.", declaration, name_prefix: "")
+    end
+
+    def render_interface_method_surface(interface_name, declaration)
+      render_callable_surface("interface method #{interface_name}.", declaration, name_prefix: "")
+    end
+
+    def render_callable_surface(kind, declaration, variadic: false, name_prefix: nil)
+      params = declaration.params.map { |param| render_param_surface(param) }
+      params << "..." if variadic
+      text = +""
+      text << "async " if declaration.respond_to?(:async) && declaration.async
+      text << kind
+      text << (name_prefix.nil? ? " #{declaration.name}" : "#{name_prefix}#{declaration.name}")
+      text << render_type_params_surface(declaration.respond_to?(:type_params) ? declaration.type_params : [])
+      text << "(#{params.join(', ')})"
+      text << " -> #{render_type_surface(declaration.return_type)}" if declaration.return_type
+      text
+    end
+
+    def render_fields_surface(fields)
+      fields.map { |field| "#{field.name}: #{render_type_surface(field.type)}" }.join(", ")
+    end
+
+    def render_param_surface(param)
+      if param.respond_to?(:boundary_type) && param.boundary_type
+        return "#{param.name}: #{render_type_surface(param.type)} as #{render_type_surface(param.boundary_type)}"
+      end
+
+      return param.name unless param.respond_to?(:type) && param.type
+
+      "#{param.name}: #{render_type_surface(param.type)}"
+    end
+
+    def render_type_surface(type)
+      case type
+      when AST::TypeRef
+        text = type.name.to_s
+        unless type.arguments.empty?
+          text += "[#{type.arguments.map { |argument| render_type_argument_surface(argument.value) }.join(', ')}]"
+        end
+        type.nullable ? "#{text}?" : text
+      when AST::FunctionType
+        "fn(#{type.params.map { |param| render_param_surface(param) }.join(', ')}) -> #{render_type_surface(type.return_type)}"
+      when AST::ProcType
+        "proc(#{type.params.map { |param| render_param_surface(param) }.join(', ')}) -> #{render_type_surface(type.return_type)}"
+      else
+        type.to_s
+      end
+    end
+
+    def render_type_argument_surface(argument)
+      case argument
+      when AST::IntegerLiteral, AST::FloatLiteral
+        argument.lexeme
+      else
+        render_type_surface(argument)
+      end
+    end
+
+    def render_type_params_surface(type_params)
+      return "" if type_params.nil? || type_params.empty?
+
+      rendered = type_params.map do |type_param|
+        next type_param.name if type_param.constraints.empty?
+
+        "#{type_param.name} #{render_type_param_constraints_surface(type_param.constraints)}"
+      end
+      "[#{rendered.join(', ')}]"
+    end
+
+    def render_type_param_constraints_surface(constraints)
+      parts = []
+      index = 0
+      while index < constraints.length
+        constraint = constraints[index]
+        if constraint.kind == :interface
+          interfaces = [constraint.interface_ref.to_s]
+          index += 1
+          while index < constraints.length && constraints[index].kind == :interface
+            interfaces << constraints[index].interface_ref.to_s
+            index += 1
+          end
+          parts << "implements #{interfaces.join(' and ')}"
+        else
+          parts << "defaults"
+          index += 1
+        end
+      end
+
+      parts.join(" and ")
+    end
+
+    def render_implements_surface(implements)
+      return "" if implements.nil? || implements.empty?
+
+      " implements #{implements.map(&:to_s).sort.join(', ')}"
+    end
+
+    def platform_api_drift_message(sibling_path, missing:, extra:)
+      parts = []
+      parts << "missing #{summarize_platform_surface_entries(missing)}" unless missing.empty?
+      parts << "extra #{summarize_platform_surface_entries(extra)}" unless extra.empty?
+      "public API differs from #{File.basename(sibling_path)}: #{parts.join('; ')}"
+    end
+
+    def summarize_platform_surface_entries(entries, limit: 2)
+      shown = entries.first(limit).map { |entry| "'#{entry}'" }
+      remaining = entries.length - shown.length
+      return shown.join(", ") if remaining <= 0
+
+      "#{shown.join(', ')} (+#{remaining} more)"
     end
 
     # Returns a Set of every "root name" referenced in expressions and type
@@ -1427,6 +1695,13 @@ module MilkTea
       )
     end
 
+    def cfg_identifier_binding_key(identifier)
+      binding_resolution = cfg_binding_resolution
+      return identifier.name unless binding_resolution
+
+      binding_resolution.identifier_binding_ids[identifier.object_id] || identifier.name
+    end
+
     def ignored_binding_name?(name)
       name == "_" || name.start_with?("_")
     end
@@ -1479,8 +1754,9 @@ module MilkTea
     def emit_constant_condition_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
-      cp    = CFG::ConstantPropagation.solve(graph)
+      binding_resolution = cfg_binding_resolution
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
+      cp    = CFG::ConstantPropagation.solve(graph, binding_resolution:, strict_binding_ids: !binding_resolution.nil?)
 
       # Precompute which nodes are inside loops by finding back-edges (a node reachable from its successors).
       loop_bodies = compute_loop_body_nodes(graph)
@@ -1506,7 +1782,12 @@ module MilkTea
         next if skip_node || cond_expr.nil?
 
         in_state  = cp.in_states[node.id] || {}
-        const_val = CFG::ConstantPropagation.constant_value_of(cond_expr, in_state)
+        const_val = CFG::ConstantPropagation.constant_value_of(
+          cond_expr,
+          in_state,
+          binding_resolution:,
+          strict_binding_ids: !binding_resolution.nil?
+        )
         next unless const_val == true || const_val == false
 
         ctx = node.kind == :while_condition ? "loop condition" : "branch condition"
@@ -1585,7 +1866,8 @@ module MilkTea
     def emit_redundant_null_check_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
+      binding_resolution = cfg_binding_resolution
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
       nf    = CFG::NullabilityFlow.solve(graph)
 
       graph.each_node do |node|
@@ -1599,7 +1881,7 @@ module MilkTea
         next if ignored_binding_name?(identifier.name)
 
         nonnull = nf.nonnull_before(branch)
-        next unless nonnull.include?(identifier.name)
+        next unless nonnull.include?(cfg_identifier_binding_key(identifier))
 
         line, column, length = condition_span(branch.condition, line: node.line, keyword_pattern: "if|elif")
 

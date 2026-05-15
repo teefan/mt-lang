@@ -7,11 +7,12 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
-      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto)
+      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil)
         diagnostics = []
         sema_analysis = nil
         path = uri_to_path(uri)
         resolution = DependencyResolution.resolve(path, mode: dependency_resolution_mode)
+        effective_platform = effective_platform_for_path(path, platform_override:)
 
         # Parse
         begin
@@ -21,11 +22,18 @@ module MilkTea
             return { diagnostics: diagnostics, analysis: sema_analysis }
           end
 
+          conflict_error = root_platform_conflict_error(path, effective_platform)
+          if conflict_error
+            diagnostics << format_error(SemaError.new(conflict_error.message, line: 1, column: 1))
+            return { diagnostics: diagnostics, analysis: sema_analysis }
+          end
+
           imported_modules = resolve_imported_modules(
             uri,
             ast,
             diagnostics,
             resolution:,
+            effective_platform:,
             shared_module_cache: shared_module_cache,
             source_overrides: source_overrides,
             content: content,
@@ -62,7 +70,7 @@ module MilkTea
 
       private
 
-      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, shared_module_cache: nil, source_overrides: nil, content: nil)
+      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, content: nil)
         path = uri_to_path(uri)
         return {} unless path && File.file?(path)
 
@@ -71,6 +79,7 @@ module MilkTea
           package_graph: load_package_graph(path, locked: resolution.locked),
           shared_cache: shared_module_cache,
           source_overrides: source_overrides,
+          platform: effective_platform,
         )
         loader.imported_modules_for_ast(ast, importer_path: path)
       rescue ModuleLoadError, PackageLockError => e
@@ -98,6 +107,24 @@ module MilkTea
         nil
       end
       private_class_method :load_package_graph
+
+      def self.effective_platform_for_path(path, platform_override: nil)
+        return nil unless path
+
+        ModuleLoader.effective_platform_for_path(path, platform_override:)
+      end
+      private_class_method :effective_platform_for_path
+
+      def self.root_platform_conflict_error(path, effective_platform)
+        return nil unless path && File.file?(path)
+        return nil unless ModuleLoader.platform_suffix_for_path(path)
+
+        ModuleLoader.resolve_source_path(path, platform: effective_platform, error_class: ModuleLoadError)
+        nil
+      rescue ModuleLoadError => e
+        e
+      end
+      private_class_method :root_platform_conflict_error
 
       def self.format_warning(warning, content: nil)
         line = warning.line.to_i

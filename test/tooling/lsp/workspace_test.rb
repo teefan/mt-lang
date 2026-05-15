@@ -365,6 +365,64 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_get_analysis_keeps_open_shared_file_as_root_while_imports_follow_platform_override
+    Dir.mktmpdir("lsp_workspace_platform_override") do |dir|
+      main_path = File.join(dir, "main.mt")
+      main_windows_path = File.join(dir, "main.windows.mt")
+      support_path = File.join(dir, "support.mt")
+      support_windows_path = File.join(dir, "support.windows.mt")
+
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+      TOML
+
+      File.write(main_path, <<~MT)
+        module demo.main
+
+        import support
+
+        function main() -> int:
+            return support.value()
+      MT
+
+      File.write(main_windows_path, <<~MT)
+        module demo.main
+
+        function main() -> int:
+            return missing_symbol
+      MT
+
+      File.write(support_path, <<~MT)
+        module support
+
+        public function value() -> int:
+            return 1
+      MT
+
+      File.write(support_windows_path, <<~MT)
+        module support
+
+        public function value() -> int:
+            return 2
+      MT
+
+      workspace = MilkTea::LSP::Workspace.new
+      workspace.platform_override = :windows
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(main_uri, File.read(main_path))
+
+      analysis = workspace.get_analysis(main_uri)
+
+      refute_nil analysis
+      assert_equal "demo.main", analysis.module_name
+      assert_equal %w[value], analysis.imports.fetch("support").functions.keys.sort
+      assert_equal [], workspace.collect_diagnostics(main_uri)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_anchors_missing_import_to_import_path
     Dir.mktmpdir("lsp_workspace_missing_import_anchor") do |dir|
       path = File.join(dir, "main.mt")
