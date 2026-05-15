@@ -17,7 +17,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_bool_conditions
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           if 1:
@@ -34,7 +34,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nullable_pointer_guard_clause_flow_narrowing
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function read(handle: ptr[int]?) -> int:
           if handle == null:
@@ -50,7 +50,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nominal_interface_constraint_calls
     source = <<~MT
-      module demo.interfaces
+      # module demo.interfaces
 
       interface Damageable:
           editable function take_damage(amount: int) -> void
@@ -83,7 +83,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_nominal_interface_constraint_without_explicit_implements
     source = <<~MT
-      module demo.interfaces
+      # module demo.interfaces
 
       interface Damageable:
           editable function take_damage(amount: int) -> void
@@ -118,7 +118,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_explicit_interface_conformance_with_missing_method
     source = <<~MT
-      module demo.interfaces
+      # module demo.interfaces
 
       interface Damageable:
           editable function take_damage(amount: int) -> void
@@ -144,7 +144,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_explicit_interface_conformance_with_generic_method
     source = <<~MT
-      module demo.interfaces
+      # module demo.interfaces
 
       interface Drawable:
           function draw() -> void
@@ -166,7 +166,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_multiple_interfaces_on_single_type
     source = <<~MT
-      module demo.interfaces
+      # module demo.interfaces
 
       interface Damageable:
           editable function take_damage(amount: int) -> void
@@ -204,7 +204,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_defaults_constraint_with_interface_requirement
     source = <<~MT
-      module demo.defaults
+      # module demo.defaults
 
       interface Named:
           function value() -> int
@@ -234,7 +234,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_defaults_constraint_without_explicit_default_provider
     source = <<~MT
-      module demo.defaults_bad
+      # module demo.defaults_bad
 
       struct Plain:
           value: int
@@ -256,7 +256,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_imported_public_interface_constraints
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -272,7 +272,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         public interface Damageable:
             editable function take_damage(amount: int) -> void
@@ -297,7 +297,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_downstream_imported_public_interface_conformance
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.contracts as contracts
       import std.entities as entities
@@ -314,14 +314,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/contracts.mt" => <<~MT,
-        module std.contracts
+        # module std.contracts
 
         public interface Damageable:
             editable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
-        module std.entities
+        # module std.entities
 
         import std.contracts as contracts
 
@@ -344,7 +344,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_downstream_imported_interface_conformance_with_private_methods
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.contracts as contracts
       import std.entities as entities
@@ -361,14 +361,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/contracts.mt" => <<~MT,
-        module std.contracts
+        # module std.contracts
 
         public interface Damageable:
             editable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
-        module std.entities
+        # module std.entities
 
         import std.contracts as contracts
 
@@ -393,7 +393,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_short_circuit_nullable_flow_narrowing
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function read(handle: ptr[int]?) -> int:
           unsafe:
@@ -409,7 +409,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_assignment_to_nullable_local_in_null_branch
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function open_handle() -> ptr[int]?:
           return null[ptr[int]]
@@ -428,7 +428,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_assignment_to_nullable_local_in_non_null_branch
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function main(input: ptr[int]?) -> ptr[int]?:
           var handle = input
@@ -444,7 +444,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_let_else_nullable_flow_narrowing
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function read_handle(handle: ptr[int]?) -> int:
           let value = handle else:
@@ -460,7 +460,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_let_else_status_success_binding
     source = <<~MT
-      module demo.status_flow
+      # module demo.status_flow
 
       import std.status as status
 
@@ -482,7 +482,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_let_else_status_error_binding
     source = <<~MT
-      module demo.status_flow
+      # module demo.status_flow
 
       import std.status as status
 
@@ -504,7 +504,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_let_else_status_void_discard_binding
     source = <<~MT
-      module demo.status_void_flow
+      # module demo.status_void_flow
 
       import std.status as status
 
@@ -529,7 +529,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_let_else_discard_binding_with_type_annotation
     source = <<~MT
-      module demo.status_void_flow
+      # module demo.status_void_flow
 
       import std.status as status
 
@@ -554,7 +554,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_let_else_error_binding_for_nullable_initializer
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function read_handle(handle: ptr[int]?) -> int:
           let value = handle else as error:
@@ -572,7 +572,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_for_loop_over_custom_iterator_protocol
     source = <<~MT
-      module demo.iterator_for
+      # module demo.iterator_for
 
       struct Numbers:
           stop: int
@@ -610,7 +610,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_for_loop_iterator_next_without_nullable_pointer_item
     source = <<~MT
-      module demo.iterator_for
+      # module demo.iterator_for
 
       struct Numbers:
           stop: int
@@ -643,7 +643,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_for_loop_over_bool_current_iterator_protocol
     source = <<~MT
-      module demo.iterator_current
+      # module demo.iterator_current
 
       struct Numbers:
           stop: int
@@ -680,7 +680,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_struct_span_for_loop_as_mutable_alias
     source = <<~MT
-      module demo.for_ref
+      # module demo.for_ref
 
       struct Position:
           x: int
@@ -700,7 +700,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_parallel_collection_for_loop
     source = <<~MT
-      module demo.parallel_for
+      # module demo.parallel_for
 
       struct Position:
           x: int
@@ -726,7 +726,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_parallel_for_loop_in_async_function
     source = <<~MT
-      module demo.parallel_for
+      # module demo.parallel_for
 
       import std.async as aio
 
@@ -746,7 +746,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_owned_foreign_release_after_let_else
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -758,14 +758,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -784,7 +785,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_let_else_without_terminating_else_body
     source = <<~MT
-      module demo.null_flow
+      # module demo.null_flow
 
       function read_handle(handle: ptr[int]?) -> int:
           let value = handle else:
@@ -802,7 +803,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_if_expression
     source = <<~MT
-      module demo.if_expr
+      # module demo.if_expr
 
       function main(ready: bool) -> int:
           return if ready: 1 else: 0
@@ -815,7 +816,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_async_functions_and_await
     source = <<~MT
-      module demo.async_flow
+      # module demo.async_flow
 
       async function child() -> int:
           return 41
@@ -833,7 +834,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_async_main_with_std_async_import
     source = <<~MT
-      module demo.async_main
+      # module demo.async_main
 
       import std.async as aio
 
@@ -849,7 +850,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_async_main_without_explicit_async_runtime_import
     source = <<~MT
-      module demo.async_main
+      # module demo.async_main
 
       async function child() -> int:
           return 41
@@ -865,7 +866,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_aio_without_explicit_async_runtime_import
     source = <<~MT
-      module demo.async_main
+      # module demo.async_main
 
       async function main() -> int:
           let waited = await aio.sleep(1)
@@ -881,7 +882,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_async_main_with_non_exit_return_type
     source = <<~MT
-      module demo.async_main
+      # module demo.async_main
 
       import std.async as aio
 
@@ -898,7 +899,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_await_outside_async_functions
     source = <<~MT
-      module demo.async_flow
+      # module demo.async_flow
 
       async function child() -> int:
           return 41
@@ -916,7 +917,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nested_await_expressions_in_async_functions
     source = <<~MT
-      module demo.async_flow
+      # module demo.async_flow
 
       import std.async as aio
 
@@ -934,7 +935,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_wait_with_direct_task_expression_root
     source = <<~MT
-      module demo.async_direct_task_root
+      # module demo.async_direct_task_root
 
       import std.async as aio
 
@@ -952,7 +953,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_async_methods
     source = <<~MT
-      module demo.async_methods
+      # module demo.async_methods
 
       import std.async as aio
 
@@ -985,7 +986,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_direct_function_identity_for_proc_parameter
     source = <<~MT
-      module demo.proc_coercion
+      # module demo.proc_coercion
 
       function apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
@@ -1004,7 +1005,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_in_if_expressions_inside_async_functions
     source = <<~MT
-      module demo.async_flow
+      # module demo.async_flow
 
       async function child() -> int:
           return 41
@@ -1019,7 +1020,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_control_flow_in_async_functions
     source = <<~MT
-      module demo.async_flow
+      # module demo.async_flow
 
       import std.async as aio
 
@@ -1036,7 +1037,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_await_inside_if_statement_in_async_functions
     source = <<~MT
-      module demo.async_await_in_if
+      # module demo.async_await_in_if
 
       import std.async as aio
 
@@ -1055,7 +1056,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_await_inside_if_condition_in_async_functions
     source = <<~MT
-      module demo.async_await_in_if_cond
+      # module demo.async_await_in_if_cond
 
       import std.async as aio
 
@@ -1074,7 +1075,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_while_condition_in_async_functions
     source = <<~MT
-      module demo.async_await_in_while_cond
+      # module demo.async_await_in_while_cond
 
       import std.async as aio
 
@@ -1093,7 +1094,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_match_discriminant_in_async_functions
     source = <<~MT
-      module demo.async_await_in_match
+      # module demo.async_await_in_match
 
       import std.async as aio
 
@@ -1118,7 +1119,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_for_iterable_in_async_functions
     source = <<~MT
-      module demo.async_await_in_for_iterable
+      # module demo.async_await_in_for_iterable
 
       import std.async as aio
 
@@ -1138,7 +1139,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_short_circuit_and_or_in_async_functions
     source = <<~MT
-      module demo.async_short_circuit
+      # module demo.async_short_circuit
 
       import std.async as aio
 
@@ -1162,7 +1163,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_assignment_target_in_async_functions
     source = <<~MT
-      module demo.async_assign_target
+      # module demo.async_assign_target
 
       import std.async as aio
 
@@ -1181,7 +1182,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_in_while_body_in_async_functions
     source = <<~MT
-      module demo.async_await_in_while
+      # module demo.async_await_in_while
 
       import std.async as aio
 
@@ -1203,7 +1204,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_defer_in_async_functions
     source = <<~MT
-      module demo.async_defer
+      # module demo.async_defer
 
       import std.async as aio
 
@@ -1224,7 +1225,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_let_else_in_async_functions
     source = <<~MT
-      module demo.async_let_else
+      # module demo.async_let_else
 
       import std.async as aio
 
@@ -1245,7 +1246,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_await_inside_async_defer_cleanup
     source = <<~MT
-      module demo.async_defer_await
+      # module demo.async_defer_await
 
       import std.async as aio
 
@@ -1264,7 +1265,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_std_fmt_format_with_format_literal
     source = <<~MT
-      module demo.format
+      # module demo.format
 
       import std.fmt as fmt
       import std.string as string
@@ -1282,7 +1283,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_format_literal_as_general_str_expression
     source = <<~MT
-      module demo.format
+      # module demo.format
 
       function length(text: str) -> ptr_uint:
           return text.len
@@ -1301,7 +1302,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_general_format_literal_with_unsupported_interpolation_type
     source = <<~MT
-      module demo.format_bad
+      # module demo.format_bad
 
       struct Counter:
           value: int
@@ -1320,7 +1321,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_nullable_pointer_inout_slot
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1331,11 +1332,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
+        # module std.c.sample
+        external
+        external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1351,7 +1353,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_format_precision_spec_on_float
     source = <<~MT
-      module demo.fmt_spec
+      # module demo.fmt_spec
 
       function main(pi: double, small: float) -> int:
           let formatted_pi = f"pi=\#{pi:.2}"
@@ -1368,7 +1370,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_precision_spec_on_non_float
     source = <<~MT
-      module demo.fmt_spec
+      # module demo.fmt_spec
 
       function main(count: int) -> int:
           let formatted = f"count=\#{count:.2}"
@@ -1386,7 +1388,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_explicit_c_name_on_non_external_struct
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct timespec = c"struct timespec":
           tv_sec: ptr_int
@@ -1402,7 +1404,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_wrong_return_type
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           return true
@@ -1417,7 +1419,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_unknown_fields_in_struct_literals
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Ball:
           radius: float
@@ -1436,7 +1438,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_duplicate_top_level_values
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       const width: int = 1
       const width: int = 2
@@ -1451,7 +1453,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
-      module demo.ffi
+      # module demo.ffi
 
       enum State: ubyte
           idle = 0
@@ -1493,7 +1495,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_function_type_aliases_and_callback_arguments
     source = <<~MT
-      module demo.callbacks
+      # module demo.callbacks
 
       type LogCallback = fn(level: int, message: cstr) -> void
       external function set_callback(callback: LogCallback) -> void
@@ -1515,7 +1517,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_callable_value_storage_and_indirect_calls
     source = <<~MT
-      module demo.callable_values
+      # module demo.callable_values
 
       struct Entry:
           callback: fn(value: float) -> float
@@ -1543,7 +1545,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_imported_function_callable_values
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ease as ease
 
@@ -1558,7 +1560,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/ease.mt" => <<~MT,
-        module std.ease
+        # module std.ease
 
         public function times_two(value: int) -> int:
             return value * 2
@@ -1573,7 +1575,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_function_calls_with_callable_value_arguments
     source = <<~MT
-      module demo.generic_callable_values
+      # module demo.generic_callable_values
 
       function apply[T](callback: fn(value: int) -> T, value: int) -> T:
           return callback(value)
@@ -1593,7 +1595,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_explicit_generic_method_specialization
     source = <<~MT
-      module demo.generic_method_specialization
+      # module demo.generic_method_specialization
 
       struct Box:
           value: int
@@ -1614,7 +1616,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_current_type_param_in_nested_generic_method_specialization
     source = <<~MT
-      module demo.nested_generic_method_specialization
+      # module demo.nested_generic_method_specialization
 
       struct Box:
           value: int
@@ -1642,7 +1644,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_closure_capture_and_param_calls
     source = <<~MT
-      module demo.proc_values
+      # module demo.proc_values
 
       function apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
@@ -1662,7 +1664,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_storage_in_struct_fields
     source = <<~MT
-      module demo.proc_field
+      # module demo.proc_field
 
       struct Holder:
           callback: proc(value: int) -> int
@@ -1686,7 +1688,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_return_types
     source = <<~MT
-      module demo.proc_return
+      # module demo.proc_return
 
       function factory(offset: int) -> proc(value: int) -> int:
           return proc(value: int) -> int:
@@ -1705,7 +1707,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_assignment
     source = <<~MT
-      module demo.proc_assign
+      # module demo.proc_assign
 
       struct Holder:
           callback: proc(value: int) -> int
@@ -1728,7 +1730,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_field_assignment
     source = <<~MT
-      module demo.proc_field_assign
+      # module demo.proc_field_assign
 
       struct Holder:
           callback: proc(value: int) -> int
@@ -1750,7 +1752,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_var_reassign
     source = <<~MT
-      module demo.proc_var_reassign
+      # module demo.proc_var_reassign
 
       function main() -> int:
           var callback = proc(value: int) -> int:
@@ -1767,7 +1769,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_async_function_with_proc_parameter
     source = <<~MT
-      module demo.async_proc_param
+      # module demo.async_proc_param
 
       async function run(callback: proc(value: int) -> int) -> int:
           return callback(1)
@@ -1780,7 +1782,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_expression_inside_async_function
     source = <<~MT
-      module demo.async_proc_expr
+      # module demo.async_proc_expr
 
       async function run() -> int:
           let callback = proc(value: int) -> int:
@@ -1795,7 +1797,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_boundary_mappings
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -1811,15 +1813,16 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/raylib.mt" => <<~MT,
-        external module std.c.raylib:
-            include "raylib.h"
+        # module std.c.raylib
+        external
+        include "raylib.h"
 
-            external function InitWindow(width: int, height: int, title: cstr) -> void
-            external function LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
-            external function SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
+        external function InitWindow(width: int, height: int, title: cstr) -> void
+        external function LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
+        external function SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
       MT
       "std/raylib.mt" => <<~MT,
-        module std.raylib
+        # module std.raylib
 
         import std.c.raylib as c
 
@@ -1838,7 +1841,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_span_str_to_span_cstr_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1850,11 +1853,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1871,7 +1875,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_span_str_to_span_ptr_char_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1883,11 +1887,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1904,7 +1909,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_span_str_temp_marshalling_in_return_expression
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1915,11 +1920,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function CountNames(names: ptr[ptr[char]], count: int) -> int
+        # module std.c.sample
+        external
+        external function CountNames(names: ptr[ptr[char]], count: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1936,7 +1942,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nested_foreign_defs_with_span_str_temp_marshalling_in_inline_context
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1950,11 +1956,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function CountNames(names: ptr[ptr[char]], count: int) -> int
+        # module std.c.sample
+        external
+        external function CountNames(names: ptr[ptr[char]], count: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1971,7 +1978,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nested_foreign_defs_with_multi_use_mapping_in_inline_context
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1984,11 +1991,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function PairSum(left: int, right: int) -> int
+        # module std.c.sample
+        external
+        external function PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2005,7 +2013,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_nested_foreign_defs_in_if_expression_and_short_circuit_contexts
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -2019,12 +2027,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function CountNames(names: ptr[ptr[char]], count: int) -> int
-            external function PairSum(left: int, right: int) -> int
+        # module std.c.sample
+        external
+        external function CountNames(names: ptr[ptr[char]], count: int) -> int
+        external function PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2042,7 +2051,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_mapping_expression_that_already_references_params
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -2052,11 +2061,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function PairSum(left: int, right: int) -> int
+        # module std.c.sample
+        external
+        external function PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2073,7 +2083,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_defs_with_str_to_ptr_char_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -2083,11 +2093,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Show(text: ptr[char]) -> void
+        # module std.c.sample
+        external
+        external function Show(text: ptr[char]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2104,7 +2115,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_span_cstr_to_span_ptr_char_boundary_without_scratch
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -2116,11 +2127,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2137,7 +2149,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_string_literal_without_using_scratch
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -2147,13 +2159,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/raylib.mt" => <<~MT,
-        external module std.c.raylib:
-            include "raylib.h"
+        # module std.c.raylib
+        external
+        include "raylib.h"
 
-            external function InitWindow(width: int, height: int, title: cstr) -> void
+        external function InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
-        module std.raylib
+        # module std.raylib
 
         import std.c.raylib as c
 
@@ -2170,7 +2183,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_existing_cstr_without_using_scratch
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -2181,13 +2194,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/raylib.mt" => <<~MT,
-        external module std.c.raylib:
-            include "raylib.h"
+        # module std.c.raylib
+        external
+        include "raylib.h"
 
-            external function InitWindow(width: int, height: int, title: cstr) -> void
+        external function InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
-        module std.raylib
+        # module std.raylib
 
         import std.c.raylib as c
 
@@ -2204,7 +2218,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_identity_pointer_projections
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.mem as mem
 
@@ -2217,16 +2231,17 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/mem.mt" => <<~MT,
-        external module std.c.mem:
-            include "mem.h"
+        # module std.c.mem
+        external
+        include "mem.h"
 
-            external function AllocateBytes(size: ptr_uint) -> ptr[void]
-            external function ReleaseBytes(memory: ptr[void]) -> void
-            external function SetLabel(label: cstr) -> void
-            external function GetLabel() -> ptr[char]
+        external function AllocateBytes(size: ptr_uint) -> ptr[void]
+        external function ReleaseBytes(memory: ptr[void]) -> void
+        external function SetLabel(label: cstr) -> void
+        external function GetLabel() -> ptr[char]
       MT
       "std/mem.mt" => <<~MT,
-        module std.mem
+        # module std.mem
 
         import std.c.mem as c
 
@@ -2246,7 +2261,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_opaque_handle_projections
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2260,14 +2275,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2287,7 +2303,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_owned_foreign_release_calls_and_refines_binding_to_null
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2302,14 +2318,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2329,7 +2346,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_external_opaque_handle_projection_against_typed_pointer_signatures
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2344,16 +2361,17 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            opaque RawWindow = c"RawWindow"
+        opaque RawWindow = c"RawWindow"
 
-            external function CreateWindow() -> ptr[RawWindow]?
-            external function DestroyWindow(window: ptr[RawWindow]) -> void
+        external function CreateWindow() -> ptr[RawWindow]?
+        external function DestroyWindow(window: ptr[RawWindow]) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2373,7 +2391,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_out_opaque_handle_projection_against_typed_pointer_signatures
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2388,16 +2406,17 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            opaque RawWindow = c"RawWindow"
+        opaque RawWindow = c"RawWindow"
 
-            external function CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
-            external function DestroyWindow(window: ptr[RawWindow]) -> void
+        external function CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
+        external function DestroyWindow(window: ptr[RawWindow]) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2417,7 +2436,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_plain_null_for_nullable_external_pointer_argument
     source = <<~MT
-      module demo.ok
+      # module demo.ok
 
       external function load_font_ex(codepoints: ptr[int]?) -> void
 
@@ -2432,7 +2451,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_external_ptr_to_void_argument_without_unsafe_cast
     source = <<~MT
-      module demo.ok
+      # module demo.ok
 
       external function update_texture(pixels: ptr[void]) -> void
 
@@ -2449,7 +2468,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_owned_foreign_release_on_non_nullable_binding
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2460,14 +2479,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function RequireWindow() -> ptr[void]
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function RequireWindow() -> ptr[void]
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2487,7 +2507,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_owned_foreign_release_on_nullable_binding
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2499,14 +2519,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2525,7 +2546,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_owned_foreign_release_inside_defer_expression
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2537,14 +2558,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2563,7 +2585,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_owned_foreign_release_inside_defer_block
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2576,14 +2598,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2602,7 +2625,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_owned_foreign_release_in_local_initializer
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2614,14 +2637,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2641,7 +2665,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_defs_that_drop_cstr_mutability
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.mem as mem
 
@@ -2651,13 +2675,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/mem.mt" => <<~MT,
-        external module std.c.mem:
-            include "mem.h"
+        # module std.c.mem
+        external
+        include "mem.h"
 
-            external function WriteLabel(label: ptr[char]) -> void
+        external function WriteLabel(label: ptr[char]) -> void
       MT
       "std/mem.mt" => <<~MT,
-        module std.mem
+        # module std.mem
 
         import std.c.mem as c
 
@@ -2674,7 +2699,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_out_argument_outside_foreign_call
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function write(value: int) -> int:
           return value
@@ -2693,7 +2718,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_mixed_numeric_binary_operators_with_arithmetic_conversion
     source = <<~MT
-      module demo.numeric_conversions
+      # module demo.numeric_conversions
 
       function sum() -> double:
           return 1 + 2.5
@@ -2716,7 +2741,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_left_biased_float_literals_against_float_operands
     source = <<~MT
-      module demo.float_literal_alignment
+      # module demo.float_literal_alignment
 
       struct Pair:
           x: float
@@ -2742,7 +2767,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_mixed_signed_and_unsigned_integer_arithmetic_without_explicit_cast
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           let left: int = 1
@@ -2760,7 +2785,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_span_construction_and_field_access
     source = <<~MT
-      module demo.spans
+      # module demo.spans
 
       function first(items: span[int]) -> int:
           if items.len == 0:
@@ -2783,7 +2808,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_safe_span_indexing_and_element_assignment
     source = <<~MT
-      module demo.spans
+      # module demo.spans
 
       function bump(items: span[int]) -> int:
           let first = items[0]
@@ -2804,7 +2829,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_struct_instantiation_and_embedding
     source = [
-      "module demo.generics",
+      "# module demo.generics",
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
@@ -2835,7 +2860,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_functions_with_inferred_type_arguments
     source = <<~MT
-      module demo.generic_functions
+      # module demo.generic_functions
 
       struct Slice[T]:
           data: ptr[T]
@@ -2866,7 +2891,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = <<~MT
-      module demo.generic_layout
+      # module demo.generic_layout
 
       function bytes_for[T](count: ptr_uint) -> ptr_uint:
           return count * size_of(T)
@@ -2883,7 +2908,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_functions_with_literal_type_arguments
     source = <<~MT
-      module demo.generic_builder
+      # module demo.generic_builder
 
       function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
@@ -2901,7 +2926,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_functions_with_explicit_literal_type_arguments
     source = <<~MT
-      module demo.generic_builder_explicit
+      # module demo.generic_builder_explicit
 
       function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
@@ -2919,7 +2944,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_methods
     source = <<~MT
-      module demo.generic_methods
+      # module demo.generic_methods
 
       struct Box:
           value: int
@@ -2951,7 +2976,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     def test_type_checks_generic_receiver_methods
     source = <<~MT
-      module demo.generic_receiver_methods
+      # module demo.generic_receiver_methods
 
       struct Box[T]:
           value: T
@@ -2991,7 +3016,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_named_constants_in_integer_type_argument_slots
     source = <<~MT
-      module demo.named_const_type_args
+      # module demo.named_const_type_args
 
       const BASE: int = 28
       const CAPACITY: int = BASE + 4
@@ -3015,7 +3040,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_removed_builtin_result_type
     source = <<~MT
-      module demo.result
+      # module demo.result
 
       enum LoadError: ubyte
           file_not_found = 1
@@ -3034,7 +3059,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_removed_builtin_ok_and_err_helpers
     ok_source = <<~MT
-      module demo.ok
+      # module demo.ok
 
       function main() -> int:
           let value = ok(7)
@@ -3048,7 +3073,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/unknown callable ok/, ok_error.message)
 
     err_source = <<~MT
-      module demo.err
+      # module demo.err
 
       function main() -> int:
           let value = err(7)
@@ -3064,7 +3089,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_fatal_statement_with_string_message
     source = <<~MT
-      module demo.fatal
+      # module demo.fatal
 
       function main() -> int:
           fatal("bad state")
@@ -3078,7 +3103,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_passing_stored_str_to_cstr_parameter_without_explicit_boundary
     source = <<~MT
-      module demo.string_boundary
+      # module demo.string_boundary
 
       external function set_text(value: cstr) -> void
 
@@ -3096,7 +3121,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_contextual_string_literals_for_cstr_surfaces
     source = <<~MT
-      module demo.literal_cstr
+      # module demo.literal_cstr
 
       external function set_text(value: cstr) -> void
 
@@ -3115,7 +3140,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_real_str_len_slice_and_cstr_conversion
     source = <<~MT
-      module demo.str_methods
+      # module demo.str_methods
 
       import std.str
       import std.mem.arena as arena
@@ -3141,7 +3166,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_direct_str_construction_outside_unsafe
     source = <<~MT
-      module demo.bad_str_constructor
+      # module demo.bad_str_constructor
 
       function main(data: ptr[char], len: ptr_uint) -> str:
           return str(data = data, len = len)
@@ -3156,7 +3181,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_exhaustive_match_statement_over_enum
     source = <<~MT
-      module demo.match
+      # module demo.match
 
       enum EventKind: ubyte
           quit = 1
@@ -3181,7 +3206,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_for_loops_over_range_and_span
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function scan(items: span[int]) -> int:
           for i in 0..items.len:
@@ -3200,7 +3225,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_break_and_continue_inside_loop_bodies
     source = <<~MT
-      module demo.loop_control
+      # module demo.loop_control
 
       enum Step: ubyte
           skip = 1
@@ -3232,7 +3257,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_break_inside_nested_loop_in_defer_block
     source = <<~MT
-      module demo.defer_loop
+      # module demo.defer_loop
 
       function main() -> int:
           for outer in 0..1:
@@ -3249,7 +3274,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_return_inside_defer_block
     source = <<~MT
-      module demo.defer_return
+      # module demo.defer_return
 
       function main() -> int:
           defer:
@@ -3266,7 +3291,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_outer_loop_continue_inside_defer_block
     source = <<~MT
-      module demo.defer_continue
+      # module demo.defer_continue
 
       function main() -> int:
           for outer in 0..1:
@@ -3284,7 +3309,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_layout_queries_and_static_assert
     source = <<~MT
-      module demo.layout
+      # module demo.layout
 
       struct Header:
           magic: array[ubyte, 4]
@@ -3303,7 +3328,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_offsetof_unknown_field
     source = <<~MT
-      module demo.layout
+      # module demo.layout
 
       struct Header:
           version: ushort
@@ -3321,7 +3346,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_static_assert_with_non_literal_message
     source = <<~MT
-      module demo.layout
+      # module demo.layout
 
       const MESSAGE: cstr = c"layout must hold"
 
@@ -3339,7 +3364,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_packed_and_aligned_struct_layout
     source = <<~MT
-      module demo.layout
+      # module demo.layout
 
       packed struct Header:
           tag: ubyte
@@ -3363,7 +3388,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_reinterpret_calls
     source = <<~MT
-      module demo.bits
+      # module demo.bits
 
       function main() -> uint:
           let value: float = 1.0
@@ -3379,7 +3404,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_expression_reinterpret_initializer
     source = <<~MT
-      module demo.bits
+      # module demo.bits
 
       function main() -> uint:
           let value: float = 1.0
@@ -3394,7 +3419,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_reinterpret_outside_unsafe
     source = <<~MT
-      module demo.bits
+      # module demo.bits
 
       function main() -> uint:
           let value: float = 1.0
@@ -3410,7 +3435,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_reinterpret_of_array_types
     source = <<~MT
-      module demo.bits
+      # module demo.bits
 
       function main() -> int:
           let values = array[ubyte, 4](1, 2, 3, 4)
@@ -3428,7 +3453,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_explicit_casts_from_enum_and_flags_backing_values
     source = <<~MT
-      module demo.cast_values
+      # module demo.cast_values
 
       enum State: ubyte
           idle = 0
@@ -3449,7 +3474,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_same_width_enum_and_flags_arguments_without_explicit_cast_for_extern_calls
     source = <<~MT
-      module demo.call_values
+      # module demo.call_values
 
       enum State: ubyte
           idle = 0
@@ -3473,7 +3498,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_integer_literals_against_expected_float_boundaries
     source = <<~MT
-      module demo.literal_float_context
+      # module demo.literal_float_context
 
       struct Point:
           x: float
@@ -3496,7 +3521,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_contextual_integer_to_float_for_non_external_call_and_field_boundaries
     source = <<~MT
-      module demo.non_external_numeric_strict
+      # module demo.non_external_numeric_strict
 
       struct Point:
           x: float
@@ -3520,7 +3545,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_contextual_integer_to_float_for_local_assignment_and_return
     source = <<~MT
-      module demo.contextual_int_to_float
+      # module demo.contextual_int_to_float
 
       struct Point:
           x: float
@@ -3547,7 +3572,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_contextual_float_narrowing_without_float_expected_context
     source = <<~MT
-      module demo.contextual_float_expected_only
+      # module demo.contextual_float_expected_only
 
       function main() -> int:
           var angle = 1
@@ -3565,7 +3590,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_contextual_float_narrowing_for_integer_compound_assignment_targets
     source = <<~MT
-      module demo.contextual_float_compound_reject
+      # module demo.contextual_float_compound_reject
 
       function main() -> int:
           var total = 1
@@ -3583,7 +3608,7 @@ class MilkTeaSemaTest < Minitest::Test
   def test_type_checks_lossless_numeric_coercion_for_external_boundaries
     program = check_program_source(
       <<~MT,
-        module demo.external_numeric
+        # module demo.external_numeric
 
         import std.c.demo as demo
 
@@ -3599,15 +3624,16 @@ class MilkTeaSemaTest < Minitest::Test
       MT
       {
         "std/c/demo.mt" => <<~MT,
-          external module std.c.demo:
-              struct Color:
-                  r: short
-                  g: short
-                  b: ubyte
-                  a: ubyte
+          # module std.c.demo
+          external
+          struct Color:
+              r: short
+              g: short
+              b: ubyte
+              a: ubyte
 
-              external function set_count(value: int) -> void
-              external function set_opacity(value: double) -> void
+          external function set_count(value: int) -> void
+          external function set_opacity(value: double) -> void
         MT
       },
     )
@@ -3618,7 +3644,7 @@ class MilkTeaSemaTest < Minitest::Test
   def test_type_checks_exact_compile_time_numeric_coercion_at_typed_and_external_boundaries
     program = check_program_source(
       <<~MT,
-        module demo.exact_numeric_constants
+        # module demo.exact_numeric_constants
 
         import std.c.demo as demo
 
@@ -3634,11 +3660,12 @@ class MilkTeaSemaTest < Minitest::Test
       MT
       {
         "std/c/demo.mt" => <<~MT,
-          external module std.c.demo:
-              const OPAQUE: int = 255
+          # module std.c.demo
+          external
+          const OPAQUE: int = 255
 
-              external function set_channel(value: ubyte) -> void
-              external function set_scale(value: float) -> void
+          external function set_channel(value: ubyte) -> void
+          external function set_scale(value: float) -> void
         MT
       },
     )
@@ -3650,7 +3677,7 @@ class MilkTeaSemaTest < Minitest::Test
     error = assert_raises(MilkTea::SemaError) do
       check_program_source(
         <<~MT,
-          module demo.external_numeric_lossy_call
+          # module demo.external_numeric_lossy_call
 
           import std.c.demo as demo
 
@@ -3661,8 +3688,9 @@ class MilkTeaSemaTest < Minitest::Test
         MT
         {
           "std/c/demo.mt" => <<~MT,
-            external module std.c.demo:
-                external function set_scale(value: float) -> void
+            # module std.c.demo
+            external
+            external function set_scale(value: float) -> void
           MT
         },
       )
@@ -3675,7 +3703,7 @@ class MilkTeaSemaTest < Minitest::Test
     error = assert_raises(MilkTea::SemaError) do
       check_program_source(
         <<~MT,
-          module demo.external_numeric_lossy_field
+          # module demo.external_numeric_lossy_field
 
           import std.c.demo as demo
 
@@ -3687,12 +3715,13 @@ class MilkTeaSemaTest < Minitest::Test
         MT
         {
           "std/c/demo.mt" => <<~MT,
-            external module std.c.demo:
-                struct Color:
-                    r: ubyte
-                    g: ubyte
-                    b: ubyte
-                    a: ubyte
+            # module std.c.demo
+            external
+            struct Color:
+                r: ubyte
+                g: ubyte
+                b: ubyte
+                a: ubyte
           MT
         },
       )
@@ -3705,7 +3734,7 @@ class MilkTeaSemaTest < Minitest::Test
     error = assert_raises(MilkTea::SemaError) do
       check_source(
         <<~MT,
-          module demo.inexact_numeric_constants
+          # module demo.inexact_numeric_constants
 
           function main() -> int:
               let whole: int = 2.5
@@ -3719,7 +3748,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_import_of_public_declarations_and_methods
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.lib as lib
 
@@ -3730,7 +3759,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/lib.mt" => [
-        "module demo.lib",
+        "# module demo.lib",
         "",
         "public const answer: int = 7",
         "",
@@ -3753,7 +3782,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_import_of_public_methods_on_imported_receiver_types
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.ext as ext
 
@@ -3764,13 +3793,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/dep.mt" => <<~MT,
-        module demo.dep
+        # module demo.dep
 
         public struct Counter:
             value: int
       MT
       "demo/ext.mt" => <<~MT,
-        module demo.ext
+        # module demo.ext
 
         import demo.dep as dep
 
@@ -3790,7 +3819,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_methods_on_opaque_receivers
     source = <<~MT
-      module demo.opaque_methods
+      # module demo.opaque_methods
 
       opaque Handle
 
@@ -3809,7 +3838,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_methods_on_pointer_receivers_without_unsafe
     source = <<~MT
-      module demo.pointer_methods
+      # module demo.pointer_methods
 
       opaque Handle
 
@@ -3828,7 +3857,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_methods_on_generic_pointer_receivers
     source = <<~MT
-      module demo.generic_pointer_methods
+      # module demo.generic_pointer_methods
 
       struct Point:
           x: int
@@ -3848,7 +3877,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_methods_on_nullable_generic_pointer_receivers
     source = <<~MT
-      module demo.nullable_generic_pointer_methods
+      # module demo.nullable_generic_pointer_methods
 
       struct Point:
           x: int
@@ -3871,7 +3900,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_import_of_private_module_member
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.lib as lib
 
@@ -3881,7 +3910,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/lib.mt" => <<~MT,
-        module demo.lib
+        # module demo.lib
 
         const hidden: int = 7
       MT
@@ -3896,7 +3925,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_import_of_private_method
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.lib as lib
 
@@ -3908,7 +3937,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/lib.mt" => <<~MT,
-        module demo.lib
+        # module demo.lib
 
         public struct Counter:
             value: int
@@ -3928,7 +3957,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_ambiguous_imported_extension_method_calls
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.dep as dep
       import demo.a as a
@@ -3941,13 +3970,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/dep.mt" => <<~MT,
-        module demo.dep
+        # module demo.dep
 
         public struct Counter:
             value: int
       MT
       "demo/a.mt" => <<~MT,
-        module demo.a
+        # module demo.a
 
         import demo.dep as dep
 
@@ -3956,7 +3985,7 @@ class MilkTeaSemaTest < Minitest::Test
                 return 1
       MT
       "demo/b.mt" => <<~MT,
-        module demo.b
+        # module demo.b
 
         import demo.dep as dep
 
@@ -3977,7 +4006,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_ambiguous_imported_extension_associated_function_calls
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.dep as dep
       import demo.a as a
@@ -3990,13 +4019,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/dep.mt" => <<~MT,
-        module demo.dep
+        # module demo.dep
 
         public struct Counter:
             value: int
       MT
       "demo/a.mt" => <<~MT,
-        module demo.a
+        # module demo.a
 
         import demo.dep as dep
 
@@ -4005,7 +4034,7 @@ class MilkTeaSemaTest < Minitest::Test
                 return dep.Counter(value = 1)
       MT
       "demo/b.mt" => <<~MT,
-        module demo.b
+        # module demo.b
 
         import demo.dep as dep
 
@@ -4026,7 +4055,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_import_of_private_type_constructor
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import demo.lib as lib
 
@@ -4037,7 +4066,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported = {
       "demo/lib.mt" => <<~MT,
-        module demo.lib
+        # module demo.lib
 
         struct Hidden:
             value: int
@@ -4053,7 +4082,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_same_width_enum_and_flags_arguments_without_explicit_cast_for_non_extern_calls
     source = <<~MT
-      module demo.call_values
+      # module demo.call_values
 
       flags Gesture: int
           tap = 1
@@ -4075,7 +4104,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_variadic_extern_calls
     source = <<~MT
-      module demo.printf
+      # module demo.printf
 
       external function printf(format: cstr, ...) -> int
 
@@ -4091,7 +4120,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_variadic_extern_calls_missing_required_arguments
     source = <<~MT
-      module demo.printf
+      # module demo.printf
 
       external function printf(format: cstr, ...) -> int
 
@@ -4108,7 +4137,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_same_width_enum_and_flags_assignment_without_explicit_cast
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       flags Gesture: int
           tap = 1
@@ -4127,7 +4156,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_power_of_two_alignment
     source = <<~MT
-      module demo.layout
+      # module demo.layout
 
       align(3) struct Mat4:
           data: array[float, 16]
@@ -4142,7 +4171,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_break_and_continue_outside_loops
     break_source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           break
@@ -4154,7 +4183,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/break must be inside a loop/, error.message)
 
     continue_source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           continue
@@ -4168,7 +4197,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_for_loop_over_non_iterable_value
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function main() -> int:
           for value in 3:
@@ -4185,7 +4214,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_dot_dot_range_in_for_loop
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function sum(count: int) -> int:
           var total = 0
@@ -4200,7 +4229,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_dot_dot_range_with_ptr_uint_bounds
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function sum_n(n: ptr_uint) -> ptr_uint:
           var total: ptr_uint = 0
@@ -4215,7 +4244,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_dot_dot_range_with_non_integer_bounds
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function main() -> void:
           for i in 0.0..1.0:
@@ -4231,7 +4260,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_dot_dot_range_with_mismatched_bound_types
     source = <<~MT
-      module demo.for_loops
+      # module demo.for_loops
 
       function main(n: ptr_uint) -> void:
           for i in 0..n:
@@ -4245,7 +4274,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_range_index_assignment
     source = <<~MT
-      module demo.range_assign
+      # module demo.range_assign
 
       function fill(buf: ptr[float]) -> void:
           unsafe:
@@ -4258,7 +4287,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_range_index_assignment_with_non_literal_bounds
     source = <<~MT
-      module demo.range_assign
+      # module demo.range_assign
 
       function fill(buf: ptr[float], n: ptr_uint) -> void:
           unsafe:
@@ -4274,7 +4303,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_range_index_assignment_with_mismatched_count
     source = <<~MT
-      module demo.range_assign
+      # module demo.range_assign
 
       function fill(buf: ptr[float]) -> void:
           unsafe:
@@ -4290,7 +4319,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_exhaustive_match_statement_over_enum
     source = <<~MT
-      module demo.match
+      # module demo.match
 
       enum EventKind: ubyte
           quit = 1
@@ -4312,7 +4341,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_fatal_with_non_string_message
     source = <<~MT
-      module demo.fatal
+      # module demo.fatal
 
       function main() -> int:
           fatal(123)
@@ -4328,7 +4357,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_mismatched_callback_arguments
     source = <<~MT
-      module demo.callbacks
+      # module demo.callbacks
 
       type LogCallback = fn(level: int, message: cstr) -> void
       external function set_callback(callback: LogCallback) -> void
@@ -4350,7 +4379,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_non_keyword_field_names
     source = <<~MT
-      module demo.keywords
+      # module demo.keywords
 
       struct Event:
           kind: int
@@ -4368,7 +4397,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_pointer_cast_and_arithmetic
     source = <<~MT
-      module demo.unsafe_surface
+      # module demo.unsafe_surface
 
       external function allocate(size: ptr_uint) -> ptr[void]
 
@@ -4386,7 +4415,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_pointer_indexing_with_integer_offsets
     source = <<~MT
-      module demo.pointer_offsets
+      # module demo.pointer_offsets
 
       external function allocate(size: ptr_uint) -> ptr[void]
 
@@ -4408,7 +4437,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_extended_compound_assignment_operators
     source = <<~MT
-      module demo.compound_assignments
+      # module demo.compound_assignments
 
       flags Bits: uint
           a = 1 << 0
@@ -4433,7 +4462,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_address_of_dereference_and_deref_assignment_in_unsafe
     source = <<~MT
-      module demo.pointer_surface
+      # module demo.pointer_surface
 
       struct Counter:
           value: int
@@ -4454,7 +4483,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_raw_pointer_member_access_in_unsafe
     source = <<~MT
-      module demo.pointer_surface
+      # module demo.pointer_surface
 
       struct Counter:
           value: int
@@ -4475,7 +4504,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_raw_pointer_method_calls_in_unsafe
     source = <<~MT
-      module demo.pointer_methods
+      # module demo.pointer_methods
 
       struct Counter:
           value: int
@@ -4503,7 +4532,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_associated_functions_on_local_structs
     source = <<~MT
-      module demo.associated
+      # module demo.associated
 
       struct Vec:
           x: int
@@ -4532,7 +4561,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_array_construction_for_locals_consts_and_struct_fields
     source = <<~MT
-      module demo.arrays
+      # module demo.arrays
 
       struct Palette:
           colors: array[uint, 4]
@@ -4554,7 +4583,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_array_assignment_and_by_value_parameters
     source = <<~MT
-      module demo.arrays
+      # module demo.arrays
 
       function mutate(values: array[int, 4]) -> int:
           var local = values
@@ -4577,7 +4606,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_local_array_return_values
     source = <<~MT
-      module demo.array_returns
+      # module demo.array_returns
 
       function make() -> array[int, 4]:
           return array[int, 4](1, 2, 3, 4)
@@ -4602,7 +4631,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_zero_initialization_for_arrays_and_structs
     source = <<~MT
-      module demo.zero
+      # module demo.zero
 
       struct Palette:
           colors: array[uint, 4]
@@ -4621,7 +4650,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_partial_aggregate_and_array_construction
     source = <<~MT
-      module demo.partial_init
+      # module demo.partial_init
 
       struct Point:
           x: int
@@ -4648,7 +4677,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_partial_array_construction_with_too_many_elements
     source = <<~MT
-      module demo.too_many_array_elements
+      # module demo.too_many_array_elements
 
       function main() -> int:
           let values = array[int, 2](1, 2, 3)
@@ -4664,7 +4693,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_zero_for_void
     source = <<~MT
-      module demo.zero_bad
+      # module demo.zero_bad
 
       function main() -> int:
           let value = zero[void]
@@ -4680,7 +4709,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_default_specialization_with_associated_override_and_zero_fallback
     source = <<~MT
-      module demo.default_builtin
+      # module demo.default_builtin
 
       struct Player:
           hp: int
@@ -4710,7 +4739,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_default_call_form
     source = <<~MT
-      module demo.default_call_form
+      # module demo.default_call_form
 
       function main() -> int:
           let value = default[int]()
@@ -4726,7 +4755,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_default_override_with_parameters
     source = <<~MT
-      module demo.bad_default_override
+      # module demo.bad_default_override
 
       struct Player:
           hp: int
@@ -4749,7 +4778,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_extern_array_params_and_returns
     param_source = <<~MT
-      module demo.bad_params
+      # module demo.bad_params
 
       external function take(values: array[int, 4]) -> int
     MT
@@ -4761,7 +4790,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/external function take cannot take array parameters/, param_error.message)
 
     return_source = <<~MT
-      module demo.bad_return
+      # module demo.bad_return
 
       external function make() -> array[int, 4]
     MT
@@ -4775,7 +4804,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_safe_array_indexing_and_element_assignment
     source = <<~MT
-      module demo.arrays
+      # module demo.arrays
 
       struct Palette:
           colors: array[uint, 4]
@@ -4797,7 +4826,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_addr_of_fixed_array_element_through_pointer_deref
     source = <<~MT
-      module demo.ptr_arrays
+      # module demo.ptr_arrays
 
       struct Palette:
           colors: array[uint, 4]
@@ -4818,7 +4847,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_pointer_indexing_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function read(data: ptr[uint]) -> uint:
           return data[0]
@@ -4836,7 +4865,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_pointer_dereference_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Counter:
           value: int
@@ -4856,7 +4885,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_raw_pointer_member_access_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Counter:
           value: int
@@ -4877,7 +4906,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_raw_pointer_method_call_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Counter:
           value: int
@@ -4901,7 +4930,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_mut_method_call_on_read_only_raw_pointer
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Counter:
           value: int
@@ -4927,7 +4956,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_safe_indexing_of_temporary_array_values
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           let value = array[int, 4](1, 2, 3, 4)[0]
@@ -4943,7 +4972,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_safe_indexing_of_value_ref_array_projection
     source = <<~MT
-      module demo.good
+      # module demo.good
 
       struct Item:
           value: int
@@ -4964,7 +4993,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_dereference_of_non_pointer
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           let value = read(1)
@@ -4980,7 +5009,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_read_on_raw_pointer_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       struct Counter:
           value: int
@@ -5000,7 +5029,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_pointer_cast_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       external function allocate(size: ptr_uint) -> ptr[void]
 
@@ -5019,7 +5048,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_pointer_arithmetic_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       external function allocate(size: ptr_uint) -> ptr[void]
 
@@ -5038,7 +5067,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_pointer_to_cstr_abi_casts
     source = <<~MT
-      module demo.cstr_casts
+      # module demo.cstr_casts
 
       external function set_text(value: cstr) -> void
       external function get_text() -> cstr
@@ -5059,7 +5088,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_const_pointer_calls_from_immutable_storage
     source = <<~MT
-      module demo.const_pointer_call
+      # module demo.const_pointer_call
 
       external function inspect(values: const_ptr[int]) -> void
 
@@ -5075,7 +5104,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_const_void_pointer_calls_from_immutable_storage
     source = <<~MT
-      module demo.const_void_pointer_call
+      # module demo.const_void_pointer_call
 
       external function inspect(value: const_ptr[void]) -> void
 
@@ -5091,7 +5120,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_in_parameter
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -5102,11 +5131,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Inspect(value: const_ptr[void]) -> void
+        # module std.c.sample
+        external
+        external function Inspect(value: const_ptr[void]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -5121,7 +5151,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_in_argument_with_legacy_marker
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -5132,11 +5162,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Inspect(value: const_ptr[void]) -> void
+        # module std.c.sample
+        external
+        external function Inspect(value: const_ptr[void]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -5153,7 +5184,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_in_parameter_without_const_ptr_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -5164,11 +5195,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Inspect(value: ptr[void]) -> void
+        # module std.c.sample
+        external
+        external function Inspect(value: ptr[void]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -5185,7 +5217,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_incompatible_foreign_in_parameter_mapping
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -5196,11 +5228,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Inspect(value: const_ptr[float]) -> void
+        # module std.c.sample
+        external
+        external function Inspect(value: const_ptr[float]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -5217,7 +5250,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_consuming_foreign_parameter_with_non_pointer_public_type
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -5227,11 +5260,12 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Release(value: int) -> void
+        # module std.c.sample
+        external
+        external function Release(value: int) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -5248,7 +5282,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_const_pointer_for_writable_pointer_parameters
     source = <<~MT
-      module demo.bad_const_pointer
+      # module demo.bad_const_pointer
 
       external function write(values: ptr[int]) -> void
 
@@ -5266,7 +5300,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_array_char_as_span_char_and_safe_index_source
     source = <<~MT
-      module demo.char_array_surface
+      # module demo.char_array_surface
 
       function view(items: span[char]) -> ptr_uint:
           return items.len
@@ -5285,7 +5319,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_zero_initialized_typed_array_char_locals
     source = <<~MT
-      module demo.char_array_zero_locals
+      # module demo.char_array_zero_locals
 
       function main() -> int:
           var buffer: array[char, 32]
@@ -5300,7 +5334,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_typed_local_without_initializer_for_non_zero_initializable_type
     source = <<~MT
-      module demo.bad_local
+      # module demo.bad_local
 
       function main() -> void:
           let callback: fn(value: int) -> void
@@ -5315,7 +5349,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_array_char_text_methods
     source = <<~MT
-      module demo.char_array_methods
+      # module demo.char_array_methods
 
       function main() -> int:
           var buffer = zero[array[char, 16]]
@@ -5333,7 +5367,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_removed_str_buffer_type
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       function main() -> void:
           var buffer: str_buffer[8]
@@ -5348,7 +5382,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_removed_cstr_list_buffer_type
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       function main() -> void:
           var labels: cstr_list_buffer[3, 64]
@@ -5363,7 +5397,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_array_char_as_str_on_temporary_receiver
     source = <<~MT
-      module demo.char_array_bad_view
+      # module demo.char_array_bad_view
 
       function main() -> str:
           return zero[array[char, 8]].as_str()
@@ -5378,7 +5412,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_array_char_as_cstr_on_temporary_receiver
     source = <<~MT
-      module demo.char_array_bad_cstr
+      # module demo.char_array_bad_cstr
 
       function main() -> cstr:
           return zero[array[char, 8]].as_cstr()
@@ -5393,7 +5427,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_str_as_cstr_calls_with_array_char_as_cstr
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -5404,12 +5438,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
+        # module std.c.ui
+        external
 
-            external function Label(text: cstr) -> void
+        external function Label(text: cstr) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -5426,7 +5461,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_defs_with_array_char_and_span_char_ptr_char_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.mem as mem
 
@@ -5439,14 +5474,15 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/mem.mt" => <<~MT,
-        external module std.c.mem:
-            include "mem.h"
+        # module std.c.mem
+        external
+        include "mem.h"
 
-            external function WriteFixed(label: ptr[char]) -> void
-            external function WriteDynamic(label: ptr[char]) -> void
+        external function WriteFixed(label: ptr[char]) -> void
+        external function WriteDynamic(label: ptr[char]) -> void
       MT
       "std/mem.mt" => <<~MT,
-        module std.mem
+        # module std.mem
 
         import std.c.mem as c
 
@@ -5462,7 +5498,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_ro_addr_on_immutable_array_elements_for_const_pointers
     source = <<~MT
-      module demo.const_pointer_arrays
+      # module demo.const_pointer_arrays
 
       struct Vec2:
           x: float
@@ -5485,7 +5521,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_mapping_public_alias_for_boundary_length_pairs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -5496,13 +5532,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -5517,7 +5554,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_str_builder_methods_and_span_char_calls
     source = <<~MT
-      module demo.str_builder_surface
+      # module demo.str_builder_surface
 
       function view(items: span[char]) -> ptr_uint:
           return items.len
@@ -5542,7 +5579,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_mapping_public_alias_for_str_builder_boundary_length_pairs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -5553,13 +5590,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -5574,7 +5612,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_foreign_mapping_public_alias_for_str_builder_capacity_pairs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -5585,13 +5623,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -5606,7 +5645,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_explicit_literal_specialization_for_imported_generic_foreign_defs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -5617,13 +5656,14 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -5638,7 +5678,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_explicit_literal_specialization_for_local_generic_foreign_defs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.c.ui as c
 
@@ -5651,10 +5691,11 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
     }
 
@@ -5665,7 +5706,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_unsafe_integer_to_char_buffer_writes
     source = <<~MT
-      module demo.char_buffer_writes
+      # module demo.char_buffer_writes
 
       function main() -> int:
           let first = 65
@@ -5683,7 +5724,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_zero_pointer_initializer_for_nullable_pointer_local
     source = <<~MT
-      module demo.bad_zero_pointer_initializer
+      # module demo.bad_zero_pointer_initializer
 
       function main() -> void:
           let maybe_buffer: ptr[char]? = zero[ptr[char]]
@@ -5698,7 +5739,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_zero_pointer_assignment_to_nullable_pointer_local
     source = <<~MT
-      module demo.bad_zero_pointer_assignment
+      # module demo.bad_zero_pointer_assignment
 
       function main() -> void:
           var maybe_buffer: ptr[char]? = null
@@ -5714,7 +5755,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_zero_pointer_argument_for_nullable_pointer_parameter
     source = <<~MT
-      module demo.bad_zero_pointer_argument
+      # module demo.bad_zero_pointer_argument
 
       external function set_buffer(value: ptr[char]?) -> void
 
@@ -5731,7 +5772,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_zero_pointer_return_for_nullable_pointer_return
     source = <<~MT
-      module demo.bad_zero_pointer_return
+      # module demo.bad_zero_pointer_return
 
       function main() -> ptr[char]?:
           return zero[ptr[char]]
@@ -5746,7 +5787,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_char_as_general_numeric_type
     source = <<~MT
-      module demo.bad_char_numeric
+      # module demo.bad_char_numeric
 
       function main() -> int:
           let value = char<-65
@@ -5762,7 +5803,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_typed_null_pointer_literals_and_unsafe_cstr_casts
     source = <<~MT
-      module demo.typed_null_cstr
+      # module demo.typed_null_cstr
 
       external function set_text(value: cstr) -> void
 
@@ -5779,7 +5820,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_pointer_typed_null_literals
     source = <<~MT
-      module demo.bad_typed_null
+      # module demo.bad_typed_null
 
       function main() -> void:
           let maybe_buffer: ptr[char]? = null[int]
@@ -5794,7 +5835,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_inference_from_typed_null_literals
     source = <<~MT
-      module demo.bad_typed_null_inference
+      # module demo.bad_typed_null_inference
 
       function main() -> void:
           let maybe_buffer = null[ptr[char]]
@@ -5809,7 +5850,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_safe_ref_locals_params_and_methods
     source = <<~MT
-      module demo.refs
+      # module demo.refs
 
       struct Counter:
           value: int
@@ -5845,7 +5886,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_implicit_ref_arguments_for_generic_ref_parameters
     source = <<~MT
-      module demo.generic_refs
+      # module demo.generic_refs
 
       function snapshot[T](value: ref[T]) -> T:
           return read(value)
@@ -5862,7 +5903,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_ref_of_immutable_values
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           let value = 1
@@ -5879,7 +5920,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_ref_storage_and_escape_types
     field_source = <<~MT
-      module demo.bad_field
+      # module demo.bad_field
 
       struct Holder:
           value: ref[int]
@@ -5892,7 +5933,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/field Holder\.value cannot store ref types/, field_error.message)
 
     extern_source = <<~MT
-      module demo.bad_param
+      # module demo.bad_param
 
       external function take(value: ref[int]) -> void
     MT
@@ -5904,7 +5945,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/external function take cannot take ref parameters/, extern_error.message)
 
     return_source = <<~MT
-      module demo.bad_return
+      # module demo.bad_return
 
       function leak(value: ref[int]) -> ref[int]:
           return value
@@ -5919,7 +5960,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_ref_arguments_for_by_value_parameters
     source = <<~MT
-      module demo.ref_value_args
+      # module demo.ref_value_args
 
       struct Counter:
           value: int
@@ -5944,7 +5985,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_ref_to_pointer_cast_outside_unsafe
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       function main() -> int:
           var value = 1
@@ -5962,7 +6003,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_ref_projection_without_value
     source = <<~MT
-      module demo.good
+      # module demo.good
 
       struct Counter:
           value: int
@@ -5982,7 +6023,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_integer_flags_backing_types
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       flags BadFlags: float
           visible = 1
@@ -5997,7 +6038,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_unknown_enum_members
     source = <<~MT
-      module demo.bad
+      # module demo.bad
 
       enum State: ubyte
           idle = 0
@@ -6016,7 +6057,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_foreign_external_struct_boundary_with_different_layout
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.shared as shared
       import std.sample as sample
@@ -6027,20 +6068,22 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/shared.mt" => <<~MT,
-        external module std.c.shared:
-            struct Matrix:
-                m0: float
+        # module std.c.shared
+        external
+        struct Matrix:
+            m0: float
       MT
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Matrix:
-                m0: float
-                m1: float
+        # module std.c.sample
+        external
+        struct Matrix:
+            m0: float
+            m1: float
 
-            external function SetMatrix(matrix: Matrix) -> void
+        external function SetMatrix(matrix: Matrix) -> void
       MT
       "std/shared.mt" => <<~MT,
-        module std.shared
+        # module std.shared
 
         import std.c.shared as c
 
@@ -6048,7 +6091,7 @@ class MilkTeaSemaTest < Minitest::Test
         public const IDENTITY: Matrix = Matrix(m0 = 1.0)
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
         import std.shared as shared
@@ -6063,7 +6106,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       def test_allows_callback_parameters_with_ref_arguments
         source = <<~MT
-          module demo.ref_callback_param
+          # module demo.ref_callback_param
 
           struct Counter:
               value: int
@@ -6092,7 +6135,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_foreign_external_opaque_boundary_with_matching_c_name
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -6102,24 +6145,26 @@ class MilkTeaSemaTest < Minitest::Test
 
     imported_sources = {
       "std/c/shared.mt" => <<~MT,
-        external module std.c.shared:
-            opaque va_list = c"va_list"
+        # module std.c.shared
+        external
+        opaque va_list = c"va_list"
       MT
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            opaque va_list = c"va_list"
+        # module std.c.sample
+        external
+        opaque va_list = c"va_list"
 
-            external function WriteLog(args: va_list) -> void
+        external function WriteLog(args: va_list) -> void
       MT
       "std/shared.mt" => <<~MT,
-        module std.shared
+        # module std.shared
 
         import std.c.shared as c
 
         public type Logger = c.va_list
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
         import std.shared as shared
@@ -6138,7 +6183,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_module_scope_mutable_vars_and_zero_initialized_storage
     source = <<~MT
-      module demo.module_vars
+      # module demo.module_vars
 
       function identity(value: int) -> int:
           return value
@@ -6174,7 +6219,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_module_scope_var_with_non_static_initializer
     source = <<~MT
-      module demo.bad_module_var
+      # module demo.bad_module_var
 
       function seed() -> int:
           return 41
@@ -6191,7 +6236,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_integer_match_with_wildcard
     source = <<~MT
-      module demo.int_match
+      # module demo.int_match
 
       function dispatch(key: int) -> int:
           match key:
@@ -6213,7 +6258,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_integer_match_missing_wildcard
     source = <<~MT
-      module demo.int_match_bad
+      # module demo.int_match_bad
 
       function dispatch(key: int) -> int:
           match key:
@@ -6235,7 +6280,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_literal_pattern_in_integer_match
     source = <<~MT
-      module demo.int_match_bad_pattern
+      # module demo.int_match_bad_pattern
 
       var x: int = 65
 
@@ -6259,7 +6304,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_duplicate_wildcard_in_match
     source = <<~MT
-      module demo.dup_wild
+      # module demo.dup_wild
 
       function dispatch(key: int) -> int:
           match key:
@@ -6283,7 +6328,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_enum_match_with_wildcard_subset
     source = <<~MT
-      module demo.enum_wild
+      # module demo.enum_wild
 
       enum EventKind: ubyte
           quit = 1
@@ -6308,7 +6353,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_duplicate_integer_match_arm_value
     source = <<~MT
-      module demo.dup_int
+      # module demo.dup_int
 
       function dispatch(key: int) -> int:
           match key:
@@ -6332,7 +6377,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_integer_match_ubyte_scrutinee
     source = <<~MT
-      module demo.u8_match
+      # module demo.u8_match
 
       function dispatch(code: ubyte) -> int:
           match code:
@@ -6354,7 +6399,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_exhaustive_variant_match
     source = <<~MT
-      module demo.variant_match
+      # module demo.variant_match
 
       variant Shape:
           circle(radius: double)
@@ -6386,7 +6431,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_variant_match_with_wildcard
     source = <<~MT
-      module demo.variant_wildcard
+      # module demo.variant_wildcard
 
       variant Token:
           ident(text: str)
@@ -6415,7 +6460,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_non_exhaustive_variant_match
     source = <<~MT
-      module demo.variant_non_exhaustive
+      # module demo.variant_non_exhaustive
 
       variant Shape:
           circle(radius: double)
@@ -6435,7 +6480,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_variant_construction_with_missing_fields
     source = <<~MT
-      module demo.variant_fields
+      # module demo.variant_fields
 
       variant Shape:
           circle(radius: double)
@@ -6450,7 +6495,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_rejects_as_binding_on_no_payload_arm
     source = <<~MT
-      module demo.variant_no_payload
+      # module demo.variant_no_payload
 
       variant Shape:
           point
@@ -6467,7 +6512,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_generic_variant_declaration_and_use
     source = <<~MT
-      module demo.variant_generic
+      # module demo.variant_generic
 
       variant Box[T]:
           some(value: T)
@@ -6493,7 +6538,7 @@ class MilkTeaSemaTest < Minitest::Test
 
   def test_type_checks_proc_fields_in_union
     source = <<~MT
-      module demo.union_proc
+      # module demo.union_proc
 
       union CallbackOrValue:
           callback: proc() -> int
@@ -6514,13 +6559,32 @@ class MilkTeaSemaTest < Minitest::Test
     File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
+  def source_relative_path(source, default: File.join("demo", "main.mt"))
+    source.each_line do |line|
+      next if line.strip.empty?
+
+      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
+      return File.join(*match[1].split(".")) + ".mt" if match
+
+      break
+    end
+
+    default
+  end
+
   def check_source(source)
-    MilkTea::Sema.check(MilkTea::Parser.parse(source))
+    Dir.mktmpdir("milk-tea-sema") do |dir|
+      root_path = File.join(dir, source_relative_path(source))
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, source)
+
+      MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_file(root_path)
+    end
   end
 
   def check_program_source(source, imported_sources = {})
     Dir.mktmpdir("milk-tea-sema") do |dir|
-      root_path = File.join(dir, "demo", "main.mt")
+      root_path = File.join(dir, source_relative_path(source))
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, source)
 

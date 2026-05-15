@@ -50,7 +50,6 @@ class MilkTeaPackageRegistryStoreTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(package_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
       MT
 
       store = MilkTea::PackageRegistryStore.new(root: registry_root)
@@ -86,7 +85,6 @@ class MilkTeaPackageRegistryStoreTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(package_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
       MT
 
       store = MilkTea::PackageRegistryStore.new(root: registry_root, upstream_root: upstream_root)
@@ -119,7 +117,6 @@ class MilkTeaPackageRegistryStoreTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(package_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
       MT
 
       publisher = MilkTea::PackageRegistryStore.new(root: registry_root, upstream_root: upstream_root)

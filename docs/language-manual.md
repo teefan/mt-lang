@@ -10,39 +10,39 @@ Milk Tea source files use the `.mt` extension.
 
 A file can be either:
 
-- an ordinary module (`module ...`)
-- an external module (`external module ...`)
+- an ordinary source file (no header; module name comes from the path)
+- an external file (`external`)
 
-### 1.1 Ordinary module
+### 1.1 Ordinary file
 
 ```mt
-module demo.main
-
 function main() -> int:
     return 0
 ```
 
-### 1.2 Extern module
+### 1.2 External file
 
 ```mt
-external module std.c.raylib:
-    include "raylib.h"
-    link "raylib"
+external
 
-    struct Color:
-        r: ubyte
-        g: ubyte
-        b: ubyte
-        a: ubyte
+include "raylib.h"
+link "raylib"
 
-    external function InitWindow(width: int, height: int, title: cstr) -> void
+struct Color:
+    r: ubyte
+    g: ubyte
+    b: ubyte
+    a: ubyte
+
+external function InitWindow(width: int, height: int, title: cstr) -> void
 ```
 
 Rules:
 
-- In ordinary modules, `import` statements are parsed only at the top after `module`.
-- In external modules, leading `import` statements are allowed inside the external-module body.
+- In ordinary files, `import` statements are parsed only at the top.
+- In external files, leading `import` statements are allowed after `external`.
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
+- Module identity is inferred from the resolved source path.
 - Platform-specific file variants are a compiler resolution rule, not a source-language import feature.
 - For an active target platform `P`, the compiler resolves `a.b.c` by preferring `a/b/c.P.mt` and falling back to `a/b/c.mt`.
 - Valid platform filename suffixes are `linux`, `windows`, and `wasm`.
@@ -141,7 +141,7 @@ Top-level declarations:
 - `public` is supported for exportable ordinary declarations.
 - `public` is rejected on `methods` blocks.
 - `public` is rejected on ordinary `external` declarations and `static_assert`.
-- In external modules, declarations are implicitly exported and `public` is rejected.
+- In external files, declarations are implicitly exported and `public` is rejected.
 
 ### 3.2 Constants and variables
 
@@ -330,7 +330,7 @@ function boot_screen[T defaults and implements ScreenState]() -> T:
     return default[T]
 ```
 
-### 3.8 Extern functions
+### 3.8 External functions
 
 ```mt
 external function printf(format: cstr, ...) -> int
@@ -796,8 +796,6 @@ Current implementation rejects:
 ## 13. Example
 
 ```mt
-module demo.main
-
 import std.fmt as fmt
 
 struct Counter:

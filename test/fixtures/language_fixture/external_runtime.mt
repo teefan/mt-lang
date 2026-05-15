@@ -1,4 +1,5 @@
-external module test.fixtures.language_fixture.external_runtime:
-    include "stdio.h"
+external
 
-    external function puts(text: cstr) -> int
+include "stdio.h"
+
+external function puts(text: cstr) -> int

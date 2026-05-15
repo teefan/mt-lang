@@ -102,8 +102,6 @@ module MilkTea
           case t.kind
           when :comment
             (map[t.line] ||= []) << t.text.strip
-          when :blank_line
-            @blank_line_set[t.line] = true
           end
         end
         map
@@ -113,15 +111,8 @@ module MilkTea
       def flush_leading_comments_before(stmt_line)
         return unless stmt_line
 
-        all_lines = (@comment_map.keys + @blank_line_set.keys).select { |l| l < stmt_line }.sort.uniq
-        all_lines.each do |l|
-          if @comment_map.key?(l)
-            @comment_map.delete(l)&.each { |text| line(text) }
-          elsif @blank_line_set.delete(l)
-            next if suppress_blank_line_trivia?
-
-            blank_line
-          end
+        @comment_map.keys.select { |line| line < stmt_line }.sort.each do |line_no|
+          @comment_map.delete(line_no)&.each { |text| line(text) }
         end
       end
 
@@ -139,27 +130,17 @@ module MilkTea
 
       def emit_source_file(source_file)
         @current_module_kind = source_file.module_kind
-        # Flush any comments that appear before the module header line
-        flush_leading_comments_before(source_file.line) if source_file.line
-        module_name = source_file.module_name ? source_file.module_name.to_s : "(anonymous)"
-        header = source_file.module_kind == :extern_module ? "external module #{module_name}:" : "module #{module_name}"
-        line(header)
-        # Inline trailing comment on the module header line itself
-        if source_file.line && @comment_map.key?(source_file.line)
-          comments = @comment_map.delete(source_file.line)
-          @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
+        if source_file.module_kind == :extern_module
+          flush_leading_comments_before(source_file.line) if source_file.line
+          line("external")
+          if source_file.line && @comment_map.key?(source_file.line)
+            comments = @comment_map.delete(source_file.line)
+            @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
+          end
+          blank_line unless source_file.imports.empty? && source_file.directives.empty? && source_file.declarations.empty?
         end
 
-        if source_file.module_kind == :extern_module
-          with_indent do
-            with_blank_line_trivia_suppressed do
-              emit_module_body(source_file)
-            end
-          end
-        else
-          blank_line unless source_file.imports.empty? && source_file.directives.empty? && source_file.declarations.empty?
-          emit_module_body(source_file)
-        end
+        emit_module_body(source_file)
       end
 
       def emit_module_body(source_file)
@@ -183,7 +164,10 @@ module MilkTea
           wrote_section = true
         end
 
-        return if source_file.declarations.empty?
+        if source_file.declarations.empty?
+          flush_remaining_comments
+          return
+        end
 
         blank_line if wrote_section
         source_file.declarations.each_with_index do |declaration, index|

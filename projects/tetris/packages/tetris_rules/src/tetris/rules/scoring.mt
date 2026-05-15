@@ -1,5 +1,3 @@
-module tetris.rules.scoring
-
 public function gravity_seconds(level: int) -> float:
     if level <= 0:
         return 0.7

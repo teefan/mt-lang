@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "tempfile"
 require_relative "../test_helper"
 
 class MilkTeaCodegenTest < Minitest::Test
@@ -25,7 +24,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_external_struct_with_explicit_c_name
     source = <<~MT
-      module demo.timespec_codegen
+      # module demo.timespec_codegen
 
       import std.c.time as c
 
@@ -36,16 +35,17 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/time.mt" => <<~MT,
-        external module std.c.time:
-            include "time.h"
+        # module std.c.time
+        external
+        include "time.h"
 
-            opaque tm = c"struct tm"
+        opaque tm = c"struct tm"
 
-            struct timespec = c"struct timespec":
-                tv_sec: ptr_int
-                tv_nsec: ptr_int
+        struct timespec = c"struct timespec":
+            tv_sec: ptr_int
+            tv_nsec: ptr_int
 
-            external function nanosleep(duration: const_ptr[timespec], remaining: ptr[timespec]?) -> int
+        external function nanosleep(duration: const_ptr[timespec], remaining: ptr[timespec]?) -> int
       MT
     }
 
@@ -58,7 +58,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_local_enums_flags_and_unions
       source = [
-        "module demo.codegen_surface",
+        "# module demo.codegen_surface",
         "",
         "enum State: int",
         "    idle = 0",
@@ -109,7 +109,7 @@ class MilkTeaCodegenTest < Minitest::Test
       FileUtils.mkdir_p(File.join(dir, "demo"))
 
       File.write(File.join(dir, "std", "math.mt"), [
-        "module std.math",
+        "# module std.math",
         "",
         "public const TEN: int = 10",
         "public const UNUSED: int = 99",
@@ -125,7 +125,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       root_path = File.join(dir, "demo", "main.mt")
       File.write(root_path, [
-        "module demo.main",
+        "# module demo.main",
         "",
         "import std.math as math",
         "",
@@ -146,7 +146,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_uses_trailing_underscore_field_name
     source = <<~MT
-      module demo.extern_field_alias
+      # module demo.extern_field_alias
 
       import std.c.sample as c
 
@@ -156,11 +156,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            enum EventType: int
-                QUIT = 256
-            union Event:
-                type_: uint
+        # module std.c.sample
+        external
+        enum EventType: int
+            QUIT = 256
+        union Event:
+            type_: uint
       MT
     }
 
@@ -172,7 +173,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_pointer_cast_and_arithmetic
     source = [
-      "module demo.pointer_surface",
+      "# module demo.pointer_surface",
       "",
       "external function allocate(size: ptr_uint) -> ptr[void]",
       "external function release(memory: ptr[void]) -> void",
@@ -194,7 +195,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_span_construction_and_field_access
     source = [
-      "module demo.span_surface",
+      "# module demo.span_surface",
       "",
       "function first(items: span[int]) -> int:",
       "    if items.len == 0:",
@@ -222,7 +223,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_emits_line_directives_for_user_statements
     source = <<~MT
-      module demo.line_directives
+      # module demo.line_directives
 
       function main() -> int:
           let x: int = 1
@@ -236,7 +237,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_loop_over_custom_iterator_protocol
     source = <<~MT
-      module demo.iterator_for
+      # module demo.iterator_for
 
       struct Numbers:
           stop: int
@@ -278,7 +279,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_loop_over_bool_current_iterator_protocol
     source = <<~MT
-      module demo.iterator_current
+      # module demo.iterator_current
 
       struct Numbers:
           stop: int
@@ -319,7 +320,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_struct_span_for_loop_as_mutable_alias
     source = <<~MT
-      module demo.for_ref
+      # module demo.for_ref
 
       struct Position:
           x: int
@@ -341,7 +342,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_parallel_collection_for_loop
     source = <<~MT
-      module demo.parallel_for
+      # module demo.parallel_for
 
       struct Position:
           x: int
@@ -372,7 +373,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_parallel_collection_for_loop_in_async_function
     source = <<~MT
-      module demo.async_parallel_for
+      # module demo.async_parallel_for
 
       import std.async as aio
 
@@ -395,7 +396,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_methods
     source = <<~MT
-      module demo.async_methods_codegen
+      # module demo.async_methods_codegen
 
       import std.async as aio
 
@@ -425,7 +426,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_methods
     source = <<~MT
-      module demo.generic_methods_codegen
+      # module demo.generic_methods_codegen
 
       struct Box:
           value: int
@@ -454,7 +455,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_receiver_methods
     source = <<~MT
-      module demo.generic_receiver_methods_codegen
+      # module demo.generic_receiver_methods_codegen
 
       struct Box[T]:
           value: T
@@ -489,7 +490,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_keeps_omitted_receiver_wrapper_for_side_effectful_receiver_expression
     source = <<~MT
-      module demo.side_effectful_receiver_codegen
+      # module demo.side_effectful_receiver_codegen
 
       struct Box:
           value: int
@@ -515,7 +516,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_suppresses_unused_emitted_parameters
     source = <<~MT
-      module demo.unused_params_codegen
+      # module demo.unused_params_codegen
 
       interface Runner:
           function tick(effect: int) -> int
@@ -539,7 +540,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_default_specialization_with_override_and_zero_fallback
     source = <<~MT
-      module demo.default_codegen
+      # module demo.default_codegen
 
       struct Player:
           hp: int
@@ -570,7 +571,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_with_control_flow
     source = <<~MT
-      module demo.async_flow_codegen
+      # module demo.async_flow_codegen
 
       import std.async as aio
 
@@ -603,7 +604,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_await_in_if_body
       source = <<~MT
-        module demo.await_in_if
+        # module demo.await_in_if
 
         import std.async as aio
 
@@ -627,7 +628,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_await_in_while_body
       source = <<~MT
-        module demo.await_in_while
+        # module demo.await_in_while
 
         import std.async as aio
 
@@ -653,7 +654,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def test_generate_c_for_defer_in_async_function
         source = <<~MT
-          module demo.async_defer_codegen
+          # module demo.async_defer_codegen
 
           import std.async as aio
 
@@ -677,7 +678,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def test_generate_c_for_await_in_async_defer_cleanup
         source = <<~MT
-          module demo.async_defer_await_codegen
+          # module demo.async_defer_await_codegen
 
           import std.async as aio
 
@@ -701,7 +702,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       def test_generate_c_for_let_else_in_async_function
         source = <<~MT
-          module demo.async_let_else_codegen
+          # module demo.async_let_else_codegen
 
           import std.async as aio
 
@@ -725,7 +726,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_await_in_if_condition
       source = <<~MT
-        module demo.await_in_if_condition
+        # module demo.await_in_if_condition
 
         import std.async as aio
 
@@ -747,7 +748,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_await_in_short_circuit
       source = <<~MT
-        module demo.await_short_circuit
+        # module demo.await_short_circuit
 
         import std.async as aio
 
@@ -774,7 +775,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     def test_generate_c_for_await_in_if_expression
       source = <<~MT
-        module demo.await_if_expr
+        # module demo.await_if_expr
 
         import std.async as aio
 
@@ -794,7 +795,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_out_and_automatic_cstr_temps
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -809,14 +810,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/raylib.mt" => <<~MT,
-        external module std.c.raylib:
-            include "raylib.h"
+        # module std.c.raylib
+        external
+        include "raylib.h"
 
-            external function LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
-            external function SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
+        external function LoadFileData(file_name: cstr, data_size: ptr[int]) -> ptr[ubyte]?
+        external function SaveFileData(file_name: cstr, data: ptr[ubyte], bytes: int) -> bool
       MT
       "std/raylib.mt" => <<~MT,
-        module std.raylib
+        # module std.raylib
 
         import std.c.raylib as c
 
@@ -839,7 +841,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_cleanup_bearing_foreign_results_without_intermediate_result_temps
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -852,11 +854,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Load(path: cstr) -> int
+        # module std.c.sample
+        external
+        external function Load(path: cstr) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -874,7 +877,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_std_fmt_format_literals
     source = <<~MT
-      module demo.format_codegen
+      # module demo.format_codegen
 
       import std.fmt as fmt
       import std.string as string
@@ -901,7 +904,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_general_format_string_expressions
     source = <<~MT
-      module demo.format_expr_codegen
+      # module demo.format_expr_codegen
 
       function sink(text: str) -> ptr_uint:
           return text.len
@@ -925,7 +928,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_direct_string_sink_format_literals
     source = <<~MT
-      module demo.format_sink_codegen
+      # module demo.format_sink_codegen
 
       import std.string as string
 
@@ -947,7 +950,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_inlines_identical_format_string_builders_without_helpers
     source = <<~MT
-      module demo.format_dedup_codegen
+      # module demo.format_dedup_codegen
 
       function first(value: ubyte) -> ptr_uint:
           let text = f"value=\#{value} ok=\#{true}"
@@ -966,7 +969,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_returning_general_format_string_as_borrowed_text
     source = <<~MT
-      module demo.format_expr_escape
+      # module demo.format_expr_escape
 
       function main(value: int) -> str:
           return f"value=\#{value}"
@@ -981,7 +984,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_cstr_backed_string_constants_without_foreign_temps
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -993,11 +996,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Load(path: cstr) -> int
+        # module std.c.sample
+        external
+        external function Load(path: cstr) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1014,7 +1018,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_in_const_void_pointer
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1026,11 +1030,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Inspect(value: const_ptr[void]) -> void
+        # module std.c.sample
+        external
+        external function Inspect(value: const_ptr[void]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1047,7 +1052,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_local_const_ptr_typed_binding
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       function main() -> void:
           let value = 7
@@ -1063,7 +1068,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_escapes_local_names_that_match_c_keywords
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       function main() -> int:
           let times_two = 7
@@ -1078,7 +1083,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_deferred_literal_return_without_spill_temp
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -1096,7 +1101,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_string_literal_without_using_scratch
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.raylib as rl
 
@@ -1106,13 +1111,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/raylib.mt" => <<~MT,
-        external module std.c.raylib:
-            include "raylib.h"
+        # module std.c.raylib
+        external
+        include "raylib.h"
 
-            external function InitWindow(width: int, height: int, title: cstr) -> void
+        external function InitWindow(width: int, height: int, title: cstr) -> void
       MT
       "std/raylib.mt" => <<~MT,
-        module std.raylib
+        # module std.raylib
 
         import std.c.raylib as c
 
@@ -1130,7 +1136,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_span_str_to_span_cstr_boundary
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1142,11 +1148,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[cstr], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1166,7 +1173,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_span_str_to_span_ptr_char_boundary
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1181,11 +1188,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1204,7 +1212,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_ignored_foreign_result_with_span_str_temp_marshalling
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1220,11 +1228,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1242,7 +1251,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_nested_foreign_defs_in_inline_contexts
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1261,12 +1270,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function CountNames(names: ptr[ptr[char]], count: int) -> int
-            external function PairSum(left: int, right: int) -> int
+        # module std.c.sample
+        external
+        external function CountNames(names: ptr[ptr[char]], count: int) -> int
+        external function PairSum(left: int, right: int) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1288,7 +1298,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_mapping_call_member_access
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1298,14 +1308,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Pair:
-                value: int
+        # module std.c.sample
+        external
+        struct Pair:
+            value: int
 
-            external function MakePair(value: int) -> Pair
+        external function MakePair(value: int) -> Pair
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1320,7 +1331,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_codegen_for_foreign_defs_with_str_to_ptr_char_boundary
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1330,11 +1341,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Show(text: ptr[char]) -> void
+        # module std.c.sample
+        external
+        external function Show(text: ptr[char]) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1351,7 +1363,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_span_cstr_to_span_ptr_char_without_scratch
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1363,11 +1375,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
+        # module std.c.sample
+        external
+        external function UseNames(names: ptr[ptr[char]], count: int, active: ptr[int]) -> int
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1388,7 +1401,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_nullable_pointer_inout_slot
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1400,11 +1413,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
+        # module std.c.sample
+        external
+        external function NextToken(text: ptr[char]?, delim: cstr, state: ptr[ptr[char]]) -> ptr[char]?
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1420,7 +1434,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_contextual_string_literals_as_cstr
     source = <<~MT
-      module demo.literal_cstr
+      # module demo.literal_cstr
 
       external function set_text(value: cstr) -> void
 
@@ -1439,7 +1453,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_inout_uses_minimal_address_of
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1450,17 +1464,18 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Camera:
-                id: int
+        # module std.c.sample
+        external
+        struct Camera:
+            id: int
 
-            enum CameraMode: int
-                CAMERA_FREE = 1
+        enum CameraMode: int
+            CAMERA_FREE = 1
 
-            external function UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
+        external function UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1479,7 +1494,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_imported_inout_call_inside_editable_method_uses_receiver_pointer
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1490,17 +1505,18 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Camera:
-                id: int
+        # module std.c.sample
+        external
+        struct Camera:
+            id: int
 
-            enum CameraMode: int
-                CAMERA_FREE = 1
+        enum CameraMode: int
+            CAMERA_FREE = 1
 
-            external function UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
+        external function UpdateCamera(camera: ptr[Camera], mode: CameraMode) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1524,7 +1540,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_without_temps_for_simple_statement_arguments
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1539,23 +1555,24 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Vector2:
-                x: float
-                y: float
+        # module std.c.sample
+        external
+        struct Vector2:
+            x: float
+            y: float
 
-            struct Color:
-                r: ubyte
-                g: ubyte
-                b: ubyte
-                a: ubyte
+        struct Color:
+            r: ubyte
+            g: ubyte
+            b: ubyte
+            a: ubyte
 
-            const VIOLET: Color = Color(r = 200, g = 122, b = 255, a = 255)
+        const VIOLET: Color = Color(r = 200, g = 122, b = 255, a = 255)
 
-            external function DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
+        external function DrawTriangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1575,7 +1592,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_checked_span_index_foreign_arguments_without_foreign_arg_temps
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1591,11 +1608,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            external function Draw(x: int, y: int, color: int) -> void
+        # module std.c.sample
+        external
+        external function Draw(x: int, y: int, color: int) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1614,7 +1632,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_nested_foreign_calls_with_imported_arguments
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1624,20 +1642,21 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Color:
-                r: ubyte
-                g: ubyte
-                b: ubyte
-                a: ubyte
+        # module std.c.sample
+        external
+        struct Color:
+            r: ubyte
+            g: ubyte
+            b: ubyte
+            a: ubyte
 
-            const RED: Color = Color(r = 255, g = 0, b = 0, a = 255)
+        const RED: Color = Color(r = 255, g = 0, b = 0, a = 255)
 
-            external function Fade(color: Color, alpha: float) -> Color
-            external function UseColor(color: Color) -> void
+        external function Fade(color: Color, alpha: float) -> Color
+        external function UseColor(color: Color) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1657,7 +1676,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_text_calls_without_numbered_argument_temps
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1669,16 +1688,17 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            const BLACK: int = 0
+        # module std.c.sample
+        external
+        const BLACK: int = 0
 
-            external function DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
-            external function MeasureText(text: cstr, font_size: int) -> int
-            external function GetScreenWidth() -> int
-            external function TextFormat(format: cstr, value: int) -> cstr
+        external function DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
+        external function MeasureText(text: cstr, font_size: int) -> int
+        external function GetScreenWidth() -> int
+        external function TextFormat(format: cstr, value: int) -> cstr
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1700,7 +1720,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_text_calls_with_dynamic_format_literals_without_extra_cstr_copy
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.sample as sample
 
@@ -1710,13 +1730,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            const BLACK: int = 0
+        # module std.c.sample
+        external
+        const BLACK: int = 0
 
-            external function DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
+        external function DrawText(text: cstr, pos_x: int, pos_y: int, font_size: int, color: int) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -1738,7 +1759,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_variadic_foreign_mapping_calls
     source = <<~MT
-      module demo.variadic_foreign
+      # module demo.variadic_foreign
 
       import std.stdio as stdio
 
@@ -1757,7 +1778,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_identity_pointer_projections
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.mem as mem
 
@@ -1773,15 +1794,16 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/mem.mt" => <<~MT,
-        external module std.c.mem:
-            include "mem.h"
+        # module std.c.mem
+        external
+        include "mem.h"
 
-            external function AllocateBytes(size: ptr_uint) -> ptr[void]
-            external function ReleaseBytes(memory: ptr[void]) -> void
-            external function SetLabel(label: cstr) -> void
+        external function AllocateBytes(size: ptr_uint) -> ptr[void]
+        external function ReleaseBytes(memory: ptr[void]) -> void
+        external function SetLabel(label: cstr) -> void
       MT
       "std/mem.mt" => <<~MT,
-        module std.mem
+        # module std.mem
 
         import std.c.mem as c
 
@@ -1801,7 +1823,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_external_struct_boundary_reinterpret
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.shared as shared
       import std.sample as sample
@@ -1815,21 +1837,23 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/shared.mt" => <<~MT,
-        external module std.c.shared:
-            struct Matrix:
-                m0: float
+        # module std.c.shared
+        external
+        struct Matrix:
+            m0: float
       MT
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Matrix:
-                m0: float
+        # module std.c.sample
+        external
+        struct Matrix:
+            m0: float
 
-            external function SetMatrix(matrix: Matrix) -> void
-            external function SetMatrixPtr(matrix: ptr[Matrix]) -> void
-            external function GetMatrix() -> Matrix
+        external function SetMatrix(matrix: Matrix) -> void
+        external function SetMatrixPtr(matrix: ptr[Matrix]) -> void
+        external function GetMatrix() -> Matrix
       MT
       "std/shared.mt" => <<~MT,
-        module std.shared
+        # module std.shared
 
         import std.c.shared as c
 
@@ -1837,7 +1861,7 @@ class MilkTeaCodegenTest < Minitest::Test
         public const IDENTITY: Matrix = Matrix(m0 = 1.0)
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
         import std.shared as shared
@@ -1860,7 +1884,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_opaque_handle_projections
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -1874,14 +1898,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -1901,7 +1926,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_owned_foreign_release_calls
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -1916,14 +1941,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -1944,7 +1970,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_let_else_owned_foreign_release_calls
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -1959,14 +1985,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -1987,7 +2014,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_let_else_status_success_binding
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.status as status
 
@@ -2012,7 +2039,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_let_else_status_error_binding
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.status as status
 
@@ -2037,7 +2064,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_let_else_status_void_discard_binding
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.status as status
 
@@ -2067,7 +2094,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_let_else_status_void_discard_binding
     source = <<~MT
-      module demo.async_status_void_codegen
+      # module demo.async_status_void_codegen
 
       import std.async as aio
       import std.status as status
@@ -2097,7 +2124,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_defer_expression_owned_foreign_release_calls
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2111,14 +2138,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            external function CreateWindow() -> ptr[void]?
-            external function DestroyWindow(window: ptr[void]?) -> void
+        external function CreateWindow() -> ptr[void]?
+        external function DestroyWindow(window: ptr[void]?) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2139,7 +2167,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_typed_opaque_handle_out_projection
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.window as win
 
@@ -2154,16 +2182,17 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/window.mt" => <<~MT,
-        external module std.c.window:
-            include "window.h"
+        # module std.c.window
+        external
+        include "window.h"
 
-            opaque RawWindow = c"RawWindow"
+        opaque RawWindow = c"RawWindow"
 
-            external function CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
-            external function DestroyWindow(window: ptr[RawWindow]) -> void
+        external function CreateWindow(window: ptr[ptr[RawWindow]]?) -> bool
+        external function DestroyWindow(window: ptr[RawWindow]) -> void
       MT
       "std/window.mt" => <<~MT,
-        module std.window
+        # module std.window
 
         import std.c.window as c
 
@@ -2185,7 +2214,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_safe_span_indexing_and_element_assignment
     source = [
-      "module demo.span_index_surface",
+      "# module demo.span_index_surface",
       "",
       "function bump(items: span[int]) -> int:",
       "    let first = items[0]",
@@ -2210,7 +2239,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_mixed_numeric_binary_operations_inserts_explicit_casts
     source = [
-      "module demo.numeric_codegen",
+      "# module demo.numeric_codegen",
       "",
       "function main() -> int:",
       "    let sum = 1 + 2.5",
@@ -2228,7 +2257,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_prefix_cast_syntax
     source = [
-      "module demo.prefix_cast_codegen",
+      "# module demo.prefix_cast_codegen",
       "",
       "function main(value: float, a: int, b: int) -> int:",
       "    let left = int<-value",
@@ -2245,7 +2274,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_if_expressions
     source = [
-      "module demo.if_expr_codegen",
+      "# module demo.if_expr_codegen",
       "",
       "function main(ready: bool) -> int:",
       "    let score = if ready: 1 else: 0",
@@ -2261,7 +2290,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_variadic_extern_calls
     source = [
-      "module demo.variadic_codegen",
+      "# module demo.variadic_codegen",
       "",
       "external function printf(format: cstr, ...) -> int",
       "",
@@ -2278,7 +2307,7 @@ class MilkTeaCodegenTest < Minitest::Test
   def test_generate_c_for_lossless_numeric_coercion_at_external_boundaries
     generated = generate_c_from_program_source(
       <<~MT,
-        module demo.external_numeric_codegen
+        # module demo.external_numeric_codegen
 
         import std.c.demo as demo
 
@@ -2294,15 +2323,16 @@ class MilkTeaCodegenTest < Minitest::Test
       MT
       {
         "std/c/demo.mt" => <<~MT,
-          external module std.c.demo:
-              struct Color:
-                  r: short
-                  g: short
-                  b: ubyte
-                  a: ubyte
+          # module std.c.demo
+          external
+          struct Color:
+              r: short
+              g: short
+              b: ubyte
+              a: ubyte
 
-              external function set_count(value: int) -> void
-              external function set_opacity(value: double) -> void
+          external function set_count(value: int) -> void
+          external function set_opacity(value: double) -> void
         MT
       },
     )
@@ -2316,7 +2346,7 @@ class MilkTeaCodegenTest < Minitest::Test
   def test_generate_c_for_exact_compile_time_numeric_coercion
     generated = generate_c_from_program_source(
       <<~MT,
-        module demo.exact_numeric_codegen
+        # module demo.exact_numeric_codegen
 
         import std.c.demo as demo
 
@@ -2331,9 +2361,10 @@ class MilkTeaCodegenTest < Minitest::Test
       MT
       {
         "std/c/demo.mt" => <<~MT,
-          external module std.c.demo:
-              external function set_channel(value: ubyte) -> void
-              external function set_scale(value: float) -> void
+          # module std.c.demo
+          external
+          external function set_channel(value: ubyte) -> void
+          external function set_scale(value: float) -> void
         MT
       },
     )
@@ -2345,7 +2376,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_contextual_integer_to_float_at_local_assignment_and_return_boundaries
     source = [
-      "module demo.contextual_int_to_float_codegen",
+      "# module demo.contextual_int_to_float_codegen",
       "",
       "struct Point:",
       "    x: float",
@@ -2373,7 +2404,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_contextual_integer_to_float_at_call_and_field_boundaries
     source = [
-      "module demo.contextual_float_calls",
+      "# module demo.contextual_float_calls",
       "",
       "struct Point:",
       "    x: float",
@@ -2401,7 +2432,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_struct_instantiation_and_embedding
     source = [
-      "module demo.generic_surface",
+      "# module demo.generic_surface",
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
@@ -2438,7 +2469,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_struct_used_only_in_expression
     source = [
-      "module demo.generic_expression_only",
+      "# module demo.generic_expression_only",
       "",
       "struct Box[T]:",
       "    value: T",
@@ -2459,7 +2490,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments
     source = [
-      "module demo.generic_functions",
+      "# module demo.generic_functions",
       "",
       "struct Slice[T]:",
       "    data: ptr[T]",
@@ -2492,7 +2523,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_interface_constraints
     source = [
-      "module demo.interface_codegen",
+      "# module demo.interface_codegen",
       "",
       "interface Damageable:",
       "    editable function take_damage(amount: int) -> void",
@@ -2528,7 +2559,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
-      "module demo.generic_layout",
+      "# module demo.generic_layout",
       "",
       "function bytes_for[T](count: ptr_uint) -> ptr_uint:",
       "    return count * size_of(T)",
@@ -2548,7 +2579,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_await_of_task_locals_without_redundant_await_slots
     source = [
-      "module demo.async_clean",
+      "# module demo.async_clean",
       "",
       "import std.async as aio",
       "",
@@ -2571,7 +2602,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_literal_type_arguments
     source = [
-      "module demo.generic_builder",
+      "# module demo.generic_builder",
       "",
       "function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
       "    return buffer.capacity()",
@@ -2591,7 +2622,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_explicit_literal_type_arguments
     source = [
-      "module demo.generic_builder_explicit",
+      "# module demo.generic_builder_explicit",
       "",
       "function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
       "    return buffer.capacity()",
@@ -2611,7 +2642,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_explicit_named_const_type_arguments
     source = [
-      "module demo.generic_builder_named_const",
+      "# module demo.generic_builder_named_const",
       "",
       "const BASE: int = 28",
       "const CAPACITY: int = BASE + 4",
@@ -2634,7 +2665,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_rejects_removed_builtin_result_type
     source = [
-      "module demo.result_surface",
+      "# module demo.result_surface",
       "",
       "enum LoadError: ubyte",
       "    invalid_format = 1",
@@ -2653,7 +2684,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_builtin_fatal_helper
     source = [
-      "module demo.fatal_surface",
+      "# module demo.fatal_surface",
       "",
       "function main() -> int:",
       "    fatal(\"bad state\")",
@@ -2674,7 +2705,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_enum_match_statement_as_switch
     source = [
-      "module demo.match_surface",
+      "# module demo.match_surface",
       "",
       "enum EventKind: ubyte",
       "    quit = 1",
@@ -2703,7 +2734,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_range_and_array_for_loops
     source = [
-      "module demo.for_surface",
+      "# module demo.for_surface",
       "",
       "function sum(items: array[int, 4]) -> int:",
       "    var total = 0",
@@ -2729,7 +2760,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_dot_dot_range_syntax
     source = [
-      "module demo.dot_dot_range",
+      "# module demo.dot_dot_range",
       "",
       "function sum(n: int) -> int:",
       "    var total = 0",
@@ -2751,7 +2782,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_dot_dot_range_with_constant_end
     source = [
-      "module demo.dot_dot_range_const",
+      "# module demo.dot_dot_range_const",
       "",
       "function sum_to_ten() -> int:",
       "    var total = 0",
@@ -2770,7 +2801,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_range_index_assignment
     source = [
-      "module demo.range_index_assign",
+      "# module demo.range_index_assign",
       "",
       "function fill3(buf: ptr[float]) -> void:",
       "    unsafe:",
@@ -2787,7 +2818,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_preserves_hoisted_stop_for_non_constant_range_bound
     source = [
-      "module demo.for_stop_surface",
+      "# module demo.for_stop_surface",
       "",
       "function main() -> int:",
       "    var stop = 4",
@@ -2807,7 +2838,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_break_and_continue_inside_match_with_for_loop
     source = [
-      "module demo.loop_control_surface",
+      "# module demo.loop_control_surface",
       "",
       "enum Step: ubyte",
       "    skip = 1",
@@ -2844,7 +2875,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_omits_unused_loop_labels
     source = [
-      "module demo.simple_loop_surface",
+      "# module demo.simple_loop_surface",
       "",
       "function main() -> int:",
       "    var i = 0",
@@ -2867,7 +2898,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_rewrites_imported_aggregate_constants_for_static_storage
     source = <<~MT
-      module demo.static_const_colors
+      # module demo.static_const_colors
 
       import std.sample as sample
 
@@ -2877,7 +2908,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/sample.mt" => <<~MT,
-        module std.sample
+        # module std.sample
 
         import std.c.sample as c
 
@@ -2885,14 +2916,15 @@ class MilkTeaCodegenTest < Minitest::Test
         public const WHITE: Color = c.WHITE
       MT
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            struct Color:
-                r: byte
-                g: byte
-                b: byte
-                a: byte
+        # module std.c.sample
+        external
+        struct Color:
+            r: byte
+            g: byte
+            b: byte
+            a: byte
 
-            const WHITE: Color = Color(r = 255, g = 255, b = 255, a = 255)
+        const WHITE: Color = Color(r = 255, g = 255, b = 255, a = 255)
       MT
     }
 
@@ -2904,7 +2936,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_emits_pedantic_safe_static_array_aggregate_initializers
     source = <<~MT
-      module demo.static_array_init
+      # module demo.static_array_init
 
       struct Cell:
           x: int
@@ -2924,7 +2956,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_uses_structured_break_for_simple_loop_exit
     source = [
-      "module demo.structured_break_surface",
+      "# module demo.structured_break_surface",
       "",
       "function main() -> int:",
       "    var total = 0",
@@ -2946,7 +2978,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_uses_structured_continue_for_simple_while_loop
     source = [
-      "module demo.structured_continue_surface",
+      "# module demo.structured_continue_surface",
       "",
       "function main() -> int:",
       "    var total = 0",
@@ -2969,7 +3001,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_uses_structured_continue_for_simple_for_loop
     source = [
-      "module demo.structured_for_continue_surface",
+      "# module demo.structured_for_continue_surface",
       "",
       "function main() -> int:",
       "    var total = 0",
@@ -2991,7 +3023,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_layout_queries_and_static_assert
     source = [
-      "module demo.layout_surface",
+      "# module demo.layout_surface",
       "",
       "struct Header:",
       "    magic: array[ubyte, 4]",
@@ -3013,7 +3045,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_real_str_literals_and_fatal
     source = [
-      "module demo.str_surface",
+      "# module demo.str_surface",
       "",
       "const greeting: str = \"hello\"",
       "",
@@ -3036,7 +3068,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_str_slice_and_arena_cstr_conversion
     source = [
-      "module demo.str_methods_surface",
+      "# module demo.str_methods_surface",
       "",
       "import std.str",
       "import std.mem.arena as arena",
@@ -3070,7 +3102,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_str_equality_and_compile_time_folding
     source = <<~MT
-      module demo.str_compare_surface
+      # module demo.str_compare_surface
 
       const same: bool = "milk" == "milk"
       static_assert("milk" != "tea", "string compare failed")
@@ -3095,7 +3127,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_codegen_for_direct_str_construction_outside_unsafe
     source = <<~MT
-      module demo.bad_str_constructor
+      # module demo.bad_str_constructor
 
       function main(data: ptr[char], len: ptr_uint) -> str:
           return str(data = data, len = len)
@@ -3110,7 +3142,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_packed_and_aligned_structs
     source = [
-      "module demo.layout_modifiers_surface",
+      "# module demo.layout_modifiers_surface",
       "",
       "packed struct Header:",
       "    tag: ubyte",
@@ -3139,7 +3171,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_address_of_and_dereference_assignment
     source = [
-      "module demo.pointer_surface",
+      "# module demo.pointer_surface",
       "",
       "struct Counter:",
       "    value: int",
@@ -3162,7 +3194,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_raw_pointer_member_access
     source = [
-      "module demo.pointer_surface_auto_member",
+      "# module demo.pointer_surface_auto_member",
       "",
       "struct Counter:",
       "    value: int",
@@ -3185,7 +3217,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_raw_pointer_method_calls
     source = [
-      "module demo.pointer_method_surface",
+      "# module demo.pointer_method_surface",
       "",
       "struct Counter:",
       "    value: int",
@@ -3217,7 +3249,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_extended_compound_assignment_operators
     source = [
-      "module demo.compound_assignments_surface",
+      "# module demo.compound_assignments_surface",
       "",
       "flags Bits: uint",
       "    a = 1 << 0",
@@ -3248,7 +3280,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_safe_ref_locals_params_and_methods
     source = [
-      "module demo.ref_surface",
+      "# module demo.ref_surface",
       "",
       "struct Counter:",
       "    value: int",
@@ -3295,7 +3327,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_immutable_array_bearing_method_receivers_uses_pointer_params
     source = [
-      "module demo.large_receiver_surface",
+      "# module demo.large_receiver_surface",
       "",
       "struct Big:",
       "    data: array[int, 8]",
@@ -3322,7 +3354,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unused_method_receivers_omits_param_but_keeps_receiver_evaluation
     source = [
-      "module demo.receiver_elision_surface",
+      "# module demo.receiver_elision_surface",
       "",
       "var calls: int = 0",
       "",
@@ -3351,7 +3383,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_function_values_returning_arrays
     source = [
-      "module demo.fn_array_return_surface",
+      "# module demo.fn_array_return_surface",
       "",
       "function make() -> array[int, 2]:",
       "    return array[int, 2](4, 9)",
@@ -3379,7 +3411,7 @@ class MilkTeaCodegenTest < Minitest::Test
       FileUtils.mkdir_p(File.join(dir, "demo"))
 
       File.write(File.join(dir, "demo", "math.mt"), [
-        "module demo.math",
+        "# module demo.math",
         "",
         "public struct RawVec:",
         "    x: int",
@@ -3394,7 +3426,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
       source_path = File.join(dir, "main.mt")
       File.write(source_path, [
-        "module demo.main",
+        "# module demo.main",
         "",
         "import demo.math as math",
         "",
@@ -3415,7 +3447,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_fixed_array_construction_and_layout
     source = [
-      "module demo.array_surface",
+      "# module demo.array_surface",
       "",
       "struct Palette:",
       "    colors: array[uint, 4]",
@@ -3445,7 +3477,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_addr_of_fixed_array_element_through_pointer_deref
     source = [
-      "module demo.ptr_array_addr",
+      "# module demo.ptr_array_addr",
       "",
       "struct Palette:",
       "    colors: array[uint, 4]",
@@ -3470,7 +3502,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
     source = [
-      "module demo.checked_index_alias_surface",
+      "# module demo.checked_index_alias_surface",
       "",
       "struct Point:",
       "    x: int",
@@ -3504,7 +3536,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_safe_array_indexing_and_assignment
     source = [
-      "module demo.array_index_surface",
+      "# module demo.array_index_surface",
       "",
       "struct Palette:",
       "    colors: array[uint, 4]",
@@ -3533,7 +3565,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_zero_initialization
     source = [
-      "module demo.zero_surface",
+      "# module demo.zero_surface",
       "",
       "struct Palette:",
       "    colors: array[uint, 4]",
@@ -3553,7 +3585,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_partial_aggregate_and_array_initialization
     source = [
-      "module demo.partial_surface",
+      "# module demo.partial_surface",
       "",
       "struct Point:",
       "    x: int",
@@ -3576,7 +3608,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_array_assignment_and_parameter_copy
     source = [
-      "module demo.array_copy_surface",
+      "# module demo.array_copy_surface",
       "",
       "function mutate(values: array[int, 4]) -> int:",
       "    var local = values",
@@ -3609,7 +3641,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_local_array_returns
     source = [
-      "module demo.array_return_surface",
+      "# module demo.array_return_surface",
       "",
       "function make() -> array[int, 4]:",
       "    return array[int, 4](1, 2, 3, 4)",
@@ -3640,7 +3672,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_reinterpret_calls
     source = [
-      "module demo.reinterpret_surface",
+      "# module demo.reinterpret_surface",
       "",
       "function main() -> uint:",
       "    let value: float = 1.0",
@@ -3660,7 +3692,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_pointer_to_cstr_abi_casts
     source = [
-      "module demo.cstr_casts_surface",
+      "# module demo.cstr_casts_surface",
       "",
       "external function set_text(value: cstr) -> void",
       "external function get_text() -> cstr",
@@ -3683,7 +3715,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_const_pointer_ro_addr_calls
     source = [
-      "module demo.const_pointer_call_surface",
+      "# module demo.const_pointer_call_surface",
       "",
       "function inspect(values: const_ptr[int]) -> void:",
       "    return",
@@ -3702,7 +3734,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_array_char_values_and_span_char_calls
     source = [
-      "module demo.char_array_surface",
+      "# module demo.char_array_surface",
       "",
       "function view(items: span[char]) -> ptr_uint:",
       "    return items.len",
@@ -3723,7 +3755,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_typed_array_char_local_without_initializer
     source = [
-      "module demo.char_array_zero_local",
+      "# module demo.char_array_zero_local",
       "",
       "function main() -> int:",
       "    var buffer: array[char, 16]",
@@ -3738,7 +3770,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_generate_c_for_array_char_text_methods
     source = [
-      "module demo.char_array_methods",
+      "# module demo.char_array_methods",
       "",
       "function main() -> int:",
       "    var buffer = zero[array[char, 16]]",
@@ -3757,7 +3789,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_str_builder_methods_and_span_char_calls
     source = [
-      "module demo.str_builder_surface",
+      "# module demo.str_builder_surface",
       "",
       "function view(items: span[char]) -> ptr_uint:",
       "    return items.len",
@@ -3798,7 +3830,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_str_builder_and_span_char_ptr_char_boundary
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -3809,13 +3841,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -3831,7 +3864,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_functions_with_defaults_and_interface_constraints
     source = [
-      "module demo.defaults_constraint_codegen",
+      "# module demo.defaults_constraint_codegen",
       "",
       "interface Named:",
       "    function value() -> int",
@@ -3864,7 +3897,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_foreign_defs_with_str_builder_public_capacity_mapping
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -3875,13 +3908,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -3896,7 +3930,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_explicit_literal_specialization_on_imported_generic_foreign_defs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -3907,13 +3941,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -3928,7 +3963,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_explicit_literal_specialization_on_local_generic_foreign_defs
     root_source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.c.ui as c
 
@@ -3941,10 +3976,11 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
     }
 
@@ -3955,7 +3991,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_codegen_for_removed_cstr_list_buffer_type
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       function main() -> void:
           var labels: cstr_list_buffer[3, 64]
@@ -3970,7 +4006,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_rejects_generate_c_for_foreign_str_as_cstr_call_with_array_char_as_cstr
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -3981,13 +4017,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function Label(text: cstr) -> void
+        external function Label(text: cstr) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -4004,7 +4041,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_defs_with_array_char_and_span_char_ptr_char_boundary
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.mem as mem
 
@@ -4017,14 +4054,15 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/mem.mt" => <<~MT,
-        external module std.c.mem:
-            include "mem.h"
+        # module std.c.mem
+        external
+        include "mem.h"
 
-            external function WriteFixed(label: ptr[char]) -> void
-            external function WriteDynamic(label: ptr[char]) -> void
+        external function WriteFixed(label: ptr[char]) -> void
+        external function WriteDynamic(label: ptr[char]) -> void
       MT
       "std/mem.mt" => <<~MT,
-        module std.mem
+        # module std.mem
 
         import std.c.mem as c
 
@@ -4041,7 +4079,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_foreign_mapping_public_alias_boundary_and_length
     source = <<~MT
-      module demo.main
+      # module demo.main
 
       import std.ui as ui
 
@@ -4052,13 +4090,14 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/c/ui.mt" => <<~MT,
-        external module std.c.ui:
-            include "ui.h"
+        # module std.c.ui
+        external
+        include "ui.h"
 
-            external function TextBox(text: ptr[char], text_size: int) -> void
+        external function TextBox(text: ptr[char], text_size: int) -> void
       MT
       "std/ui.mt" => <<~MT,
-        module std.ui
+        # module std.ui
 
         import std.c.ui as c
 
@@ -4074,7 +4113,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_typed_null_pointer_to_cstr_casts
     source = [
-      "module demo.typed_null_cstr_surface",
+      "# module demo.typed_null_cstr_surface",
       "",
       "external function set_text(value: cstr) -> void",
       "",
@@ -4091,7 +4130,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_integer_to_char_buffer_writes
     source = [
-      "module demo.char_buffer_surface",
+      "# module demo.char_buffer_surface",
       "",
       "function main() -> int:",
       "    var ptr: ptr[char] = zero[ptr[char]]",
@@ -4110,7 +4149,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_unsafe_pointer_offsets_without_ptr_uint_casts
     source = [
-      "module demo.pointer_offset_surface",
+      "# module demo.pointer_offset_surface",
       "",
       "function main() -> int:",
       "    var ptr: ptr[char] = zero[ptr[char]]",
@@ -4130,7 +4169,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_ref_arguments_passed_to_by_value_parameters
     source = [
-      "module demo.ref_value_args",
+      "# module demo.ref_value_args",
       "",
       "struct Counter:",
       "    value: int",
@@ -4156,7 +4195,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_left_biased_float_literal_inference
     source = [
-      "module demo.float_literal_inference",
+      "# module demo.float_literal_inference",
       "",
       "function main() -> int:",
       "    let value: float = 4.0",
@@ -4176,7 +4215,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_callable_value_storage_and_indirect_calls
     source = [
-      "module demo.callable_values",
+      "# module demo.callable_values",
       "",
       "struct Entry:",
       "    callback: fn(value: float) -> float",
@@ -4207,7 +4246,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_imported_function_callable_values
     source = [
-      "module demo.main",
+      "# module demo.main",
       "",
       "import std.ease as ease",
       "",
@@ -4223,7 +4262,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     imported_sources = {
       "std/ease.mt" => [
-        "module std.ease",
+        "# module std.ease",
         "",
         "public function times_two(value: int) -> int:",
         "    return value * 2",
@@ -4240,7 +4279,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_proc_closure_capture_and_param_calls
     source = [
-      "module demo.proc_codegen",
+      "# module demo.proc_codegen",
       "",
       "function apply(callback: proc(value: int) -> int, value: int) -> int:",
       "    return callback(value)",
@@ -4266,7 +4305,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_proc_return_and_struct_field
     source = [
-      "module demo.proc_surface",
+      "# module demo.proc_surface",
       "",
       "struct Holder:",
       "    callback: proc(value: int) -> int",
@@ -4295,7 +4334,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_proc_param_lifecycle
     source = [
-      "module demo.async_proc_lifecycle",
+      "# module demo.async_proc_lifecycle",
       "",
       "async function run(callback: proc(value: int) -> int) -> int:",
       "    return callback(1)",
@@ -4313,7 +4352,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_proc_local_lifecycle
     source = [
-      "module demo.async_proc_local",
+      "# module demo.async_proc_local",
       "",
       "async function run(offset: int) -> int:",
       "    let callback = proc(value: int) -> int:",
@@ -4332,7 +4371,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_proc_assignment_lifecycle
     source = [
-      "module demo.proc_assign_lifecycle",
+      "# module demo.proc_assign_lifecycle",
       "",
       "struct Holder:",
       "    callback: proc(value: int) -> int",
@@ -4364,7 +4403,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_proc_field_assignment_lifecycle
     source = [
-      "module demo.proc_field_assign",
+      "# module demo.proc_field_assign",
       "",
       "struct Holder:",
       "    callback: proc(value: int) -> int",
@@ -4391,7 +4430,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_proc_var_reassign_lifecycle
     source = [
-      "module demo.proc_var_reassign",
+      "# module demo.proc_var_reassign",
       "",
       "function main() -> int:",
       "    var callback = proc(value: int) -> int:",
@@ -4411,7 +4450,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_module_scope_mutable_vars
     source = [
-      "module demo.global_state",
+      "# module demo.global_state",
       "",
       "const BASE: int = 1",
       "",
@@ -4438,7 +4477,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_integer_match_with_default_case
     source = [
-      "module demo.int_match",
+      "# module demo.int_match",
       "",
       "function dispatch(key: int) -> int:",
       "    match key:",
@@ -4468,7 +4507,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_enum_match_with_wildcard
     source = [
-      "module demo.enum_wild",
+      "# module demo.enum_wild",
       "",
       "enum EventKind: ubyte",
       "    quit = 1",
@@ -4498,7 +4537,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_variant_tagged_union_structs
     source = <<~MT
-      module demo.variant_codegen
+      # module demo.variant_codegen
 
       variant Token:
           ident(text: str)
@@ -4541,7 +4580,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_variant_construction
     source = <<~MT
-      module demo.variant_ctor_codegen
+      # module demo.variant_ctor_codegen
 
       variant Event:
           click(x: int, y: int)
@@ -4565,7 +4604,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_variant_as_binding_field_access
     source = <<~MT
-      module demo.variant_as_binding
+      # module demo.variant_as_binding
 
       variant Shape:
           circle(radius: double)
@@ -4589,7 +4628,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_generic_variant_instances
     source = <<~MT
-      module demo.generic_variant_codegen
+      # module demo.generic_variant_codegen
 
       variant Maybe[T]:
           some(value: T)
@@ -4620,7 +4659,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_union_with_proc_field
     source = <<~MT
-      module demo.union_proc_codegen
+      # module demo.union_proc_codegen
 
       union CallbackOrValue:
           callback: proc() -> int
@@ -4639,7 +4678,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_format_precision_spec_calls_append_double_precision
     source = <<~MT
-      module demo.fmt_spec
+      # module demo.fmt_spec
 
       function main(pi: double, small: float) -> int:
           let formatted_pi = f"pi=\#{pi:.2}"
@@ -4656,7 +4695,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_main_uses_std_async_wait
     source = <<~MT
-      module demo.async_main_codegen
+      # module demo.async_main_codegen
 
       import std.async as aio
 
@@ -4674,7 +4713,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
   def test_generate_c_for_async_void_main_uses_std_async_run
     source = <<~MT
-      module demo.async_main_void_codegen
+      # module demo.async_main_void_codegen
 
       import std.async as aio
 
@@ -4692,23 +4731,37 @@ class MilkTeaCodegenTest < Minitest::Test
 
   private
 
+  def source_relative_path(source, default: "program.mt")
+    source.each_line do |line|
+      next if line.strip.empty?
+
+      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
+      return File.join(*match[1].split(".")) + ".mt" if match
+
+      break
+    end
+
+    default
+  end
+
   def language_fixture_path
     File.expand_path("../fixtures/language_fixture.mt", __dir__)
   end
 
   def generate_c_from_source(source)
-    Tempfile.create(["milk-tea-codegen", ".mt"]) do |file|
-      file.write(source)
-      file.flush
+    Dir.mktmpdir("milk-tea-codegen") do |dir|
+      root_path = File.join(dir, source_relative_path(source))
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, source)
 
-      program = MilkTea::ModuleLoader.check_program(file.path)
+      program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       MilkTea::Codegen.generate_c(program)
     end
   end
 
   def generate_c_from_program_source(source, imported_sources = {})
     Dir.mktmpdir("milk-tea-codegen") do |dir|
-      root_path = File.join(dir, "demo", "main.mt")
+      root_path = File.join(dir, source_relative_path(source, default: File.join("demo", "main.mt")))
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, source)
 

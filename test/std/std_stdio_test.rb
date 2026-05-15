@@ -9,8 +9,6 @@ class MilkTeaStdStdioTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_stdio_formatting",
-      "",
       "import std.stdio as stdio",
       "import std.str as str",
       "",
@@ -44,8 +42,6 @@ class MilkTeaStdStdioTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_stdio_stream",
-      "",
       "import std.stdio as stdio",
       "import std.str as str",
       "",
@@ -99,8 +95,6 @@ class MilkTeaStdStdioTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_stdio_bytes",
-      "",
       "import std.stdio as stdio",
       "",
       "function main() -> int:",
@@ -138,8 +132,6 @@ class MilkTeaStdStdioTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_stdio_position",
-      "",
       "import std.stdio as stdio",
       "",
       "function main() -> int:",
@@ -198,8 +190,6 @@ class MilkTeaStdStdioTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_stdio_temp_and_paths",
-      "",
       "import std.stdio as stdio",
       "import std.str as str",
       "",

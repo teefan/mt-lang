@@ -74,8 +74,6 @@ module MilkTea
 
     def render_entry_source
       <<~MT
-        module main
-
         function main() -> int:
             return 0
       MT

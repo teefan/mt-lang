@@ -1,5 +1,3 @@
-module std.errno
-
 import std.c.errno as c
 
 public type Code = int

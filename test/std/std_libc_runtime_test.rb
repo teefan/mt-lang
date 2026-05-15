@@ -12,8 +12,6 @@ class MilkTeaStdLibcRuntimeTest < Minitest::Test
       source_path = File.join(dir, "std_libc.mt")
 
       File.write(source_path, [
-        "module demo.std_libc_runtime",
-        "",
         "import std.libc as libc",
         "import std.str as text",
         "",

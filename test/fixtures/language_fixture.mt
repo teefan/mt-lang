@@ -1,5 +1,3 @@
-module test.fixtures.language_fixture
-
 import std.maybe as maybe
 import std.status as status
 import test.fixtures.language_fixture.external_runtime as runtime

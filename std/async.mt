@@ -1,5 +1,3 @@
-module std.async
-
 import std.async.runtime as backend
 import std.status as status
 

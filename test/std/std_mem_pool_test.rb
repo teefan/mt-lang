@@ -9,8 +9,6 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_pool",
-      "",
       "import std.mem.pool as pool",
       "",
       "function main() -> int:",
@@ -68,8 +66,6 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_pool_typed",
-      "",
       "import std.mem.pool as pool",
       "",
       "struct Pair:",
@@ -118,8 +114,6 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_pool_alignment",
-      "",
       "import std.mem.pool as pool",
       "",
       "align(16) struct Mat4:",

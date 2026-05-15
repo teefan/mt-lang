@@ -213,7 +213,6 @@ module MilkTea
 
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
-      validate_declared_module_name!(ast.module_name.to_s, resolved_path)
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
       analysis = Sema.check(ast, imported_modules:)
@@ -232,7 +231,16 @@ module MilkTea
 
     def parse_file(path)
       source = @source_overrides.fetch(path) { File.read(path) }
-      Parser.parse(source, path: path)
+      ast = Parser.parse(source, path: path)
+      inferred_module_name = inferred_module_name_for_path(path)
+      AST::SourceFile.new(
+        module_name: AST::QualifiedName.new(inferred_module_name.split(".")),
+        module_kind: ast.module_kind,
+        imports: ast.imports,
+        directives: ast.directives,
+        declarations: ast.declarations,
+        line: ast.line,
+      )
     rescue Errno::ENOENT
       raise ModuleLoadError.new("source file not found", path: path)
     rescue Errno::EISDIR
@@ -247,28 +255,23 @@ module MilkTea
       end
     end
 
-    def validate_declared_module_name!(module_name, resolved_path)
-      valid_names, scope_description = valid_declared_module_names_for_path(resolved_path)
-      return if valid_names.empty? || valid_names.include?(module_name)
-
-      expected_names = valid_names.map { |name| "'#{name}'" }.join(" or ")
-      message = "declared module '#{module_name}' does not match source path; expected #{expected_names}"
-      message += " relative to #{scope_description}" if scope_description
-      raise ModuleLoadError.new(message, path: resolved_path)
-    end
-
-    def valid_declared_module_names_for_path(resolved_path)
+    def inferred_module_name_for_path(path)
       manifest = begin
-        PackageManifest.load(resolved_path)
+        PackageManifest.load(path)
       rescue PackageManifestError
         nil
       end
 
-      if manifest && path_within_root?(resolved_path, manifest.source_root)
-        return [[module_name_for_path(resolved_path, manifest.source_root)], "package.source_root '#{manifest.source_root}'"]
+      if manifest && path_within_root?(path, manifest.source_root)
+        return module_name_for_path(path, manifest.source_root)
       end
 
-      [[], nil]
+      matching_root = @module_roots
+                      .select { |root| path_within_root?(path, root) }
+                      .max_by(&:length)
+      return module_name_for_path(path, matching_root) if matching_root
+
+      File.basename(path).sub(/\.(linux|windows|wasm)\.mt\z/, ".mt").sub(/\.mt\z/, "")
     end
 
     def module_name_for_path(path, root)

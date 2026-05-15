@@ -1,5 +1,3 @@
-module std.mem.heap
-
 import std.c.libc as libc
 
 

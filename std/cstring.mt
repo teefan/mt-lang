@@ -1,5 +1,3 @@
-module std.cstring
-
 import std.c.string as c
 
 public foreign function copy_bytes(destination: ptr[void], source: const_ptr[void], size_bytes: ptr_uint) -> ptr[void] = c.mt_string_memcpy

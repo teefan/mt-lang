@@ -8,8 +8,6 @@ class LSPWorkspaceTest < Minitest::Test
     uri = "file:///tmp/lsp_workspace_open_stats.mt"
 
     stats = workspace.open_document(uri, <<~MT)
-      module main
-
       function main() -> int:
           return 0
     MT
@@ -19,7 +17,7 @@ class LSPWorkspaceTest < Minitest::Test
     assert_nil stats[:skip_reason]
     assert_kind_of Numeric, stats[:analysis_ms]
     assert_operator stats[:analysis_ms], :>=, 0
-    assert_operator stats[:lines], :>=, 4
+    assert_operator stats[:lines], :>=, 3
   end
 
   def test_open_document_eagerly_analyzes_large_documents
@@ -41,8 +39,6 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "sample_text.mt")
       content = <<~MT
-        module std.sample_text
-
         import std.maybe as maybe
         import std.string as string
 
@@ -68,8 +64,6 @@ class LSPWorkspaceTest < Minitest::Test
       path = File.join(dir, "main.mt")
       body = (1..55).map { |i| "# filler #{i}" }.join("\n")
       content = <<~MT
-        module main
-
         import mathx as mx
         import mathy as my
 
@@ -96,8 +90,6 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(File.join(dir, "std"))
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         import alpha as a
         import beta as b
         import gamma as g
@@ -125,8 +117,6 @@ class LSPWorkspaceTest < Minitest::Test
       path = File.join(dir, "main.mt")
       body = (1..155).map { |i| "# filler #{i}" }.join("\n")
       content = <<~MT
-        module main
-
         import mathx as mx
 
         function main() -> int:
@@ -153,8 +143,6 @@ class LSPWorkspaceTest < Minitest::Test
     workspace.set_document_source(uri, "background-document")
 
     stats = workspace.open_document(uri, <<~MT)
-      module main
-
       function main() -> int:
           return 0
     MT
@@ -174,8 +162,6 @@ class LSPWorkspaceTest < Minitest::Test
       path = File.join(dir, "main.mt")
       body = (1..55).map { |i| "# filler #{i}" }.join("\n")
       content = <<~MT
-        module main
-
         import mathx as mx
         import mathy as my
 
@@ -205,8 +191,6 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "demo.mt")
       content = <<~MT
-        module std.demo
-
         public function answer() -> int:
             return 42
       MT
@@ -284,8 +268,6 @@ class LSPWorkspaceTest < Minitest::Test
       root_path = File.join(app_src_dir, "main.mt")
       overlay_path = File.join(overlay_src_dir, "panel.mt")
       root_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -293,8 +275,6 @@ class LSPWorkspaceTest < Minitest::Test
             return layout.default_width() + panel.overlay_width()
       MT
       overlay_source = <<~MT
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -305,15 +285,11 @@ class LSPWorkspaceTest < Minitest::Test
       File.write(overlay_path, overlay_source)
 
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -346,8 +322,6 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "demo.mt")
       content = <<~MT
-        module std.demo
-
         public function answer() -> int:
             return 42
       MT
@@ -378,8 +352,6 @@ class LSPWorkspaceTest < Minitest::Test
       TOML
 
       File.write(main_path, <<~MT)
-        module demo.main
-
         import support
 
         function main() -> int:
@@ -387,22 +359,16 @@ class LSPWorkspaceTest < Minitest::Test
       MT
 
       File.write(main_windows_path, <<~MT)
-        module demo.main
-
         function main() -> int:
             return missing_symbol
       MT
 
       File.write(support_path, <<~MT)
-        module support
-
         public function value() -> int:
             return 1
       MT
 
       File.write(support_windows_path, <<~MT)
-        module support
-
         public function value() -> int:
             return 2
       MT
@@ -415,7 +381,7 @@ class LSPWorkspaceTest < Minitest::Test
       analysis = workspace.get_analysis(main_uri)
 
       refute_nil analysis
-      assert_equal "demo.main", analysis.module_name
+      assert_equal "main", analysis.module_name
       assert_equal %w[value], analysis.imports.fetch("support").functions.keys.sort
       assert_equal [], workspace.collect_diagnostics(main_uri)
     ensure
@@ -427,8 +393,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_missing_import_anchor") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module demo.main
-
         import demo.missing.lib as missing
 
         function main() -> int:
@@ -444,7 +408,7 @@ class LSPWorkspaceTest < Minitest::Test
       missing_import = diagnostics.find { |diagnostic| diagnostic[:message] == "module not found: demo.missing.lib" }
 
       refute_nil missing_import
-      assert_equal 2, missing_import.dig(:range, :start, :line)
+      assert_equal 0, missing_import.dig(:range, :start, :line)
       assert_equal 7, missing_import.dig(:range, :start, :character)
       assert_equal 23, missing_import.dig(:range, :end, :character)
     ensure
@@ -456,8 +420,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_entry_namespace_trap") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         import main.platform_info as platform_info
 
         function main() -> int:
@@ -465,8 +427,6 @@ class LSPWorkspaceTest < Minitest::Test
       MT
       File.write(path, content)
       File.write(File.join(dir, "platform_info.mt"), <<~MT)
-        module platform_info
-
         public function label() -> str:
             return "Build: Shared"
       MT
@@ -476,13 +436,10 @@ class LSPWorkspaceTest < Minitest::Test
       workspace.open_document(uri, content)
 
       diagnostics = workspace.collect_diagnostics(uri)
-      missing_import = diagnostics.find do |diagnostic|
-        diagnostic[:message].include?("entry module 'main' does not create an import namespace for sibling files")
-      end
+      missing_import = diagnostics.find { |diagnostic| diagnostic[:message] == "module not found: main.platform_info" }
 
       refute_nil missing_import
-      assert_includes missing_import[:message], "Import 'platform_info' instead"
-      assert_equal 2, missing_import.dig(:range, :start, :line)
+      assert_equal 0, missing_import.dig(:range, :start, :line)
       assert_equal 7, missing_import.dig(:range, :start, :character)
       assert_equal 25, missing_import.dig(:range, :end, :character)
     ensure
@@ -494,8 +451,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_partial_import_resolution") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         import std.maybe as maybe
         import test # fake import for diagnostics coverage
 
@@ -525,8 +480,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_top_level_parse_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module demo.main
-
         const board_width: int = 10
         const board_height: int = 20a
         const board_cells: int = 200
@@ -544,7 +497,7 @@ class LSPWorkspaceTest < Minitest::Test
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
       analysis = workspace.get_analysis(uri)
 
-      assert_includes messages, "expected end of statement at #{uri}:4:29"
+      assert_includes messages, "expected end of statement at #{uri}:2:29"
       refute_nil analysis
       assert_equal %w[board_cells board_height board_width], analysis.values.keys.sort
       assert_equal "int", analysis.values.fetch("board_height").type.to_s
@@ -558,8 +511,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_block_parse_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             let width = 10
             let height = 20a
@@ -575,7 +526,7 @@ class LSPWorkspaceTest < Minitest::Test
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
       analysis = workspace.get_analysis(uri)
 
-      assert_includes messages, "expected end of statement at #{uri}:5:20"
+      assert_includes messages, "expected end of statement at #{uri}:3:20"
       refute_nil analysis
       assert_includes analysis.functions.keys, "main"
       assert_operator analysis.local_completion_frames.length, :>, 0
@@ -588,8 +539,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_typed_local_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             let height: int = 20a
             return height
@@ -607,7 +556,7 @@ class LSPWorkspaceTest < Minitest::Test
         frame.snapshots.flat_map { |snapshot| snapshot.bindings.keys }
       end
 
-      assert_includes messages, "expected end of statement at #{uri}:4:25"
+      assert_includes messages, "expected end of statement at #{uri}:2:25"
       refute_nil analysis
       assert_includes analysis.functions.keys, "main"
       assert_includes binding_names, "height"
@@ -620,8 +569,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_untyped_local_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             let value = 20a
             return value
@@ -639,7 +586,7 @@ class LSPWorkspaceTest < Minitest::Test
         frame.snapshots.filter_map { |snapshot| snapshot.bindings["value"]&.type&.to_s }
       end
 
-      assert_includes messages, "expected end of statement at #{uri}:4:19"
+      assert_includes messages, "expected end of statement at #{uri}:2:19"
       refute_nil analysis
       assert_includes analysis.functions.keys, "main"
       assert_includes binding_types, "<error>"
@@ -652,8 +599,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_let_else_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main(handle: ptr[int]?) -> int:
             let value = handle else as error
                 return 1
@@ -686,8 +631,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_error_stmt_frame") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
             y: int
@@ -720,8 +663,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_error_block_body") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             let value = 1
             unsafe
@@ -754,8 +695,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_unsafe_semantics") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Counter:
             value: int
 
@@ -778,7 +717,7 @@ class LSPWorkspaceTest < Minitest::Test
       assert messages.any? { |message| message.include?("expected ':' after unsafe") }
       refute messages.any? { |message| message.include?("raw pointer dereference requires unsafe") }
       refute_nil analysis
-      assert_includes analysis.required_unsafe_lines, 9
+      assert_includes analysis.required_unsafe_lines, 7
     ensure
       workspace&.shutdown
     end
@@ -788,8 +727,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_if_flow") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -820,7 +757,7 @@ class LSPWorkspaceTest < Minitest::Test
       assert messages.any? { |message| message.include?("expected ':' before block") }
       refute_nil analysis
       assert_includes analysis.functions.keys, "main"
-      assert_includes binding_types, "main.Point"
+      assert_includes binding_types, "Point"
     ensure
       workspace&.shutdown
     end
@@ -830,8 +767,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_while_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -864,8 +799,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_for_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -893,7 +826,7 @@ class LSPWorkspaceTest < Minitest::Test
       refute messages.any? { |message| message.include?("continue must be inside a loop") }
       refute_nil analysis
       assert_includes analysis.functions.keys, "main"
-      assert_includes binding_types, "ref[main.Point]"
+      assert_includes binding_types, "ref[Point]"
     ensure
       workspace&.shutdown
     end
@@ -903,8 +836,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_headerless_while_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             while:
                 continue
@@ -933,8 +864,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_headerless_for_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         function main() -> int:
             for:
                 continue
@@ -963,8 +892,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_match_arm") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -1010,8 +937,6 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_invalid_match_scrutinee") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -1059,8 +984,6 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       File.write(File.join(std_dir, "string.mt"), <<~MT)
-        module std.string
-
         public struct String:
             value: str
 
@@ -1070,8 +993,6 @@ class LSPWorkspaceTest < Minitest::Test
       MT
 
       File.write(File.join(dir, "util.mt"), <<~MT)
-        module util
-
         import std.string as string
 
         public function make() -> string.String:
@@ -1080,8 +1001,6 @@ class LSPWorkspaceTest < Minitest::Test
 
       path = File.join(dir, "main.mt")
       content = <<~MT
-        module demo.main
-
         import util
         import std.string as string
 

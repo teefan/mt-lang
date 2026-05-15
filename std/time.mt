@@ -1,5 +1,3 @@
-module std.time
-
 import std.c.time as c
 
 public type Timestamp = c.time_t

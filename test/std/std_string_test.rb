@@ -9,8 +9,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_string_storage",
-      "",
       "import std.string as string",
       "",
       "function byte_at(text: str, index: ptr_uint) -> int:",
@@ -61,8 +59,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_string_append",
-      "",
       "import std.string as string",
       "",
       "function byte_at(text: str, index: ptr_uint) -> int:",
@@ -100,8 +96,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_string_self_append",
-      "",
       "import std.str as text",
       "import std.string as string",
       "",
@@ -136,8 +130,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_string_cstr",
-      "",
       "import std.mem.arena as arena",
       "import std.string as string",
       "",
@@ -175,8 +167,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_string_invalid_utf8",
-      "",
       "import std.string as string",
       "",
       "function main() -> int:",
@@ -201,8 +191,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_str_helpers",
-      "",
       "import std.maybe as maybe",
       "import std.str as text",
       "",
@@ -239,8 +227,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_str_equality_ops",
-      "",
       "import std.mem.arena as arena",
       "import std.str as text",
       "",
@@ -278,8 +264,6 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_str_cstr_helpers",
-      "",
       "import std.mem.arena as arena",
       "import std.str as text",
       "",

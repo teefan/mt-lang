@@ -9,8 +9,6 @@ class MilkTeaStdTimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_time_timestamp_and_format",
-      "",
       "import std.str as str",
       "import std.time as time",
       "",
@@ -57,8 +55,6 @@ class MilkTeaStdTimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_time_clock_and_sleep",
-      "",
       "import std.time as time",
       "",
       "function main() -> int:",

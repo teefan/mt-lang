@@ -1,5 +1,3 @@
-module std.async.libuv_runtime
-
 import std.libuv as libuv
 import std.mem.heap as heap
 import std.status as status

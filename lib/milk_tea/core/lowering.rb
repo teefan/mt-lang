@@ -269,7 +269,7 @@ module MilkTea
         @analysis = analysis
         @current_analysis_path = source_path
         @module_name = analysis.module_name
-        @module_prefix = @module_name.tr(".", "_")
+        @module_prefix = module_c_prefix(@module_name)
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
@@ -8728,7 +8728,7 @@ module MilkTea
 
         @analysis = analysis
         @module_name = analysis.module_name
-        @module_prefix = @module_name.tr(".", "_")
+        @module_prefix = module_c_prefix(@module_name)
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
@@ -8755,7 +8755,7 @@ module MilkTea
 
         @analysis = analysis
         @module_name = analysis.module_name
-        @module_prefix = @module_name.tr(".", "_")
+        @module_prefix = module_c_prefix(@module_name)
         @imports = analysis.imports
         @types = analysis.types
         @values = analysis.values
@@ -9400,7 +9400,7 @@ module MilkTea
           base = if type.respond_to?(:module_name) && type.module_name&.start_with?("std.c.")
                    type.name
                  elsif type.respond_to?(:module_name) && !type.module_name.nil?
-                   "#{type.module_name.tr('.', '_')}_#{type.name}"
+                   "#{module_c_prefix(type.module_name)}_#{type.name}"
                  else
                    type.name
                  end
@@ -9411,7 +9411,7 @@ module MilkTea
         return type.name if type.module_name&.start_with?("std.c.")
         return type.name if type.module_name.nil?
 
-        base = "#{type.module_name.tr('.', '_')}_#{type.name}"
+        base = "#{module_c_prefix(type.module_name)}_#{type.name}"
         return base unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
 
         "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"
@@ -9532,14 +9532,18 @@ module MilkTea
       end
 
       def module_function_c_name(module_name, name, type_arguments: [])
-        base = "#{module_name.tr('.', '_')}_#{name}"
+        base = "#{module_c_prefix(module_name)}_#{name}"
         return base if type_arguments.empty?
 
         "#{base}_#{sanitize_identifier(type_arguments.join('_'))}"
       end
 
       def module_value_c_name(module_name, name)
-        "#{module_name.tr('.', '_')}_#{name}"
+        "#{module_c_prefix(module_name)}_#{name}"
+      end
+
+      def module_c_prefix(module_name)
+        sanitize_identifier(module_name.to_s.tr('.', '_'))
       end
 
       def c_local_name(name)

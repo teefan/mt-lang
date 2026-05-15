@@ -12,8 +12,6 @@ class MilkTeaStdCStringRuntimeTest < Minitest::Test
       source_path = File.join(dir, "std_cstring.mt")
 
       File.write(source_path, [
-        "module demo.std_cstring_runtime",
-        "",
         "import std.cstring as cstring",
         "",
         "function main() -> int:",

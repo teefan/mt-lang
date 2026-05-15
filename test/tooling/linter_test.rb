@@ -8,8 +8,6 @@ require_relative "../test_helper"
 class MilkTeaLinterTest < Minitest::Test
   def test_warns_on_local_named_after_builtin_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let double = 1
           return double
@@ -18,14 +16,12 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     warning = warnings.first
     assert_equal "builtin-type-name", warning.code
-    assert_equal 4, warning.line
+    assert_equal 2, warning.line
     assert_match(/local 'double' reuses builtin type name 'double'/, warning.message)
   end
 
   def test_warns_on_parameter_named_after_builtin_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
-      module demo.lint
-
       function main(int: int) -> int:
           return int
     MT
@@ -33,14 +29,12 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     warning = warnings.first
     assert_equal "builtin-type-name", warning.code
-    assert_equal 3, warning.line
+    assert_equal 1, warning.line
     assert_match(/parameter 'int' reuses builtin type name 'int'/, warning.message)
   end
 
   def test_warns_on_function_named_after_builtin_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function double(value: int) -> int:
           return value * 2
 
@@ -51,32 +45,29 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     warning = warnings.first
     assert_equal "builtin-type-name", warning.code
-    assert_equal 3, warning.line
+    assert_equal 1, warning.line
     assert_match(/function 'double' reuses builtin type name 'double'/, warning.message)
   end
 
   def test_builtin_type_name_lint_handles_declarations_without_column_metadata
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       const float: int = 1
       var double: int = 2
     MT
     warnings += MilkTea::Linter.lint_source(<<~MT, path: "extern.mt")
-      external module std.c.double:
-          external function int() -> void
+      external
+
+      external function int() -> void
     MT
 
     assert_equal ["builtin-type-name", "builtin-type-name", "builtin-type-name"], warnings.map(&:code)
-    assert_equal [3, 4, 2], warnings.map(&:line)
+    assert_equal [1, 2, 3], warnings.map(&:line)
     assert_equal ["float", "double", "int"], warnings.map(&:symbol_name)
     assert_equal [nil, nil, nil], warnings.map(&:column)
   end
 
   def test_does_not_warn_on_byte_local_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let byte = 1
           return byte
@@ -87,8 +78,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_reports_unused_local_with_line_number
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let unused = 1
           return 0
@@ -97,15 +86,13 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal 1, warnings.length
     warning = warnings.first
     assert_equal "demo.mt", warning.path
-    assert_equal 4, warning.line
+    assert_equal 2, warning.line
     assert_equal "unused-local", warning.code
     assert_match(/unused local 'unused'/, warning.message)
   end
 
   def test_does_not_report_used_local
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let used = 1
           return used
@@ -116,8 +103,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_reports_only_shadowed_unused_binding
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
-      module demo.lint
-
       function main() -> int:
           let value = 1
           if true:
@@ -131,13 +116,11 @@ class MilkTeaLinterTest < Minitest::Test
     assert_includes codes, "shadow"
     assert_includes codes, "unused-local"
     # Both warnings point to the inner declaration line
-    warnings.each { |w| assert_equal 6, w.line }
+    warnings.each { |w| assert_equal 4, w.line }
   end
 
   def test_ignores_intentionally_discarded_locals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let _unused = 1
           return 0
@@ -148,8 +131,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_counts_compound_assignment_as_use
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var total = 1
           total += 2
@@ -163,8 +144,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_reports_unused_param
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function add(a: int, b: int) -> int:
           return a
     MT
@@ -173,13 +152,11 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "unused-param", w.code
     assert_match(/unused parameter 'b'/, w.message)
-    assert_equal 3, w.line
+    assert_equal 1, w.line
   end
 
   def test_does_not_report_used_param
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function add(a: int, b: int) -> int:
           return a + b
     MT
@@ -189,8 +166,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_ignores_underscore_param
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function callback(_event: int) -> int:
           return 0
     MT
@@ -202,8 +177,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_prefer_let_for_var_never_reassigned
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var value = 42
           return value
@@ -214,13 +187,11 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal "prefer-let", w.code
     assert_match(/never reassigned/, w.message)
     assert_match(/'value'/, w.message)
-    assert_equal 4, w.line
+    assert_equal 2, w.line
   end
 
   def test_no_prefer_let_when_var_is_reassigned
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var counter = 0
           counter = counter + 1
@@ -232,8 +203,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_prefer_let_when_var_is_mutated_via_editable_method
     source = <<~MT
-      module demo.lint
-
       struct Counter:
           value: int
 
@@ -256,8 +225,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_prefer_let_when_var_is_exposed_through_ptr_of_alias
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var data = array[int, 1](0)
           let alias_ptr = ptr_of(data[0])
@@ -269,8 +236,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_prefer_let_for_let_locals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let value = 42
           return value
@@ -283,8 +248,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_unreachable_code_after_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           return 0
           let dead = 1
@@ -294,15 +257,13 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "unreachable-code", w.code
     assert_match(/unreachable/, w.message)
-    assert_equal 5, w.line
+    assert_equal 3, w.line
     assert_equal 9, w.column
     assert_equal 4, w.length
   end
 
   def test_no_unreachable_before_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let x = 1
           return x
@@ -313,8 +274,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_unreachable_after_all_branches_terminate
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
-      module demo.lint
-
       function main(flag: bool) -> int:
           if flag:
               return 1
@@ -325,15 +284,13 @@ class MilkTeaLinterTest < Minitest::Test
 
     unreachable = warnings.select { |w| w.code == "unreachable-code" }
     assert_equal 1, unreachable.length
-    assert_equal 8, unreachable.first.line
+    assert_equal 6, unreachable.first.line
     assert_equal 9, unreachable.first.column
     assert_equal 4, unreachable.first.length
   end
 
   def test_unreachable_return_anchors_to_return_keyword
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
-      module demo.lint
-
       function main(flag: bool) -> int:
           if flag:
               return 1
@@ -344,7 +301,7 @@ class MilkTeaLinterTest < Minitest::Test
 
     unreachable = warnings.select { |w| w.code == "unreachable-code" }
     assert_equal 1, unreachable.length
-    assert_equal 8, unreachable.first.line
+    assert_equal 6, unreachable.first.line
     assert_equal 5, unreachable.first.column
     assert_equal 6, unreachable.first.length
   end
@@ -353,7 +310,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_borrow_and_mutate_warns_on_aliasing
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.mem
 
       function foo(n: int) -> int:
@@ -366,14 +322,13 @@ class MilkTeaLinterTest < Minitest::Test
     borrow = warnings.select { |w| w.code == "borrow-and-mutate" }
     refute_empty borrow
     assert_match(/x/, borrow.first.message)
-    assert_equal 6, borrow.first.line
+    assert_equal 5, borrow.first.line
     assert_equal 20, borrow.first.column
     assert_equal 1, borrow.first.length
   end
 
   def test_no_borrow_warn_when_no_write_after_borrow
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.mem
 
       function foo(n: int) -> int:
@@ -388,8 +343,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_borrow_warn_for_temporary_ptr_of_call_argument_then_write
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function consume(_value: ptr[int]) -> void:
           return
 
@@ -408,7 +361,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_reports_unused_import
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.string
 
       function main() -> int:
@@ -419,12 +371,11 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "unused-import", w.code
     assert_match(/unused import 'string'/, w.message)
-    assert_equal 2, w.line
+    assert_equal 1, w.line
   end
 
   def test_does_not_report_import_used_in_expression
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.string
 
       function main() -> int:
@@ -437,7 +388,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_does_not_report_import_used_as_type_ref
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.string
 
       function process(_value: string.String) -> int:
@@ -453,8 +403,6 @@ class MilkTeaLinterTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       File.write(File.join(std_dir, "string.mt"), <<~MT)
-        module std.string
-
         public struct String:
             value: str
 
@@ -464,8 +412,6 @@ class MilkTeaLinterTest < Minitest::Test
       MT
 
       File.write(File.join(dir, "util.mt"), <<~MT)
-        module util
-
         import std.string as string
 
         public function make() -> string.String:
@@ -474,8 +420,6 @@ class MilkTeaLinterTest < Minitest::Test
 
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module demo.lint
-
         import util
         import std.string as string
 
@@ -496,8 +440,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_does_not_report_import_used_only_in_foreign_mapping
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       import std.c.string as c
 
       public foreign function compare(left: str as cstr, right: str as cstr) -> int = c.mt_string_strcmp
@@ -508,10 +450,11 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_does_not_report_import_used_only_in_extern_function_signature
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "extern.mt")
-      external module demo.raw:
-          import std.c.raylib as rl
+      external
 
-          external function scale(v: rl.Vector2) -> rl.Vector2
+      import std.c.raylib as rl
+
+      external function scale(v: rl.Vector2) -> rl.Vector2
     MT
 
     refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("rl") }
@@ -519,8 +462,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_does_not_report_import_used_in_match_arm_pattern
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       import std.maybe as maybe
 
       function main() -> int:
@@ -537,7 +478,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_import_with_alias_uses_alias_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
       import std.string as s
 
       function main() -> int:
@@ -554,8 +494,6 @@ class MilkTeaLinterTest < Minitest::Test
     Dir.mktmpdir("linter_unresolved_import") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         import std.maybe as maybe
         import test
 
@@ -575,8 +513,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_dead_assignment_value_overwritten
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x = 1
           x = 2
@@ -587,13 +523,11 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "dead-assignment", w.code
     assert_match(/'x'/, w.message)
-    assert_equal 4, w.line
+    assert_equal 2, w.line
   end
 
   def test_no_dead_assignment_when_value_is_read
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x = 1
           let _y = x
@@ -607,8 +541,6 @@ class MilkTeaLinterTest < Minitest::Test
   def test_dead_assignment_write_only_tail
     # x is read once,: overwritten and the last write is never read
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x = 1
           let _y = x
@@ -618,14 +550,12 @@ class MilkTeaLinterTest < Minitest::Test
 
     assert_equal 1, warnings.length
     assert_equal "dead-assignment", warnings.first.code
-    assert_equal 6, warnings.first.line
+    assert_equal 4, warnings.first.line
   end
 
   def test_no_dead_assignment_when_never_assigned_initial_value
     # Declaration without value: immediate use
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x: int
           x = 5
@@ -638,8 +568,6 @@ class MilkTeaLinterTest < Minitest::Test
   def test_no_dead_assignment_for_unused_local
     # unused-local should fire, not dead-assignment
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let unused = 1
           return 0
@@ -652,8 +580,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_dead_assignment_for_while_counter_backedge_read
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var index: int = 0
           while index < 3:
@@ -666,8 +592,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_dead_assignment_for_conditional_overwrite
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(cond: bool) -> int:
           var count: int = 0
           if cond:
@@ -683,8 +607,6 @@ class MilkTeaLinterTest < Minitest::Test
     # is an idiomatic placeholder pattern. The initial value is technically dead
     # (the loop might not run), but warning about it is noise.
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> bool:
           var use_ttf = false
           var counter: int = 0
@@ -699,8 +621,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_dead_assignment_when_overwritten_on_all_paths
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(cond: bool) -> int:
           var x: int = 0
           if cond:
@@ -714,15 +634,13 @@ class MilkTeaLinterTest < Minitest::Test
     dead = warnings.select { |w| w.code == "dead-assignment" }
     assert_equal 3, dead.length
     lines = dead.map(&:line).sort
-    assert_equal [4, 6, 8], lines
+    assert_equal [2, 4, 6], lines
   end
 
   # ── fix_source ─────────────────────────────────────────────────────────
 
   def test_fix_source_converts_prefer_let
     source = <<~MT
-      module demo.fix
-
       function main() -> int:
           var x = 1
           return x
@@ -736,8 +654,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_fix_source_leaves_legitimately_mutable_var
     source = <<~MT
-      module demo.fix
-
       function main() -> int:
           var x = 1
           x = 2
@@ -752,8 +668,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_fix_source_returns_same_source_when_nothing_fixable
     source = <<~MT
-      module demo.fix
-
       function main() -> int:
           let x = 1
           return x
@@ -767,8 +681,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_warns_when_no_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function compute() -> int:
           let _x = 1
     MT
@@ -777,13 +689,11 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "missing-return", w.code
     assert_match(/compute/, w.message)
-    assert_equal 3, w.line
+    assert_equal 1, w.line
   end
 
   def test_missing_return_no_warn_when_always_returns
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function compute() -> int:
           return 42
     MT
@@ -793,8 +703,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_no_warn_for_void_function
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function setup():
           let _x = 1
     MT
@@ -804,8 +712,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_if_else_both_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function pick(flag: bool) -> int:
           if flag:
               return 1
@@ -818,8 +724,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_if_without_else_warns
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function pick(flag: bool) -> int:
           if flag:
               return 1
@@ -830,8 +734,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_no_warn_when_other_path_fatals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
-      module demo.lint
-
       function pick(flag: bool) -> int:
           if flag:
               fatal(c"boom")
@@ -844,8 +746,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_no_warn_for_while_true_without_break
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function spin(flag: bool) -> int:
           while true:
               if flag:
@@ -857,8 +757,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_warns_for_while_true_with_break
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function spin(flag: bool) -> int:
           while true:
               if flag:
@@ -872,8 +770,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_lint_ignore_suppresses_warning_on_same_line
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let unused = 1 # lint: ignore
           return 0
@@ -884,8 +780,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_lint_ignore_rule_code_suppresses_specific_rule
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let unused = 1 # lint: ignore(unused-local)
           return 0
@@ -896,8 +790,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_lint_ignore_rule_code_does_not_suppress_other_rules
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var unused = 1 # lint: ignore(prefer-let)
           return 0
@@ -910,8 +802,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_lint_ignore_leading_comment_suppresses_next_line
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           # lint: ignore(unused-local)
           let unused = 1
@@ -925,8 +815,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_select_limits_to_given_rules
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", select: Set["unused-local"])
-      module demo.lint
-
       function compute(x: int) -> int:
           let unused = 1
           return 0
@@ -939,8 +827,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_ignore_excludes_given_rules
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
-      module demo.lint
-
       function compute(x: int) -> int:
           let unused = 1
           return 0
@@ -955,8 +841,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_redundant_else_fires_when_all_branches_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function sign(n: int) -> int:
           if n > 0:
               return 1
@@ -969,8 +853,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_redundant_else_no_warn_when_branch_does_not_return
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
-      module demo.lint
-
       function sign(n: int) -> int:
           if n > 0:
               let _x = 1
@@ -983,8 +865,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_redundant_else_no_warn_without_else
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
-      module demo.lint
-
       function sign(n: int) -> int:
           if n > 0:
               return 1
@@ -996,8 +876,6 @@ class MilkTeaLinterTest < Minitest::Test
   def test_redundant_else_multi_branch_all_return
     # if/elif both return → else is redundant
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function classify(n: int) -> int:
           if n > 0:
               return 1
@@ -1012,8 +890,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_redundant_else_fires_when_branch_fatals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return"])
-      module demo.lint
-
       function sign(n: int) -> int:
           if n > 0:
               fatal(c"boom")
@@ -1028,8 +904,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_shadow_warns_when_inner_redeclares_outer_name
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let x = 1
           if true:
@@ -1041,13 +915,11 @@ class MilkTeaLinterTest < Minitest::Test
     assert_any(warnings, "shadow")
     shadow_w = warnings.find { |w| w.code == "shadow" }
     assert_match(/'x'/, shadow_w.message)
-    assert_equal 6, shadow_w.line
+    assert_equal 4, shadow_w.line
   end
 
   def test_no_shadow_in_same_scope
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let x = 1
           return x
@@ -1058,8 +930,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_shadow_ignores_underscore_names
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let _x = 1
           if true:
@@ -1074,8 +944,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_missing_return_has_error_severity
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function compute() -> int:
           let _x = 1
     MT
@@ -1087,8 +955,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_prefer_let_has_hint_severity
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x = 1
           return x
@@ -1101,8 +967,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_unused_local_has_warning_severity
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           let unused = 1
           return 0
@@ -1117,8 +981,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_lints_methods_inside_methods_block
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       struct Counter:
           value: int
 
@@ -1135,8 +997,6 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_no_warnings_for_clean_method
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       struct Counter:
           value: int
 
@@ -1176,8 +1036,6 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
     Dir.mktmpdir("mt-lint-platform-api") do |dir|
       path = File.join(dir, "counter.mt")
       File.write(path, <<~MT)
-        module demo.counter
-
         public struct Counter:
             value: int
 
@@ -1186,8 +1044,6 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
                 return this.value
       MT
       File.write(File.join(dir, "counter.windows.mt"), <<~MT)
-        module demo.counter
-
         public struct Counter:
             value: str
 
@@ -1211,8 +1067,6 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
     Dir.mktmpdir("mt-lint-platform-private") do |dir|
       path = File.join(dir, "helpers.mt")
       File.write(path, <<~MT)
-        module demo.helpers
-
         function helper() -> int:
             return 1
 
@@ -1220,8 +1074,6 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
             return helper()
       MT
       File.write(File.join(dir, "helpers.windows.mt"), <<~MT)
-        module demo.helpers
-
         function helper() -> int:
             return 2
 
@@ -1245,8 +1097,6 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(File.join(dir, ".mt-lint.yml"), "select:\n  - unused-local\n")
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute(x: int) -> int:
             let unused = 1
             return 0
@@ -1264,8 +1114,6 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(File.join(dir, ".mt-lint.yml"), "ignore:\n  - prefer-let\n")
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             var x = 1
             return x
@@ -1282,8 +1130,6 @@ class MilkTeaLinterConfigTest < Minitest::Test
       File.write(File.join(dir, ".mt-lint.yml"), "select:\n  - unused-local\n  - unused-param\n")
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute(x: int) -> int:
             let unused = 1
             return 0
@@ -1301,8 +1147,6 @@ class MilkTeaLinterConfigTest < Minitest::Test
     Dir.mktmpdir("mt-lint-no-config") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute(x: int) -> int:
             let unused = 1
             return 0
@@ -1321,8 +1165,6 @@ end
 class MilkTeaLinterFixRedundantElseTest < Minitest::Test
   def test_fix_source_removes_redundant_else
     source = <<~MT
-      module demo.fix
-
       function sign(n: int) -> int:
           if n > 0:
               return 1
@@ -1340,8 +1182,6 @@ class MilkTeaLinterFixRedundantElseTest < Minitest::Test
 
   def test_fix_source_leaves_necessary_else
     source = <<~MT
-      module demo.fix
-
       function sign(n: int) -> int:
           if n > 0:
               let _x = 1
@@ -1356,8 +1196,6 @@ class MilkTeaLinterFixRedundantElseTest < Minitest::Test
 
   def test_fix_source_handles_prefer_let_and_redundant_else_together
     source = <<~MT
-      module demo.fix
-
       function classify(n: int) -> int:
           if n > 0:
               return 1
@@ -1379,8 +1217,6 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
   include LintHelpers
   def test_warns_on_integer_literal_statement
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           42
           return 0
@@ -1388,15 +1224,13 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
 
     w = warnings.find { |warning| warning.code == "useless-expression" }
     assert w, "expected useless-expression warning"
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 5, w.column
     assert_equal 2, w.length
   end
 
   def test_warns_on_identifier_statement_with_identifier_span
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(argc: int) -> int:
           argc
           return 0
@@ -1404,15 +1238,13 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
 
     w = warnings.find { |warning| warning.code == "useless-expression" }
     assert w, "expected useless-expression warning"
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 5, w.column
     assert_equal 4, w.length
   end
 
   def test_warns_on_binary_op_statement
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           1 + 2
           return 0
@@ -1423,8 +1255,6 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
 
   def test_warns_on_string_literal_statement
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           "hello"
           return 0
@@ -1435,8 +1265,6 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
 
   def test_no_warn_on_call_statement
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function side_effect() -> int:
           return 1
 
@@ -1450,8 +1278,6 @@ class MilkTeaLinterUselessExpressionTest < Minitest::Test
 
   def test_useless_expression_has_warning_severity
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           42
           return 0
@@ -1466,8 +1292,6 @@ end
 class MilkTeaLinterUnsafeExpressionTraversalTest < Minitest::Test
   def test_param_use_inside_unsafe_expression_counts_as_used
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(value: ptr[int]) -> int:
           let result = unsafe: read(value)
           return result
@@ -1482,8 +1306,6 @@ end
 class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
   def test_fix_source_removes_unused_import
     source = <<~MT
-      module demo.fix
-
       import demo.other
 
       function main() -> int:
@@ -1497,8 +1319,6 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
   def test_fix_source_keeps_used_import
     source = <<~MT
-      module demo.fix
-
       import demo.other
 
       function main() -> int:
@@ -1513,8 +1333,6 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
   def test_fix_source_removes_dead_assignment
     source = <<~MT
-      module demo.fix
-
       function compute(n: int) -> int:
           let result = n + 1
           result = n + 2
@@ -1533,8 +1351,6 @@ class MilkTeaLinterFixUnusedImportDeadAssignmentTest < Minitest::Test
 
   def test_fix_source_does_not_remove_let_declaration
     source = <<~MT
-      module demo.fix
-
       function compute(n: int) -> int:
           let result = n + 1
           return result
@@ -1552,8 +1368,6 @@ end
 class MilkTeaLinterSelfAssignmentTest < Minitest::Test
   def test_warns_on_self_assignment
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x: int = 1
           x = x
@@ -1562,7 +1376,7 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "self-assignment" }
     assert w, "expected self-assignment warning"
-    assert_equal 5, w.line
+    assert_equal 3, w.line
     assert_equal 5, w.column
     assert_equal 1, w.length
     assert_match(/'x'/, w.message)
@@ -1570,8 +1384,6 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
 
   def test_no_warn_on_normal_assignment
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x: int = 1
           var y: int = 2
@@ -1584,8 +1396,6 @@ class MilkTeaLinterSelfAssignmentTest < Minitest::Test
 
   def test_no_warn_on_compound_self_assignment
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var x: int = 1
           x += x
@@ -1601,8 +1411,6 @@ end
 class MilkTeaLinterSelfComparisonTest < Minitest::Test
   def test_warns_on_self_equal_comparison
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(x: int) -> int:
           if x == x:
               return 1
@@ -1611,7 +1419,7 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "self-comparison" }
     assert w, "expected self-comparison warning"
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 8, w.column
     assert_equal 6, w.length
     assert_match(/'x'/, w.message)
@@ -1620,8 +1428,6 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
 
   def test_warns_on_self_not_equal_comparison
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(x: int) -> int:
           if x != x:
               return 1
@@ -1635,8 +1441,6 @@ class MilkTeaLinterSelfComparisonTest < Minitest::Test
 
   def test_no_warn_on_different_operands
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(x: int, y: int) -> int:
           if x == y:
               return 1
@@ -1652,8 +1456,6 @@ end
 class MilkTeaLinterConstantConditionTest < Minitest::Test
   def test_warns_on_literal_true_in_if
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["redundant-else"])
-      module demo.lint
-
       function main() -> int:
           if true:
               return 1
@@ -1664,15 +1466,13 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     w = warnings.find { |w| w.code == "constant-condition" }
     assert w, "expected constant-condition warning"
     assert_match(/always true/, w.message)
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 8, w.column
     assert_equal 4, w.length
   end
 
   def test_warns_on_literal_false_in_if
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           if false:
               return 1
@@ -1688,8 +1488,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_warns_on_literal_false_in_while
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           while false:
               let _x = 1
@@ -1699,15 +1497,13 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     w = warnings.find { |w| w.code == "constant-condition" }
     assert w, "expected constant-condition warning"
     assert_match(/always false/, w.message)
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 11, w.column
     assert_equal 5, w.length
   end
 
   def test_no_warn_on_while_true
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           while true:
               return 42
@@ -1718,8 +1514,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_warns_on_cp_constant_variable_in_if
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
-      module demo.lint
-
       function main() -> int:
           var flag: bool = true
           if flag:
@@ -1734,8 +1528,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_no_warn_on_runtime_variable
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(flag: bool) -> int:
           if flag:
               return 1
@@ -1747,8 +1539,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_no_constant_condition_or_prefer_let_after_inout_call
     source = <<~MT
-      module demo.lint
-
       import std.sample as sample
 
       function main() -> int:
@@ -1764,12 +1554,11 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, "std", "c"))
       File.write(File.join(dir, "std", "c", "sample.mt"), <<~MT)
-        external module std.c.sample:
-            external function TabBar(active: ptr[int]) -> void
+        external
+
+        external function TabBar(active: ptr[int]) -> void
       MT
       File.write(File.join(dir, "std", "sample.mt"), <<~MT)
-        module std.sample
-
         import std.c.sample as c
 
         public foreign function tab_bar(inout active: int) -> void = c.TabBar
@@ -1791,8 +1580,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_no_constant_condition_or_prefer_let_after_ptr_of_ref_of_call
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
-      module demo.lint
-
       function mutate(value: ptr[int]) -> void:
           return
 
@@ -1810,8 +1597,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_no_warn_on_while_counter_decrement
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
-      module demo.lint
-
       function main() -> int:
           var index = 3
           while index > 0:
@@ -1824,8 +1609,6 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
   def test_constant_condition_while_reports_condition_span
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           while false:
               return 1
@@ -1834,7 +1617,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
 
     w = warnings.find { |warning| warning.code == "constant-condition" }
     assert w, "expected constant-condition warning"
-    assert_equal 4, w.line
+    assert_equal 2, w.line
     assert_equal 11, w.column
     assert_equal 5, w.length
     assert_equal "false", w.symbol_name
@@ -1846,8 +1629,6 @@ end
 class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
   def test_warns_on_redundant_null_check_inside_non_null_branch
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
-      module demo.lint
-
       function process(x: int?) -> int:
           if x != null:
               if x != null:
@@ -1858,7 +1639,7 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "redundant-null-check" }
     assert w, "expected redundant-null-check warning"
-    assert_equal 5, w.line
+    assert_equal 3, w.line
     assert_equal 12, w.column
     assert_equal 9, w.length
     assert_match(/'x'/, w.message)
@@ -1867,8 +1648,6 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
 
   def test_no_warn_on_first_null_check
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
-      module demo.lint
-
       function process(x: int?) -> int:
           if x != null:
               let _v = 1
@@ -1891,8 +1670,6 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
   def test_warns_on_redundant_unsafe_block
     warnings = lint_with_sema(<<~MT, path: "demo.mt", ignore: Set["unused-local"])
-      module demo.lint
-
       function main(value: int) -> int:
           unsafe:
               let copy = value + 1
@@ -1901,14 +1678,12 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
     warning = warnings.find { |w| w.code == "redundant-unsafe" }
     assert warning, "expected redundant-unsafe warning"
-    assert_equal 4, warning.line
+    assert_equal 2, warning.line
     assert_equal :hint, warning.severity
   end
 
   def test_does_not_warn_when_unsafe_block_dereferences_raw_pointer
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(value: ptr[int]) -> int:
           unsafe:
               return read(value)
@@ -1919,8 +1694,6 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
   def test_warns_on_outer_unsafe_when_only_nested_unsafe_is_needed
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main(value: ptr[int]) -> int:
           unsafe:
               unsafe:
@@ -1929,13 +1702,11 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
     redundant = warnings.select { |w| w.code == "redundant-unsafe" }
     assert_equal 1, redundant.length
-    assert_equal 4, redundant.first.line
+    assert_equal 2, redundant.first.line
   end
 
   def test_fix_source_removes_redundant_unsafe_block
     source = <<~MT
-      module demo.lint
-
       function main(value: int) -> int:
           unsafe:
               let copy = value + 1
@@ -1953,8 +1724,6 @@ end
 class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
   def test_warns_on_while_loop_that_always_breaks
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["constant-condition"])
-      module demo.lint
-
       function main() -> int:
           var result: int = 0
           while true:
@@ -1965,15 +1734,13 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
 
     w = warnings.find { |w| w.code == "loop-single-iteration" }
     assert w, "expected loop-single-iteration warning"
-    assert_equal 5, w.line
+    assert_equal 3, w.line
     assert_equal 5, w.column
     assert_equal 5, w.length
   end
 
   def test_warns_on_while_loop_that_always_returns
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["missing-return", "constant-condition"])
-      module demo.lint
-
       function find() -> int:
           while true:
               return 42
@@ -1985,8 +1752,6 @@ class MilkTeaLinterLoopSingleIterationTest < Minitest::Test
 
   def test_no_warn_on_normal_loop
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      module demo.lint
-
       function main() -> int:
           var i: int = 0
           while i < 10:

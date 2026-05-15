@@ -1,5 +1,3 @@
-module std.bytes
-
 import std.mem.heap as heap
 import std.maybe as maybe
 import std.str as text

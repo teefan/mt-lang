@@ -21,7 +21,7 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
   def test_generate_c_for_nullable_callback_locals_and_struct_fields
     source = <<~MT
-      module demo.callbacks
+      # module demo.callbacks
 
       type Callback = fn(value: int) -> void
       external function register(callback: Callback?) -> void
@@ -55,10 +55,21 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
   private
 
+  def source_relative_path(source, default: File.join("demo", "main.mt"))
+    source.each_line do |line|
+      next if line.strip.empty?
+
+      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
+      return File.join(*match[1].split(".")) + ".mt" if match
+
+      break
+    end
+
+    default
+  end
+
   def root_source
     <<~MT
-      module demo.main
-
       import std.sample as sample
 
       function on_tick(value: int) -> void:
@@ -74,14 +85,13 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
   def imported_sources
     {
       "std/c/sample.mt" => <<~MT,
-        external module std.c.sample:
-            type Callback = fn(arg0: int) -> void
+        external
 
-            external function Register(cb: Callback?) -> void
+        type Callback = fn(arg0: int) -> void
+
+        external function Register(cb: Callback?) -> void
       MT
       "std/sample.mt" => <<~MT,
-        module std.sample
-
         import std.c.sample as c
 
         public type Callback = c.Callback
@@ -93,7 +103,7 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
   def check_program_source(source, imported_sources = {})
     Dir.mktmpdir("milk-tea-nullable-callback-sema") do |dir|
-      root_path = File.join(dir, "demo", "main.mt")
+      root_path = File.join(dir, source_relative_path(source))
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, source)
 
@@ -109,7 +119,7 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
   def generate_c_from_program_source(source, imported_sources = {})
     Dir.mktmpdir("milk-tea-nullable-callback-codegen") do |dir|
-      root_path = File.join(dir, "demo", "main.mt")
+      root_path = File.join(dir, source_relative_path(source))
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, source)
 

@@ -9,8 +9,6 @@ class MilkTeaStdBytesTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_bytes_copy",
-      "",
       "import std.bytes as bytes",
       "import std.maybe as maybe",
       "import std.str as str",
@@ -44,8 +42,6 @@ class MilkTeaStdBytesTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_bytes_utf8",
-      "",
       "import std.bytes as bytes",
       "import std.maybe as maybe",
       "",

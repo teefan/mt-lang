@@ -12,8 +12,6 @@ class MilkTeaStdCtypeRuntimeTest < Minitest::Test
       source_path = File.join(dir, "std_ctype.mt")
 
       File.write(source_path, [
-        "module demo.std_ctype_runtime",
-        "",
         "import std.ctype as ctype",
         "",
         "function main() -> int:",

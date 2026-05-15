@@ -198,7 +198,9 @@ module MilkTea
         loader = ModuleLoader.new(
           module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path),
           package_graph: load_lint_package_graph(resolved_path),
+          source_overrides: { resolved_path => source },
         )
+        ast = loader.load_file(resolved_path)
         resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path)
         imported_modules = resolution.modules
         unresolved_import_paths.merge(resolution.errors.filter_map { |entry| entry.import&.path&.to_s })
@@ -379,7 +381,7 @@ module MilkTea
     end
 
     def load_sibling_source_file(path)
-      Parser.parse(File.read(path), path: path)
+      ModuleLoader.load_file(path)
     rescue StandardError
       nil
     end

@@ -1,5 +1,3 @@
-module std.maybe
-
 public variant Maybe[T]:
     some(value: T)
     none

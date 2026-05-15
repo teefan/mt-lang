@@ -620,6 +620,7 @@ module MilkTea
             source_overrides: file_backed_source_overrides,
             platform: effective_platform,
           )
+          ast = with_inferred_module_name(ast, loader:, path:)
           import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
           MilkTea::Sema.check_collecting_errors(
             ast,
@@ -655,6 +656,7 @@ module MilkTea
                      source_overrides: file_backed_source_overrides,
                      platform: effective_platform,
                    )
+                   ast = with_inferred_module_name(ast, loader:, path:)
                    import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
                    MilkTea::Sema.check_collecting_errors(
                      ast,
@@ -680,6 +682,18 @@ module MilkTea
         PackageGraph.load(path, locked:)
       rescue PackageManifestError
         nil
+      end
+
+      def with_inferred_module_name(ast, loader:, path:)
+        inferred_module_name = loader.send(:inferred_module_name_for_path, path)
+        AST::SourceFile.new(
+          module_name: AST::QualifiedName.new(inferred_module_name.split('.')),
+          module_kind: ast.module_kind,
+          imports: ast.imports,
+          directives: ast.directives,
+          declarations: ast.declarations,
+          line: ast.line,
+        )
       end
 
       def effective_platform_for_path(path)

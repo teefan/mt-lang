@@ -9,7 +9,6 @@ class MilkTeaPackageManifestTest < Minitest::Test
       project_root = File.join(dir, "MyProject")
       FileUtils.mkdir_p(File.join(project_root, "src"))
       File.write(File.join(project_root, "src", "main.mt"), <<~MT)
-        module main
       MT
       File.write(File.join(project_root, "package.toml"), <<~TOML)
         [package]

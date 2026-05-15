@@ -1,5 +1,3 @@
-module std.stdio
-
 import std.c.stdio as c
 
 

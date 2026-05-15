@@ -1,5 +1,3 @@
-module std.sdl3.runtime
-
 import std.sdl3 as sdl
 import std.str as text
 import std.string as string

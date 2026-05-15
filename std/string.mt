@@ -1,5 +1,3 @@
-module std.string
-
 import std.mem.arena as arena
 import std.mem.heap as heap
 import std.str as text_ops

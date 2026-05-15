@@ -372,7 +372,7 @@ class DAPServerTest < Minitest::Test
           "body" => {
             "stackFrames" => [{
               "id" => 1,
-              "name" => "demo_debug_map_add",
+              "name" => "debug_map_add",
               "line" => 4,
               "column" => 0,
               "source" => { "path" => "/tmp/demo.mt" }
@@ -1154,7 +1154,7 @@ class DAPServerTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "demo_debug_map_add",
+            c_name: "debug_map_add",
             source_path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
@@ -1210,7 +1210,7 @@ class DAPServerTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "demo_debug_map_add",
+            c_name: "debug_map_add",
             source_path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
@@ -1292,7 +1292,7 @@ class DAPServerTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "demo_debug_map_add",
+            c_name: "debug_map_add",
             source_path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
@@ -1355,7 +1355,7 @@ class DAPServerTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "demo_debug_map_add",
+            c_name: "debug_map_add",
             source_path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
@@ -1594,7 +1594,7 @@ class DAPServerTest < Minitest::Test
         functions: [
           MilkTea::DebugMap::Function.new(
             name: "add",
-            c_name: "demo_debug_map_add",
+            c_name: "debug_map_add",
             source_path: source_path,
             line: 3,
             params: [MilkTea::DebugMap::Entry.new(name: "left", c_name: "left", line: nil)],
@@ -2229,8 +2229,6 @@ class DAPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-real-lldb-dap") do |dir|
       source_path = File.join(dir, "real_debug.mt")
       File.write(source_path, [
-        "module demo.real_debug",
-        "",
         "function add(left: int) -> int:",
         "    let next_value = left + 1",
         "    return next_value",
@@ -2252,7 +2250,7 @@ class DAPServerTest < Minitest::Test
 
         breakpoints_request_seq = client.start_request("setBreakpoints", {
           "source" => { "path" => source_path },
-          "breakpoints" => [{ "line" => 5 }]
+          "breakpoints" => [{ "line" => 3 }]
         })
         configuration_done_request_seq = client.start_request("configurationDone", {})
 
@@ -2325,8 +2323,6 @@ class DAPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-real-lldb-dap-watch") do |dir|
       source_path = File.join(dir, "watch.mt")
       File.write(source_path, [
-        "module demo.watch",
-        "",
         "function add(left: int) -> int:",
         "    var watched = left",
         "    watched += 1",
@@ -2350,7 +2346,7 @@ class DAPServerTest < Minitest::Test
 
         breakpoints_request_seq = client.start_request("setBreakpoints", {
           "source" => { "path" => source_path },
-          "breakpoints" => [{ "line" => 5 }]
+          "breakpoints" => [{ "line" => 3 }]
         })
         configuration_done_request_seq = client.start_request("configurationDone", {})
 
@@ -2441,8 +2437,6 @@ class DAPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-real-lldb-dap-steps") do |dir|
       source_path = File.join(dir, "steps.mt")
       File.write(source_path, [
-        "module demo.steps",
-        "",
         "function inner(value: int) -> int:",
         "    let lifted = value + 1",
         "    return lifted",
@@ -2470,7 +2464,7 @@ class DAPServerTest < Minitest::Test
 
         breakpoints_request_seq = client.start_request("setBreakpoints", {
           "source" => { "path" => source_path },
-          "breakpoints" => [{ "line" => 8 }]
+          "breakpoints" => [{ "line" => 7 }]
         })
         configuration_done_request_seq = client.start_request("configurationDone", {})
 
@@ -2506,7 +2500,7 @@ class DAPServerTest < Minitest::Test
         first_frame = stack_response.dig("body", "stackFrames", 0)
         refute_nil first_frame
         assert_equal "outer", first_frame["name"]
-        assert_equal 9, first_frame["line"]
+        assert_equal 7, first_frame["line"]
 
         step_in_request_seq = client.start_request("stepIn", { "threadId" => thread_id })
         step_in_response, step_in_events = client.wait_for_response(step_in_request_seq, timeout: 30)
@@ -2523,7 +2517,7 @@ class DAPServerTest < Minitest::Test
         first_frame = stack_response.dig("body", "stackFrames", 0)
         refute_nil first_frame
         assert_equal "inner", first_frame["name"]
-        assert_equal 4, first_frame["line"]
+        assert_equal 2, first_frame["line"]
 
         step_out_request_seq = client.start_request("stepOut", { "threadId" => thread_id })
         step_out_response, step_out_events = client.wait_for_response(step_out_request_seq, timeout: 30)
@@ -2540,7 +2534,7 @@ class DAPServerTest < Minitest::Test
         first_frame = stack_response.dig("body", "stackFrames", 0)
         refute_nil first_frame
         assert_equal "outer", first_frame["name"]
-        assert_equal 9, first_frame["line"]
+        assert_equal 7, first_frame["line"]
 
         next_request_seq = client.start_request("next", { "threadId" => thread_id })
         next_response, next_events = client.wait_for_response(next_request_seq, timeout: 30)
@@ -2557,7 +2551,7 @@ class DAPServerTest < Minitest::Test
         first_frame = stack_response.dig("body", "stackFrames", 0)
         refute_nil first_frame
         assert_equal "outer", first_frame["name"]
-        assert_equal 10, first_frame["line"]
+        assert_equal 8, first_frame["line"]
 
         disconnect_request_seq = client.start_request("disconnect", {})
         disconnect_response, disconnect_events = client.wait_for_response(disconnect_request_seq, timeout: 30)
@@ -2575,8 +2569,6 @@ class DAPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-real-lldb-dap-controls") do |dir|
       source_path = File.join(dir, "controls.mt")
       File.write(source_path, [
-        "module demo.controls",
-        "",
         "function main() -> int:",
         "    var total = 0",
         "    while total < 2000000000:",
@@ -2596,7 +2588,7 @@ class DAPServerTest < Minitest::Test
         })
         breakpoints_request_seq = client.start_request("setBreakpoints", {
           "source" => { "path" => source_path },
-          "breakpoints" => [{ "line" => 6 }]
+          "breakpoints" => [{ "line" => 4 }]
         })
         configuration_done_request_seq = client.start_request("configurationDone", {})
 
@@ -2629,7 +2621,7 @@ class DAPServerTest < Minitest::Test
         first_frame = stack_response.dig("body", "stackFrames", 0)
         refute_nil first_frame
         assert_equal "main", first_frame["name"]
-        assert_equal 6, first_frame["line"]
+        assert_equal 4, first_frame["line"]
 
         clear_breakpoints_request_seq = client.start_request("setBreakpoints", {
           "source" => { "path" => source_path },

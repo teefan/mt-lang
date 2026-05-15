@@ -56,8 +56,6 @@ class MilkTeaRunTest < Minitest::Test
 
       source_path = File.join(dir, "cwd.mt")
       File.write(source_path, [
-        "module demo.cwd",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -84,8 +82,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "smoke.mt")
 
       File.write(source_path, [
-        "module demo.smoke",
-        "",
         "function main() -> int:",
         "    return 42",
         "",
@@ -121,8 +117,6 @@ class MilkTeaRunTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -161,8 +155,6 @@ class MilkTeaRunTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module main
-
         function main() -> int:
             return 0
       MT
@@ -222,8 +214,6 @@ class MilkTeaRunTest < Minitest::Test
       end
 
       File.write(source_path, [
-        "module demo.web",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -293,8 +283,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "generic-helper.mt")
 
       File.write(source_path, [
-        "module demo.generic_helper",
-        "",
         "function clamp[T](value: T, min_value: T, max_value: T) -> T:",
         "    if value < min_value:",
         "        return min_value",
@@ -330,8 +318,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "numeric.mt")
 
       File.write(source_path, [
-        "module demo.numeric",
-        "",
         "function main() -> int:",
         "    let sum = 1 + 2.5",
         "    if 3 < 3.5 and sum > 3.0:",
@@ -360,8 +346,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "pointers.mt")
 
       File.write(source_path, [
-        "module demo.pointers",
-        "",
         "struct Counter:",
         "    value: int",
         "",
@@ -396,8 +380,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "char-buffer.mt")
 
       File.write(source_path, [
-        "module demo.char_buffer_runtime",
-        "",
         "function main() -> int:",
         "    let first = 65",
         "    var buffer = zero[array[char, 4]]",
@@ -429,8 +411,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "refs.mt")
 
       File.write(source_path, [
-        "module demo.refs_runtime",
-        "",
         "struct Counter:",
         "    value: int",
         "",
@@ -478,8 +458,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "pointer-methods.mt")
 
       File.write(source_path, [
-        "module demo.pointer_methods_runtime",
-        "",
         "struct Counter:",
         "    value: int",
         "",
@@ -519,8 +497,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "explicit-value.mt")
 
       File.write(source_path, [
-        "module demo.explicit_value_args",
-        "",
         "struct Counter:",
         "    value: int",
         "",
@@ -555,8 +531,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "spans.mt")
 
       File.write(source_path, [
-        "module demo.spans",
-        "",
         "function first(items: span[int]) -> int:",
         "    if items.len == 0:",
         "        return 0",
@@ -590,8 +564,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "span_index.mt")
 
       File.write(source_path, [
-        "module demo.span_index_runtime",
-        "",
         "function bump(items: span[int]) -> int:",
         "    let first = items[0]",
         "    items[0] = first + 2",
@@ -624,8 +596,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "generics.mt")
 
       File.write(source_path, [
-        "module demo.generics",
-        "",
         "struct Slice[T]:",
         "    data: ptr[T]",
         "    len: ptr_uint",
@@ -666,8 +636,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "generic-expression-only.mt")
 
       File.write(source_path, [
-        "module demo.generic_expression_only_runtime",
-        "",
         "struct Box[T]:",
         "    value: T",
         "",
@@ -699,8 +667,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "generic-functions.mt")
 
       File.write(source_path, [
-        "module demo.generic_functions",
-        "",
         "struct Slice[T]:",
         "    data: ptr[T]",
         "    len: ptr_uint",
@@ -742,8 +708,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "ref-value-args.mt")
 
       File.write(source_path, [
-        "module demo.ref_value_args",
-        "",
         "struct Counter:",
         "    value: int",
         "",
@@ -778,8 +742,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "result.mt")
 
       File.write(source_path, [
-        "module demo.result_runtime",
-        "",
         "import std.status as status",
         "",
         "enum LoadError: ubyte",
@@ -827,8 +789,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "status_maybe_reader.mt")
 
       File.write(source_path, [
-        "module demo.status_maybe_reader_runtime",
-        "",
         "import std.maybe as maybe",
         "import std.status as status",
         "import std.asset_pack as pack",
@@ -874,8 +834,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "fatal.mt")
 
       File.write(source_path, [
-        "module demo.fatal_runtime",
-        "",
         "function main() -> int:",
         "    fatal(\"bad state\")",
         "    return 0",
@@ -902,8 +860,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "match.mt")
 
       File.write(source_path, [
-        "module demo.match_runtime",
-        "",
         "enum EventKind: ubyte",
         "    quit = 1",
         "    resize = 2",
@@ -940,8 +896,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "for.mt")
 
       File.write(source_path, [
-        "module demo.for_runtime",
-        "",
         "function sum(items: array[int, 4]) -> int:",
         "    var total = 0",
         "    for item in items:",
@@ -975,8 +929,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "result.mt")
 
       File.write(source_path, [
-        "module demo.result_runtime",
-        "",
         "import std.status as status",
         "",
         "enum ParseError: ubyte",
@@ -1029,8 +981,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "status_let_else.mt")
 
       File.write(source_path, [
-        "module demo.status_let_else_runtime",
-        "",
         "import std.status as status",
         "",
         "function parse(flag: int) -> status.Status[int, int]:",
@@ -1068,8 +1018,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "status_let_else_error.mt")
 
       File.write(source_path, [
-        "module demo.status_let_else_error_runtime",
-        "",
         "import std.status as status",
         "",
         "function parse(flag: int) -> status.Status[int, int]:",
@@ -1107,8 +1055,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "status_let_else_void.mt")
 
       File.write(source_path, [
-        "module demo.status_let_else_void_runtime",
-        "",
         "import std.status as status",
         "",
         "function done() -> void:",
@@ -1149,8 +1095,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "callable.mt")
 
       File.write(source_path, [
-        "module demo.callable_runtime",
-        "",
         "struct Entry:",
         "    callback: fn(value: int) -> int",
         "",
@@ -1187,8 +1131,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "proc_closure.mt")
 
       File.write(source_path, [
-        "module demo.proc_closure_runtime",
-        "",
         "function apply(callback: proc(value: int) -> int, value: int) -> int:",
         "    return callback(value)",
         "",
@@ -1220,8 +1162,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "loop_control.mt")
 
       File.write(source_path, [
-        "module demo.loop_control_runtime",
-        "",
         "enum Step: ubyte",
         "    skip = 1",
         "    keep = 2",
@@ -1266,8 +1206,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "layout.mt")
 
       File.write(source_path, [
-        "module demo.layout_runtime",
-        "",
         "struct Header:",
         "    magic: array[ubyte, 4]",
         "    version: ushort",
@@ -1300,8 +1238,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "layout_modifiers.mt")
 
       File.write(source_path, [
-        "module demo.layout_modifiers_runtime",
-        "",
         "packed struct Header:",
         "    tag: ubyte",
         "    value: uint",
@@ -1338,8 +1274,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_value.mt")
 
       File.write(source_path, [
-        "module demo.str_runtime",
-        "",
         "const greeting: str = \"hello\"",
         "",
         "function score(message: str) -> int:",
@@ -1370,8 +1304,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_ops.mt")
 
       File.write(source_path, [
-        "module demo.str_ops_runtime",
-        "",
         "import std.str",
         "import std.mem.arena as arena",
         "import std.c.libc as libc",
@@ -1408,8 +1340,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "std_libc.mt")
 
       File.write(source_path, [
-        "module demo.std_libc_runtime",
-        "",
         "import std.libc as libc",
         "import std.str",
         "",
@@ -1442,8 +1372,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "defer_block.mt")
 
       File.write(source_path, [
-        "module demo.defer_block_runtime",
-        "",
         "function append_digit(target: ptr[int], digit: int) -> void:",
         "    unsafe:",
         "        read(target) = read(target) * 10 + digit",
@@ -1481,8 +1409,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_utf8_slice.mt")
 
       File.write(source_path, [
-        "module demo.str_utf8_slice_runtime",
-        "",
         "import std.str",
         "",
         "function main() -> int:",
@@ -1514,8 +1440,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_bad_start_boundary.mt")
 
       File.write(source_path, [
-        "module demo.str_bad_start_boundary_runtime",
-        "",
         "import std.str",
         "",
         "function main() -> int:",
@@ -1545,8 +1469,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_bad_end_boundary.mt")
 
       File.write(source_path, [
-        "module demo.str_bad_end_boundary_runtime",
-        "",
         "import std.str",
         "",
         "function main() -> int:",
@@ -1573,8 +1495,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array_char_bad_str.mt")
 
       File.write(source_path, [
-        "module demo.array_char_bad_str_runtime",
-        "",
         "function main() -> int:",
         "    var buffer: array[char, 2]",
         "    let view = buffer.as_str()",
@@ -1595,8 +1515,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array_char_bad_cstr.mt")
 
       File.write(source_path, [
-        "module demo.array_char_bad_cstr_runtime",
-        "",
         "function main() -> int:",
         "    var buffer: array[char, 2]",
         "    let label = buffer.as_cstr()",
@@ -1620,8 +1538,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_builder.mt")
 
       File.write(source_path, [
-        "module demo.str_builder_runtime",
-        "",
         "function write_raw(items: span[char]) -> void:",
         "    unsafe:",
         "        items.data[0] = char<-65",
@@ -1671,8 +1587,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_builder_bad_str.mt")
 
       File.write(source_path, [
-        "module demo.str_builder_bad_str_runtime",
-        "",
         "function corrupt(items: span[char]) -> void:",
         "    unsafe:",
         "        items.data[0] = char<-0x80",
@@ -1713,8 +1627,6 @@ class MilkTeaRunTest < Minitest::Test
       module_prefix = "tmp.#{dir_name}"
 
       File.write(sample_path, [
-        "module #{module_prefix}.sample",
-        "",
         "import std.c.libc as libc",
         "",
         "public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])",
@@ -1723,8 +1635,6 @@ class MilkTeaRunTest < Minitest::Test
       ].join("\n"))
 
       File.write(source_path, [
-        "module #{module_prefix}.main",
-        "",
         "import #{module_prefix}.sample as sample",
         "",
         "function main() -> int:",
@@ -1770,8 +1680,6 @@ class MilkTeaRunTest < Minitest::Test
       module_prefix = "tmp.#{dir_name}"
 
       File.write(sample_path, [
-        "module #{module_prefix}.sample",
-        "",
         "import std.c.libc as libc",
         "",
         "public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])",
@@ -1781,8 +1689,6 @@ class MilkTeaRunTest < Minitest::Test
       ].join("\n"))
 
       File.write(source_path, [
-        "module #{module_prefix}.main",
-        "",
         "import #{module_prefix}.sample as sample",
         "",
         "function keep(value: int) -> int:",
@@ -1833,8 +1739,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "reinterpret.mt")
 
       File.write(source_path, [
-        "module demo.reinterpret_runtime",
-        "",
         "function main() -> int:",
         "    let value: float = 1.0",
         "    let expected: uint = 1065353216",
@@ -1866,8 +1770,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "arrays.mt")
 
       File.write(source_path, [
-        "module demo.arrays",
-        "",
         "struct Palette:",
         "    colors: array[uint, 4]",
         "",
@@ -1903,8 +1805,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "ptr-array-addr.mt")
 
       File.write(source_path, [
-        "module demo.ptr_arrays",
-        "",
         "struct Palette:",
         "    colors: array[uint, 4]",
         "",
@@ -1940,8 +1840,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array-indexing.mt")
 
       File.write(source_path, [
-        "module demo.array_indexing",
-        "",
         "struct Palette:",
         "    colors: array[uint, 4]",
         "",
@@ -1980,8 +1878,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array-bounds.mt")
 
       File.write(source_path, [
-        "module demo.array_bounds",
-        "",
         "function main() -> int:",
         "    let palette = array[int, 4](1, 2, 3, 4)",
         "    return palette[4]",
@@ -2007,8 +1903,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array-copy.mt")
 
       File.write(source_path, [
-        "module demo.array_copy",
-        "",
         "function mutate(values: array[int, 4]) -> int:",
         "    var local = values",
         "    unsafe:",
@@ -2049,8 +1943,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "zero.mt")
 
       File.write(source_path, [
-        "module demo.zero",
-        "",
         "struct Palette:",
         "    colors: array[uint, 4]",
         "",
@@ -2085,8 +1977,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "partial-init.mt")
 
       File.write(source_path, [
-        "module demo.partial_init",
-        "",
         "struct Point:",
         "    x: int",
         "    y: int",
@@ -2134,8 +2024,6 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "array-returns.mt")
 
       File.write(source_path, [
-        "module demo.array_returns",
-        "",
         "function make() -> array[int, 4]:",
         "    return array[int, 4](1, 2, 3, 4)",
         "",

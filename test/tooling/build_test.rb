@@ -42,8 +42,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "emit-count")
 
       File.write(source_path, [
-        "module demo.emit_count",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -83,8 +81,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "web-smoke")
 
       File.write(source_path, [
-        "module demo.web_smoke",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -129,15 +125,11 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(shared_entry_path, <<~MT)
-        module main
-
         function main() -> int:
             return 1
       MT
 
       File.write(windows_entry_path, <<~MT)
-        module main
-
         function main() -> int:
             return 2
       MT
@@ -164,8 +156,6 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "main.windows.mt")
 
       File.write(source_path, <<~MT)
-        module demo.main
-
         function main() -> int:
             return 0
       MT
@@ -214,8 +204,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -277,8 +265,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -327,8 +313,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -367,8 +351,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -410,8 +392,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -455,8 +435,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -500,8 +478,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -548,8 +524,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -593,8 +567,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -653,8 +625,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -699,8 +669,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -737,8 +705,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -789,8 +755,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -814,8 +778,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "debug-map")
 
       File.write(source_path, [
-        "module demo.debug_map",
-        "",
         "function add(a: int, b: int) -> int:",
         "    let total = a + b",
         "    return total",
@@ -834,7 +796,7 @@ class MilkTeaBuildTest < Minitest::Test
       assert_equal "debug-map", payload["binaryPath"]
       assert_equal "debug-map.mt", payload["programSourcePath"]
 
-      add_function = payload.fetch("functions").find { |function| function["cName"] == "demo_debug_map_add" }
+      add_function = payload.fetch("functions").find { |function| function["cName"] == "debug_map_add" }
       refute_nil add_function
       assert_equal "add", add_function["name"]
       assert_equal "debug-map.mt", add_function["sourcePath"]
@@ -846,7 +808,7 @@ class MilkTeaBuildTest < Minitest::Test
       loaded = MilkTea::DebugMap.load(debug_map_path)
       assert_equal File.expand_path(output_path), loaded.binary_path
       assert_equal File.expand_path(source_path), loaded.program_source_path
-      assert_equal File.expand_path(source_path), loaded.function_for_c_name("demo_debug_map_add").source_path
+      assert_equal File.expand_path(source_path), loaded.function_for_c_name("debug_map_add").source_path
     end
   end
 
@@ -859,8 +821,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "smoke")
 
       File.write(source_path, [
-        "module demo.smoke",
-        "",
         "const base: int = 40",
         "",
         "function main() -> int:",
@@ -893,8 +853,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "main-span-args")
 
       File.write(source_path, [
-        "module demo.main_span_args",
-        "",
         "function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",
@@ -924,8 +882,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "async-main-span-args")
 
       File.write(source_path, [
-        "module demo.async_main_span_args",
-        "",
         "async function main(args: span[str]) -> int:",
         "    if args.len != 2:",
         "        return 9",
@@ -953,8 +909,6 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "invalid-main.mt")
 
       File.write(source_path, [
-        "module demo.invalid_main",
-        "",
         "function main(args: array[str, 2]) -> int:",
         "    return 0",
         "",
@@ -981,10 +935,10 @@ class MilkTeaBuildTest < Minitest::Test
       FileUtils.mkdir_p(File.join(workspace_dir, "demo"))
 
       File.write(File.join(workspace_dir, "std", "c", "stdio.mt"), [
-        "external module #{unique_root}.std.c.stdio:",
-        "    include \"stdio.h\"",
+        "external",
+        "include \"stdio.h\"",
         "",
-        "    external function printf(format: cstr, ...) -> int",
+        "external function printf(format: cstr, ...) -> int",
         "",
       ].join("\n"))
 
@@ -992,8 +946,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(workspace_dir, "demo", "main")
 
       File.write(source_path, [
-        "module #{unique_root}.demo.main",
-        "",
         "import #{unique_root}.std.c.stdio as c",
         "",
         "function main() -> int:",
@@ -1025,8 +977,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "time-smoke")
 
       File.write(source_path, [
-        "module demo.time_smoke",
-        "",
         "import std.c.time as ctime",
         "",
         "const time_format: cstr = c\"%H:%M:%S\"",
@@ -1077,8 +1027,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "game_types.mt"), [
-        "module game_types",
-        "",
         "public function value() -> int:",
         "    return 41",
         "",
@@ -1086,8 +1034,6 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module main",
-        "",
         "import std.maybe as maybe",
         "import game_types as gt",
         "",
@@ -1141,8 +1087,6 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, [
-        "module snake_duel.main",
-        "",
         "import teefan.ui.layout as layout",
         "",
         "function main() -> int:",
@@ -1151,8 +1095,6 @@ class MilkTeaBuildTest < Minitest::Test
       ].join("\n"))
 
       File.write(File.join(ui_src_dir, "layout.mt"), [
-        "module teefan.ui.layout",
-        "",
         "public function default_width() -> int:",
         "    return 10",
         "",
@@ -1189,8 +1131,6 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -1223,8 +1163,6 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "module main",
-        "",
         "function main() -> int:",
         "    return 0",
         "",
@@ -1268,8 +1206,6 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "loop-labels")
 
       File.write(source_path, [
-        "module demo.loop_labels",
-        "",
         "function main() -> int:",
         "    var outer = 0",
         "    while outer < 2:",
@@ -1417,8 +1353,6 @@ class MilkTeaBuildTest < Minitest::Test
       c_path = File.join(dir, "raygui-demo.c")
 
       File.write(source_path, [
-        "module demo.raygui_smoke",
-        "",
         "import std.c.raygui as gui",
         "",
         "function main() -> int:",
@@ -1454,8 +1388,6 @@ class MilkTeaBuildTest < Minitest::Test
       c_path = File.join(dir, "raymath-demo.c")
 
       File.write(source_path, [
-        "module demo.raymath_smoke",
-        "",
         "import std.raymath as rm",
         "import std.raylib as rl",
         "",
@@ -1526,8 +1458,6 @@ class MilkTeaBuildTest < Minitest::Test
   def write_raylib_smoke_source(dir)
     path = File.join(dir, "raylib_smoke.mt")
     File.write(path, [
-      "module demo.raylib_smoke",
-      "",
       "import std.raylib as rl",
       "",
       "function main() -> int:",

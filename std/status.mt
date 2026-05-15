@@ -1,5 +1,3 @@
-module std.status
-
 public variant Status[T, E]:
     ok(value: T)
     err(error: E)

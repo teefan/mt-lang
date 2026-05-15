@@ -20,8 +20,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [art_dir, sfx_dir])
 
       source = [
-        "module demo.std_raylib_packed_assets_success",
-        "",
         "import std.asset_pack as pack",
         "import std.raylib as rl",
         "import std.raylib.packed_assets as rl_assets",
@@ -86,8 +84,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [music_dir])
 
       source = [
-        "module demo.std_raylib_packed_assets_music",
-        "",
         "import std.asset_pack as pack",
         "import std.raylib as rl",
         "import std.raylib.packed_assets as rl_assets",
@@ -154,8 +150,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [art_dir])
 
       source = [
-        "module demo.std_raylib_packed_assets_missing_type",
-        "",
         "import std.asset_pack as pack",
         "import std.raylib.packed_assets as rl_assets",
         "import std.status as status",
@@ -206,8 +200,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
 
       source_path = File.join(dir, "program.mt")
       File.write(source_path, [
-        "module demo.std_raylib_packed_assets_open_relative",
-        "",
         "import std.asset_pack as pack",
         "import std.bytes as bytes",
         "import std.maybe as maybe",
@@ -252,8 +244,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-std-raylib-packed-assets-missing-pack") do |dir|
       source = [
-        "module demo.std_raylib_packed_assets_missing_pack",
-        "",
         "import std.maybe as maybe",
         "import std.raylib.packed_assets as rl_assets",
         "import std.status as status",
@@ -308,8 +298,6 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
   def audio_device_available?(compiler)
     Dir.mktmpdir("milk-tea-std-raylib-audio-device") do |dir|
       source = [
-        "module demo.std_raylib_audio_device_probe",
-        "",
         "import std.raylib as rl",
         "",
         "function main() -> int:",

@@ -50,7 +50,7 @@ class MilkTeaSteamworksTest < Minitest::Test
 
       source = binding.generate(env:)
 
-      assert_includes source, "external module std.c.steamworks:"
+      assert_includes source, "external\n"
       assert_includes source, 'link "steam_api"'
       assert_includes source, "external function SteamAPI_Init"
       assert_includes source, "external function SteamAPI_InitFlat"

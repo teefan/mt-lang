@@ -1,5 +1,3 @@
-module std.mem.pool
-
 import std.mem.heap as heap
 
 

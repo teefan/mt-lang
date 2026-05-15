@@ -1,5 +1,3 @@
-module std.math
-
 import std.c.math as c
 
 public const PI: double = 3.141592653589793

@@ -15,7 +15,7 @@ Create a new application package scaffold with:
 mtc new my-project
 ```
 
-This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and generates `module main` for the entry file. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `src/main.mt` with `module main`.
+This writes `package.toml` and `src/main.mt` into `my-project/`. The scaffold uses an explicit `build.entry = "src/main.mt"`, normalizes the directory basename to snake_case for `package.name`, and generates a headerless entry file. For example, both `mtc new my-project` and `mtc new MyProject` generate `package.name = "my_project"` and `src/main.mt` with just the entry `function main()`.
 The generated manifest also writes `package.source_root = "src"` explicitly so imports resolve from `src/` without requiring a `src.` prefix.
 
 Minimal package example:
@@ -42,7 +42,7 @@ Relevant build keys:
 
 - `package.kind`: optional package kind. The default is `application`. Use `library` for reusable source packages.
 - `package.source_root`: optional module root for the package. When a package contains a `src/` directory, the default is `src`; otherwise the default is the package root.
-- Module headers inside a package are interpreted relative to `package.source_root`, so `src/main.mt` declares `module main` and `src/game/player.mt` declares `module game.player`.
+- Module identity inside a package is inferred relative to `package.source_root`, so `src/main.mt` is module `main` and `src/game/player.mt` is module `game.player`.
 - `build.entry`: entry source file, relative to the package root.
 - `build.output`: optional explicit output path.
 - `build.assets`: optional runtime asset path or array of paths. Each entry may be a file or directory. wasm builds preload each entry into the virtual filesystem; native builds either stage each entry beside the executable or pack them into `assets.mtpack` for bundle/archive outputs.

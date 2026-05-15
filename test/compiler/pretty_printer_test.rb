@@ -6,8 +6,6 @@ require_relative "../test_helper"
 class MilkTeaPrettyPrinterTest < Minitest::Test
   def test_formats_ast_like_source
     source = [
-      "module demo.pretty",
-      "",
       "struct Counter:",
       "    value: int",
       "",
@@ -26,8 +24,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_single_statement_unsafe_block_canonically
     source = [
-      "module demo.pretty",
-      "",
       "struct Counter:",
       "    value: int",
       "",
@@ -41,8 +37,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     ].join("\n")
 
     expected = [
-      "module demo.pretty",
-      "",
       "struct Counter:",
       "    value: int",
       "",
@@ -61,8 +55,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_multi_statement_unsafe_block_like_source
     source = [
-      "module demo.pretty",
-      "",
       "function main(ptr: ptr[int]) -> int:",
       "    unsafe:",
       "        let value = read(ptr)",
@@ -77,8 +69,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_let_else_with_error_binding_like_source
     source = <<~MT
-      module demo.pretty
-
       function main(result: int) -> int:
           let value = result else as error:
               return error
@@ -92,11 +82,12 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_ast_like_source
     source = <<~MT
-      external module std.c.sample:
-          link "sample"
-          include "sample.h"
+      external
 
-          external function add(a: int, b: int) -> int
+      link "sample"
+      include "sample.h"
+
+      external function add(a: int, b: int) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -106,13 +97,14 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_imports_like_source
     source = <<~MT
-      external module std.c.helper:
-          import std.c.dep as dep
+      external
 
-          include "helper.h"
+      import std.c.dep as dep
 
-          struct Holder:
-              value: dep.Vec
+      include "helper.h"
+
+      struct Holder:
+          value: dep.Vec
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -122,8 +114,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_public_declarations_and_methods_like_source
     source = <<~MT
-      module demo.pretty
-
       public struct Counter:
           value: int
 
@@ -146,8 +136,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_generic_methods_block_targets_like_source
     source = <<~MT
-      module demo.pretty_generic_methods
-
       struct Box[T]:
           value: T
 
@@ -163,10 +151,11 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_variadic_extern_module_ast_like_source
     source = <<~MT
-      external module std.c.stdio:
-          include "stdio.h"
+      external
 
-          external function printf(format: cstr, ...) -> int
+      include "stdio.h"
+
+      external function printf(format: cstr, ...) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -176,8 +165,9 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_opaque_with_explicit_c_name_like_source
     source = <<~MT
-      external module std.c.time:
-          opaque tm = c"struct tm"
+      external
+
+      opaque tm = c"struct tm"
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -187,10 +177,11 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_struct_with_explicit_c_name_like_source
     source = <<~MT
-      external module std.c.time:
-          struct timespec = c"struct timespec":
-              tv_sec: ptr_int
-              tv_nsec: ptr_int
+      external
+
+      struct timespec = c"struct timespec":
+          tv_sec: ptr_int
+          tv_nsec: ptr_int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -200,17 +191,18 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_extern_module_groups_simple_declarations_by_kind
     source = <<~MT
-      external module std.c.sample:
-          include "sample.h"
+      external
 
-          opaque Handle = c"struct Handle"
-          type Flags = uint
+      include "sample.h"
 
-          const MAGIC: int = 7
-          const LIMIT: int = 8
+      opaque Handle = c"struct Handle"
+      type Flags = uint
 
-          external function init() -> int
-          external function close() -> void
+      const MAGIC: int = 7
+      const LIMIT: int = 8
+
+      external function init() -> int
+      external function close() -> void
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -220,8 +212,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_foreign_declarations_and_calls_like_source
     source = <<~MT
-      module std.raylib
-
       import std.c.raylib as c
 
       public foreign function load_file_data(file_name: str as cstr, out data_size: int) -> ptr[ubyte]? = c.LoadFileData
@@ -246,8 +236,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_variadic_foreign_declarations_like_source
     source = <<~MT
-      module std.stdio
-
       import std.c.stdio as c
 
       public foreign function print(format: str as cstr, ...) -> int = c.printf
@@ -260,8 +248,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_array_char_zero_construction_like_source
     source = <<~MT
-      module demo.array_char
-
       function main() -> int:
           var buffer = zero[array[char, 64]]
           buffer[0] = 65
@@ -275,8 +261,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_typed_local_without_initializer_like_source
     source = <<~MT
-      module demo.locals
-
       function main() -> void:
           var buffer: array[char, 64]
     MT
@@ -288,8 +272,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_defer_block_like_source
     source = <<~MT
-      module demo.cleanup
-
       function main() -> void:
           defer:
               first_cleanup()
@@ -303,8 +285,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_heredoc_literals_like_source
     source = <<~MT
-      module demo.heredoc
-
       const shader: cstr = c<<-GLSL
           #version 330
           void main()
@@ -320,8 +300,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_multiline_adjacent_string_literals_like_source
     source = <<~MT
-      module demo.adjacent
-
       const title: str = "Milk Tea keeps this text readable"
           " while storing a single logical line."
     MT
@@ -333,8 +311,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_lowered_ir_as_structured_output
     source = [
-      "module demo.pretty",
-      "",
       "struct Counter:",
       "    value: int",
       "",
@@ -347,7 +323,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "",
     ].join("\n")
 
-    output = with_program(source) do |program|
+    output = with_program(source, relative_path: File.join("demo", "pretty.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
     end
 
@@ -361,8 +337,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_lowered_ir_for_clauses
     source = [
-      "module demo.pretty_for",
-      "",
       "function keep(value: int) -> void:",
       "    return",
       "",
@@ -372,7 +346,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "",
     ].join("\n")
 
-    output = with_program(source) do |program|
+    output = with_program(source, relative_path: File.join("demo", "pretty_for.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
     end
 
@@ -384,8 +358,6 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   def test_formats_lowered_ir_with_nil_else_and_switch_default_case
     source = [
-      "module demo.pretty_match",
-      "",
       "function describe(code: int) -> int:",
       "    if code < 0:",
       "        return 0",
@@ -401,7 +373,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       "",
     ].join("\n")
 
-    output = with_program(source) do |program|
+    output = with_program(source, relative_path: File.join("demo", "pretty_match.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
     end
 
@@ -413,11 +385,12 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
 
   private
 
-  def with_program(source)
+  def with_program(source, relative_path: "program.mt")
     Dir.mktmpdir("milk-tea-pretty-printer") do |dir|
-      path = File.join(dir, "program.mt")
+      path = File.join(dir, relative_path)
+      FileUtils.mkdir_p(File.dirname(path))
       File.write(path, source)
-      yield MilkTea::ModuleLoader.check_program(path)
+      yield MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(path)
     end
   end
 end
