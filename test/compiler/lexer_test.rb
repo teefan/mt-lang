@@ -5,8 +5,6 @@ require_relative "../test_helper"
 class MilkTeaLexerTest < Minitest::Test
   def test_emits_indent_and_dedent_tokens_for_blocks
     source = <<~MT
-      module demo.main
-
       struct Ball:
           radius: float
     MT
@@ -14,7 +12,7 @@ class MilkTeaLexerTest < Minitest::Test
     types = MilkTea::Lexer.lex(source).map(&:type)
 
     assert_equal(
-      %i[module identifier dot identifier newline struct identifier colon newline indent identifier colon identifier newline dedent eof],
+      %i[struct identifier colon newline indent identifier colon identifier newline dedent eof],
       types,
     )
   end

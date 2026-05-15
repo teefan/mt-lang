@@ -1,5 +1,3 @@
-module std.mem.stack
-
 import std.mem.arena as arena
 
 public type Mark = arena.Mark

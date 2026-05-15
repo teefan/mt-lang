@@ -9,8 +9,6 @@ class MilkTeaStdRaylibRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_raylib_runtime",
-      "",
       "import std.raylib.runtime as runtime",
       "",
       "function main() -> int:",

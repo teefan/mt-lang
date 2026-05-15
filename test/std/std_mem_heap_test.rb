@@ -9,8 +9,6 @@ class MilkTeaStdMemHeapTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_heap",
-      "",
       "import std.mem.heap as heap",
       "",
       "function main() -> int:",
@@ -39,8 +37,6 @@ class MilkTeaStdMemHeapTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_heap_contracts",
-      "",
       "import std.mem.heap as heap",
       "",
       "align(16) struct Mat4:",

@@ -11,13 +11,13 @@ Package manifests, build workflow, and run workflow are documented separately in
 ## 1. File Kinds And Layout
 
 - Source files use the `.mt` extension.
-- A file is either an ordinary module or an external module.
-- Ordinary module header: `module a.b.c`
-- External module header: `external module a.b.c:`
+- A file is either an ordinary source file or an external file.
+- Ordinary files have no module header; module identity is inferred from the file path.
+- External file header: `external`
 - Module lookup resolves `a.b.c` to `a/b/c.mt`.
-- Inside a package, a module header must match the file path relative to `package.source_root`; platform-specific files such as `name.linux.mt` still declare `module name`.
-- In ordinary modules, `import` statements appear only at the top after `module`.
-- In external modules, leading `import` statements are allowed inside the external-module body.
+- Inside a package, the file path relative to `package.source_root` defines the module name; platform-specific files such as `name.linux.mt` still map to module `name`.
+- In ordinary files, `import` statements appear only at the top.
+- In external files, leading `import` statements are allowed after `external`.
 
 Blocks are indentation-based:
 
@@ -85,7 +85,7 @@ Visibility:
 - `public` is allowed on exportable ordinary declarations.
 - `public` is rejected on `methods` blocks.
 - `public` is rejected on ordinary `external` declarations and `static_assert`.
-- In external modules, declarations are implicitly exported and `public` is rejected.
+- In external files, declarations are implicitly exported and `public` is rejected.
 
 ## 4. Variables And Guards
 
@@ -511,8 +511,6 @@ Current implementation rejects:
 ## 16. Minimal Example
 
 ```mt
-module demo.main
-
 struct Counter:
     value: int
 

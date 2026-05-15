@@ -6,8 +6,6 @@ require_relative "../test_helper"
 class MilkTeaCFGTest < Minitest::Test
   def test_liveness_tracks_loop_backedge_reads
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main() -> int:
           var index: int = 0
           while index < 3:
@@ -25,8 +23,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_initializer_is_live_when_only_conditionally_overwritten
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(cond: bool) -> int:
           var count: int = 0
           if cond:
@@ -46,8 +42,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_initializer_is_dead_when_overwritten_on_all_paths
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(cond: bool) -> int:
           var x: int = 0
           if cond:
@@ -69,8 +63,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_builder_uses_sema_binding_ids_for_shadowed_locals
     context = sema_function_context(<<~MT)
-      module demo.cfg
-
       function main(flag: bool) -> int:
           let x: int = 1
           if flag:
@@ -93,8 +85,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_definite_assignment_reports_read_before_assignment_with_partial_writes
     context = sema_function_context(<<~MT)
-      module demo.cfg
-
       function main(flag: bool) -> int:
           var x: int
           if flag:
@@ -116,8 +106,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_definite_assignment_treats_format_string_interpolation_as_read
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(flag: bool) -> str:
           var x: int
           if flag:
@@ -136,8 +124,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_assignment_reads_expression_list_values
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(left: int, right: int) -> int:
           var values = array[int, 2](0, 0)
           values[0..1] = (left, right)
@@ -156,8 +142,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_reachability_marks_post_return_as_unreachable
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main() -> int:
           return 0
           let dead = 1
@@ -173,8 +157,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_reachability_all_branches_terminate_makes_successor_unreachable
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(flag: bool) -> int:
           if flag:
               return 1
@@ -193,8 +175,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_reachability_entry_always_reachable
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main() -> int:
           return 42
     MT
@@ -209,8 +189,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_labeled_edges_on_if_condition
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(p: bool) -> int:
           if p:
               return 1
@@ -229,8 +207,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_nullability_flow_propagates_non_null_after_check
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(p: bool) -> int:
           if p:
               return 1
@@ -246,8 +222,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_nullability_flow_keeps_all_non_null_bindings_for_conjunction
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(x: ptr[int]?, y: ptr[int]?) -> int:
           if x != null and y != null:
               if x != null:
@@ -269,8 +243,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_constant_propagation_simple_literal
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main() -> int:
           let x: int = 42
           return x
@@ -287,8 +259,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_constant_propagation_arithmetic
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main() -> int:
           let a: int = 10
           let b: int = 32
@@ -306,8 +276,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_constant_propagation_nac_on_unknown
     body = function_body(<<~MT)
-      module demo.cfg
-
       function main(x: int) -> int:
           let y: int = x + 1
           return y
@@ -323,8 +291,6 @@ class MilkTeaCFGTest < Minitest::Test
 
   def test_constant_propagation_with_binding_ids_handles_shadowing
     context = sema_function_context(<<~MT)
-      module demo.cfg
-
       function main(flag: bool) -> int:
           let x: int = 10
           if flag:

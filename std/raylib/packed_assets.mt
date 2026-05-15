@@ -1,5 +1,3 @@
-module std.raylib.packed_assets
-
 import std.asset_pack as pack
 import std.bytes as bytes
 import std.maybe as maybe

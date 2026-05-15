@@ -6,7 +6,7 @@ class MilkTeaParserTest < Minitest::Test
   def test_parses_language_fixture_file_into_expected_ast_shape
     ast = MilkTea::Parser.parse(File.read(language_fixture_path), path: language_fixture_path)
 
-    assert_equal "test.fixtures.language_fixture", ast.module_name.to_s
+    assert_nil ast.module_name
     assert_equal :module, ast.module_kind
     assert_equal [], ast.directives
     assert_equal 4, ast.imports.length
@@ -53,8 +53,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_if_elif_else_chains
     source = <<~MT
-      module demo.flow
-
       function main() -> int:
           if ready:
               return 1
@@ -71,18 +69,16 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IfStmt, if_stmt
     assert_equal 2, if_stmt.branches.length
     assert_equal 1, if_stmt.else_body.length
-    assert_equal 4, if_stmt.branches[0].line
+    assert_equal 2, if_stmt.branches[0].line
     assert_equal 5, if_stmt.branches[0].column
     assert_equal 2, if_stmt.branches[0].length
-    assert_equal 6, if_stmt.branches[1].line
+    assert_equal 4, if_stmt.branches[1].line
     assert_equal 5, if_stmt.branches[1].column
     assert_equal 4, if_stmt.branches[1].length
   end
 
   def test_parses_let_else_local_declaration
     source = <<~MT
-      module demo.guard
-
       function main(handle: ptr[int]?) -> int:
           let value = handle else:
               return 1
@@ -104,8 +100,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_let_else_status_error_binding
     source = <<~MT
-      module demo.guard
-
       function main(result: int) -> int:
           let value = result else as error:
               return error
@@ -123,8 +117,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_var_else_local_declaration
     source = <<~MT
-      module demo.guard
-
       function main(handle: ptr[int]?) -> int:
           var value = handle else:
               return 1
@@ -140,8 +132,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_public_declarations_and_methods
     source = <<~MT
-      module demo.visibility
-
       public const answer: int = 42
       public var counter: int = 0
       public type Score = int
@@ -177,8 +167,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_interfaces_implements_and_constrained_type_params
     source = <<~MT
-      module demo.interfaces
-
       public interface Damageable:
           editable function take_damage(amount: int) -> void
           function is_alive() -> bool
@@ -210,8 +198,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_default_and_interface_type_param_constraints
     source = <<~MT
-      module demo.defaults
-
       interface ScreenState:
           function draw() -> void
 
@@ -231,8 +217,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_module_scope_vars_with_and_without_initializer
     source = <<~MT
-      module demo.globals
-
       var counter: int = 0
       public var scratch: array[ubyte, 16]
 
@@ -254,8 +238,9 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_extern_opaque_with_explicit_c_name
     source = <<~MT
-      external module std.c.time:
-          opaque tm = c"struct tm"
+      external
+
+      opaque tm = c"struct tm"
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -268,10 +253,11 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_extern_struct_with_explicit_c_name
     source = <<~MT
-      external module std.c.time:
-          struct timespec = c"struct timespec":
-              tv_sec: ptr_int
-              tv_nsec: ptr_int
+      external
+
+      struct timespec = c"struct timespec":
+          tv_sec: ptr_int
+          tv_nsec: ptr_int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -284,13 +270,14 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_leading_imports_inside_extern_modules
     source = <<~MT
-      external module std.c.helper:
-          import std.c.dep as dep
+      external
 
-          include "helper.h"
+      import std.c.dep as dep
 
-          struct Holder:
-              value: dep.Vec
+      include "helper.h"
+
+      struct Holder:
+          value: dep.Vec
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -305,8 +292,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_pub_on_methods_block
     source = <<~MT
-      module demo.visibility
-
       public methods Counter:
           function read() -> int:
               return 0
@@ -319,8 +304,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_if_expression
     source = <<~MT
-      module demo.expr
-
       function main(ready: bool) -> int:
           return if ready: 1 else: 0
     MT
@@ -337,8 +320,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_async_functions_and_await_expressions
     source = <<~MT
-      module demo.async_expr
-
       async function compute() -> int:
           let value = await child()
           return value
@@ -359,8 +340,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_scientific_float_literals
     source = <<~MT
-      module demo.float_literals
-
       const epsilon: float = 1.1920929E-7
 
       function main() -> float:
@@ -377,8 +356,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_return_boolean_chain_without_forced_parentheses
     source = <<~MT
-      module demo.expr
-
       function main(a: bool, b: bool, c: bool) -> bool:
           return a and b or c
     MT
@@ -395,8 +372,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_format_string_literal
     source = <<~MT
-      module demo.format
-
       import std.fmt as fmt
       import std.string as string
 
@@ -419,8 +394,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_format_string_literal_with_expression_colons_and_trailing_precision
     source = <<~MT
-      module demo.format_colons
-
       function main(flag: bool, handle: ptr[int]) -> int:
           let text = f"value=\#{unsafe: read(handle)} precise=\#{if flag: 1.0 else: 2.0:.2}"
           return int<-text.len
@@ -445,8 +418,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_prefix_cast_with_identifier_rhs
     source = <<~MT
-      module demo.prefix_cast
-
       function main(value: float) -> int:
           return int<-value
     MT
@@ -464,8 +435,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_prefix_cast_with_parenthesized_rhs
     source = <<~MT
-      module demo.prefix_cast
-
       function main(a: int, b: int) -> ubyte:
           return ubyte<-(a - b)
     MT
@@ -483,8 +452,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_nested_prefix_casts
     source = <<~MT
-      module demo.prefix_cast
-
       function main(value: int) -> double:
           return double<-float<-value
     MT
@@ -501,8 +468,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_for_range_statement
     source = <<~MT
-      module demo.flow
-
       function main(count: int) -> int:
           for i in 0..count:
               tick(i)
@@ -524,8 +489,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_for_collection_statement
     source = <<~MT
-      module demo.flow
-
       function main(items: span[int]) -> int:
           for item in items:
               tick(item)
@@ -545,8 +508,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_defer_block_statement
     source = <<~MT
-      module demo.cleanup
-
       function main() -> void:
           defer:
               first_cleanup()
@@ -566,8 +527,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_variant_declarations_and_as_binding_in_match
     source = <<~MT
-      module demo.variant_parse
-
       variant Shape:
           circle(radius: double)
           rect(w: double, h: double)
@@ -604,8 +563,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_break_and_continue_inside_match_arms
     source = <<~MT
-      module demo.flow
-
       enum Step: ubyte
           skip = 1
           keep = 2
@@ -636,8 +593,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_layout_queries_and_static_assert
     source = <<~MT
-      module demo.layout
-
       struct Header:
           magic: array[ubyte, 4]
           version: ushort
@@ -664,8 +619,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_packed_and_aligned_struct_declarations
     source = <<~MT
-      module demo.layout
-
       packed struct Header:
           tag: ubyte
           value: uint
@@ -686,8 +639,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_unsafe_reinterpret_specialization_call
     source = <<~MT
-      module demo.bits
-
       function main() -> uint:
           let value: float = 1.0
           unsafe:
@@ -709,8 +660,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_single_statement_unsafe_local_declaration
     source = <<~MT
-      module demo.bits
-
       function main(value: float) -> uint:
           let bits = unsafe: reinterpret[uint](value)
           return bits
@@ -730,8 +679,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_single_statement_unsafe_assignment_with_colon
     source = <<~MT
-      module demo.bits
-
       function main(ptr: ptr[uint]) -> void:
           unsafe: read(ptr) = 1
     MT
@@ -747,8 +694,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_inline_unsafe_local_declaration_with_colon
     source = <<~MT
-      module demo.bits
-
       function main(value: float) -> uint:
           unsafe: let bits = reinterpret[uint](value)
           return bits
@@ -759,8 +704,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_bare_single_statement_unsafe_without_colon
     source = <<~MT
-      module demo.bits
-
       function main(value: float) -> uint:
           unsafe let bits = reinterpret[uint](value)
           return bits
@@ -771,8 +714,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_match_statement_with_enum_member_arms
     source = <<~MT
-      module demo.flow
-
       enum EventKind: ubyte
           quit = 1
           resize = 2
@@ -800,8 +741,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_generic_nullable_types_and_bare_returns
     source = <<~MT
-      module demo.types
-
       const missing: ptr[Window]? = null
       const ready: bool = true
       const title: cstr = c"Hello"
@@ -835,8 +774,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_typed_null_pointer_literals
     source = <<~MT
-      module demo.typed_null
-
       const missing: ptr[char]? = null[ptr[char]]
     MT
 
@@ -850,8 +787,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_heredoc_cstring_literals
     source = <<~MT
-      module demo.heredoc
-
       const shader: cstr = c<<-GLSL
           #version 330
           void main()
@@ -870,8 +805,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_multiline_adjacent_cstring_literals
     source = <<~MT
-      module demo.adjacent
-
       const title: cstr = c"Milk Tea keeps this text readable"
           c" while storing a single logical line."
     MT
@@ -886,8 +819,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_const_pointer_types_and_ro_addr_calls
     source = <<~MT
-      module demo.const_pointers
-
       external function inspect(values: const_ptr[int]) -> void
 
       function main() -> void:
@@ -913,8 +844,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_generic_struct_declaration_and_constructor_call
     source = <<~MT
-      module demo.generics
-
       struct Slice[T]:
           data: ptr[T]
           len: ptr_uint
@@ -945,8 +874,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_generic_function_definition
     source = <<~MT
-      module demo.generic_functions
-
       struct Slice[T]:
           data: ptr[T]
           len: ptr_uint
@@ -968,8 +895,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_indexed_call_instead_of_generic_specialization
     source = <<~MT
-      module demo.index_call
-
       function main() -> int:
           return callbacks[0](1)
     MT
@@ -983,8 +908,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_callable_value_storage_and_indirect_calls
     source = <<~MT
-      module demo.callable_values
-
       struct Entry:
           callback: fn(value: float) -> float
 
@@ -1026,8 +949,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_explicit_cast_call_form
     source = <<~MT
-      module demo.cast_form
-
       function main(value: int) -> long:
           return cast[long](value)
     MT
@@ -1041,8 +962,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_reports_hint_for_spaced_prefix_cast_tokens
     source = <<~MT
-      module demo.cast_hint
-
       function main(value: int) -> long:
           return long < -value
     MT
@@ -1056,8 +975,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_proc_type_refs_in_function_parameters
     source = <<~MT
-      module demo.proc_params
-
       function apply(callback: proc(value: int) -> int, value: int) -> int:
           return callback(value)
     MT
@@ -1073,8 +990,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_proc_expressions
     source = <<~MT
-      module demo.proc_values
-
       function main() -> int:
           let offset = 4
           let callback = proc(value: int) -> int:
@@ -1095,8 +1010,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_generic_function_specialization_call
     source = <<~MT
-      module demo.generic_call
-
       function bytes_for[T](count: ptr_uint) -> ptr_uint:
           return count
 
@@ -1115,8 +1028,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_generic_function_literal_specialization_call
     source = <<~MT
-      module demo.generic_literal_call
-
       function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
           return buffer.capacity()
 
@@ -1136,8 +1047,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_generic_function_named_const_specialization_call
     source = <<~MT
-      module demo.generic_named_const_call
-
       const CAPACITY: int = 32
 
       function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
@@ -1159,8 +1068,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_imported_member_literal_specialization_call
     source = <<~MT
-      module demo.imported_generic_literal_call
-
       import std.ui as ui
 
       function main() -> int:
@@ -1182,8 +1089,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_local_foreign_literal_specialization_call
     source = <<~MT
-      module demo.local_generic_foreign_literal_call
-
       foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text)
 
       function main() -> int:
@@ -1203,8 +1108,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_span_constructor_calls
     source = <<~MT
-      module demo.spans
-
       function main() -> int:
           let view = span[int](data = buffer, len = 3)
           return view.len
@@ -1224,8 +1127,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_array_constructor_calls
     source = <<~MT
-      module demo.arrays
-
       function main() -> int:
           let palette = array[uint, 4](1, 2, 3, 4)
           return 0
@@ -1246,8 +1147,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_typed_local_without_initializer
     source = <<~MT
-      module demo.locals
-
       function main() -> void:
           var buffer: array[char, 32]
     MT
@@ -1267,8 +1166,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_zero_constructor_calls
     source = <<~MT
-      module demo.zero
-
       function main() -> int:
           let palette = zero[array[uint, 4]]
           return 0
@@ -1291,8 +1188,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_array_char_zero_constructor_calls
     source = <<~MT
-      module demo.char_array
-
       function main() -> int:
           let buffer = zero[array[char, 64]]
           return 0
@@ -1314,8 +1209,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_partial_aggregate_and_array_constructor_calls
     source = <<~MT
-      module demo.partial_literals
-
       struct Point:
           x: int
           y: int
@@ -1350,8 +1243,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_index_access_instead_of_specialization
     source = <<~MT
-      module demo.arrays
-
       function main() -> int:
           unsafe:
               let value = palette[1]
@@ -1372,8 +1263,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_function_type_aliases
     source = <<~MT
-      module demo.callbacks
-
       type LogCallback = fn(level: int, message: cstr, user_data: ptr[void]) -> void
     MT
 
@@ -1390,8 +1279,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_async_methods
     source = <<~MT
-      module demo.async_methods
-
       struct Counter:
           value: int
 
@@ -1415,8 +1302,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_generic_methods_block_targets
     source = <<~MT
-      module demo.generic_receiver_parse
-
       struct Box[T]:
           value: T
 
@@ -1434,8 +1319,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic
     source = <<~MT
-      module demo.unsafe_surface
-
       function main(memory: ptr[void]) -> int:
           unsafe:
               let advanced = ptr[ubyte]<-memory + 4
@@ -1456,8 +1339,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_addr_value_and_raw_calls
     source = <<~MT
-      module demo.handles
-
       struct Counter:
           value: int
 
@@ -1492,8 +1373,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_extended_compound_assignment_operators
     source = <<~MT
-      module demo.compound_assignments
-
       flags Bits: uint
           a = 1 << 0
           b = 1 << 1
@@ -1518,8 +1397,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_legacy_pointer_sigils
     source = <<~MT
-      module demo.bad
-
       struct Counter:
           value: int
 
@@ -1536,8 +1413,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_keyword_names_in_struct_fields
     source = <<~MT
-      module demo.keywords
-
       struct Event:
           kind: int
     MT
@@ -1550,8 +1425,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_reserved_keyword_as_struct_field_name
     source = <<~MT
-      module demo.keywords
-
       struct Event:
           type: int
     MT
@@ -1565,8 +1438,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_untyped_non_self_parameters
     source = <<~MT
-      module demo.bad
-
       function bad(value):
           return 0
     MT
@@ -1580,37 +1451,38 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_extern_module_declarations
     source = <<~MT
-      external module std.c.raylib:
-          link "raylib"
-          include "raylib.h"
+      external
 
-          struct Color:
-              r: ubyte
-              g: ubyte
-              b: ubyte
-              a: ubyte
+      link "raylib"
+      include "raylib.h"
 
-          const BLACK: Color = Color(r = 0, g = 0, b = 0, a = 255)
+      struct Color:
+          r: ubyte
+          g: ubyte
+          b: ubyte
+          a: ubyte
 
-          enum LogLevel: int
-              info = 1
-              warning = 2
+      const BLACK: Color = Color(r = 0, g = 0, b = 0, a = 255)
 
-          flags WindowFlags: uint
-              visible = 1 << 0
+      enum LogLevel: int
+          info = 1
+          warning = 2
 
-          union Number:
-              i: int
-              f: float
+      flags WindowFlags: uint
+          visible = 1 << 0
 
-          opaque SDL_Window
-          external function InitWindow(width: int, height: int, title: cstr) -> void
+      union Number:
+          i: int
+          f: float
+
+      opaque SDL_Window
+      external function InitWindow(width: int, height: int, title: cstr) -> void
     MT
 
     ast = MilkTea::Parser.parse(source)
 
     assert_equal :extern_module, ast.module_kind
-    assert_equal "std.c.raylib", ast.module_name.to_s
+    assert_nil ast.module_name
     assert_equal %w[LinkDirective IncludeDirective], ast.directives.map { |node| node.class.name.split("::").last }
     assert_equal(
       %w[StructDecl ConstDecl EnumDecl FlagsDecl UnionDecl OpaqueDecl ExternFunctionDecl],
@@ -1636,10 +1508,11 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_variadic_extern_function_declarations
     source = <<~MT
-      external module std.c.stdio:
-          include "stdio.h"
+      external
 
-          external function printf(format: cstr, ...) -> int
+      include "stdio.h"
+
+      external function printf(format: cstr, ...) -> int
     MT
 
     ast = MilkTea::Parser.parse(source)
@@ -1652,8 +1525,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_foreign_function_declarations_and_calls
     source = <<~MT
-      module std.raylib
-
       import std.c.raylib as c
 
       public foreign function init_window(width: int, height: int, title: str as cstr) -> void = c.InitWindow
@@ -1713,8 +1584,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_variadic_foreign_function_declarations
     source = <<~MT
-      module std.stdio
-
       import std.c.stdio as c
 
       public foreign function print(format: str as cstr, ...) -> int = c.printf
@@ -1731,8 +1600,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_format_string_precision_spec
     source = <<~MT
-      module demo.fmt_spec
-
       function main() -> int:
           let pi: double = 3.14159
           let first = f"pi=\#{pi:.2}"
@@ -1770,8 +1637,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_recovers_after_invalid_top_level_declaration
     source = <<~MT
-      module demo.recovery
-
       const board_width: int = 10
       const board_height: int = 20a
       const board_cells: int = 200
@@ -1791,8 +1656,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_recovers_after_invalid_statement_in_block
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           let width = 10
           let height = 20a
@@ -1814,8 +1677,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_typed_local_declaration_with_invalid_initializer
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           let height: int = 20a
           return height
@@ -1835,8 +1696,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_untyped_local_declaration_with_invalid_initializer
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           let value = 20a
           return value
@@ -1857,8 +1716,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_let_else_after_invalid_else_block
     source = <<~MT
-      module demo.guard
-
       function main(handle: ptr[int]?) -> int:
           let value = handle else as error
               return 1
@@ -1882,8 +1739,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_non_declaration_statement
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           let value = 1
           unsafe
@@ -1907,8 +1762,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_block_header_body
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           let value = 1
           unsafe
@@ -1933,8 +1786,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_marks_invalid_unsafe_block_header_type
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           unsafe
               return 1
@@ -1952,8 +1803,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_if_block_header_condition
     source = <<~MT
-      module demo.recovery
-
       struct Point:
           x: int
 
@@ -1981,8 +1830,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_while_block_header_condition
     source = <<~MT
-      module demo.recovery
-
       struct Point:
           x: int
 
@@ -2009,8 +1856,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_for_block_header_bindings_and_iterables
     source = <<~MT
-      module demo.recovery
-
       function main(items: array[int, 2]) -> int:
           for item in items
               return item
@@ -2035,8 +1880,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_if_block_body_without_condition
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           if:
               return 1
@@ -2058,8 +1901,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_while_block_body_without_condition
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           while:
               continue
@@ -2080,8 +1921,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_for_block_body_without_header
     source = <<~MT
-      module demo.recovery
-
       function main() -> int:
           for:
               continue
@@ -2104,8 +1943,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_match_arms_after_invalid_match_header
     source = <<~MT
-      module demo.recovery
-
       variant MaybePoint:
           some(value: int)
           none
@@ -2136,8 +1973,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_match_arms_after_missing_match_expression
     source = <<~MT
-      module demo.recovery
-
       variant MaybePoint:
           some(value: int)
           none
@@ -2165,8 +2000,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_match_arm_header_body
     source = <<~MT
-      module demo.recovery
-
       variant MaybePoint:
           some(value: int)
           none
@@ -2195,8 +2028,6 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parse_collecting_errors_preserves_invalid_match_arm_body_without_pattern
     source = <<~MT
-      module demo.recovery
-
       function main(value: int) -> int:
           match value:
               :

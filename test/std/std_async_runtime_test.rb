@@ -9,8 +9,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_runtime",
-      "",
       "import std.async as aio",
       "",
       "function compute_value() -> int:",
@@ -37,8 +35,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_main_no_import",
-      "",
       "async function main() -> int:",
       "    return 42",
       "",
@@ -57,8 +53,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_main_void",
-      "",
       "import std.async as aio",
       "",
       "async function main() -> void:",
@@ -81,8 +75,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_runtime_void",
-      "",
       "import std.async as aio",
       "",
       "async function run_once() -> void:",
@@ -109,8 +101,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_direct_root",
-      "",
       "import std.async as aio",
       "",
       "async function app() -> int:",
@@ -134,8 +124,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_direct_task_root",
-      "",
       "import std.async as aio",
       "",
       "async function child(bonus: int) -> int:",
@@ -160,8 +148,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_runtime_generic_work",
-      "",
       "import std.async as aio",
       "",
       "struct Pair:",
@@ -197,8 +183,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_defer",
-      "",
       "import std.async as aio",
       "",
       "async function main() -> int:",
@@ -225,8 +209,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_defer_await",
-      "",
       "import std.async as aio",
       "",
       "async function main() -> int:",
@@ -253,8 +235,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_let_else",
-      "",
       "import std.async as aio",
       "",
       "async function maybe_value(flag: bool, handle: ptr[int]?) -> ptr[int]?:",
@@ -289,8 +269,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_for_body_await",
-      "",
       "import std.async as aio",
       "",
       "async function tick() -> int:",
@@ -319,8 +297,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_for_body_suspend",
-      "",
       "import std.async as aio",
       "",
       "async function main() -> int:",
@@ -346,8 +322,6 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_async_parallel_for_body_suspend",
-      "",
       "import std.async as aio",
       "",
       "async function main() -> int:",

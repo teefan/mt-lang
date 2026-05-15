@@ -16,7 +16,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_match(/MilkTea::Token/, out.string)
-    assert_match(/type=:module/, out.string)
+    assert_match(/type=:import/, out.string)
   end
 
   def test_semantic_tokens_command_reports_imported_module_function_reference_as_function
@@ -25,15 +25,14 @@ class MilkTeaCliTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        external module std.c.sdl3:
-            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external
+
+        external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
-        module std.sdl3
-
         import std.c.sdl3 as c
 
         public foreign function set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
@@ -65,7 +64,7 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "module test.fixtures.language_fixture"
+    assert_includes out.string, "import std.maybe as maybe"
     assert_includes out.string, "methods AppState:"
     assert_includes out.string, "function main() -> ExitCode:"
   end
@@ -78,14 +77,14 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "module test.fixtures.language_fixture"
+    assert_includes out.string, "import std.maybe as maybe"
     assert_includes out.string, "function main() -> ExitCode:"
   end
 
   def test_format_command_check_mode_reports_changes
     Dir.mktmpdir("milk-tea-cli-fmt-check") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\n\nfunction main()->int:\n    return 0\n")
+      File.write(path, "function main()->int:\n    return 0\n")
       out = StringIO.new
       err = StringIO.new
 
@@ -100,7 +99,7 @@ class MilkTeaCliTest < Minitest::Test
   def test_format_command_write_mode_rewrites_file
     Dir.mktmpdir("milk-tea-cli-fmt-write") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\n\nfunction main()->int:\n    return 0\n")
+      File.write(path, "function main()->int:\n    return 0\n")
       out = StringIO.new
       err = StringIO.new
 
@@ -109,14 +108,14 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 0, status
       assert_equal "", err.string
       assert_match(/formatted/, out.string)
-      assert_equal "module demo.fmt\n\nfunction main() -> int:\n    return 0\n", File.read(path)
+      assert_equal "function main() -> int:\n    return 0\n", File.read(path)
     end
   end
 
   def test_format_command_preserve_mode_keeps_comments
     Dir.mktmpdir("milk-tea-cli-fmt-preserve") do |dir|
       path = File.join(dir, "sample.mt")
-      source = "# header\nmodule demo.fmt\n"
+      source = "# header\n"
       File.write(path, source)
       out = StringIO.new
       err = StringIO.new
@@ -132,22 +131,23 @@ class MilkTeaCliTest < Minitest::Test
   def test_format_command_canonical_preserves_comments
     Dir.mktmpdir("milk-tea-cli-fmt-canonical") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "# header\nmodule demo.fmt\n")
+      File.write(path, "# header\nfunction  main()->int:\n    return 0\n")
       out = StringIO.new
       err = StringIO.new
 
       status = MilkTea::CLI.start(["format", path, "--canonical"], out:, err:)
 
       assert_equal 0, status
+      assert_equal "", err.string
       assert_includes out.string, "# header"
-      assert_includes out.string, "module demo.fmt"
+      assert_includes out.string, "function main() -> int:"
     end
   end
 
   def test_format_command_safe_default_formats_with_comments
     Dir.mktmpdir("milk-tea-cli-fmt-safe") do |dir|
       path = File.join(dir, "sample.mt")
-      source = "# head\nmodule demo.safe\n"
+      source = "# head\nfunction  main()->int:\n    return 0\n"
       File.write(path, source)
       out = StringIO.new
       err = StringIO.new
@@ -157,7 +157,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 0, status
       assert_equal "", err.string
       assert_includes out.string, "# head"
-      assert_includes out.string, "module demo.safe"
+      assert_includes out.string, "function main() -> int:"
     end
   end
 
@@ -165,8 +165,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-unused") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             let unused = 1
             return 0
@@ -178,7 +176,7 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 1, status
       assert_equal "", err.string
-      assert_match(/sample\.mt:4: unused-local: unused local 'unused'/, out.string)
+      assert_match(/sample\.mt:2: unused-local: unused local 'unused'/, out.string)
     end
   end
 
@@ -186,8 +184,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-clean") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             let used = 1
             return used
@@ -233,8 +229,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -245,8 +239,6 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -302,7 +294,7 @@ class MilkTeaCliTest < Minitest::Test
     status = MilkTea::CLI.start(["check", language_fixture_path], out:, err:)
 
     assert_equal 0, status
-    assert_match(/checked .*language_fixture\.mt as test\.fixtures\.language_fixture/, out.string)
+    assert_match(/checked .*language_fixture\.mt as fixtures\.language_fixture/, out.string)
     assert_equal "", err.string
   end
 
@@ -314,8 +306,8 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "program test.fixtures.language_fixture"
-    assert_includes out.string, "const default_step as test_fixtures_language_fixture_default_step: int = 3"
+    assert_includes out.string, "program fixtures.language_fixture"
+    assert_includes out.string, "const default_step as fixtures_language_fixture_default_step: int = 3"
   end
 
   def test_emit_c_command_reports_generated_c
@@ -327,7 +319,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_match(/#include <stdio\.h>/, out.string)
-    assert_match(/test_fixtures_language_fixture_AppState_touch\(&state, test_fixtures_language_fixture_default_step\);/, out.string)
+    assert_match(/fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\);/, out.string)
     refute_match(/^#line\s+/m, out.string)
   end
 
@@ -387,8 +379,6 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module demo.main
-
         function main() -> int:
             return 0
       MT
@@ -472,8 +462,6 @@ class MilkTeaCliTest < Minitest::Test
       FileUtils.mkdir_p(source_dir)
       FileUtils.mkdir_p(File.join(build_dir, "bin", "linux", "debug"))
       File.write(File.join(source_dir, "main.mt"), <<~MT)
-        module demo.clean
-
         function main() -> int:
             return 0
       MT
@@ -559,8 +547,6 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module main
-
         function main() -> int:
             return 0
       MT
@@ -616,8 +602,6 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module main
-
         function main() -> int:
             return 0
       MT
@@ -682,8 +666,6 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(File.join(src_dir, "main.mt"), <<~MT)
-        module main
-
         function main() -> int:
             return 0
       MT
@@ -758,7 +740,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "", err.string
       assert_match(/generated .*sample\.h -> .*sample\.mt/, out.string)
       assert File.exist?(output_path)
-      assert_match(/external module std\.c\.sample:/, File.read(output_path))
+      assert_match(/\A# generated by mtc bindgen from .*\nexternal\n/, File.read(output_path))
     end
   end
 
@@ -2083,8 +2065,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(origin_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2106,8 +2086,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2195,8 +2173,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(origin_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2223,8 +2199,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2315,8 +2289,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2336,8 +2308,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2447,8 +2417,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2461,8 +2429,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -2481,8 +2447,6 @@ class MilkTeaCliTest < Minitest::Test
         "teefan.ui" = "2.0.0"
       TOML
       File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -2505,8 +2469,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -2606,8 +2568,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2620,8 +2580,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -2640,8 +2598,6 @@ class MilkTeaCliTest < Minitest::Test
         "teefan.ui" = "^2.0.0"
       TOML
       File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -2664,8 +2620,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -2740,8 +2694,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2761,8 +2713,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2852,8 +2802,6 @@ class MilkTeaCliTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(ui_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2873,8 +2821,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2970,8 +2916,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2979,8 +2923,6 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -3041,8 +2983,6 @@ class MilkTeaCliTest < Minitest::Test
       TOML
 
       File.write(source_path, <<~MT)
-        module main
-
         import main.platform_info as platform_info
 
         function main() -> int:
@@ -3050,8 +2990,6 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(src_dir, "platform_info.mt"), <<~MT)
-        module platform_info
-
         public function label() -> str:
             return "Build: Shared"
       MT
@@ -3127,8 +3065,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -3137,8 +3073,6 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -3146,15 +3080,11 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -3206,8 +3136,6 @@ class MilkTeaCliTest < Minitest::Test
 
       source_path = File.join(app_src_dir, "main.mt")
       File.write(source_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -3215,8 +3143,6 @@ class MilkTeaCliTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -3325,8 +3251,6 @@ class MilkTeaCliTest < Minitest::Test
         entry = "src/main.mt"
       TOML
       assert_equal <<~MT, File.read(File.join(project_root, "src", "main.mt"))
-        module main
-
         function main() -> int:
             return 0
       MT
@@ -3354,7 +3278,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "", err.string
       assert_match(/created #{Regexp.escape(project_root)}/, out.string)
       assert_match(/name = "my_project"/, File.read(File.join(project_root, "package.toml")))
-      assert_match(/module main/, File.read(File.join(project_root, "src", "main.mt")))
+      assert_match(/function main\(\) -> int:/, File.read(File.join(project_root, "src", "main.mt")))
     end
   end
 
@@ -3459,8 +3383,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-select") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute(x: int) -> int:
             let unused = 1
             return 0
@@ -3481,8 +3403,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-ignore") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute(x: int) -> int:
             let unused = 1
             return 0
@@ -3502,8 +3422,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-missing-return") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function compute() -> int:
             let _x = 1
       MT
@@ -3520,15 +3438,11 @@ class MilkTeaCliTest < Minitest::Test
   def test_lint_command_directory_lints_all_mt_files
     Dir.mktmpdir("milk-tea-cli-lint-dir") do |dir|
       File.write(File.join(dir, "a.mt"), <<~MT)
-        module demo.a
-
         function main() -> int:
             let unused_a = 1
             return 0
       MT
       File.write(File.join(dir, "b.mt"), <<~MT)
-        module demo.b
-
         function main() -> int:
             let unused_b = 1
             return 0
@@ -3547,8 +3461,6 @@ class MilkTeaCliTest < Minitest::Test
   def test_lint_command_directory_clean_exits_zero
     Dir.mktmpdir("milk-tea-cli-lint-dir-clean") do |dir|
       File.write(File.join(dir, "clean.mt"), <<~MT)
-        module demo.clean
-
         function main() -> int:
             return 0
       MT
@@ -3566,8 +3478,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-fix") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             var x = 1
             return x
@@ -3587,8 +3497,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-json") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             let unused = 1
             return 0
@@ -3611,8 +3519,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-json-clean") do |dir|
       path = File.join(dir, "clean.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             return 0
       MT
@@ -3631,8 +3537,6 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-lint-summary") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(path, <<~MT)
-        module demo.lint
-
         function main() -> int:
             let a = 1
             let b = 2
@@ -3652,16 +3556,14 @@ class MilkTeaCliTest < Minitest::Test
       unformatted = File.join(dir, "a.mt")
       already_ok  = File.join(dir, "b.mt")
 
-      # Unformatted: missing module header, but valid enough for formatter
-      File.write(unformatted, "module demo.fmt\nfunction  main()->int:\n    return 0\n")
-      File.write(already_ok,  "module demo.fmt\n")
+      File.write(unformatted, "function  main()->int:\n    return 0\n")
+      File.write(already_ok,  "function main() -> int:\n    return 0\n")
 
       out = StringIO.new
       err = StringIO.new
 
       status = MilkTea::CLI.start(["format", dir, "--check"], out:, err:)
 
-      # At least one file needs formatting → exit 1
       assert_equal 1, status
       assert_match(/needs formatting/, out.string)
     end
@@ -3670,7 +3572,7 @@ class MilkTeaCliTest < Minitest::Test
   def test_format_command_directory_write_mode
     Dir.mktmpdir("milk-tea-cli-fmt-dir-write") do |dir|
       path = File.join(dir, "sample.mt")
-      File.write(path, "module demo.fmt\nfunction  main()->int:\n    return 0\n")
+      File.write(path, "function  main()->int:\n    return 0\n")
 
       out = StringIO.new
       err = StringIO.new
@@ -3684,7 +3586,7 @@ class MilkTeaCliTest < Minitest::Test
 
   def test_format_command_directory_no_flag_errors
     Dir.mktmpdir("milk-tea-cli-fmt-dir-noflag") do |dir|
-      File.write(File.join(dir, "a.mt"), "module demo.fmt\n")
+      File.write(File.join(dir, "a.mt"), "function main() -> int:\n    return 0\n")
 
       out = StringIO.new
       err = StringIO.new

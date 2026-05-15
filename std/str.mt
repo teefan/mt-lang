@@ -1,5 +1,3 @@
-module std.str
-
 import std.maybe as maybe
 import std.mem.arena as arena
 

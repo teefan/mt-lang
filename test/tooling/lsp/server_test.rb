@@ -395,8 +395,6 @@ class LSPServerTest < Minitest::Test
   MT
 
   SOURCE_WITH_SPECIALIZED_MEMBER_CALL_SEMANTICS = <<~MT
-    module tmp.specialized_member_calls
-
     import std.mem.pool as pool
 
     struct Mat4:
@@ -411,8 +409,6 @@ class LSPServerTest < Minitest::Test
   MT
 
       SOURCE_WITH_GENERIC_PARAMETER_SHADOWING_IMPORT_SEMANTICS = <<~MT
-      module tmp.semantic_generic_param_shadow
-
       import std.status as status
 
       function wrap[T](status: int, value: T) -> int:
@@ -439,8 +435,6 @@ class LSPServerTest < Minitest::Test
       MT
 
       SOURCE_WITH_KEYWORD_NAMESPACE_PATH_SEMANTICS = <<~MT
-      module std.async
-
       import tmp.async as impl
 
       function main() -> int:
@@ -448,8 +442,6 @@ class LSPServerTest < Minitest::Test
       MT
 
       SOURCE_WITH_GENERIC_LOCAL_AND_SPECIALIZED_FUNCTION_VALUE_SEMANTICS = <<~MT
-      module tmp.semantic_generic_local_specialized
-
       import std.status as status
 
       function invoke(callback: fn() -> int) -> int:
@@ -687,15 +679,11 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       contracts_source = <<~MT
-        module std.contracts
-
         ## Damage contract.
         public interface Damageable:
             editable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
-        module demo.main
-
         import std.contracts as contracts
 
         struct NPC implements contracts.Damageable:
@@ -818,8 +806,6 @@ class LSPServerTest < Minitest::Test
 
   def test_hover_shows_let_else_error_binding_declaration_type
     source = <<~MT
-      module demo.main
-
       import std.status as status
 
       function load() -> status.Status[int, int]:
@@ -830,6 +816,8 @@ class LSPServerTest < Minitest::Test
               return error
           return value
     MT
+        error_decl_line = source.lines.index { |line| line.include?("else as error") }
+        error_decl_char = source.lines.fetch(error_decl_line).index("error") + 1
 
     Dir.mktmpdir("lsp_hover_let_else_error_decl") do |dir|
       path = File.join(dir, "main.mt")
@@ -851,7 +839,7 @@ class LSPServerTest < Minitest::Test
 
         hover_response = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => uri },
-          "position" => { "line" => 8, "character" => 35 },
+          "position" => { "line" => error_decl_line, "character" => error_decl_char },
         })
 
         hover_value = hover_response.dig("result", "contents", "value")
@@ -1229,8 +1217,6 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       foo_source = <<~MT
-        module std.foo
-
         public struct Point:
             x: int
             y: int
@@ -1240,8 +1226,6 @@ class LSPServerTest < Minitest::Test
                 return 0
       MT
       main_source = <<~MT
-        module app
-
         import std.foo as foo
 
         public function main() -> int:
@@ -1353,8 +1337,6 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       foo_source = <<~MT
-        module std.foo
-
         public struct Point:
             x: int
             y: int
@@ -1367,8 +1349,6 @@ class LSPServerTest < Minitest::Test
             return Point.zero()
       MT
       other_source = <<~MT
-        module app.other
-
         public function zero() -> int:
             return 0
 
@@ -1376,8 +1356,6 @@ class LSPServerTest < Minitest::Test
             return zero()
       MT
       main_source = <<~MT
-        module app
-
         import std.foo as foo
 
         public function main() -> int:
@@ -1561,14 +1539,13 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        external module std.c.sdl3:
-            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external
+
+        external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       %w[alpha beta gamma].each do |name|
         File.write(File.join(dir, "std", "#{name}.mt"), <<~MT)
-          module std.#{name}
-
           public function answer() -> int:
               return 42
         MT
@@ -1577,8 +1554,6 @@ class LSPServerTest < Minitest::Test
       source_path = File.join(dir, "std", "sdl3.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
-        module std.sdl3
-
         import std.c.sdl3 as c
         import std.alpha as a
         import std.beta as b
@@ -1616,8 +1591,6 @@ class LSPServerTest < Minitest::Test
     server = MilkTea::LSP::Server.new(protocol: protocol)
     uri = "file:///tmp/lsp_background_context.mt"
     source = <<~MT
-      module main
-
       function main() -> int:
           return 0
     MT
@@ -1661,15 +1634,11 @@ class LSPServerTest < Minitest::Test
       main_path = File.join(dir, "main.mt")
 
       File.write(lib_path, <<~MT)
-        module mathx
-
         public function greet() -> int:
             return 1
       MT
 
       main_source = <<~MT
-        module main
-
         import mathx as mx
 
         function main() -> int:
@@ -1699,8 +1668,6 @@ class LSPServerTest < Minitest::Test
       refute_includes server.instance_variable_get(:@diagnostics_last_scheduled_hash).keys, main_uri
 
       File.write(lib_path, <<~MT)
-        module mathx
-
         public function greet() -> str:
             return "oops"
       MT
@@ -1813,14 +1780,10 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       contracts_source = <<~MT
-        module std.contracts
-
         public interface Damageable:
             editable function take_damage(amount: int) -> void
       MT
       entities_source = <<~MT
-        module std.entities
-
         import std.contracts as contracts
 
         public struct NPC implements contracts.Damageable:
@@ -2015,8 +1978,6 @@ class LSPServerTest < Minitest::Test
 
       module_path = File.join(dir, "mathx.mt")
       module_source = <<~MT
-        module mathx
-
         public function add(a: int, b: int) -> int:
             return a + b
       MT
@@ -2024,14 +1985,14 @@ class LSPServerTest < Minitest::Test
 
       main_path = File.join(dir, "main.mt")
       main_source = <<~MT
-        module main
-
         import mathx as mx
 
         function main() -> int:
             return mx.add(1, 2)
       MT
       File.write(main_path, main_source)
+      call_line = main_source.lines.index { |line| line.include?("mx.add") }
+      call_end_char = main_source.lines.fetch(call_line).chomp.length
 
       with_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
@@ -2044,8 +2005,8 @@ class LSPServerTest < Minitest::Test
         response = client.send_request("textDocument/inlayHint", {
           "textDocument" => { "uri" => uri },
           "range" => {
-            "start" => { "line" => 5, "character" => 0 },
-            "end" => { "line" => 5, "character" => 30 }
+            "start" => { "line" => call_line, "character" => 0 },
+            "end" => { "line" => call_line, "character" => call_end_char }
           }
         })
 
@@ -2063,8 +2024,6 @@ class LSPServerTest < Minitest::Test
 
       module_path = File.join(dir, "ui.mt")
       module_source = <<~MT
-        module ui
-
         public function draw(width: int, title: str, count: int) -> int:
             return count
       MT
@@ -2072,8 +2031,6 @@ class LSPServerTest < Minitest::Test
 
       main_path = File.join(dir, "main.mt")
       main_source = <<~MT
-        module main
-
         import ui as ui
 
         function main() -> int:
@@ -2081,6 +2038,8 @@ class LSPServerTest < Minitest::Test
             return ui.draw(screen_width, "Milk Tea", 3)
       MT
       File.write(main_path, main_source)
+      call_line = main_source.lines.index { |line| line.include?("ui.draw") }
+      call_end_char = main_source.lines.fetch(call_line).chomp.length
 
       with_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
@@ -2093,8 +2052,8 @@ class LSPServerTest < Minitest::Test
         response = client.send_request("textDocument/inlayHint", {
           "textDocument" => { "uri" => uri },
           "range" => {
-            "start" => { "line" => 5, "character" => 0 },
-            "end" => { "line" => 6, "character" => 50 }
+            "start" => { "line" => call_line, "character" => 0 },
+            "end" => { "line" => call_line, "character" => call_end_char }
           }
         })
 
@@ -2296,14 +2255,10 @@ class LSPServerTest < Minitest::Test
       Dir.mkdir(File.join(dir, "demo"))
 
       lib_source = <<~MT
-        module demo.lib
-
         function greet() -> int:
             return 1
       MT
       main_source = <<~MT
-        module demo.main
-
         import demo.lib as lib
 
         function main() -> int:
@@ -2336,10 +2291,12 @@ class LSPServerTest < Minitest::Test
           "textDocument" => { "uri" => main_uri },
           "position" => { "line" => call_line, "character" => call_char }
         })
+        definition_line = lib_source.lines.index { |line| line.include?("function greet") }
+        definition_char = lib_source.lines.fetch(definition_line).index("greet")
 
         assert_equal lib_uri, definition.dig("result", "uri")
-        assert_equal 2, definition.dig("result", "range", "start", "line")
-        assert_equal 9, definition.dig("result", "range", "start", "character")
+        assert_equal definition_line, definition.dig("result", "range", "start", "line")
+        assert_equal definition_char, definition.dig("result", "range", "start", "character")
       end
     end
   end
@@ -2350,8 +2307,6 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       foo_source = <<~MT
-        module std.foo
-
         public struct Point:
             x: int
             y: int
@@ -2361,8 +2316,6 @@ class LSPServerTest < Minitest::Test
                 return 0
       MT
       main_source = <<~MT
-        module app
-
         import std.foo as foo
 
         public function main() -> int:
@@ -2413,8 +2366,6 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       foo_source = <<~MT
-        module std.foo
-
         public struct Point:
             x: int
             y: int
@@ -2424,8 +2375,6 @@ class LSPServerTest < Minitest::Test
                 return 0
       MT
       main_source = <<~MT
-        module app
-
         import std.foo as foo
 
         public function main() -> int:
@@ -2513,14 +2462,10 @@ class LSPServerTest < Minitest::Test
       main_path = File.join(dir, "main.mt")
 
       File.write(lib_path, <<~MT)
-        module mathx
-
         public function greet() -> int:
             return 1
       MT
       main_source = <<~MT
-        module main
-
         import mathx as mx
 
         function main() -> int:
@@ -2552,8 +2497,6 @@ class LSPServerTest < Minitest::Test
         assert_equal [], first_result["items"]
 
         File.write(lib_path, <<~MT)
-          module mathx
-
           public function greet() -> str:
               return "oops"
         MT
@@ -2582,15 +2525,11 @@ class LSPServerTest < Minitest::Test
       main_path = File.join(dir, "main.mt")
 
       maybe_initial = <<~MT
-        module maybe
-
         public struct Maybe[T]:
             is_some: bool
             value: T
       MT
       maybe_updated = <<~MT
-        module maybe
-
         public struct Maybe[T]:
             is_some: bool
             value: T
@@ -2600,8 +2539,6 @@ class LSPServerTest < Minitest::Test
                 return not this.is_some
       MT
       main_source = <<~MT
-        module main
-
         import maybe as maybe
 
         function main() -> int:
@@ -2693,8 +2630,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2706,8 +2641,6 @@ class LSPServerTest < Minitest::Test
 
       File.write(File.join(app_src_dir, "main.mt"), main_source)
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2791,8 +2724,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -2804,8 +2735,6 @@ class LSPServerTest < Minitest::Test
 
       File.write(File.join(app_src_dir, "main.mt"), main_source)
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -2872,8 +2801,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module demo.main
-
         import support
 
         function main() -> int:
@@ -2882,11 +2809,8 @@ class LSPServerTest < Minitest::Test
 
       File.write(main_path, main_source)
       File.write(support_path, <<~MT)
-        module support
       MT
       File.write(support_windows_path, <<~MT)
-        module support
-
         public function value() -> int:
             return 2
       MT
@@ -2939,8 +2863,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module demo.main
-
         import support
 
         function main() -> int:
@@ -2949,11 +2871,8 @@ class LSPServerTest < Minitest::Test
 
       File.write(main_path, main_source)
       File.write(support_path, <<~MT)
-        module support
       MT
       File.write(support_windows_path, <<~MT)
-        module support
-
         public function value() -> int:
             return 2
       MT
@@ -3032,8 +2951,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as duel_ui
 
         function main() -> int:
@@ -3042,8 +2959,6 @@ class LSPServerTest < Minitest::Test
 
       File.write(File.join(app_src_dir, "main.mt"), main_source)
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -3134,16 +3049,12 @@ class LSPServerTest < Minitest::Test
       TOML
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       main_path = File.join(app_src_dir, "main.mt")
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import test
 
@@ -3224,16 +3135,12 @@ class LSPServerTest < Minitest::Test
       TOML
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       main_path = File.join(app_src_dir, "main.mt")
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         const board_height: int = 20a
@@ -3269,7 +3176,7 @@ class LSPServerTest < Minitest::Test
           "textDocument" => { "uri" => main_uri },
         })
         messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
-        assert_includes messages, "expected end of statement at #{main_uri}:5:29"
+        assert_includes messages, "expected end of statement at #{main_uri}:3:29"
 
         board_height_hover = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => main_uri },
@@ -3305,14 +3212,14 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-block-parse-recovery") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         function main() -> int:
             let value = 1
             let broken = 20a
             return value
       MT
       File.write(path, source)
+      hover_line = source.lines.index { |line| line.include?("return value") }
+      hover_char = source.lines.fetch(hover_line).index("value") + 1
 
       with_server do |client|
         client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
@@ -3332,11 +3239,11 @@ class LSPServerTest < Minitest::Test
           "textDocument" => { "uri" => uri },
         })
         messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
-        assert_includes messages, "expected end of statement at #{uri}:5:20"
+        assert_includes messages, "expected end of statement at #{uri}:3:20"
 
         hover_response = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => uri },
-          "position" => { "line" => 5, "character" => 11 },
+          "position" => { "line" => hover_line, "character" => hover_char },
         })
 
         hover_value = hover_response.dig("result", "contents", "value")
@@ -3495,8 +3402,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-file-backed-error-stmt-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
             y: int
@@ -3555,8 +3460,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-error-block-hover") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         function main() -> int:
             let value = 1
             unsafe
@@ -3603,8 +3506,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-unsafe-diagnostics") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Counter:
             value: int
 
@@ -3645,8 +3546,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-if-flow-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3696,8 +3595,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-while-flow-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3747,8 +3644,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-for-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3798,8 +3693,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-headerless-if-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3849,8 +3742,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-match-arm-completion") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3905,8 +3796,6 @@ class LSPServerTest < Minitest::Test
     Dir.mktmpdir("milk-tea-lsp-invalid-match-scrutinee-hover") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        module main
-
         struct Point:
             x: int
 
@@ -3986,8 +3875,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as duel_ui
 
         function main() -> int:
@@ -3996,8 +3883,6 @@ class LSPServerTest < Minitest::Test
 
       File.write(File.join(app_src_dir, "main.mt"), main_source)
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -4084,14 +3969,10 @@ class LSPServerTest < Minitest::Test
       TOML
 
       ui_source = <<~MT
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as duel_ui
 
         function main() -> int:
@@ -4196,8 +4077,6 @@ class LSPServerTest < Minitest::Test
       TOML
 
       main_source = <<~MT
-        module snake_duel.main
-
         import teefan.ui.layout as duel_ui
 
         function main() -> int:
@@ -4206,8 +4085,6 @@ class LSPServerTest < Minitest::Test
 
       File.write(File.join(app_src_dir, "main.mt"), main_source)
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -4335,8 +4212,6 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       File.write(File.join(std_dir, "foo.mt"), <<~MT)
-        module std.foo
-
         public struct Point:
             x: int
             y: int
@@ -4350,8 +4225,6 @@ class LSPServerTest < Minitest::Test
       MT
 
       source = <<~MT
-        module app
-
         import std.foo as foo
 
         public function main() -> int:
@@ -4935,15 +4808,11 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(demo_dir)
 
       File.write(File.join(demo_dir, "dep.mt"), <<~MT)
-        module demo.dep
-
         public struct Counter:
             value: int
       MT
 
       File.write(File.join(demo_dir, "a.mt"), <<~MT)
-        module demo.a
-
         import demo.dep as dep
 
         methods dep.Counter:
@@ -4952,8 +4821,6 @@ class LSPServerTest < Minitest::Test
       MT
 
       File.write(File.join(demo_dir, "b.mt"), <<~MT)
-        module demo.b
-
         import demo.dep as dep
 
         methods dep.Counter:
@@ -4963,8 +4830,6 @@ class LSPServerTest < Minitest::Test
 
       main_path = File.join(demo_dir, "main.mt")
       source = <<~MT
-        module demo.main
-
         import demo.dep as dep
         import demo.a as a
         import demo.b as b
@@ -4991,7 +4856,7 @@ class LSPServerTest < Minitest::Test
         end
 
         refute_nil diagnostic, "expected ambiguous imported method diagnostic, got #{items.map { |item| item['message'] }.inspect}"
-        assert_equal 7, diagnostic.dig("range", "start", "line")
+        assert_equal 5, diagnostic.dig("range", "start", "line")
         assert_equal 10, diagnostic.dig("range", "start", "character")
         assert_equal 11, diagnostic.dig("range", "end", "character")
       end
@@ -5004,15 +4869,14 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        external module std.c.sdl3:
-            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external
+
+        external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
-        module std.sdl3
-
         import std.c.sdl3 as c
 
         public foreign function set_window_fill_document(window: ptr[void], fill: bool) -> bool = c.SDL_SetWindowFillDocument
@@ -5048,15 +4912,14 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "sdl3.mt"), <<~MT)
-        external module std.c.sdl3:
-            external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
+        external
+
+        external function SDL_SetWindowFillDocument(window: ptr[void], fill: bool) -> bool
       MT
 
       source_path = File.join(dir, "std", "sdl3.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
-        module std.sdl3
-
         import std.c.sdl3 as c
 
         function main() -> int:
@@ -5078,7 +4941,8 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-        member_entry = semantic_entry_for_lexeme_on_line(source, entries, "SDL_SetWindowFillDocument", 5)
+        member_line = source.lines.index { |line| line.include?("SDL_SetWindowFillDocument") }
+        member_entry = semantic_entry_for_lexeme_on_line(source, entries, "SDL_SetWindowFillDocument", member_line)
 
         assert_equal "property", member_entry.fetch("tokenType")
       end
@@ -5091,18 +4955,17 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "raylib.mt"), <<~MT)
-        external module std.c.raylib:
-            struct Vector2:
-                x: float
-                y: float
+        external
+
+        struct Vector2:
+            x: float
+            y: float
       MT
 
       filler = (1..160).map { |i| "public const PAD_#{i}: int = #{i}" }.join("\n")
       source_path = File.join(dir, "std", "raylib.mt")
       FileUtils.mkdir_p(File.dirname(source_path))
       source = <<~MT
-        module std.raylib
-
         import std.c.raylib as c
 
         public type VecAlias = c.Vector2
@@ -5123,20 +4986,21 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+        type_alias_line = source.lines.index { |line| line.include?("c.Vector2") }
 
         alias_entry = entries.find do |entry|
-          next false unless entry.fetch("line") == 4
+          next false unless entry.fetch("line") == type_alias_line
 
           line_text = source.lines.fetch(entry.fetch("line"))
           line_text[entry.fetch("startChar"), 1] == "c"
-        end or flunk("expected semantic token entry for aliased module receiver on line 5")
+        end or flunk("expected semantic token entry for aliased module receiver on the type alias line")
 
         member_entry = entries.find do |entry|
-          next false unless entry.fetch("line") == 4
+          next false unless entry.fetch("line") == type_alias_line
 
           line_text = source.lines.fetch(entry.fetch("line"))
           line_text[entry.fetch("startChar"), "Vector2".length] == "Vector2"
-        end or flunk("expected semantic token entry for imported type member on line 5")
+        end or flunk("expected semantic token entry for imported type member on the type alias line")
 
         assert_equal "namespace", alias_entry.fetch("tokenType")
         assert_equal "type", member_entry.fetch("tokenType")
@@ -5150,15 +5014,14 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(c_dir)
 
       File.write(File.join(c_dir, "foo.mt"), <<~MT)
-        external module std.c.foo:
-            enum thing_t: int
-                THING_A = 1
+        external
+
+        enum thing_t: int
+            THING_A = 1
       MT
 
       source_path = File.join(dir, "demo.mt")
       source = <<~MT
-        module demo
-
         import std.c.foo as c
 
         function uses_helper(loop: int) -> int:
@@ -5185,9 +5048,10 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-
-        loop_decl = semantic_entry_for_lexeme_on_line(source, entries, "loop", 4)
-        enum_member = semantic_entry_for_lexeme_on_line(source, entries, "THING_A", 11)
+        loop_decl_line = source.lines.index { |line| line.include?("function uses_helper") }
+        enum_member_line = source.lines.index { |line| line.include?("THING_A") }
+        loop_decl = semantic_entry_for_lexeme_on_line(source, entries, "loop", loop_decl_line)
+        enum_member = semantic_entry_for_lexeme_on_line(source, entries, "THING_A", enum_member_line)
 
         assert_equal "parameter", loop_decl.fetch("tokenType")
         assert_includes loop_decl.fetch("modifierNames"), "declaration"
@@ -5203,16 +5067,11 @@ class LSPServerTest < Minitest::Test
       main_path = File.join(dir, "main.mt")
 
       api_initial = <<~MT
-        module api
       MT
       api_updated = <<~MT
-        module api
-
         public type Answer = int
       MT
       main_source = <<~MT
-        module main
-
         import api as api
 
         public type Result = api.Answer
@@ -5304,14 +5163,10 @@ class LSPServerTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
 
       contracts_source = <<~MT
-        module std.contracts
-
         public interface Damageable:
             editable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
-        module demo.main
-
         import std.contracts as contracts
 
         struct NPC implements contracts.Damageable:
@@ -5340,9 +5195,9 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-
-        alias_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "contracts", 2)
-        interface_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "Damageable", 4)
+        implements_line = main_source.lines.index { |line| line.include?("contracts.Damageable") }
+        alias_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "contracts", implements_line)
+        interface_entry = semantic_entry_for_lexeme_on_line(main_source, entries, "Damageable", implements_line)
 
         assert_equal "namespace", alias_entry.fetch("tokenType")
         assert_equal "type", interface_entry.fetch("tokenType")
@@ -5632,8 +5487,10 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-        create_for_entry = semantic_entry_for_lexeme_on_line(source, entries, "create_for", 8)
-        alloc_entry = semantic_entry_for_lexeme_on_line(source, entries, "alloc", 9)
+        create_for_line = source.lines.index { |line| line.include?("create_for") }
+        alloc_line = source.lines.index { |line| line.include?("alloc") }
+        create_for_entry = semantic_entry_for_lexeme_on_line(source, entries, "create_for", create_for_line)
+        alloc_entry = semantic_entry_for_lexeme_on_line(source, entries, "alloc", alloc_line)
 
         assert_equal "function", create_for_entry.fetch("tokenType")
         assert_equal "method", alloc_entry.fetch("tokenType")
@@ -5658,9 +5515,12 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", 4)
-        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 5)
-        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 6)
+        status_decl_line = source.lines.index { |line| line.include?("function wrap") }
+        status_if_line = source.lines.index { |line| line.include?("if status") }
+        status_return_line = source.lines.index { |line| line.include?("return status") }
+        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", status_decl_line)
+        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", status_if_line)
+        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", status_return_line)
 
         assert_equal "parameter", status_decl.fetch("tokenType")
         assert_includes status_decl.fetch("modifierNames"), "declaration"
@@ -5710,10 +5570,9 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-        module_async = semantic_entry_for_lexeme_on_line(source, entries, "async", 0)
-        import_async = semantic_entry_for_lexeme_on_line(source, entries, "async", 2)
+        import_async_line = source.lines.index { |line| line.include?("tmp.async") }
+        import_async = semantic_entry_for_lexeme_on_line(source, entries, "async", import_async_line)
 
-        assert_equal "namespace", module_async.fetch("tokenType")
         assert_equal "namespace", import_async.fetch("tokenType")
       end
     end
@@ -5736,11 +5595,15 @@ class LSPServerTest < Minitest::Test
 
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
-        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", 11)
-        status_assign_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 12)
-        make_status_ref = semantic_entry_for_lexeme_on_line(source, entries, "make_status", 12)
-        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 13)
-        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", 14)
+        status_decl_line = source.lines.index { |line| line.include?("var status") }
+        status_assign_line = source.lines.index { |line| line.include?("status = invoke") }
+        status_if_line = source.lines.index { |line| line.include?("if status") }
+        status_return_line = source.lines.index { |line| line.include?("return status") }
+        status_decl = semantic_entry_for_lexeme_on_line(source, entries, "status", status_decl_line)
+        status_assign_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", status_assign_line)
+        make_status_ref = semantic_entry_for_lexeme_on_line(source, entries, "make_status", status_assign_line)
+        status_if_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", status_if_line)
+        status_return_ref = semantic_entry_for_lexeme_on_line(source, entries, "status", status_return_line)
 
         assert_equal "variable", status_decl.fetch("tokenType")
         assert_includes status_decl.fetch("modifierNames"), "declaration"
@@ -5959,8 +5822,6 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_let.mt"
       source = <<~MT
-        module demo.lint
-
         function main() -> int:
             var x = 1
             return x
@@ -5997,8 +5858,6 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_else.mt"
       source = <<~MT
-        module demo.lint
-
         function sign(n: int) -> int:
             if n > 0:
                 return 1
@@ -6039,8 +5898,6 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_unsafe.mt"
       source = <<~MT
-        module demo.lint
-
         function main(value: int) -> int:
             unsafe:
                 let copy = value + 1

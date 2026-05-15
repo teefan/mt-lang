@@ -9,8 +9,6 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_arena",
-      "",
       "import std.mem.arena as arena",
       "",
       "function main() -> int:",
@@ -62,8 +60,6 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_arena_typed",
-      "",
       "import std.mem.arena as arena",
       "",
       "struct Pair:",
@@ -106,8 +102,6 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_arena_cstr",
-      "",
       "import std.mem.arena as arena",
       "import std.str as text_ops",
       "",
@@ -142,8 +136,6 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_arena_aligned",
-      "",
       "import std.mem.arena as arena",
       "",
       "align(16) struct Mat4:",
@@ -178,8 +170,6 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_arena_invalid_mark",
-      "",
       "import std.mem.arena as arena",
       "",
       "function main() -> int:",

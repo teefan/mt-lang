@@ -96,7 +96,6 @@ class MilkTeaPackageSourceFetcherTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(published_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
       MT
       registry_store.publish(published_root)
 
@@ -166,7 +165,6 @@ class MilkTeaPackageSourceFetcherTest < Minitest::Test
         source_root = "src"
       TOML
       File.write(File.join(published_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
-        module teefan.ui.layout
       MT
       registry_store.publish(published_root, target: :upstream)
 

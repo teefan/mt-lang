@@ -4,18 +4,16 @@ require_relative "../test_helper"
 
 class MilkTeaFormatterTest < Minitest::Test
   def test_check_source_detects_changes
-    source = "module demo.f\n\nfunction main()->int:\n    return 0\n"
+    source = "function main()->int:\n    return 0\n"
 
     result = MilkTea::Formatter.check_source(source, path: "demo.mt")
 
     assert_equal true, result.changed
-    assert_equal "module demo.f\n\nfunction main() -> int:\n    return 0\n", result.formatted_source
+    assert_equal "function main() -> int:\n    return 0\n", result.formatted_source
   end
 
   def test_canonical_mode_rewrites_single_statement_unsafe_blocks
     source = <<~MT
-      module demo.fmt
-
       function main(counter_ptr: ptr[int]) -> void:
           unsafe:
               counter_ptr[0] = 1
@@ -24,8 +22,6 @@ class MilkTeaFormatterTest < Minitest::Test
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
 
     assert_equal <<~MT, formatted
-      module demo.fmt
-
       function main(counter_ptr: ptr[int]) -> void:
           unsafe: counter_ptr[0] = 1
     MT
@@ -34,7 +30,6 @@ class MilkTeaFormatterTest < Minitest::Test
   def test_build_cst_reconstructs_original_source
     source = <<~MT
       # banner
-      module demo.cst
 
       function main() -> int: # keep
           return 0
@@ -50,7 +45,6 @@ class MilkTeaFormatterTest < Minitest::Test
   def test_preserve_mode_keeps_comments_exactly
     source = <<~MT
       # banner
-      module demo.fmt
 
       function main() -> int: # trailing
           return 0
@@ -63,8 +57,6 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_preserve_mode_keeps_multiline_call_arguments
     source = <<~MT
-      module demo.fmt
-
       function main() -> int:
           log(
               "a",
@@ -81,29 +73,25 @@ class MilkTeaFormatterTest < Minitest::Test
   def test_safe_mode_preserves_comments_in_canonical_output
     source = <<~MT
       # banner
-      module demo.safe
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt")
 
     assert_includes formatted, "# banner"
-    assert_includes formatted, "module demo.safe"
   end
 
   def test_canonical_mode_preserves_comments
     source = <<~MT
       # banner
-      module demo.fmt
     MT
 
     # canonical mode now preserves comments — no error raised
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
     assert_includes formatted, "# banner"
-    assert_includes formatted, "module demo.fmt"
   end
 
   def test_reconstruct_handles_comment_only_tail_without_newline
-    source = "module demo.tail\n# trailing"
+    source = "# trailing"
 
     cst = MilkTea::Formatter.build_cst(source, path: "demo.mt")
 
@@ -111,11 +99,11 @@ class MilkTeaFormatterTest < Minitest::Test
   end
 
   def test_preserve_mode_normalizes_crlf_without_truncation
-    source = "module demo.crlf\r\n\r\ndef main() -> int:\r\n    return 0\r\n"
+    source = "function main() -> int:\r\n    return 0\r\n"
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :preserve)
 
-    assert_equal "module demo.crlf\n\ndef main() -> int:\n    return 0\n", formatted
+    assert_equal "function main() -> int:\n    return 0\n", formatted
   end
 
   # ── comment preservation ─────────────────────────────────────────────
@@ -123,18 +111,15 @@ class MilkTeaFormatterTest < Minitest::Test
   def test_canonical_preserves_leading_standalone_comment
     source = <<~MT
       # top-level comment
-      module demo.comments
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
 
-    assert_equal "# top-level comment\nmodule demo.comments\n", formatted
+    assert_equal "# top-level comment\n", formatted
   end
 
   def test_canonical_preserves_comment_before_function
     source = <<~MT
-      module demo.comments
-
       # computes sum
       function add(a: int, b: int) -> int:
           return a + b
@@ -150,8 +135,6 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_canonical_preserves_comment_before_statement
     source = <<~MT
-      module demo.comments
-
       function main() -> int:
           # initialize counter
           let x = 0
@@ -166,8 +149,6 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_canonical_preserves_inline_trailing_comment
     source = <<~MT
-      module demo.comments
-
       function main() -> int:
           let x = 42  # the answer
           return x
@@ -181,20 +162,16 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_canonical_formats_top_level_var_declaration
     source = <<~MT
-      module demo.var
-
       public var  counter  :  int   =  1
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
 
-    assert_equal "module demo.var\n\npublic var counter: int = 1\n", formatted
+    assert_equal "public var counter: int = 1\n", formatted
   end
 
   def test_tidy_mode_does_not_insert_blank_lines_before_first_method
     source = <<~MT
-      module demo.methods
-
       struct Ball:
           x: int
 
@@ -213,8 +190,6 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_tidy_mode_inserts_two_blank_lines_before_methods_block
     source = <<~MT
-      module demo.methods
-
       function helper() -> void:
           return
 
@@ -231,8 +206,6 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_tidy_mode_preserves_utf8_string_literals
     source = <<~MT
-      module demo.utf8
-
       const text: cstr = c"いろはにほへと　ちりぬるを\\nわかよたれそ"
       const path: cstr = c"../resources/DotGothic16-Regular.ttf"
     MT
@@ -245,36 +218,38 @@ class MilkTeaFormatterTest < Minitest::Test
 
   def test_canonical_groups_extern_module_simple_declarations_by_kind
     source = <<~MT
-      external module std.c.sample:
-          include "sample.h"
+      external
 
-          opaque Handle = c"struct Handle"
+      include "sample.h"
 
-          type Flags = uint
+      opaque Handle = c"struct Handle"
 
-          const MAGIC: int = 7
+      type Flags = uint
 
-          const LIMIT: int = 8
+      const MAGIC: int = 7
 
-          external function init() -> int
+      const LIMIT: int = 8
 
-          external function close() -> void
+      external function init() -> int
+
+      external function close() -> void
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "sample.mt", mode: :canonical)
 
     assert_equal <<~MT, formatted
-      external module std.c.sample:
-          include "sample.h"
+      external
 
-          opaque Handle = c"struct Handle"
-          type Flags = uint
+      include "sample.h"
 
-          const MAGIC: int = 7
-          const LIMIT: int = 8
+      opaque Handle = c"struct Handle"
+      type Flags = uint
 
-          external function init() -> int
-          external function close() -> void
+      const MAGIC: int = 7
+      const LIMIT: int = 8
+
+      external function init() -> int
+      external function close() -> void
     MT
   end
 end

@@ -19,8 +19,6 @@ class MilkTeaStdAssetPackTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [credits_path, assets_dir])
 
       source = [
-        "module demo.std_asset_pack_read",
-        "",
         "import std.asset_pack as asset_pack",
         "import std.bytes as bytes",
         "import std.maybe as maybe",
@@ -78,8 +76,6 @@ class MilkTeaStdAssetPackTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [assets_dir])
 
       source = [
-        "module demo.std_asset_pack_missing",
-        "",
         "import std.asset_pack as asset_pack",
         "import std.status as status",
         "",
@@ -139,8 +135,6 @@ class MilkTeaStdAssetPackTest < Minitest::Test
       File.binwrite(pack_path, ["NOPE", 1, 0, 0, 0, 28].pack(MilkTea::AssetPack::HEADER_FORMAT))
 
       source = [
-        "module demo.std_asset_pack_invalid",
-        "",
         "import std.asset_pack as asset_pack",
         "import std.status as status",
         "",

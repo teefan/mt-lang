@@ -9,8 +9,6 @@ class MilkTeaStdSpanTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.span_constructors",
-      "",
       "function sum(values: span[int]) -> int:",
       "    var total = 0",
       "    var index: ptr_uint = 0",

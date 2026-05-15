@@ -1,5 +1,3 @@
-module std.fmt
-
 import std.c.stdio as c
 import std.str as text_ops
 import std.string as string

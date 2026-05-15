@@ -9,8 +9,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt",
-      "",
       "import std.fmt as fmt",
       "import std.mem.arena as arena",
       "import std.string as string",
@@ -57,8 +55,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_format",
-      "",
       "import std.fmt as fmt",
       "import std.mem.arena as arena",
       "import std.string as string",
@@ -89,8 +85,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_string_sink",
-      "",
       "import std.string as string",
       "",
       "function main() -> int:",
@@ -116,8 +110,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_float_format",
-      "",
       "import std.fmt as fmt",
       "import std.string as string",
       "",
@@ -143,8 +135,6 @@ class MilkTeaStdFmtLogTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_fmt_general_expr",
-      "",
       "function size(text: str) -> ptr_uint:",
       "    return text.len",
       "",

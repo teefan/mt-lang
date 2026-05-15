@@ -12,8 +12,6 @@ class MilkTeaStdErrnoRuntimeTest < Minitest::Test
       source_path = File.join(dir, "std_errno.mt")
 
       File.write(source_path, [
-        "module demo.std_errno_runtime",
-        "",
         "import std.errno as errno",
         "",
         "function main() -> int:",

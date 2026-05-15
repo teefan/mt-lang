@@ -36,7 +36,7 @@ The output target is beautiful C. The generated C should be readable enough that
 
 If code allocates, takes an address, dereferences a raw pointer, performs an FFI call, or enters unsafe territory, the source should say so directly.
 
-FFI visibility belongs at the declaration site. Raw `external module` declarations expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
+FFI visibility belongs at the declaration site. Raw `external` files expose exact ABI types. Imported foreign declarations may project those raw types into ordinary Milk Tea types, but the projection rule, temporary-storage rule, and ownership rule must be declared there instead of repeated at every call site.
 
 The same rule applies to text construction. Plain string literals and format string literals are borrowed `str` values. Any surface that builds owned text must say so explicitly, for example `std.fmt.format(f"...")` when ownership must escape.
 
@@ -96,8 +96,6 @@ If a new feature introduces a second ordinary way to express the same concept, t
 Example:
 
 ```mt
-module game.main
-
 import std.math as math
 import std.raylib as rl
 
@@ -154,8 +152,6 @@ Address formation and dereference stay as word forms: `ref_of(expr)`, `const_ptr
 ### Declarations
 
 ```mt
-module demo.physics
-
 import std.math
 
 const gravity: float = 9.81
@@ -478,7 +474,7 @@ Notes:
 
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
 - Every `str` value must contain valid UTF-8 bytes for its full length.
-- `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `external module` declarations and low-level interop code.
+- `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `external` files and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
 - Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, `str_builder.as_str()`, slicing an existing `str`, imported foreign boundaries that declare borrowed text, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
@@ -834,7 +830,7 @@ Rules for safe references:
 - member access and method calls auto-project through refs, so `handle.field` and `handle.edit_method()` are the preferred forms.
 - there is no implicit ref-to-value call conversion: if a function expects `T`, pass `read(handle)`.
 - references do not support arithmetic, pointer indexing, or nullable semantics.
-- writable references are non-escaping in the current implementation: they may be used in locals and non-external function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `external module` declarations.
+- writable references are non-escaping in the current implementation: they may be used in locals and non-external function parameters, and imported foreign parameters may expose `out` or `inout` boundary forms that lower to raw pointers, but refs themselves still cannot be stored, nested inside other types, returned, or used directly in raw `external` files.
 
 Rules for raw pointers:
 
@@ -942,15 +938,13 @@ No implicit exception paths. Every failure path is visible in the type or the co
 Source files should map directly to modules.
 
 ```mt
-module game.rendering.sprite_batch
-
 import std.raylib as rl
 import game.assets
 ```
 
 Rules:
 
-- one top-level module per file
+- one module identity per file, derived from its path
 - explicit imports only
 - no wildcard imports in v1
 - no cyclic imports
@@ -977,30 +971,31 @@ The declaration site carries the boundary contract. Raw pointers, reinterpretati
 
 ### Raw C bindings
 
-Milk Tea needs a dedicated `external module` form for ABI-exact bindings.
+Milk Tea needs a dedicated `external` file form for ABI-exact bindings.
 
-Direct `external function` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `external module` files so the raw surface stays grouped, auditable, and easy to regenerate.
+Direct `external function` declarations are also allowed in ordinary modules for small manual ABI bridges, but generated and standard-library bindings should prefer full `external` files so the raw surface stays grouped, auditable, and easy to regenerate.
 
 ```mt
-external module std.c.raylib:
-	link "raylib"
-	include "raylib.h"
+external
 
-	struct Vector2:
-		x: float
-		y: float
+link "raylib"
+include "raylib.h"
 
-	struct Color:
-		r: ubyte
-		g: ubyte
-		b: ubyte
-		a: ubyte
+struct Vector2:
+	x: float
+	y: float
 
-	external function InitWindow(width: int, height: int, title: cstr) -> void
-	external function WindowShouldClose() -> bool
-	external function BeginDrawing() -> void
-	external function EndDrawing() -> void
-	external function DrawCircleV(center: Vector2, radius: float, color: Color) -> void
+struct Color:
+	r: ubyte
+	g: ubyte
+	b: ubyte
+	a: ubyte
+
+external function InitWindow(width: int, height: int, title: cstr) -> void
+external function WindowShouldClose() -> bool
+external function BeginDrawing() -> void
+external function EndDrawing() -> void
+external function DrawCircleV(center: Vector2, radius: float, color: Color) -> void
 ```
 
 Capabilities required by the FFI surface:
@@ -1038,11 +1033,9 @@ The focused follow-on proposal for reducing imported-call friction without addin
 
 Most application code should call imported foreign declarations, not raw `std.c.*` bindings.
 
-Imported foreign modules are ordinary `module` files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign function` declarations.
+Imported foreign modules are ordinary headerless files. They import a raw `std.c.*` module and re-export compiler-recognized `foreign function` declarations.
 
 ```mt
-module std.raylib
-
 import std.c.raylib as c
 
 public type Vector2 = c.Vector2
@@ -1128,7 +1121,7 @@ The checker should treat `foreign function` as its own declaration kind with ded
 
 Declaration rules:
 
-- `foreign function` is allowed only in ordinary modules, not inside `external module`, `methods`, or function bodies
+- `foreign function` is allowed only in ordinary modules, not inside `external`, `methods`, or function bodies
 - the right-hand side must resolve to an imported raw external symbol from a `std.c.*` module
 - `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `external function`
 - `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `external function`
@@ -1258,7 +1251,7 @@ This boundary rule is deliberate: declarations say how the boundary works, while
 
 String and buffer rules must stay explicit, but the explicitness belongs in imported declarations, not in every call site:
 
-- raw `external module` declarations stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
+- raw `external` files stay exact and continue to use `cstr`, `ptr[T]`, and `ptr[void]`
 - a string literal may satisfy a contextual `cstr` position directly; ordinary UI code should not need `c"..."` just to populate `cstr` locals, `array[cstr, N]`, or borrowed C-string arguments
 - converting a dynamic `str` or `span[str]` to foreign C-compatible text is automatic when an imported declaration chooses that public surface
 - `cstr` remains available for raw ABI work, returned native strings, and low-level code

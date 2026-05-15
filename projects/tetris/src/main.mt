@@ -1,5 +1,3 @@
-module main
-
 import std.maybe as maybe
 import platform_info as platform_info
 import std.raylib as rl

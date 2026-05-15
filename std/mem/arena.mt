@@ -1,5 +1,3 @@
-module std.mem.arena
-
 import std.mem.heap as heap
 
 public type Mark = ptr_uint

@@ -1,5 +1,3 @@
-module std.ctype
-
 import std.c.ctype as c
 
 

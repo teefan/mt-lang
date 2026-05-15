@@ -9,8 +9,6 @@ class MilkTeaStdMaybeStatusTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_maybe_status",
-      "",
       "import std.maybe as maybe",
       "import std.status as status",
       "",

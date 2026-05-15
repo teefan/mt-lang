@@ -12,8 +12,6 @@ class MilkTeaStdMathRuntimeTest < Minitest::Test
       source_path = File.join(dir, "std_math.mt")
 
       File.write(source_path, [
-        "module demo.std_math_runtime",
-        "",
         "import std.math as math",
         "",
         "const EPSILON: double = 0.000001",

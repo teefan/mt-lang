@@ -1,5 +1,3 @@
-module tetris.pieces.defs
-
 public const piece_i: int = 1
 public const piece_j: int = 2
 public const piece_l: int = 3

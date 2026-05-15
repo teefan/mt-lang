@@ -1,5 +1,3 @@
-module std.asset_pack
-
 import std.bytes as bytes
 import std.mem.heap as heap
 import std.status as status

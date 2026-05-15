@@ -1,5 +1,3 @@
-module test.fixtures.language_fixture.types
-
 public struct Counter:
     total: int
 

@@ -166,7 +166,7 @@ module MilkTea
           result[constant.c_name] = constant
         end
         referenced_names = {}
-        root_module_prefix = "#{@program.module_name.tr('.', '_')}_"
+        root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
 
         @program.constants.each do |constant|
           next unless constant.c_name.start_with?(root_module_prefix)
@@ -200,7 +200,7 @@ module MilkTea
 
         seeds = @program.functions.select(&:entry_point)
         if seeds.empty?
-          root_module_prefix = "#{@program.module_name.tr('.', '_')}_"
+          root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
           seeds = @program.functions.select { |function| function.c_name.start_with?(root_module_prefix) }
         end
 
@@ -3727,7 +3727,7 @@ module MilkTea
         return type.c_name
       end
 
-      base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{type.module_name.tr('.', '_')}_#{type.name}" : type.name
+      base_name = type.module_name&.start_with?("std.c.") ? type.name : type.module_name ? "#{module_c_prefix(type.module_name)}_#{type.name}" : type.name
       return base_name unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
 
       "#{base_name}_#{sanitize_identifier(type.arguments.join('_'))}"
@@ -3740,6 +3740,10 @@ module MilkTea
     def sanitize_identifier(text)
       identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/^_+/, "").sub(/_+$/, "")
       identifier.empty? ? "value" : identifier
+    end
+
+    def module_c_prefix(module_name)
+      sanitize_identifier(module_name.to_s.tr('.', '_'))
     end
 
     def primitive_c_type(name)

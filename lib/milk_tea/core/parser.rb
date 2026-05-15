@@ -70,50 +70,37 @@ module MilkTea
       skip_newlines
 
       module_name = nil
-      module_kind = nil
+      module_kind = :module
       module_line = nil
       imports = []
       directives = []
       declarations = []
 
-      if match(:module)
-        module_kind = :module
+      if external_file_header?
+        advance
         module_line = previous.line
+        module_kind = :extern_module
+        consume(:newline, "expected newline after external") unless eof?
+        skip_newlines
+        imports, directives, declarations = parse_extern_module_body
+        skip_newlines
+        raise error(peek, "expected end of file after external declarations") unless eof?
+
+        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
+      end
+
+      while match(:import)
         if errors
           begin
-            module_name = parse_module_name
+            imports << parse_import
           rescue ParseError => e
             errors << e
             synchronize_to_top_level_boundary
           end
         else
-          module_name = parse_module_name
+          imports << parse_import
         end
-
         skip_newlines
-        while match(:import)
-          if errors
-            begin
-              imports << parse_import
-            rescue ParseError => e
-              errors << e
-              synchronize_to_top_level_boundary
-            end
-          else
-            imports << parse_import
-          end
-          skip_newlines
-        end
-      elsif match(:external)
-        module_line = previous.line
-        consume(:module, "expected module after external")
-        module_kind = :extern_module
-        module_name = parse_qualified_name
-        imports, directives, declarations = parse_extern_module_body
-        skip_newlines
-        raise error(peek, "expected end of file after external module") unless eof?
-
-        return AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
       end
 
       until eof?
@@ -131,12 +118,6 @@ module MilkTea
       end
 
       AST::SourceFile.new(module_name:, module_kind:, imports:, directives:, declarations:, line: module_line)
-    end
-
-    def parse_module_name
-      name = parse_qualified_name
-      consume_end_of_statement
-      name
     end
 
     def parse_import
@@ -207,20 +188,16 @@ module MilkTea
     end
 
     def parse_extern_module_body
-      consume(:colon, "expected ':' before external module body")
-      consume(:newline, "expected newline before external module body")
-      consume(:indent, "expected indented external module body")
-
       imports = []
       directives = []
       declarations = []
-      skip_newlines
+
       while match(:import)
         imports << parse_import
         skip_newlines
       end
 
-      until check(:dedent) || eof?
+      until eof?
         if match(:link)
           directives << parse_link_directive
         elsif match(:include)
@@ -233,7 +210,6 @@ module MilkTea
         skip_newlines
       end
 
-      consume(:dedent, "expected end of external module body")
       [imports, directives, declarations]
     end
 
@@ -257,7 +233,7 @@ module MilkTea
 
     def parse_extern_module_declaration
       if match(:public)
-        raise error(previous, "public is not allowed inside external modules")
+        raise error(previous, "public is not allowed in external files")
       elsif check(:packed) || check(:align)
         parse_struct_decl_with_layout(visibility: :public)
       elsif match(:const)
@@ -277,7 +253,7 @@ module MilkTea
       elsif match(:external)
         parse_extern_decl
       else
-        raise error(peek, "expected external module declaration")
+        raise error(peek, "expected external declaration")
       end
     end
 
@@ -1736,6 +1712,13 @@ module MilkTea
 
     def skip_newlines
       advance while check(:newline)
+    end
+
+    def external_file_header?
+      return false unless check(:external)
+
+      next_token = @tokens[@current + 1]
+      next_token.nil? || %i[newline eof].include?(next_token.type)
     end
 
     def match(*types)

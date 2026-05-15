@@ -1,5 +1,3 @@
-module std.libc
-
 import std.c.libc as c
 
 public type IntDiv = c.div_t

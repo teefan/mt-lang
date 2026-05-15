@@ -47,8 +47,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, <<~MT)
-        module demo.main
-
         function main() -> int:
             let count = 7
             let text = f"count=\#{count}"
@@ -69,8 +67,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
   def test_check_file_reports_missing_imported_modules
     source_path = File.expand_path("missing-import.mt", __dir__)
     File.write(source_path, <<~MT)
-      module demo.bad
-
       import std.c.missing as missing
 
       function main() -> int:
@@ -86,7 +82,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     File.delete(source_path) if source_path && File.exist?(source_path)
   end
 
-  def test_check_program_rejects_package_module_name_that_is_not_relative_to_source_root
+  def test_check_program_infers_package_module_name_relative_to_source_root
     Dir.mktmpdir("milk-tea-module-loader-package-module-path-mismatch") do |dir|
       FileUtils.mkdir_p(File.join(dir, "src"))
       File.write(File.join(dir, "package.toml"), <<~TOML)
@@ -100,18 +96,13 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(dir, "src", "main.mt")
       File.write(root_path, <<~MT)
-        module game_engine
-
         function main() -> int:
             return 0
       MT
 
-      error = assert_raises(MilkTea::ModuleLoadError) do
-        MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
-      end
+      program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(root_path)).check_program(root_path)
 
-      assert_match(/declared module 'game_engine' does not match source path; expected 'main'/, error.message)
-      assert_match(/relative to package\.source_root/, error.message)
+      assert_equal "main", program.root_analysis.module_name
     end
   end
 
@@ -128,8 +119,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(dir, "src", "main.mt")
       File.write(root_path, <<~MT)
-        module main
-
         import main.platform_info as platform_info
 
         function main() -> int:
@@ -137,8 +126,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(dir, "src", "platform_info.mt"), <<~MT)
-        module platform_info
-
         public function label() -> str:
             return "Build: Shared"
       MT
@@ -159,8 +146,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       FileUtils.mkdir_p(File.dirname(root_path))
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.lib as lib
 
         function main() -> int:
@@ -169,8 +154,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(lib_path, <<~MT)
-        module demo.lib
-
         public const answer: int = 7
         const hidden: int = 9
 
@@ -236,8 +219,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(app_src_dir, "main.mt")
       File.write(root_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -245,8 +226,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
@@ -291,8 +270,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(app_src_dir, "main.mt")
       File.write(root_path, <<~MT)
-        module main
-
         import tetris.pieces.defs as pieces
 
         function main() -> int:
@@ -300,8 +277,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(pieces_src_dir, "defs.mt"), <<~MT)
-        module tetris.pieces.defs
-
         public function spawn_value() -> int:
             return 4
       MT
@@ -322,8 +297,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(root_path))
 
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.support as support
 
         function main() -> int:
@@ -331,15 +304,11 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(shared_path, <<~MT)
-        module demo.support
-
         public function value() -> int:
             return 1
       MT
 
       File.write(windows_path, <<~MT)
-        module demo.support
-
         public function value() -> int:
             return 2
       MT
@@ -395,8 +364,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       TOML
 
       File.write(File.join(app_src_dir, "main.mt"), <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
 
         function main() -> int:
@@ -404,8 +371,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         import teefan.math.ops as ops
 
         public function default_width() -> int:
@@ -413,8 +378,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(math_src_dir, "ops.mt"), <<~MT)
-        module teefan.math.ops
-
         public function bump(value: int) -> int:
             return value + 1
       MT
@@ -475,8 +438,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(app_src_dir, "main.mt")
       File.write(root_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -485,8 +446,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -494,15 +453,11 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -632,8 +587,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
 
       root_path = File.join(app_src_dir, "main.mt")
       File.write(root_path, <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.overlay.panel as panel
 
@@ -642,8 +595,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(overlay_src_dir, "panel.mt"), <<~MT)
-        module teefan.overlay.panel
-
         import teefan.ui.layout as layout
 
         public function overlay_width() -> int:
@@ -651,15 +602,11 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(ui_v1_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       File.write(File.join(ui_v2_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 20
 
@@ -726,8 +673,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       TOML
 
       File.write(File.join(app_src_dir, "main.mt"), <<~MT)
-        module snake_duel.main
-
         import teefan.ui.layout as layout
         import teefan.math.ops as ops
 
@@ -736,15 +681,11 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(File.join(ui_src_dir, "layout.mt"), <<~MT)
-        module teefan.ui.layout
-
         public function default_width() -> int:
             return 10
       MT
 
       File.write(File.join(math_src_dir, "ops.mt"), <<~MT)
-        module teefan.math.ops
-
         public function bump(value: int) -> int:
             return value + 1
       MT
@@ -765,22 +706,24 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(dep_path))
 
       File.write(dep_path, <<~MT)
-        external module std.c.dep:
-            struct Vec:
-                x: float
-                y: float
+        external
+
+        struct Vec:
+            x: float
+            y: float
       MT
 
       File.write(helper_path, <<~MT)
-        external module std.c.helper:
-            import std.c.dep as dep
+        external
 
-            include "helper.h"
+        import std.c.dep as dep
 
-            struct Holder:
-                value: dep.Vec
+        include "helper.h"
 
-            external function wrap(value: dep.Vec) -> Holder
+        struct Holder:
+            value: dep.Vec
+
+        external function wrap(value: dep.Vec) -> Holder
       MT
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(helper_path)
@@ -802,8 +745,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(root_path))
 
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.ext as ext
 
         function main() -> int:
@@ -812,15 +753,11 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(dep_path, <<~MT)
-        module demo.dep
-
         public struct Counter:
             value: int
       MT
 
       File.write(ext_path, <<~MT)
-        module demo.ext
-
         import demo.dep as dep
 
         methods dep.Counter:
@@ -849,8 +786,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(root_path))
 
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.dep as dep
         import demo.ext as ext
 
@@ -859,14 +794,10 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(dep_path, <<~MT)
-        module demo.dep
-
         public opaque Handle
       MT
 
       File.write(ext_path, <<~MT)
-        module demo.ext
-
         import demo.dep as dep
 
         methods ptr[dep.Handle]:
@@ -891,8 +822,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(root_path))
 
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.ext as ext
 
         function main(value: const_ptr[int]) -> int:
@@ -900,8 +829,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(ext_path, <<~MT)
-        module demo.ext
-
         methods const_ptr[T]:
             public function read_value() -> T:
                 return unsafe: read(this)
@@ -923,8 +850,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(root_path))
 
       File.write(root_path, <<~MT)
-        module demo.main
-
         import demo.ext as ext
 
         function main(value: const_ptr[int]?) -> const_ptr[int]:
@@ -932,8 +857,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(ext_path, <<~MT)
-        module demo.ext
-
         methods const_ptr[T]?:
             public function require_value(message: str) -> const_ptr[T]:
                 if this == null:

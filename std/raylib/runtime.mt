@@ -1,5 +1,3 @@
-module std.raylib.runtime
-
 import std.raylib as rl
 import std.libc as libc
 

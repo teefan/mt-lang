@@ -9,8 +9,6 @@ class MilkTeaStdMemStackTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_stack",
-      "",
       "import std.mem.stack as stack",
       "",
       "function main() -> int:",
@@ -53,8 +51,6 @@ class MilkTeaStdMemStackTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_stack_typed",
-      "",
       "import std.mem.stack as stack",
       "",
       "struct Pair:",
@@ -97,8 +93,6 @@ class MilkTeaStdMemStackTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "module demo.std_mem_stack_aligned",
-      "",
       "import std.mem.stack as stack",
       "",
       "align(16) struct Mat4:",
