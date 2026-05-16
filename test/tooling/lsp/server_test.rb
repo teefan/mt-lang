@@ -5364,6 +5364,60 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_classify_ordered_map_receiver_type_parameters_and_members
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source_path = File.join(Dir.pwd, "std", "ordered_map.mt")
+        source = File.read(source_path)
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_line = source.lines.index { |line| line == "methods OrderedMap[K, V]:\n" } or flunk("expected OrderedMap methods header")
+        set_line = source.lines.index { |line| line.include?("public editable function set(key: K, value: V) -> maybe.Maybe[V]:") } or flunk("expected OrderedMap.set declaration")
+        entries_line = source.lines.index { |line| line.include?("return this.entries()") } or flunk("expected OrderedMap.iter body")
+        next_line = source.lines.index { |line| line.include?("if not this.started:") } or flunk("expected Entries.next guard")
+        current_line = source.lines.index { |line| line.include?("public function current() -> Entry[K, V]:") } or flunk("expected Entries.current declaration")
+        current_guard_line = source.lines.index { |line| line.include?("if current == null or not this.started:") } or flunk("expected Entries.current guard")
+
+        header_k = semantic_entry_for_lexeme_on_line(source, entries, "K", header_line)
+        header_v = semantic_entry_for_lexeme_on_line(source, entries, "V", header_line)
+        maybe_alias = semantic_entry_for_lexeme_on_line(source, entries, "maybe", set_line)
+        entries_call = semantic_entry_for_lexeme_on_line(source, entries, "entries", entries_line)
+        next_this = semantic_entry_for_lexeme_on_line(source, entries, "this", next_line)
+        next_started = semantic_entry_for_lexeme_on_line(source, entries, "started", next_line)
+        current_decl = semantic_entry_for_lexeme_on_line(source, entries, "current", current_line)
+        entry_return = semantic_entry_for_lexeme_on_line(source, entries, "Entry", current_line)
+        current_k = semantic_entry_for_lexeme_on_line(source, entries, "K", current_line)
+        current_v = semantic_entry_for_lexeme_on_line(source, entries, "V", current_line)
+        current_this = semantic_entry_for_lexeme_on_line(source, entries, "this", current_guard_line)
+        current_started = semantic_entry_for_lexeme_on_line(source, entries, "started", current_guard_line)
+
+        assert_equal "typeParameter", header_k.fetch("tokenType")
+        assert_includes header_k.fetch("modifierNames"), "declaration"
+        assert_equal "typeParameter", header_v.fetch("tokenType")
+        assert_includes header_v.fetch("modifierNames"), "declaration"
+        assert_equal "namespace", maybe_alias.fetch("tokenType")
+        assert_equal "method", entries_call.fetch("tokenType")
+        assert_equal "parameter", next_this.fetch("tokenType")
+        assert_equal "property", next_started.fetch("tokenType")
+        assert_equal "function", current_decl.fetch("tokenType")
+        assert_equal "type", entry_return.fetch("tokenType")
+        assert_equal "typeParameter", current_k.fetch("tokenType")
+        assert_equal "typeParameter", current_v.fetch("tokenType")
+        assert_equal "parameter", current_this.fetch("tokenType")
+        assert_equal "property", current_started.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
