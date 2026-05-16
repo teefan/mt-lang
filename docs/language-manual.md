@@ -338,7 +338,7 @@ Rules:
 - Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may declare constraints with `implements`, `hashes`, and `equates`.
+- Generic function and method type parameters may declare constraints with `implements`.
 
 Examples:
 
@@ -638,11 +638,9 @@ Rules:
 
 - Constraints are supported on generic structs, variants, functions, and methods.
 - Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
-- `hashes` and `equates` are associated-function constraints.
-- `hashes` requires an accessible associated function `T.hash(value: const_ptr[T]) -> uint`.
-- `equates` requires an accessible associated function `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`.
+- There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)` or `equal[T](...)` rely on specialization-time checking of the canonical associated functions.
 - Current type parameters may be used as type expressions for associated function calls in generic bodies, such as `T.default()` or `T.tag()`.
-- Constraint kinds compose with `and`: `T implements ScreenState and Named`, `T hashes and equates`, and `T implements Named and hashes` are all valid.
+- Constraint kinds compose with `and`: `T implements ScreenState and Named` remains valid.
 
 Type arguments can be:
 
@@ -672,6 +670,8 @@ Special recognized callables:
 `default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.
 
 `hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint`, and `equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. Each argument must already be a `ref[T]`, `ptr[T]`, or `const_ptr[T]`, or be a safe stored `T` lvalue that can be borrowed implicitly.
+
+There are no separate `hashes` or `equates` constraints; the builtins themselves force those hook requirements at specialization time.
 
 There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 

@@ -327,16 +327,11 @@ function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
 	value.draw()
 ```
 
-`hashes` and `equates` are the associated-function constraint family. They do not introduce runtime polymorphism; they just state that specialization may call canonical static hooks on `T`.
+Canonical hash and equality hooks remain associated functions `T.hash(value: const_ptr[T]) -> uint` and `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. The built-in `hash[T](...)` and `equal[T](...)` forms lower directly to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
 
-`hashes` and `equates` are dedicated constraint kinds for container-style generic APIs that need canonical hash and equality hooks without turning interfaces into a trait solver:
+The separate `hashes` and `equates` constraint keywords were removed because they were only contract spelling. They were not the thing that made the built-ins work; direct `hash[T](...)` and `equal[T](...)` use already forced the canonical hooks at specialization time.
 
-```mt
-function same_bucket[T hashes and equates](left: T, right: T) -> bool:
-	return hash[T](left) == hash[T](right) and equal[T](left, right)
-```
-
-The canonical implementation hooks are associated functions `T.hash(value: const_ptr[T]) -> uint` and `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. The built-in `hash[T](...)` and `equal[T](...)` forms just lower to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
+We are not adding an `order` hook in v1. The current ordered surfaces already take an explicit comparator function, and if Milk Tea later wants a canonical ordering hook it should be a tri-state `compare` surface rather than a boolean `less` hook so it matches sort and binary-search style APIs.
 
 `default[T]` requires an explicit `T.default()` provider at each use site. The separate `defaults` constraint was removed because it duplicated that requirement while lengthening generic signatures. If an API depends on semantic defaulting, say so in the API docs and call `default[T]` directly in the generic body.
 

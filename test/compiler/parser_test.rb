@@ -213,25 +213,32 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/default\[T\]/, error.message)
   end
 
-  def test_parses_mixed_type_param_constraints_with_hashes_equates_and_multiple_interfaces
+  def test_rejects_removed_hashes_constraint_with_explicit_diagnostic
     source = <<~MT
-      function same_key[T implements Named and Tagged and hashes and equates](left: T, right: T) -> bool:
+      function same_key[T implements Named and hashes](left: T, right: T) -> uint:
+          return hash[T](left)
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/hashes constraint has been removed/, error.message)
+    assert_match(/hash\[T\]/, error.message)
+  end
+
+  def test_rejects_removed_equates_constraint_with_explicit_diagnostic
+    source = <<~MT
+      function same_key[T implements Named and equates](left: T, right: T) -> bool:
           return equal[T](left, right)
     MT
 
-    ast = MilkTea::Parser.parse(source)
-    function_decl = ast.declarations.first
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
 
-    assert_instance_of MilkTea::AST::FunctionDef, function_decl
-    assert_equal(
-      [
-        [:interface, "Named"],
-        [:interface, "Tagged"],
-        [:hashes, nil],
-        [:equates, nil],
-      ],
-      function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] },
-    )
+    assert_match(/equates constraint has been removed/, error.message)
+    assert_match(/equal\[T\]/, error.message)
   end
 
   def test_parses_module_scope_vars_with_and_without_initializer

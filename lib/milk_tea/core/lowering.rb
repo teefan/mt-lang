@@ -7828,92 +7828,73 @@ module MilkTea
       end
 
       def resolve_explicit_default_binding(target_type, context:)
-        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
-        method_entry_receiver_type = target_type
-        method_entry = @method_definitions[[target_type, "default"]]
-        unless method_entry || dispatch_receiver_type == target_type
-          method_entry_receiver_type = dispatch_receiver_type
-          method_entry = @method_definitions[[dispatch_receiver_type, "default"]]
+        requirement_message = "#{context} requires associated function #{target_type}.default()"
+        resolve_explicit_associated_binding(target_type, "default", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          raise LoweringError, "#{context} requires #{target_type}.default() to take 0 arguments" unless method_binding.type.params.empty?
+          unless method_binding.type.return_type == target_type
+            raise LoweringError, "#{context} requires #{target_type}.default() to return #{target_type}, got #{method_binding.type.return_type}"
+          end
         end
-        return nil unless method_entry
-
-        method_analysis, method_ast = method_entry
-        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
-        raise LoweringError, "#{context} requires associated function #{target_type}.default()" unless method_binding.type.receiver_type.nil?
-
-        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
-        raise LoweringError, "#{context} requires #{target_type}.default() to take 0 arguments" unless method_binding.type.params.empty?
-        unless method_binding.type.return_type == target_type
-          raise LoweringError, "#{context} requires #{target_type}.default() to return #{target_type}, got #{method_binding.type.return_type}"
-        end
-
-        callee_name = if method_binding.external
-                        method_binding.name
-                      else
-                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
-                      end
-        ExplicitDefaultBinding.new(binding: method_binding, callee_name:)
       end
 
       def resolve_explicit_hash_binding(target_type, context:)
-        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
-        method_entry_receiver_type = target_type
-        method_entry = @method_definitions[[target_type, "hash"]]
-        unless method_entry || dispatch_receiver_type == target_type
-          method_entry_receiver_type = dispatch_receiver_type
-          method_entry = @method_definitions[[dispatch_receiver_type, "hash"]]
+        requirement_message = "#{context} requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
+        resolve_explicit_associated_binding(target_type, "hash", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          unless method_binding.type.params.map(&:type) == [const_pointer_to(target_type)]
+            raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
+          end
+          unless method_binding.type.return_type == @types.fetch("uint")
+            raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}"
+          end
         end
-        return nil unless method_entry
-
-        method_analysis, method_ast = method_entry
-        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
-        raise LoweringError, "#{context} requires associated function #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint" unless method_binding.type.receiver_type.nil?
-
-        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
-        unless method_binding.type.params.map(&:type) == [const_pointer_to(target_type)]
-          raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint"
-        end
-        unless method_binding.type.return_type == @types.fetch("uint")
-          raise LoweringError, "#{context} requires #{target_type}.hash(value: const_ptr[#{target_type}]) -> uint, got #{method_binding.type.return_type}"
-        end
-
-        callee_name = if method_binding.external
-                        method_binding.name
-                      else
-                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
-                      end
-        ExplicitHashBinding.new(binding: method_binding, callee_name:)
       end
 
       def resolve_explicit_equal_binding(target_type, context:)
+        requirement_message = "#{context} requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
+        resolve_explicit_associated_binding(target_type, "equal", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
+          unless method_binding.type.params.map(&:type) == expected_param_types
+            raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
+          end
+          unless method_binding.type.return_type == @types.fetch("bool")
+            raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}"
+          end
+        end
+      end
+
+      def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
         dispatch_receiver_type = method_dispatch_receiver_type(target_type)
         method_entry_receiver_type = target_type
-        method_entry = @method_definitions[[target_type, "equal"]]
+        method_entry = @method_definitions[[target_type, method_name]]
         unless method_entry || dispatch_receiver_type == target_type
           method_entry_receiver_type = dispatch_receiver_type
-          method_entry = @method_definitions[[dispatch_receiver_type, "equal"]]
+          method_entry = @method_definitions[[dispatch_receiver_type, method_name]]
         end
         return nil unless method_entry
 
         method_analysis, method_ast = method_entry
         method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
-        raise LoweringError, "#{context} requires associated function #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool" unless method_binding.type.receiver_type.nil?
+        raise LoweringError, requirement_message unless method_binding.type.receiver_type.nil?
 
         method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
-        expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
-        unless method_binding.type.params.map(&:type) == expected_param_types
-          raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool"
-        end
-        unless method_binding.type.return_type == @types.fetch("bool")
-          raise LoweringError, "#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method_binding.type.return_type}"
-        end
+        yield method_binding, method_analysis, method_entry_receiver_type
 
         callee_name = if method_binding.external
                         method_binding.name
                       else
                         function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
                       end
-        ExplicitEqualBinding.new(binding: method_binding, callee_name:)
+
+        case method_name
+        when "default"
+          ExplicitDefaultBinding.new(binding: method_binding, callee_name:)
+        when "hash"
+          ExplicitHashBinding.new(binding: method_binding, callee_name:)
+        when "equal"
+          ExplicitEqualBinding.new(binding: method_binding, callee_name:)
+        else
+          raise LoweringError, "unsupported associated hook #{method_name}"
+        end
       end
 
       def resolve_specialization_type_arguments(expression)
@@ -8151,18 +8132,6 @@ module MilkTea
 
             raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
           end
-
-          if constraints.requires_hash
-            unless resolve_explicit_hash_binding(actual_type, context: "hashes constraint on type parameter #{name} for function #{binding.name}")
-              raise LoweringError, "type #{actual_type} does not satisfy hashes constraint for function #{binding.name}"
-            end
-          end
-
-          next unless constraints.requires_equality
-
-          next if resolve_explicit_equal_binding(actual_type, context: "equates constraint on type parameter #{name} for function #{binding.name}")
-
-          raise LoweringError, "type #{actual_type} does not satisfy equates constraint for function #{binding.name}"
         end
       end
 

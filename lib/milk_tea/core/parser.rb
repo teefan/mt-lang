@@ -814,11 +814,11 @@ module MilkTea
       end
 
       if match(:hashes)
-        return [AST::TypeParamConstraint.new(kind: :hashes), false]
+        raise error(previous, "hashes constraint has been removed; remove 'hashes' and rely on hash[T](...) to require T.hash(...)")
       end
 
       if match(:equates)
-        return [AST::TypeParamConstraint.new(kind: :equates), false]
+        raise error(previous, "equates constraint has been removed; remove 'equates' and rely on equal[T](...) to require T.equal(...)")
       end
 
       return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true] if interface_constraint_mode
