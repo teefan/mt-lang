@@ -1,5 +1,6 @@
 import std.counter as counter
 import std.linked_map as linked_map
+import std.linked_map_view as linked_map_view
 import std.maybe as maybe
 
 
@@ -9,7 +10,7 @@ public struct Entry[T]:
 
 
 public struct Entries[T]:
-    values: counter.Entries[T]
+    values: linked_map_view.SnapshotEntries[T, ptr_uint]
 
 
 public struct MultiSet[T]:
@@ -60,11 +61,96 @@ methods MultiSet[T]:
 
 
     public function entries() -> Entries[T]:
-        return Entries[T](values = this.values.entries())
+        return Entries[T](values = linked_map_view.SnapshotEntries[T, ptr_uint].create(this.values.values.entries()))
 
 
     public function iter() -> Entries[T]:
         return this.entries()
+
+
+    public function is_subset(other: MultiSet[T]) -> bool:
+        if this.total_count() > other.total_count():
+            return false
+
+        for entry in this:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                if entry.count > other.count(current):
+                    return false
+
+        return true
+
+
+    public function union_with(other: MultiSet[T]) -> MultiSet[T]:
+        var result = MultiSet[T].with_capacity(this.distinct_len() + other.distinct_len())
+
+        for entry in this:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                var count = entry.count
+                let other_count = other.count(current)
+                if other_count > count:
+                    count = other_count
+                result.add(current, count)
+
+        for entry in other:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                if not result.contains(current):
+                    result.add(current, entry.count)
+
+        return result
+
+
+    public function intersection(other: MultiSet[T]) -> MultiSet[T]:
+        var result = MultiSet[T].with_capacity(this.distinct_len())
+
+        for entry in this:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                let other_count = other.count(current)
+                if other_count != 0:
+                    var count = entry.count
+                    if other_count < count:
+                        count = other_count
+                    result.add(current, count)
+
+        return result
+
+
+    public function difference(other: MultiSet[T]) -> MultiSet[T]:
+        var result = MultiSet[T].with_capacity(this.distinct_len())
+
+        for entry in this:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                let other_count = other.count(current)
+                if entry.count > other_count:
+                    result.add(current, entry.count - other_count)
+
+        return result
+
+
+    public function symmetric_difference(other: MultiSet[T]) -> MultiSet[T]:
+        var result = MultiSet[T].with_capacity(this.distinct_len() + other.distinct_len())
+
+        for entry in this:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                let other_count = other.count(current)
+                if entry.count != other_count:
+                    if entry.count > other_count:
+                        result.add(current, entry.count - other_count)
+                    else:
+                        result.add(current, other_count - entry.count)
+
+        for entry in other:
+            unsafe:
+                let current = read(ptr[T]<-entry.value)
+                if not this.contains(current):
+                    result.add(current, entry.count)
+
+        return result
 
 
     public editable function clear() -> void:
@@ -109,4 +195,4 @@ methods Entries[T]:
 
     public function current() -> Entry[T]:
         let entry = this.values.current()
-        return Entry[T](value = entry.key, count = entry.count)
+        return Entry[T](value = entry.key, count = entry.value)
