@@ -3601,6 +3601,34 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_lint_command_fix_applies_to_multiple_expanded_paths_with_trailing_fix_flag
+    Dir.mktmpdir("milk-tea-cli-lint-multi-fix") do |dir|
+      first_path = File.join(dir, "a.mt")
+      second_path = File.join(dir, "b.mt")
+      File.write(first_path, <<~MT)
+        function main() -> int:
+            var first = 1
+            return first
+      MT
+      File.write(second_path, <<~MT)
+        function helper() -> int:
+            var second = 2
+            return second
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", first_path, second_path, "--fix"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/fixed .*a\.mt/, out.string)
+      assert_match(/fixed .*b\.mt/, out.string)
+      assert_includes File.read(first_path), "let first = 1"
+      assert_includes File.read(second_path), "let second = 2"
+    end
+  end
+
   def test_lint_command_output_format_json
     Dir.mktmpdir("milk-tea-cli-lint-json") do |dir|
       path = File.join(dir, "sample.mt")

@@ -63,8 +63,7 @@ methods String:
             else:
                 new_capacity *= 2
 
-        let resized = heap.resize[ubyte](this.data, new_capacity)
-        if resized == null:
+        let resized = heap.resize[ubyte](this.data, new_capacity) else:
             fatal(c"string.reserve out of memory")
 
         this.data = resized
@@ -76,8 +75,7 @@ methods String:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"string.push_byte missing storage")
 
         unsafe:
@@ -105,8 +103,7 @@ methods String:
 
         this.reserve(new_len)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"string.append missing storage")
 
         unsafe:

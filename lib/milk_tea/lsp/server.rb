@@ -1118,6 +1118,100 @@ module MilkTea
               }
             }
 
+          when 'redundant-read-cast'
+            next if source_line.empty?
+
+            cast_text = source_line[diag_start_char...diag_end_char].to_s
+            next if cast_text.empty?
+
+            replacement = cast_text[/\A\s*(?:ptr|const_ptr|ref)\[[^\)]*\]<-\s*([A-Za-z_][A-Za-z0-9_]*)\s*\z/, 1]
+            next unless replacement
+
+            actions << {
+              title: 'Remove redundant read cast',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: diag_start_char },
+                      end:   { line: diag_line - 1, character: diag_end_char }
+                    },
+                    newText: replacement
+                  }]
+                }
+              }
+            }
+
+          when 'redundant-read-release-temp'
+            fix = Linter.build_read_release_temp_fix(content.lines, diag_line - 1)
+            next unless fix
+
+            actions << {
+              title: 'Inline read(...).release()',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: fix[:start_line_idx], character: 0 },
+                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
+                    },
+                    newText: fix[:new_text]
+                  }]
+                }
+              }
+            }
+
+          when 'prefer-let-else'
+            fix = Linter.build_prefer_let_else_fix(content.lines, diag_line - 1)
+            next unless fix
+
+            actions << {
+              title: 'Rewrite as let-else',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: fix[:start_line_idx], character: 0 },
+                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
+                    },
+                    newText: fix[:new_text]
+                  }]
+                }
+              }
+            }
+
+          when 'directional-ffi-arg'
+            next if source_line.empty?
+
+            argument_text = source_line[diag_start_char...diag_end_char].to_s
+            next if argument_text.empty?
+
+            replacement = Linter.rewrite_directional_ffi_argument(argument_text)
+            next if replacement == argument_text
+
+            actions << {
+              title: 'Pass lvalue directly',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: diag_start_char },
+                      end:   { line: diag_line - 1, character: diag_end_char }
+                    },
+                    newText: replacement
+                  }]
+                }
+              }
+            }
+
           when 'shadow'
             # Offer to rename to _ prefix; editor will invoke textDocument/rename.
             # This action just annotates — the actual rename is a client-side refactor.

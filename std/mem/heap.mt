@@ -45,8 +45,7 @@ public function must_alloc_bytes(size_bytes: ptr_uint) -> ptr[void]:
     if size_bytes == 0:
         fatal(c"heap.must_alloc_bytes requires size > 0")
 
-    let memory = alloc_bytes(size_bytes)
-    if memory == null:
+    let memory = alloc_bytes(size_bytes) else:
         fatal(c"heap.must_alloc_bytes out of memory")
 
     return unsafe: ptr[void]<-memory
@@ -76,8 +75,7 @@ public function must_alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_ui
     if normalized_alignment == 0:
         fatal(c"heap.must_alloc_bytes_aligned requires a power-of-two alignment")
 
-    let memory = alloc_bytes_aligned(size_bytes, normalized_alignment)
-    if memory == null:
+    let memory = alloc_bytes_aligned(size_bytes, normalized_alignment) else:
         fatal(c"heap.must_alloc_bytes_aligned out of memory")
 
     return unsafe: ptr[void]<-memory
@@ -97,8 +95,7 @@ public function must_alloc_zeroed_bytes(count: ptr_uint, element_size_bytes: ptr
     if count == 0 or element_size_bytes == 0:
         fatal(c"heap.must_alloc_zeroed_bytes requires count > 0 and element size > 0")
 
-    let memory = alloc_zeroed_bytes(count, element_size_bytes)
-    if memory == null:
+    let memory = alloc_zeroed_bytes(count, element_size_bytes) else:
         fatal(c"heap.must_alloc_zeroed_bytes out of memory")
 
     return unsafe: ptr[void]<-memory
@@ -131,8 +128,7 @@ public function must_resize_bytes(memory: ptr[void]?, size_bytes: ptr_uint) -> p
     if size_bytes == 0:
         fatal(c"heap.must_resize_bytes requires size > 0")
 
-    let resized = resize_bytes(memory, size_bytes)
-    if resized == null:
+    let resized = resize_bytes(memory, size_bytes) else:
         fatal(c"heap.must_resize_bytes out of memory")
 
     return unsafe: ptr[void]<-resized

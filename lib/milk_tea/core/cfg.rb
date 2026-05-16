@@ -277,7 +277,18 @@ module MilkTea
         when AST::ExpressionStmt
           reads = read_identifiers(stmt.expression)
           writes, writes_info = write_targets_from_expression(stmt.expression, line: stmt.line)
-          add_linear_node(:expression, stmt, next_id, reads:, writes:, writes_info:)
+          if fatal_expression?(stmt.expression)
+            @graph.add_node(
+              kind: :fatal,
+              statement: stmt,
+              line: stmt.line,
+              reads:,
+              writes:,
+              writes_info:
+            )
+          else
+            add_linear_node(:expression, stmt, next_id, reads:, writes:, writes_info:)
+          end
         when AST::StaticAssert
           add_linear_node(:static_assert, stmt, next_id, reads: read_identifiers(stmt.condition))
         when AST::PassStmt
@@ -297,6 +308,10 @@ module MilkTea
         node_id = @graph.add_node(kind:, statement: stmt, line: stmt.respond_to?(:line) ? stmt.line : nil, reads:, writes:, writes_info:)
         @graph.add_edge(node_id, next_id)
         node_id
+      end
+
+      def fatal_expression?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "fatal"
       end
 
       def assignment_target_reads(target, operator)

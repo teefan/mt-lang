@@ -42,8 +42,7 @@ struct EntryMetadata:
 
 
 public function open(path: str) -> status.Status[Reader, Error]:
-    let file = stdio.open(path, "rb")
-    if file == null:
+    let file = stdio.open(path, "rb") else:
         return status.Status[Reader, Error].err(error= Error.open_failed)
 
     var header = zero[array[ubyte, 28]]

@@ -18,8 +18,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
     if normalized_alignment == 0:
         fatal(c"arena.create_aligned requires a power-of-two alignment")
 
-    let memory = heap.alloc_bytes_aligned(capacity_bytes, normalized_alignment)
-    if memory == null:
+    let memory = heap.alloc_bytes_aligned(capacity_bytes, normalized_alignment) else:
         if capacity_bytes != 0:
             fatal(c"arena.create_aligned out of memory")
 
@@ -67,8 +66,7 @@ methods Arena:
 
 
     public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
-        let backing = this.memory
-        if backing == null:
+        let backing = this.memory else:
             return null
         if alignment == 0:
             return null
@@ -109,8 +107,7 @@ methods Arena:
         if text.len == heap.ptr_uint_max():
             return null
 
-        let memory = this.alloc_bytes(text.len + 1)
-        if memory == null:
+        let memory = this.alloc_bytes(text.len + 1) else:
             return null
 
         unsafe:
@@ -124,8 +121,7 @@ methods Arena:
         if text.len == heap.ptr_uint_max():
             fatal(c"arena.to_cstr size overflow")
 
-        let memory = this.alloc_bytes(text.len + 1)
-        if memory == null:
+        let memory = this.alloc_bytes(text.len + 1) else:
             fatal(c"arena.to_cstr out of memory")
 
         unsafe:

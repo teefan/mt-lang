@@ -26,7 +26,7 @@ module MilkTea
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :editable_receiver_expression_ids)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :editable_receiver_expression_ids, :binding_types)
     class FlowScope
       def initialize = (@bindings = {})
       def [](key) = @bindings[key]
@@ -166,6 +166,7 @@ module MilkTea
         @active_local_completion_stack = []
         @next_binding_id = 1
         @binding_name_by_id = {}
+        @binding_type_by_id = {}
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
         @mutating_argument_identifier_ids = {}
@@ -1482,6 +1483,7 @@ module MilkTea
           declaration_binding_ids: declaration_binding_ids,
           mutating_argument_identifier_ids: {},
           editable_receiver_expression_ids: {},
+          binding_types: {},
         )
       end
 
@@ -6347,6 +6349,7 @@ module MilkTea
       def value_binding(name:, type:, mutable:, kind:, flow_type: nil, const_value: nil, id: nil)
         id ||= allocate_binding_id
         @binding_name_by_id[id] = name
+        @binding_type_by_id[id] = flow_type == type ? type : (flow_type || type)
         ValueBinding.new(id:, name:, storage_type: type, flow_type: flow_type == type ? nil : flow_type, mutable:, kind:, const_value:)
       end
 
@@ -6356,6 +6359,7 @@ module MilkTea
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
           mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
           editable_receiver_expression_ids: @editable_receiver_expression_ids.dup.freeze,
+          binding_types: @binding_type_by_id.dup.freeze,
         )
       end
 

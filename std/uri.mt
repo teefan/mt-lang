@@ -34,7 +34,7 @@ public function path_from_file_uri(uri: str) -> maybe.Maybe[string.String]:
                 maybe.Maybe.some as view_payload:
                     let decoded_path = view_payload.value
                     if leading_slash_drive_path(decoded_path):
-                        var normalized = string.String.from_str(decoded_path.slice(1, decoded_path.len - 1))
+                        let normalized = string.String.from_str(decoded_path.slice(1, decoded_path.len - 1))
                         decoded.release()
                         return maybe.Maybe[string.String].some(value= normalized)
 

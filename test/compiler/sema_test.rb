@@ -846,6 +846,72 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("read_handle")
   end
 
+  def test_type_checks_nullable_local_guard_clause_flow_narrowing
+    source = <<~MT
+      # module demo.null_flow
+
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function read_handle(handle: ptr[int]?) -> int:
+          let value = maybe_handle(handle)
+          if value == null:
+              return 0
+          unsafe:
+              return read(value)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_handle")
+  end
+
+  def test_type_checks_nullable_vec_get_guard_clause_flow_narrowing
+    source = <<~MT
+      # module demo.null_flow
+
+      import std.vec as vec
+
+      function read_values() -> int:
+          var values = vec.Vec[int].create()
+          defer values.release()
+          values.push(7)
+
+          let value_ptr = values.get(0)
+          if value_ptr == null:
+              return 0
+          unsafe:
+              return read(value_ptr)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_values")
+  end
+
+  def test_type_checks_nullable_vec_get_fatal_guard_clause_flow_narrowing
+    source = <<~MT
+      # module demo.null_flow
+
+      import std.vec as vec
+
+      function read_values() -> int:
+          var values = vec.Vec[int].create()
+          defer values.release()
+          values.push(7)
+
+          let value_ptr = values.get(0)
+          if value_ptr == null:
+              fatal("missing value")
+          unsafe:
+              return read(value_ptr)
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_values")
+  end
+
   def test_type_checks_let_else_status_success_binding
     source = <<~MT
       # module demo.status_flow

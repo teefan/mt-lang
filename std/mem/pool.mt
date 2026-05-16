@@ -43,12 +43,10 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
         fatal(c"pool.create size overflow")
 
     let total_size = slot_size_bytes * slot_count
-    let memory = heap.alloc_bytes_aligned(total_size, normalized_alignment)
-    if memory == null:
+    let memory = heap.alloc_bytes_aligned(total_size, normalized_alignment) else:
         fatal(c"pool.create_aligned out of memory")
 
-    let occupancy = heap.alloc_zeroed[bool](slot_count)
-    if occupancy == null:
+    let occupancy = heap.alloc_zeroed[bool](slot_count) else:
         heap.release_bytes(memory)
         fatal(c"pool.create occupancy out of memory")
 
@@ -82,11 +80,9 @@ methods Pool:
 
 
     public editable function alloc_bytes() -> ptr[ubyte]?:
-        let memory = this.memory
-        if memory == null:
+        let memory = this.memory else:
             return null
-        let occupancy = this.occupancy
-        if occupancy == null:
+        let occupancy = this.occupancy else:
             return null
 
         var index: ptr_uint = 0
@@ -126,11 +122,9 @@ methods Pool:
         if slot == null:
             return false
 
-        let memory = this.memory
-        if memory == null:
+        let memory = this.memory else:
             return false
-        let occupancy = this.occupancy
-        if occupancy == null:
+        let occupancy = this.occupancy else:
             return false
 
         var index: ptr_uint = 0

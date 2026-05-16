@@ -110,8 +110,7 @@ function total_storage_bytes(command: span[str], cwd: maybe.Maybe[str], env: spa
 
 function write_environment_value(space: ref[arena.Arena], entry: EnvironmentEntry) -> cstr:
     let size_bytes = entry.name.len + entry.value.len + 2
-    let memory = space.alloc_bytes(size_bytes)
-    if memory == null:
+    let memory = space.alloc_bytes(size_bytes) else:
         fatal(c"process env storage exhausted")
 
     unsafe:
@@ -132,8 +131,7 @@ function prepare_command(command: span[str], cwd: maybe.Maybe[str], env: span[En
     let total_bytes = total_storage_bytes(command, cwd, env)
     var storage = arena.create_aligned(total_bytes, ptr_uint<-align_of(ptr[char]))
 
-    let allocated_args = storage.alloc[ptr[char]](command.len + 1)
-    if allocated_args == null:
+    let allocated_args = storage.alloc[ptr[char]](command.len + 1) else:
         fatal(c"process args storage exhausted")
 
     let args_ptr = unsafe: ptr[ptr[char]]<-allocated_args
@@ -141,8 +139,7 @@ function prepare_command(command: span[str], cwd: maybe.Maybe[str], env: span[En
     var env_ptr: ptr[ptr[char]]? = null
     var env_storage: ptr[ptr[char]]? = null
     if env.len != 0:
-        let allocated = storage.alloc[ptr[char]](env.len + 1)
-        if allocated == null:
+        let allocated = storage.alloc[ptr[char]](env.len + 1) else:
             fatal(c"process env pointer storage exhausted")
 
         let allocated_ptr = unsafe: ptr[ptr[char]]<-allocated
@@ -158,8 +155,7 @@ function prepare_command(command: span[str], cwd: maybe.Maybe[str], env: span[En
     unsafe: clear_pointer_slot(args_ptr + command.len)
 
     if env.len != 0:
-        let allocated_ptr = env_storage
-        if allocated_ptr == null:
+        let allocated_ptr = env_storage else:
             fatal(c"process env pointer storage missing")
 
         let env_storage_ptr = unsafe: ptr[ptr[char]]<-allocated_ptr

@@ -133,8 +133,7 @@ function work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
 
 
 function sleep_timer_close(handle: ptr[libuv.uv_handle_t]) -> void:
-    let state_raw = libuv.handle_get_data(handle)
-    if state_raw == null:
+    let state_raw = libuv.handle_get_data(handle) else:
         unsafe: heap.release_bytes(ptr[void]<-handle_as_timer(handle))
         return
 
@@ -153,8 +152,7 @@ function sleep_timer_close(handle: ptr[libuv.uv_handle_t]) -> void:
 
 function sleep_timer_fire(timer: ptr[libuv.uv_timer_t]) -> void:
     let handle = timer_as_handle(timer)
-    let state_raw = libuv.handle_get_data(handle)
-    if state_raw == null:
+    let state_raw = libuv.handle_get_data(handle) else:
         return
 
     let state = unsafe: ptr[SleepState]<-state_raw
@@ -250,8 +248,7 @@ public function work_ready[T](frame: ptr[void]) -> bool:
 
 
 function work_execute(req: ptr[libuv.uv_work_t]) -> void:
-    let state_raw = libuv.req_get_data(work_as_req(req))
-    if state_raw == null:
+    let state_raw = libuv.req_get_data(work_as_req(req)) else:
         return
 
     let state = work_state_base(state_raw)
@@ -261,8 +258,7 @@ function work_execute(req: ptr[libuv.uv_work_t]) -> void:
 
 
 function work_complete(req: ptr[libuv.uv_work_t], status_code: int) -> void:
-    let state_raw = libuv.req_get_data(work_as_req(req))
-    if state_raw == null:
+    let state_raw = libuv.req_get_data(work_as_req(req)) else:
         unsafe: heap.release_bytes(ptr[void]<-req)
         return
 
