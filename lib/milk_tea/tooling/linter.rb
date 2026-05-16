@@ -2112,13 +2112,13 @@ module MilkTea
       return if declaration.type || declaration.else_binding || declaration.else_body || declaration.recovered_else
       return unless declaration.value && declaration.name
       return if ignored_binding_name?(declaration.name)
-      return unless nullable_binding_declaration?(declaration)
       return unless if_stmt.is_a?(AST::IfStmt)
       return unless if_stmt.else_body.nil? && if_stmt.branches.length == 1
 
       branch = if_stmt.branches.first
       identifier = null_equality_identifier(branch.condition)
       return unless identifier&.name == declaration.name
+      return unless nullable_binding_declaration?(declaration)
       return unless CFG::Termination.block_always_terminates?(branch.body, ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution)
 
       { declaration:, if_stmt:, branch: }
@@ -2136,7 +2136,20 @@ module MilkTea
 
     def nullable_binding_declaration?(statement)
       binding_type = binding_type_for_declaration(statement)
-      binding_type.is_a?(Types::Nullable)
+      return binding_type.is_a?(Types::Nullable) if binding_type
+
+      nullable_initializer_without_binding_type?(statement.value)
+    end
+
+    def nullable_initializer_without_binding_type?(expression)
+      case expression
+      when AST::Identifier, AST::MemberAccess, AST::IndexAccess, AST::Call, AST::IfExpr, AST::MatchExpr
+        true
+      when AST::AwaitExpr, AST::UnsafeExpr
+        nullable_initializer_without_binding_type?(expression.expression)
+      else
+        false
+      end
     end
 
     def binding_type_for_declaration(statement)

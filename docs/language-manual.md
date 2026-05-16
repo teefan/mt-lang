@@ -710,6 +710,12 @@ The current shipped collection modules in `std` are:
 - `std.ordered_map.OrderedMap[K, V]`: AVL-backed ordered map keyed by the canonical `order[K](...)` hook, with `create`, `len`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
 - `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
 - `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
+- `std.linked_map.LinkedMap[K, V]`: insertion-ordered hash map keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
+- `std.linked_set.LinkedSet[T]`: insertion-ordered hash set built on `LinkedMap[T, bool]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `contains`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `clear`, `release`, `reserve`, `insert`, and `remove`.
+- `std.counter.Counter[T]`: insertion-ordered frequency table built on `LinkedMap[T, ptr_uint]`, with `create`, `with_capacity`, `len`, `total_count`, `capacity`, `is_empty`, `count`, `contains`, `keys`, `counts`, `entries`, `iter`, `clear`, `release`, `reserve`, `add`, `increment`, `remove_one`, and `remove`.
+- `std.multiset.MultiSet[T]`: insertion-ordered bag built on `Counter[T]`, with `create`, `with_capacity`, `len`, `total_count`, `distinct_len`, `capacity`, `is_empty`, `count`, `contains`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `insert`, `add`, `remove_one`, and `remove_all`.
+- `std.queue.Queue[T]`: FIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `enqueue`, and `dequeue`.
+- `std.stack.Stack[T]`: LIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `push`, and `pop`.
 
 Iterator notes for those collection modules:
 
@@ -721,6 +727,15 @@ Iterator notes for those collection modules:
 - `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
 - `Map.values()` returns mutable value pointers during iteration.
 - `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.
+- `LinkedMap.keys()` and `LinkedSet.iter()` use the pointer-returning iterator form with read-only key pointers in insertion order.
+- `LinkedMap.values()` returns mutable value pointers in insertion order.
+- `LinkedMap.entries()` and `LinkedMap.iter()` use the `next() -> bool` plus `current()` iterator form in insertion order.
+- `Counter.keys()` uses the pointer-returning iterator form with read-only key pointers in first-seen order.
+- `Counter.counts()` uses the `next() -> bool` plus `current()` iterator form and yields copied `ptr_uint` counts so totals cannot be mutated out of sync.
+- `Counter.entries()` and `Counter.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ key, count }` snapshots.
+- `MultiSet.values()` uses the pointer-returning iterator form with read-only value pointers in first-seen order.
+- `MultiSet.entries()` and `MultiSet.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ value, count }` snapshots.
+- `Queue.iter()` and `Stack.iter()` use the same mutable pointer-returning iterator form as `Deque.iter()`, and `peek()` returns a mutable element pointer because changing an element value does not violate FIFO/LIFO ordering invariants.
 
 ## 8. Strings, C Strings, And Format Strings
 
