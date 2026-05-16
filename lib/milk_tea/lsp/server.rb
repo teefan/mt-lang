@@ -2813,8 +2813,12 @@ module MilkTea
         scopes = @generic_function_lexical_binding_scope_cache ||= {}
         cached = scopes[analysis.object_id]
         unless cached
-          cached = Array(analysis.ast&.declarations).flat_map do |decl|
-            generic_function_lexical_scopes_for_declaration(decl)
+          decls = Array(analysis.ast&.declarations)
+          cached = decls.each_with_index.flat_map do |decl, index|
+            generic_function_lexical_scopes_for_declaration(
+              decl,
+              end_line: declaration_scope_end_line(decls, index),
+            )
           end
           scopes[analysis.object_id] = cached
         end
@@ -2822,27 +2826,55 @@ module MilkTea
         cached
       end
 
-      def generic_function_lexical_scopes_for_declaration(decl)
+      def generic_function_lexical_scopes_for_declaration(decl, end_line: Float::INFINITY)
+        if decl.is_a?(AST::MethodsBlock)
+          receiver_type_params = generic_type_parameter_names_for_methods_block(decl)
+          methods = Array(decl.methods)
+          return methods.each_with_index.flat_map do |method, index|
+            generic_method_lexical_scopes(
+              method,
+              receiver_type_params: receiver_type_params,
+              end_line: nested_declaration_scope_end_line(methods, index, fallback_end_line: end_line),
+            )
+          end
+        end
+
         return [] unless generic_function_declaration?(decl)
 
-        function_end_line = generic_statement_list_end_line(decl.body, decl.line)
+        generic_callable_lexical_scopes(decl, end_line: generic_statement_list_end_line(decl.body, decl.line))
+      end
+
+      def generic_method_lexical_scopes(method, receiver_type_params:, end_line:)
+        return [] unless method.respond_to?(:body) && !method.body.nil?
+        return [] if receiver_type_params.empty? && Array(method.type_params).empty?
+
+        generic_callable_lexical_scopes(
+          method,
+          end_line:,
+          include_receiver: method.respond_to?(:kind) && method.kind != :static,
+        )
+      end
+
+      def generic_callable_lexical_scopes(decl, end_line:, include_receiver: false)
         scopes = []
-        current_bindings = Array(decl.params).each_with_object({}) do |param, bindings|
+        current_bindings = {}
+        current_bindings['this'] = :param if include_receiver
+        Array(decl.params).each do |param|
           next unless param.respond_to?(:name)
 
-          bindings[param.name] = :param
+          current_bindings[param.name] = :param
         end
 
         unless current_bindings.empty?
           scopes << {
             start_line: decl.line,
             start_column: 0,
-            end_line: function_end_line,
+            end_line: end_line,
             bindings: current_bindings.dup,
           }
         end
 
-        collect_generic_function_local_scopes(Array(decl.body), current_bindings, function_end_line, scopes)
+        collect_generic_function_local_scopes(Array(decl.body), current_bindings, end_line, scopes)
 
         scopes
       end
@@ -3211,16 +3243,11 @@ module MilkTea
         cached = scopes[analysis.object_id]
         unless cached
           decls = Array(analysis.ast&.declarations)
-          cached = decls.each_with_index.filter_map do |decl, index|
-            names = generic_type_parameter_names_for_declaration(decl)
-            next if names.empty? || decl.line.nil?
-
-            next_decl = decls[(index + 1)..]&.find { |candidate| candidate.respond_to?(:line) && !candidate.line.nil? }
-            {
-              start_line: decl.line,
-              end_line: next_decl ? next_decl.line - 1 : Float::INFINITY,
-              names: names,
-            }
+          cached = decls.each_with_index.flat_map do |decl, index|
+            type_parameter_scopes_for_declaration(
+              decl,
+              end_line: declaration_scope_end_line(decls, index),
+            )
           end
           scopes[analysis.object_id] = cached
         end
@@ -3232,10 +3259,64 @@ module MilkTea
         []
       end
 
+      def type_parameter_scopes_for_declaration(decl, end_line: Float::INFINITY)
+        if decl.is_a?(AST::MethodsBlock)
+          receiver_names = generic_type_parameter_names_for_methods_block(decl)
+          methods = Array(decl.methods)
+          return methods.each_with_index.filter_map do |method, index|
+            names = receiver_names + generic_type_parameter_names_for_declaration(method)
+            next if names.empty? || method.line.nil?
+
+            {
+              start_line: method.line,
+              end_line: nested_declaration_scope_end_line(methods, index, fallback_end_line: end_line),
+              names: names.uniq,
+            }
+          end
+        end
+
+        names = generic_type_parameter_names_for_declaration(decl)
+        return [] if names.empty? || decl.line.nil?
+
+        [{
+          start_line: decl.line,
+          end_line: end_line,
+          names: names,
+        }]
+      end
+
       def generic_type_parameter_names_for_declaration(decl)
         return [] unless decl.respond_to?(:type_params)
 
         Array(decl.type_params).filter_map { |type_param| type_param.respond_to?(:name) ? type_param.name : nil }
+      end
+
+      def generic_type_parameter_names_for_methods_block(decl)
+        return [] unless decl.respond_to?(:type_name)
+
+        type_ref = decl.type_name
+        return [] unless type_ref.is_a?(AST::TypeRef)
+
+        Array(type_ref.arguments).filter_map do |argument|
+          simple_type_parameter_name_from_type_argument(argument)
+        end
+      end
+
+      def simple_type_parameter_name_from_type_argument(argument)
+        value = argument.respond_to?(:value) ? argument.value : nil
+        return nil unless value.is_a?(AST::TypeRef)
+        return nil unless value.arguments.empty? && !value.nullable && value.name.parts.length == 1
+
+        value.name.parts.first
+      end
+
+      def declaration_scope_end_line(decls, index)
+        nested_declaration_scope_end_line(decls, index, fallback_end_line: Float::INFINITY)
+      end
+
+      def nested_declaration_scope_end_line(decls, index, fallback_end_line:)
+        next_decl = decls[(index + 1)..]&.find { |candidate| candidate.respond_to?(:line) && !candidate.line.nil? }
+        next_decl ? next_decl.line - 1 : fallback_end_line
       end
 
       def matching_closer_index(tokens, opener_index, opener_type, closer_type)
