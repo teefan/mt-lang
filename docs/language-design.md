@@ -84,6 +84,7 @@ If a new feature introduces a second ordinary way to express the same concept, t
 - A colon starts a block.
 - Newlines terminate statements.
 - Newlines inside `()` and `[]` do not terminate statements.
+- A physical line that ends with a binary operator also continues onto the next line.
 - Tabs are illegal in source files; indentation is 4 spaces.
 - Trailing commas are allowed in multiline call arguments and aggregate literals.
 - Comments use `#`.
@@ -135,6 +136,8 @@ function main() -> int:
 	return 0
 ```
 
+For long expressions, the preferred style is the Python-like one: wrap inside delimiters so the continuation is structurally obvious. Operator-led continuation is supported, but it should remain the secondary style for cases where it is already clear.
+
 ## Syntax and readability rules
 
 Milk Tea should use a deliberately small punctuation set. The only everyday symbolic forms are:
@@ -178,8 +181,8 @@ flags DrawFlags: uint
 - `var` creates a mutable local binding.
 - `const` defines a compile-time constant.
 - A typed local declaration without `= ...` zero-initializes that local. This is the normal local-storage form and is only valid for types that `zero[T]` already supports. Use `zero[T]` or `Type()` only when you need a value expression.
-- Use `zero[T]` when you want raw zero-initialization. Use `default[T]` when you want a semantic default value: it calls an accessible `T.default()` associated function when present, otherwise it falls back to the same raw initialization contract as `zero[T]`.
-- When a generic API must require an explicit semantic default and reject raw zero fallback, constrain the type parameter with `defaults` and call `default[T]` inside that API.
+- Use `zero[T]` when you want raw zero-initialization. Use `default[T]` when you want a semantic default value supplied by an accessible `T.default()` associated function.
+- When a generic API depends on that semantic default, call `default[T]` directly in the generic body and document the requirement in the API prose or naming.
 - `init` is not special syntax. Constructor-like setup remains an ordinary static method naming convention such as `Type.init(...)`.
 - For pointer-like absence, use a nullable type plus `null`. `zero[ptr[T]]` remains available for low-level zero-initialized pointer storage, but the compiler rejects it when the surrounding expected type is already a nullable pointer-like type. In those contexts, write `null`.
 
@@ -324,12 +327,7 @@ function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
 	value.draw()
 ```
 
-`defaults` is a separate constraint kind for generic APIs that need an actual associated default provider instead of accepting `default[T]` zero fallback:
-
-```mt
-function spawn_state[T defaults and implements ScreenState]() -> T:
-	return default[T]
-```
+`hashes` and `equates` are the associated-function constraint family. They do not introduce runtime polymorphism; they just state that specialization may call canonical static hooks on `T`.
 
 `hashes` and `equates` are dedicated constraint kinds for container-style generic APIs that need canonical hash and equality hooks without turning interfaces into a trait solver:
 
@@ -339,6 +337,8 @@ function same_bucket[T hashes and equates](left: T, right: T) -> bool:
 ```
 
 The canonical implementation hooks are associated functions `T.hash(value: const_ptr[T]) -> uint` and `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. The built-in `hash[T](...)` and `equal[T](...)` forms just lower to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
+
+`default[T]` requires an explicit `T.default()` provider at each use site. The separate `defaults` constraint was removed because it duplicated that requirement while lengthening generic signatures. If an API depends on semantic defaulting, say so in the API docs and call `default[T]` directly in the generic body.
 
 Constraint checking happens after type inference and specialization, and constrained calls still lower to ordinary static method calls in generated C.
 There is no witness table or vtable for constrained generics.

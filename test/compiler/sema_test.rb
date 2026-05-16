@@ -202,9 +202,9 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_defaults_constraint_with_interface_requirement
+  def test_type_checks_default_specialization_with_interface_requirement_without_defaults_constraint
     source = <<~MT
-      # module demo.defaults
+      # module demo.default_interface_ok
 
       interface Named:
           function value() -> int
@@ -219,7 +219,7 @@ class MilkTeaSemaTest < Minitest::Test
           function value() -> int:
               return this.count
 
-      function make_and_read[T defaults and implements Named]() -> int:
+      function make_and_read[T implements Named]() -> int:
           let item = default[T]
           return item.value()
 
@@ -454,9 +454,9 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/type demo\.generic_type_constraints_bad\.Holder/, error.message)
   end
 
-  def test_rejects_generic_variant_defaults_constraint_without_explicit_default_provider
+  def test_rejects_removed_defaults_constraint_on_generic_variant
     source = <<~MT
-      # module demo.generic_variant_defaults_bad
+      # module demo.generic_variant_defaults_removed
 
       struct Plain:
           value: int
@@ -474,17 +474,17 @@ class MilkTeaSemaTest < Minitest::Test
                   return some.value.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::ParseError) do
       check_source(source)
     end
 
-    assert_match(/type demo\.generic_variant_defaults_bad\.Plain does not satisfy defaults constraint/, error.message)
-    assert_match(/type demo\.generic_variant_defaults_bad\.Slot/, error.message)
+    assert_match(/defaults constraint has been removed/, error.message)
+    assert_match(/default\[T\]/, error.message)
   end
 
-  def test_rejects_defaults_constraint_without_explicit_default_provider
+  def test_rejects_removed_defaults_constraint_on_generic_function
     source = <<~MT
-      # module demo.defaults_bad
+      # module demo.defaults_removed
 
       struct Plain:
           value: int
@@ -497,11 +497,12 @@ class MilkTeaSemaTest < Minitest::Test
           return plain.value
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
+    error = assert_raises(MilkTea::ParseError) do
       check_source(source)
     end
 
-    assert_match(/type demo\.defaults_bad\.Plain does not satisfy defaults constraint for function make_default/, error.message)
+    assert_match(/defaults constraint has been removed/, error.message)
+    assert_match(/default\[T\]/, error.message)
   end
 
   def test_type_checks_imported_public_interface_constraints
@@ -4957,7 +4958,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/zero does not support type void/, error.message)
   end
 
-  def test_type_checks_default_specialization_with_associated_override_and_zero_fallback
+  def test_type_checks_default_specialization_with_explicit_associated_overrides
     source = <<~MT
       # module demo.default_builtin
 
@@ -4970,6 +4971,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       struct Plain:
           hp: int
+
+      methods Plain:
+          static function default() -> Plain:
+              return Plain(hp = 7)
 
       function make_default[T]() -> T:
           return default[T]
@@ -4985,6 +4990,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.types.key?("Player")
     assert_equal true, result.types.key?("Plain")
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_default_specialization_without_explicit_associated_default
+    source = <<~MT
+      # module demo.default_builtin_bad
+
+      struct Plain:
+          hp: int
+
+      function make_default[T]() -> T:
+          return default[T]
+
+      function main() -> int:
+          let plain = make_default[Plain]()
+          return plain.hp
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/default\[demo\.default_builtin_bad\.Plain\] requires associated function demo\.default_builtin_bad\.Plain\.default\(\)/, error.message)
   end
 
   def test_rejects_default_call_form

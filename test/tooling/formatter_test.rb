@@ -70,6 +70,60 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, formatted
   end
 
+  def test_canonical_mode_flattens_grouped_multiline_binary_expression
+    source = <<~MT
+      function main() -> int:
+          let total = (
+              subtotal
+              + tax
+              - discount
+          )
+          return total
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal <<~MT, formatted
+      function main() -> int:
+          let total = subtotal + tax - discount
+          return total
+    MT
+  end
+
+  def test_preserve_mode_keeps_grouped_multiline_binary_expression
+    source = <<~MT
+      function main() -> int:
+          let total = (
+              subtotal
+              + tax
+              - discount
+          )
+          return total
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :preserve)
+
+    assert_equal source, formatted
+  end
+
+  def test_canonical_mode_flattens_operator_led_binary_continuation
+    source = <<~MT
+      function main() -> int:
+          let total = subtotal +
+              tax -
+              discount
+          return total
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal <<~MT, formatted
+      function main() -> int:
+          let total = subtotal + tax - discount
+          return total
+    MT
+  end
+
   def test_safe_mode_preserves_comments_in_canonical_output
     source = <<~MT
       # banner

@@ -196,7 +196,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal [[:interface, "Damageable"]], function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] }
   end
 
-  def test_parses_default_and_interface_type_param_constraints
+  def test_rejects_removed_defaults_constraint_with_explicit_diagnostic
     source = <<~MT
       interface ScreenState:
           function draw() -> void
@@ -205,19 +205,17 @@ class MilkTeaParserTest < Minitest::Test
           return default[T]
     MT
 
-    ast = MilkTea::Parser.parse(source)
-    function_decl = ast.declarations[1]
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
 
-    assert_instance_of MilkTea::AST::FunctionDef, function_decl
-    assert_equal(
-      [[:defaults, nil], [:interface, "ScreenState"]],
-      function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] },
-    )
+    assert_match(/defaults constraint has been removed/, error.message)
+    assert_match(/default\[T\]/, error.message)
   end
 
   def test_parses_mixed_type_param_constraints_with_hashes_equates_and_multiple_interfaces
     source = <<~MT
-      function same_key[T defaults and implements Named and Tagged and hashes and equates](left: T, right: T) -> bool:
+      function same_key[T implements Named and Tagged and hashes and equates](left: T, right: T) -> bool:
           return equal[T](left, right)
     MT
 
@@ -227,7 +225,6 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::FunctionDef, function_decl
     assert_equal(
       [
-        [:defaults, nil],
         [:interface, "Named"],
         [:interface, "Tagged"],
         [:hashes, nil],
@@ -837,6 +834,53 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::StringLiteral, declaration.value
     assert_equal true, declaration.value.cstring
     assert_equal "Milk Tea keeps this text readable while storing a single logical line.", declaration.value.value
+  end
+
+  def test_parses_parenthesized_multiline_binary_expression
+    source = <<~MT
+      function main() -> int:
+          let total = (
+              1
+              + 2
+          )
+          return total
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    declaration = ast.declarations[0].body[0]
+
+    assert_instance_of MilkTea::AST::BinaryOp, declaration.value
+    assert_equal "+", declaration.value.operator
+  end
+
+  def test_parses_binary_expression_continued_after_operator
+    source = <<~MT
+      function main() -> int:
+          let total = 1 +
+              2
+          return total
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    declaration = ast.declarations[0].body[0]
+
+    assert_instance_of MilkTea::AST::BinaryOp, declaration.value
+    assert_equal "+", declaration.value.operator
+  end
+
+  def test_rejects_binary_expression_split_before_operator_without_grouping
+    source = <<~MT
+      function main() -> int:
+          let total = 1
+              + 2
+          return total
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/expected expression/, error.message)
   end
 
   def test_parses_const_pointer_types_and_ro_addr_calls

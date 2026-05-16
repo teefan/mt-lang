@@ -350,6 +350,10 @@ class LSPServerTest < Minitest::Test
     struct Box:
         value: int
 
+    methods Box:
+        static function default() -> Box:
+            return Box(value = 7)
+
     function add_one(value: int) -> int:
         return value + 1
 
@@ -991,7 +995,7 @@ class LSPServerTest < Minitest::Test
 
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "builtin default[Box] -> Box"
-      assert_includes hover_value, "falls back to the same raw initialization contract as `zero[T]`"
+      assert_includes hover_value, "requires an accessible zero-argument associated function `T.default()` that returns `T`"
       refute_includes hover_value, "local default"
     end
   end
@@ -5408,10 +5412,15 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        callback_value = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 10)
-        zero_value = semantic_entry_for_lexeme_on_line(source, entries, "zero", 11)
-        default_value = semantic_entry_for_lexeme_on_line(source, entries, "default", 12)
-        callback_argument = semantic_entry_for_lexeme_on_line(source, entries, "add_one", 13)
+        callback_value_line = source.lines.index { |text| text.include?("let callback: fn(value: int) -> int = add_one") }
+        zero_value_line = source.lines.index { |text| text.include?("let zeroed = zero[Box]") }
+        default_value_line = source.lines.index { |text| text.include?("let defaulted = default[Box]") }
+        callback_argument_line = source.lines.index { |text| text.include?("return apply(add_one, zeroed.value) + callback(defaulted.value)") }
+
+        callback_value = semantic_entry_for_lexeme_on_line(source, entries, "add_one", callback_value_line)
+        zero_value = semantic_entry_for_lexeme_on_line(source, entries, "zero", zero_value_line)
+        default_value = semantic_entry_for_lexeme_on_line(source, entries, "default", default_value_line)
+        callback_argument = semantic_entry_for_lexeme_on_line(source, entries, "add_one", callback_argument_line)
 
         assert_equal "function", callback_value.fetch("tokenType")
         assert_equal "function", callback_argument.fetch("tokenType")
