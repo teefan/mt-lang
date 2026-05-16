@@ -149,10 +149,10 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_hashes_and_equates_type_param_constraints_like_source
+  def test_formats_multiple_interface_type_param_constraints_like_source
     source = <<~MT
-      function same_key[T hashes and equates](left: T, right: T) -> bool:
-          return hash[T](left) == hash[T](right) and equal[T](left, right)
+      function same_key[T implements Named and Tagged](left: T, right: T) -> bool:
+          return left.equal(right)
     MT
 
     ast = MilkTea::Parser.parse(source)

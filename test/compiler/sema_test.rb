@@ -283,9 +283,9 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/method kind does not match/, error.message)
   end
 
-  def test_type_checks_hashes_and_equates_constraints_with_canonical_builtins
+  def test_type_checks_hash_and_equal_builtins_with_canonical_hooks
     source = <<~MT
-      # module demo.hash_equates
+      # module demo.hash_equal_ok
 
       struct Key:
           value: int
@@ -297,7 +297,7 @@ class MilkTeaSemaTest < Minitest::Test
           static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
               return true
 
-      function same_key[T hashes and equates](left: T, right: T) -> bool:
+      function same_key[T](left: T, right: T) -> bool:
           return hash[T](left) == hash[T](right) and equal[T](left, right)
 
       function main() -> bool:
@@ -311,9 +311,9 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_rejects_hashes_constraint_without_canonical_associated_hash_function
+  def test_rejects_hash_builtin_without_canonical_associated_hash_function
     source = <<~MT
-      # module demo.hash_constraint_bad
+      # module demo.hash_builtin_bad
 
       struct Key:
           value: int
@@ -322,7 +322,7 @@ class MilkTeaSemaTest < Minitest::Test
           static function hash(value: Key) -> uint:
               return uint<-value.value
 
-      function read_hash[T hashes](value: T) -> uint:
+      function read_hash[T](value: T) -> uint:
           return hash[T](value)
 
       function main() -> uint:
@@ -334,14 +334,14 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/requires demo\.hash_constraint_bad\.Key\.hash\(value: const_ptr\[demo\.hash_constraint_bad\.Key\]\) -> uint/, error.message)
+    assert_match(/requires demo\.hash_builtin_bad\.Key\.hash\(value: const_ptr\[demo\.hash_builtin_bad\.Key\]\) -> uint/, error.message)
   end
 
-  def test_rejects_hashes_constraint_for_ordinary_primitive_types
+  def test_rejects_hash_builtin_for_ordinary_primitive_types
     source = <<~MT
-      # module demo.hash_primitive_bad
+      # module demo.hash_builtin_primitive_bad
 
-      function read_hash[T hashes](value: T) -> uint:
+      function read_hash[T](value: T) -> uint:
           return hash[T](value)
 
       function main() -> uint:
@@ -352,12 +352,12 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/type int does not satisfy hashes constraint for function read_hash/, error.message)
+    assert_match(/hash\[int\] requires associated function int\.hash/, error.message)
   end
 
-  def test_type_checks_hashes_and_equates_constraints_for_str_with_explicit_static_hooks
+  def test_type_checks_hash_and_equal_builtins_for_str_with_explicit_static_hooks
     source = <<~MT
-      # module demo.hash_str_ok
+      # module demo.hash_equal_str_ok
 
       methods str:
           static function hash(value: const_ptr[str]) -> uint:
@@ -366,7 +366,7 @@ class MilkTeaSemaTest < Minitest::Test
           static function equal(left: const_ptr[str], right: const_ptr[str]) -> bool:
               return true
 
-      function same_text[T hashes and equates](left: T, right: T) -> bool:
+      function same_text[T](left: T, right: T) -> bool:
           return hash[T](left) == hash[T](right) and equal[T](left, right)
 
       function main() -> bool:

@@ -230,7 +230,7 @@ Ordinary functions:
 - Parameters are non-rebindable.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may use `implements`, `hashes`, and `equates` constraints.
+- Generic function and method type parameters may use `implements` constraints.
 
 External functions:
 
@@ -417,12 +417,10 @@ Nullability:
 Generics:
 
 - Generic structs, variants, functions, methods, and foreign functions are supported.
-- Generic type parameter constraints use `implements`, `hashes`, and `equates` on structs, variants, functions, and methods.
+- Generic type parameter constraints use `implements` on structs, variants, functions, and methods.
 - `implements` is the interface constraint kind.
-- `hashes` and `equates` are associated-function constraint kinds.
 - Multiple interface constraints are joined with `and`.
-- `hashes` requires an accessible `T.hash(value: const_ptr[T]) -> uint` associated function.
-- `equates` requires an accessible `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` associated function.
+- There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)` or `equal[T](...)` rely on specialization-time checking of the canonical associated functions.
 - Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
 
 ## 11. Built-In Callable Surface
@@ -450,6 +448,7 @@ Reference and pointer notes:
 - Member access and method calls auto-dereference `ref[T]` receivers.
 - Passing a mutable addressable `T` to a parameter of type `ref[T]` implicitly borrows it.
 - `hash[T](value)` and `equal[T](left, right)` lower to `T.hash(...)` and `T.equal(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
+- There are no separate `hashes` or `equates` constraints; the builtins themselves force those hook requirements at specialization time.
 - There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 
 ## 12. Strings, Text, And Builders

@@ -575,13 +575,7 @@ module MilkTea
           end
           parts << "implements #{interfaces.join(' and ')}"
         else
-          parts << case constraint.kind
-                   when :hashes then "hashes"
-                   when :equates then "equates"
-                   else
-                     raise "unsupported type parameter constraint #{constraint.kind}"
-                   end
-          index += 1
+          raise "unsupported type parameter constraint #{constraint.kind}"
         end
       end
 

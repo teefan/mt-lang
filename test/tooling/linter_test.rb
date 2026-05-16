@@ -1063,24 +1063,30 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
     end
   end
 
-  def test_warns_with_generic_constraint_drift_in_platform_api_surface
+  def test_warns_with_interface_constraint_drift_in_platform_api_surface
     Dir.mktmpdir("mt-lint-platform-generic-api") do |dir|
       path = File.join(dir, "hashable.mt")
       File.write(path, <<~MT)
-        public function same_key[T hashes and equates](left: T, right: T) -> bool:
-            return hash[T](left) == hash[T](right) and equal[T](left, right)
+        public interface Named:
+            function name() -> str
+
+        public function same_key[T implements Named](left: T, right: T) -> bool:
+            return true
       MT
       File.write(File.join(dir, "hashable.windows.mt"), <<~MT)
-        public function same_key[T equates](left: T, right: T) -> bool:
-            return equal[T](left, right)
+        public interface Named:
+            function name() -> str
+
+        public function same_key[T](left: T, right: T) -> bool:
+            return true
       MT
 
       warnings = MilkTea::Linter.lint_source(File.read(path), path: path)
 
       warning = warnings.find { |entry| entry.code == "platform-api-drift" }
       assert warning, "expected platform-api-drift warning"
-      assert_match(/function same_key\[T hashes and equates\]\(left: T, right: T\) -> bool/, warning.message)
-      assert_match(/function same_key\[T equates\]\(left: T, right: T\) -> bool/, warning.message)
+      assert_match(/function same_key\[T implements Named\]\(left: T, right: T\) -> bool/, warning.message)
+      assert_match(/function same_key\[T\]\(left: T, right: T\) -> bool/, warning.message)
     end
   end
 

@@ -2620,9 +2620,9 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return demo_static_interface_codegen_Counter_tag\(\);/, generated)
   end
 
-  def test_generate_c_for_hashes_and_equates_constraints_with_canonical_builtins
+  def test_generate_c_for_hash_and_equal_builtins_with_canonical_hooks
     source = [
-      "# module demo.hash_codegen",
+      "# module demo.hash_equal_codegen",
       "",
       "struct Key:",
       "    value: int",
@@ -2634,7 +2634,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
       "        return true",
       "",
-      "function same_key[T hashes and equates](left: T, right: T) -> bool:",
+      "function same_key[T](left: T, right: T) -> bool:",
       "    return hash[T](left) == hash[T](right) and equal[T](left, right)",
       "",
       "function main() -> bool:",
@@ -2646,13 +2646,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uint32_t demo_hash_codegen_Key_hash\(const demo_hash_codegen_Key\* value\)/, generated)
-    assert_match(/static bool demo_hash_codegen_Key_equal\(const demo_hash_codegen_Key\* left, const demo_hash_codegen_Key\* right\)/, generated)
-    assert_match(/demo_hash_codegen_Key_hash\(&left\)/, generated)
-    assert_match(/demo_hash_codegen_Key_equal\(&left, &right\)/, generated)
+    assert_match(/static uint32_t demo_hash_equal_codegen_Key_hash\(const demo_hash_equal_codegen_Key\* value\)/, generated)
+    assert_match(/static bool demo_hash_equal_codegen_Key_equal\(const demo_hash_equal_codegen_Key\* left, const demo_hash_equal_codegen_Key\* right\)/, generated)
+    assert_match(/demo_hash_equal_codegen_Key_hash\(&left\)/, generated)
+    assert_match(/demo_hash_equal_codegen_Key_equal\(&left, &right\)/, generated)
   end
 
-  def test_generate_c_for_transitive_hashes_and_equates_constraints
+  def test_generate_c_for_transitive_hash_and_equal_builtins
     source = [
       "# module demo.hash_transitive_codegen",
       "",
@@ -2666,10 +2666,10 @@ class MilkTeaCodegenTest < Minitest::Test
       "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
       "        return true",
       "",
-      "function inner[U hashes and equates](left: U, right: U) -> bool:",
+      "function inner[U](left: U, right: U) -> bool:",
       "    return hash[U](left) == hash[U](right) and equal[U](left, right)",
       "",
-      "function outer[T hashes and equates](left: T, right: T) -> bool:",
+      "function outer[T](left: T, right: T) -> bool:",
       "    return inner[T](left, right)",
       "",
       "function main() -> bool:",
