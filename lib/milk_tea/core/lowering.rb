@@ -7823,6 +7823,7 @@ module MilkTea
           instances: {},
           type_arguments: key,
           owner: binding.owner,
+          specialization_owner: nil,
           type_substitutions: substitutions.freeze,
           declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )

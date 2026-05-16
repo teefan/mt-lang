@@ -292,6 +292,7 @@ public interface Damageable:
 Rules:
 
 - Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
 - `public` is allowed on the interface declaration, not on individual interface methods.
@@ -474,6 +475,12 @@ Single-form `for` supports:
 - `start..stop` — exclusive integer range via range expression
 - `array[T, N]`
 - `span[T]`
+- custom structural iterables with a non-editable zero-argument `iter()` method
+
+Iterator protocol for custom structural iterables:
+
+- the iterable value must expose `iter()` with no parameters
+- the returned iterator must expose either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()`
 
 Parallel `for` is also supported:
 
@@ -632,12 +639,15 @@ Rules:
 Supported:
 
 - generic structs
+- generic variants
 - generic functions
+- generic methods
 - generic foreign functions
 
 Rules:
 
 - Constraints are supported on generic structs, variants, functions, and methods.
+- Generic interfaces are not supported.
 - Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
 - There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)` or `equal[T](...)` rely on specialization-time checking of the canonical associated functions.
 - Current type parameters may be used as type expressions for associated function calls in generic bodies, such as `T.default()` or `T.tag()`.
@@ -681,6 +691,21 @@ For recoverable failures, use `import std.status as status` and the ordinary lib
 For repeated pointer-plus-length span construction, use the built-in `span[T](data = ..., len = ...)` form directly. If the pattern repeats often in one codebase, define a small local helper in your own module instead of depending on a standard helper module.
 
 `read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first. Calls in the other direction are also lighter now: if a function expects `ref[T]`, passing a mutable addressable `T` borrows it implicitly.
+
+### 7.1 Current standard collection modules
+
+The current shipped heap-backed collection modules in `std` are:
+
+- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
+- `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
+- `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
+- `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
+
+Iterator notes for those collection modules:
+
+- `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
+- `Map.values()` returns mutable value pointers during iteration.
+- `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.
 
 ## 8. Strings, C Strings, And Format Strings
 
@@ -828,6 +853,7 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 Current implementation rejects:
 
 - interface methods with `async` or generic signatures
+- generic interface declarations
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
 
 ## 13. Example

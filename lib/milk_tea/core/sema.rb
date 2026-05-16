@@ -55,14 +55,14 @@ module MilkTea
     end
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
-    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
+    FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :specialization_owner, :type_substitutions, :declared_receiver_type)
     TypeParamConstraintBinding = Data.define(:interfaces) do
       def initialize(interfaces: []) = super
     end
     DefaultResolution = Data.define(:target_type, :binding)
     HashResolution = Data.define(:target_type, :binding)
     EqualResolution = Data.define(:target_type, :binding)
-    ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
+    ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
       end
@@ -175,6 +175,7 @@ module MilkTea
         @callable_value_identifier_sites = {}
         @callable_value_member_access_sites = {}
         @required_unsafe_lines = []
+        @current_specialization_owner = nil
       end
 
       def check
@@ -749,6 +750,7 @@ module MilkTea
           instances: {},
           type_arguments: [].freeze,
           owner: self,
+          specialization_owner: nil,
           type_substitutions: {}.freeze,
           declared_receiver_type: declared_receiver_type,
         )
@@ -1179,12 +1181,14 @@ module MilkTea
         @local_completion_frames = @local_completion_frames.dup if @local_completion_frames.frozen?
 
         previous_type_substitutions = @current_type_substitutions
+        previous_specialization_owner = @current_specialization_owner
         return if binding.external || binding.type_params.any?
         return if @checked_function_bindings[binding.object_id]
         return if @checking_function_bindings[binding.object_id]
 
         @checking_function_bindings[binding.object_id] = true
         @current_type_substitutions = binding.type_substitutions
+        @current_specialization_owner = binding.specialization_owner
         with_scope(binding.body_params) do |scopes|
           start_local_completion_frame(binding, scopes)
           if binding.ast.is_a?(AST::ForeignFunctionDecl)
@@ -1216,6 +1220,7 @@ module MilkTea
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @current_type_substitutions = previous_type_substitutions
+        @current_specialization_owner = previous_specialization_owner
         @checking_function_bindings.delete(binding.object_id)
       end
 
@@ -3716,6 +3721,16 @@ module MilkTea
       end
 
       def lookup_method(receiver_type, name)
+        method = lookup_method_local_or_imported(receiver_type, name)
+        return method if method
+
+        fallback_owner = specialization_lookup_owner
+        return nil unless fallback_owner
+
+        fallback_owner.send(:lookup_method_local_or_imported, receiver_type, name)
+      end
+
+      def lookup_method_local_or_imported(receiver_type, name)
         dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
 
         method = @methods.fetch(receiver_type, {})[name]
@@ -3733,7 +3748,12 @@ module MilkTea
           imported_candidates << [module_binding, imported_method] if imported_method
         end
 
-        return nil if imported_candidates.empty?
+        if imported_candidates.empty?
+          owner_module = reachable_module_binding_for_type(receiver_type)
+          return nil unless owner_module
+
+          return module_binding_method(owner_module, receiver_type, dispatch_receiver_type, name)
+        end
 
         if imported_candidates.length > 1
           modules = imported_candidates.map { |module_binding, _binding| module_binding.name }.join(", ")
@@ -3741,6 +3761,59 @@ module MilkTea
         end
 
         imported_candidates.first.last
+      end
+
+      def module_binding_method(module_binding, receiver_type, dispatch_receiver_type, name)
+        method = module_binding.methods.fetch(receiver_type, {})[name]
+        method ||= module_binding.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method
+      end
+
+      def reachable_module_binding_for_type(receiver_type)
+        module_name = receiver_type_module_name(receiver_type)
+        return nil unless module_name
+        return nil if module_name == @module_name
+
+        find_reachable_imported_module(module_name)
+      end
+
+      def receiver_type_module_name(receiver_type)
+        return receiver_type_module_name(receiver_type.base) if receiver_type.is_a?(Types::Nullable)
+        return receiver_type.module_name if receiver_type.respond_to?(:module_name)
+
+        nil
+      end
+
+      def find_reachable_imported_module(module_name)
+        visited = {}
+
+        @imports.each_value do |module_binding|
+          found = find_reachable_imported_module_from(module_binding, module_name, visited)
+          return found if found
+        end
+
+        nil
+      end
+
+      def find_reachable_imported_module_from(module_binding, module_name, visited)
+        return nil unless module_binding
+        return module_binding if module_binding.name == module_name
+        return nil if visited[module_binding.name]
+
+        visited[module_binding.name] = true
+        module_binding.imports.each_value do |imported_module|
+          found = find_reachable_imported_module_from(imported_module, module_name, visited)
+          return found if found
+        end
+
+        nil
+      end
+
+      def specialization_lookup_owner
+        return nil if @current_specialization_owner.nil?
+        return nil if @current_specialization_owner.equal?(self)
+
+        @current_specialization_owner
       end
 
       def char_array_removed_text_method?(receiver_type, name)
@@ -4799,6 +4872,8 @@ module MilkTea
         iter_method = lookup_method(type, "iter")
         return nil unless iter_method
 
+        iter_method = instantiate_function_binding_with_receiver(iter_method, [], receiver_type: type) if iter_method.type_params.any?
+
         unless iter_method.type.params.empty?
           raise_sema_error("for iterator #{type}.iter expects 0 arguments")
         end
@@ -4809,6 +4884,7 @@ module MilkTea
         iterator_type = iter_method.type.return_type
         next_method = lookup_method(iterator_type, "next")
         raise_sema_error("for iterator #{iterator_type} must define next()") unless next_method
+        next_method = instantiate_function_binding_with_receiver(next_method, [], receiver_type: iterator_type) if next_method.type_params.any?
         unless next_method.type.params.empty?
           raise_sema_error("for iterator #{iterator_type}.next expects 0 arguments")
         end
@@ -4821,6 +4897,7 @@ module MilkTea
         if next_type == @types.fetch("bool")
           current_method = lookup_method(iterator_type, "current")
           raise_sema_error("for iterator #{iterator_type} must define current() when next() returns bool") unless current_method
+          current_method = instantiate_function_binding_with_receiver(current_method, [], receiver_type: iterator_type) if current_method.type_params.any?
           unless current_method.type.params.empty?
             raise_sema_error("for iterator #{iterator_type}.current expects 0 arguments")
           end
@@ -4906,6 +4983,16 @@ module MilkTea
       end
 
       def imported_module_with_private_method(receiver_type, method_name)
+        imported_module = imported_module_with_private_method_local(receiver_type, method_name)
+        return imported_module if imported_module
+
+        fallback_owner = specialization_lookup_owner
+        return nil unless fallback_owner
+
+        fallback_owner.send(:imported_module_with_private_method_local, receiver_type, method_name)
+      end
+
+      def imported_module_with_private_method_local(receiver_type, method_name)
         @imports.each_value do |module_binding|
           return module_binding if module_binding.private_method?(receiver_type, method_name)
         end
@@ -5186,6 +5273,7 @@ module MilkTea
           instances: {},
           type_arguments: key,
           owner: binding.owner,
+          specialization_owner: @current_specialization_owner || (binding.owner == self ? nil : self),
           type_substitutions: substitutions.freeze,
           declared_receiver_type: binding.declared_receiver_type ? substitute_type(binding.declared_receiver_type, substitutions) : nil,
         )
