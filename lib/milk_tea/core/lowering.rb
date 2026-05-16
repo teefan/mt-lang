@@ -2381,12 +2381,13 @@ module MilkTea
         expr_setup, prepared_expr = prepare_expression_for_inline_lowering(statement.expression, env:)
         match_expr = lower_contextual_expression(prepared_expr, env:, expected_type: nil)
         match_type = infer_expression_type(statement.expression, env:)
+        arm_loop_flow = switch_loop_flow(loop_flow, [])
 
         cases = statement.arms.map do |arm|
           arm_body = if statements_contain_await?(arm.body, async_info)
-            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow:)
+            lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
           else
-            lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow:)
+            lower_async_non_await_statements(arm.body, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
           end
           if wildcard_arm_pattern?(arm.pattern)
             IR::SwitchDefaultCase.new(body: arm_body + [IR::BreakStmt.new])
@@ -2475,9 +2476,10 @@ module MilkTea
             )
             lowered.concat(expr_setup)
             expr = lower_expression(prepared_expr, env: local_env, expected_type: scrutinee_type)
+            arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
             cases = statement.arms.map do |arm|
               arm_body = lower_async_non_await_statements(
-                arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)
+                arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: arm_loop_flow
               )
               if wildcard_arm_pattern?(arm.pattern)
                 IR::SwitchDefaultCase.new(body: arm_body)
@@ -3403,6 +3405,7 @@ module MilkTea
               outer_c = c_type_name(scrutinee_type)
               kind_type = @types.fetch("int")
               kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
+              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|
                 arm_local_env = duplicate_env(local_env)
                 binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
@@ -3422,7 +3425,7 @@ module MilkTea
                   env: arm_local_env,
                   active_defers: active_defers + local_defers,
                   return_type:,
-                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  loop_flow: arm_loop_flow,
                   allow_return:,
                 )
                 body = [binding_decl, *body].compact if binding_decl
@@ -3435,13 +3438,14 @@ module MilkTea
               end
               lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
             else
+              arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|
                 body = lower_block(
                   arm.body,
                   env: local_env,
                   active_defers: active_defers + local_defers,
                   return_type:,
-                  loop_flow: nested_loop_flow(loop_flow, local_defers),
+                  loop_flow: arm_loop_flow,
                   allow_return:,
                 )
                 if wildcard_arm_pattern?(arm.pattern)
@@ -9260,6 +9264,24 @@ module MilkTea
           continue_target: current_loop_flow[:continue_target],
           break_defers: current_loop_flow[:break_defers] + local_defers,
           continue_defers: current_loop_flow[:continue_defers] + local_defers,
+        )
+      end
+
+      def switch_loop_target(target)
+        return target unless target && target[:label]
+
+        loop_exit_label(target[:label])
+      end
+
+      def switch_loop_flow(current_loop_flow, local_defers)
+        nested = nested_loop_flow(current_loop_flow, local_defers)
+        return nil unless nested
+
+        loop_flow(
+          break_target: switch_loop_target(nested[:break_target]),
+          continue_target: switch_loop_target(nested[:continue_target]),
+          break_defers: nested[:break_defers],
+          continue_defers: nested[:continue_defers],
         )
       end
 
