@@ -2754,6 +2754,82 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_hash_equal_imported_codegen_main_Key_equal\(&left, &right\)/, generated)
   end
 
+  def test_generate_c_for_order_builtin_with_canonical_hook
+    source = [
+      "# module demo.order_codegen",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
+      "        unsafe:",
+      "            let left_value = read(ptr[Key]<-left).value",
+      "            let right_value = read(ptr[Key]<-right).value",
+      "            if left_value < right_value:",
+      "                return -1",
+      "            if left_value > right_value:",
+      "                return 1",
+      "            return 0",
+      "",
+      "function compare[T](left: T, right: T) -> int:",
+      "    return order[T](left, right)",
+      "",
+      "function main() -> int:",
+      "    let left = Key(value = 1)",
+      "    let right = Key(value = 5)",
+      "    return compare[Key](left, right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t demo_order_codegen_Key_order\(const demo_order_codegen_Key\* left, const demo_order_codegen_Key\* right\)/, generated)
+    assert_match(/demo_order_codegen_Key_order\(&left, &right\)/, generated)
+  end
+
+  def test_generate_c_for_order_builtin_in_imported_generic_functions
+    source = [
+      "# module demo.order_imported_codegen_main",
+      "",
+      "import demo.order_tools as tools",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
+      "        unsafe:",
+      "            let left_value = read(ptr[Key]<-left).value",
+      "            let right_value = read(ptr[Key]<-right).value",
+      "            if left_value < right_value:",
+      "                return -1",
+      "            if left_value > right_value:",
+      "                return 1",
+      "            return 0",
+      "",
+      "function main() -> int:",
+      "    let left = Key(value = 2)",
+      "    let right = Key(value = 7)",
+      "    return tools.compare(left, right)",
+      "",
+    ].join("\n")
+
+    imported_sources = {
+      "demo/order_tools.mt" => <<~MT,
+        # module demo.order_tools
+
+        public function compare[T](left: T, right: T) -> int:
+            return order[T](left, right)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/static int32_t demo_order_tools_compare_demo_order_imported_codegen_main_Key\(demo_order_imported_codegen_main_Key left, demo_order_imported_codegen_main_Key right\)/, generated)
+    assert_match(/demo_order_imported_codegen_main_Key_order\(&left, &right\)/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",

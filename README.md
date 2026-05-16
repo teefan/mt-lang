@@ -424,7 +424,7 @@ Generics:
 - Generic type parameter constraints use `implements` on structs, variants, functions, and methods.
 - `implements` is the interface constraint kind.
 - Multiple interface constraints are joined with `and`.
-- There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)` or `equal[T](...)` rely on specialization-time checking of the canonical associated functions.
+- There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)`, `equal[T](...)`, or `order[T](...)` rely on specialization-time checking of the canonical associated functions.
 - Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
 
 ## 11. Built-In Callable Surface
@@ -443,6 +443,7 @@ Special recognized callables:
 - `default[T]`
 - `hash[T](value)`
 - `equal[T](left, right)`
+- `order[T](left, right)`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
@@ -451,7 +452,8 @@ Reference and pointer notes:
 - `read(ref_value)` explicitly projects the referent value.
 - Member access and method calls auto-dereference `ref[T]` receivers.
 - Passing a mutable addressable `T` to a parameter of type `ref[T]` implicitly borrows it.
-- `hash[T](value)` and `equal[T](left, right)` lower to `T.hash(...)` and `T.equal(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
+- `hash[T](value)`, `equal[T](left, right)`, and `order[T](left, right)` lower to `T.hash(...)`, `T.equal(...)`, and `T.order(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
+- `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` returns a negative value when `left < right`, `0` when equal, and a positive value when `left > right`.
 - There are no separate `hashes` or `equates` constraints; the builtins themselves force those hook requirements at specialization time.
 - There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 
@@ -459,13 +461,14 @@ Reference and pointer notes:
 
 Current heap-backed collection modules in `std` are:
 
-- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
-- `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
+- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
+- `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
 - `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
 - `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
 
 Iterator notes for the collection modules:
 
+- `Vec.iter()` and `Deque.iter()` use the pointer-returning iterator form.
 - `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
 - `Map.values()` returns mutable value pointers during iteration.
 - `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.

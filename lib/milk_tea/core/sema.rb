@@ -62,6 +62,7 @@ module MilkTea
     DefaultResolution = Data.define(:target_type, :binding)
     HashResolution = Data.define(:target_type, :binding)
     EqualResolution = Data.define(:target_type, :binding)
+    OrderResolution = Data.define(:target_type, :binding)
     ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
@@ -2835,6 +2836,8 @@ module MilkTea
           check_hash_call(callable, expression.arguments, scopes:)
         when :equal
           check_equal_call(callable, expression.arguments, scopes:)
+        when :order
+          check_order_call(callable, expression.arguments, scopes:)
         when :zero
           raise_sema_error("zero[T]() is no longer supported; use zero[T]")
         when :default
@@ -3198,6 +3201,10 @@ module MilkTea
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "equal"
             return [:equal, resolve_equal_specialization(callee), nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
+            return [:order, resolve_order_specialization(callee), nil]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
@@ -3579,6 +3586,22 @@ module MilkTea
         )
       end
 
+      def resolve_order_specialization(callee)
+        raise_sema_error("order requires exactly one type argument") unless callee.arguments.length == 1
+
+        type_arg = callee.arguments.first.value
+        raise_sema_error("order type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+        target_type = resolve_type_ref(type_arg)
+        binding = resolve_explicit_order_binding(target_type, context: "order[#{target_type}]")
+        raise_sema_error("order[#{target_type}] requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int") unless binding
+
+        OrderResolution.new(
+          target_type:,
+          binding:,
+        )
+      end
+
       def resolve_explicit_default_binding(target_type, context:)
         requirement_message = "#{context} requires associated function #{target_type}.default()"
         resolve_explicit_associated_binding(target_type, "default", requirement_message:) do |method|
@@ -3610,6 +3633,19 @@ module MilkTea
           end
           unless method.type.return_type == @types.fetch("bool")
             raise_sema_error("#{context} requires #{target_type}.equal(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> bool, got #{method.type.return_type}")
+          end
+        end
+      end
+
+      def resolve_explicit_order_binding(target_type, context:)
+        requirement_message = "#{context} requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int"
+        resolve_explicit_associated_binding(target_type, "order", requirement_message:) do |method|
+          expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
+          unless method.type.params.map(&:type) == expected_param_types
+            raise_sema_error("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int")
+          end
+          unless method.type.return_type == @types.fetch("int")
+            raise_sema_error("#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method.type.return_type}")
           end
         end
       end
@@ -3649,6 +3685,17 @@ module MilkTea
         end
 
         @types.fetch("bool")
+      end
+
+      def check_order_call(resolution, arguments, scopes:)
+        raise_sema_error("order does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("order expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        arguments.each do |argument|
+          validate_hash_operation_argument!(argument.value, resolution.target_type, scopes:, operation: "order")
+        end
+
+        @types.fetch("int")
       end
 
       def validate_hash_operation_argument!(expression, target_type, scopes:, operation:)
