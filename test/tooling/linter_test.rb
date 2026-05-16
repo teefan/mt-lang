@@ -1786,7 +1786,7 @@ class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
 
     warning = warnings.find { |w| w.code == "redundant-read-release-temp" }
     assert warning, "expected redundant-read-release-temp warning"
-    assert_equal 10, warning.line
+    assert_equal 11, warning.line
     assert_equal :hint, warning.severity
   end
 
@@ -1893,6 +1893,60 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
 
     assert_includes fixed, "let value_ptr = maybe_handle(handle) else:"
     refute_includes fixed, "if value_ptr == null:"
+  end
+
+  def test_warns_on_generic_method_nullable_guard_without_binding_metadata
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      struct Node[T]:
+          value: T
+          next: ptr[Node[T]]?
+
+      public struct Values[T]:
+          node: ptr[Node[T]]?
+
+      methods Values[T]:
+          public editable function next() -> const_ptr[T]?:
+              let current = this.node
+              if current == null:
+                  return null
+
+              unsafe:
+                  let current_ptr = ptr[Node[T]]<-current
+                  this.node = read(current_ptr).next
+                  return const_ptr_of(read(current_ptr).value)
+    MT
+
+    warning = warnings.find { |w| w.code == "prefer-let-else" }
+    assert warning, "expected prefer-let-else warning for generic method"
+    assert_equal 11, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_fix_source_rewrites_generic_method_nullable_guard_as_let_else
+    source = <<~MT
+      struct Node[T]:
+          value: T
+          next: ptr[Node[T]]?
+
+      public struct Values[T]:
+          node: ptr[Node[T]]?
+
+      methods Values[T]:
+          public editable function next() -> const_ptr[T]?:
+              let current = this.node
+              if current == null:
+                  return null
+
+              unsafe:
+                  let current_ptr = ptr[Node[T]]<-current
+                  this.node = read(current_ptr).next
+                  return const_ptr_of(read(current_ptr).value)
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "let current = this.node else:"
+    refute_includes fixed, "if current == null:"
   end
 end
 

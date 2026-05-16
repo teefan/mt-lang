@@ -70,8 +70,7 @@ methods Deque[T]:
         if index >= this.len:
             return null
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.Deque.get missing storage")
 
         return unsafe: ptr[T]<-data + Deque[T].physical_index(this.head, this.capacity, index)
@@ -143,8 +142,7 @@ methods Deque[T]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.push_back missing storage")
 
         let tail_index = Deque[T].physical_index(this.head, this.capacity, this.len)
@@ -160,8 +158,7 @@ methods Deque[T]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.push_front missing storage")
 
         if this.len == 0:
@@ -192,8 +189,7 @@ methods Deque[T]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.insert missing storage")
 
         unsafe:
@@ -227,8 +223,7 @@ methods Deque[T]:
         if this.len == 0:
             return maybe.Maybe[T].none
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.pop_back missing storage")
 
         let tail_index = Deque[T].physical_index(this.head, this.capacity, this.len - 1)
@@ -247,8 +242,7 @@ methods Deque[T]:
         if this.len == 0:
             return maybe.Maybe[T].none
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.pop_front missing storage")
 
         unsafe:
@@ -273,8 +267,7 @@ methods Deque[T]:
         if index + 1 == this.len:
             return this.pop_back()
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.remove missing storage")
 
         unsafe:
@@ -359,8 +352,7 @@ methods Iter[T]:
         if this.index >= this.len:
             return null
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"deque.Iter.next missing storage")
 
         let current_index = this.index
