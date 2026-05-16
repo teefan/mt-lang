@@ -9280,14 +9280,14 @@ module MilkTea
       end
 
       def loop_exit_statement(target, local_defers:, outer_defers:)
-        return IR::GotoStmt.new(label: target[:label]) if target[:label]
-
         case target[:kind]
         when :break
           IR::BreakStmt.new
         when :continue
           IR::ContinueStmt.new
         when :label
+          return IR::GotoStmt.new(label: target[:label]) if target[:label]
+
           IR::GotoStmt.new(label: target[:label])
         else
           raise LoweringError, "unsupported loop exit target #{target.inspect}"

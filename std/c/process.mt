@@ -1,6 +1,7 @@
 external
 
 
+link "uv"
 include "process_support.h"
 
 

@@ -55,7 +55,7 @@ function validate_utf8_string(value: string.String, error_message: str) -> statu
         maybe.Maybe.some:
             return status.Status[string.String, Error].ok(value= value)
         maybe.Maybe.none:
-            let owned = value
+            var owned = value
             owned.release()
             return status.Status[string.String, Error].err(error= Error(code = -1, message = string.String.from_str(error_message)))
 
@@ -68,7 +68,7 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
             fatal(c"fs.release_string_values missing value")
 
         unsafe:
-            let owned = read(value_ptr)
+            var owned = read(value_ptr)
             owned.release()
 
         index += 1
@@ -78,7 +78,7 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
 
 
 function path_kind(path: str) -> int:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
     return c.mt_fs_path_kind(storage.to_cstr(path))
 
@@ -137,11 +137,11 @@ public function is_directory(path: str) -> bool:
 
 
 public function read_text(path: str) -> status.Status[string.String, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_text = zero[c.mt_fs_string]
-    let raw_error = zero[c.mt_fs_error]
+    var raw_text = zero[c.mt_fs_string]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_read_text(storage.to_cstr(path), raw_text, raw_error)
     if status_code != 0:
         return status.Status[string.String, Error].err(error= take_error(raw_error, "fs read failed"))
@@ -150,11 +150,11 @@ public function read_text(path: str) -> status.Status[string.String, Error]:
 
 
 public function read_bytes(path: str) -> status.Status[bytes.Bytes, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_bytes = zero[c.mt_fs_string]
-    let raw_error = zero[c.mt_fs_error]
+    var raw_bytes = zero[c.mt_fs_string]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_read_bytes(storage.to_cstr(path), raw_bytes, raw_error)
     if status_code != 0:
         return status.Status[bytes.Bytes, Error].err(error= take_error(raw_error, "fs read bytes failed"))
@@ -163,10 +163,10 @@ public function read_bytes(path: str) -> status.Status[bytes.Bytes, Error]:
 
 
 public function write_text(path: str, content: str) -> status.Status[bool, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_error = zero[c.mt_fs_error]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_text(storage.to_cstr(path), content.data, content.len, raw_error)
     if status_code != 0:
         return status.Status[bool, Error].err(error= take_error(raw_error, "fs write failed"))
@@ -175,10 +175,10 @@ public function write_text(path: str, content: str) -> status.Status[bool, Error
 
 
 public function write_bytes(path: str, content: span[ubyte]) -> status.Status[bool, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_error = zero[c.mt_fs_error]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_bytes(storage.to_cstr(path), content.data, content.len, raw_error)
     if status_code != 0:
         return status.Status[bool, Error].err(error= take_error(raw_error, "fs write bytes failed"))
@@ -187,10 +187,10 @@ public function write_bytes(path: str, content: span[ubyte]) -> status.Status[bo
 
 
 public function create_directories(path: str) -> status.Status[bool, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_error = zero[c.mt_fs_error]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_create_directories(storage.to_cstr(path), raw_error)
     if status_code != 0:
         return status.Status[bool, Error].err(error= take_error(raw_error, "fs create directories failed"))
@@ -199,10 +199,10 @@ public function create_directories(path: str) -> status.Status[bool, Error]:
 
 
 public function remove(path: str) -> status.Status[bool, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_error = zero[c.mt_fs_error]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_remove(storage.to_cstr(path), raw_error)
     if status_code != 0:
         return status.Status[bool, Error].err(error= take_error(raw_error, "fs remove failed"))
@@ -211,12 +211,12 @@ public function remove(path: str) -> status.Status[bool, Error]:
 
 
 public function rename(source_path: str, target_path: str) -> status.Status[bool, Error]:
-    let source_storage = arena.create(source_path.len + 1)
+    var source_storage = arena.create(source_path.len + 1)
     defer source_storage.release()
-    let target_storage = arena.create(target_path.len + 1)
+    var target_storage = arena.create(target_path.len + 1)
     defer target_storage.release()
 
-    let raw_error = zero[c.mt_fs_error]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_rename(source_storage.to_cstr(source_path), target_storage.to_cstr(target_path), raw_error)
     if status_code != 0:
         return status.Status[bool, Error].err(error= take_error(raw_error, "fs rename failed"))
@@ -225,8 +225,8 @@ public function rename(source_path: str, target_path: str) -> status.Status[bool
 
 
 public function current_directory() -> status.Status[string.String, Error]:
-    let raw_text = zero[c.mt_fs_string]
-    let raw_error = zero[c.mt_fs_error]
+    var raw_text = zero[c.mt_fs_string]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_current_directory(raw_text, raw_error)
     if status_code != 0:
         return status.Status[string.String, Error].err(error= take_error(raw_error, "fs current directory failed"))
@@ -235,11 +235,11 @@ public function current_directory() -> status.Status[string.String, Error]:
 
 
 public function canonicalize(path: str) -> status.Status[string.String, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_text = zero[c.mt_fs_string]
-    let raw_error = zero[c.mt_fs_error]
+    var raw_text = zero[c.mt_fs_string]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_canonicalize(storage.to_cstr(path), raw_text, raw_error)
     if status_code != 0:
         return status.Status[string.String, Error].err(error= take_error(raw_error, "fs canonicalize failed"))
@@ -248,11 +248,11 @@ public function canonicalize(path: str) -> status.Status[string.String, Error]:
 
 
 public function list_entries(path: str) -> status.Status[Entries, Error]:
-    let storage = arena.create(path.len + 1)
+    var storage = arena.create(path.len + 1)
     defer storage.release()
 
-    let raw_entries = zero[c.mt_fs_entries]
-    let raw_error = zero[c.mt_fs_error]
+    var raw_entries = zero[c.mt_fs_entries]
+    var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_list_entries(storage.to_cstr(path), raw_entries, raw_error)
     if status_code != 0:
         return status.Status[Entries, Error].err(error= take_error(raw_error, "fs list entries failed"))
