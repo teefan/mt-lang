@@ -196,7 +196,7 @@ const max_players: int = 4
 Local type inference is allowed when the initializer makes the type obvious:
 
 ```mt
-let dt = rl.GetFrameTime()      # inferred as float
+let dt = rl.get_frame_time()    # inferred as float
 var player_count = 0            # inferred as int
 ```
 
@@ -300,6 +300,7 @@ That keeps the contract visible at the owning type and avoids import-sensitive s
 Rules for interfaces in v1:
 
 - `interface` bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface declarations themselves are not generic in v1.
 - Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance in v1.
 - Interface methods may not be generic or async in v1.
 - `struct` and `opaque` declarations may implement zero or more interfaces.
@@ -344,6 +345,14 @@ If Milk Tea later grows runtime polymorphic interface values, that surface must 
 
 Because fixed arrays copy by value, mutating interface-constrained collection code should usually take `span[T]` or `ref[array[T, N]]` rather than `array[T, N]` by value.
 
+Iteration stays structural in v1 rather than going through a nominal `Iterator[T]` or `Iterable[T]` interface. Arrays, spans, and ranges keep their built-in behavior, and custom iterables participate by exposing the same method shape the compiler already recognizes: a non-editable `iter()` method on the iterable, then either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()` on the iterator.
+
+This is deliberate. Interfaces are compile-time-only nominal contracts and are not generic today, so introducing a central iterator interface hierarchy now would either erase the item type or duplicate type-specific interfaces. The standard library should instead standardize on one iterator convention:
+
+- `collection.iter()` is the canonical traversal surface.
+- Alternate traversals use explicit view methods such as `map.keys()`, `map.values()`, and `map.entries()`.
+- Hash collections keep relying on the canonical `hash[T]` and `equal[T]` associated hooks instead of callback-style comparer objects.
+
 ### Control flow
 
 ```mt
@@ -378,7 +387,8 @@ Rules:
 - Conditions must be `bool`. Integers and pointers do not become truthy implicitly.
 - `match` must be exhaustive for enums.
 - `break` and `continue` use ordinary loop control semantics.
-- Single-form `for` accepts `start..stop`, `array[T, N]`, and `span[T]` as iterables.
+- Single-form `for` accepts `start..stop`, `array[T, N]`, `span[T]`, and custom structural iterables.
+- A custom structural iterable must expose non-editable `iter()` with no arguments, and its iterator must expose either `next() ->` nullable pointer-like item or `next() -> bool` plus `current()`.
 - Parallel `for` accepts multiple array/span iterables and binds them in lockstep.
 - Parallel `for` does not accept ranges, and iterable lengths must match.
 

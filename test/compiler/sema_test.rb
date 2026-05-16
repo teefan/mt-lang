@@ -311,6 +311,44 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_hash_and_equal_builtins_in_imported_generic_functions
+    source = <<~MT
+      # module demo.hash_equal_imported_main
+
+      import demo.hash_tools as tools
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function hash(value: const_ptr[Key]) -> uint:
+              unsafe:
+                  return uint<-read(ptr[Key]<-value).value
+
+          static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+              unsafe:
+                  return read(ptr[Key]<-left).value == read(ptr[Key]<-right).value
+
+      function main() -> bool:
+          let left = Key(value = 5)
+          let right = Key(value = 5)
+          return tools.same_key(left, right)
+    MT
+
+    imported_sources = {
+      "demo/hash_tools.mt" => <<~MT,
+        # module demo.hash_tools
+
+        public function same_key[T](left: T, right: T) -> bool:
+            return hash[T](left) == hash[T](right) and equal[T](left, right)
+      MT
+    }
+
+    result = check_program_source(source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_rejects_hash_builtin_without_canonical_associated_hash_function
     source = <<~MT
       # module demo.hash_builtin_bad

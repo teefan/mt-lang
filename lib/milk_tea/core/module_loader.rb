@@ -469,6 +469,7 @@ module MilkTea
         functions:,
         methods:,
         implemented_interfaces:,
+        imports: analysis.imports,
         private_types:,
         private_interfaces:,
         private_values:,

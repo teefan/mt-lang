@@ -205,6 +205,7 @@ public interface Damageable:
 Interface rules:
 
 - Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
 - Bare interface names are not runtime storage types.
@@ -318,7 +319,9 @@ Rules:
 Loop forms:
 
 - `for i in 0..count:` for exclusive integer ranges
-- `for item in items:` for arrays and spans
+- `for item in items:` for arrays, spans, and custom iterables
+- Custom iterable protocol: `items.iter()` must take no arguments, be a non-editable method, and return the iterator value.
+- Iterator forms: either `next() ->` nullable pointer-like item, or `next() -> bool` together with `current() -> T`.
 - `for left, right in xs, ys:` for parallel array/span iteration
 - Parallel `for` does not accept ranges.
 
@@ -451,6 +454,21 @@ Reference and pointer notes:
 - `hash[T](value)` and `equal[T](left, right)` lower to `T.hash(...)` and `T.equal(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
 - There are no separate `hashes` or `equates` constraints; the builtins themselves force those hook requirements at specialization time.
 - There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
+
+### Current Std Collections
+
+Current heap-backed collection modules in `std` are:
+
+- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
+- `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
+- `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
+- `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
+
+Iterator notes for the collection modules:
+
+- `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
+- `Map.values()` returns mutable value pointers during iteration.
+- `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.
 
 ## 12. Strings, Text, And Builders
 

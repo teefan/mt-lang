@@ -2715,6 +2715,45 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_hash_transitive_codegen_Key_equal\(&left, &right\)/, generated)
   end
 
+  def test_generate_c_for_hash_and_equal_builtins_in_imported_generic_functions
+    source = [
+      "# module demo.hash_equal_imported_codegen_main",
+      "",
+      "import demo.hash_tools as tools",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function hash(value: const_ptr[Key]) -> uint:",
+      "        return uint<-0",
+      "",
+      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
+      "        return true",
+      "",
+      "function main() -> bool:",
+      "    let left = Key(value = 1)",
+      "    let right = Key(value = 1)",
+      "    return tools.same_key(left, right)",
+      "",
+    ].join("\n")
+
+    imported_sources = {
+      "demo/hash_tools.mt" => <<~MT,
+        # module demo.hash_tools
+
+        public function same_key[T](left: T, right: T) -> bool:
+            return hash[T](left) == hash[T](right) and equal[T](left, right)
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/static bool demo_hash_tools_same_key_demo_hash_equal_imported_codegen_main_Key\(demo_hash_equal_imported_codegen_main_Key left, demo_hash_equal_imported_codegen_main_Key right\)/, generated)
+    assert_match(/demo_hash_equal_imported_codegen_main_Key_hash\(&left\)/, generated)
+    assert_match(/demo_hash_equal_imported_codegen_main_Key_equal\(&left, &right\)/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",
