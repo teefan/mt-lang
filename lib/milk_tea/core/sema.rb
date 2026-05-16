@@ -1183,11 +1183,13 @@ module MilkTea
 
         previous_type_substitutions = @current_type_substitutions
         previous_specialization_owner = @current_specialization_owner
+        started_check = false
         return if binding.external || binding.type_params.any?
         return if @checked_function_bindings[binding.object_id]
         return if @checking_function_bindings[binding.object_id]
 
         @checking_function_bindings[binding.object_id] = true
+        started_check = true
         @current_type_substitutions = binding.type_substitutions
         @current_specialization_owner = binding.specialization_owner
         with_scope(binding.body_params) do |scopes|
@@ -1217,6 +1219,8 @@ module MilkTea
         end
         @checked_function_bindings[binding.object_id] = true
       ensure
+        return unless started_check
+
         finish_local_completion_frame(binding)
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil

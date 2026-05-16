@@ -459,11 +459,14 @@ Reference and pointer notes:
 
 ### Current Std Collections
 
-Current heap-backed collection modules in `std` are:
+Current collection modules in `std` are:
 
 - `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
 - `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
 - `std.binary_heap.BinaryHeap[T]`: max-heap keyed by the canonical `order[T](...)` hook, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `push`, and `pop`.
+- `std.priority_queue.PriorityQueue[T]`: task-oriented facade over `BinaryHeap[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `enqueue`, and `dequeue`.
+- `std.ordered_set.OrderedSet[T]`: AVL-backed unique sorted set keyed by the canonical `order[T](...)` hook, with `create`, `len`, `is_empty`, `get`, `contains`, `iter`, `clear`, `release`, `insert`, and `remove`.
+- `std.ordered_map.OrderedMap[K, V]`: AVL-backed ordered map keyed by the canonical `order[K](...)` hook, with `create`, `len`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
 - `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
 - `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
 
@@ -471,6 +474,9 @@ Iterator notes for the collection modules:
 
 - `Vec.iter()` and `Deque.iter()` use the pointer-returning iterator form.
 - `BinaryHeap.iter()` uses the pointer-returning iterator form with read-only element pointers, and `peek()` is also read-only because arbitrary element mutation would violate the heap invariant.
+- `PriorityQueue.iter()` uses the same read-only pointer-returning iterator form as `BinaryHeap.iter()`.
+- `OrderedSet.iter()` uses the pointer-returning iterator form with read-only element pointers so in-place mutation cannot violate the sorted uniqueness invariant.
+- `OrderedMap.keys()` uses the pointer-returning iterator form with read-only key pointers, `OrderedMap.values()` returns mutable value pointers in key order, and `OrderedMap.entries()` / `OrderedMap.iter()` use the `next() -> bool` plus `current()` iterator form in key order.
 - `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
 - `Map.values()` returns mutable value pointers during iteration.
 - `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.

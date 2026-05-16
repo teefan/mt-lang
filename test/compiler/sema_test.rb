@@ -6996,6 +6996,49 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.types.key?("CallbackOrValue")
   end
 
+  def test_type_checks_recursive_generic_method_helper_with_multiple_recursive_calls
+  source = <<~MT
+    # module demo.recursive_method_helper
+
+    import std.mem.heap as heap
+
+    struct Node[T]:
+        value: T
+        left: ptr[Node[T]]?
+
+    public struct OrderedSet[T]:
+        root: ptr[void]?
+
+    methods OrderedSet[T]:
+        public static function create() -> OrderedSet[T]:
+            return OrderedSet[T](root = null)
+
+        static function probe(node: ptr[Node[T]]?) -> void:
+            if node == null:
+                return
+            let current = unsafe: ptr[Node[T]]<-node
+            let left = unsafe: read(current).left
+            OrderedSet[T].probe(left)
+            OrderedSet[T].probe(left)
+            heap.release(node)
+            return
+
+        public editable function release() -> void:
+            OrderedSet[T].probe(unsafe: ptr[Node[T]]<-this.root)
+            this.root = null
+            return
+
+    function main() -> int:
+        var values = OrderedSet[int].create()
+        defer values.release()
+        return 0
+  MT
+
+  result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   private
 
   def language_fixture_path

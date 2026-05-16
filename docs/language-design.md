@@ -332,7 +332,7 @@ Canonical hash, equality, and ordering hooks remain associated functions `T.hash
 
 The separate `hashes` and `equates` constraint keywords were removed because they were only contract spelling. They were not the thing that made the built-ins work; direct `hash[T](...)`, `equal[T](...)`, and now `order[T](...)` use already force the canonical hooks at specialization time.
 
-Ordered std surfaces should now rely on the canonical tri-state `order[T](...)` hook instead of storing per-instance comparator callbacks when the element type already has a natural ordering. The first such surface is `std.binary_heap.BinaryHeap[T]`, which is a max-heap keyed directly by `T.order(...)`.
+Ordered std surfaces should now rely on the canonical tri-state `order[T](...)` hook instead of storing per-instance comparator callbacks when the element type already has a natural ordering. Current ordered surfaces include `std.binary_heap.BinaryHeap[T]`, the thin `std.priority_queue.PriorityQueue[T]` facade over it, `std.ordered_set.OrderedSet[T]` for unique ordered membership, and `std.ordered_map.OrderedMap[K, V]` for ordered associative storage.
 
 `default[T]` requires an explicit `T.default()` provider at each use site. The separate `defaults` constraint was removed because it duplicated that requirement while lengthening generic signatures. If an API depends on semantic defaulting, say so in the API docs and call `default[T]` directly in the generic body.
 
