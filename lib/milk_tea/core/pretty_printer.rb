@@ -690,6 +690,13 @@ module MilkTea
           then_expression = render_expression(expression.then_expression, IF_EXPRESSION_PRECEDENCE)
           else_expression = render_expression(expression.else_expression, IF_EXPRESSION_PRECEDENCE)
           wrap("if #{condition}: #{then_expression} else: #{else_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+        when AST::MatchExpr
+          rendered_expression = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
+          rendered_arms = expression.arms.map do |arm|
+            binding = arm.binding_name ? " as #{arm.binding_name}" : ""
+            "#{render_expression(arm.pattern)}#{binding}: #{render_expression(arm.value, IF_EXPRESSION_PRECEDENCE)}"
+          end.join("\n#{INDENT}")
+          "match #{rendered_expression}:\n#{INDENT}#{rendered_arms}"
         when AST::UnsafeExpr
           inner = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
           wrap("unsafe: #{inner}", parent_precedence, IF_EXPRESSION_PRECEDENCE)

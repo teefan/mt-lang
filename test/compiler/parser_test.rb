@@ -344,6 +344,27 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::IntegerLiteral, return_stmt.value.else_expression
   end
 
+  def test_parses_match_expression
+    source = <<~MT
+      variant Step:
+          keep(value: int)
+          stop
+
+      function main(step: Step) -> int:
+          return match step:
+              Step.keep as payload: payload.value
+              Step.stop: 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    return_stmt = ast.declarations[1].body.first
+
+    assert_instance_of MilkTea::AST::ReturnStmt, return_stmt
+    assert_instance_of MilkTea::AST::MatchExpr, return_stmt.value
+    assert_equal "payload", return_stmt.value.arms.first.binding_name
+    assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arms.first.value.receiver
+  end
+
   def test_parses_async_functions_and_await_expressions
     source = <<~MT
       async function compute() -> int:
@@ -1798,6 +1819,19 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, return_stmt.value
     assert_instance_of MilkTea::AST::Identifier, return_stmt.value.arguments[1].value
     assert_equal "data_size", return_stmt.value.arguments[1].value.name
+  end
+
+  def test_parses_external_function_directional_params
+    source = <<~MT
+      external function fill(out value: int, inout total: int, label: cstr) -> void
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::ExternFunctionDecl, decl
+    assert_equal %i[out inout plain], decl.params.map(&:mode)
+    assert_equal %w[int int cstr], decl.params.map { |param| param.type.name.to_s }
   end
 
   def test_parses_variadic_foreign_function_declarations

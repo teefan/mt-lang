@@ -1731,6 +1731,44 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
+  def test_run_with_host_compiler_executes_match_expression_once
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-match-expr") do |dir|
+      source_path = File.join(dir, "match_expr.mt")
+
+      File.write(source_path, [
+        "struct Counter:",
+        "    value: int",
+        "",
+        "variant Step:",
+        "    keep(value: int)",
+        "    stop",
+        "",
+        "function next_step(counter: ref[Counter]) -> Step:",
+        "    counter.value += 1",
+        "    return Step.keep(value = 41)",
+        "",
+        "function main() -> int:",
+        "    var counter = Counter(value = 0)",
+        "    let result = match next_step(counter):",
+        "        Step.keep as payload: payload.value + counter.value",
+        "        Step.stop: 0",
+        "    if counter.value != 1:",
+        "        return 1",
+        "    return if result == 42: 0 else: 2",
+        "",
+      ].join("\n"))
+
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_unsafe_reinterpret
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

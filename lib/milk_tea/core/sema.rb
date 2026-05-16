@@ -670,17 +670,24 @@ module MilkTea
             raise_sema_error("external function #{decl.name} cannot take array parameters")
           end
 
-          if foreign
-            raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
-            validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
+          if param.is_a?(AST::ForeignParam)
+            if external
+              raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `as`") if param.boundary_type
+              unless %i[plain out inout].include?(param.mode)
+                raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `#{param.mode}`")
+              end
+            elsif foreign
+              raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
+              validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
+            end
 
             boundary_type = foreign_parameter_boundary_type(param, type, type_params:, type_param_constraints:)
-            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.boundary_type && param.mode != :in
-            validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if param.mode == :in
+            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.boundary_type && param.mode != :in
+            validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.mode == :in
             param_binding = value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
             body_params << param_binding
             record_declaration_binding(param, param_binding)
-            if param.boundary_type
+            if foreign && param.boundary_type
               body_params << value_binding(
                 name: foreign_mapping_public_alias_name(param.name),
                 type:,
@@ -693,6 +700,7 @@ module MilkTea
             param_binding = value_binding(name: param.name, type:, mutable: false, kind: :param)
             body_params << param_binding
             record_declaration_binding(param, param_binding)
+            public_params << Types::Parameter.new(param.name, type) if external
           end
         end
 
@@ -705,7 +713,7 @@ module MilkTea
           function_receiver_type = receiver_type
         end
 
-        call_params = public_params if foreign
+        call_params = public_params if foreign || external
 
         seen = {}
         body_params.each do |param|
@@ -730,7 +738,7 @@ module MilkTea
 
         function_type = Types::Function.new(
           decl.name,
-          params: foreign ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type) },
+          params: (foreign || external) ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type) },
           return_type: function_return_type,
           receiver_type: function_receiver_type,
           receiver_mutable:,
@@ -1351,34 +1359,103 @@ module MilkTea
         statements.each do |statement|
           case statement
           when AST::ErrorBlockStmt
+            preassign_local_binding_ids_in_expression(statement.header_expression) if statement.header_expression
+            Array(statement.header_iterables).each { |iterable| preassign_local_binding_ids_in_expression(iterable) }
             Array(statement.header_bindings).each do |binding|
               @preassigned_local_binding_ids[binding.object_id] ||= allocate_binding_id
             end if statement.header_type == :for
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::LocalDecl
             @preassigned_local_binding_ids[statement.object_id] ||= allocate_binding_id
+            preassign_local_binding_ids_in_expression(statement.value) if statement.value
             if statement.else_binding && (statement.else_body || statement.recovered_else)
               @preassigned_local_binding_ids[statement.else_binding.object_id] ||= allocate_binding_id
             end
             preassign_local_binding_ids_in_statements(statement.else_body || [])
+          when AST::Assignment
+            preassign_local_binding_ids_in_expression(statement.target)
+            preassign_local_binding_ids_in_expression(statement.value)
           when AST::IfStmt
-            statement.branches.each { |branch| preassign_local_binding_ids_in_statements(branch.body || []) }
+            statement.branches.each do |branch|
+              preassign_local_binding_ids_in_expression(branch.condition)
+              preassign_local_binding_ids_in_statements(branch.body || [])
+            end
             preassign_local_binding_ids_in_statements(statement.else_body || [])
           when AST::MatchStmt
+            preassign_local_binding_ids_in_expression(statement.expression)
             statement.arms.each do |arm|
+              preassign_local_binding_ids_in_expression(arm.pattern)
               @preassigned_local_binding_ids[arm.object_id] ||= allocate_binding_id if arm.binding_name
               preassign_local_binding_ids_in_statements(arm.body || [])
             end
-          when AST::UnsafeStmt, AST::WhileStmt
+          when AST::UnsafeStmt
+            preassign_local_binding_ids_in_statements(statement.body || [])
+          when AST::WhileStmt
+            preassign_local_binding_ids_in_expression(statement.condition)
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::ForStmt
             statement.bindings.each do |binding|
               @preassigned_local_binding_ids[binding.object_id] ||= allocate_binding_id
             end
+            statement.iterables.each { |iterable| preassign_local_binding_ids_in_expression(iterable) }
             preassign_local_binding_ids_in_statements(statement.body || [])
           when AST::DeferStmt
+            preassign_local_binding_ids_in_expression(statement.expression) if statement.expression
             preassign_local_binding_ids_in_statements(statement.body || []) if statement.body
+          when AST::ReturnStmt
+            preassign_local_binding_ids_in_expression(statement.value) if statement.value
+          when AST::StaticAssert
+            preassign_local_binding_ids_in_expression(statement.condition)
+            preassign_local_binding_ids_in_expression(statement.message)
+          when AST::ExpressionStmt
+            preassign_local_binding_ids_in_expression(statement.expression)
           end
+        end
+      end
+
+      def preassign_local_binding_ids_in_expression(expression)
+        case expression
+        when nil, AST::Identifier, AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
+             AST::BooleanLiteral, AST::NullLiteral, AST::SizeofExpr, AST::AlignofExpr,
+             AST::OffsetofExpr, AST::ErrorExpr
+          nil
+        when AST::MemberAccess
+          preassign_local_binding_ids_in_expression(expression.receiver)
+        when AST::IndexAccess
+          preassign_local_binding_ids_in_expression(expression.receiver)
+          preassign_local_binding_ids_in_expression(expression.index)
+        when AST::Specialization, AST::Call
+          preassign_local_binding_ids_in_expression(expression.callee)
+          expression.arguments.each { |argument| preassign_local_binding_ids_in_expression(argument.value) }
+        when AST::UnaryOp
+          preassign_local_binding_ids_in_expression(expression.operand)
+        when AST::BinaryOp
+          preassign_local_binding_ids_in_expression(expression.left)
+          preassign_local_binding_ids_in_expression(expression.right)
+        when AST::RangeExpr
+          preassign_local_binding_ids_in_expression(expression.start_expr)
+          preassign_local_binding_ids_in_expression(expression.end_expr)
+        when AST::IfExpr
+          preassign_local_binding_ids_in_expression(expression.condition)
+          preassign_local_binding_ids_in_expression(expression.then_expression)
+          preassign_local_binding_ids_in_expression(expression.else_expression)
+        when AST::MatchExpr
+          preassign_local_binding_ids_in_expression(expression.expression)
+          expression.arms.each do |arm|
+            preassign_local_binding_ids_in_expression(arm.pattern)
+            @preassigned_local_binding_ids[arm.object_id] ||= allocate_binding_id if arm.binding_name
+            preassign_local_binding_ids_in_expression(arm.value)
+          end
+        when AST::UnsafeExpr
+          preassign_local_binding_ids_in_expression(expression.expression)
+        when AST::AwaitExpr
+          preassign_local_binding_ids_in_expression(expression.expression)
+        when AST::FormatString
+          expression.parts.each do |part|
+            preassign_local_binding_ids_in_expression(part.expression) if part.is_a?(AST::FormatExprPart)
+          end
+        when AST::ProcExpr
+          preassign_local_binding_ids_in_statements(expression.body)
         end
       end
 
@@ -1415,7 +1492,7 @@ module MilkTea
           when AST::ErrorBlockStmt
             if statement.header_type == :for
               Array(statement.header_iterables).each do |iterable|
-                walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids)
+                walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids, declaration_ids)
               end
               for_scopes = block_scopes + [{}]
               Array(statement.header_bindings).each do |binding|
@@ -1425,11 +1502,11 @@ module MilkTea
               end
               walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
             else
-              walk_expression_for_precheck_resolution(statement.header_expression, block_scopes, identifier_ids) if statement.header_expression
+              walk_expression_for_precheck_resolution(statement.header_expression, block_scopes, identifier_ids, declaration_ids) if statement.header_expression
               walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
             end
           when AST::LocalDecl
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
             if statement.else_binding && (statement.else_body || statement.recovered_else)
               else_scopes = block_scopes + [{}]
               binding_id = @preassigned_local_binding_ids.fetch(statement.else_binding.object_id)
@@ -1445,8 +1522,8 @@ module MilkTea
               declaration_ids[statement.object_id] = binding_id
             end
           when AST::Assignment
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids)
-            walk_assignment_target_reads_for_precheck_resolution(statement.target, statement.operator, block_scopes, identifier_ids)
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids)
+            walk_assignment_target_reads_for_precheck_resolution(statement.target, statement.operator, block_scopes, identifier_ids, declaration_ids)
             if statement.target.is_a?(AST::Identifier)
               if (binding_id = resolve_name_in_precheck_scopes(statement.target.name, block_scopes))
                 identifier_ids[statement.target.object_id] = binding_id
@@ -1454,12 +1531,12 @@ module MilkTea
             end
           when AST::IfStmt
             statement.branches.each do |branch|
-              walk_expression_for_precheck_resolution(branch.condition, block_scopes, identifier_ids)
+              walk_expression_for_precheck_resolution(branch.condition, block_scopes, identifier_ids, declaration_ids)
               walk_statements_for_precheck_resolution(branch.body || [], block_scopes, declaration_ids, identifier_ids)
             end
             walk_statements_for_precheck_resolution(statement.else_body || [], block_scopes, declaration_ids, identifier_ids)
           when AST::MatchStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids)
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids)
             statement.arms.each do |arm|
               arm_scopes = block_scopes + [{}]
               if arm.binding_name
@@ -1470,11 +1547,11 @@ module MilkTea
               walk_statements_for_precheck_resolution(arm.body || [], arm_scopes, declaration_ids, identifier_ids)
             end
           when AST::UnsafeStmt, AST::WhileStmt
-            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids) if statement.is_a?(AST::WhileStmt)
+            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids, declaration_ids) if statement.is_a?(AST::WhileStmt)
             walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids)
           when AST::ForStmt
             statement.iterables.each do |iterable|
-              walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids)
+              walk_expression_for_precheck_resolution(iterable, block_scopes, identifier_ids, declaration_ids)
             end
             for_scopes = block_scopes + [{}]
             statement.bindings.each do |binding|
@@ -1484,19 +1561,19 @@ module MilkTea
             end
             walk_statements_for_precheck_resolution(statement.body || [], for_scopes, declaration_ids, identifier_ids)
           when AST::DeferStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids) if statement.expression
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids) if statement.expression
             walk_statements_for_precheck_resolution(statement.body || [], block_scopes, declaration_ids, identifier_ids) if statement.body
           when AST::ExpressionStmt
-            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids)
+            walk_expression_for_precheck_resolution(statement.expression, block_scopes, identifier_ids, declaration_ids)
           when AST::ReturnStmt
-            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids) if statement.value
+            walk_expression_for_precheck_resolution(statement.value, block_scopes, identifier_ids, declaration_ids) if statement.value
           when AST::StaticAssert
-            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids)
+            walk_expression_for_precheck_resolution(statement.condition, block_scopes, identifier_ids, declaration_ids)
           end
         end
       end
 
-      def walk_expression_for_precheck_resolution(expression, scopes, identifier_ids)
+      def walk_expression_for_precheck_resolution(expression, scopes, identifier_ids, declaration_ids = nil)
         case expression
         when nil
           nil
@@ -1505,41 +1582,53 @@ module MilkTea
             identifier_ids[expression.object_id] = binding_id
           end
         when AST::MemberAccess
-          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids, declaration_ids)
         when AST::IndexAccess
-          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(expression.index, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.receiver, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(expression.index, scopes, identifier_ids, declaration_ids)
         when AST::Specialization
-          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids, declaration_ids)
         when AST::Call
-          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids)
-          expression.arguments.each { |argument| walk_expression_for_precheck_resolution(argument.value, scopes, identifier_ids) }
+          walk_expression_for_precheck_resolution(expression.callee, scopes, identifier_ids, declaration_ids)
+          expression.arguments.each { |argument| walk_expression_for_precheck_resolution(argument.value, scopes, identifier_ids, declaration_ids) }
         when AST::UnaryOp
-          walk_expression_for_precheck_resolution(expression.operand, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.operand, scopes, identifier_ids, declaration_ids)
         when AST::BinaryOp
-          walk_expression_for_precheck_resolution(expression.left, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(expression.right, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.left, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(expression.right, scopes, identifier_ids, declaration_ids)
         when AST::RangeExpr
-          walk_expression_for_precheck_resolution(expression.start_expr, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(expression.end_expr, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.start_expr, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(expression.end_expr, scopes, identifier_ids, declaration_ids)
         when AST::IfExpr
-          walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(expression.else_expression, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.condition, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(expression.then_expression, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(expression.else_expression, scopes, identifier_ids, declaration_ids)
+        when AST::MatchExpr
+          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
+          expression.arms.each do |arm|
+            walk_expression_for_precheck_resolution(arm.pattern, scopes, identifier_ids, declaration_ids)
+            arm_scopes = scopes
+            if arm.binding_name
+              binding_id = @preassigned_local_binding_ids.fetch(arm.object_id)
+              arm_scopes = scopes + [{ arm.binding_name => binding_id }]
+              declaration_ids[arm.object_id] = binding_id if declaration_ids
+            end
+            walk_expression_for_precheck_resolution(arm.value, arm_scopes, identifier_ids, declaration_ids)
+          end
         when AST::UnsafeExpr
-          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
         when AST::AwaitExpr
-          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(expression.expression, scopes, identifier_ids, declaration_ids)
         when AST::FormatString
           expression.parts.each do |part|
             next unless part.is_a?(AST::FormatExprPart)
 
-            walk_expression_for_precheck_resolution(part.expression, scopes, identifier_ids)
+            walk_expression_for_precheck_resolution(part.expression, scopes, identifier_ids, declaration_ids)
           end
         end
       end
 
-      def walk_assignment_target_reads_for_precheck_resolution(target, operator, scopes, identifier_ids)
+      def walk_assignment_target_reads_for_precheck_resolution(target, operator, scopes, identifier_ids, declaration_ids = nil)
         if operator != "=" && target.is_a?(AST::Identifier)
           if (binding_id = resolve_name_in_precheck_scopes(target.name, scopes))
             identifier_ids[target.object_id] = binding_id
@@ -1550,12 +1639,12 @@ module MilkTea
         when AST::Identifier
           nil
         when AST::MemberAccess
-          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids, declaration_ids)
         when AST::IndexAccess
-          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids)
-          walk_expression_for_precheck_resolution(target.index, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(target.receiver, scopes, identifier_ids, declaration_ids)
+          walk_expression_for_precheck_resolution(target.index, scopes, identifier_ids, declaration_ids)
         else
-          walk_expression_for_precheck_resolution(target, scopes, identifier_ids)
+          walk_expression_for_precheck_resolution(target, scopes, identifier_ids, declaration_ids)
         end
       end
 
@@ -2417,6 +2506,8 @@ module MilkTea
             infer_binary(expression, scopes:, expected_type:)
           when AST::IfExpr
             infer_if_expression(expression, scopes:, expected_type:)
+          when AST::MatchExpr
+            infer_match_expression(expression, scopes:, expected_type:)
           when AST::UnsafeExpr
             infer_unsafe_expression(expression, scopes:, expected_type:)
           when AST::ProcExpr
@@ -2729,6 +2820,210 @@ module MilkTea
         raise_sema_error("if expression branches require compatible types, got #{then_type} and #{else_type}")
       end
 
+      def infer_match_expression(expression, scopes:, expected_type: nil)
+        validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
+        validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
+        scrutinee_type = infer_expression(expression.expression, scopes:)
+
+        if error_type?(scrutinee_type)
+          infer_recovered_match_expression(expression, scopes:, expected_type:)
+        elsif scrutinee_type.is_a?(Types::Enum)
+          infer_enum_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        elsif scrutinee_type.is_a?(Types::Variant)
+          infer_variant_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        elsif integer_type?(scrutinee_type)
+          infer_integer_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        else
+          raise_sema_error("match requires an enum, variant, or integer scrutinee, got #{scrutinee_type}")
+        end
+      end
+
+      def infer_recovered_match_expression(expression, scopes:, expected_type:)
+        arm_entries = expression.arms.map do |arm|
+          arm_scopes = scopes
+          if arm.binding_name
+            binding = value_binding(
+              name: arm.binding_name,
+              type: @error_type,
+              mutable: false,
+              kind: :local,
+              id: @preassigned_local_binding_ids.fetch(arm.object_id),
+            )
+            arm_scopes = [{ arm.binding_name => binding }] + scopes
+            record_declaration_binding(arm, binding)
+          end
+          [infer_match_expression_arm_value(arm, scopes: arm_scopes, expected_type:), arm.value]
+        end
+
+        match_expression_common_type(arm_entries, expected_type)
+      end
+
+      def infer_enum_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        covered_members = {}
+        wildcard_seen = false
+        arm_entries = []
+
+        expression.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+
+            wildcard_seen = true
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
+          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
+          pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
+          ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
+
+          member_name = match_member_name(arm.pattern, scrutinee_type)
+          raise_sema_error("match arm must be an enum member of #{scrutinee_type}") unless member_name
+          raise_sema_error("duplicate match arm #{scrutinee_type}.#{member_name}") if covered_members.key?(member_name)
+
+          covered_members[member_name] = true
+          arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+        end
+
+        unless wildcard_seen
+          missing_members = scrutinee_type.members - covered_members.keys
+          raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}") unless missing_members.empty?
+        end
+
+        match_expression_common_type(arm_entries, expected_type)
+      end
+
+      def infer_integer_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        has_wildcard = expression.arms.any? { |arm| wildcard_pattern?(arm.pattern) }
+        raise_sema_error("match on integer type #{scrutinee_type} requires a wildcard arm (_:)") unless has_wildcard
+
+        covered_values = {}
+        wildcard_seen = false
+        arm_entries = []
+
+        expression.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+
+            wildcard_seen = true
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          unless arm.pattern.is_a?(AST::IntegerLiteral)
+            raise_sema_error("match arm for integer scrutinee must be an integer literal or _, got #{arm.pattern.class.name}")
+          end
+
+          value = arm.pattern.value
+          raise_sema_error("duplicate match arm value #{value}") if covered_values.key?(value)
+
+          covered_values[value] = true
+          arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+        end
+
+        match_expression_common_type(arm_entries, expected_type)
+      end
+
+      def infer_variant_match_expression(expression, scrutinee_type, scopes:, expected_type:)
+        covered_arms = {}
+        wildcard_seen = false
+        arm_entries = []
+
+        expression.arms.each do |arm|
+          if arm.pattern.is_a?(AST::ErrorExpr)
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          if wildcard_pattern?(arm.pattern)
+            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
+
+            wildcard_seen = true
+            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+            next
+          end
+
+          validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
+          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
+
+          arm_name = variant_match_arm_name(arm.pattern, scrutinee_type)
+          raise_sema_error("match arm must be a variant arm of #{scrutinee_type}") unless arm_name
+          raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
+
+          covered_arms[arm_name] = true
+
+          arm_scopes = scopes.dup
+          if arm.binding_name
+            fields = scrutinee_type.arm(arm_name)
+            if fields.nil? || fields.empty?
+              raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed")
+            end
+
+            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+            binding = value_binding(
+              name: arm.binding_name,
+              type: payload_type,
+              mutable: false,
+              kind: :local,
+              id: @preassigned_local_binding_ids.fetch(arm.object_id),
+            )
+            arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
+            record_declaration_binding(arm, binding)
+          end
+
+          arm_entries << [infer_match_expression_arm_value(arm, scopes: arm_scopes, expected_type:), arm.value]
+        end
+
+        unless wildcard_seen
+          missing_arms = scrutinee_type.arm_names - covered_arms.keys
+          raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}") unless missing_arms.empty?
+        end
+
+        match_expression_common_type(arm_entries, expected_type)
+      end
+
+      def infer_match_expression_arm_value(arm, scopes:, expected_type:)
+        validate_consuming_foreign_expression!(arm.value, scopes:, root_allowed: false)
+        validate_hoistable_foreign_expression!(arm.value, scopes:, root_hoistable: false)
+        infer_expression(arm.value, scopes:, expected_type:)
+      end
+
+      def match_expression_common_type(arm_entries, expected_type)
+        return expected_type || @error_type if arm_entries.empty?
+
+        if expected_type && arm_entries.all? { |type, expr| types_compatible?(type, expected_type, expression: expr) }
+          return expected_type
+        end
+
+        common_type, common_expression = arm_entries.first
+        arm_entries.drop(1).each do |type, expr|
+          next if type == common_type
+
+          merged_type = conditional_common_type(
+            common_type,
+            type,
+            then_expression: common_expression,
+            else_expression: expr,
+          )
+          raise_sema_error("match expression arms require compatible types, got #{common_type} and #{type}") unless merged_type
+
+          common_type = merged_type
+          common_expression = expr
+        end
+
+        common_type
+      end
+
       def infer_proc_expression(expression, scopes:, expected_type: nil)
         proc_type = resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         if expected_type && !proc_type_compatible?(proc_type, expected_type)
@@ -2886,6 +3181,13 @@ module MilkTea
           validate_consuming_foreign_expression!(expression.condition, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.then_expression, scopes:, root_allowed: false)
           validate_consuming_foreign_expression!(expression.else_expression, scopes:, root_allowed: false)
+        when AST::MatchExpr
+          validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
+          expression.arms.each do |arm|
+            validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
+            arm_scopes = arm.binding_name ? [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] + scopes : scopes
+            validate_consuming_foreign_expression!(arm.value, scopes: arm_scopes, root_allowed: false)
+          end
         when AST::UnsafeExpr
           validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
         when AST::FormatString
@@ -2928,6 +3230,13 @@ module MilkTea
           validate_hoistable_foreign_expression!(expression.condition, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.then_expression, scopes:, root_hoistable: false)
           validate_hoistable_foreign_expression!(expression.else_expression, scopes:, root_hoistable: false)
+        when AST::MatchExpr
+          validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
+          expression.arms.each do |arm|
+            validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
+            arm_scopes = arm.binding_name ? [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] + scopes : scopes
+            validate_hoistable_foreign_expression!(arm.value, scopes: arm_scopes, root_hoistable: false)
+          end
         when AST::UnsafeExpr
           validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
         when AST::FormatString
@@ -4177,6 +4486,7 @@ module MilkTea
         when AST::UnaryOp then source_line(node.operand)
         when AST::BinaryOp then source_line(node.left) || source_line(node.right)
         when AST::IfExpr then source_line(node.condition) || source_line(node.then_expression) || source_line(node.else_expression)
+        when AST::MatchExpr then source_line(node.expression) || node.arms.filter_map { |arm| source_line(arm.pattern) || source_line(arm.value) }.first
         when AST::AwaitExpr then source_line(node.expression)
         when AST::FormatExprPart then source_line(node.expression)
         else nil
@@ -4196,6 +4506,7 @@ module MilkTea
         when AST::UnaryOp then source_column(node.operand)
         when AST::BinaryOp then source_column(node.left) || source_column(node.right)
         when AST::IfExpr then source_column(node.condition) || source_column(node.then_expression) || source_column(node.else_expression)
+        when AST::MatchExpr then source_column(node.expression) || node.arms.filter_map { |arm| source_column(arm.pattern) || source_column(arm.value) }.first
         when AST::AwaitExpr then source_column(node.expression)
         when AST::FormatExprPart then source_column(node.expression)
         else nil
@@ -4514,6 +4825,9 @@ module MilkTea
           unsupported_async_await_context(expression.condition) ||
             unsupported_async_await_context(expression.then_expression) ||
             unsupported_async_await_context(expression.else_expression)
+        when AST::MatchExpr
+          unsupported_async_await_context(expression.expression) ||
+            expression.arms.filter_map { |arm| unsupported_async_await_context(arm.pattern) || unsupported_async_await_context(arm.value) }.first
         when AST::UnsafeExpr
           unsupported_async_await_context(expression.expression)
         when AST::MemberAccess
@@ -4586,6 +4900,8 @@ module MilkTea
           expression_contains_await?(expression.left) || expression_contains_await?(expression.right)
         when AST::IfExpr
           expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
+        when AST::MatchExpr
+          expression_contains_await?(expression.expression) || expression.arms.any? { |arm| expression_contains_await?(arm.pattern) || expression_contains_await?(arm.value) }
         when AST::UnsafeExpr
           expression_contains_await?(expression.expression)
         when AST::MemberAccess

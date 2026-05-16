@@ -262,6 +262,8 @@ module MilkTea
           expression_uses_pattern?(expression.start_expr, &predicate) || expression_uses_pattern?(expression.end_expr, &predicate)
         when AST::IfExpr
           expression_uses_pattern?(expression.condition, &predicate) || expression_uses_pattern?(expression.then_expression, &predicate) || expression_uses_pattern?(expression.else_expression, &predicate)
+        when AST::MatchExpr
+          expression_uses_pattern?(expression.expression, &predicate) || expression.arms.any? { |arm| expression_uses_pattern?(arm.pattern, &predicate) || expression_uses_pattern?(arm.value, &predicate) }
         when AST::UnsafeExpr
           expression_uses_pattern?(expression.expression, &predicate)
         when AST::UnaryOp
@@ -1820,6 +1822,55 @@ module MilkTea
             ),
           ]
           [setup, AST::Identifier.new(name: temp_name)]
+        when AST::MatchExpr
+          expression_setup, normalized_expression = normalize_async_expression(expression.expression, counter, env:)
+          result_type = infer_expression_type(expression, env:, expected_type:)
+          scrutinee_type = infer_expression_type(expression.expression, env:)
+          normalized_arms = expression.arms.map do |arm|
+            arm_env = duplicate_env(env)
+            if scrutinee_type.is_a?(Types::Variant) && arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+              arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+              if arm_name && scrutinee_type.has_payload?(arm_name)
+                fields = scrutinee_type.arm(arm_name)
+                payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
+              end
+            end
+            pattern_setup, normalized_pattern = normalize_async_expression(arm.pattern, counter, env:)
+            value_setup, normalized_value = normalize_async_expression(arm.value, counter, env: arm_env, expected_type: result_type)
+            [pattern_setup, value_setup, AST::MatchExprArm.new(
+              pattern: normalized_pattern,
+              binding_name: arm.binding_name,
+              binding_line: arm.binding_line,
+              binding_column: arm.binding_column,
+              value: normalized_value,
+            )]
+          end
+
+          if expression_setup.empty? && normalized_arms.all? { |pattern_setup, value_setup, _arm| pattern_setup.empty? && value_setup.empty? }
+            return [[], AST::MatchExpr.new(expression: normalized_expression, arms: normalized_arms.map(&:last), line: expression.line, column: expression.column, length: expression.length)]
+          end
+
+          temp_name = fresh_async_temp_name(counter)
+          setup = expression_setup + [
+            AST::LocalDecl.new(kind: :var, name: temp_name, type: ast_type_ref_for(result_type), value: nil),
+            AST::MatchStmt.new(
+              expression: normalized_expression,
+              arms: normalized_arms.map do |pattern_setup, value_setup, arm|
+                AST::MatchArm.new(
+                  pattern: arm.pattern,
+                  binding_name: arm.binding_name,
+                  binding_line: arm.binding_line,
+                  binding_column: arm.binding_column,
+                  body: pattern_setup + value_setup + [AST::Assignment.new(target: AST::Identifier.new(name: temp_name), operator: "=", value: arm.value)],
+                )
+              end,
+              line: expression.line,
+              column: expression.column,
+              length: expression.length,
+            ),
+          ]
+          [setup, AST::Identifier.new(name: temp_name)]
         when AST::UnsafeExpr
           normalize_async_expression(expression.expression, counter, env:, expected_type:)
         when AST::MemberAccess
@@ -1920,6 +1971,8 @@ module MilkTea
           async_expression_contains_await?(expression.left) || async_expression_contains_await?(expression.right)
         when AST::IfExpr
           async_expression_contains_await?(expression.condition) || async_expression_contains_await?(expression.then_expression) || async_expression_contains_await?(expression.else_expression)
+        when AST::MatchExpr
+          async_expression_contains_await?(expression.expression) || expression.arms.any? { |arm| async_expression_contains_await?(arm.pattern) || async_expression_contains_await?(arm.value) }
         when AST::UnsafeExpr
           async_expression_contains_await?(expression.expression)
         when AST::MemberAccess
@@ -3783,6 +3836,13 @@ module MilkTea
           collect_proc_captures_from_expression(expression.condition, env, local_scopes, captures)
           collect_proc_captures_from_expression(expression.then_expression, env, local_scopes, captures)
           collect_proc_captures_from_expression(expression.else_expression, env, local_scopes, captures)
+        when AST::MatchExpr
+          collect_proc_captures_from_expression(expression.expression, env, local_scopes, captures)
+          expression.arms.each do |arm|
+            collect_proc_captures_from_expression(arm.pattern, env, local_scopes, captures)
+            arm_scopes = arm.binding_name ? local_scopes + [{ arm.binding_name => true }] : local_scopes
+            collect_proc_captures_from_expression(arm.value, env, arm_scopes, captures)
+          end
         when AST::UnsafeExpr
           collect_proc_captures_from_expression(expression.expression, env, local_scopes, captures)
         when AST::AwaitExpr
@@ -4459,6 +4519,8 @@ module MilkTea
           prepare_binary_expression_for_inline_lowering(expression, env:, expected_type:)
         when AST::IfExpr
           prepare_if_expression_for_inline_lowering(expression, env:, expected_type:)
+        when AST::MatchExpr
+          prepare_match_expression_for_inline_lowering(expression, env:, expected_type:)
         when AST::UnsafeExpr
           prepare_expression_for_inline_lowering(expression.expression, env:, expected_type:)
         when AST::Call
@@ -4842,6 +4904,69 @@ module MilkTea
         ]
       end
 
+      def prepare_match_expression_for_inline_lowering(expression, env:, expected_type: nil)
+        scrutinee_type = infer_expression_type(expression.expression, env:)
+        expression_setup, prepared_expression = prepare_expression_for_inline_lowering(expression.expression, env:, expected_type: scrutinee_type)
+        result_type = infer_expression_type(expression, env:, expected_type:)
+        result_name = fresh_c_temp_name(env, "match_expr")
+        register_prepared_temp!(env, result_name, result_type)
+        result_ref = IR::Name.new(name: result_name, type: result_type, pointer: false)
+        setup = expression_setup + [IR::LocalDecl.new(name: result_name, c_name: result_name, type: result_type, value: IR::ZeroInit.new(type: result_type))]
+        lowered_expression = lower_expression(prepared_expression, env:, expected_type: scrutinee_type)
+
+        if scrutinee_type.is_a?(Types::Variant) &&
+           expression.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
+           !duplicable_foreign_argument_expression?(lowered_expression)
+          scrutinee_name = fresh_c_temp_name(env, "match_value")
+          setup << IR::LocalDecl.new(name: scrutinee_name, c_name: scrutinee_name, type: scrutinee_type, value: lowered_expression)
+          lowered_expression = IR::Name.new(name: scrutinee_name, type: scrutinee_type, pointer: false)
+        end
+
+        switch_expression = lowered_expression
+        cases = if scrutinee_type.is_a?(Types::Variant)
+                  kind_type = @types.fetch("int")
+                  switch_expression = IR::Member.new(receiver: lowered_expression, member: "kind", type: kind_type)
+                  outer_c = c_type_name(scrutinee_type)
+                  expression.arms.map do |arm|
+                    arm_env = duplicate_env(env)
+                    binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+                                     arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                                     if arm_name && scrutinee_type.has_payload?(arm_name)
+                                       fields = scrutinee_type.arm(arm_name)
+                                       payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                                       data_expr = IR::Member.new(receiver: lowered_expression, member: "data", type: nil)
+                                       arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+                                       binding_c = c_local_name(arm.binding_name)
+                                       arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+                                       IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+                                     end
+                                   end
+                    value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                    body = [binding_decl, *value_setup].compact
+                    body << IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))
+                    if wildcard_arm_pattern?(arm.pattern)
+                      IR::SwitchDefaultCase.new(body: body)
+                    else
+                      arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                      IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+                    end
+                  end
+                else
+                  expression.arms.map do |arm|
+                    arm_env = duplicate_env(env)
+                    value_setup, prepared_value = prepare_expression_for_inline_lowering(arm.value, env: arm_env, expected_type: result_type)
+                    body = value_setup + [IR::Assignment.new(target: result_ref, operator: "=", value: lower_contextual_expression(prepared_value, env: arm_env, expected_type: result_type))]
+                    if wildcard_arm_pattern?(arm.pattern)
+                      IR::SwitchDefaultCase.new(body: body)
+                    else
+                      IR::SwitchCase.new(value: lower_expression(arm.pattern, env: arm_env, expected_type: scrutinee_type), body: body)
+                    end
+                  end
+                end
+
+        [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases)], AST::Identifier.new(name: result_name)]
+      end
+
       def materialize_prepared_expression(setup, value, env:, type:, prefix:)
         raise LoweringError, "cannot use void expression inline" unless value
 
@@ -4963,6 +5088,8 @@ module MilkTea
             else_expression: lower_contextual_expression(expression.else_expression, env: else_env, expected_type: type),
             type:,
           )
+        when AST::MatchExpr
+          raise LoweringError, "match expressions must be prepared before direct lowering"
         when AST::UnsafeExpr
           lower_expression(expression.expression, env:, expected_type: type)
         when AST::ProcExpr
@@ -5321,8 +5448,13 @@ module MilkTea
 
       def lower_call_arguments(arguments, callee_type, env:)
         arguments.map.with_index do |argument, index|
-          expected_type = index < callee_type.params.length ? callee_type.params[index].type : nil
+          parameter = index < callee_type.params.length ? callee_type.params[index] : nil
+          expected_type = parameter&.type
           external_call = callee_type.respond_to?(:external) && callee_type.external && !expected_type.nil?
+          if external_call && parameter && %i[out inout].include?(parameter.passing_mode)
+            next lower_foreign_pointer_argument_value(parameter, argument, env:)
+          end
+
           lower_contextual_expression(
             argument.value,
             env:,
@@ -7270,6 +7402,30 @@ module MilkTea
           end
 
           conditional_common_type(then_type, else_type) || raise(LoweringError, "if expression branches require compatible types, got #{then_type} and #{else_type}")
+        when AST::MatchExpr
+          scrutinee_type = infer_expression_type(expression.expression, env:)
+          arm_types = expression.arms.map do |arm|
+            arm_env = duplicate_env(env)
+            if scrutinee_type.is_a?(Types::Variant) && arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+              arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+              if arm_name && scrutinee_type.has_payload?(arm_name)
+                fields = scrutinee_type.arm(arm_name)
+                payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
+              end
+            end
+            infer_expression_type(arm.value, env: arm_env, expected_type: expected_type)
+          end
+
+          if expected_type && arm_types.all? { |arm_type| if_expression_branch_compatible?(arm_type, expected_type) }
+            return expected_type
+          end
+
+          common_type = arm_types.first
+          arm_types.drop(1).each do |arm_type|
+            common_type = conditional_common_type(common_type, arm_type) || raise(LoweringError, "match expression arms require compatible types, got #{common_type} and #{arm_type}")
+          end
+          common_type
         when AST::UnsafeExpr
           infer_expression_type(expression.expression, env:, expected_type:)
         when AST::ProcExpr
@@ -9124,6 +9280,8 @@ module MilkTea
       end
 
       def loop_exit_statement(target, local_defers:, outer_defers:)
+        return IR::GotoStmt.new(label: target[:label]) if target[:label]
+
         case target[:kind]
         when :break
           IR::BreakStmt.new

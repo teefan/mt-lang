@@ -1081,6 +1081,24 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/Inspect\(\(\(const void\*\) \(&__mt_foreign_in_\d+\)\)\);/, generated)
   end
 
+  def test_generate_c_for_external_out_params
+    source = <<~MT
+      # module demo.external_out_surface
+
+      external function Fill(out value: int, inout total: int) -> void
+
+      function main() -> int:
+          var value = 1
+          var total = 2
+          Fill(value, total)
+          return value + total
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/Fill\(&value, &total\);/, generated)
+  end
+
   def test_generate_c_for_local_const_ptr_typed_binding
     source = <<~MT
       # module demo.main
