@@ -407,7 +407,6 @@ module MilkTea
             parts << "implements #{interfaces.join(' and ')}"
           else
             parts << case constraint.kind
-                     when :defaults then "defaults"
                      when :hashes then "hashes"
                      when :equates then "equates"
                      else

@@ -538,7 +538,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static int32_t demo_unused_params_codegen_Title_tick\(demo_unused_params_codegen_Title this, int32_t effect\) \{\s+\(void\)effect;/m, generated)
   end
 
-  def test_generate_c_for_default_specialization_with_override_and_zero_fallback
+  def test_generate_c_for_default_specialization_with_explicit_associated_overrides
     source = <<~MT
       # module demo.default_codegen
 
@@ -551,6 +551,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
       struct Plain:
           hp: int
+
+      methods Plain:
+          static function default() -> Plain:
+              return Plain(hp = 7)
 
       function make_default[T]() -> T:
           return default[T]
@@ -566,7 +570,7 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static demo_default_codegen_Player demo_default_codegen_make_default_demo_default_codegen_Player\(void\)/, generated)
     assert_match(/return demo_default_codegen_Player_default\(\);/, generated)
     assert_match(/static demo_default_codegen_Plain demo_default_codegen_make_default_demo_default_codegen_Plain\(void\)/, generated)
-    assert_match(/return \(demo_default_codegen_Plain\) \{ 0 \};/, generated)
+    assert_match(/return demo_default_codegen_Plain_default\(\);/, generated)
   end
 
   def test_generate_c_for_async_with_control_flow
@@ -3989,9 +3993,9 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
   end
 
-  def test_generate_c_for_generic_functions_with_defaults_and_interface_constraints
+  def test_generate_c_for_generic_functions_with_default_calls_and_interface_constraints
     source = [
-      "# module demo.defaults_constraint_codegen",
+      "# module demo.default_call_interface_codegen",
       "",
       "interface Named:",
       "    function value() -> int",
@@ -4006,7 +4010,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    function value() -> int:",
       "        return this.count",
       "",
-      "function make_and_read[T defaults and implements Named]() -> int:",
+      "function make_and_read[T implements Named]() -> int:",
       "    let item = default[T]",
       "    return item.value()",
       "",
@@ -4017,9 +4021,9 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t demo_defaults_constraint_codegen_make_and_read_demo_defaults_constraint_codegen_Counter\(void\)/, generated)
-    assert_match(/demo_defaults_constraint_codegen_Counter item = demo_defaults_constraint_codegen_Counter_default\(\);/, generated)
-    assert_match(/return demo_defaults_constraint_codegen_Counter_value\(item\);/, generated)
+    assert_match(/static int32_t demo_default_call_interface_codegen_make_and_read_demo_default_call_interface_codegen_Counter\(void\)/, generated)
+    assert_match(/demo_default_call_interface_codegen_Counter item = demo_default_call_interface_codegen_Counter_default\(\);/, generated)
+    assert_match(/return demo_default_call_interface_codegen_Counter_value\(item\);/, generated)
   end
 
   def test_generate_c_for_generic_foreign_defs_with_str_builder_public_capacity_mapping

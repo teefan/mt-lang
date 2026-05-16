@@ -62,7 +62,27 @@ Rules:
 - Tabs are rejected.
 - Indentation must be a multiple of 4 spaces.
 - Indentation can increase by only one level (4 spaces) at a time.
-- Newlines end statements, except while inside `()` or `[]`.
+- Newlines end statements, except while inside `()` or `[]`, or when the previous physical line ends with a binary operator.
+
+For long expressions, prefer delimiter-based wrapping:
+
+```mt
+let total = (
+    subtotal
+    + tax
+    - discount
+)
+```
+
+Milk Tea also accepts continuation after a line-ending binary operator:
+
+```mt
+let total = subtotal +
+    tax -
+    discount
+```
+
+Starting a new physical line with the operator is not part of the supported source contract; wrap in `()` instead if that layout is clearer.
 
 ### 2.2 Comments
 
@@ -318,7 +338,7 @@ Rules:
 - Mutation through referent surfaces (for example span element writes, `read(ref_value) = ...`, and pointer writes in `unsafe`) is allowed.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may declare constraints with `implements`, `defaults`, `hashes`, and `equates`.
+- Generic function and method type parameters may declare constraints with `implements`, `hashes`, and `equates`.
 
 Examples:
 
@@ -330,10 +350,10 @@ function damage_one[T implements Damageable](target: ref[T], amount: int) -> voi
 function tag[T implements Damageable and Named](target: ref[T]) -> str:
     return target.name()
 
-function make_default[T defaults]() -> T:
+function make_default[T]() -> T:
     return default[T]
 
-function boot_screen[T defaults and implements ScreenState]() -> T:
+function boot_screen[T implements ScreenState]() -> T:
     return default[T]
 ```
 
@@ -618,11 +638,11 @@ Rules:
 
 - Constraints are supported on generic structs, variants, functions, and methods.
 - Interface constraints use `implements`, and multiple interfaces on the same type parameter use `and`: `T implements A and B`.
-- `defaults` requires an accessible zero-argument associated function `T.default()` that returns `T`.
+- `hashes` and `equates` are associated-function constraints.
 - `hashes` requires an accessible associated function `T.hash(value: const_ptr[T]) -> uint`.
 - `equates` requires an accessible associated function `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`.
 - Current type parameters may be used as type expressions for associated function calls in generic bodies, such as `T.default()` or `T.tag()`.
-- Constraint kinds compose with `and`: `T defaults and implements ScreenState`, `T hashes and equates`, and `T implements Named and defaults` are all valid.
+- Constraint kinds compose with `and`: `T implements ScreenState and Named`, `T hashes and equates`, and `T implements Named and hashes` are all valid.
 
 Type arguments can be:
 
@@ -649,11 +669,11 @@ Special recognized callables:
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 
-`default[T]` first looks for an accessible zero-argument associated function `T.default()` that returns `T`. If none exists, it falls back to the same raw initialization contract as `zero[T]`.
+`default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.
 
 `hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint`, and `equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. Each argument must already be a `ref[T]`, `ptr[T]`, or `const_ptr[T]`, or be a safe stored `T` lvalue that can be borrowed implicitly.
 
-When a generic API needs an explicit semantic default instead of that fallback behavior, add a `defaults` constraint to the type parameter. `T defaults` requires an accessible zero-argument `T.default()` that returns `T`.
+There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 
 For recoverable failures, use `import std.status as status` and the ordinary library type `status.Status[T, E]`. Its `.ok(...)` and `.err(...)` constructors are variant arms, not built-in callables.
 

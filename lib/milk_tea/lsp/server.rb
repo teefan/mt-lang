@@ -4115,7 +4115,7 @@ module MilkTea
                when 'zero'
                  '`zero[T]` returns the raw zero-initialized value for `T`.'
                when 'default'
-                 '`default[T]` first looks for an accessible zero-argument associated function `T.default()` that returns `T`. If none exists, it falls back to the same raw initialization contract as `zero[T]`.'
+                 '`default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.'
                when 'reinterpret'
                  '`reinterpret[T](value)` bit-casts a value to `T`; it requires `unsafe` and compatible concrete sized types.'
                end

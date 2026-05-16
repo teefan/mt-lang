@@ -56,8 +56,8 @@ module MilkTea
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
     FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :type_substitutions, :declared_receiver_type)
-    TypeParamConstraintBinding = Data.define(:interfaces, :requires_default, :requires_hash, :requires_equality) do
-      def initialize(interfaces: [], requires_default: false, requires_hash: false, requires_equality: false) = super
+    TypeParamConstraintBinding = Data.define(:interfaces, :requires_hash, :requires_equality) do
+      def initialize(interfaces: [], requires_hash: false, requires_equality: false) = super
     end
     DefaultResolution = Data.define(:target_type, :binding)
     HashResolution = Data.define(:target_type, :binding)
@@ -758,7 +758,6 @@ module MilkTea
 
           resolved_interfaces = []
           seen_interfaces = {}
-          requires_default = false
           requires_hash = false
           requires_equality = false
 
@@ -770,10 +769,6 @@ module MilkTea
 
               seen_interfaces[interface] = true
               resolved_interfaces << interface
-            when :defaults
-              raise_sema_error("duplicate defaults constraint #{type_param.name} defaults") if requires_default
-
-              requires_default = true
             when :hashes
               raise_sema_error("duplicate hashes constraint #{type_param.name} hashes") if requires_hash
 
@@ -789,7 +784,6 @@ module MilkTea
 
           constraints[type_param.name] = TypeParamConstraintBinding.new(
             interfaces: resolved_interfaces.freeze,
-            requires_default: requires_default,
             requires_hash: requires_hash,
             requires_equality: requires_equality,
           )
@@ -870,11 +864,6 @@ module MilkTea
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier)
             return if expression.callee.name == "zero"
-
-            if expression.callee.name == "default"
-              resolution = resolve_default_specialization(expression)
-              return if resolution.binding.nil? && default_zero_fallback_type?(resolution.target_type, expected_type: nil)
-            end
           end
 
           raise_sema_error("module variable initializer must be static-storage-safe")
@@ -2443,8 +2432,7 @@ module MilkTea
 
               if expression.callee.name == "default"
                 resolution = resolve_default_specialization(expression)
-                return resolution.target_type if resolution.binding
-                return check_zero_call(resolution.target_type, [], expected_type:, operation: "default")
+                return resolution.target_type
               end
             end
 
@@ -2797,6 +2785,15 @@ module MilkTea
       end
 
       def infer_call(expression, scopes:, expected_type: nil)
+        if expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
+          case expression.callee.callee.name
+          when "zero"
+            raise_sema_error("zero[T]() is no longer supported; use zero[T]")
+          when "default"
+            raise_sema_error("default[T]() is no longer supported; use default[T]")
+          end
+        end
+
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
 
         case callable_kind
@@ -3546,9 +3543,12 @@ module MilkTea
         raise_sema_error("default type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
 
         target_type = resolve_type_ref(type_arg)
+        binding = resolve_explicit_default_binding(target_type, context: "default[#{target_type}]")
+        raise_sema_error("default[#{target_type}] requires associated function #{target_type}.default()") unless binding
+
         DefaultResolution.new(
           target_type:,
-          binding: resolve_explicit_default_binding(target_type, context: "default[#{target_type}]"),
+          binding:,
         )
       end
 
@@ -3644,11 +3644,6 @@ module MilkTea
         end
 
         nil
-      end
-
-      def default_zero_fallback_type?(target_type, expected_type:)
-        check_zero_call(target_type, [], expected_type:, operation: "default")
-        true
       end
 
       def check_hash_call(resolution, arguments, scopes:)
@@ -3872,15 +3867,6 @@ module MilkTea
         type_implements_interface?(type, interface)
       end
 
-      def type_satisfies_defaults_constraint?(type, context:, available_type_param_constraints: current_type_param_constraints)
-        if type.is_a?(Types::TypeVar)
-          constraint = available_type_param_constraints[type.name]
-          return constraint && constraint.requires_default
-        end
-
-        !!resolve_explicit_default_binding(type, context:)
-      end
-
       def type_satisfies_hashes_constraint?(type, context:, available_type_param_constraints: current_type_param_constraints)
         if type.is_a?(Types::TypeVar)
           constraint = available_type_param_constraints[type.name]
@@ -3910,12 +3896,6 @@ module MilkTea
             next if type_satisfies_interface_constraint?(actual_type, interface, available_type_param_constraints:)
 
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for #{context}")
-          end
-
-          if constraints.requires_default
-            unless type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
-              raise_sema_error("type #{actual_type} does not satisfy defaults constraint for #{context}")
-            end
           end
 
           if constraints.requires_hash
@@ -5535,12 +5515,6 @@ module MilkTea
             next if type_satisfies_interface_constraint?(actual_type, interface)
 
             raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
-          end
-
-          if constraints.requires_default
-            unless type_satisfies_defaults_constraint?(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
-              raise_sema_error("type #{actual_type} does not satisfy defaults constraint for function #{binding.name}")
-            end
           end
 
           if constraints.requires_hash

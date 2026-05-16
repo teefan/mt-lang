@@ -7806,13 +7806,9 @@ module MilkTea
         target_type = resolve_type_ref(expression.arguments.fetch(0).value)
 
         explicit_default = resolve_explicit_default_binding(target_type, context: "default[#{target_type}]")
-        if explicit_default
-          return DefaultResolution.new(target_type:, binding: explicit_default.binding, callee_name: explicit_default.callee_name)
-        end
+        raise LoweringError, "default[#{target_type}] requires associated function #{target_type}.default()" unless explicit_default
 
-        raise LoweringError, "default does not support type #{target_type}" unless default_zero_fallback_type?(target_type)
-
-        DefaultResolution.new(target_type:, binding: nil, callee_name: nil)
+        DefaultResolution.new(target_type:, binding: explicit_default.binding, callee_name: explicit_default.callee_name)
       end
 
       def resolve_hash_specialization(expression, env:)
@@ -7918,23 +7914,6 @@ module MilkTea
                         function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
                       end
         ExplicitEqualBinding.new(binding: method_binding, callee_name:)
-      end
-
-      def default_zero_fallback_type?(type)
-        return true if type.is_a?(Types::Primitive) && !type.void?
-        return true if type.is_a?(Types::Nullable)
-        return true if type.is_a?(Types::EnumBase)
-        return true if type.is_a?(Types::Span)
-        return true if type.is_a?(Types::StringView)
-        return true if task_type?(type)
-        return true if type.is_a?(Types::Struct)
-        return true if type.is_a?(Types::Variant)
-        return true if pointer_type?(type)
-        return true if type.is_a?(Types::Opaque) && !type.external
-        return true if array_type?(type)
-        return true if str_builder_type?(type)
-
-        false
       end
 
       def resolve_specialization_type_arguments(expression)
@@ -8171,12 +8150,6 @@ module MilkTea
             next if type_implements_interface?(actual_type, interface)
 
             raise LoweringError, "type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}"
-          end
-
-          if constraints.requires_default
-            unless resolve_explicit_default_binding(actual_type, context: "defaults constraint on type parameter #{name} for function #{binding.name}")
-              raise LoweringError, "type #{actual_type} does not satisfy defaults constraint for function #{binding.name}"
-            end
           end
 
           if constraints.requires_hash

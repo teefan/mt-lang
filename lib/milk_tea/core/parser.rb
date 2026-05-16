@@ -810,7 +810,7 @@ module MilkTea
       end
 
       if match(:defaults)
-        return [AST::TypeParamConstraint.new(kind: :defaults), false]
+        raise error(previous, "defaults constraint has been removed; remove 'defaults' and rely on default[T] to require T.default()")
       end
 
       if match(:hashes)

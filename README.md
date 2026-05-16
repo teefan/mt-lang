@@ -28,7 +28,27 @@ Blocks are indentation-based:
 - Tabs are rejected.
 - Indentation must be a multiple of 4 spaces.
 - Indentation can increase by only one level at a time.
-- Newlines end statements except inside `()` and `[]`.
+- Newlines end statements except inside `()` and `[]`, or when the previous physical line ends with a binary operator such as `+`, `and`, or `==`.
+
+Long expressions should usually be wrapped with delimiters, following the same broad shape as Python's implicit line joining:
+
+```mt
+let total = (
+    subtotal
+    + tax
+    - discount
+)
+```
+
+Milk Tea also accepts operator-led continuation when the previous line ends with a binary operator:
+
+```mt
+let total = subtotal +
+    tax -
+    discount
+```
+
+Do not rely on starting the next physical line with the operator; wrap the expression in `()` instead if that layout reads better.
 
 Comments:
 
@@ -210,7 +230,7 @@ Ordinary functions:
 - Parameters are non-rebindable.
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
-- Generic function and method type parameters may use `implements`, `defaults`, `hashes`, and `equates` constraints.
+- Generic function and method type parameters may use `implements`, `hashes`, and `equates` constraints.
 
 External functions:
 
@@ -397,9 +417,10 @@ Nullability:
 Generics:
 
 - Generic structs, variants, functions, methods, and foreign functions are supported.
-- Generic type parameter constraints use `implements`, `defaults`, `hashes`, and `equates` on structs, variants, functions, and methods.
+- Generic type parameter constraints use `implements`, `hashes`, and `equates` on structs, variants, functions, and methods.
+- `implements` is the interface constraint kind.
+- `hashes` and `equates` are associated-function constraint kinds.
 - Multiple interface constraints are joined with `and`.
-- `defaults` requires an accessible zero-argument `T.default() -> T`.
 - `hashes` requires an accessible `T.hash(value: const_ptr[T]) -> uint` associated function.
 - `equates` requires an accessible `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` associated function.
 - Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
@@ -429,6 +450,7 @@ Reference and pointer notes:
 - Member access and method calls auto-dereference `ref[T]` receivers.
 - Passing a mutable addressable `T` to a parameter of type `ref[T]` implicitly borrows it.
 - `hash[T](value)` and `equal[T](left, right)` lower to `T.hash(...)` and `T.equal(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
+- There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 
 ## 12. Strings, Text, And Builders
 
