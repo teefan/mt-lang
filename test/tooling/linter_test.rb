@@ -234,6 +234,28 @@ class MilkTeaLinterTest < Minitest::Test
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("data") }
   end
 
+  def test_no_prefer_let_inside_generic_method_body
+    source = <<~MT
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          editable function set(value: T):
+              this.value = value
+
+          static function build(value: T) -> Box[T]:
+              var result = Box[T](value = value)
+              result.set(value)
+              return result
+    MT
+
+    ast = MilkTea::Parser.parse(source, path: "demo.mt")
+    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_analysis: analysis)
+
+    refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("result") }
+  end
+
   def test_no_prefer_let_for_let_locals
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> int:
@@ -1730,6 +1752,37 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     redundant = warnings.select { |w| w.code == "redundant-unsafe" }
     assert_equal 1, redundant.length
     assert_equal 2, redundant.first.line
+  end
+
+  def test_does_not_warn_on_generic_method_unsafe_block_with_pointer_cast
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      struct Box[T]:
+          data: ptr[T]
+
+      methods Box[T]:
+          editable function load(index: ptr_uint) -> T:
+              unsafe:
+                  let item = ptr[T]<-this.data + index
+                  return read(item)
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-unsafe" }
+  end
+
+  def test_warns_on_redundant_generic_method_unsafe_block_without_builtin_unsafe_syntax
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          function copy() -> T:
+              unsafe:
+                  return this.value
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-unsafe" }
+    assert warning, "expected redundant-unsafe warning"
+    assert_equal 6, warning.line
   end
 
   def test_fix_source_removes_redundant_unsafe_block

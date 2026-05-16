@@ -279,6 +279,8 @@ module MilkTea
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
       @warnings = []
       @scopes = []
+      @declared_callable_names = Set.new
+      @generic_function_depth = 0
     end
 
     def lint(ast)
@@ -289,6 +291,7 @@ module MilkTea
     private
 
     def visit_source_file(source_file)
+      @declared_callable_names = declared_callable_names(source_file)
       check_unused_imports(source_file)
       check_platform_api_drift(source_file)
       source_file.declarations.each do |declaration|
@@ -297,9 +300,10 @@ module MilkTea
           warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
           visit_function(declaration)
         when AST::MethodsBlock
+          generic_context = methods_block_generic?(declaration)
           declaration.methods.each do |method|
             warn_builtin_type_style_name(method.name, line: method.line, column: method.column, kind_label: "function")
-            visit_function(method)
+            visit_function(method, generic_context:)
           end
         when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
           warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "function")
@@ -307,6 +311,20 @@ module MilkTea
           warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "constant")
         when AST::VarDecl
           warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "module variable")
+        end
+      end
+    end
+
+    def methods_block_generic?(declaration)
+      declaration.type_name.respond_to?(:arguments) && declaration.type_name.arguments.any?
+    end
+
+    def declared_callable_names(source_file)
+      source_file.declarations.each_with_object(Set.new) do |declaration, names|
+        case declaration
+        when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl,
+             AST::ConstDecl, AST::VarDecl
+          names << declaration.name
         end
       end
     end
@@ -833,7 +851,9 @@ module MilkTea
       end
     end
 
-    def visit_function(function)
+    def visit_function(function, generic_context: false)
+      generic_body = generic_context || function.type_params.any?
+      @generic_function_depth += 1 if generic_body
       with_scope do
         function.params.each do |param|
           declare_param(
@@ -852,6 +872,12 @@ module MilkTea
         emit_loop_single_iteration_warnings(function.body)
       end
       check_missing_return(function)
+    ensure
+      @generic_function_depth -= 1 if generic_body
+    end
+
+    def generic_function_context?
+      @generic_function_depth > 0
     end
 
     # ── missing-return ───────────────────────────────────────────────────
@@ -1281,7 +1307,7 @@ module MilkTea
       @scopes.last[name] = Binding.new(
         name:, line:, column:, used: false,
         binding_kind: :local,
-        allow_prefer_let: var,
+        allow_prefer_let: var && !generic_function_context?,
         mutated: false
       )
     end
@@ -1955,7 +1981,7 @@ module MilkTea
       stmts.each do |stmt|
         case stmt
         when AST::UnsafeStmt
-          if stmt.line && !required_unsafe_lines.include?(stmt.line)
+          if stmt.line && !required_unsafe_lines.include?(stmt.line) && !unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
             @warnings << Warning.new(
               path: @path,
               line: stmt.line,
@@ -1978,6 +2004,121 @@ module MilkTea
           walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
         end
       end
+    end
+
+    def unsafe_block_contains_builtin_unsafe_syntax?(stmts)
+      stmts.any? { |stmt| statement_contains_builtin_unsafe_syntax?(stmt) }
+    end
+
+    def statement_contains_builtin_unsafe_syntax?(stmt)
+      case stmt
+      when AST::LocalDecl
+        expression_contains_builtin_unsafe_syntax?(stmt.value)
+      when AST::Assignment
+        expression_contains_builtin_unsafe_syntax?(stmt.target) || expression_contains_builtin_unsafe_syntax?(stmt.value)
+      when AST::IfStmt
+        stmt.branches.any? do |branch|
+          expression_contains_builtin_unsafe_syntax?(branch.condition) || unsafe_block_contains_builtin_unsafe_syntax?(branch.body)
+        end || (stmt.else_body && unsafe_block_contains_builtin_unsafe_syntax?(stmt.else_body))
+      when AST::MatchStmt
+        expression_contains_builtin_unsafe_syntax?(stmt.expression) || stmt.arms.any? { |arm| unsafe_block_contains_builtin_unsafe_syntax?(arm.body) }
+      when AST::ForStmt
+        stmt.iterables.any? { |iterable| expression_contains_builtin_unsafe_syntax?(iterable) } || unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
+      when AST::WhileStmt
+        expression_contains_builtin_unsafe_syntax?(stmt.condition) || unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
+      when AST::DeferStmt
+        (stmt.expression && expression_contains_builtin_unsafe_syntax?(stmt.expression)) ||
+          (stmt.body && unsafe_block_contains_builtin_unsafe_syntax?(stmt.body))
+      when AST::ReturnStmt
+        stmt.value && expression_contains_builtin_unsafe_syntax?(stmt.value)
+      when AST::ExpressionStmt
+        expression_contains_builtin_unsafe_syntax?(stmt.expression)
+      when AST::StaticAssert
+        expression_contains_builtin_unsafe_syntax?(stmt.condition)
+      when AST::UnsafeStmt
+        false
+      else
+        false
+      end
+    end
+
+    def expression_contains_builtin_unsafe_syntax?(expression)
+      case expression
+      when nil
+        false
+      when AST::MemberAccess
+        expression_contains_builtin_unsafe_syntax?(expression.receiver)
+      when AST::IndexAccess
+        expression_contains_builtin_unsafe_syntax?(expression.receiver) || expression_contains_builtin_unsafe_syntax?(expression.index)
+      when AST::Specialization
+        expression_contains_builtin_unsafe_syntax?(expression.callee)
+      when AST::Call
+        builtin_unsafe_call_syntax?(expression) ||
+          expression_contains_builtin_unsafe_syntax?(expression.callee) ||
+          expression.arguments.any? { |argument| expression_contains_builtin_unsafe_syntax?(argument.value) }
+      when AST::UnaryOp
+        expression_contains_builtin_unsafe_syntax?(expression.operand)
+      when AST::BinaryOp
+        expression_contains_builtin_unsafe_syntax?(expression.left) || expression_contains_builtin_unsafe_syntax?(expression.right)
+      when AST::RangeExpr
+        expression_contains_builtin_unsafe_syntax?(expression.start_expr) || expression_contains_builtin_unsafe_syntax?(expression.end_expr)
+      when AST::ExpressionList
+        expression.elements.any? { |element| expression_contains_builtin_unsafe_syntax?(element) }
+      when AST::IfExpr
+        expression_contains_builtin_unsafe_syntax?(expression.condition) ||
+          expression_contains_builtin_unsafe_syntax?(expression.then_expression) ||
+          expression_contains_builtin_unsafe_syntax?(expression.else_expression)
+      when AST::UnsafeExpr, AST::ProcExpr
+        false
+      when AST::AwaitExpr
+        expression_contains_builtin_unsafe_syntax?(expression.expression)
+      when AST::FormatString
+        expression.parts.any? do |part|
+          part.is_a?(AST::FormatExprPart) && expression_contains_builtin_unsafe_syntax?(part.expression)
+        end
+      else
+        false
+      end
+    end
+
+    def builtin_unsafe_call_syntax?(expression)
+      builtin_read_call_syntax?(expression) ||
+        builtin_reinterpret_call_syntax?(expression) ||
+        builtin_pointer_cast_call_syntax?(expression)
+    end
+
+    def builtin_read_call_syntax?(expression)
+      return false unless expression.callee.is_a?(AST::Identifier)
+      return false unless expression.callee.name == "read"
+
+      !unsafe_builtin_name_shadowed?("read")
+    end
+
+    def builtin_reinterpret_call_syntax?(expression)
+      return false unless expression.callee.is_a?(AST::Specialization)
+      return false unless expression.callee.callee.is_a?(AST::Identifier)
+      return false unless expression.callee.callee.name == "reinterpret"
+
+      !unsafe_builtin_name_shadowed?("reinterpret")
+    end
+
+    def builtin_pointer_cast_call_syntax?(expression)
+      return false unless expression.callee.is_a?(AST::Specialization)
+      return false unless expression.callee.callee.is_a?(AST::Identifier)
+      return false unless expression.callee.callee.name == "cast"
+      return false if unsafe_builtin_name_shadowed?("cast")
+
+      target_argument = expression.callee.arguments.first
+      target_type = target_argument&.value
+      target_type.is_a?(AST::TypeRef) && %w[ptr const_ptr].include?(target_type.name.to_s)
+    end
+
+    def unsafe_builtin_name_shadowed?(name)
+      @scopes.reverse_each do |scope|
+        return true if scope.key?(name)
+      end
+
+      @declared_callable_names.include?(name)
     end
 
     # ── loop-single-iteration ──────────────────────────────────────────────

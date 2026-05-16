@@ -1020,6 +1020,31 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "callback", right_decl.value.callee.name
   end
 
+  def test_parses_member_indexed_call_instead_of_generic_specialization
+    source = <<~MT
+      struct Entry:
+          callbacks: array[fn(value: int) -> int, 1]
+
+      function identity(value: int) -> int:
+          return value
+
+      function main() -> int:
+          let entry = Entry(callbacks = array[fn(value: int) -> int, 1](identity))
+          return entry.callbacks[0](1)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[2]
+    call = main_fn.body[1].value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::IndexAccess, call.callee
+    assert_instance_of MilkTea::AST::MemberAccess, call.callee.receiver
+    assert_equal "callbacks", call.callee.receiver.member
+    assert_instance_of MilkTea::AST::IntegerLiteral, call.callee.index
+    assert_equal 0, call.callee.index.value
+  end
+
   def test_rejects_explicit_cast_call_form
     source = <<~MT
       function main(value: int) -> long:
@@ -1388,6 +1413,32 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::MethodsBlock, methods
     assert_equal "Box[T]", methods.type_name.to_s
+  end
+
+  def test_parses_generic_receiver_self_specialization_call
+    source = <<~MT
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          static function create() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          static function with_default() -> Box[T]:
+              return Box[T].create()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    methods = ast.declarations[1]
+    return_stmt = methods.methods[1].body.first
+    call = return_stmt.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::MemberAccess, call.callee
+    assert_instance_of MilkTea::AST::Specialization, call.callee.receiver
+    assert_equal "Box", call.callee.receiver.callee.name
+    assert_equal "T", call.callee.receiver.arguments.first.value.name.to_s
+    assert_equal "create", call.callee.member
   end
 
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic
