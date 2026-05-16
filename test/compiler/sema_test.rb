@@ -337,6 +337,49 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/requires demo\.hash_constraint_bad\.Key\.hash\(value: const_ptr\[demo\.hash_constraint_bad\.Key\]\) -> uint/, error.message)
   end
 
+  def test_rejects_hashes_constraint_for_ordinary_primitive_types
+    source = <<~MT
+      # module demo.hash_primitive_bad
+
+      function read_hash[T hashes](value: T) -> uint:
+          return hash[T](value)
+
+      function main() -> uint:
+          return read_hash[int](1)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type int does not satisfy hashes constraint for function read_hash/, error.message)
+  end
+
+  def test_type_checks_hashes_and_equates_constraints_for_str_with_explicit_static_hooks
+    source = <<~MT
+      # module demo.hash_str_ok
+
+      methods str:
+          static function hash(value: const_ptr[str]) -> uint:
+              return uint<-0
+
+          static function equal(left: const_ptr[str], right: const_ptr[str]) -> bool:
+              return true
+
+      function same_text[T hashes and equates](left: T, right: T) -> bool:
+          return hash[T](left) == hash[T](right) and equal[T](left, right)
+
+      function main() -> bool:
+          let left: str = "a"
+          let right: str = "b"
+          return same_text[str](left, right)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_hash_builtin_on_non_addressable_temporary_values
     source = <<~MT
       # module demo.hash_temporary_bad

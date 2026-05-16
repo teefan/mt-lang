@@ -50,11 +50,9 @@ struct Game implements ScreenState:
     cleared_flash: float
     game_over: bool
 
-
 struct RuntimeAssets:
     tiles: rl.Texture2D
     clear_sound: rl.Sound
-
 
 variant RuntimeAssetsError:
     missing_assets_directory

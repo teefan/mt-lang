@@ -188,6 +188,21 @@ class MilkTeaFormatterTest < Minitest::Test
     refute_includes formatted, "methods Ball:\n\n    function draw() -> void:"
   end
 
+  def test_tidy_mode_does_not_insert_blank_lines_before_first_interface_method
+    source = <<~MT
+      interface ScreenState:
+
+
+          editable function update(effect: rl.Sound) -> void
+          function draw(texture: rl.Texture2D) -> void
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "interface ScreenState:\n    editable function update(effect: rl.Sound) -> void"
+    refute_includes formatted, "interface ScreenState:\n\n    editable function update(effect: rl.Sound) -> void"
+  end
+
   def test_tidy_mode_inserts_two_blank_lines_before_methods_block
     source = <<~MT
       function helper() -> void:

@@ -215,6 +215,28 @@ class MilkTeaParserTest < Minitest::Test
     )
   end
 
+  def test_parses_mixed_type_param_constraints_with_hashes_equates_and_multiple_interfaces
+    source = <<~MT
+      function same_key[T defaults and implements Named and Tagged and hashes and equates](left: T, right: T) -> bool:
+          return equal[T](left, right)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    function_decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::FunctionDef, function_decl
+    assert_equal(
+      [
+        [:defaults, nil],
+        [:interface, "Named"],
+        [:interface, "Tagged"],
+        [:hashes, nil],
+        [:equates, nil],
+      ],
+      function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] },
+    )
+  end
+
   def test_parses_module_scope_vars_with_and_without_initializer
     source = <<~MT
       var counter: int = 0
