@@ -88,7 +88,8 @@ module MilkTea
     end
 
     # Apply auto-fixable rules to source text.
-    # Handles: prefer-let, redundant-else, redundant-unsafe.
+    # Handles: prefer-let, redundant-read-cast, redundant-read-release-temp,
+    # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_analysis: nil)
       warnings = lint_source(source, path:, sema_analysis: sema_analysis || best_effort_sema_analysis(source, path:))
@@ -101,6 +102,47 @@ module MilkTea
         next unless lines[idx]
 
         lines[idx] = lines[idx].sub(/\bvar\b/, "let")
+      end
+
+      # redundant-read-cast: replace read(T<-value) with read(value).
+      redundant_read_cast_fixes = warnings.select { |w| w.code == "redundant-read-cast" && w.line && w.symbol_name }
+      redundant_read_cast_fixes.sort_by(&:line).each do |w|
+        idx = w.line - 1
+        next unless lines[idx]
+
+        symbol = Regexp.escape(w.symbol_name)
+        pattern = /(read\(\s*)(?:ptr|const_ptr|ref)\[[^\)]*\]<-\s*#{symbol}(\s*\))/
+        lines[idx] = lines[idx].sub(pattern, "\\1#{w.symbol_name}\\2")
+      end
+
+      # redundant-read-release-temp: collapse `var owned = read(...); owned.release()`
+      # into `read(...).release()`.
+      read_release_temp_fixes = warnings.select { |w| w.code == "redundant-read-release-temp" && w.line }
+      read_release_temp_fixes.sort_by(&:line).reverse_each do |w|
+        fix = build_read_release_temp_fix(lines, w.line - 1)
+        next unless fix
+
+        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
+      end
+
+      # prefer-let-else: rewrite adjacent nullable guard clauses into
+      # `let value = expr else:`.
+      prefer_let_else_fixes = warnings.select { |w| w.code == "prefer-let-else" && w.line }
+      prefer_let_else_fixes.sort_by(&:line).reverse_each do |w|
+        fix = build_prefer_let_else_fix(lines, w.line - 1, symbol_name: w.symbol_name)
+        next unless fix
+
+        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
+      end
+
+      # directional-ffi-arg: strip legacy wrappers where the callee already
+      # declares in/out/inout passing.
+      directional_ffi_arg_fixes = warnings.select { |w| w.code == "directional-ffi-arg" && w.line }
+      directional_ffi_arg_fixes.sort_by(&:line).each do |w|
+        idx = w.line - 1
+        next unless lines[idx]
+
+        lines[idx] = rewrite_directional_ffi_argument(lines[idx])
       end
 
       # redundant-else: for each warning, find the `else:` line above, delete it,
@@ -186,6 +228,57 @@ module MilkTea
       end
 
       lines.join
+    end
+
+    def self.rewrite_directional_ffi_argument(line)
+      updated = line.sub(/\b(ptr_of|ref_of)\(([^()]+)\)/, "\\2")
+      return updated if updated != line
+
+      updated = line.sub(/\b(?:out|inout|in)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]]+\])*)/, "\\1")
+      return updated if updated != line
+
+      line.sub(/\b(?:ptr|const_ptr|ref)\[[^\)]*\]<-\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]]+\])*)/, "\\1")
+    end
+
+    def self.build_read_release_temp_fix(lines, decl_idx)
+      return nil if decl_idx.nil? || decl_idx.negative? || decl_idx + 1 >= lines.length
+
+      declaration = lines[decl_idx].delete_suffix("\n")
+      release = lines[decl_idx + 1].delete_suffix("\n")
+      match = declaration.match(/\A(\s*)var\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*[^=]+)?\s*=\s*(read\(.+\))\s*(#.*)?\z/)
+      return nil unless match
+
+      indent, name, read_expression, comment = match.captures
+      return nil unless release.match?(/\A#{Regexp.escape(indent)}#{Regexp.escape(name)}\.release\(\)\s*\z/)
+
+      new_text = +"#{indent}#{read_expression}.release()"
+      new_text << " #{comment}" if comment
+      new_text << "\n"
+
+      { start_line_idx: decl_idx, end_line_idx: decl_idx + 1, new_text: }
+    end
+
+    def self.build_prefer_let_else_fix(lines, if_idx, symbol_name: nil)
+      return nil if if_idx.nil? || if_idx <= 0 || if_idx >= lines.length
+
+      declaration = lines[if_idx - 1].delete_suffix("\n")
+      guard = lines[if_idx].delete_suffix("\n")
+      name = symbol_name ||
+        guard[/\A\s*if\s+([A-Za-z_][A-Za-z0-9_]*)\s*==\s*null\s*:/, 1] ||
+        guard[/\A\s*if\s+null\s*==\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/, 1]
+      return nil unless name
+
+      declaration_comment = declaration[/\s+#.*\z/] || ""
+      declaration_base = declaration.sub(/\s+#.*\z/, "").rstrip
+      return nil unless declaration_base.match?(/\A\s*let\s+#{Regexp.escape(name)}\s*=\s*.+\z/)
+      return nil if declaration_base.end_with?(" else:")
+      return nil unless guard.match?(/\A\s*if\s+(?:#{Regexp.escape(name)}\s*==\s*null|null\s*==\s*#{Regexp.escape(name)})\s*:\s*(?:#.*)?\z/)
+
+      new_text = +"#{declaration_base} else:"
+      new_text << declaration_comment unless declaration_comment.empty?
+      new_text << "\n"
+
+      { start_line_idx: if_idx - 1, end_line_idx: if_idx, new_text: }
     end
 
     def self.best_effort_lint_context(source, path: nil)
@@ -280,6 +373,7 @@ module MilkTea
       @warnings = []
       @scopes = []
       @declared_callable_names = Set.new
+      @declared_directional_functions = {}
       @generic_function_depth = 0
     end
 
@@ -292,6 +386,7 @@ module MilkTea
 
     def visit_source_file(source_file)
       @declared_callable_names = declared_callable_names(source_file)
+      @declared_directional_functions = declared_directional_functions(source_file)
       check_unused_imports(source_file)
       check_platform_api_drift(source_file)
       source_file.declarations.each do |declaration|
@@ -326,6 +421,15 @@ module MilkTea
              AST::ConstDecl, AST::VarDecl
           names << declaration.name
         end
+      end
+    end
+
+    def declared_directional_functions(source_file)
+      source_file.declarations.each_with_object({}) do |declaration, functions|
+        next unless declaration.is_a?(AST::ExternFunctionDecl) || declaration.is_a?(AST::ForeignFunctionDecl)
+        next unless declaration.params.any? { |param| %i[in out inout].include?(param.mode) }
+
+        functions[declaration.name] = declaration
       end
     end
 
@@ -868,6 +972,9 @@ module MilkTea
         emit_borrow_warnings(function.body)
         emit_constant_condition_warnings(function.body)
         emit_redundant_null_check_warnings(function.body)
+        emit_prefer_let_else_warnings(function.body)
+        emit_redundant_read_cast_warnings(function.body)
+        emit_redundant_read_release_temp_warnings(function.body)
         emit_redundant_unsafe_warnings(function.body)
         emit_loop_single_iteration_warnings(function.body)
       end
@@ -1129,6 +1236,7 @@ module MilkTea
         end
         mark_alias_source_mutated(expression)
         mark_call_receiver_mutated(expression)
+        check_directional_ffi_call(expression)
       when AST::UnaryOp
         visit_expression(expression.operand)
       when AST::BinaryOp
@@ -1162,6 +1270,9 @@ module MilkTea
           emit_borrow_warnings(expression.body)
           emit_constant_condition_warnings(expression.body)
           emit_redundant_null_check_warnings(expression.body)
+          emit_prefer_let_else_warnings(expression.body)
+          emit_redundant_read_cast_warnings(expression.body)
+          emit_redundant_read_release_temp_warnings(expression.body)
           emit_redundant_unsafe_warnings(expression.body)
           emit_loop_single_iteration_warnings(expression.body)
         end
@@ -1964,6 +2075,414 @@ module MilkTea
       elsif cond.left.is_a?(AST::NullLiteral) && cond.right.is_a?(AST::Identifier)
         cond.right
       end
+    end
+
+    # ── prefer-let-else ────────────────────────────────────────────────
+
+    def emit_prefer_let_else_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      walk_statement_lists(stmts) do |statement_list|
+        statement_list.each_with_index do |_statement, index|
+          candidate = prefer_let_else_candidate(statement_list, index)
+          next unless candidate
+
+          branch = candidate[:branch]
+          line, column, length = condition_span(branch.condition, line: candidate[:if_stmt].line, keyword_pattern: "if")
+
+          @warnings << Warning.new(
+            path: @path,
+            line:,
+            column:,
+            length:,
+            code: "prefer-let-else",
+            message: "nullable guard for '#{candidate[:declaration].name}' can use let ... else",
+            severity: :hint,
+            symbol_name: candidate[:declaration].name
+          )
+        end
+      end
+    end
+
+    def prefer_let_else_candidate(stmts, index)
+      declaration = stmts[index]
+      if_stmt = stmts[index + 1]
+      return unless declaration.is_a?(AST::LocalDecl)
+      return unless declaration.kind == :let
+      return if declaration.type || declaration.else_binding || declaration.else_body || declaration.recovered_else
+      return unless declaration.value && declaration.name
+      return if ignored_binding_name?(declaration.name)
+      return unless nullable_binding_declaration?(declaration)
+      return unless if_stmt.is_a?(AST::IfStmt)
+      return unless if_stmt.else_body.nil? && if_stmt.branches.length == 1
+
+      branch = if_stmt.branches.first
+      identifier = null_equality_identifier(branch.condition)
+      return unless identifier&.name == declaration.name
+      return unless CFG::Termination.block_always_terminates?(branch.body, ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution)
+
+      { declaration:, if_stmt:, branch: }
+    end
+
+    def null_equality_identifier(cond)
+      return nil unless cond.is_a?(AST::BinaryOp) && cond.operator == "=="
+
+      if cond.left.is_a?(AST::Identifier) && cond.right.is_a?(AST::NullLiteral)
+        cond.left
+      elsif cond.left.is_a?(AST::NullLiteral) && cond.right.is_a?(AST::Identifier)
+        cond.right
+      end
+    end
+
+    def nullable_binding_declaration?(statement)
+      binding_type = binding_type_for_declaration(statement)
+      binding_type.is_a?(Types::Nullable)
+    end
+
+    def binding_type_for_declaration(statement)
+      binding_resolution = @sema_analysis&.binding_resolution
+      return nil unless binding_resolution&.binding_types
+
+      binding_id = binding_resolution.declaration_binding_ids[statement.object_id]
+      return nil unless binding_id
+
+      binding_resolution.binding_types[binding_id]
+    end
+
+    # ── redundant-read-cast ──────────────────────────────────────────────
+
+    def emit_redundant_read_cast_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      binding_resolution = @sema_analysis&.binding_resolution
+      binding_types = binding_resolution&.binding_types
+      cfg_resolution = cfg_binding_resolution
+      return unless binding_resolution && binding_types && cfg_resolution
+
+      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_resolution).build(stmts)
+      nf = CFG::NullabilityFlow.solve(graph)
+      seen = Set.new
+
+      graph.each_node do |node|
+        statement = node.statement
+        next unless statement
+        next if seen.include?(statement.object_id)
+
+        seen << statement.object_id
+        warn_redundant_read_casts_in_statement(statement, nonnull: nf.nonnull_before(statement), binding_resolution:, binding_types:)
+      end
+    end
+
+    def warn_redundant_read_casts_in_statement(statement, nonnull:, binding_resolution:, binding_types:)
+      each_statement_expression(statement) do |expression|
+        candidate = redundant_read_cast_candidate(expression)
+        next unless candidate
+
+        source = candidate[:source]
+        binding_id = binding_resolution.identifier_binding_ids[source.object_id]
+        next unless binding_id
+
+        binding_type = binding_types[binding_id]
+        next unless binding_type
+
+        target_text = render_type_surface(candidate[:target_type])
+        redundant = if binding_type.to_s == target_text
+                      true
+                    elsif binding_type.is_a?(Types::Nullable) && binding_type.base.to_s == target_text
+                      nonnull.include?(binding_id)
+                    else
+                      false
+                    end
+        next unless redundant
+
+        @warnings << Warning.new(
+          path: @path,
+          line: expression_line(candidate[:cast_expression]) || expression_line(source),
+          column: expression_column(candidate[:cast_expression]) || expression_column(source),
+          length: expression_length(candidate[:cast_expression]) || expression_length(source),
+          code: "redundant-read-cast",
+          message: "cast to #{target_text} is redundant here; use read(#{source.name}) directly",
+          severity: :hint,
+          symbol_name: source.name
+        )
+      end
+    end
+
+    def redundant_read_cast_candidate(expression)
+      return unless expression.is_a?(AST::Call)
+      return unless expression.callee.is_a?(AST::Identifier) && expression.callee.name == "read"
+      return unless expression.arguments.length == 1
+
+      cast = pointer_like_cast_expression(expression.arguments.first.value)
+      return unless cast
+      return unless cast[:source].is_a?(AST::Identifier)
+
+      {
+        source: cast[:source],
+        target_type: cast[:target_type],
+        cast_expression: expression.arguments.first.value,
+      }
+    end
+
+    def pointer_like_cast_expression(expression)
+      return unless expression.is_a?(AST::Call)
+
+      callee = expression.callee
+      return unless callee.is_a?(AST::Specialization)
+      return unless callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
+      return unless callee.arguments.length == 1 && expression.arguments.length == 1
+
+      target_type = callee.arguments.first.value
+      return unless target_type.is_a?(AST::TypeRef)
+      return unless pointer_like_type_ref?(target_type)
+
+      { target_type:, source: expression.arguments.first.value }
+    end
+
+    def pointer_like_type_ref?(type_ref)
+      return false if type_ref.nullable
+
+      %w[ptr const_ptr ref].include?(type_ref.name.to_s)
+    end
+
+    def each_statement_expression(statement, &block)
+      case statement
+      when AST::LocalDecl
+        walk_expression_tree(statement.value, &block)
+      when AST::Assignment
+        walk_expression_tree(statement.target, &block)
+        walk_expression_tree(statement.value, &block)
+      when AST::IfBranch
+        walk_expression_tree(statement.condition, &block)
+      when AST::IfStmt
+        statement.branches.each { |branch| walk_expression_tree(branch.condition, &block) }
+      when AST::WhileStmt
+        walk_expression_tree(statement.condition, &block)
+      when AST::ForStmt
+        statement.iterables.each { |iterable| walk_expression_tree(iterable, &block) }
+      when AST::MatchStmt
+        walk_expression_tree(statement.expression, &block)
+      when AST::ReturnStmt
+        walk_expression_tree(statement.value, &block)
+      when AST::DeferStmt
+        walk_expression_tree(statement.expression, &block)
+      when AST::ExpressionStmt
+        walk_expression_tree(statement.expression, &block)
+      when AST::StaticAssert
+        walk_expression_tree(statement.condition, &block)
+      end
+    end
+
+    def walk_expression_tree(expression, &block)
+      return unless expression
+
+      yield expression
+      case expression
+      when AST::MemberAccess
+        walk_expression_tree(expression.receiver, &block)
+      when AST::IndexAccess
+        walk_expression_tree(expression.receiver, &block)
+        walk_expression_tree(expression.index, &block)
+      when AST::Specialization
+        walk_expression_tree(expression.callee, &block)
+      when AST::Call
+        walk_expression_tree(expression.callee, &block)
+        expression.arguments.each { |argument| walk_expression_tree(argument.value, &block) }
+      when AST::UnaryOp
+        walk_expression_tree(expression.operand, &block)
+      when AST::BinaryOp
+        walk_expression_tree(expression.left, &block)
+        walk_expression_tree(expression.right, &block)
+      when AST::RangeExpr
+        walk_expression_tree(expression.start_expr, &block)
+        walk_expression_tree(expression.end_expr, &block)
+      when AST::ExpressionList
+        expression.elements.each { |element| walk_expression_tree(element, &block) }
+      when AST::IfExpr
+        walk_expression_tree(expression.condition, &block)
+        walk_expression_tree(expression.then_expression, &block)
+        walk_expression_tree(expression.else_expression, &block)
+      when AST::AwaitExpr
+        walk_expression_tree(expression.expression, &block)
+      when AST::UnsafeExpr
+        walk_expression_tree(expression.expression, &block)
+      when AST::FormatString
+        expression.parts.each do |part|
+          walk_expression_tree(part.expression, &block) if part.is_a?(AST::FormatExprPart)
+        end
+      end
+    end
+
+    # ── redundant-read-release-temp ─────────────────────────────────────
+
+    def emit_redundant_read_release_temp_warnings(stmts)
+      return if stmts.nil? || stmts.empty?
+
+      walk_statement_lists(stmts) do |statement_list|
+        statement_list.each_with_index do |_statement, index|
+          candidate = redundant_read_release_temp_candidate(statement_list, index)
+          next unless candidate
+
+          declaration = candidate[:declaration]
+          @warnings << Warning.new(
+            path: @path,
+            line: declaration.line,
+            column: declaration.column,
+            length: declaration.name.length,
+            code: "redundant-read-release-temp",
+            message: "temporary '#{declaration.name}' only stores read(...) to call release(); use read(...).release() directly",
+            severity: :hint,
+            symbol_name: declaration.name
+          )
+        end
+      end
+    end
+
+    def redundant_read_release_temp_candidate(stmts, index)
+      declaration = stmts[index]
+      release_stmt = stmts[index + 1]
+      return unless declaration.is_a?(AST::LocalDecl)
+      return unless declaration.kind == :var
+      return unless declaration.value && declaration.name
+      return if ignored_binding_name?(declaration.name)
+      return unless read_call_expression?(declaration.value)
+      return unless release_stmt.is_a?(AST::ExpressionStmt)
+      return unless release_call_on_identifier?(release_stmt.expression, declaration.name)
+      return if stmts[(index + 2)..]&.any? { |statement| statement_uses_identifier?(statement, declaration.name) }
+
+      { declaration:, release_stmt: }
+    end
+
+    def read_call_expression?(expression)
+      expression.is_a?(AST::Call) &&
+        expression.callee.is_a?(AST::Identifier) &&
+        expression.callee.name == "read" &&
+        expression.arguments.length == 1
+    end
+
+    def release_call_on_identifier?(expression, name)
+      expression.is_a?(AST::Call) &&
+        expression.callee.is_a?(AST::MemberAccess) &&
+        expression.callee.member == "release" &&
+        expression.callee.receiver.is_a?(AST::Identifier) &&
+        expression.callee.receiver.name == name &&
+        expression.arguments.empty?
+    end
+
+    def statement_uses_identifier?(statement, name)
+      catch(:statement_uses_identifier) do
+        each_statement_expression(statement) do |expression|
+          throw(:statement_uses_identifier, true) if expression.is_a?(AST::Identifier) && expression.name == name
+        end
+        false
+      end
+    end
+
+    def walk_statement_lists(stmts, &block)
+      return if stmts.nil? || stmts.empty?
+
+      yield stmts
+      stmts.each do |statement|
+        case statement
+        when AST::IfStmt
+          statement.branches.each { |branch| walk_statement_lists(branch.body, &block) }
+          walk_statement_lists(statement.else_body, &block) if statement.else_body
+        when AST::MatchStmt
+          statement.arms.each { |arm| walk_statement_lists(arm.body, &block) }
+        when AST::UnsafeStmt, AST::ForStmt, AST::WhileStmt
+          walk_statement_lists(statement.body, &block)
+        when AST::DeferStmt
+          walk_statement_lists(statement.body, &block) if statement.body
+        end
+      end
+    end
+
+    # ── directional-ffi-arg ──────────────────────────────────────────────
+
+    def check_directional_ffi_call(expression)
+      call = resolve_directional_ffi_call(expression.callee)
+      return unless call
+
+      call[:params].zip(expression.arguments).each do |parameter, argument|
+        next unless parameter && argument
+
+        passing_mode = parameter_passing_mode(parameter)
+        next unless %i[in out inout].include?(passing_mode)
+        next unless legacy_directional_argument_expression?(argument.value)
+
+        @warnings << Warning.new(
+          path: @path,
+          line: expression_line(argument.value),
+          column: expression_column(argument.value),
+          length: expression_length(argument.value),
+          code: "directional-ffi-arg",
+          message: "pass the lvalue directly to '#{call[:name]}'; parameter '#{parameter_name(parameter)}' already declares #{passing_mode} passing",
+          severity: :hint,
+          symbol_name: parameter_name(parameter)
+        )
+      end
+    end
+
+    def resolve_directional_ffi_call(callee)
+      case callee
+      when AST::Specialization
+        resolve_directional_ffi_call(callee.callee)
+      when AST::Identifier
+        if @sema_analysis && (binding = @sema_analysis.functions[callee.name]) && directional_ffi_binding?(binding)
+          return { name: binding.name, params: binding.type.params }
+        end
+
+        if (declaration = @declared_directional_functions[callee.name])
+          return { name: declaration.name, params: declaration.params }
+        end
+
+        nil
+      when AST::MemberAccess
+        return nil unless callee.receiver.is_a?(AST::Identifier)
+        return nil unless @sema_analysis
+
+        imported_module = @sema_analysis.imports[callee.receiver.name]
+        return nil unless imported_module
+
+        binding = imported_module.functions[callee.member]
+        return nil unless directional_ffi_binding?(binding)
+
+        { name: binding.name, params: binding.type.params }
+      else
+        nil
+      end
+    end
+
+    def directional_ffi_binding?(binding)
+      return false unless binding
+      return false unless binding.respond_to?(:ast) && (binding.ast.is_a?(AST::ExternFunctionDecl) || binding.ast.is_a?(AST::ForeignFunctionDecl))
+
+      binding.type.params.any? { |parameter| %i[in out inout].include?(parameter.passing_mode) }
+    end
+
+    def parameter_passing_mode(parameter)
+      parameter.respond_to?(:passing_mode) ? parameter.passing_mode : parameter.mode
+    end
+
+    def parameter_name(parameter)
+      parameter.respond_to?(:name) ? parameter.name : "argument"
+    end
+
+    def legacy_directional_argument_expression?(expression)
+      return true if expression.is_a?(AST::UnaryOp) && %w[in out inout].include?(expression.operator)
+
+      if expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && %w[ptr_of ref_of].include?(expression.callee.name)
+        return expression.arguments.length == 1
+      end
+
+      cast = pointer_like_cast_expression(expression)
+      return false unless cast
+
+      lvalue_expression?(cast[:source]) || legacy_directional_argument_expression?(cast[:source])
+    end
+
+    def lvalue_expression?(expression)
+      expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess)
     end
 
     # ── redundant-unsafe ───────────────────────────────────────────────

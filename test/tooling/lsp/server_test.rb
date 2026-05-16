@@ -6061,7 +6061,7 @@ class LSPServerTest < Minitest::Test
       end
     end
 
-  private
+  public
 
   def test_code_action_quickfix_prefer_let
     with_server do |client|
@@ -6079,13 +6079,13 @@ class LSPServerTest < Minitest::Test
       prefer_let_diag = {
         "source" => "milk-tea",
         "code"   => "prefer-let",
-        "range"  => { "start" => { "line" => 3, "character" => 4 }, "end" => { "line" => 3, "character" => 13 } },
+        "range"  => { "start" => { "line" => 1, "character" => 4 }, "end" => { "line" => 1, "character" => 13 } },
         "message" => "var 'x' is never reassigned; prefer 'let'"
       }
 
       response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
-        "range" => { "start" => { "line" => 3, "character" => 0 }, "end" => { "line" => 3, "character" => 0 } },
+        "range" => { "start" => { "line" => 1, "character" => 0 }, "end" => { "line" => 1, "character" => 0 } },
         "context" => { "diagnostics" => [prefer_let_diag] }
       })
 
@@ -6114,17 +6114,16 @@ class LSPServerTest < Minitest::Test
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
 
-      # The redundant-else warning fires on line 7 (1-based), which is `return -1`
       redundant_diag = {
         "source" => "milk-tea",
         "code"   => "redundant-else",
-        "range"  => { "start" => { "line" => 6, "character" => 8 }, "end" => { "line" => 6, "character" => 17 } },
+        "range"  => { "start" => { "line" => 4, "character" => 8 }, "end" => { "line" => 4, "character" => 17 } },
         "message" => "else block is redundant because all preceding branches return"
       }
 
       response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
-        "range" => { "start" => { "line" => 6, "character" => 0 }, "end" => { "line" => 6, "character" => 0 } },
+        "range" => { "start" => { "line" => 4, "character" => 0 }, "end" => { "line" => 4, "character" => 0 } },
         "context" => { "diagnostics" => [redundant_diag] }
       })
 
@@ -6156,13 +6155,13 @@ class LSPServerTest < Minitest::Test
       redundant_diag = {
         "source" => "milk-tea",
         "code"   => "redundant-unsafe",
-        "range"  => { "start" => { "line" => 3, "character" => 4 }, "end" => { "line" => 3, "character" => 10 } },
+        "range"  => { "start" => { "line" => 1, "character" => 4 }, "end" => { "line" => 1, "character" => 10 } },
         "message" => "unsafe block does not contain any operation that requires unsafe"
       }
 
       response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
-        "range" => { "start" => { "line" => 3, "character" => 0 }, "end" => { "line" => 3, "character" => 0 } },
+        "range" => { "start" => { "line" => 1, "character" => 0 }, "end" => { "line" => 1, "character" => 0 } },
         "context" => { "diagnostics" => [redundant_diag] }
       })
 
@@ -6177,6 +6176,165 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_code_action_quickfix_redundant_read_cast
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_read_cast.mt"
+      source = <<~MT
+        function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+            return handle
+
+        function main(handle: ptr[int]?) -> int:
+            let value_ptr = maybe_handle(handle)
+            if value_ptr == null:
+                fatal("missing")
+            unsafe:
+                return read(ptr[int]<-value_ptr)
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code" => "redundant-read-cast",
+        "range" => { "start" => { "line" => 8, "character" => 20 }, "end" => { "line" => 8, "character" => 39 } },
+        "message" => "cast to ptr[int] is redundant here; use read(value_ptr) directly"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 8, "character" => 20 }, "end" => { "line" => 8, "character" => 39 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant read cast" }
+      assert quickfix, "expected a quickFix action for redundant-read-cast"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "value_ptr", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_redundant_read_release_temp
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_read_release_temp.mt"
+      source = <<~MT
+        struct Box:
+            value: int
+
+        methods Box:
+            editable function release() -> void:
+                pass
+
+        function main(box_ptr: ptr[Box]) -> void:
+            unsafe:
+                var owned = read(box_ptr)
+                owned.release()
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code" => "redundant-read-release-temp",
+        "range" => { "start" => { "line" => 9, "character" => 12 }, "end" => { "line" => 9, "character" => 17 } },
+        "message" => "temporary 'owned' only stores read(...) to call release(); use read(...).release() directly"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 9, "character" => 12 }, "end" => { "line" => 9, "character" => 17 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Inline read(...).release()" }
+      assert quickfix, "expected a quickFix action for redundant-read-release-temp"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "        read(box_ptr).release()\n", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_prefer_let_else
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_prefer_let_else.mt"
+      source = <<~MT
+        function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+            return handle
+
+        function main(handle: ptr[int]?) -> int:
+            let value_ptr = maybe_handle(handle)
+            if value_ptr == null:
+                return 0
+            unsafe:
+                return read(value_ptr)
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      prefer_diag = {
+        "source" => "milk-tea",
+        "code" => "prefer-let-else",
+        "range" => { "start" => { "line" => 5, "character" => 4 }, "end" => { "line" => 5, "character" => 24 } },
+        "message" => "nullable guard for 'value_ptr' can use let ... else"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 5, "character" => 4 }, "end" => { "line" => 5, "character" => 24 } },
+        "context" => { "diagnostics" => [prefer_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Rewrite as let-else" }
+      assert quickfix, "expected a quickFix action for prefer-let-else"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "    let value_ptr = maybe_handle(handle) else:\n", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_directional_ffi_arg
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_directional_ffi_arg.mt"
+      source = <<~MT
+        external function fill(out value: int) -> void
+
+        function main() -> int:
+            var value = 0
+            fill(ptr_of(value))
+            return value
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      directional_diag = {
+        "source" => "milk-tea",
+        "code" => "directional-ffi-arg",
+        "range" => { "start" => { "line" => 4, "character" => 9 }, "end" => { "line" => 4, "character" => 22 } },
+        "message" => "pass the lvalue directly to 'fill'; parameter 'value' already declares out passing"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 4, "character" => 9 }, "end" => { "line" => 4, "character" => 22 } },
+        "context" => { "diagnostics" => [directional_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Pass lvalue directly" }
+      assert quickfix, "expected a quickFix action for directional-ffi-arg"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "value", edit["newText"]
+    end
+  end
+
   def test_initialize_advertises_quickfix_code_action_kind
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -6185,6 +6343,8 @@ class LSPServerTest < Minitest::Test
       assert_includes kinds, "source.fixAll"
     end
   end
+
+  private
 
   def path_to_uri(path)
     escaped_path = path.split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")

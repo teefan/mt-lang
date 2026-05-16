@@ -236,20 +236,20 @@ module MilkTea
     end
 
     def lint_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
       resolution = { locked: false, frozen: false }
       select = nil
       ignore = nil
       fix = false
       output_format = :text
-      while @argv.first&.start_with?("--")
-        flag = @argv.shift
+      input_paths = []
+      until @argv.empty?
+        arg = @argv.shift
+        unless arg.start_with?("--")
+          input_paths << arg
+          next
+        end
+
+        flag = arg
         case flag
         when "--select"
           arg = @argv.shift
@@ -291,14 +291,23 @@ module MilkTea
         end
       end
 
-      paths = if File.directory?(path)
-                Dir.glob(File.join(path, "**/*.mt")).sort
-              else
-                [path]
-              end
+      if input_paths.empty?
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      paths = input_paths.flat_map do |path|
+        if File.directory?(path)
+          Dir.glob(File.join(path, "**/*.mt")).sort
+        else
+          [path]
+        end
+      end.uniq
 
       if paths.empty?
-        @out.puts("no .mt files found in #{path}")
+        label = input_paths.length == 1 ? input_paths.first : input_paths.join(", ")
+        @out.puts("no .mt files found in #{label}")
         return 0
       end
 
@@ -332,7 +341,11 @@ module MilkTea
       end
 
       if all_warnings.empty?
-        @out.puts("clean #{path}")
+        if input_paths.length == 1
+          @out.puts("clean #{input_paths.first}")
+        else
+          @out.puts("clean #{paths.size} file(s)")
+        end
         return 0
       end
 

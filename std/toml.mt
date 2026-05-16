@@ -6,7 +6,6 @@ import std.string as string
 import std.vec as vec
 import std.mem.heap as heap
 
-
 const byte_tab: ubyte = ubyte<-9
 const byte_newline: ubyte = ubyte<-10
 const byte_carriage_return: ubyte = ubyte<-13
@@ -24,12 +23,10 @@ const byte_left_brace: ubyte = ubyte<-123
 const byte_right_brace: ubyte = ubyte<-125
 const byte_underscore: ubyte = ubyte<-95
 
-
 public struct ParseError:
     line: ptr_uint
     column: ptr_uint
     message: string.String
-
 
 public enum ValueKind: int
     string = 0
@@ -37,7 +34,6 @@ public enum ValueKind: int
     boolean = 2
     array = 3
     object = 4
-
 
 public struct Value:
     kind: ValueKind
@@ -47,35 +43,28 @@ public struct Value:
     array_value: ptr[Array]?
     object_value: ptr[Object]?
 
-
 public struct Entry:
     key: string.String
     value: Value
 
-
 public struct Object:
     entries: vec.Vec[Entry]
 
-
 public struct Array:
     values: vec.Vec[Value]
-
 
 public struct Table:
     name: string.String
     entries: Object
 
-
 public struct ArrayTable:
     name: string.String
     tables: vec.Vec[Object]
-
 
 public struct Document:
     root: Object
     tables: vec.Vec[Table]
     array_tables: vec.Vec[ArrayTable]
-
 
 struct Parser:
     text_value: str
@@ -83,12 +72,10 @@ struct Parser:
     line: ptr_uint
     column: ptr_uint
 
-
 enum SectionKind: int
     root = 0
     table = 1
     array_table = 2
-
 
 struct Cursor:
     kind: SectionKind
@@ -124,15 +111,13 @@ public function release_value(value: Value) -> void:
     let nested_array = value.array_value
     if nested_array != null:
         unsafe:
-            var array_owned = read(ptr[Array]<-nested_array)
-            array_owned.release()
+            read(nested_array).release()
             heap.release(nested_array)
 
     let nested_object = value.object_value
     if nested_object != null:
         unsafe:
-            var object_owned = read(ptr[Object]<-nested_object)
-            object_owned.release()
+            read(nested_object).release()
             heap.release(nested_object)
 
     return
@@ -194,12 +179,11 @@ methods Object:
     static function find_entry(current: Object, key: str) -> ptr[Entry]?:
         var index: ptr_uint = 0
         while index < current.entries.len():
-            let entry = current.entries.get(index)
-            if entry == null:
+            let entry = current.entries.get(index) else:
                 fatal(c"toml.Object.find_entry missing entry")
 
             unsafe:
-                if read(ptr[Entry]<-entry).key.as_str().equal(key):
+                if read(entry).key.as_str().equal(key):
                     return entry
 
             index += 1
@@ -212,60 +196,53 @@ methods Object:
 
 
     public function get_string(key: str) -> maybe.Maybe[str]:
-        let entry = Object.find_entry(this, key)
-        if entry == null:
+        let entry = Object.find_entry(this, key) else:
             return maybe.Maybe[str].none
 
         unsafe:
-            return value_as_string(read(ptr[Entry]<-entry).value)
+            return value_as_string(read(entry).value)
 
 
     public function get_integer(key: str) -> maybe.Maybe[long]:
-        let entry = Object.find_entry(this, key)
-        if entry == null:
+        let entry = Object.find_entry(this, key) else:
             return maybe.Maybe[long].none
 
         unsafe:
-            return value_as_integer(read(ptr[Entry]<-entry).value)
+            return value_as_integer(read(entry).value)
 
 
     public function get_boolean(key: str) -> maybe.Maybe[bool]:
-        let entry = Object.find_entry(this, key)
-        if entry == null:
+        let entry = Object.find_entry(this, key) else:
             return maybe.Maybe[bool].none
 
         unsafe:
-            return value_as_boolean(read(ptr[Entry]<-entry).value)
+            return value_as_boolean(read(entry).value)
 
 
     public function get_array(key: str) -> ptr[Array]?:
-        let entry = Object.find_entry(this, key)
-        if entry == null:
+        let entry = Object.find_entry(this, key) else:
             return null
 
         unsafe:
-            return value_as_array(read(ptr[Entry]<-entry).value)
+            return value_as_array(read(entry).value)
 
 
     public function get_object(key: str) -> ptr[Object]?:
-        let entry = Object.find_entry(this, key)
-        if entry == null:
+        let entry = Object.find_entry(this, key) else:
             return null
 
         unsafe:
-            return value_as_object(read(ptr[Entry]<-entry).value)
+            return value_as_object(read(entry).value)
 
 
     public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.entries.len():
-            let entry = this.entries.get(index)
-            if entry == null:
+            let entry = this.entries.get(index) else:
                 fatal(c"toml.Object.release missing entry")
 
             unsafe:
-                var owned = read(ptr[Entry]<-entry)
-                owned.release()
+                read(entry).release()
 
             index += 1
 
@@ -283,59 +260,53 @@ methods Array:
 
 
     public function get_string(index: ptr_uint) -> maybe.Maybe[str]:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return maybe.Maybe[str].none
 
         unsafe:
-            return value_as_string(read(ptr[Value]<-value_ptr))
+            return value_as_string(read(value_ptr))
 
 
     public function get_integer(index: ptr_uint) -> maybe.Maybe[long]:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return maybe.Maybe[long].none
 
         unsafe:
-            return value_as_integer(read(ptr[Value]<-value_ptr))
+            return value_as_integer(read(value_ptr))
 
 
     public function get_boolean(index: ptr_uint) -> maybe.Maybe[bool]:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return maybe.Maybe[bool].none
 
         unsafe:
-            return value_as_boolean(read(ptr[Value]<-value_ptr))
+            return value_as_boolean(read(value_ptr))
 
 
     public function get_array(index: ptr_uint) -> ptr[Array]?:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return null
 
         unsafe:
-            return value_as_array(read(ptr[Value]<-value_ptr))
+            return value_as_array(read(value_ptr))
 
 
     public function get_object(index: ptr_uint) -> ptr[Object]?:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return null
 
         unsafe:
-            return value_as_object(read(ptr[Value]<-value_ptr))
+            return value_as_object(read(value_ptr))
 
 
     public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.values.len():
-            let value_ptr = this.values.get(index)
-            if value_ptr == null:
+            let value_ptr = this.values.get(index) else:
                 fatal(c"toml.Array.release missing value")
 
             unsafe:
-                release_value(read(ptr[Value]<-value_ptr))
+                release_value(read(value_ptr))
 
             index += 1
 
@@ -384,13 +355,11 @@ methods ArrayTable:
 
         var index: ptr_uint = 0
         while index < this.tables.len():
-            let table_ptr = this.tables.get(index)
-            if table_ptr == null:
+            let table_ptr = this.tables.get(index) else:
                 fatal(c"toml.ArrayTable.release missing table")
 
             unsafe:
-                var owned = read(ptr[Object]<-table_ptr)
-                owned.release()
+                read(table_ptr).release()
 
             index += 1
 
@@ -426,12 +395,11 @@ methods Document:
     public function get_table(name: str) -> ptr[Table]?:
         var index: ptr_uint = 0
         while index < this.tables.len():
-            let table_ptr = this.tables.get(index)
-            if table_ptr == null:
+            let table_ptr = this.tables.get(index) else:
                 fatal(c"toml.Document.get_table missing table")
 
             unsafe:
-                if read(ptr[Table]<-table_ptr).name.as_str().equal(name):
+                if read(table_ptr).name.as_str().equal(name):
                     return table_ptr
 
             index += 1
@@ -442,12 +410,11 @@ methods Document:
     public function get_array_table(name: str) -> ptr[ArrayTable]?:
         var index: ptr_uint = 0
         while index < this.array_tables.len():
-            let table_ptr = this.array_tables.get(index)
-            if table_ptr == null:
+            let table_ptr = this.array_tables.get(index) else:
                 fatal(c"toml.Document.get_array_table missing table")
 
             unsafe:
-                if read(ptr[ArrayTable]<-table_ptr).name.as_str().equal(name):
+                if read(table_ptr).name.as_str().equal(name):
                     return table_ptr
 
             index += 1
@@ -460,25 +427,21 @@ methods Document:
 
         var table_index: ptr_uint = 0
         while table_index < this.tables.len():
-            let table_ptr = this.tables.get(table_index)
-            if table_ptr == null:
+            let table_ptr = this.tables.get(table_index) else:
                 fatal(c"toml.Document.release missing table")
 
             unsafe:
-                var owned = read(ptr[Table]<-table_ptr)
-                owned.release()
+                read(table_ptr).release()
 
             table_index += 1
 
         var array_table_index: ptr_uint = 0
         while array_table_index < this.array_tables.len():
-            let table_ptr = this.array_tables.get(array_table_index)
-            if table_ptr == null:
+            let table_ptr = this.array_tables.get(array_table_index) else:
                 fatal(c"toml.Document.release missing array table")
 
             unsafe:
-                var owned = read(ptr[ArrayTable]<-table_ptr)
-                owned.release()
+                read(table_ptr).release()
 
             array_table_index += 1
 
@@ -815,7 +778,7 @@ function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseErr
 
     let array_ptr = heap.must_alloc[Array](1)
     unsafe:
-        read(ptr[Array]<-array_ptr) = Array.create()
+        read(array_ptr) = Array.create()
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_bracket):
@@ -827,13 +790,12 @@ function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseErr
         match value_result:
             status.Status.err as payload:
                 unsafe:
-                    var owned = read(ptr[Array]<-array_ptr)
-                    owned.release()
+                    read(array_ptr).release()
                 heap.release(array_ptr)
                 return status.Status[ptr[Array]?, ParseError].err(error= payload.error)
             status.Status.ok as payload:
                 unsafe:
-                    read(ptr[Array]<-array_ptr).values.push(payload.value)
+                    read(array_ptr).values.push(payload.value)
 
         parser_skip_inline_space(parser)
         if parser_consume_byte(parser, byte_comma):
@@ -842,8 +804,7 @@ function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseErr
             return status.Status[ptr[Array]?, ParseError].ok(value= array_ptr)
 
         unsafe:
-            var owned = read(ptr[Array]<-array_ptr)
-            owned.release()
+            read(array_ptr).release()
         heap.release(array_ptr)
         return status.Status[ptr[Array]?, ParseError].err(error= parse_error(parser, "expected ',' or ']'"))
 
@@ -854,7 +815,7 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
 
     let object_ptr = heap.must_alloc[Object](1)
     unsafe:
-        read(ptr[Object]<-object_ptr) = Object.create()
+        read(object_ptr) = Object.create()
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_brace):
@@ -866,8 +827,7 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
         match key_result:
             status.Status.err as payload:
                 unsafe:
-                    var owned = read(ptr[Object]<-object_ptr)
-                    owned.release()
+                    read(object_ptr).release()
                 heap.release(object_ptr)
                 return status.Status[ptr[Object]?, ParseError].err(error= payload.error)
             status.Status.ok as key_payload:
@@ -876,8 +836,7 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                 if not parser_consume_byte(parser, byte_equal):
                     key.release()
                     unsafe:
-                        var owned = read(ptr[Object]<-object_ptr)
-                        owned.release()
+                        read(object_ptr).release()
                     heap.release(object_ptr)
                     return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "expected '='"))
 
@@ -887,23 +846,21 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                     status.Status.err as payload:
                         key.release()
                         unsafe:
-                            var owned = read(ptr[Object]<-object_ptr)
-                            owned.release()
+                            read(object_ptr).release()
                         heap.release(object_ptr)
                         return status.Status[ptr[Object]?, ParseError].err(error= payload.error)
                     status.Status.ok as value_payload:
                         let key_text = key.as_str()
-                        if unsafe: read(ptr[Object]<-object_ptr).contains(key_text):
+                        if unsafe: read(object_ptr).contains(key_text):
                             key.release()
                             release_value(value_payload.value)
                             unsafe:
-                                var owned = read(ptr[Object]<-object_ptr)
-                                owned.release()
+                                read(object_ptr).release()
                             heap.release(object_ptr)
                             return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "duplicate key"))
 
                         unsafe:
-                            read(ptr[Object]<-object_ptr).entries.push(Entry(key = key, value = value_payload.value))
+                            read(object_ptr).entries.push(Entry(key = key, value = value_payload.value))
 
                 parser_skip_inline_space(parser)
                 if parser_consume_byte(parser, byte_comma):
@@ -912,8 +869,7 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                     return status.Status[ptr[Object]?, ParseError].ok(value= object_ptr)
 
                 unsafe:
-                    var owned = read(ptr[Object]<-object_ptr)
-                    owned.release()
+                    read(object_ptr).release()
                 heap.release(object_ptr)
                 return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "expected ',' or '}'"))
 
@@ -970,12 +926,11 @@ function parse_value(parser: ref[Parser]) -> status.Status[Value, ParseError]:
 function document_find_table_index(document: ref[Document], name: str) -> maybe.Maybe[ptr_uint]:
     var index: ptr_uint = 0
     while index < document.tables.len():
-        let table_ptr = document.tables.get(index)
-        if table_ptr == null:
+        let table_ptr = document.tables.get(index) else:
             fatal(c"toml.document_find_table_index missing table")
 
         unsafe:
-            if read(ptr[Table]<-table_ptr).name.as_str().equal(name):
+            if read(table_ptr).name.as_str().equal(name):
                 return maybe.Maybe[ptr_uint].some(value= index)
 
         index += 1
@@ -986,12 +941,11 @@ function document_find_table_index(document: ref[Document], name: str) -> maybe.
 function document_find_array_table_index(document: ref[Document], name: str) -> maybe.Maybe[ptr_uint]:
     var index: ptr_uint = 0
     while index < document.array_tables.len():
-        let table_ptr = document.array_tables.get(index)
-        if table_ptr == null:
+        let table_ptr = document.array_tables.get(index) else:
             fatal(c"toml.document_find_array_table_index missing table")
 
         unsafe:
-            if read(ptr[ArrayTable]<-table_ptr).name.as_str().equal(name):
+            if read(table_ptr).name.as_str().equal(name):
                 return maybe.Maybe[ptr_uint].some(value= index)
 
         index += 1
@@ -1004,23 +958,20 @@ function current_object_contains(document: ref[Document], cursor: Cursor, key: s
         SectionKind.root:
             return document.root.contains(key)
         SectionKind.table:
-            let table_ptr = document.tables.get(cursor.table_index)
-            if table_ptr == null:
+            let table_ptr = document.tables.get(cursor.table_index) else:
                 fatal(c"toml.current_object_contains missing table")
 
             unsafe:
-                return read(ptr[Table]<-table_ptr).entries.contains(key)
+                return read(table_ptr).entries.contains(key)
         SectionKind.array_table:
-            let array_table_ptr = document.array_tables.get(cursor.array_table_index)
-            if array_table_ptr == null:
+            let array_table_ptr = document.array_tables.get(cursor.array_table_index) else:
                 fatal(c"toml.current_object_contains missing array table")
 
             unsafe:
-                let object_ptr = read(ptr[ArrayTable]<-array_table_ptr).tables.get(cursor.array_item_index)
-                if object_ptr == null:
+                let object_ptr = read(array_table_ptr).tables.get(cursor.array_item_index) else:
                     fatal(c"toml.current_object_contains missing array table item")
 
-                return read(ptr[Object]<-object_ptr).contains(key)
+                return read(object_ptr).contains(key)
 
 
 function current_object_push(document: ref[Document], cursor: Cursor, entry: Entry) -> void:
@@ -1029,24 +980,21 @@ function current_object_push(document: ref[Document], cursor: Cursor, entry: Ent
             document.root.entries.push(entry)
             return
         SectionKind.table:
-            let table_ptr = document.tables.get(cursor.table_index)
-            if table_ptr == null:
+            let table_ptr = document.tables.get(cursor.table_index) else:
                 fatal(c"toml.current_object_push missing table")
 
             unsafe:
-                read(ptr[Table]<-table_ptr).entries.entries.push(entry)
+                read(table_ptr).entries.entries.push(entry)
             return
         SectionKind.array_table:
-            let array_table_ptr = document.array_tables.get(cursor.array_table_index)
-            if array_table_ptr == null:
+            let array_table_ptr = document.array_tables.get(cursor.array_table_index) else:
                 fatal(c"toml.current_object_push missing array table")
 
             unsafe:
-                let object_ptr = read(ptr[ArrayTable]<-array_table_ptr).tables.get(cursor.array_item_index)
-                if object_ptr == null:
+                let object_ptr = read(array_table_ptr).tables.get(cursor.array_item_index) else:
                     fatal(c"toml.current_object_push missing array table item")
 
-                read(ptr[Object]<-object_ptr).entries.push(entry)
+                read(object_ptr).entries.push(entry)
             return
 
 
@@ -1107,15 +1055,14 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
                     maybe.Maybe.some as payload:
                         let index = payload.value
                         name.release()
-                        let array_table_ptr = document.array_tables.get(index)
-                        if array_table_ptr == null:
+                        let array_table_ptr = document.array_tables.get(index) else:
                             fatal(c"toml.parse_header missing array table")
 
                         unsafe:
-                            read(ptr[ArrayTable]<-array_table_ptr).tables.push(Object.create())
+                            read(array_table_ptr).tables.push(Object.create())
                             cursor.kind = SectionKind.array_table
                             cursor.array_table_index = index
-                            cursor.array_item_index = read(ptr[ArrayTable]<-array_table_ptr).tables.len() - 1
+                            cursor.array_item_index = read(array_table_ptr).tables.len() - 1
                         return status.Status[bool, ParseError].ok(value= true)
                     maybe.Maybe.none:
                         var next = ArrayTable(name = name, tables = vec.Vec[Object].create())
@@ -1247,17 +1194,16 @@ function append_value(output: ref[string.String], value: Value) -> void:
         let nested_array = value.array_value
         if nested_array != null:
             unsafe:
-                let values = read(ptr[Array]<-nested_array)
+                let values = read(nested_array)
                 var index: ptr_uint = 0
                 while index < values.len():
                     if index != 0:
                         output.append(", ")
 
-                    let item = values.values.get(index)
-                    if item == null:
+                    let item = values.values.get(index) else:
                         fatal(c"toml.append_value missing array item")
 
-                    append_value(output, unsafe: read(ptr[Value]<-item))
+                    append_value(output, unsafe: read(item))
                     index += 1
 
         output.push_byte(byte_right_bracket)
@@ -1267,17 +1213,16 @@ function append_value(output: ref[string.String], value: Value) -> void:
     let nested_object = value.object_value
     if nested_object != null:
         unsafe:
-            let object_entries = read(ptr[Object]<-nested_object)
+            let object_entries = read(nested_object)
             var index: ptr_uint = 0
             while index < object_entries.entries.len():
                 if index != 0:
                     output.append(", ")
 
-                let entry = object_entries.entries.get(index)
-                if entry == null:
+                let entry = object_entries.entries.get(index) else:
                     fatal(c"toml.append_value missing object entry")
 
-                let current = unsafe: read(ptr[Entry]<-entry)
+                let current = unsafe: read(entry)
                 append_entry_key(output, current.key.as_str())
                 output.append(" = ")
                 append_value(output, current.value)
@@ -1290,11 +1235,10 @@ function append_value(output: ref[string.String], value: Value) -> void:
 function append_table_entries(output: ref[string.String], object_entries: Object) -> void:
     var index: ptr_uint = 0
     while index < object_entries.entries.len():
-        let entry = object_entries.entries.get(index)
-        if entry == null:
+        let entry = object_entries.entries.get(index) else:
             fatal(c"toml.append_table_entries missing entry")
 
-        let current = unsafe: read(ptr[Entry]<-entry)
+        let current = unsafe: read(entry)
         append_entry_key(output, current.key.as_str())
         output.append(" = ")
         append_value(output, current.value)
@@ -1319,11 +1263,10 @@ public function render(document: Document) -> string.String:
         if table_index != 0:
             output.append("\n")
 
-        let table_ptr = document.tables.get(table_index)
-        if table_ptr == null:
+        let table_ptr = document.tables.get(table_index) else:
             fatal(c"toml.render missing table")
 
-        let current = unsafe: read(ptr[Table]<-table_ptr)
+        let current = unsafe: read(table_ptr)
         output.push_byte(byte_left_bracket)
         append_header_name(ref_of(output), current.name.as_str())
         output.push_byte(byte_right_bracket)
@@ -1333,11 +1276,10 @@ public function render(document: Document) -> string.String:
 
     var array_table_index: ptr_uint = 0
     while array_table_index < document.array_tables.len():
-        let array_table_ptr = document.array_tables.get(array_table_index)
-        if array_table_ptr == null:
+        let array_table_ptr = document.array_tables.get(array_table_index) else:
             fatal(c"toml.render missing array table")
 
-        let current = unsafe: read(ptr[ArrayTable]<-array_table_ptr)
+        let current = unsafe: read(array_table_ptr)
         var object_index: ptr_uint = 0
         while object_index < current.tables.len():
             if output.len() > 0 and not output.as_str().ends_with("\n\n"):
@@ -1350,11 +1292,10 @@ public function render(document: Document) -> string.String:
             output.push_byte(byte_right_bracket)
             output.append("\n")
 
-            let object_ptr = current.tables.get(object_index)
-            if object_ptr == null:
+            let object_ptr = current.tables.get(object_index) else:
                 fatal(c"toml.render missing array table item")
 
-            append_table_entries(ref_of(output), unsafe: read(ptr[Object]<-object_ptr))
+            append_table_entries(ref_of(output), unsafe: read(object_ptr))
             object_index += 1
         array_table_index += 1
 

@@ -1708,6 +1708,274 @@ class MilkTeaLinterRedundantNullCheckTest < Minitest::Test
   end
 end
 
+# ── redundant-read-cast ──────────────────────────────────────────────────
+
+class MilkTeaLinterRedundantReadCastTest < Minitest::Test
+  private def lint_with_sema(source, path: "demo.mt", **kwargs)
+    ast = MilkTea::Parser.parse(source, path: path)
+    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+  end
+
+  def test_warns_on_redundant_read_cast_after_fatal_guard
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function main(handle: ptr[int]?) -> int:
+          let value_ptr = maybe_handle(handle)
+          if value_ptr == null:
+              fatal("missing")
+          unsafe:
+              return read(ptr[int]<-value_ptr)
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-read-cast" }
+    assert warning, "expected redundant-read-cast warning"
+    assert_equal 9, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_does_not_warn_without_non_null_proof
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function main(handle: ptr[int]?) -> int:
+          unsafe:
+              return read(ptr[int]<-handle)
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-read-cast" }
+  end
+
+  def test_fix_source_removes_redundant_read_cast
+    source = <<~MT
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function main(handle: ptr[int]?) -> int:
+          let value_ptr = maybe_handle(handle)
+          if value_ptr == null:
+              fatal("missing")
+          unsafe:
+              return read(ptr[int]<-value_ptr)
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "return read(value_ptr)"
+    refute_includes fixed, "read(ptr[int]<-value_ptr)"
+  end
+end
+
+# ── redundant-read-release-temp ─────────────────────────────────────────
+
+class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
+  def test_warns_on_read_temp_only_used_for_release
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Box:
+          value: int
+
+      methods Box:
+          editable function release() -> void:
+              pass
+
+      function main(box_ptr: ptr[Box]) -> void:
+          unsafe:
+              var owned = read(box_ptr)
+              owned.release()
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-read-release-temp" }
+    assert warning, "expected redundant-read-release-temp warning"
+    assert_equal 10, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_does_not_warn_when_temp_is_used_after_release
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      struct Box:
+          value: int
+
+      methods Box:
+          editable function release() -> void:
+              pass
+
+      function main(box_ptr: ptr[Box]) -> int:
+          unsafe:
+              var owned = read(box_ptr)
+              owned.release()
+              return owned.value
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-read-release-temp" }
+  end
+
+  def test_fix_source_inlines_read_release_temp
+    source = <<~MT
+      struct Box:
+          value: int
+
+      methods Box:
+          editable function release() -> void:
+              pass
+
+      function main(box_ptr: ptr[Box]) -> void:
+          unsafe:
+              var owned = read(box_ptr)
+              owned.release()
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "read(box_ptr).release()"
+    refute_includes fixed, "var owned = read(box_ptr)"
+    refute_includes fixed, "owned.release()"
+  end
+end
+
+# ── prefer-let-else ─────────────────────────────────────────────────────
+
+class MilkTeaLinterPreferLetElseTest < Minitest::Test
+  private def lint_with_sema(source, path: "demo.mt", **kwargs)
+    ast = MilkTea::Parser.parse(source, path: path)
+    analysis = MilkTea::Sema.check(ast, imported_modules: {})
+    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+  end
+
+  def test_warns_on_immediate_nullable_guard_return
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function main(handle: ptr[int]?) -> int:
+          let value_ptr = maybe_handle(handle)
+          if value_ptr == null:
+              return 0
+          unsafe:
+              return read(value_ptr)
+    MT
+
+    warning = warnings.find { |w| w.code == "prefer-let-else" }
+    assert warning, "expected prefer-let-else warning"
+    assert_equal 6, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_does_not_warn_when_declaration_has_explicit_type
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function main(handle: ptr[int]?) -> int:
+          let value_ptr: ptr[int]? = maybe_handle(handle)
+          if value_ptr == null:
+              return 0
+          unsafe:
+              return read(value_ptr)
+    MT
+
+    refute warnings.any? { |w| w.code == "prefer-let-else" }
+  end
+
+  def test_fix_source_rewrites_nullable_guard_as_let_else
+    source = <<~MT
+      function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+          return handle
+
+      function main(handle: ptr[int]?) -> int:
+          let value_ptr = maybe_handle(handle)
+          if value_ptr == null:
+              return 0
+          unsafe:
+              return read(value_ptr)
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "let value_ptr = maybe_handle(handle) else:"
+    refute_includes fixed, "if value_ptr == null:"
+  end
+end
+
+# ── directional-ffi-arg ──────────────────────────────────────────────────
+
+class MilkTeaLinterDirectionalFfiArgTest < Minitest::Test
+  def test_warns_on_ptr_of_for_directional_ffi_param
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      external function fill(out value: int) -> void
+
+      function main() -> int:
+          var value = 0
+          fill(ptr_of(value))
+          return value
+    MT
+
+    warning = warnings.find { |w| w.code == "directional-ffi-arg" }
+    assert warning, "expected directional-ffi-arg warning"
+    assert_equal 5, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_warns_on_legacy_out_keyword_for_directional_ffi_param
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      external function fill(out value: int) -> void
+
+      function main() -> int:
+          var value = 0
+          fill(out value)
+          return value
+    MT
+
+    warning = warnings.find { |w| w.code == "directional-ffi-arg" }
+    assert warning, "expected directional-ffi-arg warning"
+    assert_equal 5, warning.line
+  end
+
+  def test_does_not_warn_on_plain_lvalue_for_directional_ffi_param
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      external function fill(out value: int) -> void
+
+      function main() -> int:
+          var value = 0
+          fill(value)
+          return value
+    MT
+
+    refute warnings.any? { |w| w.code == "directional-ffi-arg" }
+  end
+
+  def test_fix_source_removes_ptr_of_wrapper_for_directional_ffi_param
+    source = <<~MT
+      external function fill(out value: int) -> void
+
+      function main() -> int:
+          var value = 0
+          fill(ptr_of(value))
+          return value
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "fill(value)"
+    refute_includes fixed, "fill(ptr_of(value))"
+  end
+
+  def test_fix_source_removes_out_keyword_for_directional_ffi_param
+    source = <<~MT
+      external function fill(out value: int) -> void
+
+      function main() -> int:
+          var value = 0
+          fill(out value)
+          return value
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "fill(value)"
+    refute_includes fixed, "fill(out value)"
+  end
+end
+
 # ── redundant-unsafe ─────────────────────────────────────────────────────
 
 class MilkTeaLinterRedundantUnsafeTest < Minitest::Test

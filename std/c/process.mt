@@ -1,6 +1,5 @@
 external
 
-import std.c.libuv
 
 include "process_support.h"
 

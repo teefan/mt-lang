@@ -49,13 +49,11 @@ public function format_utc_time_into(buffer: ptr[char], max_size: ptr_uint, form
 
 
 public function clock_resolution(clock_id: ClockId, resolution: ref[TimeSpec]) -> int:
-    unsafe:
-        return c.clock_getres(clock_id, ptr_of(resolution))
+    return c.clock_getres(clock_id, ptr_of(resolution))
 
 
 public function clock_time(clock_id: ClockId, value: ref[TimeSpec]) -> int:
-    unsafe:
-        return c.clock_gettime(clock_id, ptr_of(value))
+    return c.clock_gettime(clock_id, ptr_of(value))
 
 
 public function realtime(value: ref[TimeSpec]) -> int:
