@@ -4836,6 +4836,43 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return 1;/, generated)
   end
 
+  def test_generate_c_adds_non_void_fallback_after_exhaustive_match_switch
+    source = <<~MT
+      # module demo.non_void_match_fallback
+
+      import std.maybe as maybe
+
+      function select_bool(value: maybe.Maybe[bool]) -> bool:
+          match value:
+              maybe.Maybe.none:
+                  return false
+              maybe.Maybe.some as payload:
+                  return payload.value
+
+      function select_ptr(value: maybe.Maybe[ptr[int]], fallback: ptr[int]) -> ptr[int]:
+          match value:
+              maybe.Maybe.none:
+                  return fallback
+              maybe.Maybe.some as payload:
+                  return payload.value
+
+      function main() -> int:
+          var number = 7
+          if not select_bool(maybe.Maybe[bool].some(value = true)):
+              return 1
+          let chosen = select_ptr(maybe.Maybe[ptr[int]].none, ptr_of(number))
+          unsafe:
+              if read(chosen) != 7:
+                  return 2
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/static bool demo_non_void_match_fallback_select_bool\(.*?switch \(value\.kind\) \{.*?\n  \}\n  return false;\n\}/m, generated)
+    assert_match(/static int32_t \*demo_non_void_match_fallback_select_ptr\(.*?switch \(value\.kind\) \{.*?\n  \}\n  return \(int32_t \*\) NULL;\n\}/m, generated)
+  end
+
   def test_generate_c_for_variant_tagged_union_structs
     source = <<~MT
       # module demo.variant_codegen
