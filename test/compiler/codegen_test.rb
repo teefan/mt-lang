@@ -2830,6 +2830,34 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_order_imported_codegen_main_Key_order\(&left, &right\)/, generated)
   end
 
+  def test_generate_c_for_order_builtin_used_in_binary_comparison
+    source = [
+      "# module demo.order_compare_codegen",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
+      "        unsafe:",
+      "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",
+      "",
+      "function ordered_before_or_equal[T](left: T, right: T) -> bool:",
+      "    return order[T](left, right) <= 0",
+      "",
+      "function main() -> bool:",
+      "    let left = Key(value = 1)",
+      "    let right = Key(value = 2)",
+      "    return ordered_before_or_equal[Key](left, right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static bool demo_order_compare_codegen_ordered_before_or_equal_demo_order_compare_codegen_Key\(demo_order_compare_codegen_Key left, demo_order_compare_codegen_Key right\)/, generated)
+    assert_match(/demo_order_compare_codegen_Key_order\(&left, &right\)/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",

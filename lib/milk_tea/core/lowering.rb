@@ -7265,7 +7265,7 @@ module MilkTea
           case kind
           when :function, :method, :associated_method, :callable_value,
             :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr,
-            :cast, :reinterpret, :zero, :hash, :equal
+            :cast, :reinterpret, :zero, :hash, :equal, :order
             callee_type.return_type
           when :struct_literal, :array, :variant_arm_ctor
             callee_type

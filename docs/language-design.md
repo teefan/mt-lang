@@ -332,7 +332,7 @@ Canonical hash, equality, and ordering hooks remain associated functions `T.hash
 
 The separate `hashes` and `equates` constraint keywords were removed because they were only contract spelling. They were not the thing that made the built-ins work; direct `hash[T](...)`, `equal[T](...)`, and now `order[T](...)` use already force the canonical hooks at specialization time.
 
-We are not adding an `order` hook in v1. The current ordered surfaces already take an explicit comparator function, and if Milk Tea later wants a canonical ordering hook it should be a tri-state `compare` surface rather than a boolean `less` hook so it matches sort and binary-search style APIs.
+Ordered std surfaces should now rely on the canonical tri-state `order[T](...)` hook instead of storing per-instance comparator callbacks when the element type already has a natural ordering. The first such surface is `std.binary_heap.BinaryHeap[T]`, which is a max-heap keyed directly by `T.order(...)`.
 
 `default[T]` requires an explicit `T.default()` provider at each use site. The separate `defaults` constraint was removed because it duplicated that requirement while lengthening generic signatures. If an API depends on semantic defaulting, say so in the API docs and call `default[T]` directly in the generic body.
 
