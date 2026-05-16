@@ -1,0 +1,11 @@
+{
+  "name": "emit_c_simple",
+  "argv": ["emit-c", "main.mt"],
+  "cwd": ".",
+  "exitStatus": 0,
+  "stderr": "",
+  "stdout": {
+    "type": "text-regexp-all",
+    "path": "expected.stdout.json"
+  }
+}

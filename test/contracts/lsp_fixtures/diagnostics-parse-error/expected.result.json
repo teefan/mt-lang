@@ -1,0 +1,13 @@
+{
+  "kind": "full",
+  "items": [
+    {
+      "code": "parse/error",
+      "severity": 1,
+      "source": "milk-tea",
+      "data": {
+        "stage": "parse"
+      }
+    }
+  ]
+}

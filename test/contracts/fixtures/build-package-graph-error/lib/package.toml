@@ -1,0 +1,8 @@
+[package]
+name = "demo.lib"
+version = "0.1.0"
+kind = "library"
+source_root = "src"
+
+[dependencies]
+"demo.app" = { path = "../app" }

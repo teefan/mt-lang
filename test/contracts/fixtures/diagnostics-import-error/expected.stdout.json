@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "contract": "diagnostics",
+  "positionEncoding": "utf-8",
+  "path": "main.mt",
+  "summary": {
+    "errorCount": 1,
+    "warningCount": 0,
+    "informationCount": 0,
+    "hintCount": 0,
+    "totalCount": 1
+  },
+  "diagnostics": [
+    {
+      "code": "import/load-error",
+      "stage": "import",
+      "severity": "error",
+      "source": "milk-tea"
+    }
+  ]
+}

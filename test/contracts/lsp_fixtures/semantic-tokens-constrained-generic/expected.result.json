@@ -1,0 +1,130 @@
+{
+  "entries": [
+    {
+      "line": 0,
+      "startChar": 0,
+      "endChar": 9,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 0,
+      "startChar": 10,
+      "endChar": 20,
+      "tokenType": "type",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 0,
+      "startChar": 20,
+      "endChar": 21,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 4,
+      "endChar": 12,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 13,
+      "endChar": 19,
+      "tokenType": "function",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 1,
+      "startChar": 19,
+      "endChar": 20,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 20,
+      "endChar": 26,
+      "tokenType": "parameter",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 1,
+      "startChar": 26,
+      "endChar": 27,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 28,
+      "endChar": 31,
+      "tokenType": "type",
+      "modifierNames": ["defaultLibrary"]
+    },
+    {
+      "line": 1,
+      "startChar": 31,
+      "endChar": 32,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 33,
+      "endChar": 35,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 36,
+      "endChar": 39,
+      "tokenType": "type",
+      "modifierNames": ["defaultLibrary"]
+    },
+    {
+      "line": 3,
+      "startChar": 0,
+      "endChar": 8,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 3,
+      "startChar": 9,
+      "endChar": 14,
+      "tokenType": "function",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 3,
+      "startChar": 14,
+      "endChar": 15,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 3,
+      "startChar": 15,
+      "endChar": 16,
+      "tokenType": "typeParameter",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 3,
+      "startChar": 17,
+      "endChar": 27,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 3,
+      "startChar": 28,
+      "endChar": 38,
+      "tokenType": "type",
+      "modifierNames": []
+    }
+  ]
+}

@@ -416,6 +416,7 @@ Supported statements:
 - `static_assert`
 - `for`
 - `while`
+- `pass`
 - `break`
 - `continue`
 - `return`
@@ -425,6 +426,8 @@ Supported statements:
 ### 4.1 If
 
 Condition must be `bool`.
+
+`pass` is an explicit no-op statement for intentionally empty block bodies.
 
 ### 4.2 Match
 

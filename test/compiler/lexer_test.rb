@@ -116,6 +116,12 @@ class MilkTeaLexerTest < Minitest::Test
     assert_includes types, :ellipsis
   end
 
+  def test_lexes_pass_as_keyword
+    types = MilkTea::Lexer.lex("function main() -> void:\n    pass\n").map(&:type)
+
+    assert_includes types, :pass
+  end
+
   def test_lexes_format_string_literal_parts
     tokens = MilkTea::Lexer.lex("const message = f\"value=\#{count} ok=\#{true}\"\n")
     format_token = tokens.find { |token| token.type == :fstring }

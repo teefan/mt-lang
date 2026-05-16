@@ -1,0 +1,21 @@
+{
+  "name": "diagnostics_platform_override_success",
+  "cwd": ".",
+  "rootPath": ".",
+  "documentPath": "main.mt",
+  "initialize": {
+    "initializationOptions": {
+      "milkTea": {
+        "lsp": {
+          "platform": "windows"
+        }
+      }
+    }
+  },
+  "requestMethod": "textDocument/diagnostic",
+  "stderr": "",
+  "result": {
+    "type": "json-projection",
+    "path": "expected.result.json"
+  }
+}

@@ -1,0 +1,22 @@
+schema_version = 1
+root_package = "snake_duel"
+
+[[package]]
+name = "snake_duel"
+kind = "application"
+version = "0.1.0"
+source_kind = "path"
+source_path = "apps/snake-duel"
+manifest_path = "apps/snake-duel/package.toml"
+source_root = "apps/snake-duel/src"
+dependencies = ["teefan.ui"]
+
+[[package]]
+name = "teefan.ui"
+kind = "library"
+version = "0.3.0"
+source_kind = "path"
+source_path = "libs/ui"
+manifest_path = "libs/ui/package.toml"
+source_root = "libs/ui/src"
+dependencies = []

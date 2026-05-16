@@ -1,0 +1,3 @@
+#!/bin/sh
+printf 'compile failed\n' >&2
+exit 2

@@ -280,6 +280,8 @@ module MilkTea
           add_linear_node(:expression, stmt, next_id, reads:, writes:, writes_info:)
         when AST::StaticAssert
           add_linear_node(:static_assert, stmt, next_id, reads: read_identifiers(stmt.condition))
+        when AST::PassStmt
+          add_linear_node(:pass, stmt, next_id)
         when AST::BreakStmt
           target = break_target || next_id
           add_linear_node(:break, stmt, target)

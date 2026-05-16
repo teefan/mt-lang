@@ -1,0 +1,12 @@
+{
+  "name": "run_package_success",
+  "argv": ["run", "app", "--cc", "./fake-run-cc", "--json"],
+  "cwd": ".",
+  "executablePaths": ["fake-run-cc"],
+  "exitStatus": 3,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

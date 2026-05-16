@@ -1,0 +1,18 @@
+{
+  "name": "definition_workspace_function",
+  "cwd": ".",
+  "rootPath": ".",
+  "documentPath": "main.mt",
+  "requestMethod": "textDocument/definition",
+  "requestParams": {
+    "position": {
+      "line": 1,
+      "character": 11
+    }
+  },
+  "stderr": "",
+  "result": {
+    "type": "json-exact",
+    "path": "expected.result.json"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "kind": "full",
+  "items": [
+    {
+      "code": "lex/error",
+      "severity": 1,
+      "source": "milk-tea",
+      "data": {
+        "stage": "lex"
+      }
+    }
+  ]
+}

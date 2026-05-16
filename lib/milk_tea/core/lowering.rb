@@ -1705,7 +1705,7 @@ module MilkTea
                            expression_setup + [AST::ExpressionStmt.new(expression:, line: statement.line)]
                          end
           [AST::DeferStmt.new(expression: nil, body: cleanup_body, line: statement.line, column: statement.column, length: statement.length)]
-        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
+        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
           [statement]
         else
           raise LoweringError, "unsupported async statement #{statement.class.name}"
@@ -2022,6 +2022,8 @@ module MilkTea
             lowered.concat(lower_async_cf_statements(statement.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)))
           when AST::DeferStmt
             local_defers << lower_async_defer_cleanup(statement, env:, async_info:)
+          when AST::PassStmt
+            nil
           when AST::BreakStmt
             if loop_flow
               lowered.concat(lower_async_loop_exit(loop_flow[:break_target], local_defers, loop_flow[:break_defers], frame_expr:, raw_frame_expr:, async_info:))
@@ -2438,6 +2440,8 @@ module MilkTea
             lowered << lower_async_for_stmt(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers)
           when AST::DeferStmt
             local_defers << lower_async_defer_cleanup(statement, env: local_env, async_info:)
+          when AST::PassStmt
+            nil
           when AST::BreakStmt
             if loop_flow
               lowered.concat(lower_async_loop_exit(loop_flow[:break_target], local_defers, loop_flow[:break_defers], frame_expr:, raw_frame_expr:, async_info:))
@@ -3334,6 +3338,14 @@ module MilkTea
             lowered.concat(expression_setup)
             expression = lower_expression(prepared_expression, env: local_env, expected_type: scrutinee_type)
 
+            if scrutinee_type.is_a?(Types::Variant) &&
+               statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
+               !duplicable_foreign_argument_expression?(expression)
+              scrutinee_c_name = fresh_c_temp_name(local_env, "match_value")
+              lowered << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: scrutinee_type, value: expression)
+              expression = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
+            end
+
             if scrutinee_type.is_a?(Types::Variant)
               outer_c = c_type_name(scrutinee_type)
               kind_type = @types.fetch("int")
@@ -3398,6 +3410,8 @@ module MilkTea
             lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
           when AST::WhileStmt
             lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
+          when AST::PassStmt
+            nil
           when AST::BreakStmt
             raise LoweringError, "break must be inside a loop" unless loop_flow
 

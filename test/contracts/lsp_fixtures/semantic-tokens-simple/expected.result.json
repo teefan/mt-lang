@@ -1,0 +1,67 @@
+{
+  "entries": [
+    {
+      "line": 0,
+      "startChar": 0,
+      "endChar": 8,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 0,
+      "startChar": 9,
+      "endChar": 13,
+      "tokenType": "function",
+      "modifierNames": ["declaration"]
+    },
+    {
+      "line": 0,
+      "startChar": 13,
+      "endChar": 14,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 0,
+      "startChar": 14,
+      "endChar": 15,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 0,
+      "startChar": 16,
+      "endChar": 18,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 0,
+      "startChar": 19,
+      "endChar": 22,
+      "tokenType": "type",
+      "modifierNames": ["defaultLibrary"]
+    },
+    {
+      "line": 0,
+      "startChar": 22,
+      "endChar": 23,
+      "tokenType": "operator",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 4,
+      "endChar": 10,
+      "tokenType": "keyword",
+      "modifierNames": []
+    },
+    {
+      "line": 1,
+      "startChar": 11,
+      "endChar": 12,
+      "tokenType": "number",
+      "modifierNames": []
+    }
+  ]
+}

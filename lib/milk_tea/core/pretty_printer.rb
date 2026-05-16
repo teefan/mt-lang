@@ -507,6 +507,8 @@ module MilkTea
           with_indent do
             statement.body.each { |nested| emit_statement(nested) }
           end
+        when AST::PassStmt
+          line("pass")
         when AST::BreakStmt
           line("break")
         when AST::ContinueStmt
@@ -561,6 +563,8 @@ module MilkTea
           "#{render_expression(statement.target)} #{statement.operator} #{render_expression(statement.value)}"
         when AST::StaticAssert
           "static_assert(#{render_expression(statement.condition)}, #{render_expression(statement.message)})"
+        when AST::PassStmt
+          "pass"
         when AST::BreakStmt
           "break"
         when AST::ContinueStmt

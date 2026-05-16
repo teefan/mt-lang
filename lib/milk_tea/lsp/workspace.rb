@@ -706,11 +706,15 @@ module MilkTea
         ModuleLoader.resolve_source_path(path, platform: effective_platform, error_class: ModuleLoadError)
       end
 
+      public
+
       def open_document_uris
         @document_state_mutex.synchronize do
           @open_documents.keys.dup
         end
       end
+
+      private
 
       # ── Symbol extraction (token-based, no AST position requirement) ────────
 

@@ -1,0 +1,12 @@
+{
+  "name": "build_success",
+  "argv": ["build", "main.mt", "--cc", "./fake-cc", "-o", "build-output", "--keep-c", "generated.c", "--json"],
+  "cwd": ".",
+  "executablePaths": ["fake-cc"],
+  "exitStatus": 0,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

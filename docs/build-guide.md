@@ -320,6 +320,77 @@ Planned registry and source-cache model:
 - `package.lock` should record that exact resolved source identity so `--locked` and `--frozen` can rebuild the graph from cached sources without re-solving or re-fetching
 - compiler and LSP analysis should keep operating on local source roots only; fetch, update, and cache-population behavior should stay in explicit tooling commands instead of being hidden inside `check`, `build`, or editor requests
 
+### 2.1 Machine-readable CLI contracts
+
+The CLI now exposes versioned JSON contracts for external tooling and future cross-implementation conformance tests.
+
+Available contract surfaces:
+
+- `mtc semantic-tokens path/to/file.mt` emits a versioned semantic-token JSON payload.
+- `mtc diagnostics path/to/file.mt` emits a versioned diagnostics JSON payload.
+- `mtc build path/to/package --json` emits a versioned build-result JSON payload.
+- `mtc run path/to/package --json` emits a versioned run-result JSON payload.
+
+Current contract conventions:
+
+- each payload includes `version = 1` and a `contract` name
+- paths are normalized with forward slashes and are relative to the current working directory when the target lives under it
+- diagnostics and semantic tokens expose explicit UTF-8 byte spans for stable machine checks
+- `mtc run --json` still returns the program exit status as the CLI process status while also including it in the JSON payload
+
+### 2.2 Portable contract runners
+
+The black-box conformance runners under `test/contracts/` now accept env-configured command lines so the same Ruby harness can validate a non-Ruby Milk Tea implementation.
+
+Supported runner env vars:
+
+- `MILK_TEA_CONTRACT_CLI_CMD` overrides the command used by `test/contracts/cli_contract_test.rb`
+- `MILK_TEA_CONTRACT_LSP_CMD` overrides the command used by `test/contracts/lsp_contract_test.rb`
+
+When unset, the harnesses keep the current defaults and run the checked-in Ruby scripts:
+
+- CLI default: `ruby bin/mtc`
+- LSP default: `ruby bin/mtc-lsp`
+
+Each env var is parsed as a full command line, not just an executable path. This lets an alternate implementation provide either a native binary or a wrapper command.
+
+Examples:
+
+```sh
+bundle exec ruby -Itest test/contracts/cli_contract_test.rb
+bundle exec ruby -Itest test/contracts/lsp_contract_test.rb
+```
+
+```sh
+MILK_TEA_CONTRACT_CLI_CMD='./build/mtc' \
+MILK_TEA_CONTRACT_LSP_CMD='./build/mtc-lsp' \
+bundle exec ruby -Itest test/contracts/cli_contract_test.rb
+
+MILK_TEA_CONTRACT_CLI_CMD='./build/mtc' \
+MILK_TEA_CONTRACT_LSP_CMD='./build/mtc-lsp' \
+bundle exec ruby -Itest test/contracts/lsp_contract_test.rb
+```
+
+That contract layer is now the preferred portability gate for a rewrite: keep the fixtures and expected payloads stable, and swap only the implementation command.
+
+### 2.3 Bootstrap scope for a rewrite
+
+The recommended bootstrap-v1 scope for a non-Ruby compiler implementation is:
+
+- compiler frontend and backend parity sufficient to satisfy the existing CLI contracts
+- stdio LSP parity sufficient to satisfy the existing LSP contract fixtures
+- enough std support for compiler, CLI, and editor tooling code paths that do not require external package fetching
+
+Pure host-side helpers such as `std.path` and `std.uri` are in scope for bootstrap-v1. They replace ad hoc path joining, normalization, and file-URI encoding glue without pulling in network or archive dependencies.
+
+The following surfaces should stay out of bootstrap-v1 unless they are directly required by that contract gate:
+
+- registry HTTP mirroring and package archive extraction
+- git-backed dependency materialization
+- binding generation and clang-driven bindgen automation
+
+That split is deliberate. The current black-box contract suite is already strong enough to validate compiler and editor behavior, while registry sync, archive tooling, and bindgen still depend on higher-level host libraries that are better added after the core implementation is stable.
+
 ## 3. Build Commands
 
 Build a source file:

@@ -141,6 +141,9 @@ module MilkTea
     ContinueStmt = Data.define(:line, :column, :length) do
       def initialize(line: nil, column: nil, length: nil) = super
     end
+    PassStmt = Data.define(:line, :column, :length) do
+      def initialize(line: nil, column: nil, length: nil) = super
+    end
     ReturnStmt = Data.define(:value, :line, :column, :length) do
       def initialize(value:, line: nil, column: nil, length: nil) = super
     end

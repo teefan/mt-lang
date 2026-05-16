@@ -49,6 +49,7 @@ module MilkTea
       "consuming" => :consuming,
       "or" => :or,
       "out" => :out,
+      "pass" => :pass,
       "packed" => :packed,
       "proc" => :proc,
       "public" => :public,

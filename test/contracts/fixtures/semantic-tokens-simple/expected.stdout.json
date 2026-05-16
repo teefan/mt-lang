@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "contract": "semanticTokens",
+  "positionEncoding": "utf-8",
+  "path": "main.mt",
+  "moduleName": "main",
+  "entries": [
+    {
+      "line": 0,
+      "startChar": 0,
+      "length": 8,
+      "tokenType": "keyword",
+      "modifiers": [],
+      "startByte": 0,
+      "endByte": 8,
+      "lengthBytes": 8
+    },
+    {
+      "line": 0,
+      "startChar": 9,
+      "length": 4,
+      "tokenType": "function",
+      "modifiers": ["declaration"],
+      "startByte": 9,
+      "endByte": 13,
+      "lengthBytes": 4
+    },
+    {
+      "line": 0,
+      "startChar": 13,
+      "length": 1,
+      "tokenType": "operator",
+      "modifiers": [],
+      "startByte": 13,
+      "endByte": 14,
+      "lengthBytes": 1
+    },
+    {
+      "line": 0,
+      "startChar": 14,
+      "length": 1,
+      "tokenType": "operator",
+      "modifiers": [],
+      "startByte": 14,
+      "endByte": 15,
+      "lengthBytes": 1
+    },
+    {
+      "line": 0,
+      "startChar": 16,
+      "length": 2,
+      "tokenType": "operator",
+      "modifiers": [],
+      "startByte": 16,
+      "endByte": 18,
+      "lengthBytes": 2
+    },
+    {
+      "line": 0,
+      "startChar": 19,
+      "length": 3,
+      "tokenType": "type",
+      "modifiers": ["defaultLibrary"],
+      "startByte": 19,
+      "endByte": 22,
+      "lengthBytes": 3
+    },
+    {
+      "line": 0,
+      "startChar": 22,
+      "length": 1,
+      "tokenType": "operator",
+      "modifiers": [],
+      "startByte": 22,
+      "endByte": 23,
+      "lengthBytes": 1
+    },
+    {
+      "line": 1,
+      "startChar": 4,
+      "length": 6,
+      "tokenType": "keyword",
+      "modifiers": [],
+      "startByte": 4,
+      "endByte": 10,
+      "lengthBytes": 6
+    },
+    {
+      "line": 1,
+      "startChar": 11,
+      "length": 1,
+      "tokenType": "number",
+      "modifiers": [],
+      "startByte": 11,
+      "endByte": 12,
+      "lengthBytes": 1
+    }
+  ]
+}

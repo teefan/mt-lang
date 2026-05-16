@@ -1,0 +1,11 @@
+{
+  "name": "build_invalid_package_manifest",
+  "argv": ["build", "app", "--json"],
+  "cwd": ".",
+  "exitStatus": 1,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

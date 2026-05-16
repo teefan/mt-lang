@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "contract": "buildResult",
+  "success": false,
+  "inputPath": "app",
+  "error": {
+    "code": "build/error",
+    "type": "BuildError"
+  }
+}

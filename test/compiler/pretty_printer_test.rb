@@ -294,6 +294,21 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_pass_statements_like_source
+    source = <<~MT
+      function main(flag: bool) -> int:
+          if flag:
+              pass
+          defer:
+              pass
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_heredoc_literals_like_source
     source = <<~MT
       const shader: cstr = c<<-GLSL

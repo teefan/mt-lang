@@ -1,0 +1,10 @@
+#!/bin/sh
+output=''
+previous=''
+for argument in "$@"; do
+  if [ "$previous" = '-o' ]; then
+    output="$argument"
+  fi
+  previous="$argument"
+done
+: > "$output"

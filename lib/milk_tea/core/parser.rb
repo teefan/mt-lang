@@ -915,6 +915,8 @@ module MilkTea
         parse_for_stmt
       elsif match(:while)
         parse_while_stmt
+      elsif match(:pass)
+        parse_pass_stmt
       elsif match(:break)
         parse_break_stmt
       elsif match(:continue)
@@ -1204,6 +1206,13 @@ module MilkTea
       ) if recovered_body
 
       recovery_error_stmt(e)
+    end
+
+    def parse_pass_stmt
+      token = previous
+      line = token.line
+      consume_end_of_statement
+      AST::PassStmt.new(line:, column: token.column, length: token.lexeme.length)
     end
 
     def parse_break_stmt

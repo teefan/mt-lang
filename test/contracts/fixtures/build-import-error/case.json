@@ -1,0 +1,11 @@
+{
+  "name": "build_import_error",
+  "argv": ["build", "main.mt", "--json"],
+  "cwd": ".",
+  "exitStatus": 1,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

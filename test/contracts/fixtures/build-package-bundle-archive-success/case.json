@@ -1,0 +1,12 @@
+{
+  "name": "build_package_bundle_archive_success",
+  "argv": ["build", "app", "--cc", "./fake-cc", "--bundle", "--archive", "-o", "out/demo_app", "--json"],
+  "cwd": ".",
+  "executablePaths": ["fake-cc"],
+  "exitStatus": 0,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

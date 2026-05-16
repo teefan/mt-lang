@@ -65,6 +65,41 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_variant_match_payload_binding_evaluates_scrutinee_once
+    Dir.mktmpdir("milk-tea-build-match-bind") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "match-bind.mt")
+      output_path = File.join(dir, "match-bind")
+      c_path = File.join(dir, "match-bind.c")
+
+      File.write(source_path, <<~MT)
+        import std.maybe as maybe
+        import std.str as text
+
+        function match_scrutinee_once() -> maybe.Maybe[str]:
+            return maybe.Maybe[str].some(value= "milk")
+
+        function main() -> int:
+            match match_scrutinee_once():
+                maybe.Maybe.some as payload:
+                    if not payload.value.equal("milk"):
+                        return 1
+                maybe.Maybe.none:
+                    return 2
+            return 0
+      MT
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, keep_c_path: c_path)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_equal File.expand_path(c_path), result.c_path
+      generated = File.read(c_path)
+      assert_equal 1, generated.scan(/\b\w*match_scrutinee_once\(\)/).length
+      refute_match(/^#line\s+/m, generated)
+    end
+  end
+
   def test_build_reports_missing_compiler
     error = assert_raises(MilkTea::BuildError) do
       MilkTea::Build.build(language_fixture_path, cc: "/definitely/missing/cc")

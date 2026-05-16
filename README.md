@@ -293,6 +293,7 @@ Supported statements:
 - `static_assert`
 - `for`
 - `while`
+- `pass`
 - `break`
 - `continue`
 - `return`
@@ -303,6 +304,7 @@ Rules:
 
 - Conditions must be `bool`.
 - There is no truthy or falsy coercion from integers or pointers.
+- `pass` is an explicit no-op statement for intentionally empty block bodies.
 
 `match` supports:
 
