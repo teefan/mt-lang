@@ -9,6 +9,14 @@ public struct Deque[T]:
     capacity: ptr_uint
 
 
+public struct Iter[T]:
+    data: ptr[T]?
+    head: ptr_uint
+    len: ptr_uint
+    capacity: ptr_uint
+    index: ptr_uint
+
+
 methods Deque[T]:
     public static function create() -> Deque[T]:
         return Deque[T](data = null, head = 0, len = 0, capacity = 0)
@@ -52,6 +60,10 @@ methods Deque[T]:
 
     public function is_empty() -> bool:
         return this.len == 0
+
+
+    public function iter() -> Iter[T]:
+        return Iter[T](data = this.data, head = this.head, len = this.len, capacity = this.capacity, index = 0)
 
 
     public function get(index: ptr_uint) -> ptr[T]?:
@@ -336,3 +348,21 @@ methods Deque[T]:
                     this.push_front(payload.value)
             remaining -= 1
         return
+
+
+methods Iter[T]:
+    public function iter() -> Iter[T]:
+        return this
+
+
+    public editable function next() -> ptr[T]?:
+        if this.index >= this.len:
+            return null
+
+        let data = this.data
+        if data == null:
+            fatal(c"deque.Iter.next missing storage")
+
+        let current_index = this.index
+        this.index += 1
+        return unsafe: ptr[T]<-data + Deque[T].physical_index(this.head, this.capacity, current_index)

@@ -8,6 +8,12 @@ public struct Vec[T]:
     capacity: ptr_uint
 
 
+public struct Iter[T]:
+    data: ptr[T]?
+    index: ptr_uint
+    len: ptr_uint
+
+
 methods Vec[T]:
     public static function create() -> Vec[T]:
         return Vec[T](data = null, len = 0, capacity = 0)
@@ -29,6 +35,10 @@ methods Vec[T]:
 
     public function is_empty() -> bool:
         return this.len == 0
+
+
+    public function iter() -> Iter[T]:
+        return Iter[T](data = this.data, index = 0, len = this.len)
 
 
     public function as_span() -> span[T]:
@@ -241,3 +251,21 @@ methods Vec[T]:
                 read(data_ptr + index) = read(data_ptr + last_index)
             this.len = last_index
             return maybe.Maybe[T].some(value = removed)
+
+
+methods Iter[T]:
+    public function iter() -> Iter[T]:
+        return this
+
+
+    public editable function next() -> ptr[T]?:
+        if this.index >= this.len:
+            return null
+
+        let data = this.data
+        if data == null:
+            fatal(c"vec.Iter.next missing storage")
+
+        let current_index = this.index
+        this.index += 1
+        return unsafe: ptr[T]<-data + current_index

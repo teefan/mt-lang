@@ -418,6 +418,105 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_order_builtin_with_canonical_hook
+    source = <<~MT
+      # module demo.order_ok
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+              unsafe:
+                  let left_value = read(ptr[Key]<-left).value
+                  let right_value = read(ptr[Key]<-right).value
+                  if left_value < right_value:
+                      return -1
+                  if left_value > right_value:
+                      return 1
+                  return 0
+
+      function compare[T](left: T, right: T) -> int:
+          return order[T](left, right)
+
+      function main() -> int:
+          let left = Key(value = 1)
+          let right = Key(value = 5)
+          return compare[Key](left, right)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_order_builtin_in_imported_generic_functions
+    source = <<~MT
+      # module demo.order_imported_main
+
+      import demo.order_tools as tools
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+              unsafe:
+                  let left_value = read(ptr[Key]<-left).value
+                  let right_value = read(ptr[Key]<-right).value
+                  if left_value < right_value:
+                      return -1
+                  if left_value > right_value:
+                      return 1
+                  return 0
+
+      function main() -> int:
+          let left = Key(value = 2)
+          let right = Key(value = 7)
+          return tools.compare(left, right)
+    MT
+
+    imported_sources = {
+      "demo/order_tools.mt" => <<~MT,
+        # module demo.order_tools
+
+        public function compare[T](left: T, right: T) -> int:
+            return order[T](left, right)
+      MT
+    }
+
+    result = check_program_source(source, imported_sources)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_order_builtin_without_canonical_associated_order_function
+    source = <<~MT
+      # module demo.order_builtin_bad
+
+      struct Key:
+          value: int
+
+      methods Key:
+          static function order(left: Key, right: Key) -> int:
+              return left.value - right.value
+
+      function compare[T](left: T, right: T) -> int:
+          return order[T](left, right)
+
+      function main() -> int:
+          let left = Key(value = 1)
+          let right = Key(value = 3)
+          return compare[Key](left, right)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires demo\.order_builtin_bad\.Key\.order\(left: const_ptr\[demo\.order_builtin_bad\.Key\], right: const_ptr\[demo\.order_builtin_bad\.Key\]\) -> int/, error.message)
+  end
+
   def test_rejects_hash_builtin_on_non_addressable_temporary_values
     source = <<~MT
       # module demo.hash_temporary_bad

@@ -405,6 +405,52 @@ class MilkTeaStdDequeTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_deque_iter_surface
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "import std.deque as deque",
+      "",
+      "function main() -> int:",
+      "    var values = deque.Deque[int].create()",
+      "    defer values.release()",
+      "    values.push_back(10)",
+      "    values.push_back(20)",
+      "    values.push_front(5)",
+      "",
+      "    var iter = values.iter()",
+      "    let first = iter.next()",
+      "    let second = iter.next()",
+      "    let third = iter.next()",
+      "    if first == null or second == null or third == null:",
+      "        return 1",
+      "    unsafe:",
+      "        if read(ptr[int]<-first) != 5 or read(ptr[int]<-second) != 10 or read(ptr[int]<-third) != 20:",
+      "            return 2",
+      "        read(ptr[int]<-second) = 12",
+      "",
+      "    var total = 0",
+      "    for value in values:",
+      "        unsafe:",
+      "            total += read(value)",
+      "",
+      "    if total != 37:",
+      "        return 3",
+      "    if iter.next() != null:",
+      "        return 4",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

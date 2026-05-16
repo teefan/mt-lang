@@ -362,6 +362,50 @@ class MilkTeaStdVecTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_vec_iter_surface
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "import std.vec as vec",
+      "",
+      "function main() -> int:",
+      "    var values = vec.Vec[int].create()",
+      "    defer values.release()",
+      "    values.push(10)",
+      "    values.push(20)",
+      "    values.push(30)",
+      "",
+      "    var iter = values.iter()",
+      "    let first = iter.next()",
+      "    let second = iter.next()",
+      "    let third = iter.next()",
+      "    if first == null or second == null or third == null:",
+      "        return 1",
+      "    unsafe:",
+      "        read(ptr[int]<-second) = 25",
+      "",
+      "    var total = 0",
+      "    for value in values:",
+      "        unsafe:",
+      "            total += read(value)",
+      "",
+      "    if total != 65:",
+      "        return 2",
+      "    if iter.next() != null:",
+      "        return 3",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   private
 
   def run_program(source, compiler:)

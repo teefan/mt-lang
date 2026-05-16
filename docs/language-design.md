@@ -328,9 +328,9 @@ function update_and_draw[T implements Updatable and Drawable](value: ref[T]):
 	value.draw()
 ```
 
-Canonical hash and equality hooks remain associated functions `T.hash(value: const_ptr[T]) -> uint` and `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`. The built-in `hash[T](...)` and `equal[T](...)` forms lower directly to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
+Canonical hash, equality, and ordering hooks remain associated functions `T.hash(value: const_ptr[T]) -> uint`, `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool`, and `T.order(left: const_ptr[T], right: const_ptr[T]) -> int`. The built-in `hash[T](...)`, `equal[T](...)`, and `order[T](...)` forms lower directly to those associated functions after borrowing safe lvalues or forwarding existing refs and pointers.
 
-The separate `hashes` and `equates` constraint keywords were removed because they were only contract spelling. They were not the thing that made the built-ins work; direct `hash[T](...)` and `equal[T](...)` use already forced the canonical hooks at specialization time.
+The separate `hashes` and `equates` constraint keywords were removed because they were only contract spelling. They were not the thing that made the built-ins work; direct `hash[T](...)`, `equal[T](...)`, and now `order[T](...)` use already force the canonical hooks at specialization time.
 
 We are not adding an `order` hook in v1. The current ordered surfaces already take an explicit comparator function, and if Milk Tea later wants a canonical ordering hook it should be a tri-state `compare` surface rather than a boolean `less` hook so it matches sort and binary-search style APIs.
 
@@ -352,6 +352,7 @@ This is deliberate. Interfaces are compile-time-only nominal contracts and are n
 - `collection.iter()` is the canonical traversal surface.
 - Alternate traversals use explicit view methods such as `map.keys()`, `map.values()`, and `map.entries()`.
 - Hash collections keep relying on the canonical `hash[T]` and `equal[T]` associated hooks instead of callback-style comparer objects.
+- Ordered collections can now rely on the canonical `order[T]` hook instead of forcing per-instance comparator storage when the type already has a natural ordering.
 
 ### Control flow
 

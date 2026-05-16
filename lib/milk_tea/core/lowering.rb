@@ -14,9 +14,11 @@ module MilkTea
       ExplicitDefaultBinding = Data.define(:binding, :callee_name)
       ExplicitHashBinding = Data.define(:binding, :callee_name)
       ExplicitEqualBinding = Data.define(:binding, :callee_name)
+      ExplicitOrderBinding = Data.define(:binding, :callee_name)
       DefaultResolution = Data.define(:target_type, :binding, :callee_name)
       HashResolution = Data.define(:target_type, :binding, :callee_name)
       EqualResolution = Data.define(:target_type, :binding, :callee_name)
+      OrderResolution = Data.define(:target_type, :binding, :callee_name)
 
       def initialize(program)
         @program = program
@@ -149,11 +151,19 @@ module MilkTea
       end
 
       def program_uses_fatal?
-        @program.analyses_by_path.values.any? { |analysis| analysis_uses_fatal?(analysis) }
+        @program.analyses_by_module_name.each_value.any? do |analysis|
+          next false if analysis.module_kind == :raw_module
+
+          analysis_uses_fatal?(analysis)
+        end
       end
 
       def program_uses_offsetof?
-        @program.analyses_by_path.values.any? { |analysis| analysis_uses_offsetof?(analysis) }
+        @program.analyses_by_module_name.each_value.any? do |analysis|
+          next false if analysis.module_kind == :raw_module
+
+          analysis_uses_offsetof?(analysis)
+        end
       end
 
       def analysis_uses_fatal?(analysis)
@@ -172,10 +182,6 @@ module MilkTea
       def analysis_uses_offsetof?(analysis)
         analysis.ast.declarations.any? do |decl|
           case decl
-          when AST::ConstDecl
-            expression_uses_offsetof?(decl.value)
-          when AST::StaticAssert
-            expression_uses_offsetof?(decl.condition) || expression_uses_offsetof?(decl.message)
           when AST::FunctionDef
             block_uses_offsetof?(decl.body)
           when AST::MethodsBlock
@@ -5201,6 +5207,18 @@ module MilkTea
             ],
             type:,
           )
+        when :order
+          resolution = resolve_order_specialization(expression.callee, env:)
+          left = expression.arguments.fetch(0)
+          right = expression.arguments.fetch(1)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [
+              lower_hash_operation_argument(left.value, env:, target_type: resolution.target_type),
+              lower_hash_operation_argument(right.value, env:, target_type: resolution.target_type),
+            ],
+            type:,
+          )
         when :zero
           IR::ZeroInit.new(type:)
         when :fatal
@@ -5994,6 +6012,32 @@ module MilkTea
         when :equal
           resolution = with_analysis_context(owner_analysis) do
             resolve_equal_specialization(expression.callee, env: mapping_env)
+          end
+          left = expression.arguments.fetch(0)
+          right = expression.arguments.fetch(1)
+          IR::Call.new(
+            callee: resolution.callee_name,
+            arguments: [
+              lower_inline_hash_operation_argument(
+                left.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+                target_type: resolution.target_type,
+              ),
+              lower_inline_hash_operation_argument(
+                right.value,
+                mapping_env:,
+                replacements:,
+                owner_analysis:,
+                target_type: resolution.target_type,
+              ),
+            ],
+            type:,
+          )
+        when :order
+          resolution = with_analysis_context(owner_analysis) do
+            resolve_order_specialization(expression.callee, env: mapping_env)
           end
           left = expression.arguments.fetch(0)
           right = expression.arguments.fetch(1)
@@ -7070,6 +7114,15 @@ module MilkTea
             return [:equal, resolution.callee_name, nil, Types::Function.new("equal", params:, return_type: @types.fetch("bool")), resolution.binding]
           end
 
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
+            resolution = resolve_order_specialization(callee, env:)
+            params = [
+              Types::Parameter.new("left", resolution.target_type),
+              Types::Parameter.new("right", resolution.target_type),
+            ]
+            return [:order, resolution.callee_name, nil, Types::Function.new("order", params:, return_type: @types.fetch("int")), resolution.binding]
+          end
+
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
             callable_kind, function_binding, receiver = callable_resolution
             if callable_kind == :method
@@ -7534,6 +7587,14 @@ module MilkTea
         EqualResolution.new(target_type:, binding: explicit_equal.binding, callee_name: explicit_equal.callee_name)
       end
 
+      def resolve_order_specialization(expression, env:)
+        target_type = resolve_type_ref(expression.arguments.fetch(0).value)
+        explicit_order = resolve_explicit_order_binding(target_type, context: "order[#{target_type}]")
+        raise LoweringError, "order[#{target_type}] requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int" unless explicit_order
+
+        OrderResolution.new(target_type:, binding: explicit_order.binding, callee_name: explicit_order.callee_name)
+      end
+
       def resolve_explicit_default_binding(target_type, context:)
         requirement_message = "#{context} requires associated function #{target_type}.default()"
         resolve_explicit_associated_binding(target_type, "default", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
@@ -7569,6 +7630,19 @@ module MilkTea
         end
       end
 
+      def resolve_explicit_order_binding(target_type, context:)
+        requirement_message = "#{context} requires associated function #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int"
+        resolve_explicit_associated_binding(target_type, "order", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          expected_param_types = [const_pointer_to(target_type), const_pointer_to(target_type)]
+          unless method_binding.type.params.map(&:type) == expected_param_types
+            raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int"
+          end
+          unless method_binding.type.return_type == @types.fetch("int")
+            raise LoweringError, "#{context} requires #{target_type}.order(left: const_ptr[#{target_type}], right: const_ptr[#{target_type}]) -> int, got #{method_binding.type.return_type}"
+          end
+        end
+      end
+
       def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
         dispatch_receiver_type = method_dispatch_receiver_type(target_type)
         method_entry_receiver_type = target_type
@@ -7599,6 +7673,8 @@ module MilkTea
           ExplicitHashBinding.new(binding: method_binding, callee_name:)
         when "equal"
           ExplicitEqualBinding.new(binding: method_binding, callee_name:)
+        when "order"
+          ExplicitOrderBinding.new(binding: method_binding, callee_name:)
         else
           raise LoweringError, "unsupported associated hook #{method_name}"
         end
