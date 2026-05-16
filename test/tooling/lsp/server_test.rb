@@ -5418,6 +5418,125 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_classify_binary_heap_receiver_type_parameter_and_members
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source_path = File.join(Dir.pwd, "std", "binary_heap.mt")
+        source = File.read(source_path)
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_line = source.lines.index { |line| line == "methods BinaryHeap[T]:\n" } or flunk("expected BinaryHeap methods header")
+        create_line = source.lines.index { |line| line.include?("return BinaryHeap[T](values = vec.Vec[T].create())") } or flunk("expected BinaryHeap.create body")
+        push_line = source.lines.index { |line| line.include?("this.values.push(value)") } or flunk("expected BinaryHeap.push body")
+
+        header_t = semantic_entry_for_lexeme_on_line(source, entries, "T", header_line)
+        vec_alias = semantic_entry_for_lexeme_on_line(source, entries, "vec", create_line)
+        push_this = semantic_entry_for_lexeme_on_line(source, entries, "this", push_line)
+        push_values = semantic_entry_for_lexeme_on_line(source, entries, "values", push_line)
+        push_call = semantic_entry_for_lexeme_on_line(source, entries, "push", push_line)
+
+        assert_equal "typeParameter", header_t.fetch("tokenType")
+        assert_includes header_t.fetch("modifierNames"), "declaration"
+        assert_equal "namespace", vec_alias.fetch("tokenType")
+        assert_equal "parameter", push_this.fetch("tokenType")
+        assert_equal "property", push_values.fetch("tokenType")
+        assert_equal "method", push_call.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_priority_queue_receiver_type_parameter_and_members
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source_path = File.join(Dir.pwd, "std", "priority_queue.mt")
+        source = File.read(source_path)
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_line = source.lines.index { |line| line == "methods PriorityQueue[T]:\n" } or flunk("expected PriorityQueue methods header")
+        iter_signature_line = source.lines.index { |line| line.include?("public function iter() -> binary_heap.Iter[T]:") } or flunk("expected PriorityQueue.iter signature")
+        iter_line = source.lines.index { |line| line.include?("return this.values.iter()") } or flunk("expected PriorityQueue.iter body")
+        enqueue_line = source.lines.index { |line| line.include?("this.values.push(value)") } or flunk("expected PriorityQueue.enqueue body")
+        dequeue_line = source.lines.index { |line| line.include?("return this.values.pop()") } or flunk("expected PriorityQueue.dequeue body")
+
+        header_t = semantic_entry_for_lexeme_on_line(source, entries, "T", header_line)
+        binary_heap_alias = semantic_entry_for_lexeme_on_line(source, entries, "binary_heap", iter_signature_line)
+        iter_this = semantic_entry_for_lexeme_on_line(source, entries, "this", iter_line)
+        iter_values = semantic_entry_for_lexeme_on_line(source, entries, "values", iter_line)
+        iter_call = semantic_entry_for_lexeme_on_line(source, entries, "iter", iter_line)
+        enqueue_push = semantic_entry_for_lexeme_on_line(source, entries, "push", enqueue_line)
+        dequeue_pop = semantic_entry_for_lexeme_on_line(source, entries, "pop", dequeue_line)
+
+        assert_equal "typeParameter", header_t.fetch("tokenType")
+        assert_includes header_t.fetch("modifierNames"), "declaration"
+        assert_equal "namespace", binary_heap_alias.fetch("tokenType")
+        assert_equal "parameter", iter_this.fetch("tokenType")
+        assert_equal "property", iter_values.fetch("tokenType")
+        assert_equal "method", iter_call.fetch("tokenType")
+        assert_equal "method", enqueue_push.fetch("tokenType")
+        assert_equal "method", dequeue_pop.fetch("tokenType")
+      end
+    end
+
+    def test_semantic_tokens_classify_ordered_set_receiver_type_parameter_and_members
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
+        source_path = File.join(Dir.pwd, "std", "ordered_set.mt")
+        source = File.read(source_path)
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_line = source.lines.index { |line| line == "methods OrderedSet[T]:\n" } or flunk("expected OrderedSet methods header")
+        contains_line = source.lines.index { |line| line.include?("return this.get(value) != null") } or flunk("expected OrderedSet.contains body")
+        iter_line = source.lines.index { |line| line.include?("return Iter[T](node = OrderedSet[T].minimum(this.root))") } or flunk("expected OrderedSet.iter body")
+        next_line = source.lines.index { |line| line.include?("this.node = OrderedSet[T].successor(current)") } or flunk("expected OrderedSet.Iter.next body")
+
+        header_t = semantic_entry_for_lexeme_on_line(source, entries, "T", header_line)
+        contains_this = semantic_entry_for_lexeme_on_line(source, entries, "this", contains_line)
+        get_call = semantic_entry_for_lexeme_on_line(source, entries, "get", contains_line)
+        iter_t = semantic_entry_for_lexeme_on_line(source, entries, "T", iter_line)
+        iter_root = semantic_entry_for_lexeme_on_line(source, entries, "root", iter_line)
+        next_this = semantic_entry_for_lexeme_on_line(source, entries, "this", next_line)
+        next_node = semantic_entry_for_lexeme_on_line(source, entries, "node", next_line)
+
+        assert_equal "typeParameter", header_t.fetch("tokenType")
+        assert_includes header_t.fetch("modifierNames"), "declaration"
+        assert_equal "parameter", contains_this.fetch("tokenType")
+        assert_equal "method", get_call.fetch("tokenType")
+        assert_equal "typeParameter", iter_t.fetch("tokenType")
+        assert_equal "property", iter_root.fetch("tokenType")
+        assert_equal "parameter", next_this.fetch("tokenType")
+        assert_equal "property", next_node.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

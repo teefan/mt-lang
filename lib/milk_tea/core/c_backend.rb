@@ -1242,6 +1242,9 @@ module MilkTea
         lines.concat(unused_param_lines)
         lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
       end
+      if function_returns_value_in_c?(function) && !body_ends_with_explicit_c_return?(body)
+        lines << "#{INDENT}return #{emit_zero_expression(function.return_type)};"
+      end
       lines << "}"
       lines
     end
@@ -1693,6 +1696,12 @@ module MilkTea
       statement_terminates?(statements.last)
     end
 
+    def body_ends_with_explicit_c_return?(statements)
+      return false if statements.empty?
+
+      statement_ends_with_explicit_c_return?(statements.last)
+    end
+
     def constant_boolean_value(expression)
       case expression
       when IR::BooleanLiteral
@@ -1760,6 +1769,17 @@ module MilkTea
         statement.else_body && body_terminates?(statement.then_body) && body_terminates?(statement.else_body)
       when IR::SwitchStmt
         statement.cases.any? && statement.cases.all? { |switch_case| body_terminates?(switch_case.body) }
+      else
+        false
+      end
+    end
+
+    def statement_ends_with_explicit_c_return?(statement)
+      case statement
+      when IR::ReturnStmt
+        true
+      when IR::BlockStmt
+        body_ends_with_explicit_c_return?(statement.body)
       else
         false
       end
@@ -2066,6 +2086,7 @@ module MilkTea
       return "{ 0 }" if type.is_a?(Types::StringView)
       return "{ 0 }" if array_type?(type)
       return "NULL" if type.is_a?(Types::Nullable)
+      return "NULL" if raw_pointer_type?(type) || ref_type?(type)
       return "NULL" if type.is_a?(Types::Opaque) && !type.external
       return "false" if type.is_a?(Types::Primitive) && type.boolean?
       return "0.0" if type.is_a?(Types::Primitive) && type.float?
@@ -2320,6 +2341,10 @@ module MilkTea
 
     def c_function_return_type(type)
       c_type(array_type?(type) ? void_type : type)
+    end
+
+    def function_returns_value_in_c?(function)
+      c_function_return_type(function.return_type) != c_type(void_type)
     end
 
     def array_out_param_declaration(type, name)
