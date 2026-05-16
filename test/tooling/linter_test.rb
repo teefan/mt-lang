@@ -1786,7 +1786,7 @@ class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
 
     warning = warnings.find { |w| w.code == "redundant-read-release-temp" }
     assert warning, "expected redundant-read-release-temp warning"
-    assert_equal 11, warning.line
+    assert_equal 10, warning.line
     assert_equal :hint, warning.severity
   end
 
