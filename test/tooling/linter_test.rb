@@ -1063,6 +1063,27 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
     end
   end
 
+  def test_warns_with_hashes_and_equates_constraints_in_platform_api_surface
+    Dir.mktmpdir("mt-lint-platform-generic-api") do |dir|
+      path = File.join(dir, "hashable.mt")
+      File.write(path, <<~MT)
+        public function same_key[T hashes and equates](left: T, right: T) -> bool:
+            return hash[T](left) == hash[T](right) and equal[T](left, right)
+      MT
+      File.write(File.join(dir, "hashable.windows.mt"), <<~MT)
+        public function same_key[T defaults and equates](left: T, right: T) -> bool:
+            return equal[T](left, right)
+      MT
+
+      warnings = MilkTea::Linter.lint_source(File.read(path), path: path)
+
+      warning = warnings.find { |entry| entry.code == "platform-api-drift" }
+      assert warning, "expected platform-api-drift warning"
+      assert_match(/function same_key\[T hashes and equates\]\(left: T, right: T\) -> bool/, warning.message)
+      assert_match(/function same_key\[T defaults and equates\]\(left: T, right: T\) -> bool/, warning.message)
+    end
+  end
+
   def test_does_not_warn_when_only_private_declarations_differ_between_variants
     Dir.mktmpdir("mt-lint-platform-private") do |dir|
       path = File.join(dir, "helpers.mt")

@@ -2648,6 +2648,42 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_hash_codegen_Key_equal\(&left, &right\)/, generated)
   end
 
+  def test_generate_c_for_transitive_hashes_and_equates_constraints
+    source = [
+      "# module demo.hash_transitive_codegen",
+      "",
+      "struct Key:",
+      "    value: int",
+      "",
+      "methods Key:",
+      "    static function hash(value: const_ptr[Key]) -> uint:",
+      "        return uint<-0",
+      "",
+      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
+      "        return true",
+      "",
+      "function inner[U hashes and equates](left: U, right: U) -> bool:",
+      "    return hash[U](left) == hash[U](right) and equal[U](left, right)",
+      "",
+      "function outer[T hashes and equates](left: T, right: T) -> bool:",
+      "    return inner[T](left, right)",
+      "",
+      "function main() -> bool:",
+      "    let left = Key(value = 1)",
+      "    let right = Key(value = 1)",
+      "    return outer[Key](left, right)",
+      "",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static bool demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
+    assert_match(/static bool demo_hash_transitive_codegen_outer_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
+    assert_match(/return demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(left, right\);/, generated)
+    assert_match(/demo_hash_transitive_codegen_Key_hash\(&left\)/, generated)
+    assert_match(/demo_hash_transitive_codegen_Key_equal\(&left, &right\)/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
     source = [
       "# module demo.generic_layout",

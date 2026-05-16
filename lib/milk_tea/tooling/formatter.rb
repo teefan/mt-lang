@@ -74,6 +74,8 @@ module MilkTea
               if bodyless_function_line?(line)
                 if previous_content_line && function_line?(previous_content_line) && bodyless_function_line?(previous_content_line)
                   0 # Keep consecutive declaration-style functions tightly packed.
+                elsif previous_content_line && interface_block_header_line?(previous_content_line)
+                  0 # First interface method should not have leading blank lines.
                 else
                   1 # Separate declaration-style functions from preceding non-function content.
                 end
@@ -151,6 +153,13 @@ module MilkTea
       return false unless stripped.end_with?(":")
 
       stripped.start_with?("methods ")
+    end
+
+    def self.interface_block_header_line?(line)
+      stripped = line.strip
+      return false unless stripped.end_with?(":")
+
+      stripped.start_with?("interface ")
     end
 
     def self.validate_mode!(mode)
