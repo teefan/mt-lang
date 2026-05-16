@@ -1,4 +1,5 @@
 import std.linked_map as linked_map
+import std.linked_map_view as linked_map_view
 import std.maybe as maybe
 import std.mem.heap as heap
 
@@ -8,12 +9,8 @@ public struct Entry[T]:
     count: ptr_uint
 
 
-public struct Counts[T]:
-    values: linked_map.Entries[T, ptr_uint]
-
-
 public struct Entries[T]:
-    values: linked_map.Entries[T, ptr_uint]
+    values: linked_map_view.SnapshotEntries[T, ptr_uint]
 
 
 public struct Counter[T]:
@@ -68,12 +65,12 @@ methods Counter[T]:
         return this.values.keys()
 
 
-    public function counts() -> Counts[T]:
-        return Counts[T](values = this.values.entries())
+    public function counts() -> linked_map_view.SnapshotValues[T, ptr_uint]:
+        return linked_map_view.SnapshotValues[T, ptr_uint].create(this.values.entries())
 
 
     public function entries() -> Entries[T]:
-        return Entries[T](values = this.values.entries())
+        return Entries[T](values = linked_map_view.SnapshotEntries[T, ptr_uint].create(this.values.entries()))
 
 
     public editable function clear() -> void:
@@ -156,21 +153,6 @@ methods Counter[T]:
                 return maybe.Maybe[ptr_uint].some(value = payload.value)
 
 
-methods Counts[T]:
-    public function iter() -> Counts[T]:
-        return this
-
-
-    public editable function next() -> bool:
-        return this.values.next()
-
-
-    public function current() -> ptr_uint:
-        let entry = this.values.current()
-        unsafe:
-            return read(entry.value)
-
-
 methods Entries[T]:
     public function iter() -> Entries[T]:
         return this
@@ -182,5 +164,4 @@ methods Entries[T]:
 
     public function current() -> Entry[T]:
         let entry = this.values.current()
-        unsafe:
-            return Entry[T](key = entry.key, count = read(entry.value))
+        return Entry[T](key = entry.key, count = entry.value)
