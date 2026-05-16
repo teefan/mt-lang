@@ -566,6 +566,7 @@ Rules:
 - indexing: `a[i]`
 - call: `f(x)`
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
+- explicit specialization is only accepted on bare or module-qualified names; `value.member[32](...)` remains indexed-call syntax, so value-member calls rely on inference instead of explicit literal specialization
 
 ### 5.3 Operator precedence (low to high)
 

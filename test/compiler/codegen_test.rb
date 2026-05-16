@@ -488,6 +488,33 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\) \{/, generated)
   end
 
+  def test_generate_c_for_generic_receiver_static_self_call
+    source = <<~MT
+      # module demo.generic_receiver_static_self_call_codegen
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          static function create() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          static function with_default() -> Box[T]:
+              return Box[T].create()
+
+      function main() -> int:
+          let box = Box[int].with_default()
+          return box.value
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_int\(\)/, generated)
+  end
+
   def test_generate_c_keeps_omitted_receiver_wrapper_for_side_effectful_receiver_expression
     source = <<~MT
       # module demo.side_effectful_receiver_codegen

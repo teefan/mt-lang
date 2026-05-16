@@ -3265,6 +3265,35 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
     end
 
+  def test_type_checks_generic_receiver_static_self_call
+    source = <<~MT
+      # module demo.generic_receiver_static_self_call
+
+      struct Box[T]:
+          value: T
+
+      methods Box[T]:
+          static function create() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          static function with_default() -> Box[T]:
+              return Box[T].create()
+
+      function main() -> int:
+          let box = Box[int].with_default()
+          return box.value
+    MT
+
+    result = check_source(source)
+
+    box_type = result.types.fetch("Box")
+    methods = result.methods.fetch(box_type)
+
+    assert_equal ["T"], methods.fetch("create").type_params
+    assert_equal ["T"], methods.fetch("with_default").type_params
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_named_constants_in_integer_type_argument_slots
     source = <<~MT
       # module demo.named_const_type_args

@@ -500,10 +500,38 @@ module MilkTea
     def parse_methods_block
       line = previous.line
       type_name = parse_type_ref
-      methods = parse_named_block do
-        parse_method_def
+      receiver_type_param_names = methods_target_type_param_names(type_name)
+      methods = with_type_param_names(receiver_type_param_names) do
+        parse_named_block do
+          parse_method_def
+        end
       end
       AST::MethodsBlock.new(type_name:, methods:, line:)
+    end
+
+    def methods_target_type_param_names(type_name)
+      type_name.arguments.flat_map do |argument|
+        methods_target_type_param_names_from_argument(argument.value)
+      end.uniq
+    end
+
+    def methods_target_type_param_names_from_argument(value)
+      case value
+      when AST::TypeRef
+        nested_names = value.arguments.flat_map do |argument|
+          methods_target_type_param_names_from_argument(argument.value)
+        end
+        if value.name.parts.length == 1 && value.arguments.empty? && !value.nullable
+          name = value.name.parts.first
+          nested_names << name unless known_type_like_name?(name)
+        end
+        nested_names
+      when AST::FunctionType, AST::ProcType
+        value.params.flat_map { |param| methods_target_type_param_names_from_argument(param.type) } +
+          methods_target_type_param_names_from_argument(value.return_type)
+      else
+        []
+      end
     end
 
     def parse_function_def(visibility: :private, async: false)
