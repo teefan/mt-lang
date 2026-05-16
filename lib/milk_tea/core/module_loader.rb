@@ -190,6 +190,8 @@ module MilkTea
 
     def check_path(path)
       resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+      shared_cache_mtime = nil
+      shared_cache_mtime_checked = false
 
       # 1. Instance-local cache (within a single check_program call, prevents re-entrant work)
       return @analysis_cache[resolved_path] if @analysis_cache.key?(resolved_path)
@@ -199,8 +201,9 @@ module MilkTea
       if use_shared_cache?
         entry = @shared_cache[resolved_path]
         if entry
-          current_mtime = File.mtime(resolved_path).to_f rescue nil
-          if current_mtime && entry[:mtime] == current_mtime
+          shared_cache_mtime_checked = true
+          shared_cache_mtime = File.mtime(resolved_path).to_f rescue nil
+          if shared_cache_mtime && entry[:mtime] == shared_cache_mtime
             @analysis_cache[resolved_path] = entry[:analysis]
             return entry[:analysis]
           end
@@ -220,7 +223,11 @@ module MilkTea
 
       # Populate shared cache with current mtime so subsequent requests skip re-analysis.
       if use_shared_cache?
-        mtime = File.mtime(resolved_path).to_f rescue nil
+        mtime = if shared_cache_mtime_checked
+                  shared_cache_mtime
+                else
+                  File.mtime(resolved_path).to_f rescue nil
+                end
         @shared_cache[resolved_path] = { mtime: mtime, analysis: analysis } if mtime
       end
 

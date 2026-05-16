@@ -628,30 +628,14 @@ module MilkTea
     end
 
     def parse_params(allow_variadic: false)
-      consume(:lparen, "expected '('")
-      params = []
-      variadic = false
-
-      unless check(:rparen)
-        loop do
-          if allow_variadic && match(:ellipsis)
-            variadic = true
-            break
-          end
-
-          params << parse_param
-          break unless match(:comma)
-          raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
-        end
-      end
-
-      consume(:rparen, "expected ')' after parameters")
-      return [params, variadic] if allow_variadic
-
-      params
+      parse_parameter_list(allow_variadic:) { parse_param }
     end
 
     def parse_foreign_params(allow_variadic: false)
+      parse_parameter_list(allow_variadic:) { parse_foreign_param }
+    end
+
+    def parse_parameter_list(allow_variadic: false)
       consume(:lparen, "expected '('")
       params = []
       variadic = false
@@ -663,7 +647,7 @@ module MilkTea
             break
           end
 
-          params << parse_foreign_param
+          params << yield
           break unless match(:comma)
           raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
         end

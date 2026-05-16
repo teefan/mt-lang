@@ -7323,15 +7323,14 @@ module MilkTea
         when AST::ProcExpr
           resolve_type_ref(AST::ProcType.new(params: expression.params, return_type: expression.return_type))
         when AST::Call
-          kind, = resolve_callee(expression.callee, env, arguments: expression.arguments)
+          kind, _callee_name, _receiver, callee_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
           when :function, :method, :associated_method, :callable_value,
-            :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
-            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            function_type.return_type
-          when :struct_literal, :array
-            _, _, _, struct_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            struct_type
+            :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr,
+            :cast, :reinterpret, :zero, :hash, :equal
+            callee_type.return_type
+          when :struct_literal, :array, :variant_arm_ctor
+            callee_type
           when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
             Types::GenericInstance.new("ref", [argument_type])
@@ -7347,21 +7346,6 @@ module MilkTea
             else
               Types::GenericInstance.new("ptr", [infer_expression_type(expression.arguments.fetch(0).value, env:, expected_type: expected_type && pointer_type?(expected_type) ? pointee_type(expected_type) : nil)])
             end
-          when :cast
-            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            function_type.return_type
-          when :reinterpret
-            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            function_type.return_type
-          when :zero
-            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            function_type.return_type
-          when :hash, :equal
-            _, _, _, function_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            function_type.return_type
-          when :variant_arm_ctor
-            _, _, _, variant_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
-            variant_type
           when :fatal
             @types.fetch("void")
           else
@@ -7544,6 +7528,7 @@ module MilkTea
 
       def foreign_identity_projection_cast_compatible?(actual_type, expected_type)
         return true if actual_type == expected_type
+        return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if same_external_opaque_c_name?(actual_type, expected_type)
         return true if foreign_function_type_projection_compatible?(actual_type, expected_type)
 
@@ -7557,6 +7542,7 @@ module MilkTea
         return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
 
         if pointer_type?(actual_type) && pointer_type?(expected_type)
+          return false if const_pointer_type?(actual_type) && mutable_pointer_type?(expected_type)
           return true if void_pointer_type?(actual_type) || void_pointer_type?(expected_type)
 
           return true if foreign_identity_projection_cast_compatible?(actual_type.arguments.first, expected_type.arguments.first)
@@ -8437,11 +8423,27 @@ module MilkTea
       end
 
       def pointer_type?(type)
-        type.is_a?(Types::GenericInstance) && ["ptr", "const_ptr"].include?(type.name) && type.arguments.length == 1
+        mutable_pointer_type?(type) || const_pointer_type?(type)
+      end
+
+      def mutable_pointer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+      end
+
+      def const_pointer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
       end
 
       def ref_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+      end
+
+      def mutable_to_const_pointer_compatibility?(actual_type, expected_type)
+        return mutable_to_const_pointer_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
+        return false if actual_type.is_a?(Types::Nullable)
+        return false unless mutable_pointer_type?(actual_type) && const_pointer_type?(expected_type)
+
+        pointee_type(actual_type) == pointee_type(expected_type)
       end
 
       def range_expr?(expression)
