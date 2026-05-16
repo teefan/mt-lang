@@ -3885,6 +3885,26 @@ module MilkTea
         !!resolve_explicit_equal_binding(type, context:)
       end
 
+      def validate_type_param_constraint_binding!(name, constraints, actual_type, context:, available_type_param_constraints: current_type_param_constraints)
+        constraints.interfaces.each do |interface|
+          next if type_satisfies_interface_constraint?(actual_type, interface, available_type_param_constraints:)
+
+          raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for #{context}")
+        end
+
+        if constraints.requires_hash
+          unless type_satisfies_hashes_constraint?(actual_type, context: "hashes constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+            raise_sema_error("type #{actual_type} does not satisfy hashes constraint for #{context}")
+          end
+        end
+
+        return unless constraints.requires_equality
+
+        return if type_satisfies_equates_constraint?(actual_type, context: "equates constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
+
+        raise_sema_error("type #{actual_type} does not satisfy equates constraint for #{context}")
+      end
+
       def validate_generic_type_param_constraints!(generic_type, arguments, context:, available_type_param_constraints: current_type_param_constraints)
         return if generic_type.type_param_constraints.empty?
 
@@ -3892,23 +3912,7 @@ module MilkTea
           constraints = generic_type.type_param_constraints[name]
           next unless constraints
 
-          constraints.interfaces.each do |interface|
-            next if type_satisfies_interface_constraint?(actual_type, interface, available_type_param_constraints:)
-
-            raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for #{context}")
-          end
-
-          if constraints.requires_hash
-            unless type_satisfies_hashes_constraint?(actual_type, context: "hashes constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
-              raise_sema_error("type #{actual_type} does not satisfy hashes constraint for #{context}")
-            end
-          end
-
-          next unless constraints.requires_equality
-
-          next if type_satisfies_equates_constraint?(actual_type, context: "equates constraint on type parameter #{name} for #{context}", available_type_param_constraints:)
-
-          raise_sema_error("type #{actual_type} does not satisfy equates constraint for #{context}")
+          validate_type_param_constraint_binding!(name, constraints, actual_type, context:, available_type_param_constraints:)
         end
       end
 
@@ -5511,23 +5515,7 @@ module MilkTea
           actual_type = substitutions[name]
           raise_sema_error("cannot infer type argument #{name} for function #{binding.name}") unless actual_type
 
-          constraints.interfaces.each do |interface|
-            next if type_satisfies_interface_constraint?(actual_type, interface)
-
-            raise_sema_error("type #{actual_type} does not implement interface #{interface.name} for function #{binding.name}")
-          end
-
-          if constraints.requires_hash
-            unless type_satisfies_hashes_constraint?(actual_type, context: "hashes constraint on type parameter #{name} for function #{binding.name}")
-              raise_sema_error("type #{actual_type} does not satisfy hashes constraint for function #{binding.name}")
-            end
-          end
-
-          next unless constraints.requires_equality
-
-          next if type_satisfies_equates_constraint?(actual_type, context: "equates constraint on type parameter #{name} for function #{binding.name}")
-
-          raise_sema_error("type #{actual_type} does not satisfy equates constraint for function #{binding.name}")
+          validate_type_param_constraint_binding!(name, constraints, actual_type, context: "function #{binding.name}")
         end
       end
 
