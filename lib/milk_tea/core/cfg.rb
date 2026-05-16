@@ -350,6 +350,12 @@ module MilkTea
           read_identifiers(expression.condition, names)
           read_identifiers(expression.then_expression, names)
           read_identifiers(expression.else_expression, names)
+        when AST::MatchExpr
+          read_identifiers(expression.expression, names)
+          expression.arms.each do |arm|
+            read_identifiers(arm.pattern, names)
+            read_identifiers(arm.value, names)
+          end
         when AST::UnsafeExpr
           read_identifiers(expression.expression, names)
         when AST::FormatString
@@ -425,6 +431,12 @@ module MilkTea
           write_targets_from_expression(expression.condition, line:, writes:, writes_info:)
           write_targets_from_expression(expression.then_expression, line:, writes:, writes_info:)
           write_targets_from_expression(expression.else_expression, line:, writes:, writes_info:)
+        when AST::MatchExpr
+          write_targets_from_expression(expression.expression, line:, writes:, writes_info:)
+          expression.arms.each do |arm|
+            write_targets_from_expression(arm.pattern, line:, writes:, writes_info:)
+            write_targets_from_expression(arm.value, line:, writes:, writes_info:)
+          end
         when AST::UnsafeExpr
           write_targets_from_expression(expression.expression, line:, writes:, writes_info:)
         when AST::FormatString

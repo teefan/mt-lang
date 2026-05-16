@@ -628,7 +628,7 @@ module MilkTea
       variadic = false
       return_type = nil
       with_type_param_names(type_params.map(&:name)) do
-        params, variadic = parse_params(allow_variadic: true)
+        params, variadic = parse_foreign_params(allow_variadic: true)
         consume(:arrow, "expected '->' before external function return type")
         return_type = parse_type_ref
       end
@@ -1266,6 +1266,7 @@ module MilkTea
 
     def parse_expression
       return parse_if_expression if match(:if)
+      return parse_match_expression if match(:match)
       return parse_unsafe_expression if match(:unsafe)
 
       parse_range
@@ -1289,6 +1290,48 @@ module MilkTea
       consume(:colon, "expected ':' after 'else' in if expression")
       else_expression = parse_expression
       AST::IfExpr.new(condition:, then_expression:, else_expression:)
+    end
+
+    def parse_match_expression
+      token = previous
+      expression = parse_expression
+      arms = parse_match_expression_arms
+      AST::MatchExpr.new(expression:, arms:, line: token.line, column: token.column, length: token.lexeme.length)
+    end
+
+    def parse_match_expression_arms
+      consume(:colon, "expected ':' before match expression arms")
+      consume(:newline, "expected newline before match expression arms")
+      consume(:indent, "expected indented match expression arms")
+
+      arms = []
+      skip_newlines
+      until check(:dedent) || eof?
+        arms << parse_match_expression_arm
+        skip_newlines
+      end
+
+      consume(:dedent, "expected end of match expression arms")
+      arms
+    end
+
+    def parse_match_expression_arm
+      pattern = parse_expression
+      binding_token = nil
+      binding_name = if match(:as)
+                       binding_token = consume_name("expected binding name after 'as'")
+                       binding_token.lexeme
+                     end
+      consume(:colon, "expected ':' after match expression arm pattern")
+      value = parse_expression
+      consume_end_of_statement unless block_expression?(value)
+      AST::MatchExprArm.new(
+        pattern:,
+        binding_name:,
+        binding_line: binding_token&.line,
+        binding_column: binding_token&.column,
+        value:,
+      )
     end
 
     def parse_unsafe_expression
@@ -1570,7 +1613,7 @@ module MilkTea
     end
 
     def block_expression?(expression)
-      expression.is_a?(AST::ProcExpr)
+      expression.is_a?(AST::ProcExpr) || expression.is_a?(AST::MatchExpr)
     end
 
     def parse_sizeof_expr

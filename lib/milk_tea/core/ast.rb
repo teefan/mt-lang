@@ -115,6 +115,9 @@ module MilkTea
     MatchStmt = Data.define(:expression, :arms, :line, :column, :length) do
       def initialize(expression:, arms:, line: nil, column: nil, length: nil) = super
     end
+    MatchExprArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :value) do
+      def initialize(pattern:, binding_name:, value:, binding_line: nil, binding_column: nil) = super
+    end
     UnsafeStmt = Data.define(:body, :line, :column, :length) do
       def initialize(body:, line: nil, column: nil, length: nil) = super
     end
@@ -178,6 +181,9 @@ module MilkTea
     RangeExpr = Data.define(:start_expr, :end_expr, :line, :column)
     ExpressionList = Data.define(:elements, :line, :column)
     IfExpr = Data.define(:condition, :then_expression, :else_expression)
+    MatchExpr = Data.define(:expression, :arms, :line, :column, :length) do
+      def initialize(expression:, arms:, line: nil, column: nil, length: nil) = super
+    end
     UnsafeExpr = Data.define(:expression, :line, :column, :length) do
       def initialize(expression:, line: nil, column: nil, length: nil) = super
     end

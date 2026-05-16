@@ -100,6 +100,42 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_build_break_inside_match_exits_enclosing_loop
+    Dir.mktmpdir("milk-tea-build-match-break") do |dir|
+      compiler_path = ENV.fetch("CC", "cc")
+      skip "C compiler not available" unless compiler_available?(compiler_path)
+      source_path = File.join(dir, "match-break.mt")
+      output_path = File.join(dir, "match-break")
+
+      File.write(source_path, <<~MT)
+        enum Step: ubyte
+            keep = 1
+            stop = 2
+
+        function main() -> int:
+            var count = 0
+            while true:
+                count += 1
+                let step = Step.stop
+                match step:
+                    Step.stop:
+                        break
+                    Step.keep:
+                        return 3
+                if count > 1:
+                    return 2
+            return if count == 1: 0 else: 1
+      MT
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path)
+      _stdout, _stderr, status = Open3.capture3(output_path)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      assert_equal 0, status.exitstatus
+    end
+  end
+
   def test_build_reports_missing_compiler
     error = assert_raises(MilkTea::BuildError) do
       MilkTea::Build.build(language_fixture_path, cc: "/definitely/missing/cc")
