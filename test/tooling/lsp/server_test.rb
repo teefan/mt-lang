@@ -5300,6 +5300,70 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_classify_generic_methods_receiver_and_receiver_type_parameters
+      source = <<~MT
+        struct Cache[K, V]:
+            key: K
+            value: V
+
+        methods Cache[K, V]:
+            function read_key() -> K:
+                return this.key
+
+            function read_value() -> V:
+                return this.value
+
+            function choose[T](fallback: T) -> T:
+                let selected = fallback
+                return selected
+
+            static function create(key: K, value: V) -> Cache[K, V]:
+                return Cache[K, V](key = key, value = value)
+      MT
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_generic_methods_receiver_test.mt"
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        header_k = semantic_entry_for_lexeme_on_line(source, entries, "K", 4)
+        header_v = semantic_entry_for_lexeme_on_line(source, entries, "V", 4)
+        read_key_return = semantic_entry_for_lexeme_on_line(source, entries, "K", 5)
+        read_value_return = semantic_entry_for_lexeme_on_line(source, entries, "V", 8)
+        this_key = semantic_entry_for_lexeme_on_line(source, entries, "this", 6)
+        this_value = semantic_entry_for_lexeme_on_line(source, entries, "this", 9)
+        fallback_ref = semantic_entry_for_lexeme_on_line(source, entries, "fallback", 12)
+        selected_decl = semantic_entry_for_lexeme_on_line(source, entries, "selected", 12)
+        selected_ref = semantic_entry_for_lexeme_on_line(source, entries, "selected", 13)
+        ctor_k = semantic_entry_for_lexeme_on_line(source, entries, "K", 16)
+        ctor_v = semantic_entry_for_lexeme_on_line(source, entries, "V", 16)
+
+        assert_equal "typeParameter", header_k.fetch("tokenType")
+        assert_includes header_k.fetch("modifierNames"), "declaration"
+        assert_equal "typeParameter", header_v.fetch("tokenType")
+        assert_includes header_v.fetch("modifierNames"), "declaration"
+        assert_equal "typeParameter", read_key_return.fetch("tokenType")
+        assert_equal "typeParameter", read_value_return.fetch("tokenType")
+        assert_equal "parameter", this_key.fetch("tokenType")
+        assert_equal "parameter", this_value.fetch("tokenType")
+        assert_equal "parameter", fallback_ref.fetch("tokenType")
+        assert_equal "variable", selected_decl.fetch("tokenType")
+        assert_includes selected_decl.fetch("modifierNames"), "declaration"
+        assert_equal "variable", selected_ref.fetch("tokenType")
+        assert_equal "typeParameter", ctor_k.fetch("tokenType")
+        assert_equal "typeParameter", ctor_v.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_classify_parameters_named_labels_and_for_binders
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
