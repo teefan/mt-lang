@@ -1,0 +1,11 @@
+{
+  "name": "build_frozen_missing_lock",
+  "argv": ["build", "app", "--frozen", "--json"],
+  "cwd": ".",
+  "exitStatus": 1,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

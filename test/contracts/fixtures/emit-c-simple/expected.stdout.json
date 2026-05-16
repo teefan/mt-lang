@@ -1,0 +1,5 @@
+[
+  "typedef struct mt_str \\{",
+  "int32_t [A-Za-z0-9_]*main\\(void\\);",
+  "return 0;"
+]

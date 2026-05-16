@@ -1,0 +1,12 @@
+{
+  "name": "run_success",
+  "argv": ["run", "main.mt", "--cc", "./fake-run-cc", "-o", "run-output", "--keep-c", "generated.c", "--json"],
+  "cwd": ".",
+  "executablePaths": ["fake-run-cc"],
+  "exitStatus": 7,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

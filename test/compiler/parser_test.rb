@@ -551,6 +551,27 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ExpressionStmt, defer_stmt.body[1]
   end
 
+  def test_parses_pass_statements_in_nested_blocks
+    source = <<~MT
+      function main(flag: bool) -> int:
+          if flag:
+              pass
+          defer:
+              pass
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    if_stmt = main_fn.body[0]
+    defer_stmt = main_fn.body[1]
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert_instance_of MilkTea::AST::PassStmt, if_stmt.branches[0].body.first
+    assert_instance_of MilkTea::AST::DeferStmt, defer_stmt
+    assert_instance_of MilkTea::AST::PassStmt, defer_stmt.body.first
+  end
+
   def test_parses_variant_declarations_and_as_binding_in_match
     source = <<~MT
       variant Shape:

@@ -1,0 +1,12 @@
+{
+  "name": "semantic_tokens_simple",
+  "cwd": ".",
+  "rootPath": ".",
+  "documentPath": "main.mt",
+  "requestMethod": "textDocument/semanticTokens/full",
+  "stderr": "",
+  "result": {
+    "type": "json-projection",
+    "path": "expected.result.json"
+  }
+}

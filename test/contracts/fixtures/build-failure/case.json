@@ -1,0 +1,12 @@
+{
+  "name": "build_failure",
+  "argv": ["build", "main.mt", "--cc", "./fail-cc", "-o", "build-output", "--json"],
+  "cwd": ".",
+  "executablePaths": ["fail-cc"],
+  "exitStatus": 1,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

@@ -1,0 +1,10 @@
+[package]
+name = "demo.app"
+version = "0.1.0"
+source_root = "src"
+
+[build]
+entry = "src/app/main.mt"
+
+[dependencies]
+"demo.lib" = { path = "../lib" }

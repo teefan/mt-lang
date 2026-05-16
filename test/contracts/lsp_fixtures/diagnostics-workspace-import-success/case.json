@@ -1,0 +1,12 @@
+{
+  "name": "diagnostics_workspace_import_success",
+  "cwd": ".",
+  "rootPath": ".",
+  "documentPath": "main.mt",
+  "requestMethod": "textDocument/diagnostic",
+  "stderr": "",
+  "result": {
+    "type": "json-projection",
+    "path": "expected.result.json"
+  }
+}

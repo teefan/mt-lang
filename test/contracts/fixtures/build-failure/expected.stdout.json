@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "contract": "buildResult",
+  "success": false,
+  "inputPath": "main.mt",
+  "error": {
+    "code": "build/error",
+    "type": "BuildError"
+  }
+}

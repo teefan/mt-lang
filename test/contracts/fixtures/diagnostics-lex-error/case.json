@@ -1,0 +1,11 @@
+{
+  "name": "diagnostics_lex_error",
+  "argv": ["diagnostics", "main.mt"],
+  "cwd": ".",
+  "exitStatus": 1,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  }
+}

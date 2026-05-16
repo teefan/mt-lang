@@ -1666,6 +1666,8 @@ module MilkTea
                 check_block(statement.body, scopes: body_scopes, return_type:, allow_return:)
               end
             end
+          when AST::PassStmt
+            nil
           when AST::BreakStmt
             raise_sema_error("break must be inside a loop") unless inside_loop?
           when AST::ContinueStmt
@@ -4484,7 +4486,7 @@ module MilkTea
         when AST::DeferStmt
           validate_async_expression_support!(statement.expression, context: "defer cleanup") if statement.expression
           statement.body&.each { |s| validate_async_statement!(s) }
-        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert
+        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
           nil
         else
           raise_sema_error("async functions currently only support straight-line local declarations, assignments, expression statements, and return statements")

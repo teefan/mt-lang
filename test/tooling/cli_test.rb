@@ -56,6 +56,30 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_semantic_tokens_command_emits_versioned_contract_fields
+    out = StringIO.new
+    err = StringIO.new
+
+    Dir.chdir(File.expand_path("../..", __dir__)) do
+      status = MilkTea::CLI.start(["semantic-tokens", language_fixture_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+
+      assert_equal 1, payload.fetch("version")
+      assert_equal "semanticTokens", payload.fetch("contract")
+      assert_equal "utf-8", payload.fetch("positionEncoding")
+      assert_equal "test/fixtures/language_fixture.mt", payload.fetch("path")
+
+      first_entry = payload.fetch("entries").first
+      assert first_entry.key?("startByte")
+      assert first_entry.key?("endByte")
+      assert first_entry.key?("lengthBytes")
+    end
+  end
+
   def test_parse_command_reports_ast
     out = StringIO.new
     err = StringIO.new
@@ -298,6 +322,35 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", err.string
   end
 
+  def test_diagnostics_command_emits_versioned_json_contract
+    Dir.mktmpdir("milk-tea-cli-diagnostics") do |dir|
+      path = File.join(dir, "broken.mt")
+      File.write(path, "function main() -> int:\n    return nope\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["diagnostics", path], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+
+      assert_equal 1, payload.fetch("version")
+      assert_equal "diagnostics", payload.fetch("contract")
+      assert_equal "utf-8", payload.fetch("positionEncoding")
+      assert_equal File.expand_path(path).tr("\\", "/"), payload.fetch("path")
+      assert_equal 1, payload.dig("summary", "errorCount")
+
+      diagnostic = payload.fetch("diagnostics").first
+      assert_equal "sema/error", diagnostic.fetch("code")
+      assert_equal "sema", diagnostic.fetch("stage")
+      assert_equal "error", diagnostic.fetch("severity")
+      assert diagnostic.dig("range", "start").key?("byte")
+      assert diagnostic.dig("range", "end").key?("byte")
+    end
+  end
+
   def test_lower_command_reports_ir
     out = StringIO.new
     err = StringIO.new
@@ -355,6 +408,35 @@ class MilkTeaCliTest < Minitest::Test
       refute_match(/^#line\s+/m, File.read(c_path))
       invocation = File.read(compiler_log).lines(chomp: true)
       refute_includes invocation, "-lm"
+    end
+  end
+
+  def test_build_command_json_emits_versioned_result_contract
+    Dir.mktmpdir("milk-tea-cli-build-json") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "language-fixture")
+      c_path = File.join(dir, "language-fixture.c")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["build", language_fixture_path, "--cc", compiler_path, "-o", output_path, "--keep-c", c_path, "--json"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+
+      assert_equal 1, payload.fetch("version")
+      assert_equal "buildResult", payload.fetch("contract")
+      assert_equal true, payload.fetch("success")
+      assert_equal "test/fixtures/language_fixture.mt", payload.fetch("inputPath")
+      assert_equal File.expand_path(output_path).tr("\\", "/"), payload.fetch("outputPath")
+      assert_equal File.expand_path(c_path).tr("\\", "/"), payload.fetch("cPath")
+      assert_equal File.expand_path(compiler_path).tr("\\", "/"), payload.fetch("compiler")
+      assert_equal "linux", payload.fetch("platform")
+      assert File.exist?(output_path)
+      assert File.exist?(c_path)
     end
   end
 
@@ -637,6 +719,32 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "run-err\n", err.string
       invocation = File.read(compiler_log).lines(chomp: true)
       refute_includes invocation, "-lm"
+    end
+  end
+
+  def test_run_command_json_emits_versioned_result_contract
+    Dir.mktmpdir("milk-tea-cli-run-json") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "run-ok\n", stderr: "run-err\n", exit_status: 7)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["run", language_fixture_path, "--cc", compiler_path, "--json"], out:, err:)
+
+      assert_equal 7, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+
+      assert_equal 1, payload.fetch("version")
+      assert_equal "runResult", payload.fetch("contract")
+      assert_equal true, payload.fetch("success")
+      assert_equal "test/fixtures/language_fixture.mt", payload.fetch("inputPath")
+      assert_equal "run-ok\n", payload.fetch("stdout")
+      assert_equal "run-err\n", payload.fetch("stderr")
+      assert_equal 7, payload.fetch("exitStatus")
+      assert_equal File.expand_path(compiler_path).tr("\\", "/"), payload.fetch("compiler")
+      assert_equal "linux", payload.fetch("platform")
     end
   end
 

@@ -1,9 +1,15 @@
 # frozen_string_literal: true
 
+require "cgi/escape"
+require "json"
+require "pathname"
 require "pp"
 
 module MilkTea
   class CLI
+    CONTRACT_VERSION = 1
+    CONTRACT_POSITION_ENCODING = "utf-8"
+
     def self.start(argv = ARGV, out: $stdout, err: $stderr)
       new(argv, out:, err:).start
     end
@@ -44,6 +50,8 @@ module MilkTea
         format_command
       when "lint"
         lint_command
+      when "diagnostics"
+        diagnostics_command
       when "check"
         check_command
       when "lower"
@@ -101,15 +109,30 @@ module MilkTea
       resolution = extract_resolution_flags!
       ensure_current_lockfile!(path) if resolution[:frozen]
 
-      require "json"
-
       payload = MilkTea::LSP::Server.semantic_tokens_for_path(
         path,
         module_roots: module_roots_for(path, locked: resolution[:locked]),
         package_graph: package_graph_for(path, locked: resolution[:locked]),
       )
-      @out.puts(JSON.pretty_generate(payload))
+      @out.puts(JSON.pretty_generate(semantic_tokens_contract_payload(payload, source_path: path)))
       0
+    end
+
+    def diagnostics_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      resolution = extract_resolution_flags!
+      ensure_current_lockfile!(path) if resolution[:frozen]
+
+      source = read_source_file(path)
+      payload = diagnostics_contract_payload(path, source, locked: resolution[:locked])
+      @out.puts(JSON.pretty_generate(payload))
+      payload.fetch(:summary).fetch(:errorCount).positive? ? 1 : 0
     end
 
     def parse_command
@@ -381,6 +404,7 @@ module MilkTea
 
       options = parse_build_options(allow_clean: true)
       return 1 unless options
+      json_output = options.delete(:json)
 
       unless path
         if File.file?(File.join(Dir.pwd, "package.toml"))
@@ -392,26 +416,34 @@ module MilkTea
         end
       end
 
-      if options.delete(:clean)
-        cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
-        @out.puts("cleaned #{cleaned_path}")
-        return 0
-      end
+      with_contract_error_handling("buildResult", enabled: json_output, input_path: path) do
+        if options.delete(:clean)
+          cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
+          if json_output
+            @out.puts(JSON.pretty_generate(build_clean_contract_payload(path, cleaned_path)))
+          else
+            @out.puts("cleaned #{cleaned_path}")
+          end
+          return 0
+        end
 
-      ensure_current_lockfile!(path) if options.delete(:frozen)
-      locked = options.delete(:locked)
-      bundle = options[:bundle]
-      package_graph = package_graph_for(path, locked:)
-      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
-      if bundle
-        @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
-        @out.puts("entry executable #{result.output_path}")
-        @out.puts("archive #{result.archive_path}") if result.archive_path
-      else
-        @out.puts("built #{path} -> #{result.output_path}")
+        ensure_current_lockfile!(path) if options.delete(:frozen)
+        locked = options.delete(:locked)
+        bundle = options[:bundle]
+        package_graph = package_graph_for(path, locked:)
+        result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
+        if json_output
+          @out.puts(JSON.pretty_generate(build_result_contract_payload(path, result)))
+        elsif bundle
+          @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
+          @out.puts("entry executable #{result.output_path}")
+          @out.puts("archive #{result.archive_path}") if result.archive_path
+        else
+          @out.puts("built #{path} -> #{result.output_path}")
+        end
+        @out.puts("saved C to #{result.c_path}") if result.c_path && !json_output
+        0
       end
-      @out.puts("saved C to #{result.c_path}") if result.c_path
-      0
     end
 
     def run_command
@@ -422,6 +454,7 @@ module MilkTea
 
       options = parse_build_options
       return 1 unless options
+      json_output = options.delete(:json)
 
       unless path
         if File.file?(File.join(Dir.pwd, "package.toml"))
@@ -433,24 +466,35 @@ module MilkTea
         end
       end
 
-      ensure_current_lockfile!(path) if options.delete(:frozen)
-      locked = options.delete(:locked)
-      package_graph = package_graph_for(path, locked:)
-      preview_notice_emitted = false
-      result = Run.run(
-        path,
-        module_roots: module_roots_for(path, locked:),
-        package_graph:,
-        preview_started: lambda do |message|
-          preview_notice_emitted = true
-          @out.write(message)
-          @out.flush if @out.respond_to?(:flush)
-        end,
-        **options
-      )
-      @out.write(result.stdout) unless preview_notice_emitted
-      @err.write(result.stderr)
-      result.exit_status
+      with_contract_error_handling("runResult", enabled: json_output, input_path: path) do
+        ensure_current_lockfile!(path) if options.delete(:frozen)
+        locked = options.delete(:locked)
+        package_graph = package_graph_for(path, locked:)
+        preview_notice_emitted = false
+        preview_started = nil
+        unless json_output
+          preview_started = lambda do |message|
+            preview_notice_emitted = true
+            @out.write(message)
+            @out.flush if @out.respond_to?(:flush)
+          end
+        end
+
+        result = Run.run(
+          path,
+          module_roots: module_roots_for(path, locked:),
+          package_graph:,
+          preview_started:,
+          **options
+        )
+        if json_output
+          @out.puts(JSON.pretty_generate(run_result_contract_payload(path, result)))
+        else
+          @out.write(result.stdout) unless preview_notice_emitted
+          @err.write(result.stderr)
+        end
+        result.exit_status
+      end
     end
 
     def new_command
@@ -511,6 +555,7 @@ module MilkTea
         archive: false,
         locked: false,
         frozen: false,
+        json: false,
       }
       options[:clean] = false if allow_clean
 
@@ -552,6 +597,8 @@ module MilkTea
         when "--frozen"
           options[:locked] = true
           options[:frozen] = true
+        when "--json"
+          options[:json] = true
         when "--clean"
           if allow_clean
             options[:clean] = true
@@ -744,12 +791,262 @@ module MilkTea
     end
 
     def command_supports_include_paths?(command)
-      %w[semantic-tokens parse lint check lower emit-c build run].include?(command)
+      %w[semantic-tokens parse lint diagnostics check lower emit-c build run].include?(command)
+    end
+
+    def semantic_tokens_contract_payload(payload, source_path:)
+      source = read_source_file(source_path)
+      line_texts = source.lines
+
+      payload.merge(
+        version: CONTRACT_VERSION,
+        contract: "semanticTokens",
+        positionEncoding: CONTRACT_POSITION_ENCODING,
+        path: contract_path(payload.fetch(:path)),
+        entries: payload.fetch(:entries).map do |entry|
+          contract_semantic_token_entry(entry, line_texts)
+        end,
+      )
+    end
+
+    def diagnostics_contract_payload(path, source, locked: false)
+      result = MilkTea::LSP::Diagnostics.collect(
+        path_to_uri(path),
+        source,
+        dependency_resolution_mode: locked ? :locked : :auto,
+      )
+      diagnostics = result.fetch(:diagnostics)
+
+      {
+        version: CONTRACT_VERSION,
+        contract: "diagnostics",
+        positionEncoding: CONTRACT_POSITION_ENCODING,
+        path: contract_path(path),
+        moduleName: result[:analysis]&.module_name,
+        summary: diagnostics_summary_payload(diagnostics),
+        diagnostics: diagnostics.map { |diagnostic| diagnostics_entry_payload(diagnostic, source) },
+      }.compact
+    end
+
+    def diagnostics_summary_payload(diagnostics)
+      counts = diagnostics.each_with_object({ errorCount: 0, warningCount: 0, informationCount: 0, hintCount: 0 }) do |diagnostic, memo|
+        case severity_name(fetch_hash_value(diagnostic, :severity))
+        when "error"
+          memo[:errorCount] += 1
+        when "warning"
+          memo[:warningCount] += 1
+        when "information"
+          memo[:informationCount] += 1
+        when "hint"
+          memo[:hintCount] += 1
+        end
+      end
+      counts[:totalCount] = counts.values.sum
+      counts
+    end
+
+    def diagnostics_entry_payload(diagnostic, source)
+      {
+        code: fetch_hash_value(diagnostic, :code) || "tooling/error",
+        stage: fetch_hash_value(fetch_hash_value(diagnostic, :data) || {}, :stage) || "tooling",
+        severity: severity_name(fetch_hash_value(diagnostic, :severity)),
+        message: fetch_hash_value(diagnostic, :message).to_s,
+        source: fetch_hash_value(diagnostic, :source),
+        range: contract_range_payload(fetch_hash_value(diagnostic, :range), source),
+      }.compact
+    end
+
+    def build_clean_contract_payload(input_path, cleaned_path)
+      {
+        version: CONTRACT_VERSION,
+        contract: "buildResult",
+        success: true,
+        action: "clean",
+        inputPath: contract_path(input_path),
+        cleanedPath: contract_path(cleaned_path),
+      }
+    end
+
+    def build_result_contract_payload(input_path, result)
+      {
+        version: CONTRACT_VERSION,
+        contract: "buildResult",
+        success: true,
+        inputPath: contract_path(input_path),
+        outputPath: contract_path(result.output_path),
+        cPath: contract_path(result.c_path),
+        compiler: result.compiler,
+        linkFlags: result.link_flags,
+        profile: result.profile&.to_s,
+        platform: result.platform&.to_s,
+        bundleRoot: contract_path(result.bundle_root),
+        archivePath: contract_path(result.archive_path),
+      }.compact
+    end
+
+    def run_result_contract_payload(input_path, result)
+      {
+        version: CONTRACT_VERSION,
+        contract: "runResult",
+        success: true,
+        inputPath: contract_path(input_path),
+        outputPath: contract_path(result.output_path),
+        cPath: contract_path(result.c_path),
+        compiler: result.compiler,
+        linkFlags: result.link_flags,
+        platform: result.platform&.to_s,
+        bundleRoot: contract_path(result.bundle_root),
+        archivePath: contract_path(result.archive_path),
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitStatus: result.exit_status,
+      }.compact
+    end
+
+    def with_contract_error_handling(contract_name, enabled:, input_path: nil)
+      yield
+    rescue StandardError => e
+      raise unless enabled && handled_cli_error?(e)
+
+      @out.puts(JSON.pretty_generate(contract_error_payload(contract_name, e, input_path:)))
+      1
+    end
+
+    def contract_error_payload(contract_name, error, input_path: nil)
+      payload = {
+        version: CONTRACT_VERSION,
+        contract: contract_name,
+        success: false,
+        error: {
+          code: contract_error_code(error),
+          type: error.class.name.split("::").last,
+          message: error.message.to_s,
+        },
+      }
+      payload[:inputPath] = contract_path(input_path) if input_path
+      payload
+    end
+
+    def contract_error_code(error)
+      case error
+      when BuildError
+        "build/error"
+      when RunError
+        "run/error"
+      when PackageLockError
+        "package/lock-error"
+      when PackageManifestError
+        "package/manifest-error"
+      when PackageGraphError
+        "package/graph-error"
+      when PackageSourceResolverError
+        "package/source-resolver-error"
+      when PackageSourceFetcherError
+        "package/source-fetcher-error"
+      when PackageRegistryStoreError
+        "package/registry-store-error"
+      when PackageRegistryMetadataProviderError
+        "package/registry-metadata-error"
+      when PackageDependencySolverError
+        "package/dependency-solver-error"
+      when PackageVersionError
+        "package/version-error"
+      when ModuleLoadError
+        "import/load-error"
+      when LexError
+        "lex/error"
+      when ParseError
+        "parse/error"
+      when SemaError
+        "sema/error"
+      else
+        "tooling/error"
+      end
+    end
+
+    def contract_range_payload(range, source)
+      source_lines = source.lines
+      start = fetch_hash_value(range, :start)
+      end_pos = fetch_hash_value(range, :end)
+      start_line = fetch_hash_value(start, :line)
+      end_line = fetch_hash_value(end_pos, :line)
+      start_char = fetch_hash_value(start, :character)
+      end_char = fetch_hash_value(end_pos, :character)
+
+      {
+        start: {
+          line: start_line,
+          byte: line_char_to_byte(source_lines, start_line, start_char),
+        },
+        end: {
+          line: end_line,
+          byte: line_char_to_byte(source_lines, end_line, end_char),
+        },
+      }
+    end
+
+    def line_char_to_byte(line_texts, line_index, char_index)
+      line_text = line_texts.fetch(line_index, "")
+      line_text[0, char_index].to_s.bytesize
+    end
+
+    def severity_name(value)
+      case value.to_i
+      when 1 then "error"
+      when 2 then "warning"
+      when 3 then "information"
+      when 4 then "hint"
+      else "warning"
+      end
+    end
+
+    def fetch_hash_value(hash, key)
+      return nil unless hash
+      return hash[key] if hash.key?(key)
+
+      hash[key.to_s]
+    end
+
+    def contract_semantic_token_entry(entry, line_texts)
+      line_text = line_texts.fetch(entry.fetch(:line), "")
+      start_char = entry.fetch(:startChar)
+      char_length = entry.fetch(:length)
+      start_byte = line_text[0, start_char].to_s.bytesize
+      token_text = line_text[start_char, char_length].to_s
+      length_bytes = token_text.bytesize
+
+      entry.merge(
+        startByte: start_byte,
+        endByte: start_byte + length_bytes,
+        lengthBytes: length_bytes,
+      )
+    end
+
+    def contract_path(path, base_dir: Dir.pwd)
+      return nil unless path
+
+      expanded_path = File.expand_path(path)
+      return expanded_path.tr("\\", "/") unless base_dir
+
+      expanded_base_dir = File.expand_path(base_dir)
+      within_base_dir = expanded_path == expanded_base_dir || expanded_path.start_with?("#{expanded_base_dir}#{File::SEPARATOR}")
+      return expanded_path.tr("\\", "/") unless within_base_dir
+
+      begin
+        Pathname.new(expanded_path).relative_path_from(Pathname.new(expanded_base_dir)).to_s.tr("\\", "/")
+      rescue ArgumentError
+        expanded_path.tr("\\", "/")
+      end
+    end
+
+    def path_to_uri(path)
+      escaped_path = File.expand_path(path).tr("\\", "/").split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
+      "file://#{escaped_path}"
     end
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
-      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit LSP-style semantic token data for a source file as JSON.",
+      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned semantic token contract for a source file as JSON.",
       "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [OPTIONS]
@@ -781,6 +1078,7 @@ module MilkTea
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
+          "diagnostics"     => "Usage: mtc diagnostics PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned diagnostics contract for a source file as JSON.",
       "check"           => "Usage: mtc check PATH [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on a source file and report errors.",
       "lower"           => "Usage: mtc lower PATH [--locked] [--frozen] [-I PATH]\n\n  Lower a source file to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen] [-I PATH]\n\n  Compile a source file to C and print the output.",
@@ -798,6 +1096,7 @@ module MilkTea
             --platform PLATFORM          linux (default) | windows | wasm.
             --bundle                     Package a native package build into a distributable directory.
             --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).
+            --json                       Emit a versioned build result contract as JSON.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             --clean                      Remove existing build outputs and exit.
@@ -825,6 +1124,7 @@ module MilkTea
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
+            --json                       Emit a versioned run result contract as JSON.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             -I, --include-path PATH      Add an extra module root.
@@ -895,12 +1195,13 @@ module MilkTea
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc diagnostics PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--json] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")

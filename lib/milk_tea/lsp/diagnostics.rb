@@ -175,7 +175,10 @@ module MilkTea
           severity: lsp_severity,
           code: warning.code,
           message: warning.message.to_s,
-          source: 'milk-tea'
+          source: 'milk-tea',
+          data: {
+            stage: 'lint'
+          }
         }
       end
 
@@ -233,8 +236,12 @@ module MilkTea
             }
           },
           severity: 1,  # Error
+          code: diagnostic_code(error),
           message: error.message.to_s,
-          source: 'milk-tea'
+          source: 'milk-tea',
+          data: {
+            stage: diagnostic_stage(error)
+          }
         }
       end
 
@@ -258,9 +265,43 @@ module MilkTea
             }
           },
           severity: 1,
+          code: diagnostic_code(error),
           message: error.message.to_s,
-          source: 'milk-tea'
+          source: 'milk-tea',
+          data: {
+            stage: diagnostic_stage(error)
+          }
         }
+      end
+
+      def self.diagnostic_code(error)
+        case error
+        when MilkTea::LexError
+          'lex/error'
+        when MilkTea::ParseError
+          'parse/error'
+        when MilkTea::ModuleLoadError
+          'import/load-error'
+        when MilkTea::SemaError
+          'sema/error'
+        else
+          'tooling/error'
+        end
+      end
+
+      def self.diagnostic_stage(error)
+        case error
+        when MilkTea::LexError
+          'lex'
+        when MilkTea::ParseError
+          'parse'
+        when MilkTea::ModuleLoadError
+          'import'
+        when MilkTea::SemaError
+          'sema'
+        else
+          'tooling'
+        end
       end
 
       def self.import_path_span(import, content)

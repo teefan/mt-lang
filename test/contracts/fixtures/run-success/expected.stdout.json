@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "contract": "runResult",
+  "success": true,
+  "inputPath": "main.mt",
+  "outputPath": "run-output",
+  "cPath": "generated.c",
+  "compiler": "./fake-run-cc",
+  "platform": "linux",
+  "stdout": "run-ok\n",
+  "stderr": "run-err\n",
+  "exitStatus": 7
+}
