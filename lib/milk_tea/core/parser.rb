@@ -1411,6 +1411,7 @@ module MilkTea
       return nil unless check_name && known_type_like_name?(peek.lexeme)
 
       expression = nil
+      target_head = peek
       target_type = parse_type_ref
       type_tail = @tokens[@current - 1]
       less_token = peek
@@ -1429,7 +1430,7 @@ module MilkTea
       expression = parse_unary
       AST::Call.new(
         callee: AST::Specialization.new(
-          callee: AST::Identifier.new(name: "cast"),
+          callee: AST::Identifier.new(name: "cast", line: target_head.line, column: target_head.column),
           arguments: [AST::TypeArgument.new(value: target_type)],
         ),
         arguments: [AST::Argument.new(name: nil, value: expression)],

@@ -5691,6 +5691,21 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/pointer cast requires unsafe/, error.message)
   end
 
+  def test_reports_invalid_prefix_cast_at_cast_expression_column
+    source = <<~MT
+      function main() -> int:
+          return unsafe: read(ptr[int]<-0)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cast currently only supports numeric primitive types/, error.message)
+    assert_equal 2, error.line
+    assert_equal 25, error.column
+  end
+
   def test_rejects_pointer_arithmetic_outside_unsafe
     source = <<~MT
       # module demo.bad

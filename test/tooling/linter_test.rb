@@ -538,10 +538,11 @@ class MilkTeaLinterTest < Minitest::Test
 
   # ── dead-assignment ────────────────────────────────────────────────────
 
-  def test_dead_assignment_value_overwritten
+  def test_dead_assignment_plain_assignment_value_overwritten
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> int:
-          var x = 1
+          var x: int
+          x = 1
           x = 2
           return x
     MT
@@ -550,7 +551,7 @@ class MilkTeaLinterTest < Minitest::Test
     w = warnings.first
     assert_equal "dead-assignment", w.code
     assert_match(/'x'/, w.message)
-    assert_equal 2, w.line
+    assert_equal 3, w.line
   end
 
   def test_no_dead_assignment_when_value_is_read
@@ -646,6 +647,20 @@ class MilkTeaLinterTest < Minitest::Test
     refute warnings.any? { |w| w.code == "dead-assignment" }
   end
 
+  def test_no_dead_assignment_for_initializer_overwritten_on_all_paths
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main(cond: bool) -> int:
+          var x: int = 0
+          if cond:
+              x = 1
+          else:
+              x = 2
+          return x
+    MT
+
+    refute warnings.any? { |w| w.code == "dead-assignment" }
+  end
+
   def test_dead_assignment_when_overwritten_on_all_paths
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main(cond: bool) -> int:
@@ -659,9 +674,9 @@ class MilkTeaLinterTest < Minitest::Test
     MT
 
     dead = warnings.select { |w| w.code == "dead-assignment" }
-    assert_equal 3, dead.length
+    assert_equal 2, dead.length
     lines = dead.map(&:line).sort
-    assert_equal [2, 4, 6], lines
+    assert_equal [4, 6], lines
   end
 
   # ── fix_source ─────────────────────────────────────────────────────────
@@ -2151,6 +2166,34 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     assert_equal 2, redundant.first.line
   end
 
+  def test_warns_on_redundant_inline_unsafe_expression
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function main() -> ptr[int]:
+          var value: int = 0
+          return unsafe: ptr[int]<-ptr_of(value)
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-unsafe" }
+    assert warning, "expected redundant-unsafe warning"
+    assert_equal 3, warning.line
+    assert_equal 12, warning.column
+    assert_equal :hint, warning.severity
+  end
+
+  def test_warns_on_redundant_inline_unsafe_expression_even_with_unrelated_later_error
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> ptr[int]:
+          var value: int = 0
+          let pointer = unsafe: ptr[int]<-ptr_of(value)
+          let broken = unsafe: read(ptr[int]<-0)
+          return pointer
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-unsafe" && w.line == 3 }
+    assert warning, "expected redundant-unsafe warning"
+    assert_equal 19, warning.column
+  end
+
   def test_does_not_warn_on_generic_method_unsafe_block_with_pointer_cast
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
       struct Box[T]:
@@ -2193,6 +2236,48 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
     refute_match(/unsafe:/, fixed)
     assert_match(/\n    let copy = value \+ 1\n/, fixed)
+  end
+
+  def test_fix_source_removes_redundant_inline_unsafe_expression
+    source = <<~MT
+      function main() -> ptr[int]:
+          var value: int = 0
+          return unsafe: ptr[int]<-ptr_of(value)
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "return ptr[int]<-ptr_of(value)"
+    refute_includes fixed, "return unsafe: ptr[int]<-ptr_of(value)"
+  end
+end
+
+class MilkTeaLinterRedundantReturnTest < Minitest::Test
+  def test_warns_on_final_bare_return_in_void_function
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> void:
+          let _ = 1
+          return
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-return" }
+    assert warning, "expected redundant-return warning"
+    assert_equal 3, warning.line
+    assert_equal 5, warning.column
+    assert_equal :hint, warning.severity
+  end
+
+  def test_fix_source_removes_final_bare_return_in_void_function
+    source = <<~MT
+      function main() -> void:
+          let _ = 1
+          return
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "let _ = 1"
+    refute_includes fixed, "\n    return\n"
   end
 end
 

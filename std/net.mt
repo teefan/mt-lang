@@ -1,5 +1,6 @@
 import std.async as aio
 import std.async.libuv_runtime as aio_backend
+import std.bytes as bytes
 import std.c.libuv as libuv_c
 import std.libuv as libuv
 import std.mem.arena as arena
@@ -19,6 +20,10 @@ public type NativeUdpHandle = libuv.uv_udp_t
 type NativeHandle = libuv.uv_handle_t
 type NativeStreamHandle = libuv.uv_stream_t
 type NativeConnectRequest = libuv.uv_connect_t
+type NativeWriteRequest = libuv.uv_write_t
+type NativeShutdownRequest = libuv.uv_shutdown_t
+type NativeUdpSendRequest = libuv.uv_udp_send_t
+type NativeBuffer = libuv.uv_buf_t
 
 
 public struct TcpStream:
@@ -27,6 +32,15 @@ public struct TcpStream:
 
 public struct TcpListener:
     handle: ptr[NativeTcpHandle]?
+
+
+public struct UdpSocket:
+    handle: ptr[NativeUdpHandle]?
+
+
+public struct UdpDatagram:
+    data: bytes.Bytes
+    source: SocketAddress
 
 
 public struct Error:
@@ -70,6 +84,8 @@ struct ConnectState:
     waiter_registered: bool
     req: ptr[NativeConnectRequest]?
     handle: ptr[NativeTcpHandle]?
+    destination: SocketAddress
+    destination_owned: bool
     released: bool
 
 
@@ -89,6 +105,87 @@ struct AcceptState:
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
     listener: ptr[ListenerState]?
+
+
+struct TcpStreamState:
+    handle: ptr[NativeTcpHandle]?
+    read_state: ptr[ReadState]?
+
+
+struct WriteState:
+    ready: bool
+    status_code: int
+    result: status.Status[ptr_uint, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    req: ptr[NativeWriteRequest]?
+    buffers: ptr[NativeBuffer]?
+    data: bytes.Bytes
+    released: bool
+
+
+struct ReadState:
+    ready: bool
+    status_code: int
+    result: status.Status[bytes.Bytes, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    stream: ptr[TcpStreamState]?
+    max_bytes: ptr_uint
+    buffer: ptr[ubyte]?
+    received_bytes: ptr_uint
+    exact: bool
+    released: bool
+
+
+struct ShutdownState:
+    ready: bool
+    status_code: int
+    result: status.Status[bool, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    req: ptr[NativeShutdownRequest]?
+    released: bool
+
+
+struct UdpSocketState:
+    handle: ptr[NativeUdpHandle]?
+    receive_state: ptr[UdpReceiveState]?
+
+
+struct UdpSendState:
+    ready: bool
+    status_code: int
+    result: status.Status[ptr_uint, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    req: ptr[NativeUdpSendRequest]?
+    buffers: ptr[NativeBuffer]?
+    data: bytes.Bytes
+    destination: SocketAddress
+    destination_owned: bool
+    released: bool
+
+
+struct UdpReceiveState:
+    ready: bool
+    status_code: int
+    result: status.Status[UdpDatagram, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    socket: ptr[UdpSocketState]?
+    max_bytes: ptr_uint
+    released: bool
 
 
 function noop_waiter(frame: ptr[void]) -> void:
@@ -114,6 +211,38 @@ function connect_req_as_base(req: ptr[NativeConnectRequest]) -> ptr[libuv.uv_req
 
 function accept_state(frame: ptr[void]) -> ptr[AcceptState]:
     return unsafe: ptr[AcceptState]<-frame
+
+
+function write_state(frame: ptr[void]) -> ptr[WriteState]:
+    return unsafe: ptr[WriteState]<-frame
+
+
+function stream_read_state(frame: ptr[void]) -> ptr[ReadState]:
+    return unsafe: ptr[ReadState]<-frame
+
+
+function shutdown_state(frame: ptr[void]) -> ptr[ShutdownState]:
+    return unsafe: ptr[ShutdownState]<-frame
+
+
+function udp_send_state(frame: ptr[void]) -> ptr[UdpSendState]:
+    return unsafe: ptr[UdpSendState]<-frame
+
+
+function udp_receive_state(frame: ptr[void]) -> ptr[UdpReceiveState]:
+    return unsafe: ptr[UdpReceiveState]<-frame
+
+
+function write_req_as_base(req: ptr[NativeWriteRequest]) -> ptr[libuv.uv_req_t]:
+    return unsafe: ptr[libuv.uv_req_t]<-req
+
+
+function shutdown_req_as_base(req: ptr[NativeShutdownRequest]) -> ptr[libuv.uv_req_t]:
+    return unsafe: ptr[libuv.uv_req_t]<-req
+
+
+function udp_send_req_as_base(req: ptr[NativeUdpSendRequest]) -> ptr[libuv.uv_req_t]:
+    return unsafe: ptr[libuv.uv_req_t]<-req
 
 
 function sockaddr_storage_as_sockaddr(storage: ptr[NativeSocketStorage]) -> ptr[libuv.sockaddr]:
@@ -144,6 +273,14 @@ function stream_as_handle(stream: ptr[NativeStreamHandle]) -> ptr[NativeHandle]:
     return unsafe: ptr[NativeHandle]<-stream
 
 
+function udp_as_handle(handle: ptr[NativeUdpHandle]) -> ptr[NativeHandle]:
+    return unsafe: ptr[NativeHandle]<-handle
+
+
+function handle_as_udp(handle: ptr[NativeHandle]) -> ptr[NativeUdpHandle]:
+    return unsafe: ptr[NativeUdpHandle]<-handle
+
+
 function alloc_tcp_handle() -> ptr[NativeTcpHandle]:
     let handle_size = libuv.handle_size(libuv.uv_handle_type.UV_TCP)
     return unsafe: ptr[NativeTcpHandle]<-heap.must_alloc_zeroed_bytes(1, handle_size)
@@ -152,6 +289,26 @@ function alloc_tcp_handle() -> ptr[NativeTcpHandle]:
 function alloc_connect_request() -> ptr[NativeConnectRequest]:
     let req_size = libuv.req_size(libuv.uv_req_type.UV_CONNECT)
     return unsafe: ptr[NativeConnectRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
+
+
+function alloc_write_request() -> ptr[NativeWriteRequest]:
+    let req_size = libuv.req_size(libuv.uv_req_type.UV_WRITE)
+    return unsafe: ptr[NativeWriteRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
+
+
+function alloc_shutdown_request() -> ptr[NativeShutdownRequest]:
+    let req_size = libuv.req_size(libuv.uv_req_type.UV_SHUTDOWN)
+    return unsafe: ptr[NativeShutdownRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
+
+
+function alloc_udp_handle() -> ptr[NativeUdpHandle]:
+    let handle_size = libuv.handle_size(libuv.uv_handle_type.UV_UDP)
+    return unsafe: ptr[NativeUdpHandle]<-heap.must_alloc_zeroed_bytes(1, handle_size)
+
+
+function alloc_udp_send_request() -> ptr[NativeUdpSendRequest]:
+    let req_size = libuv.req_size(libuv.uv_req_type.UV_UDP_SEND)
+    return unsafe: ptr[NativeUdpSendRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
 
 
 function tcp_close_callback(handle: ptr[NativeHandle]) -> void:
@@ -165,6 +322,81 @@ function close_tcp_handle(handle: ptr[NativeTcpHandle]) -> void:
 
     libuv.close(tcp_as_handle(handle), tcp_close_callback)
     return
+
+
+function udp_close_callback(handle: ptr[NativeHandle]) -> void:
+    unsafe: heap.release_bytes(ptr[void]<-handle_as_udp(handle))
+    return
+
+
+function close_raw_udp_handle(handle: ptr[NativeUdpHandle]) -> void:
+    if libuv.is_closing(udp_as_handle(handle)) != 0:
+        return
+
+    libuv.close(udp_as_handle(handle), udp_close_callback)
+    return
+
+
+function release_uv_buffer(buffer: NativeBuffer) -> void:
+    unsafe: heap.release_bytes(ptr[void]<-buffer.base)
+    return
+
+
+function attach_tcp_stream(handle: ptr[NativeTcpHandle]) -> TcpStream:
+    let state = heap.must_alloc_zeroed[TcpStreamState](1)
+    unsafe:
+        read(state).handle = handle
+        read(state).read_state = null
+        libuv.handle_set_data(tcp_as_handle(handle), ptr[void]<-state)
+    return TcpStream(handle = handle)
+
+
+function attach_udp_socket(handle: ptr[NativeUdpHandle]) -> UdpSocket:
+    let state = heap.must_alloc_zeroed[UdpSocketState](1)
+    unsafe:
+        read(state).handle = handle
+        read(state).receive_state = null
+        libuv.handle_set_data(udp_as_handle(handle), ptr[void]<-state)
+    return UdpSocket(handle = handle)
+
+
+function duplicate_socket_address(address: SocketAddress) -> status.Status[SocketAddress, Error]:
+    let storage = address.storage else:
+        return status.Status[SocketAddress, Error].err(error= invalid_address_error("socket address is released"))
+
+    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(storage), address.len)
+
+
+function ipv4_socket_family() -> ushort:
+    var raw = zero[libuv.sockaddr_in]
+    let status_code = libuv.ip4_addr("0.0.0.0", 0, raw)
+    if status_code != 0:
+        fatal(c"std.net internal failed to determine AF_INET")
+
+    return raw.sin_family
+
+
+function ipv6_socket_family() -> ushort:
+    var raw = zero[libuv.sockaddr_in6]
+    let status_code = libuv.ip6_addr("::", 0, raw)
+    if status_code != 0:
+        fatal(c"std.net internal failed to determine AF_INET6")
+
+    return raw.sin6_family
+
+
+function socket_address_from_unknown_sockaddr(address: const_ptr[libuv.sockaddr]?) -> status.Status[SocketAddress, Error]:
+    let live_address = address else:
+        return status.Status[SocketAddress, Error].err(error= invalid_address_error("socket address is missing"))
+
+    let family = unsafe: read(live_address).sa_family
+    if family == ipv4_socket_family():
+        return socket_address_from_sockaddr(unsafe: ptr[libuv.sockaddr]?<-address, ptr_uint<-size_of(libuv.sockaddr_in))
+
+    if family == ipv6_socket_family():
+        return socket_address_from_sockaddr(unsafe: ptr[libuv.sockaddr]?<-address, ptr_uint<-size_of(libuv.sockaddr_in6))
+
+    return status.Status[SocketAddress, Error].err(error= invalid_address_error("unsupported socket address family"))
 
 
 function take_owned_message(message: str) -> string.String:
@@ -219,16 +451,16 @@ function socket_address_to_string_result(address: SocketAddress) -> status.Statu
         return status.Status[string.String, Error].err(error= invalid_address_error("socket address is released"))
 
     var buffer: array[char, address_name_capacity] = zero[array[char, address_name_capacity]]
-    var status_code: int = 0
     if address.kind == AddressKind.ipv4:
         var value = unsafe: read(ptr[libuv.sockaddr_in]<-storage_ptr)
-        status_code = libuv.ip4_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
+        let status_code = libuv.ip4_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
+        if status_code != 0:
+            return status.Status[string.String, Error].err(error= libuv_error(status_code))
     else:
         var value = unsafe: read(ptr[libuv.sockaddr_in6]<-storage_ptr)
-        status_code = libuv.ip6_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
-
-    if status_code != 0:
-        return status.Status[string.String, Error].err(error= libuv_error(status_code))
+        let status_code = libuv.ip6_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
+        if status_code != 0:
+            return status.Status[string.String, Error].err(error= libuv_error(status_code))
 
     return status.Status[string.String, Error].ok(value= string.String.from_str(text.chars_as_str(ptr_of(buffer[0]))))
 
@@ -265,6 +497,57 @@ function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> s
         return status.Status[SocketAddress, Error].err(error= libuv_error(status_code))
 
     return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+
+
+function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> status.Status[SocketAddress, Error]:
+    let live_handle = handle else:
+        return status.Status[SocketAddress, Error].err(error= net_error("udp handle is released"))
+
+    var raw = zero[NativeSocketStorage]
+    var name_length = int<-size_of(NativeSocketStorage)
+    let status_code = libuv_c.uv_udp_getsockname(
+            live_handle,
+            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            ptr_of(name_length),
+        )
+    if status_code != 0:
+        return status.Status[SocketAddress, Error].err(error= libuv_error(status_code))
+
+    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+
+
+function udp_socket_address_from_getpeername(handle: ptr[NativeUdpHandle]?) -> status.Status[SocketAddress, Error]:
+    let live_handle = handle else:
+        return status.Status[SocketAddress, Error].err(error= net_error("udp handle is released"))
+
+    var raw = zero[NativeSocketStorage]
+    var name_length = int<-size_of(NativeSocketStorage)
+    let status_code = libuv_c.uv_udp_getpeername(
+            live_handle,
+            sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+            ptr_of(name_length),
+        )
+    if status_code != 0:
+        return status.Status[SocketAddress, Error].err(error= libuv_error(status_code))
+
+    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+
+
+function udp_connect_impl(handle: ptr[NativeUdpHandle]?, destination: SocketAddress) -> status.Status[bool, Error]:
+    let live_handle = handle else:
+        return status.Status[bool, Error].err(error= net_error("udp socket is released"))
+
+    if libuv.is_closing(udp_as_handle(live_handle)) != 0:
+        return status.Status[bool, Error].err(error= net_error("udp socket is closing"))
+
+    let storage = destination.storage else:
+        return status.Status[bool, Error].err(error= invalid_address_error("socket address is released"))
+
+    let status_code = libuv.udp_connect(live_handle, sockaddr_storage_as_sockaddr(storage))
+    if status_code != 0:
+        return status.Status[bool, Error].err(error= libuv_error(status_code))
+
+    return status.Status[bool, Error].ok(value= true)
 
 
 function resolve_ready(frame: ptr[void]) -> bool:
@@ -346,6 +629,11 @@ function connect_cleanup_and_release(state: ptr[ConnectState]) -> void:
             heap.release_bytes(ptr[void]<-read(state).req)
             read(state).req = null
 
+        if read(state).destination_owned:
+            var destination = read(state).destination
+            destination.release()
+            read(state).destination_owned = false
+
         if read(state).result_owned:
             var result_value = read(state).result
             match result_value:
@@ -396,14 +684,12 @@ function finish_connect(state: ptr[ConnectState], result_value: status.Status[Tc
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
-    var released = false
 
     unsafe:
         read(state).result = result_value
         read(state).result_owned = true
         read(state).status_code = status_code
         read(state).ready = true
-        released = read(state).released
         if read(state).waiter_registered:
             waiter = read(state).waiter
             waiter_frame = read(state).waiter_frame
@@ -413,7 +699,7 @@ function finish_connect(state: ptr[ConnectState], result_value: status.Status[Tc
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
 
-    if released:
+    if unsafe: read(state).released:
         connect_cleanup_and_release(state)
     return
 
@@ -442,7 +728,7 @@ function connect_callback(req: ptr[NativeConnectRequest], status_code: int) -> v
         return
 
     unsafe: read(state).handle = null
-    finish_connect(state, status.Status[TcpStream, Error].ok(value= TcpStream(handle = handle)), 0)
+    finish_connect(state, status.Status[TcpStream, Error].ok(value= attach_tcp_stream(handle)), 0)
 
 
 function accept_ready(frame: ptr[void]) -> bool:
@@ -571,7 +857,7 @@ function perform_listener_accept(listener: ptr[ListenerState], state: ptr[Accept
         finish_accept(state, status.Status[TcpStream, Error].err(error= libuv_error(accept_status)), accept_status)
         return
 
-    finish_accept(state, status.Status[TcpStream, Error].ok(value= TcpStream(handle = client_handle)), 0)
+    finish_accept(state, status.Status[TcpStream, Error].ok(value= attach_tcp_stream(client_handle)), 0)
 
 
 function listener_connection_callback(server: ptr[NativeStreamHandle], status_code: int) -> void:
@@ -643,6 +929,1167 @@ function accept_impl(handle: ptr[NativeTcpHandle]?) -> Task[status.Status[TcpStr
 
     unsafe: read(listener).accept_state = state
     return accept_task(state)
+
+
+function tcp_stream_close_callback(handle: ptr[NativeHandle]) -> void:
+    let state_raw = libuv.handle_get_data(handle) else:
+        unsafe: heap.release_bytes(ptr[void]<-handle_as_tcp(handle))
+        return
+
+    let stream = unsafe: ptr[TcpStreamState]<-state_raw
+    let pending_read = unsafe: read(stream).read_state
+    if pending_read != null[ptr[ReadState]]:
+        unsafe:
+            read(stream).read_state = null
+            read(ptr[ReadState]<-pending_read).stream = null
+        finish_stream_read(unsafe: ptr[ReadState]<-pending_read, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream closed")), -1)
+
+    unsafe:
+        heap.release_bytes(ptr[void]<-handle_as_tcp(handle))
+        read(stream).handle = null
+        heap.release(stream)
+    return
+
+
+function close_tcp_stream_handle(handle: ptr[NativeTcpHandle]) -> void:
+    if libuv.is_closing(tcp_as_handle(handle)) != 0:
+        return
+
+    let state_raw = libuv.handle_get_data(tcp_as_handle(handle))
+    if state_raw == null[ptr[void]]:
+        close_tcp_handle(handle)
+        return
+
+    libuv.close(tcp_as_handle(handle), tcp_stream_close_callback)
+    return
+
+
+function write_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(write_state(frame)).ready
+
+
+function write_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = write_state(frame)
+    unsafe:
+        if read(state).ready:
+            waiter(waiter_frame)
+            return
+
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+    return
+
+
+function write_cleanup_and_release(state: ptr[WriteState]) -> void:
+    unsafe:
+        if read(state).req != null[ptr[NativeWriteRequest]]:
+            heap.release_bytes(ptr[void]<-read(state).req)
+            read(state).req = null
+
+        if read(state).buffers != null[ptr[NativeBuffer]]:
+            heap.release(read(state).buffers)
+            read(state).buffers = null
+
+        var stored_data = read(state).data
+        stored_data.release()
+        read(state).data = bytes.Bytes.empty()
+
+        if read(state).result_owned:
+            var result_value = read(state).result
+            match result_value:
+                status.Status.ok as ok_payload:
+                    unsafe: ptr_uint<-ok_payload.value
+                status.Status.err as error_payload:
+                    var error = error_payload.error
+                    error.release()
+            read(state).result_owned = false
+
+        heap.release(state)
+    return
+
+
+function write_release(frame: ptr[void]) -> void:
+    let state = write_state(frame)
+    if unsafe: read(state).ready:
+        write_cleanup_and_release(state)
+        return
+
+    unsafe: read(state).released = true
+    return
+
+
+function write_take_result(frame: ptr[void]) -> status.Status[ptr_uint, Error]:
+    let state = write_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function write_task(state: ptr[WriteState]) -> Task[status.Status[ptr_uint, Error]]:
+    return unsafe: Task[status.Status[ptr_uint, Error]](
+            frame = ptr[void]<-state,
+            ready = write_ready,
+            set_waiter = write_set_waiter,
+            release = write_release,
+            take_result = write_take_result,
+        )
+
+
+function finish_write(state: ptr[WriteState], result_value: status.Status[ptr_uint, Error], status_code: int, owns_error: bool) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = owns_error
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+    if unsafe: read(state).released:
+        write_cleanup_and_release(state)
+    return
+
+
+function write_callback(req: ptr[NativeWriteRequest], status_code: int) -> void:
+    let state_raw = libuv.req_get_data(write_req_as_base(req)) else:
+        unsafe: heap.release_bytes(ptr[void]<-req)
+        return
+
+    let state = unsafe: ptr[WriteState]<-state_raw
+    let written = unsafe: read(state).data.len
+    unsafe:
+        heap.release_bytes(ptr[void]<-req)
+        read(state).req = null
+
+        if read(state).buffers != null[ptr[NativeBuffer]]:
+            heap.release(read(state).buffers)
+            read(state).buffers = null
+
+        var payload = read(state).data
+        payload.release()
+        read(state).data = bytes.Bytes.empty()
+
+    if status_code != 0:
+        finish_write(state, status.Status[ptr_uint, Error].err(error= libuv_error(status_code)), status_code, true)
+        return
+
+    finish_write(state, status.Status[ptr_uint, Error].ok(value= written), 0, false)
+    return
+
+
+function write_on_impl(handle: ptr[NativeTcpHandle]?, content: span[ubyte]) -> Task[status.Status[ptr_uint, Error]]:
+    let state = heap.must_alloc_zeroed[WriteState](1)
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = status.Status[ptr_uint, Error].ok(value= 0)
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).req = null
+        read(state).buffers = null
+        read(state).data = bytes.Bytes.empty()
+        read(state).released = false
+
+    let live_handle = handle else:
+        finish_write(state, status.Status[ptr_uint, Error].err(error= net_error("tcp stream is released")), -1, true)
+        return write_task(state)
+
+    if libuv.is_closing(tcp_as_handle(live_handle)) != 0:
+        finish_write(state, status.Status[ptr_uint, Error].err(error= net_error("tcp stream is closing")), -1, true)
+        return write_task(state)
+
+    if content.len == 0:
+        finish_write(state, status.Status[ptr_uint, Error].ok(value= 0), 0, false)
+        return write_task(state)
+
+    let copied = bytes.Bytes.copy(content)
+    let copied_data = copied.data else:
+        finish_write(state, status.Status[ptr_uint, Error].err(error= net_error("tcp write missing storage")), -1, true)
+        return write_task(state)
+
+    let req = alloc_write_request()
+    let buffers = heap.must_alloc_zeroed[NativeBuffer](1)
+    unsafe:
+        read(state).req = req
+        read(state).buffers = buffers
+        read(state).data = copied
+        read(buffers) = libuv.buf_init(ptr[char]<-copied_data, uint<-copied.len)
+        libuv.req_set_data(write_req_as_base(req), ptr[void]<-state)
+
+    let queue_status = libuv.write(req, tcp_as_stream(live_handle), buffers, 1, write_callback)
+    if queue_status != 0:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+            heap.release(buffers)
+            read(state).buffers = null
+            var payload = read(state).data
+            payload.release()
+            read(state).data = bytes.Bytes.empty()
+        finish_write(state, status.Status[ptr_uint, Error].err(error= libuv_error(queue_status)), queue_status, true)
+        return write_task(state)
+
+    return write_task(state)
+
+
+function stream_read_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(stream_read_state(frame)).ready
+
+
+function stream_read_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = stream_read_state(frame)
+    unsafe:
+        if read(state).ready:
+            waiter(waiter_frame)
+            return
+
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+    return
+
+
+function stream_read_reset_buffer(state: ptr[ReadState]) -> void:
+    let buffer = unsafe: read(state).buffer
+    if buffer != null[ptr[ubyte]]:
+        heap.release(buffer)
+
+    unsafe:
+        read(state).buffer = null
+        read(state).received_bytes = 0
+    return
+
+
+function stream_read_take_payload(state: ptr[ReadState]) -> bytes.Bytes:
+    let received_bytes = unsafe: read(state).received_bytes
+    if received_bytes == 0:
+        stream_read_reset_buffer(state)
+        return bytes.Bytes.empty()
+
+    let buffer = unsafe: read(state).buffer else:
+        fatal(c"std.net tcp read buffer missing storage")
+
+    unsafe:
+        read(state).buffer = null
+        read(state).received_bytes = 0
+    return bytes.Bytes(data = buffer, len = received_bytes)
+
+
+function stop_stream_read(stream: ptr[TcpStreamState], state: ptr[ReadState], stream_handle: ptr[NativeStreamHandle]) -> void:
+    unsafe:
+        if read(stream).read_state == state:
+            read(stream).read_state = null
+        read(state).stream = null
+
+    libuv.read_stop(stream_handle)
+    return
+
+
+function stream_read_cleanup_and_release(state: ptr[ReadState]) -> void:
+    unsafe:
+        if read(state).buffer != null[ptr[ubyte]]:
+            heap.release(read(state).buffer)
+            read(state).buffer = null
+            read(state).received_bytes = 0
+
+        if read(state).result_owned:
+            var result_value = read(state).result
+            match result_value:
+                status.Status.ok as payload:
+                    var payload_data = payload.value
+                    payload_data.release()
+                status.Status.err as payload:
+                    var error = payload.error
+                    error.release()
+            read(state).result_owned = false
+
+        heap.release(state)
+    return
+
+
+function stream_read_release(frame: ptr[void]) -> void:
+    let state = stream_read_state(frame)
+    if unsafe: read(state).ready:
+        stream_read_cleanup_and_release(state)
+        return
+
+    unsafe: read(state).released = true
+
+    let stream = unsafe: read(state).stream
+    if stream != null[ptr[TcpStreamState]]:
+        let live_stream = unsafe: ptr[TcpStreamState]<-stream
+        let handle = unsafe: read(live_stream).handle
+        unsafe:
+            if read(live_stream).read_state == state:
+                read(live_stream).read_state = null
+            read(state).stream = null
+
+        if handle != null[ptr[NativeTcpHandle]]:
+            libuv.read_stop(tcp_as_stream(unsafe: ptr[NativeTcpHandle]<-handle))
+
+    finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp read released")), -1)
+    return
+
+
+function stream_read_take_result(frame: ptr[void]) -> status.Status[bytes.Bytes, Error]:
+    let state = stream_read_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function stream_read_task(state: ptr[ReadState]) -> Task[status.Status[bytes.Bytes, Error]]:
+    return unsafe: Task[status.Status[bytes.Bytes, Error]](
+            frame = ptr[void]<-state,
+            ready = stream_read_ready,
+            set_waiter = stream_read_set_waiter,
+            release = stream_read_release,
+            take_result = stream_read_take_result,
+        )
+
+
+function finish_stream_read(state: ptr[ReadState], result_value: status.Status[bytes.Bytes, Error], status_code: int) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = true
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+    if unsafe: read(state).released:
+        stream_read_cleanup_and_release(state)
+    return
+
+
+function stream_read_alloc_callback(handle: ptr[NativeHandle], suggested_size: ptr_uint, buf: ptr[NativeBuffer]) -> void:
+    let state_raw = libuv.handle_get_data(handle) else:
+        let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
+        unsafe: read(buf) = libuv.buf_init(storage, 0)
+        return
+
+    let stream = unsafe: ptr[TcpStreamState]<-state_raw
+    let pending_read = unsafe: read(stream).read_state
+    if pending_read == null[ptr[ReadState]]:
+        let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
+        unsafe: read(buf) = libuv.buf_init(storage, 0)
+        return
+
+    let state = unsafe: ptr[ReadState]<-pending_read
+    var capacity = suggested_size
+    let remaining = unsafe: read(state).max_bytes - read(state).received_bytes
+    if remaining < capacity:
+        capacity = remaining
+
+    if capacity == 0:
+        capacity = 1
+
+    let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, capacity)
+    unsafe: read(buf) = libuv.buf_init(storage, uint<-capacity)
+    return
+
+
+function stream_read_callback(stream_handle: ptr[NativeStreamHandle], nread: ptr_int, buf: const_ptr[NativeBuffer]) -> void:
+    let raw_buffer = unsafe: read(buf)
+
+    let state_raw = libuv.handle_get_data(stream_as_handle(stream_handle)) else:
+        release_uv_buffer(raw_buffer)
+        return
+
+    let stream = unsafe: ptr[TcpStreamState]<-state_raw
+    let pending_read = unsafe: read(stream).read_state
+    if pending_read == null[ptr[ReadState]]:
+        release_uv_buffer(raw_buffer)
+        return
+
+    let state = unsafe: ptr[ReadState]<-pending_read
+    if nread == 0:
+        release_uv_buffer(raw_buffer)
+        return
+
+    if nread < 0:
+        release_uv_buffer(raw_buffer)
+        stop_stream_read(stream, state, stream_handle)
+        if nread == ptr_int<-libuv._EOF:
+            let exact = unsafe: read(state).exact
+            let total_received = unsafe: read(state).received_bytes
+            let max_bytes = unsafe: read(state).max_bytes
+            if exact and total_received < max_bytes:
+                stream_read_reset_buffer(state)
+                finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream ended before requested bytes were read")), int<-nread)
+                return
+
+            finish_stream_read(state, status.Status[bytes.Bytes, Error].ok(value= stream_read_take_payload(state)), 0)
+            return
+
+        stream_read_reset_buffer(state)
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= libuv_error(int<-nread)), int<-nread)
+        return
+
+    let destination = unsafe: read(state).buffer else:
+        release_uv_buffer(raw_buffer)
+        stop_stream_read(stream, state, stream_handle)
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp read buffer missing storage")), -1)
+        return
+
+    let chunk_len = ptr_uint<-nread
+    let received_bytes = unsafe: read(state).received_bytes
+    unsafe:
+        heap.copy_bytes(ptr[ubyte]<-destination + received_bytes, ptr[ubyte]<-raw_buffer.base, chunk_len)
+        read(state).received_bytes = received_bytes + chunk_len
+
+    release_uv_buffer(raw_buffer)
+
+    let exact = unsafe: read(state).exact
+    let total_received = unsafe: read(state).received_bytes
+    let max_bytes = unsafe: read(state).max_bytes
+    if (not exact) or total_received == max_bytes:
+        stop_stream_read(stream, state, stream_handle)
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].ok(value= stream_read_take_payload(state)), 0)
+    return
+
+
+function read_impl(handle: ptr[NativeTcpHandle]?, max_bytes: ptr_uint, exact: bool) -> Task[status.Status[bytes.Bytes, Error]]:
+    let state = heap.must_alloc_zeroed[ReadState](1)
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = status.Status[bytes.Bytes, Error].ok(value= bytes.Bytes.empty())
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).stream = null
+        read(state).max_bytes = max_bytes
+        read(state).buffer = null
+        read(state).received_bytes = 0
+        read(state).exact = exact
+        read(state).released = false
+
+    if max_bytes == 0:
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp read requires max_bytes > 0")), -1)
+        return stream_read_task(state)
+
+    let live_handle = handle else:
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream is released")), -1)
+        return stream_read_task(state)
+
+    if libuv.is_closing(tcp_as_handle(live_handle)) != 0:
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream is closing")), -1)
+        return stream_read_task(state)
+
+    let stream_raw = libuv.handle_get_data(tcp_as_handle(live_handle)) else:
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream state is unavailable")), -1)
+        return stream_read_task(state)
+
+    let stream = unsafe: ptr[TcpStreamState]<-stream_raw
+    if unsafe: read(stream).read_state != null[ptr[ReadState]]:
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= net_error("tcp stream already has a pending read")), -1)
+        return stream_read_task(state)
+
+    let buffer = heap.must_alloc[ubyte](max_bytes)
+    unsafe:
+        read(state).buffer = buffer
+        read(state).stream = stream
+        read(stream).read_state = state
+
+    let start_status = libuv.read_start(tcp_as_stream(live_handle), stream_read_alloc_callback, stream_read_callback)
+    if start_status != 0:
+        unsafe:
+            read(stream).read_state = null
+            read(state).stream = null
+        finish_stream_read(state, status.Status[bytes.Bytes, Error].err(error= libuv_error(start_status)), start_status)
+        return stream_read_task(state)
+
+    return stream_read_task(state)
+
+
+function read_once_impl(handle: ptr[NativeTcpHandle]?, max_bytes: ptr_uint) -> Task[status.Status[bytes.Bytes, Error]]:
+    return read_impl(handle, max_bytes, false)
+
+
+function read_exactly_impl(handle: ptr[NativeTcpHandle]?, byte_count: ptr_uint) -> Task[status.Status[bytes.Bytes, Error]]:
+    return read_impl(handle, byte_count, true)
+
+
+function shutdown_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(shutdown_state(frame)).ready
+
+
+function shutdown_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = shutdown_state(frame)
+    unsafe:
+        if read(state).ready:
+            waiter(waiter_frame)
+            return
+
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+    return
+
+
+function shutdown_cleanup_and_release(state: ptr[ShutdownState]) -> void:
+    unsafe:
+        if read(state).req != null[ptr[NativeShutdownRequest]]:
+            heap.release_bytes(ptr[void]<-read(state).req)
+            read(state).req = null
+
+        if read(state).result_owned:
+            var result_value = read(state).result
+            match result_value:
+                status.Status.ok as payload:
+                    unsafe: bool<-payload.value
+                status.Status.err as payload:
+                    var error = payload.error
+                    error.release()
+            read(state).result_owned = false
+
+        heap.release(state)
+    return
+
+
+function shutdown_release(frame: ptr[void]) -> void:
+    let state = shutdown_state(frame)
+    if unsafe: read(state).ready:
+        shutdown_cleanup_and_release(state)
+        return
+
+    unsafe: read(state).released = true
+    return
+
+
+function shutdown_take_result(frame: ptr[void]) -> status.Status[bool, Error]:
+    let state = shutdown_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function shutdown_task(state: ptr[ShutdownState]) -> Task[status.Status[bool, Error]]:
+    return unsafe: Task[status.Status[bool, Error]](
+            frame = ptr[void]<-state,
+            ready = shutdown_ready,
+            set_waiter = shutdown_set_waiter,
+            release = shutdown_release,
+            take_result = shutdown_take_result,
+        )
+
+
+function finish_shutdown(state: ptr[ShutdownState], result_value: status.Status[bool, Error], status_code: int, owns_error: bool) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = owns_error
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+    if unsafe: read(state).released:
+        shutdown_cleanup_and_release(state)
+    return
+
+
+function shutdown_callback(req: ptr[NativeShutdownRequest], status_code: int) -> void:
+    let state_raw = libuv.req_get_data(shutdown_req_as_base(req)) else:
+        unsafe: heap.release_bytes(ptr[void]<-req)
+        return
+
+    let state = unsafe: ptr[ShutdownState]<-state_raw
+    unsafe:
+        heap.release_bytes(ptr[void]<-req)
+        read(state).req = null
+
+    if status_code != 0:
+        finish_shutdown(state, status.Status[bool, Error].err(error= libuv_error(status_code)), status_code, true)
+        return
+
+    finish_shutdown(state, status.Status[bool, Error].ok(value= true), 0, false)
+    return
+
+
+function shutdown_impl(handle: ptr[NativeTcpHandle]?) -> Task[status.Status[bool, Error]]:
+    let state = heap.must_alloc_zeroed[ShutdownState](1)
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = status.Status[bool, Error].ok(value= false)
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).req = null
+        read(state).released = false
+
+    let live_handle = handle else:
+        finish_shutdown(state, status.Status[bool, Error].err(error= net_error("tcp stream is released")), -1, true)
+        return shutdown_task(state)
+
+    if libuv.is_closing(tcp_as_handle(live_handle)) != 0:
+        finish_shutdown(state, status.Status[bool, Error].err(error= net_error("tcp stream is closing")), -1, true)
+        return shutdown_task(state)
+
+    let req = alloc_shutdown_request()
+    unsafe:
+        read(state).req = req
+        libuv.req_set_data(shutdown_req_as_base(req), ptr[void]<-state)
+
+    let queue_status = libuv.shutdown(req, tcp_as_stream(live_handle), shutdown_callback)
+    if queue_status != 0:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+        finish_shutdown(state, status.Status[bool, Error].err(error= libuv_error(queue_status)), queue_status, true)
+        return shutdown_task(state)
+
+    return shutdown_task(state)
+
+
+function udp_socket_close_callback(handle: ptr[NativeHandle]) -> void:
+    let state_raw = libuv.handle_get_data(handle) else:
+        unsafe: heap.release_bytes(ptr[void]<-handle_as_udp(handle))
+        return
+
+    let socket = unsafe: ptr[UdpSocketState]<-state_raw
+    let pending_receive = unsafe: read(socket).receive_state
+    if pending_receive != null[ptr[UdpReceiveState]]:
+        unsafe:
+            read(socket).receive_state = null
+            read(ptr[UdpReceiveState]<-pending_receive).socket = null
+        finish_udp_receive(unsafe: ptr[UdpReceiveState]<-pending_receive, status.Status[UdpDatagram, Error].err(error= net_error("udp socket closed")), -1)
+
+    unsafe:
+        heap.release_bytes(ptr[void]<-handle_as_udp(handle))
+        read(socket).handle = null
+        heap.release(socket)
+    return
+
+
+function close_udp_socket_handle(handle: ptr[NativeUdpHandle]) -> void:
+    if libuv.is_closing(udp_as_handle(handle)) != 0:
+        return
+
+    let state_raw = libuv.handle_get_data(udp_as_handle(handle))
+    if state_raw == null[ptr[void]]:
+        close_raw_udp_handle(handle)
+        return
+
+    libuv.close(udp_as_handle(handle), udp_socket_close_callback)
+    return
+
+
+function udp_send_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(udp_send_state(frame)).ready
+
+
+function udp_send_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = udp_send_state(frame)
+    unsafe:
+        if read(state).ready:
+            waiter(waiter_frame)
+            return
+
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+    return
+
+
+function udp_send_cleanup_and_release(state: ptr[UdpSendState]) -> void:
+    unsafe:
+        if read(state).req != null[ptr[NativeUdpSendRequest]]:
+            heap.release_bytes(ptr[void]<-read(state).req)
+            read(state).req = null
+
+        if read(state).buffers != null[ptr[NativeBuffer]]:
+            heap.release(read(state).buffers)
+            read(state).buffers = null
+
+        var stored_data = read(state).data
+        stored_data.release()
+        read(state).data = bytes.Bytes.empty()
+
+        if read(state).destination_owned:
+            var destination = read(state).destination
+            destination.release()
+            read(state).destination_owned = false
+
+        if read(state).result_owned:
+            var result_value = read(state).result
+            match result_value:
+                status.Status.ok as ok_payload:
+                    unsafe: ptr_uint<-ok_payload.value
+                status.Status.err as error_payload:
+                    var error = error_payload.error
+                    error.release()
+            read(state).result_owned = false
+
+        heap.release(state)
+    return
+
+
+function udp_send_release(frame: ptr[void]) -> void:
+    let state = udp_send_state(frame)
+    if unsafe: read(state).ready:
+        udp_send_cleanup_and_release(state)
+        return
+
+    unsafe: read(state).released = true
+    return
+
+
+function udp_send_take_result(frame: ptr[void]) -> status.Status[ptr_uint, Error]:
+    let state = udp_send_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function udp_send_task(state: ptr[UdpSendState]) -> Task[status.Status[ptr_uint, Error]]:
+    return unsafe: Task[status.Status[ptr_uint, Error]](
+            frame = ptr[void]<-state,
+            ready = udp_send_ready,
+            set_waiter = udp_send_set_waiter,
+            release = udp_send_release,
+            take_result = udp_send_take_result,
+        )
+
+
+function finish_udp_send(state: ptr[UdpSendState], result_value: status.Status[ptr_uint, Error], status_code: int, owns_error: bool) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = owns_error
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+    if unsafe: read(state).released:
+        udp_send_cleanup_and_release(state)
+    return
+
+
+function udp_send_callback(req: ptr[NativeUdpSendRequest], status_code: int) -> void:
+    let state_raw = libuv.req_get_data(udp_send_req_as_base(req)) else:
+        unsafe: heap.release_bytes(ptr[void]<-req)
+        return
+
+    let state = unsafe: ptr[UdpSendState]<-state_raw
+    let sent = unsafe: read(state).data.len
+    unsafe:
+        heap.release_bytes(ptr[void]<-req)
+        read(state).req = null
+
+        if read(state).buffers != null[ptr[NativeBuffer]]:
+            heap.release(read(state).buffers)
+            read(state).buffers = null
+
+        var payload = read(state).data
+        payload.release()
+        read(state).data = bytes.Bytes.empty()
+
+        if read(state).destination_owned:
+            var destination = read(state).destination
+            destination.release()
+            read(state).destination_owned = false
+
+    if status_code != 0:
+        finish_udp_send(state, status.Status[ptr_uint, Error].err(error= libuv_error(status_code)), status_code, true)
+        return
+
+    finish_udp_send(state, status.Status[ptr_uint, Error].ok(value= sent), 0, false)
+    return
+
+
+function udp_send_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], destination: SocketAddress, use_destination: bool) -> Task[status.Status[ptr_uint, Error]]:
+    let state = heap.must_alloc_zeroed[UdpSendState](1)
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = status.Status[ptr_uint, Error].ok(value= 0)
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).req = null
+        read(state).buffers = null
+        read(state).data = bytes.Bytes.empty()
+        read(state).destination = zero[SocketAddress]
+        read(state).destination_owned = false
+        read(state).released = false
+
+    let live_handle = handle else:
+        finish_udp_send(state, status.Status[ptr_uint, Error].err(error= net_error("udp socket is released")), -1, true)
+        return udp_send_task(state)
+
+    if libuv.is_closing(udp_as_handle(live_handle)) != 0:
+        finish_udp_send(state, status.Status[ptr_uint, Error].err(error= net_error("udp socket is closing")), -1, true)
+        return udp_send_task(state)
+
+    if content.len == 0:
+        finish_udp_send(state, status.Status[ptr_uint, Error].ok(value= 0), 0, false)
+        return udp_send_task(state)
+
+    if use_destination:
+        match duplicate_socket_address(destination):
+            status.Status.err as payload:
+                var error = payload.error
+                finish_udp_send(state, status.Status[ptr_uint, Error].err(error= error), error.code, true)
+                return udp_send_task(state)
+            status.Status.ok as payload:
+                unsafe:
+                    read(state).destination = payload.value
+                    read(state).destination_owned = true
+
+    let copied = bytes.Bytes.copy(content)
+    let copied_data = copied.data else:
+        finish_udp_send(state, status.Status[ptr_uint, Error].err(error= net_error("udp send missing storage")), -1, true)
+        return udp_send_task(state)
+
+    var remote_address: const_ptr[libuv.sockaddr]? = null[const_ptr[libuv.sockaddr]]
+    if use_destination:
+        let destination_storage = unsafe: read(state).destination.storage else:
+            var payload = copied
+            payload.release()
+            finish_udp_send(state, status.Status[ptr_uint, Error].err(error= invalid_address_error("socket address is released")), -1, true)
+            return udp_send_task(state)
+
+        remote_address = sockaddr_storage_as_sockaddr(destination_storage)
+
+    let req = alloc_udp_send_request()
+    let buffers = heap.must_alloc_zeroed[NativeBuffer](1)
+    unsafe:
+        read(state).req = req
+        read(state).buffers = buffers
+        read(state).data = copied
+        read(buffers) = libuv.buf_init(ptr[char]<-copied_data, uint<-copied.len)
+        libuv.req_set_data(udp_send_req_as_base(req), ptr[void]<-state)
+
+    let queue_status = libuv.udp_send(req, live_handle, buffers, 1, remote_address, udp_send_callback)
+    if queue_status != 0:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+            heap.release(buffers)
+            read(state).buffers = null
+            var payload = read(state).data
+            payload.release()
+            read(state).data = bytes.Bytes.empty()
+            if read(state).destination_owned:
+                var target = read(state).destination
+                target.release()
+                read(state).destination_owned = false
+        finish_udp_send(state, status.Status[ptr_uint, Error].err(error= libuv_error(queue_status)), queue_status, true)
+        return udp_send_task(state)
+
+    return udp_send_task(state)
+
+
+function udp_send_to_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], destination: SocketAddress) -> Task[status.Status[ptr_uint, Error]]:
+    return udp_send_impl(handle, content, destination, true)
+
+
+function udp_send_connected_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte]) -> Task[status.Status[ptr_uint, Error]]:
+    return udp_send_impl(handle, content, zero[SocketAddress], false)
+
+
+function udp_receive_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(udp_receive_state(frame)).ready
+
+
+function udp_receive_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = udp_receive_state(frame)
+    unsafe:
+        if read(state).ready:
+            waiter(waiter_frame)
+            return
+
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+    return
+
+
+function udp_receive_cleanup_and_release(state: ptr[UdpReceiveState]) -> void:
+    unsafe:
+        if read(state).result_owned:
+            var result_value = read(state).result
+            match result_value:
+                status.Status.ok as payload:
+                    var datagram = payload.value
+                    datagram.data.release()
+                    datagram.source.release()
+                status.Status.err as payload:
+                    var error = payload.error
+                    error.release()
+            read(state).result_owned = false
+
+        heap.release(state)
+    return
+
+
+function udp_receive_release(frame: ptr[void]) -> void:
+    let state = udp_receive_state(frame)
+    if unsafe: read(state).ready:
+        udp_receive_cleanup_and_release(state)
+        return
+
+    unsafe: read(state).released = true
+
+    let socket = unsafe: read(state).socket
+    if socket != null[ptr[UdpSocketState]]:
+        let live_socket = unsafe: ptr[UdpSocketState]<-socket
+        let handle = unsafe: read(live_socket).handle
+        unsafe:
+            if read(live_socket).receive_state == state:
+                read(live_socket).receive_state = null
+            read(state).socket = null
+
+        if handle != null[ptr[NativeUdpHandle]]:
+            libuv.udp_recv_stop(unsafe: ptr[NativeUdpHandle]<-handle)
+
+    finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp receive released")), -1)
+    return
+
+
+function udp_receive_take_result(frame: ptr[void]) -> status.Status[UdpDatagram, Error]:
+    let state = udp_receive_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function udp_receive_task(state: ptr[UdpReceiveState]) -> Task[status.Status[UdpDatagram, Error]]:
+    return unsafe: Task[status.Status[UdpDatagram, Error]](
+            frame = ptr[void]<-state,
+            ready = udp_receive_ready,
+            set_waiter = udp_receive_set_waiter,
+            release = udp_receive_release,
+            take_result = udp_receive_take_result,
+        )
+
+
+function finish_udp_receive(state: ptr[UdpReceiveState], result_value: status.Status[UdpDatagram, Error], status_code: int) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = true
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+    if unsafe: read(state).released:
+        udp_receive_cleanup_and_release(state)
+    return
+
+
+function udp_receive_alloc_callback(handle: ptr[NativeHandle], suggested_size: ptr_uint, buf: ptr[NativeBuffer]) -> void:
+    let state_raw = libuv.handle_get_data(handle) else:
+        let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
+        unsafe: read(buf) = libuv.buf_init(storage, 0)
+        return
+
+    let socket = unsafe: ptr[UdpSocketState]<-state_raw
+    let pending_receive = unsafe: read(socket).receive_state
+    if pending_receive == null[ptr[UdpReceiveState]]:
+        let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
+        unsafe: read(buf) = libuv.buf_init(storage, 0)
+        return
+
+    let state = unsafe: ptr[UdpReceiveState]<-pending_receive
+    var capacity = suggested_size
+    let max_bytes = unsafe: read(state).max_bytes
+    if max_bytes < capacity:
+        capacity = max_bytes
+
+    if capacity == 0:
+        capacity = 1
+
+    let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, capacity)
+    unsafe: read(buf) = libuv.buf_init(storage, uint<-capacity)
+    return
+
+
+function udp_receive_callback(handle: ptr[NativeUdpHandle], nread: ptr_int, buf: const_ptr[NativeBuffer], addr: const_ptr[libuv.sockaddr], flags_: uint) -> void:
+    let raw_buffer = unsafe: read(buf)
+
+    let state_raw = libuv.handle_get_data(udp_as_handle(handle)) else:
+        release_uv_buffer(raw_buffer)
+        return
+
+    let socket = unsafe: ptr[UdpSocketState]<-state_raw
+    let pending_receive = unsafe: read(socket).receive_state
+    if pending_receive == null[ptr[UdpReceiveState]]:
+        release_uv_buffer(raw_buffer)
+        return
+
+    let state = unsafe: ptr[UdpReceiveState]<-pending_receive
+    if nread == 0:
+        release_uv_buffer(raw_buffer)
+        return
+
+    unsafe:
+        read(socket).receive_state = null
+        read(state).socket = null
+
+    libuv.udp_recv_stop(handle)
+
+    if nread < 0:
+        release_uv_buffer(raw_buffer)
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= libuv_error(int<-nread)), int<-nread)
+        return
+
+    if (flags_ & uint<-libuv.uv_udp_flags.UV_UDP_PARTIAL) != 0:
+        release_uv_buffer(raw_buffer)
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp datagram truncated")), -1)
+        return
+
+    let source_result = socket_address_from_unknown_sockaddr(addr)
+    var payload = bytes.Bytes.copy(unsafe: span[ubyte](data = ptr[ubyte]<-raw_buffer.base, len = ptr_uint<-nread))
+    release_uv_buffer(raw_buffer)
+
+    match source_result:
+        status.Status.err as payload_error:
+            var error = payload_error.error
+            payload.release()
+            finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= error), error.code)
+            return
+        status.Status.ok as payload_source:
+            finish_udp_receive(state, status.Status[UdpDatagram, Error].ok(value= UdpDatagram(data = payload, source = payload_source.value)), 0)
+            return
+
+
+function recv_from_impl(handle: ptr[NativeUdpHandle]?, max_bytes: ptr_uint) -> Task[status.Status[UdpDatagram, Error]]:
+    let state = heap.must_alloc_zeroed[UdpReceiveState](1)
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = status.Status[UdpDatagram, Error].ok(value= zero[UdpDatagram])
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).socket = null
+        read(state).max_bytes = max_bytes
+        read(state).released = false
+
+    if max_bytes == 0:
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp receive requires max_bytes > 0")), -1)
+        return udp_receive_task(state)
+
+    let live_handle = handle else:
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp socket is released")), -1)
+        return udp_receive_task(state)
+
+    if libuv.is_closing(udp_as_handle(live_handle)) != 0:
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp socket is closing")), -1)
+        return udp_receive_task(state)
+
+    let socket_raw = libuv.handle_get_data(udp_as_handle(live_handle)) else:
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp socket state is unavailable")), -1)
+        return udp_receive_task(state)
+
+    let socket = unsafe: ptr[UdpSocketState]<-socket_raw
+    if unsafe: read(socket).receive_state != null[ptr[UdpReceiveState]]:
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= net_error("udp socket already has a pending receive")), -1)
+        return udp_receive_task(state)
+
+    unsafe:
+        read(state).socket = socket
+        read(socket).receive_state = state
+
+    let start_status = libuv.udp_recv_start(live_handle, udp_receive_alloc_callback, udp_receive_callback)
+    if start_status != 0:
+        unsafe:
+            read(socket).receive_state = null
+            read(state).socket = null
+        finish_udp_receive(state, status.Status[UdpDatagram, Error].err(error= libuv_error(start_status)), start_status)
+        return udp_receive_task(state)
+
+    return udp_receive_task(state)
+
+
+async function recv_impl(handle: ptr[NativeUdpHandle]?, max_bytes: ptr_uint) -> status.Status[bytes.Bytes, Error]:
+    let received = await recv_from_impl(handle, max_bytes)
+    match received:
+        status.Status.err as payload:
+            return status.Status[bytes.Bytes, Error].err(error= payload.error)
+        status.Status.ok as payload:
+            var datagram = payload.value
+            var data = datagram.data
+            datagram.data = bytes.Bytes.empty()
+            datagram.source.release()
+            return status.Status[bytes.Bytes, Error].ok(value= data)
+
+
+function udp_bind_on_impl(runtime: aio.Runtime, address: SocketAddress) -> status.Status[UdpSocket, Error]:
+    let storage = address.storage else:
+        return status.Status[UdpSocket, Error].err(error= invalid_address_error("socket address is released"))
+
+    let handle = alloc_udp_handle()
+    let init_status = libuv.udp_init(aio_backend.runtime_loop(runtime), handle)
+    if init_status != 0:
+        unsafe: heap.release_bytes(ptr[void]<-handle)
+        return status.Status[UdpSocket, Error].err(error= libuv_error(init_status))
+
+    let bind_status = libuv.udp_bind(handle, sockaddr_storage_as_sockaddr(storage), 0)
+    if bind_status != 0:
+        close_raw_udp_handle(handle)
+        return status.Status[UdpSocket, Error].err(error= libuv_error(bind_status))
+
+    return status.Status[UdpSocket, Error].ok(value= attach_udp_socket(handle))
 
 
 function finish_resolve(state: ptr[ResolveState], result_value: status.Status[SocketAddress, Error], status_code: int) -> void:
@@ -740,11 +2187,19 @@ function connect_on_impl(runtime: aio.Runtime, address: SocketAddress) -> Task[s
         read(state).waiter_registered = false
         read(state).req = null
         read(state).handle = null
+        read(state).destination = zero[SocketAddress]
+        read(state).destination_owned = false
         read(state).released = false
 
-    let storage = address.storage else:
-        finish_connect(state, status.Status[TcpStream, Error].err(error= invalid_address_error("socket address is released")), -1)
-        return connect_task(state)
+    match duplicate_socket_address(address):
+        status.Status.err as payload:
+            var error = payload.error
+            finish_connect(state, status.Status[TcpStream, Error].err(error= error), error.code)
+            return connect_task(state)
+        status.Status.ok as payload:
+            unsafe:
+                read(state).destination = payload.value
+                read(state).destination_owned = true
 
     let handle = alloc_tcp_handle()
     let init_status = libuv.tcp_init(aio_backend.runtime_loop(runtime), handle)
@@ -759,7 +2214,16 @@ function connect_on_impl(runtime: aio.Runtime, address: SocketAddress) -> Task[s
         read(state).handle = handle
         libuv.req_set_data(connect_req_as_base(req), ptr[void]<-state)
 
-    let queue_status = libuv.tcp_connect(req, handle, sockaddr_storage_as_sockaddr(storage), connect_callback)
+    let destination_storage = unsafe: read(state).destination.storage else:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+            read(state).handle = null
+        close_tcp_handle(handle)
+        finish_connect(state, status.Status[TcpStream, Error].err(error= invalid_address_error("socket address is released")), -1)
+        return connect_task(state)
+
+    let queue_status = libuv.tcp_connect(req, handle, sockaddr_storage_as_sockaddr(destination_storage), connect_callback)
     if queue_status != 0:
         unsafe:
             heap.release_bytes(ptr[void]<-req)
@@ -820,13 +2284,20 @@ methods SocketAddress:
         return socket_address_to_string_result(this)
 
 
+methods UdpDatagram:
+    public editable function release() -> void:
+        this.data.release()
+        this.source.release()
+        return
+
+
 methods TcpStream:
     public editable function release() -> void:
         let handle = this.handle else:
             return
 
         this.handle = null
-        close_tcp_handle(handle)
+        close_tcp_stream_handle(handle)
         return
 
 
@@ -836,6 +2307,22 @@ methods TcpStream:
 
     public function peer_address() -> status.Status[SocketAddress, Error]:
         return tcp_socket_address_from_getpeername(this.handle)
+
+
+    public function write_bytes(content: span[ubyte]) -> Task[status.Status[ptr_uint, Error]]:
+        return write_on_impl(this.handle, content)
+
+
+    public function read_once(max_bytes: ptr_uint) -> Task[status.Status[bytes.Bytes, Error]]:
+        return read_once_impl(this.handle, max_bytes)
+
+
+    public function read_exactly(byte_count: ptr_uint) -> Task[status.Status[bytes.Bytes, Error]]:
+        return read_exactly_impl(this.handle, byte_count)
+
+
+    public function shutdown() -> Task[status.Status[bool, Error]]:
+        return shutdown_impl(this.handle)
 
 
 methods TcpListener:
@@ -863,6 +2350,44 @@ methods TcpListener:
 
     public function local_address() -> status.Status[SocketAddress, Error]:
         return tcp_socket_address_from_getsockname(this.handle)
+
+
+methods UdpSocket:
+    public editable function release() -> void:
+        let handle = this.handle else:
+            return
+
+        this.handle = null
+        close_udp_socket_handle(handle)
+        return
+
+
+    public function local_address() -> status.Status[SocketAddress, Error]:
+        return udp_socket_address_from_getsockname(this.handle)
+
+
+    public function peer_address() -> status.Status[SocketAddress, Error]:
+        return udp_socket_address_from_getpeername(this.handle)
+
+
+    public function connect(destination: SocketAddress) -> status.Status[bool, Error]:
+        return udp_connect_impl(this.handle, destination)
+
+
+    public function send(content: span[ubyte]) -> Task[status.Status[ptr_uint, Error]]:
+        return udp_send_connected_impl(this.handle, content)
+
+
+    public function send_to(content: span[ubyte], destination: SocketAddress) -> Task[status.Status[ptr_uint, Error]]:
+        return udp_send_to_impl(this.handle, content, destination)
+
+
+    public function recv(max_bytes: ptr_uint) -> Task[status.Status[bytes.Bytes, Error]]:
+        return recv_impl(this.handle, max_bytes)
+
+
+    public function recv_from(max_bytes: ptr_uint) -> Task[status.Status[UdpDatagram, Error]]:
+        return recv_from_impl(this.handle, max_bytes)
 
 
 public function ipv4(ip: str, port: int) -> status.Status[SocketAddress, Error]:
@@ -905,3 +2430,11 @@ public function listen_on(runtime: aio.Runtime, address: SocketAddress, backlog:
 
 public function listen(address: SocketAddress, backlog: int) -> status.Status[TcpListener, Error]:
     return listen_on(aio.current_runtime(), address, backlog)
+
+
+public function udp_bind_on(runtime: aio.Runtime, address: SocketAddress) -> status.Status[UdpSocket, Error]:
+    return udp_bind_on_impl(runtime, address)
+
+
+public function udp_bind(address: SocketAddress) -> status.Status[UdpSocket, Error]:
+    return udp_bind_on(aio.current_runtime(), address)
