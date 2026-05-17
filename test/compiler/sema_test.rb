@@ -934,6 +934,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("read_value")
   end
 
+  def test_type_checks_let_else_maybe_success_binding
+    source = <<~MT
+      # module demo.maybe_flow
+
+      import std.maybe as maybe
+
+      function parse(input: int) -> maybe.Maybe[int]:
+          if input < 0:
+              return maybe.Maybe[int].none
+          return maybe.Maybe[int].some(value= input + 1)
+
+      function read_value(input: int) -> int:
+          let value = parse(input) else:
+              return 7
+          return value + 10
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_value")
+  end
+
   def test_type_checks_let_else_status_error_binding
     source = <<~MT
       # module demo.status_flow

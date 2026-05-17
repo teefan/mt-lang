@@ -1841,7 +1841,7 @@ module MilkTea
             success_type ||= declared_type || @error_type
             error_type ||= @error_type if statement.else_binding
           else
-            raise_sema_error("let-else initializer for #{statement.name} must be nullable or std.status.Status[T, E], got #{inferred_type}") unless success_type
+            raise_sema_error("let-else initializer for #{statement.name} must be nullable, std.maybe.Maybe[T], or std.status.Status[T, E], got #{inferred_type}") unless success_type
           end
 
           if discard_binding && declared_type
@@ -2122,12 +2122,13 @@ module MilkTea
       end
 
       def let_else_source_type?(type)
-        type.is_a?(Types::Nullable) || status_let_else_type?(type)
+        type.is_a?(Types::Nullable) || status_let_else_type?(type) || maybe_let_else_type?(type)
       end
 
       def let_else_success_type(type)
         return @error_type if error_type?(type)
         return type.base if type.is_a?(Types::Nullable)
+        return type.arm("some").fetch("value") if maybe_let_else_type?(type)
         return unless status_let_else_type?(type)
 
         type.arm("ok").fetch("value")
@@ -2138,6 +2139,16 @@ module MilkTea
         return unless status_let_else_type?(type)
 
         type.arm("err").fetch("error")
+      end
+
+      def maybe_let_else_type?(type)
+        return false unless type.is_a?(Types::Variant)
+        return false unless type.module_name == "std.maybe" && type.name == "Maybe"
+
+        some_fields = type.arm("some")
+        none_fields = type.arm("none")
+        some_fields && some_fields.length == 1 && some_fields.key?("value") &&
+          none_fields && none_fields.empty?
       end
 
       def status_let_else_type?(type)

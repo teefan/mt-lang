@@ -633,6 +633,27 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/total\s*\+=/, generated)
   end
 
+  def test_generate_c_for_if_elif_else_emits_flat_chain
+    source = <<~MT
+      # module demo.if_chain_codegen
+
+      function classify(value: int) -> int:
+          if value < 0:
+              return -1
+          elif value > 0:
+              return 1
+          else:
+              return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+    function_body = generated[/static int32_t demo_if_chain_codegen_classify\(.*?^\}/m]
+
+    refute_nil function_body
+    assert_match(/\} else if \(/, function_body)
+    refute_match(/\} else \{\n\s+if \(/, function_body)
+  end
+
     def test_generate_c_for_await_in_if_body
       source = <<~MT
         # module demo.await_in_if
@@ -2103,6 +2124,31 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/if \(value\.kind == std_status_Status_int_int_kind_err\)/, generated)
     assert_match(/return 1;/, generated)
     assert_match(/return value\.data\.ok\.value \+ 10;/, generated)
+  end
+
+  def test_generate_c_for_let_else_maybe_success_binding
+    source = <<~MT
+      # module demo.main
+
+      import std.maybe as maybe
+
+      function parse(input: int) -> maybe.Maybe[int]:
+          if input < 0:
+              return maybe.Maybe[int].none
+          return maybe.Maybe[int].some(value= input + 1)
+
+      function main() -> int:
+          let value = parse(4) else:
+              return 1
+          return value + 10
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/std_maybe_Maybe_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == std_maybe_Maybe_int_kind_none\)/, generated)
+    assert_match(/return 1;/, generated)
+    assert_match(/return value\.data\.some\.value \+ 10;/, generated)
   end
 
   def test_generate_c_for_let_else_status_error_binding

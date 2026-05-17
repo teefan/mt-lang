@@ -188,7 +188,7 @@ Rules:
   - `let` is immutable
   - `var` is mutable
 - A local declaration without initializer requires explicit type and must be zero-initializable.
-- `let` declarations may use a guard form over nullable values and `std.status.Status[T, E]`:
+- `let` declarations may use a guard form over nullable values, `std.maybe.Maybe[T]`, and `std.status.Status[T, E]`:
 
 ```mt
 let window = maybe_window else:
@@ -201,8 +201,9 @@ let image = load_image(path) else:
 Rules for `let ... else:`:
 
 - only `let` supports an `else` block
-- the initializer must have type `T?` or `std.status.Status[T, E]`
+- the initializer must have type `T?`, `std.maybe.Maybe[T]`, or `std.status.Status[T, E]`
 - an explicit type annotation, if present, must name the success type `T`
+- for `std.maybe.Maybe[T]`, the bound name is the `some.value`
 - for `std.status.Status[T, E]`, the bound name is the `ok.value`
 - `let _ = expr else:` discards the success value and does not introduce a local binding
 - for `std.status.Status[T, E]`, `else as error:` optionally binds the `err.error` value inside the `else` block
