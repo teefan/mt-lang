@@ -109,7 +109,7 @@ module MilkTea
     # Apply auto-fixable rules to source text.
     # Handles: prefer-let, redundant-read-cast, redundant-read-release-temp,
     # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe,
-    # redundant-cast.
+    # redundant-return, redundant-cast.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_analysis: nil)
       warnings = lint_source(source, path:, sema_analysis: sema_analysis || best_effort_sema_analysis(source, path:))
@@ -197,11 +197,19 @@ module MilkTea
         lines.delete_at(else_idx)
       end
 
-      # redundant-unsafe: delete the `unsafe:` line and dedent the block body.
+      # redundant-unsafe: delete the `unsafe:` line and dedent the block body,
+      # or strip an inline `unsafe:` expression prefix.
       redundant_unsafe_fixes = warnings.select { |w| w.code == "redundant-unsafe" && w.line }
       redundant_unsafe_fixes.sort_by(&:line).reverse_each do |w|
         unsafe_idx = w.line - 1
-        next unless lines[unsafe_idx]&.match?(/\A\s*unsafe:\s*\z/)
+        next unless lines[unsafe_idx]
+
+        unless lines[unsafe_idx].match?(/\A\s*unsafe:\s*\z/)
+          next unless w.column
+
+          lines[unsafe_idx] = remove_inline_unsafe_prefix(lines[unsafe_idx], column: w.column)
+          next
+        end
 
         unsafe_indent = lines[unsafe_idx].match(/\A(\s*)/)[1]
         body_indent = unsafe_indent + "    "
@@ -225,6 +233,15 @@ module MilkTea
         end
 
         lines.delete_at(unsafe_idx)
+      end
+
+      # redundant-return: delete a final bare `return` in a void function.
+      redundant_return_fixes = warnings.select { |w| w.code == "redundant-return" && w.line }
+      redundant_return_fixes.sort_by(&:line).reverse_each do |w|
+        idx = w.line - 1
+        next unless lines[idx]&.match?(/\A\s*return\s*\z/)
+
+        lines.delete_at(idx)
       end
 
       # unused-import: delete the import line entirely.
@@ -400,13 +417,16 @@ module MilkTea
         unresolved_import_paths.merge(resolution.errors.filter_map { |entry| entry.import&.path&.to_s })
       end
 
+      result = Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+
       {
         ast: ast,
-        analysis: Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis],
+        analysis: result[:analysis],
+        errors: result[:errors],
         unresolved_import_paths: unresolved_import_paths,
       }
     rescue StandardError
-      { ast: nil, analysis: nil, unresolved_import_paths: Set.new }
+      { ast: nil, analysis: nil, errors: nil, unresolved_import_paths: Set.new }
     end
 
     def self.best_effort_sema_analysis(source, path: nil)
@@ -423,6 +443,17 @@ module MilkTea
       end
     rescue StandardError
       nil
+    end
+
+    def self.remove_inline_unsafe_prefix(line, column:)
+      start_idx = column - 1
+      return line unless start_idx >= 0 && start_idx < line.length
+
+      prefix = line[0...start_idx]
+      suffix = line[start_idx..]
+      return line unless suffix&.start_with?("unsafe:")
+
+      prefix + suffix.sub(/\Aunsafe:\s*/, "")
     end
 
     def self.load_lint_package_graph(path)
@@ -1311,6 +1342,7 @@ module MilkTea
         emit_redundant_read_cast_warnings(function.body)
         emit_redundant_read_release_temp_warnings(function.body)
         emit_redundant_unsafe_warnings(function.body)
+        emit_redundant_return_warnings(function)
         emit_loop_single_iteration_warnings(function.body)
       end
       check_missing_return(function)
@@ -1339,6 +1371,25 @@ module MilkTea
         message: "function '#{function.name}' does not always return a value",
         severity: :error,
         symbol_name: function.name
+      )
+    end
+
+    def emit_redundant_return_warnings(function)
+      return unless function.return_type
+      return unless void_return_type?(function.return_type)
+
+      final_statement = function.body&.last
+      return unless final_statement.is_a?(AST::ReturnStmt)
+      return unless final_statement.value.nil?
+
+      @warnings << Warning.new(
+        path: @path,
+        line: final_statement.line,
+        column: final_statement.column,
+        length: final_statement.length || "return".length,
+        code: "redundant-return",
+        message: "final bare return in void function is redundant",
+        severity: :hint,
       )
     end
 
@@ -2173,6 +2224,7 @@ module MilkTea
       graph = CFG::Builder.new(
         ignore_name: method(:ignored_binding_name?),
         binding_resolution: cfg_binding_resolution,
+        local_decl_without_initializer_writes: true,
       ).build(stmts)
       liveness = CFG::Liveness.solve(graph)
       readable_bindings = graph.read_bindings
@@ -2187,28 +2239,16 @@ module MilkTea
         end
       end
 
-      # For the common pattern `var x = default; while cond: x = compute(); use(x)`,
-      # the initial value of x is technically dead (loop might not run), but this is
-      # idiomatic and warning about it is noise. Suppress declaration-dead warnings
-      # when the binding's overwriting assignment lives inside a loop body.
-      loop_initialized = Set.new
-      graph.each_node do |node|
-        node.writes_info.each do |w|
-          next unless w[:origin] == :assignment
-          loop_initialized << w[:binding_key] if assignment_inside_loop?(graph, node.id)
-        end
-      end
-
       graph.each_node do |node|
         node.writes_info.each do |write|
           next if write[:origin] == :call_argument
+            next if write[:origin] == :declaration
 
           binding_key = write[:binding_key]
           name = write[:name]
           next unless readable_bindings.include?(binding_key)
           next unless locally_declared.include?(binding_key)
           next if liveness.live_out[node.id].include?(binding_key)
-          next if write[:origin] == :declaration && loop_initialized.include?(binding_key)
 
           @warnings << Warning.new(
             path: @path,
@@ -2221,25 +2261,6 @@ module MilkTea
           )
         end
       end
-    end
-
-    # Returns true if node_id is inside a while/for loop body — i.e., walking
-    # predecessor edges backward from it eventually reaches a :while_condition
-    # or :for_header node before the function entry. This is used to suppress
-    # dead-declaration warnings for the "var x = default; while ...: x = ..."
-    # pattern where the initial value is a required placeholder, not a bug.
-    def assignment_inside_loop?(graph, node_id)
-      visited = Set.new
-      stack = graph.nodes[node_id].preds.dup
-      until stack.empty?
-        id = stack.pop
-        next if visited.include?(id)
-        visited << id
-        node = graph.nodes[id]
-        return true if %i[while_condition for_header].include?(node.kind)
-        node.preds.each { |p| stack << p }
-      end
-      false
     end
 
     def emit_unreachable_warnings(stmts)
@@ -3123,6 +3144,21 @@ module MilkTea
 
     def walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
       stmts.each do |stmt|
+        each_statement_expression(stmt) do |expression|
+          next unless expression.is_a?(AST::UnsafeExpr)
+          next unless redundant_unsafe_expression?(expression)
+
+          @warnings << Warning.new(
+            path: @path,
+            line: expression.line,
+            column: expression.column,
+            length: expression.length || "unsafe".length,
+            code: "redundant-unsafe",
+            message: "unsafe expression does not contain any operation that requires unsafe",
+            severity: :hint,
+          )
+        end
+
         case stmt
         when AST::UnsafeStmt
           if stmt.line && !required_unsafe_lines.include?(stmt.line) && !unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
@@ -3147,6 +3183,50 @@ module MilkTea
         when AST::DeferStmt
           walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
         end
+      end
+    end
+
+    def redundant_unsafe_expression?(expression)
+      return false unless expression.line && expression.column
+
+      modified_source = source_without_inline_unsafe(expression.line, expression.column)
+      return false unless modified_source
+
+      context = self.class.best_effort_lint_context(modified_source, path: @path)
+      return false unless context[:analysis]
+
+      !introduces_new_errors?(error_signature_counts(context[:errors]), current_error_signature_counts)
+    end
+
+    def source_without_inline_unsafe(line, column)
+      lines = @source.lines
+      idx = line - 1
+      return nil unless lines[idx]
+
+      modified_line = self.class.remove_inline_unsafe_prefix(lines[idx], column:)
+      return nil if modified_line == lines[idx]
+
+      modified_lines = lines.dup
+      modified_lines[idx] = modified_line
+      modified_lines.join
+    end
+
+    def current_error_signature_counts
+      @current_error_signature_counts ||= begin
+        context = self.class.best_effort_lint_context(@source, path: @path)
+        error_signature_counts(context[:errors])
+      end
+    end
+
+    def error_signature_counts(errors)
+      Array(errors).each_with_object(Hash.new(0)) do |error, counts|
+        counts[[error.line, error.column, error.message]] += 1
+      end
+    end
+
+    def introduces_new_errors?(modified_counts, baseline_counts)
+      modified_counts.any? do |signature, count|
+        count > baseline_counts.fetch(signature, 0)
       end
     end
 

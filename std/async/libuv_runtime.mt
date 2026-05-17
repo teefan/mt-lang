@@ -3,8 +3,16 @@ import std.mem.heap as heap
 import std.status as status
 
 
+public type NativeLoopHandle = libuv.uv_loop_t
+
+type NativeHandle = libuv.uv_handle_t
+type NativeTimerHandle = libuv.uv_timer_t
+type NativeRequest = libuv.uv_req_t
+type NativeWorkRequest = libuv.uv_work_t
+
+
 public struct Runtime:
-    loop: ptr[libuv.uv_loop_t]?
+    loop: ptr[NativeLoopHandle]?
     active: bool
 
 
@@ -63,19 +71,19 @@ function work_state_base(frame: ptr[void]) -> ptr[WorkStateBase]:
 
 
 function timer_as_handle(timer: ptr[libuv.uv_timer_t]) -> ptr[libuv.uv_handle_t]:
-    return unsafe: ptr[libuv.uv_handle_t]<-timer
+    return unsafe: ptr[NativeHandle]<-timer
 
 
 function handle_as_timer(handle: ptr[libuv.uv_handle_t]) -> ptr[libuv.uv_timer_t]:
-    return unsafe: ptr[libuv.uv_timer_t]<-handle
+    return unsafe: ptr[NativeTimerHandle]<-handle
 
 
 function req_as_work(req: ptr[libuv.uv_req_t]) -> ptr[libuv.uv_work_t]:
-    return unsafe: ptr[libuv.uv_work_t]<-req
+    return unsafe: ptr[NativeWorkRequest]<-req
 
 
 function work_as_req(work: ptr[libuv.uv_work_t]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-work
+    return unsafe: ptr[NativeRequest]<-work
 
 
 function noop_waiter(frame: ptr[void]) -> void:
@@ -95,16 +103,16 @@ function require_live_runtime(runtime: Runtime) -> void:
     return
 
 
-function live_loop(runtime: Runtime) -> ptr[libuv.uv_loop_t]:
+function live_loop(runtime: Runtime) -> ptr[NativeLoopHandle]:
     require_live_runtime(runtime)
-    return unsafe: ptr[libuv.uv_loop_t]<-runtime.loop
+    return unsafe: ptr[NativeLoopHandle]<-runtime.loop
 
 
 public function current_runtime_handle() -> Runtime:
     return require_current_runtime()
 
 
-public function runtime_loop(runtime: Runtime) -> ptr[libuv.uv_loop_t]:
+public function runtime_loop(runtime: Runtime) -> ptr[NativeLoopHandle]:
     return live_loop(runtime)
 
 
