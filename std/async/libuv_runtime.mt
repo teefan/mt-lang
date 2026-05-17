@@ -100,6 +100,14 @@ function live_loop(runtime: Runtime) -> ptr[libuv.uv_loop_t]:
     return unsafe: ptr[libuv.uv_loop_t]<-runtime.loop
 
 
+public function current_runtime_handle() -> Runtime:
+    return require_current_runtime()
+
+
+public function runtime_loop(runtime: Runtime) -> ptr[libuv.uv_loop_t]:
+    return live_loop(runtime)
+
+
 function activate_current_runtime(runtime: Runtime) -> void:
     current_runtime = runtime
     current_runtime_active = true

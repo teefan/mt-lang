@@ -60,9 +60,13 @@ module MilkTea
       end
 
       opaque_decls = @program.opaques
-      struct_decls = sort_struct_decls(@program.structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_builder_decls)
+      aggregate_decls = sort_aggregate_decls(
+        @program.structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_builder_decls,
+        @program.unions,
+        @program.variants + collect_generic_variant_decls,
+      )
 
-      forward_declarations = emit_forward_declarations(opaque_decls, struct_decls)
+      forward_declarations = emit_forward_declarations(opaque_decls, aggregate_decls)
       unless forward_declarations.empty?
         lines.concat(forward_declarations)
         lines << ""
@@ -93,23 +97,15 @@ module MilkTea
         lines << ""
       end
 
-      struct_decls.each do |struct_decl|
-        lines.concat(emit_struct(struct_decl))
-        lines << ""
-      end
-
-      @program.unions.each do |union_decl|
-        lines.concat(emit_union(union_decl))
-        lines << ""
-      end
-
-      @program.variants.each do |variant_decl|
-        lines.concat(emit_variant(variant_decl))
-        lines << ""
-      end
-
-      collect_generic_variant_decls.each do |variant_decl|
-        lines.concat(emit_variant(variant_decl))
+      aggregate_decls.each do |aggregate_decl|
+        case aggregate_decl
+        when IR::StructDecl
+          lines.concat(emit_struct(aggregate_decl))
+        when IR::UnionDecl
+          lines.concat(emit_union(aggregate_decl))
+        when IR::VariantDecl
+          lines.concat(emit_variant(aggregate_decl))
+        end
         lines << ""
       end
 
@@ -1111,7 +1107,7 @@ module MilkTea
       ]
     end
 
-    def emit_forward_declarations(opaque_decls, struct_decls)
+    def emit_forward_declarations(opaque_decls, aggregate_decls)
       lines = []
       opaque_decls.uniq { |opaque_decl| opaque_decl.c_name }.each do |opaque_decl|
         next unless opaque_decl.forward_declarable
@@ -1119,11 +1115,15 @@ module MilkTea
 
         lines << "typedef struct #{opaque_decl.c_name} #{opaque_decl.c_name};"
       end
-      struct_decls.each do |struct_decl|
-        lines << "typedef struct #{struct_decl.c_name} #{struct_decl.c_name};"
-      end
-      @program.unions.each do |union_decl|
-        lines << "typedef union #{union_decl.c_name} #{union_decl.c_name};"
+      aggregate_decls.uniq { |aggregate_decl| [aggregate_decl.class.name, aggregate_decl.c_name] }.each do |aggregate_decl|
+        case aggregate_decl
+        when IR::StructDecl
+          lines << "typedef struct #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+        when IR::UnionDecl
+          lines << "typedef union #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+        when IR::VariantDecl
+          lines << "typedef struct #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+        end
       end
       lines
     end
@@ -3545,56 +3545,72 @@ module MilkTea
       end
     end
 
-    def sort_struct_decls(struct_decls)
-      by_c_name = struct_decls.each_with_object({}) do |struct_decl, declarations|
-        declarations[struct_decl.c_name] = struct_decl
+    def sort_aggregate_decls(struct_decls, union_decls, variant_decls)
+      aggregate_decls = struct_decls + union_decls + variant_decls
+      by_c_name = aggregate_decls.each_with_object({}) do |aggregate_decl, declarations|
+        declarations[aggregate_decl.c_name] = aggregate_decl
       end
       visiting = {}
       visited = {}
       sorted = []
 
-      visit = lambda do |struct_decl|
-        return if visited[struct_decl.c_name]
-        raise LoweringError, "cyclic struct dependency involving #{struct_decl.c_name}" if visiting[struct_decl.c_name]
+      visit = lambda do |aggregate_decl|
+        return if visited[aggregate_decl.c_name]
+        raise LoweringError, "cyclic aggregate dependency involving #{aggregate_decl.c_name}" if visiting[aggregate_decl.c_name]
 
-        visiting[struct_decl.c_name] = true
-        struct_decl.fields.each do |field|
-          struct_type_dependencies(field.type).each do |dependency|
-            next unless by_c_name.key?(dependency)
+        visiting[aggregate_decl.c_name] = true
+        aggregate_decl_dependencies(aggregate_decl).each do |dependency|
+          next unless by_c_name.key?(dependency)
 
-            visit.call(by_c_name.fetch(dependency))
-          end
+          visit.call(by_c_name.fetch(dependency))
         end
-        visiting.delete(struct_decl.c_name)
-        visited[struct_decl.c_name] = true
-        sorted << struct_decl
+        visiting.delete(aggregate_decl.c_name)
+        visited[aggregate_decl.c_name] = true
+        sorted << aggregate_decl
       end
 
-      struct_decls.each do |struct_decl|
-        visit.call(struct_decl)
+      aggregate_decls.each do |aggregate_decl|
+        visit.call(aggregate_decl)
       end
 
       sorted
     end
 
-    def struct_type_dependencies(type)
+    def aggregate_decl_dependencies(aggregate_decl)
+      case aggregate_decl
+      when IR::StructDecl, IR::UnionDecl
+        aggregate_decl.fields.flat_map { |field| aggregate_type_dependencies(field.type) }.uniq
+      when IR::VariantDecl
+        aggregate_decl.arms.flat_map { |arm| arm.fields.flat_map { |field| aggregate_type_dependencies(field.type) } }.uniq
+      else
+        []
+      end
+    end
+
+    def aggregate_type_dependencies(type)
       case type
       when Types::Nullable
-        struct_type_dependencies(type.base)
+        aggregate_type_dependencies(type.base)
       when Types::Task
-        [task_type_name(type)] + struct_type_dependencies(type.result_type)
+        [task_type_name(type)]
+      when Types::Proc
+        [proc_type_name(type)]
       when Types::GenericInstance
         if pointer_type?(type)
           []
         elsif array_type?(type)
-          struct_type_dependencies(array_element_type(type))
+          aggregate_type_dependencies(array_element_type(type))
+        elsif str_builder_type?(type)
+          [str_builder_type_name(type)]
         else
           []
         end
       when Types::Function
-        type.params.flat_map { |param| struct_type_dependencies(param.type) } + struct_type_dependencies(type.return_type)
-      when Types::Struct, Types::Union
+        []
+      when Types::Struct, Types::StructInstance, Types::Union, Types::Variant, Types::VariantInstance
         [named_type_c_name(type)]
+      when Types::VariantArmPayload
+        [named_type_c_name(type.variant_type)]
       else
         []
       end

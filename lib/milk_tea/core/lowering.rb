@@ -994,8 +994,11 @@ module MilkTea
             end
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::MatchStmt
+            scrutinee_type = infer_expression_type(statement.expression, env:)
             statement.arms.each do |arm|
-              await_counter = analyze_async_statements!(arm.body, await_counter, env, param_fields, local_fields, await_fields)
+              arm_env = duplicate_env(env)
+              bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+              await_counter = analyze_async_statements!(arm.body, await_counter, arm_env, param_fields, local_fields, await_fields)
             end
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
@@ -1091,8 +1094,11 @@ module MilkTea
             end
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::MatchStmt
+            scrutinee_type = infer_expression_type(statement.expression, env:)
             statement.arms.each do |arm|
-              await_counter = analyze_async_statements!(arm.body, await_counter, env, param_fields, local_fields, await_fields)
+              arm_env = duplicate_env(env)
+              bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+              await_counter = analyze_async_statements!(arm.body, await_counter, arm_env, param_fields, local_fields, await_fields)
             end
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
@@ -1638,8 +1644,10 @@ module MilkTea
           normalize_async_if_statement(statement, counter, env, return_type:)
         when AST::MatchStmt
           expr_setup, expression = normalize_async_expression(statement.expression, counter, env:)
+          scrutinee_type = infer_expression_type(statement.expression, env:)
           arms = statement.arms.map do |arm|
             arm_env = duplicate_env(env)
+            bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
             AST::MatchArm.new(pattern: arm.pattern, binding_name: arm.binding_name, body: normalize_async_statements(arm.body, counter, arm_env, return_type:))
           end
           expr_setup + [AST::MatchStmt.new(expression:, arms:)]
@@ -1703,7 +1711,7 @@ module MilkTea
           cleanup_body = if statement.body
                            normalize_async_statements(statement.body, counter, cleanup_env, return_type:)
                          else
-                           expression_setup, expression = normalize_async_expression(statement.expression, counter, cleanup_env)
+                           expression_setup, expression = normalize_async_expression(statement.expression, counter, env: cleanup_env)
                            expression_setup + [AST::ExpressionStmt.new(expression:, line: statement.line)]
                          end
           [AST::DeferStmt.new(expression: nil, body: cleanup_body, line: statement.line, column: statement.column, length: statement.length)]
@@ -1828,14 +1836,7 @@ module MilkTea
           scrutinee_type = infer_expression_type(expression.expression, env:)
           normalized_arms = expression.arms.map do |arm|
             arm_env = duplicate_env(env)
-            if scrutinee_type.is_a?(Types::Variant) && arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-              arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-              if arm_name && scrutinee_type.has_payload?(arm_name)
-                fields = scrutinee_type.arm(arm_name)
-                payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-                arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
-              end
-            end
+            bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
             pattern_setup, normalized_pattern = normalize_async_expression(arm.pattern, counter, env:)
             value_setup, normalized_value = normalize_async_expression(arm.value, counter, env: arm_env, expected_type: result_type)
             [pattern_setup, value_setup, AST::MatchExprArm.new(
@@ -2383,6 +2384,36 @@ module MilkTea
         match_type = infer_expression_type(statement.expression, env:)
         arm_loop_flow = switch_loop_flow(loop_flow, [])
 
+        if match_type.is_a?(Types::Variant)
+          if statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
+             !duplicable_foreign_argument_expression?(match_expr)
+            scrutinee_c_name = fresh_c_temp_name(env, "match_value")
+            expr_setup << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: match_type, value: match_expr)
+            match_expr = IR::Name.new(name: scrutinee_c_name, type: match_type, pointer: false)
+          end
+
+          outer_c = c_type_name(match_type)
+          kind_type = @types.fetch("int")
+          kind_expr = IR::Member.new(receiver: match_expr, member: "kind", type: kind_type)
+          cases = statement.arms.map do |arm|
+            arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:)
+            arm_body = if statements_contain_await?(arm.body, async_info)
+                         lower_async_cf_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
+                       else
+                         lower_async_non_await_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, async_info:, active_defers:, loop_flow: arm_loop_flow)
+                       end
+            body = [binding_decl, *arm_body].compact + [IR::BreakStmt.new]
+            if wildcard_arm_pattern?(arm.pattern)
+              IR::SwitchDefaultCase.new(body: body)
+            else
+              arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+              IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+            end
+          end
+
+          return expr_setup + [IR::SwitchStmt.new(expression: kind_expr, cases:)]
+        end
+
         cases = statement.arms.map do |arm|
           arm_body = if statements_contain_await?(arm.body, async_info)
             lower_async_cf_statements(arm.body, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
@@ -2477,18 +2508,45 @@ module MilkTea
             lowered.concat(expr_setup)
             expr = lower_expression(prepared_expr, env: local_env, expected_type: scrutinee_type)
             arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
-            cases = statement.arms.map do |arm|
-              arm_body = lower_async_non_await_statements(
-                arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: arm_loop_flow
-              )
-              if wildcard_arm_pattern?(arm.pattern)
-                IR::SwitchDefaultCase.new(body: arm_body)
-              else
-                value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
-                IR::SwitchCase.new(value:, body: arm_body)
+            if scrutinee_type.is_a?(Types::Variant)
+              if statement.arms.any? { |arm| arm.binding_name && !wildcard_arm_pattern?(arm.pattern) } &&
+                 !duplicable_foreign_argument_expression?(expr)
+                scrutinee_c_name = fresh_c_temp_name(local_env, "match_value")
+                lowered << IR::LocalDecl.new(name: scrutinee_c_name, c_name: scrutinee_c_name, type: scrutinee_type, value: expr)
+                expr = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
               end
+
+              outer_c = c_type_name(scrutinee_type)
+              kind_type = @types.fetch("int")
+              kind_expr = IR::Member.new(receiver: expr, member: "kind", type: kind_type)
+              cases = statement.arms.map do |arm|
+                arm_env, binding_decl = async_variant_match_arm_binding(arm, expr, scrutinee_type, env: local_env)
+                arm_body = lower_async_non_await_statements(
+                  arm.body, env: arm_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: arm_loop_flow
+                )
+                body = [binding_decl, *arm_body].compact
+                if wildcard_arm_pattern?(arm.pattern)
+                  IR::SwitchDefaultCase.new(body: body)
+                else
+                  arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                  IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+                end
+              end
+              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
+            else
+              cases = statement.arms.map do |arm|
+                arm_body = lower_async_non_await_statements(
+                  arm.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: arm_loop_flow
+                )
+                if wildcard_arm_pattern?(arm.pattern)
+                  IR::SwitchDefaultCase.new(body: arm_body)
+                else
+                  value = lower_expression(arm.pattern, env: local_env, expected_type: scrutinee_type)
+                  IR::SwitchCase.new(value:, body: arm_body)
+                end
+              end
+              lowered << IR::SwitchStmt.new(expression: expr, cases:)
             end
-            lowered << IR::SwitchStmt.new(expression: expr, cases:)
           when AST::WhileStmt
             lowered << lower_async_while_stmt(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers)
           when AST::ForStmt
@@ -8433,6 +8491,38 @@ module MilkTea
       def variant_match_arm_name_from_pattern(pattern)
         # pattern is TypeName.arm_name or module.TypeName.arm_name
         pattern.is_a?(AST::MemberAccess) ? pattern.member : nil
+      end
+
+      def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:)
+        arm_env = duplicate_env(env)
+        binding_decl = nil
+
+        if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+          arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+          if arm_name && scrutinee_type.has_payload?(arm_name)
+            fields = scrutinee_type.arm(arm_name)
+            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+            data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
+            arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+            binding_c = c_local_name(arm.binding_name)
+            arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+            binding_decl = IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+          end
+        end
+
+        [arm_env, binding_decl]
+      end
+
+      def bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+        return unless scrutinee_type.is_a?(Types::Variant)
+        return unless arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+
+        arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+        return unless arm_name && scrutinee_type.has_payload?(arm_name)
+
+        fields = scrutinee_type.arm(arm_name)
+        payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
       end
 
       def task_type?(type)

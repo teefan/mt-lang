@@ -48,6 +48,10 @@ public function work[T](run_work: fn() -> T) -> Task[T]:
     return backend.work[T](run_work)
 
 
+public function current_runtime() -> Runtime:
+    return backend.current_runtime_handle()
+
+
 public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
     return backend.work_on[T](runtime, run_work)
 
