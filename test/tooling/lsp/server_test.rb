@@ -6486,6 +6486,76 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_code_action_quickfix_redundant_inline_unsafe
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_inline_unsafe.mt"
+      source = <<~MT
+        function main() -> ptr[int]:
+            var value: int = 0
+            return unsafe: ptr[int]<-ptr_of(value)
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code"   => "redundant-unsafe",
+        "range"  => { "start" => { "line" => 2, "character" => 11 }, "end" => { "line" => 2, "character" => 17 } },
+        "message" => "unsafe expression does not contain any operation that requires unsafe"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 2, "character" => 0 }, "end" => { "line" => 2, "character" => 0 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant unsafe" }
+      assert quickfix, "expected a quickFix action for inline redundant-unsafe"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "    return ptr[int]<-ptr_of(value)\n", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_redundant_return
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_return.mt"
+      source = <<~MT
+        function main() -> void:
+            let _ = 1
+            return
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code"   => "redundant-return",
+        "range"  => { "start" => { "line" => 2, "character" => 4 }, "end" => { "line" => 2, "character" => 10 } },
+        "message" => "final bare return in void function is redundant"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 2, "character" => 0 }, "end" => { "line" => 2, "character" => 0 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant return" }
+      assert quickfix, "expected a quickFix action for redundant-return"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "", edit["newText"]
+      assert_equal({ "line" => 2, "character" => 0 }, edit.dig("range", "start"))
+      assert_equal({ "line" => 3, "character" => 0 }, edit.dig("range", "end"))
+    end
+  end
+
   def test_code_action_quickfix_redundant_read_cast
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
