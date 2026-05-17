@@ -9521,6 +9521,7 @@ module MilkTea
 
       def let_else_success_type(type)
         return type.base if type.is_a?(Types::Nullable)
+        return type.arm("some").fetch("value") if maybe_let_else_type?(type)
         return unless status_let_else_type?(type)
 
         type.arm("ok").fetch("value")
@@ -9534,8 +9535,19 @@ module MilkTea
 
       def let_else_binding_projection(type)
         return :status_ok_value if status_let_else_type?(type)
+        return :maybe_some_value if maybe_let_else_type?(type)
 
         nil
+      end
+
+      def maybe_let_else_type?(type)
+        return false unless type.is_a?(Types::Variant)
+        return false unless type.module_name == "std.maybe" && type.name == "Maybe"
+
+        some_fields = type.arm("some")
+        none_fields = type.arm("none")
+        some_fields && some_fields.length == 1 && some_fields.key?("value") &&
+          none_fields && none_fields.empty?
       end
 
       def status_let_else_type?(type)
@@ -9568,6 +9580,16 @@ module MilkTea
           )
         end
 
+        if maybe_let_else_type?(storage_type)
+          kind_type = @types.fetch("int")
+          return IR::Binary.new(
+            operator: "==",
+            left: IR::Member.new(receiver: storage_expr, member: "kind", type: kind_type),
+            right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_none", type: kind_type, pointer: false),
+            type: @types.fetch("bool"),
+          )
+        end
+
         raise LoweringError, "unsupported let-else storage type #{storage_type}"
       end
 
@@ -9578,12 +9600,17 @@ module MilkTea
 
         if projection == :status_ok_value
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return status_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
         end
 
         if projection == :status_err_error
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return status_binding_projection_expression(local_ref, storage_type, "err", "error", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "err", "error", visible_type)
+        end
+
+        if projection == :maybe_some_value
+          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
 
         return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
@@ -9591,13 +9618,18 @@ module MilkTea
 
         if status_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return status_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+        end
+
+        if maybe_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
+          local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+          return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
 
         IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
       end
 
-      def status_binding_projection_expression(storage_expr, storage_type, arm_name, field_name, field_type)
+      def variant_binding_projection_expression(storage_expr, storage_type, arm_name, field_name, field_type)
         payload_type = Types::VariantArmPayload.new(storage_type, arm_name, storage_type.arm(arm_name))
         data_expr = IR::Member.new(receiver: storage_expr, member: "data", type: nil)
         arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)

@@ -216,7 +216,7 @@ let _ = initialize_runtime() else:
 	return 1
 ```
 
-The initializer may be `T?` or `std.status.Status[T, E]`. For nullable inputs the bound name is the non-null `T`; for `std.status.Status[T, E]` it is the `ok.value`, and `else as error:` optionally binds the `err.error` value for the failure path. Use `let _ = expr else:` when the success path should be checked but not bound, including `std.status.Status[void, E]`. The `else` block must terminate control flow.
+The initializer may be `T?`, `std.maybe.Maybe[T]`, or `std.status.Status[T, E]`. For nullable inputs the bound name is the non-null `T`; for `std.maybe.Maybe[T]` it is the `some.value`; for `std.status.Status[T, E]` it is the `ok.value`, and `else as error:` optionally binds the `err.error` value for the failure path. Use `let _ = expr else:` when the success path should be checked but not bound, including `std.status.Status[void, E]`. The `else` block must terminate control flow.
 
 Public items should always spell their types out.
 

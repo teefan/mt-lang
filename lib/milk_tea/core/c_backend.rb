@@ -1329,23 +1329,7 @@ module MilkTea
         when IR::StaticAssert
           ["#{indent}#{emit_static_assert(statement)}"]
         when IR::IfStmt
-          case constant_boolean_value(statement.condition)
-          when true
-            return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
-          when false
-            return [] unless statement.else_body && !statement.else_body.empty?
-
-            return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
-          end
-
-          lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
-          lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:))
-          if statement.else_body && !statement.else_body.empty?
-            lines << "#{indent}} else {"
-            lines.concat(emit_statement_sequence(statement.else_body, level + 1, function:, used_labels:))
-          end
-          lines << "#{indent}}"
-          lines
+          emit_if_statement(statement, level, function:, used_labels:)
         when IR::SwitchStmt
           lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
           statement.cases.each do |switch_case|
@@ -1430,6 +1414,44 @@ module MilkTea
       else
         statement
       end
+    end
+
+    def emit_if_statement(statement, level, function:, used_labels:)
+      indent = indent(level)
+
+      case constant_boolean_value(statement.condition)
+      when true
+        return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
+      when false
+        return [] unless statement.else_body && !statement.else_body.empty?
+
+        return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
+      end
+
+      lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
+      lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:))
+
+      nested_else_if = nested_else_if_statement(statement.else_body)
+      if nested_else_if
+        nested_lines = emit_if_statement(nested_else_if, level, function:, used_labels:)
+        lines << "#{indent}} else #{nested_lines.first.sub(/^#{Regexp.escape(indent)}/, "") }"
+        lines.concat(nested_lines.drop(1))
+        return lines
+      end
+
+      if statement.else_body && !statement.else_body.empty?
+        lines << "#{indent}} else {"
+        lines.concat(emit_statement_sequence(statement.else_body, level + 1, function:, used_labels:))
+      end
+      lines << "#{indent}}"
+      lines
+    end
+
+    def nested_else_if_statement(else_body)
+      return unless else_body && else_body.length == 1
+
+      nested = else_body.first
+      nested if nested.is_a?(IR::IfStmt)
     end
 
     def fold_single_use_local_alias(source_decl, alias_decl, remaining_statements)

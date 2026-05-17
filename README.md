@@ -138,8 +138,9 @@ let _ = initialize() else:
 Rules for `let ... else:`:
 
 - Only `let` supports an `else` block.
-- The initializer must have type `T?` or `std.status.Status[T, E]`.
+- The initializer must have type `T?`, `std.maybe.Maybe[T]`, or `std.status.Status[T, E]`.
 - For `T?`, the bound name has type `T`.
+- For `std.maybe.Maybe[T]`, the bound name is `some.value`.
 - For `std.status.Status[T, E]`, the bound name is `ok.value`.
 - `else as error:` optionally binds the `err.error` value.
 - `let _ = expr else:` checks success without binding a name.
