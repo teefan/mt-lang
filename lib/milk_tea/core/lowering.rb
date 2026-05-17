@@ -1891,7 +1891,7 @@ module MilkTea
             if part.is_a?(AST::FormatExprPart)
               expression_setup, inner_expression = normalize_async_expression(part.expression, counter, env:)
               setup.concat(expression_setup)
-              AST::FormatExprPart.new(expression: inner_expression)
+              AST::FormatExprPart.new(expression: inner_expression, format_spec: part.format_spec)
             else
               part
             end

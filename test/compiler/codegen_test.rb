@@ -824,6 +824,25 @@ class MilkTeaCodegenTest < Minitest::Test
       assert_match(/if\s*\(/, generated)
     end
 
+    def test_generate_c_for_await_in_format_string
+      source = <<~'MT'
+        # module demo.await_format_string
+
+        async function value() -> double:
+            return 3.14159
+
+        async function parent() -> str:
+            return f"pi=#{await value():.2}"
+      MT
+
+      generated = generate_c_from_program_source(source)
+
+      assert_match(/demo_await_format_string_parent__frame/, generated)
+      assert_match(/resume_state_1:/, generated)
+      assert_match(/mt_format_append_double_precision\(/, generated)
+      assert_match(/,\s*2\s*\)/, generated)
+    end
+
   def test_generate_c_for_foreign_defs_with_out_and_automatic_cstr_temps
     source = <<~MT
       # module demo.main
