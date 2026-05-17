@@ -25,6 +25,10 @@ module MilkTea
       :name, :line, :column, :used, :binding_kind, :allow_prefer_let, :mutated,
       keyword_init: true
     )
+    PrefixCastSite = Data.define(
+      :line, :column, :length, :target_text, :replacement_text,
+      :start_offset, :end_offset, :pointer_like, :literal_source
+    )
 
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil)
       context = nil
@@ -89,7 +93,8 @@ module MilkTea
 
     # Apply auto-fixable rules to source text.
     # Handles: prefer-let, redundant-read-cast, redundant-read-release-temp,
-    # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe.
+    # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe,
+    # redundant-cast.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_analysis: nil)
       warnings = lint_source(source, path:, sema_analysis: sema_analysis || best_effort_sema_analysis(source, path:))
@@ -227,7 +232,38 @@ module MilkTea
         lines.delete_at(idx)
       end
 
-      lines.join
+      fixed_source = lines.join
+      redundant_cast_warnings = lint_source(fixed_source, path:).select do |w|
+        w.code == "redundant-cast" && w.line && w.column && w.length
+      end
+      return fixed_source if redundant_cast_warnings.empty?
+
+      fixed_lines = fixed_source.lines
+      redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
+        idx = w.line - 1
+        next unless fixed_lines[idx]
+
+        start_char = w.column - 1
+        cast_text = fixed_lines[idx][start_char, w.length]
+        replacement = extract_prefix_cast_source_text(cast_text)
+        next unless replacement
+
+        fixed_lines[idx] = fixed_lines[idx].dup
+        fixed_lines[idx][start_char, w.length] = replacement
+      end
+
+      fixed_lines.join
+    end
+
+    def self.extract_prefix_cast_source_text(text)
+      return nil unless text&.include?("<-")
+
+      separator = text.index("<-")
+      return nil unless separator
+
+      replacement = text[(separator + 2)..]
+      replacement = replacement.sub(/\A\s+/, "")
+      replacement unless replacement.nil? || replacement.empty?
     end
 
     def self.rewrite_directional_ffi_argument(line)
@@ -330,6 +366,149 @@ module MilkTea
       nil
     end
 
+    def self.prefix_cast_sites(source, analysis: nil)
+      byte_offset = 0
+      sites = []
+
+      source.each_line.with_index(1) do |raw_line, line_number|
+        line = raw_line.delete_suffix("\n")
+        line_prefix_cast_sites(line, line_number, analysis:).each do |site|
+          sites << PrefixCastSite.new(
+            line: site.line,
+            column: site.column,
+            length: site.length,
+            target_text: site.target_text,
+            replacement_text: site.replacement_text,
+            start_offset: byte_offset + site.start_offset,
+            end_offset: byte_offset + site.end_offset,
+            pointer_like: site.pointer_like,
+            literal_source: site.literal_source,
+          )
+        end
+        byte_offset += raw_line.bytesize
+      end
+
+      sites
+    end
+
+    def self.line_prefix_cast_sites(line, line_number, analysis: nil)
+      return [] unless line.include?("<-")
+
+      tokens = Lexer.lex(line)
+      less_indices = tokens.each_index.select do |index|
+        token = tokens[index]
+        minus = tokens[index + 1]
+        token.type == :less && minus&.type == :minus && contiguous_tokens?(token, minus)
+      end
+      return [] if less_indices.empty?
+
+      seen = Set.new
+      less_indices.each_with_object([]) do |less_index, sites|
+        matching_site = nil
+        tokens[0...less_index].each_index.select { |index| tokens[index].type == :identifier }.each do |start_index|
+          site = parse_prefix_cast_site(line, line_number, tokens[start_index].start_offset, analysis:)
+          next unless site
+          next unless site.start_offset <= tokens[less_index].start_offset && tokens[less_index].start_offset < site.end_offset
+
+          matching_site = site
+          break
+        end
+        next unless matching_site
+
+        key = [matching_site.start_offset, matching_site.end_offset]
+        next if seen.include?(key)
+
+        seen << key
+        sites << matching_site
+      end
+    end
+
+    def self.parse_prefix_cast_site(line, line_number, start_offset, analysis: nil)
+      snippet = line.byteslice(start_offset, line.bytesize - start_offset)
+      return nil unless snippet&.include?("<-")
+
+      snippet_for_parse = snippet
+      tokens = nil
+      loop do
+        tokens = Lexer.lex(snippet_for_parse)
+        break
+      rescue LexError => e
+        match = e.message.match(/unexpected closing delimiter at \d+:(\d+)/)
+        raise e unless match
+
+        closer_index = match[1].to_i - 1
+        raise e if closer_index <= 0
+
+        snippet_for_parse = snippet_for_parse.byteslice(0, closer_index).rstrip
+        raise e if snippet_for_parse.nil? || snippet_for_parse.empty?
+      end
+
+      parser = Parser.new(tokens)
+      seed_prefix_cast_parser!(parser, analysis)
+      expression = parser.send(:parse_unary)
+      return nil unless prefix_cast_expression?(expression)
+
+      current = parser.instance_variable_get(:@current)
+      consumed_tokens = tokens[0...current].reject(&:eof?)
+      return nil if consumed_tokens.empty?
+
+      less_index = consumed_tokens.each_index.find do |index|
+        token = consumed_tokens[index]
+        minus = consumed_tokens[index + 1]
+        token.type == :less && minus&.type == :minus && contiguous_tokens?(token, minus)
+      end
+      return nil unless less_index
+
+      source_token = consumed_tokens[(less_index + 2)..]&.first
+      return nil unless source_token
+
+      target_type = expression.callee.arguments.first.value
+      end_offset = consumed_tokens.last.end_offset
+      target_text = snippet_for_parse.byteslice(0, consumed_tokens[less_index].start_offset).rstrip
+      replacement_text = snippet_for_parse.byteslice(source_token.start_offset, end_offset - source_token.start_offset)
+      return nil if target_text.empty? || replacement_text.nil? || replacement_text.empty?
+
+      PrefixCastSite.new(
+        line: line_number,
+        column: start_offset + 1,
+        length: end_offset,
+        target_text: target_text,
+        replacement_text: replacement_text,
+        start_offset: start_offset,
+        end_offset: start_offset + end_offset,
+        pointer_like: target_type.is_a?(AST::TypeRef) && !target_type.nullable && %w[ptr const_ptr ref].include?(target_type.name.to_s),
+        literal_source: expression.arguments.first.value.is_a?(AST::IntegerLiteral) || expression.arguments.first.value.is_a?(AST::FloatLiteral),
+      )
+    rescue ParseError
+      nil
+    end
+
+    def self.seed_prefix_cast_parser!(parser, analysis)
+      return unless analysis
+
+      known_type_names = parser.instance_variable_get(:@known_type_names)
+      analysis.types.each_key { |name| known_type_names[name] = true }
+      analysis.interfaces.each_key { |name| known_type_names[name] = true }
+
+      known_import_aliases = parser.instance_variable_get(:@known_import_aliases)
+      analysis.imports.each_key { |name| known_import_aliases[name] = true }
+    end
+
+    def self.prefix_cast_expression?(expression)
+      return false unless expression.is_a?(AST::Call)
+
+      callee = expression.callee
+      return false unless callee.is_a?(AST::Specialization)
+      return false unless callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
+      return false unless callee.arguments.length == 1 && expression.arguments.length == 1
+
+      callee.arguments.first.value.is_a?(AST::TypeRef)
+    end
+
+    def self.contiguous_tokens?(left, right)
+      left.line == right.line && right.column == (left.column + left.lexeme.length)
+    end
+
     # Parse `# lint: ignore` / `# lint: ignore(rule1, rule2)` comments.
     # Returns Hash { line_number => Set<code> | :all }
     def self.parse_suppressions(trivia)
@@ -369,16 +548,21 @@ module MilkTea
       @path = path
       @sema_analysis = sema_analysis
       @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
+      @source = source.to_s
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
       @warnings = []
       @scopes = []
       @declared_callable_names = Set.new
       @declared_directional_functions = {}
       @generic_function_depth = 0
+      @current_function_stack = []
+      @prefix_cast_sites = nil
+      @redundant_cast_context_site_keys = Set.new
     end
 
     def lint(ast)
       visit_source_file(ast)
+      emit_redundant_cast_warnings
       @warnings
     end
 
@@ -958,6 +1142,7 @@ module MilkTea
     def visit_function(function, generic_context: false)
       generic_body = generic_context || function.type_params.any?
       @generic_function_depth += 1 if generic_body
+      @current_function_stack << function
       with_scope do
         function.params.each do |param|
           declare_param(
@@ -980,6 +1165,7 @@ module MilkTea
       end
       check_missing_return(function)
     ensure
+      @current_function_stack.pop
       @generic_function_depth -= 1 if generic_body
     end
 
@@ -1156,6 +1342,13 @@ module MilkTea
     def visit_statement(statement)
       case statement
       when AST::LocalDecl
+        if statement.type && statement.value
+          remember_contextual_redundant_cast_site(
+            statement.value,
+            expected_type_text: render_type_surface(statement.type),
+            preferred_lines: [statement.line],
+          )
+        end
         visit_expression(statement.value) if statement.value
         declare_local(
           statement.name,
@@ -1198,6 +1391,13 @@ module MilkTea
         visit_expression(statement.condition)
         with_scope { visit_statement_list(statement.body) }
       when AST::ReturnStmt
+        if statement.value && current_function&.return_type
+          remember_contextual_redundant_cast_site(
+            statement.value,
+            expected_type_text: render_type_surface(current_function.return_type),
+            preferred_lines: [statement.line],
+          )
+        end
         visit_expression(statement.value) if statement.value
       when AST::DeferStmt
         visit_expression(statement.expression) if statement.expression
@@ -1229,6 +1429,7 @@ module MilkTea
         visit_expression(expression.callee)
         expression.arguments.each { |argument| visit_type_argument(argument) }
       when AST::Call
+        remember_contextual_call_argument_cast_sites(expression)
         visit_expression(expression.callee)
         expression.arguments.each do |argument|
           visit_expression(argument.value)
@@ -2250,6 +2451,149 @@ module MilkTea
       return unless pointer_like_type_ref?(target_type)
 
       { target_type:, source: expression.arguments.first.value }
+    end
+
+    # ── redundant-cast ───────────────────────────────────────────────────
+
+    def current_function
+      @current_function_stack.last
+    end
+
+    def remember_contextual_redundant_cast_site(expression, expected_type_text:, preferred_lines:, used_site_keys: nil)
+      return unless expected_type_text
+
+      site = contextual_redundant_cast_site(
+        expression,
+        expected_type_text:,
+        preferred_lines:,
+        used_site_keys: used_site_keys || Set.new,
+      )
+      return unless site
+
+      @redundant_cast_context_site_keys << prefix_cast_site_key(site)
+    end
+
+    def remember_contextual_call_argument_cast_sites(expression)
+      params = callable_params_for_expression(expression.callee)
+      return if params.nil? || params.empty?
+
+      positional_index = 0
+      used_site_keys = Set.new
+      expression.arguments.each do |argument|
+        parameter = if argument.name
+                      params.find { |param| parameter_name(param) == argument.name }
+                    else
+                      params[positional_index].tap { positional_index += 1 }
+                    end
+        next unless parameter
+
+        expected_type_text = render_parameter_type_surface(parameter)
+        next unless expected_type_text
+
+        remember_contextual_redundant_cast_site(
+          argument.value,
+          expected_type_text:,
+          preferred_lines: [expression_line(argument.value), expression_line(expression)],
+          used_site_keys:,
+        )
+      end
+    end
+
+    def contextual_redundant_cast_site(expression, expected_type_text:, preferred_lines:, used_site_keys:)
+      return unless prefix_cast_expression?(expression)
+
+      target_type = expression.callee.arguments.first.value
+      return unless render_type_surface(target_type) == expected_type_text
+
+      lines = Array(preferred_lines).compact.uniq
+      return if lines.empty?
+
+      prefix_cast_sites.find do |site|
+        next false if used_site_keys.include?(prefix_cast_site_key(site))
+        next false unless site.target_text == expected_type_text
+        next false unless lines.include?(site.line)
+
+        used_site_keys << prefix_cast_site_key(site)
+        true
+      end
+    end
+
+    def callable_params_for_expression(callee)
+      return unless @sema_analysis
+
+      case callee
+      when AST::Specialization
+        callable_params_for_expression(callee.callee)
+      when AST::Identifier
+        if (binding = @sema_analysis.functions[callee.name])
+          return binding.type.params
+        end
+
+        if (binding = @sema_analysis.values[callee.name]) && binding.type.respond_to?(:params)
+          return binding.type.params
+        end
+
+        nil
+      when AST::MemberAccess
+        return nil unless callee.receiver.is_a?(AST::Identifier)
+
+        imported_module = @sema_analysis.imports[callee.receiver.name]
+        return nil unless imported_module
+
+        binding = imported_module.functions[callee.member]
+        binding&.type&.params
+      else
+        nil
+      end
+    end
+
+    def render_parameter_type_surface(parameter)
+      return nil unless parameter.respond_to?(:type) && parameter.type
+
+      render_type_surface(parameter.type)
+    end
+
+    def prefix_cast_expression?(expression)
+      self.class.prefix_cast_expression?(expression)
+    end
+
+    def prefix_cast_site_key(site)
+      [site.start_offset, site.end_offset]
+    end
+
+    def contextual_redundant_cast_site?(site)
+      @redundant_cast_context_site_keys.include?(prefix_cast_site_key(site))
+    end
+
+    def emit_redundant_cast_warnings
+      return unless @sema_analysis
+      return if @source.empty?
+
+      prefix_cast_sites.each do |site|
+        next if site.pointer_like
+        next unless site.literal_source || contextual_redundant_cast_site?(site)
+        next unless redundant_cast_site?(site)
+
+        @warnings << Warning.new(
+          path: @path,
+          line: site.line,
+          column: site.column,
+          length: site.length,
+          code: "redundant-cast",
+          message: "cast to #{site.target_text} is redundant here; remove the cast",
+          severity: :hint,
+        )
+      end
+    end
+
+    def prefix_cast_sites
+      @prefix_cast_sites ||= self.class.prefix_cast_sites(@source, analysis: @sema_analysis)
+    end
+
+    def redundant_cast_site?(site)
+      modified_source = @source.dup
+      modified_source[site.start_offset...site.end_offset] = site.replacement_text
+      self.class.best_effort_lint_context(modified_source, path: @path).fetch(:analysis, nil)
     end
 
     def pointer_like_type_ref?(type_ref)

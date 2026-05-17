@@ -29,6 +29,7 @@ module MilkTea
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default].to_set.freeze
+      BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
         equal plus minus star slash percent less greater tilde
@@ -1129,6 +1130,32 @@ module MilkTea
 
             actions << {
               title: 'Remove redundant read cast',
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: diag_start_char },
+                      end:   { line: diag_line - 1, character: diag_end_char }
+                    },
+                    newText: replacement
+                  }]
+                }
+              }
+            }
+
+          when 'redundant-cast'
+            next if source_line.empty?
+
+            cast_text = source_line[diag_start_char...diag_end_char].to_s
+            next if cast_text.empty?
+
+            replacement = Linter.extract_prefix_cast_source_text(cast_text)
+            next unless replacement
+
+            actions << {
+              title: 'Remove redundant cast',
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -2426,7 +2453,14 @@ module MilkTea
             next
           end
 
-          return nil if segment[:token_index] == token_index
+          if segment[:token_index] == token_index
+            method_receiver_type = project_method_receiver_type_for_completion(current_type)
+            method_info = member_method_info_for_receiver_type(analysis, method_receiver_type, segment[:name])
+            return nil unless method_info
+
+            return module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding]) ||
+              module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+          end
 
           break
         end
@@ -2675,6 +2709,7 @@ module MilkTea
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         parameter_declaration = parameter_declaration_token?(tokens, index)
+        user_defined_function = analysis ? analysis.functions.key?(name) : lexically_declared_free_function_name?(tokens, name)
 
         if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
@@ -2772,24 +2807,35 @@ module MilkTea
             return resolved
           end
 
+          return [:function, []] if user_defined_function
+
           modifiers = []
           modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(name)
+          if BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name) && specialized_call_with_type_args?(tokens, index) && !user_defined_function
+            modifiers << 'defaultLibrary'
+          end
           return [:function, modifiers]
         end
 
-        return [:function, []] if analysis && next_tok&.type == :lbracket && analysis.functions.key?(name)
+        return [:function, []] if next_tok&.type == :lbracket && user_defined_function
 
-        if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
-          return [:type, ['defaultLibrary']]
+        if analysis && identifier_in_type_reference_position?(tokens, index)
+          return [:type, []] if analysis.types.key?(name)
+          return [:type, []] if analysis.interfaces.key?(name)
+
+          if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
+            return [:type, ['defaultLibrary']]
+          end
         end
 
         if analysis
-          return [:type, []] if analysis.types.key?(name)
-          return [:type, []] if analysis.interfaces.key?(name)
 
           if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
+
+          return [:type, []] if analysis.types.key?(name)
+          return [:type, []] if analysis.interfaces.key?(name)
 
           return [:namespace, []] if analysis.imports.key?(name)
 
@@ -2798,6 +2844,10 @@ module MilkTea
           end
 
           return [:function, []] if bare_function_value_identifier_site?(analysis, tok)
+        end
+
+        if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
+          return [:type, ['defaultLibrary']]
         end
 
         return [:function, ['defaultLibrary']] if bare_builtin_specialization?(name, tokens, index)
@@ -2877,6 +2927,29 @@ module MilkTea
         end
 
         nil
+      end
+
+      def lexically_declared_free_function_name?(tokens, name)
+        lexically_declared_free_function_names(tokens).include?(name)
+      end
+
+      def lexically_declared_free_function_names(tokens)
+        cache = @lexically_declared_free_function_name_cache ||= {}
+        cached = cache[tokens.object_id]
+        return cached if cached
+
+        cache[tokens.object_id] = tokens.each_with_index.each_with_object(Set.new) do |(token, index), names|
+          next unless token.type == :identifier
+
+          prev_index = previous_non_trivia_token_index(tokens, index)
+          next unless prev_index
+
+          prev_tok = tokens[prev_index]
+          next unless [:function, :fn, :proc].include?(prev_tok.type)
+          next unless first_non_trivia_token_on_line?(tokens, prev_index)
+
+          names << token.lexeme
+        end
       end
 
       def generic_function_lexical_binding_semantic(analysis, token)
@@ -3281,6 +3354,27 @@ module MilkTea
 
         prev_tok = previous_non_trivia_token(tokens, index)
         [:colon, :arrow].include?(prev_tok&.type)
+      end
+
+      def identifier_in_type_reference_position?(tokens, index)
+        return true if identifier_in_type_argument_position?(tokens, index)
+
+        prev_tok = previous_non_trivia_token(tokens, index)
+        return true if [:colon, :arrow, :as].include?(prev_tok&.type)
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tokens[index].line)
+        return true if prev_tok&.type == :equal && line_tokens.first&.type == :type
+
+        next_index = next_non_trivia_token_index(tokens, index + 1)
+        return false unless next_index && tokens[next_index].type == :less
+
+        minus_index = next_non_trivia_token_index(tokens, next_index + 1)
+        return false unless minus_index && tokens[minus_index].type == :minus
+
+        tokens[next_index].line == tokens[index].line &&
+          tokens[next_index].column == (tokens[index].column + tokens[index].lexeme.length) &&
+          tokens[minus_index].line == tokens[next_index].line &&
+          tokens[minus_index].column == (tokens[next_index].column + tokens[next_index].lexeme.length)
       end
 
       def type_parameter_declaration_info_on_line(tokens, line)
@@ -3920,13 +4014,8 @@ module MilkTea
       end
 
       def resolve_dot_receiver_value_type(analysis, receiver_name, line, char)
-        frame = enclosing_completion_frame(analysis, line)
-        if frame
-          snapshot = latest_completion_snapshot(frame, line, char)
-          if snapshot && (binding = snapshot.bindings[receiver_name])
-            return binding.type
-          end
-        end
+        local_type = resolve_local_hover_type(analysis, receiver_name, line, char)
+        return local_type if local_type
 
         analysis.values[receiver_name]&.type
       end
@@ -3989,7 +4078,16 @@ module MilkTea
       def member_method_info_for_receiver_type(analysis, receiver_type, method_name)
         return nil unless receiver_type
 
+        dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
+
         if (binding = analysis.methods.fetch(receiver_type, {})[method_name])
+          return {
+            binding: binding,
+            module_name: analysis.module_name,
+          }
+        end
+
+        if dispatch_receiver_type != receiver_type && (binding = analysis.methods.fetch(dispatch_receiver_type, {})[method_name])
           return {
             binding: binding,
             module_name: analysis.module_name,
@@ -3998,6 +4096,9 @@ module MilkTea
 
         analysis.imports.each_value do |module_binding|
           binding = module_binding.methods.fetch(receiver_type, {})[method_name]
+          if binding.nil? && dispatch_receiver_type != receiver_type
+            binding = module_binding.methods.fetch(dispatch_receiver_type, {})[method_name]
+          end
           next unless binding
 
           return {
@@ -4267,6 +4368,9 @@ module MilkTea
         specialization_info = builtin_value_specialization_info(name, tokens, token_index)
         return specialization_info if specialization_info
 
+        associated_hook_info = builtin_associated_hook_hover_info(name, tokens, token_index)
+        return associated_hook_info if associated_hook_info
+
         type_constructor_info = builtin_type_constructor_hover_info(name, tokens, token_index)
         return type_constructor_info if type_constructor_info
 
@@ -4342,6 +4446,43 @@ module MilkTea
 
         {
           signature: "builtin type #{specialization}",
+          docs: docs,
+        }
+      end
+
+      def builtin_associated_hook_hover_info(name, tokens, token_index)
+        return nil unless BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name)
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+        return nil unless after_bracket_index && tokens[after_bracket_index].type == :lparen
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        docs = case name
+               when 'hash'
+                 '`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               when 'equal'
+                 '`equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               when 'order'
+                 '`order[T](left, right)` lowers to `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               end
+
+        signature = case name
+                    when 'hash'
+                      "builtin #{specialization}(value) -> uint"
+                    when 'equal'
+                      "builtin #{specialization}(left, right) -> bool"
+                    when 'order'
+                      "builtin #{specialization}(left, right) -> int"
+                    end
+
+        {
+          signature: signature,
           docs: docs,
         }
       end
@@ -4608,11 +4749,48 @@ module MilkTea
 
       def methods_for_receiver_type(analysis, receiver_type)
         methods = {}
-        methods.merge!(analysis.methods.fetch(receiver_type, {})) if receiver_type
+        return methods unless receiver_type
+
+        receiver_candidates = [receiver_type]
+        dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
+        receiver_candidates << dispatch_receiver_type if dispatch_receiver_type != receiver_type
+
+        receiver_candidates.each do |candidate|
+          analysis.methods.fetch(candidate, {}).each do |name, binding|
+            methods[name] ||= binding
+          end
+        end
+
         analysis.imports.each_value do |module_binding|
-          methods.merge!(module_binding.methods.fetch(receiver_type, {})) if module_binding.methods.key?(receiver_type)
+          receiver_candidates.each do |candidate|
+            module_binding.methods.fetch(candidate, {}).each do |name, binding|
+              methods[name] ||= binding
+            end
+          end
         end
         methods
+      end
+
+      def method_dispatch_receiver_type_for_completion(receiver_type)
+        return receiver_type.definition if receiver_type.is_a?(Types::StructInstance)
+
+        if receiver_type.is_a?(Types::Nullable)
+          dispatch_base_type = method_dispatch_receiver_type_for_completion(receiver_type.base)
+          return receiver_type if dispatch_base_type == receiver_type.base
+
+          return Types::Nullable.new(dispatch_base_type)
+        end
+
+        return receiver_type unless receiver_type.is_a?(Types::GenericInstance)
+
+        dispatch_receiver_type = Types::GenericInstance.new(
+          receiver_type.name,
+          receiver_type.arguments.each_with_index.map do |argument, index|
+            argument.is_a?(Types::LiteralTypeArg) ? argument : Types::TypeVar.new("__receiver_arg#{index}")
+          end,
+        )
+
+        dispatch_receiver_type == receiver_type ? receiver_type : dispatch_receiver_type
       end
 
       def project_field_receiver_type_for_completion(type)

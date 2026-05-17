@@ -1766,6 +1766,76 @@ class MilkTeaLinterRedundantReadCastTest < Minitest::Test
   end
 end
 
+# ── redundant-cast ───────────────────────────────────────────────────────
+
+class MilkTeaLinterRedundantCastTest < Minitest::Test
+  def test_warns_on_redundant_numeric_literal_cast_in_comparison
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function is_ascii_space(byte: ubyte) -> bool:
+          return byte == ubyte<-32 or byte == ubyte<-9
+    MT
+
+    redundant_casts = warnings.select { |warning| warning.code == "redundant-cast" }
+    assert_equal 2, redundant_casts.length
+    assert_equal [2, 2], redundant_casts.map(&:line)
+    assert_equal :hint, redundant_casts.first.severity
+  end
+
+  def test_warns_on_redundant_return_cast_when_function_return_type_matches
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function widen(value: int) -> long:
+          return long<-value
+    MT
+
+    assert warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
+  def test_warns_on_redundant_typed_local_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function widen(value: int) -> long:
+          let widened: long = long<-value
+          return widened
+    MT
+
+    assert warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
+  def test_warns_on_redundant_call_argument_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function takes_long(value: long) -> long:
+          return value
+
+      function main(value: int) -> long:
+          return takes_long(long<-value)
+    MT
+
+    assert warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
+  def test_does_not_warn_on_inferred_local_cast_that_changes_binding_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function widen(value: int) -> long:
+          let widened = long<-value
+          return widened
+    MT
+
+    refute warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
+  def test_fix_source_removes_redundant_casts
+    source = <<~MT
+      function is_ascii_space(byte: ubyte) -> bool:
+          return byte == ubyte<-32 or byte == ubyte<-9
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "return byte == 32 or byte == 9"
+    refute_includes fixed, "ubyte<-32"
+    refute_includes fixed, "ubyte<-9"
+  end
+end
+
 # ── redundant-read-release-temp ─────────────────────────────────────────
 
 class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
