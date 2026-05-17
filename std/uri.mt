@@ -74,7 +74,7 @@ function append_percent_encoded_path(output: ref[string.String], path_text: str)
         let value = path_text.byte_at(index)
         if value == ubyte<-47:
             output.push_byte(value)
-        elif safe_path_byte(value):
+        else if safe_path_byte(value):
             output.push_byte(value)
         else:
             append_percent_encoded_byte(output, value)

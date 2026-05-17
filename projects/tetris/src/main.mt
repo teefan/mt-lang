@@ -394,13 +394,13 @@ methods Game:
         var horizontal_direction = 0
         if rl.is_key_down(rl.KeyboardKey.KEY_LEFT) and not rl.is_key_down(rl.KeyboardKey.KEY_RIGHT):
             horizontal_direction = -1
-        elif rl.is_key_down(rl.KeyboardKey.KEY_RIGHT) and not rl.is_key_down(rl.KeyboardKey.KEY_LEFT):
+        else if rl.is_key_down(rl.KeyboardKey.KEY_RIGHT) and not rl.is_key_down(rl.KeyboardKey.KEY_LEFT):
             horizontal_direction = 1
 
         if horizontal_direction == 0:
             this.horizontal_move_direction = 0
             this.horizontal_move_repeat_timer = 0.0
-        elif horizontal_direction != this.horizontal_move_direction:
+        else if horizontal_direction != this.horizontal_move_direction:
             this.horizontal_move_direction = horizontal_direction
             this.horizontal_move_repeat_timer = horizontal_repeat_delay
             this.try_move(horizontal_direction, 0)
@@ -552,11 +552,11 @@ function main() -> int:
                 game = default[Game]
                 showing_title = false
                 showing_pause = false
-        elif showing_pause:
+        else if showing_pause:
             run_screen_frame(paused, assets.tiles, assets.clear_sound)
             if paused.resume_requested:
                 showing_pause = false
-            elif paused.exit_requested:
+            else if paused.exit_requested:
                 title = default[TitleScreen]
                 showing_pause = false
                 showing_title = true
@@ -565,7 +565,7 @@ function main() -> int:
             if game.pause_requested:
                 paused = make_paused_screen(game)
                 showing_pause = true
-            elif game.exit_requested:
+            else if game.exit_requested:
                 title = default[TitleScreen]
                 showing_title = true
 

@@ -6190,6 +6190,67 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_classify_variant_members_payload_fields_and_generic_constructor_labels
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_variant_constructor_labels_test.mt"
+        source = <<~MT
+          variant Maybe[T]:
+              some(value: T)
+              none
+
+          variant Status[T, E]:
+              ok(value: T)
+              err(error: E)
+
+          struct Entry[T]:
+              key: T
+              count: int
+
+          function classify(entry: Entry[int]) -> Status[int, int]:
+              let rebuilt = Entry[int](key = entry.key, count = entry.count)
+              match Maybe[int].some(value = rebuilt.count):
+                  Maybe.some as payload:
+                      return Status[int, int].ok(value = payload.value)
+                  Maybe.none:
+                      return Status[int, int].err(error = rebuilt.count)
+        MT
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        some_decl = semantic_entry_for_lexeme_on_line(source, entries, "some", 1)
+        error_decl = semantic_entry_for_lexeme_on_line(source, entries, "error", 6)
+        key_label = semantic_entry_for_lexeme_on_line(source, entries, "key", 13)
+        count_label = semantic_entry_for_lexeme_on_line(source, entries, "count", 13)
+        some_ctor = semantic_entry_for_lexeme_on_line(source, entries, "some", 14)
+        some_match = semantic_entry_for_lexeme_on_line(source, entries, "some", 15)
+        none_match = semantic_entry_for_lexeme_on_line(source, entries, "none", 17)
+        err_return = semantic_entry_for_lexeme_on_line(source, entries, "err", 18)
+        error_label = semantic_entry_for_lexeme_on_line(source, entries, "error", 18)
+
+        assert_equal "enumMember", some_decl.fetch("tokenType")
+        assert_includes some_decl.fetch("modifierNames"), "declaration"
+        assert_equal "property", error_decl.fetch("tokenType")
+        assert_includes error_decl.fetch("modifierNames"), "declaration"
+        assert_equal "property", key_label.fetch("tokenType")
+        assert_equal "property", count_label.fetch("tokenType")
+        assert_equal "enumMember", some_ctor.fetch("tokenType")
+        assert_equal "enumMember", some_match.fetch("tokenType")
+        assert_equal "enumMember", none_match.fetch("tokenType")
+        assert_equal "enumMember", err_return.fetch("tokenType")
+        assert_equal "property", error_label.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_fstring_delimiters_do_not_override_textmate
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

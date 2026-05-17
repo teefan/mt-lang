@@ -1167,7 +1167,7 @@ module MilkTea
                   }
                 }
               }
-              end
+            end
 
           when 'redundant-return'
             next unless source_line.match?(/\A\s*return\s*\z/)
@@ -2811,6 +2811,7 @@ module MilkTea
 
         return [:variable, ['declaration']] if match_arm_binding_token?(tokens, index)
         return [:parameter, ['declaration']] if callable_parameter_declaration_token?(tokens, index)
+        return [:property, ['declaration']] if variant_payload_field_declaration_token?(tokens, index)
         return [:property, ['declaration']] if field_declaration_token?(tokens, index)
 
         if analysis
@@ -2946,6 +2947,18 @@ module MilkTea
 
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :colon
+      end
+
+      def variant_payload_field_declaration_token?(tokens, index)
+        return false unless parameter_declaration_token?(tokens, index)
+
+        opener_index = parameter_list_opener_index(tokens, index)
+        return false unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return false unless head_index
+
+        variant_enum_member_declaration?(tokens, head_index)
       end
 
       def parameter_declaration_token?(tokens, index)

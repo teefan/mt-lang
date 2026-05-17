@@ -21,7 +21,6 @@ module MilkTea
       "editable" => :editable,
       "equates" => :equates,
       "enum" => :enum,
-      "elif" => :elif,
       "else" => :else,
       "external" => :external,
       "false" => :false,

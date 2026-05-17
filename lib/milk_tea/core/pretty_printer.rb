@@ -599,7 +599,7 @@ module MilkTea
         end
 
         rest.each do |branch|
-          line("elif #{render_expression(branch.condition)}:")
+          line("else if #{render_expression(branch.condition)}:")
           with_indent do
             branch.body.each { |nested| emit_statement(nested) }
           end

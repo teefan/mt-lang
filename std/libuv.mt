@@ -325,7 +325,7 @@ public foreign function udp_set_multicast_interface(handle: ptr[uv_udp_t], inter
 public foreign function udp_set_broadcast(handle: ptr[uv_udp_t], on: int) -> int = c.uv_udp_set_broadcast
 public foreign function udp_set_ttl(handle: ptr[uv_udp_t], ttl: int) -> int = c.uv_udp_set_ttl
 public foreign function udp_send(req: ptr[uv_udp_send_t], handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: uint, addr: const_ptr[sockaddr]?, send_cb: fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void) -> int = c.uv_udp_send
-public foreign function udp_try_send(handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: uint, addr: const_ptr[sockaddr]) -> int = c.uv_udp_try_send
+public foreign function udp_try_send(handle: ptr[uv_udp_t], bufs: const_ptr[uv_buf_t], nbufs: uint, addr: const_ptr[sockaddr]?) -> int = c.uv_udp_try_send
 public foreign function udp_try_send2(handle: ptr[uv_udp_t], count: uint, bufs: ptr[ptr[uv_buf_t]], nbufs: ptr[uint], addrs: ptr[ptr[sockaddr]], flags_: uint) -> int = c.uv_udp_try_send2
 public foreign function udp_recv_start(handle: ptr[uv_udp_t], alloc_cb: fn(arg0: ptr[uv_handle_t], arg1: ptr_uint, arg2: ptr[uv_buf_t]) -> void, recv_cb: fn(arg0: ptr[uv_udp_t], arg1: ptr_int, arg2: const_ptr[uv_buf_t], arg3: const_ptr[sockaddr], arg4: uint) -> void) -> int = c.uv_udp_recv_start
 public foreign function udp_using_recvmmsg(handle: const_ptr[uv_udp_t]) -> int = c.uv_udp_using_recvmmsg

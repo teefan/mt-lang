@@ -1471,7 +1471,7 @@ module MilkTea
     end
 
     # ── redundant-else ───────────────────────────────────────────────────
-    # Fire when every explicit if/elif branch always returns, making the else
+    # Fire when every explicit if/else if branch always returns, making the else
     # block an unnecessary level of indentation.
     def check_redundant_else(stmt)
       return unless stmt.else_body && !stmt.else_body.empty?
@@ -2425,7 +2425,7 @@ module MilkTea
             branch = node.statement
             # Skip if conditions inside loops; variables can change across iterations.
             skip = loop_bodies.include?(node.id)
-            [branch&.condition, branch&.line || node.line, "if|elif", skip]
+            [branch&.condition, branch&.line || node.line, "else if|if", skip]
           when :while_condition
             wstmt = node.statement
             # `while true` is an idiomatic infinite loop — do not warn
@@ -2540,7 +2540,7 @@ module MilkTea
         nonnull = nf.nonnull_before(branch)
         next unless nonnull.include?(cfg_identifier_binding_key(identifier))
 
-        line, column, length = condition_span(branch.condition, line: node.line, keyword_pattern: "if|elif")
+        line, column, length = condition_span(branch.condition, line: node.line, keyword_pattern: "else if|if")
 
         @warnings << Warning.new(
           path: @path,

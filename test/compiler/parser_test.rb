@@ -51,12 +51,12 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, main_fn.body.last
   end
 
-  def test_parses_if_elif_else_chains
+  def test_parses_if_else_if_else_chains
     source = <<~MT
       function main() -> int:
           if ready:
               return 1
-          elif fallback:
+          else if fallback:
               return 2
           else:
               return 3
@@ -73,8 +73,8 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 5, if_stmt.branches[0].column
     assert_equal 2, if_stmt.branches[0].length
     assert_equal 4, if_stmt.branches[1].line
-    assert_equal 5, if_stmt.branches[1].column
-    assert_equal 4, if_stmt.branches[1].length
+    assert_equal 10, if_stmt.branches[1].column
+    assert_equal 2, if_stmt.branches[1].length
   end
 
   def test_parses_let_else_local_declaration

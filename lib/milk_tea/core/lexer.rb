@@ -633,7 +633,7 @@ module MilkTea
         equal plus_equal minus_equal star_equal slash_equal percent_equal
         amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
         lparen lbracket comma colon
-        return defer if elif while match in
+        return defer if else while match in
         or and not out inout
         plus minus star slash percent amp pipe caret shift_left shift_right
         less less_equal greater greater_equal equal_equal bang_equal

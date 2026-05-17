@@ -641,17 +641,17 @@ function parse_string(parser: ref[Parser]) -> status.Status[string.String, Parse
                 let escaped = payload.value
                 if escaped == ubyte<-98:
                     result.push_byte(ubyte<-8)
-                elif escaped == ubyte<-102:
+                else if escaped == ubyte<-102:
                     result.push_byte(ubyte<-12)
-                elif escaped == ubyte<-110:
+                else if escaped == ubyte<-110:
                     result.push_byte(byte_newline)
-                elif escaped == ubyte<-114:
+                else if escaped == ubyte<-114:
                     result.push_byte(byte_carriage_return)
-                elif escaped == ubyte<-116:
+                else if escaped == ubyte<-116:
                     result.push_byte(byte_tab)
-                elif escaped == byte_quote:
+                else if escaped == byte_quote:
                     result.push_byte(byte_quote)
-                elif escaped == byte_backslash:
+                else if escaped == byte_backslash:
                     result.push_byte(byte_backslash)
                 else:
                     result.release()
@@ -729,7 +729,7 @@ function parse_integer(parser: ref[Parser]) -> status.Status[long, ParseError]:
             if payload.value == byte_minus:
                 negative = true
                 parser_advance(parser)
-            elif payload.value == byte_plus:
+            else if payload.value == byte_plus:
                 parser_advance(parser)
 
     match parser_peek_byte(parser):
@@ -1130,17 +1130,17 @@ function append_quoted_string(output: ref[string.String], text_value: str) -> vo
         let value = text_value.byte_at(index)
         if value == byte_backslash:
             output.append("\\\\")
-        elif value == byte_quote:
+        else if value == byte_quote:
             output.append("\\\"")
-        elif value == byte_newline:
+        else if value == byte_newline:
             output.append("\\n")
-        elif value == byte_carriage_return:
+        else if value == byte_carriage_return:
             output.append("\\r")
-        elif value == byte_tab:
+        else if value == byte_tab:
             output.append("\\t")
-        elif value == ubyte<-8:
+        else if value == ubyte<-8:
             output.append("\\b")
-        elif value == ubyte<-12:
+        else if value == ubyte<-12:
             output.append("\\f")
         else:
             output.push_byte(value)

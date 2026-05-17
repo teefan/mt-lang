@@ -117,7 +117,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "public function clamp[T](value: T, min_value: T, max_value: T) -> T:",
         "    if value < min_value:",
         "        return min_value",
-        "    elif value > max_value:",
+        "    else if value > max_value:",
         "        return max_value",
         "    return value",
         "",
@@ -616,7 +616,7 @@ class MilkTeaCodegenTest < Minitest::Test
           let total = await sum_range(limit)
           if total > 100:
               return 100
-          elif total < 0:
+          else if total < 0:
               return 0
           else:
               return total
@@ -633,14 +633,14 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/total\s*\+=/, generated)
   end
 
-  def test_generate_c_for_if_elif_else_emits_flat_chain
+  def test_generate_c_for_if_else_if_else_emits_flat_chain
     source = <<~MT
       # module demo.if_chain_codegen
 
       function classify(value: int) -> int:
           if value < 0:
               return -1
-          elif value > 0:
+          else if value > 0:
               return 1
           else:
               return 0
