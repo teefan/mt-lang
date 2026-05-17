@@ -4,6 +4,7 @@ require "json"
 require "open3"
 require "tempfile"
 require_relative "../core/token"
+require_relative "../core/types"
 require_relative "../tooling/formatter"
 
 module MilkTea
@@ -921,9 +922,13 @@ module MilkTea
       end
 
       def bindgen_param_name(name)
-        return [name, nil] unless Token::KEYWORDS.key?(name)
+        return [name, nil] unless generated_binding_name_conflict?(name)
 
         ["#{name}_", nil]
+      end
+
+      def generated_binding_name_conflict?(name)
+        Token::KEYWORDS.key?(name) || Types::BUILTIN_PRIMITIVE_NAMES.include?(name)
       end
 
       def discover_synthetic_aggregate_dependencies(declarations)

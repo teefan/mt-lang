@@ -293,11 +293,11 @@ function file_type(logical_path: str) -> maybe.Maybe[str]:
     while index > 0:
         index -= 1
 
-        let byte = logical_path.byte_at(index)
-        if byte == ubyte<-47:
+        let value = logical_path.byte_at(index)
+        if value == ubyte<-47:
             return maybe.Maybe[str].none
 
-        if byte == ubyte<-46:
+        if value == ubyte<-46:
             if index + 1 == logical_path.len:
                 return maybe.Maybe[str].none
 

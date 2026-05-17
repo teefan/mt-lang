@@ -959,6 +959,7 @@ module MilkTea
         actions = []
         lines = content.lines
         requested_diagnostics = params.dig('context', 'diagnostics') || []
+        reserved_primitive_name_fixes = nil
 
         quickfix_start = monotonic_time
 
@@ -1004,6 +1005,35 @@ module MilkTea
           end
 
           case code
+          when 'reserved-primitive-name'
+            reserved_primitive_name_fixes ||= Linter.collect_reserved_primitive_name_fixes(content, path: uri)
+            fix = reserved_primitive_name_fixes.find do |candidate|
+              declaration_site = candidate.sites.first
+              declaration_site.line == diag_line && declaration_site.column == (diag_start_char + 1)
+            end
+            next unless fix
+
+            edits = fix.sites.uniq { |site| [site.line, site.column] }.sort_by { |site| [site.line, site.column] }.map do |site|
+              {
+                range: {
+                  start: { line: site.line - 1, character: site.column - 1 },
+                  end:   { line: site.line - 1, character: site.column - 1 + site.length }
+                },
+                newText: fix.replacement_name
+              }
+            end
+
+            actions << {
+              title: "Rename '#{fix.original_name}' to '#{fix.replacement_name}'",
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => edits
+                }
+              }
+            }
+
           when 'prefer-let'
             # Replace `var` with `let` on the declaration line
             source_line = lines[diag_line - 1].to_s

@@ -401,6 +401,8 @@ Primitive types:
 - `str`
 - `cstr`
 
+Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
+
 Type constructors:
 
 - `ptr[T]`

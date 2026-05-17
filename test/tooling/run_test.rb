@@ -1304,7 +1304,7 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_ops.mt")
 
       File.write(source_path, [
-        "import std.str",
+        "import std.str as text_ops",
         "import std.mem.arena as arena",
         "import std.c.libc as libc",
         "",
@@ -1341,7 +1341,7 @@ class MilkTeaRunTest < Minitest::Test
 
       File.write(source_path, [
         "import std.libc as libc",
-        "import std.str",
+        "import std.str as text_ops",
         "",
         "function main() -> int:",
         "    let text = \"12345!\"",
@@ -1409,7 +1409,7 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_utf8_slice.mt")
 
       File.write(source_path, [
-        "import std.str",
+        "import std.str as text_ops",
         "",
         "function main() -> int:",
         "    let text = \"éx\"",
@@ -1440,7 +1440,7 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_bad_start_boundary.mt")
 
       File.write(source_path, [
-        "import std.str",
+        "import std.str as text_ops",
         "",
         "function main() -> int:",
         "    let text = \"éx\"",
@@ -1469,7 +1469,7 @@ class MilkTeaRunTest < Minitest::Test
       source_path = File.join(dir, "str_bad_end_boundary.mt")
 
       File.write(source_path, [
-        "import std.str",
+        "import std.str as text_ops",
         "",
         "function main() -> int:",
         "    let text = \"éx\"",

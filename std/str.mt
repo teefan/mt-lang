@@ -39,8 +39,8 @@ public function utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
         return maybe.Maybe[str].some(value= borrowed)
 
 
-public function utf8_continuation_byte(byte: ubyte) -> bool:
-    return (byte & ubyte<-0xC0) == ubyte<-0x80
+public function utf8_continuation_byte(value: ubyte) -> bool:
+    return (value & ubyte<-0xC0) == ubyte<-0x80
 
 
 function utf8_boundary(text: str, index: ptr_uint) -> bool:
@@ -48,12 +48,12 @@ function utf8_boundary(text: str, index: ptr_uint) -> bool:
         return true
 
     unsafe:
-        let byte = ubyte<-read(text.data + index)
-        return not utf8_continuation_byte(byte)
+        let value = ubyte<-read(text.data + index)
+        return not utf8_continuation_byte(value)
 
 
-function is_ascii_space(byte: ubyte) -> bool:
-    return byte == 32 or byte == 9 or byte == 10 or byte == 13 or byte == 12
+function is_ascii_space(value: ubyte) -> bool:
+    return value == 32 or value == 9 or value == 10 or value == 13 or value == 12
 
 
 methods str:
@@ -101,10 +101,10 @@ methods str:
         return true
 
 
-    public function find_byte(byte: ubyte) -> maybe.Maybe[ptr_uint]:
+    public function find_byte(value: ubyte) -> maybe.Maybe[ptr_uint]:
         var index: ptr_uint = 0
         while index < this.len:
-            if this.byte_at(index) == byte:
+            if this.byte_at(index) == value:
                 return maybe.Maybe[ptr_uint].some(value= index)
             index += 1
         return maybe.Maybe[ptr_uint].none

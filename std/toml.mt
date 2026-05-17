@@ -454,24 +454,24 @@ function parse_error(parser: ref[Parser], message: str) -> ParseError:
     return ParseError(line = parser.line, column = parser.column, message = string.String.from_str(message))
 
 
-function ascii_letter(byte: ubyte) -> bool:
-    return (byte >= ubyte<-65 and byte <= ubyte<-90) or (byte >= ubyte<-97 and byte <= ubyte<-122)
+function ascii_letter(value: ubyte) -> bool:
+    return (value >= ubyte<-65 and value <= ubyte<-90) or (value >= ubyte<-97 and value <= ubyte<-122)
 
 
-function ascii_digit(byte: ubyte) -> bool:
-    return byte >= ubyte<-48 and byte <= ubyte<-57
+function ascii_digit(value: ubyte) -> bool:
+    return value >= ubyte<-48 and value <= ubyte<-57
 
 
-function inline_space(byte: ubyte) -> bool:
-    return byte == byte_space or byte == byte_tab
+function inline_space(value: ubyte) -> bool:
+    return value == byte_space or value == byte_tab
 
 
-function bare_key_byte(byte: ubyte) -> bool:
-    return ascii_letter(byte) or ascii_digit(byte) or byte == byte_minus or byte == byte_underscore
+function bare_key_byte(value: ubyte) -> bool:
+    return ascii_letter(value) or ascii_digit(value) or value == byte_minus or value == byte_underscore
 
 
-function header_name_byte(byte: ubyte) -> bool:
-    return bare_key_byte(byte)
+function header_name_byte(value: ubyte) -> bool:
+    return bare_key_byte(value)
 
 
 function parser_peek_byte(parser: ref[Parser]) -> maybe.Maybe[ubyte]:
@@ -1127,23 +1127,23 @@ function append_quoted_string(output: ref[string.String], text_value: str) -> vo
 
     var index: ptr_uint = 0
     while index < text_value.len:
-        let byte = text_value.byte_at(index)
-        if byte == byte_backslash:
+        let value = text_value.byte_at(index)
+        if value == byte_backslash:
             output.append("\\\\")
-        elif byte == byte_quote:
+        elif value == byte_quote:
             output.append("\\\"")
-        elif byte == byte_newline:
+        elif value == byte_newline:
             output.append("\\n")
-        elif byte == byte_carriage_return:
+        elif value == byte_carriage_return:
             output.append("\\r")
-        elif byte == byte_tab:
+        elif value == byte_tab:
             output.append("\\t")
-        elif byte == ubyte<-8:
+        elif value == ubyte<-8:
             output.append("\\b")
-        elif byte == ubyte<-12:
+        elif value == ubyte<-12:
             output.append("\\f")
         else:
-            output.push_byte(byte)
+            output.push_byte(value)
         index += 1
 
     output.push_byte(byte_quote)
