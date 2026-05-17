@@ -226,7 +226,7 @@ Public items should always spell their types out.
 function clamp(value: float, min_value: float, max_value: float) -> float:
 	if value < min_value:
 		return min_value
-	elif value > max_value:
+	else if value > max_value:
 		return max_value
 	else:
 		return value
@@ -359,7 +359,7 @@ This is deliberate. Interfaces are compile-time-only nominal contracts and are n
 ```mt
 if ready:
 	start_game()
-elif wants_menu:
+else if wants_menu:
 	open_menu()
 else:
 	show_intro()

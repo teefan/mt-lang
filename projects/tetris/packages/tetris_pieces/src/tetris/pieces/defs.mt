@@ -47,18 +47,18 @@ public function shape_cells(kind: int, rotation: int) -> array[Cell, 4]:
     if kind == piece_j:
         if spin == 0:
             return cells_j_0
-        elif spin == 1:
+        else if spin == 1:
             return cells_j_1
-        elif spin == 2:
+        else if spin == 2:
             return cells_j_2
         return cells_j_3
 
     if kind == piece_l:
         if spin == 0:
             return cells_l_0
-        elif spin == 1:
+        else if spin == 1:
             return cells_l_1
-        elif spin == 2:
+        else if spin == 2:
             return cells_l_2
         return cells_l_3
 
@@ -73,9 +73,9 @@ public function shape_cells(kind: int, rotation: int) -> array[Cell, 4]:
     if kind == piece_t:
         if spin == 0:
             return cells_t_0
-        elif spin == 1:
+        else if spin == 1:
             return cells_t_1
-        elif spin == 2:
+        else if spin == 2:
             return cells_t_2
         return cells_t_3
 

@@ -1001,7 +1001,9 @@ module MilkTea
       line = previous.line
       branches = [parse_if_branch(previous)]
 
-      while match(:elif)
+      while check(:else) && check_next(:if)
+        advance
+        advance
         branches << parse_if_branch(previous)
       end
 

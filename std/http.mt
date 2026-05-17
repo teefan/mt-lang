@@ -334,11 +334,11 @@ function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader]
 
         if ascii_case_equal(header.name, "Host"):
             has_host = true
-        elif ascii_case_equal(header.name, "Connection"):
+        else if ascii_case_equal(header.name, "Connection"):
             has_connection = true
-        elif ascii_case_equal(header.name, "User-Agent"):
+        else if ascii_case_equal(header.name, "User-Agent"):
             has_user_agent = true
-        elif ascii_case_equal(header.name, "Content-Length"):
+        else if ascii_case_equal(header.name, "Content-Length"):
             if content_length_seen:
                 request.release()
                 return status_error[vec.Vec[ubyte]]("request Content-Length must not be repeated")

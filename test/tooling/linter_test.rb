@@ -916,12 +916,12 @@ class MilkTeaLinterTest < Minitest::Test
   end
 
   def test_redundant_else_multi_branch_all_return
-    # if/elif both return → else is redundant
+    # if/else if both return -> else is redundant
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function classify(n: int) -> int:
           if n > 0:
               return 1
-          elif n < 0:
+          else if n < 0:
               return -1
           else:
               return 0
@@ -1615,7 +1615,7 @@ class MilkTeaLinterConstantConditionTest < Minitest::Test
           sample.tab_bar(tab_active)
           if tab_active == 0:
               return 1
-          elif tab_active == 1:
+          else if tab_active == 1:
               return 2
           return 3
     MT

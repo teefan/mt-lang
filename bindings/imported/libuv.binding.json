@@ -33,7 +33,7 @@
           { "name": "handle", "type": "ptr[uv_udp_t]" },
           { "name": "bufs", "type": "const_ptr[uv_buf_t]" },
           { "name": "nbufs", "type": "uint" },
-          { "name": "addr", "type": "const_ptr[sockaddr]" },
+          { "name": "addr", "type": "const_ptr[sockaddr]?" },
           { "name": "send_cb", "type": "fn(arg0: ptr[uv_udp_send_t], arg1: int) -> void" }
         ],
         "return_type": "int"
@@ -44,7 +44,7 @@
           { "name": "handle", "type": "ptr[uv_udp_t]" },
           { "name": "bufs", "type": "const_ptr[uv_buf_t]" },
           { "name": "nbufs", "type": "uint" },
-          { "name": "addr", "type": "const_ptr[sockaddr]" }
+          { "name": "addr", "type": "const_ptr[sockaddr]?" }
         ],
         "return_type": "int"
       },

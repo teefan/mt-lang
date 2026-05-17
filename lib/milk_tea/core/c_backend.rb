@@ -1417,7 +1417,7 @@ module MilkTea
     end
 
     def emit_if_statement(statement, level, function:, used_labels:)
-      indent = indent(level)
+      indent = INDENT * level
 
       case constant_boolean_value(statement.condition)
       when true

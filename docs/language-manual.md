@@ -411,7 +411,7 @@ Supported statements:
 
 - local declaration (`let`, `var`)
 - assignment
-- `if` / `elif` / `else`
+- `if` / `else if` / `else`
 - `match`
 - `unsafe`
 - `static_assert`
@@ -822,7 +822,7 @@ Rules:
 
 Current async limitations:
 
-- `await` is supported inside `if` expressions, `if`/`elif`/`else` bodies and conditions, `while` bodies and conditions, single-form and parallel `for` bodies and iterables, `match` discriminants and arms, `let ... else:` initializers and else bodies, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
+- `await` is supported inside `if` expressions, `if`/`else if`/`else` bodies and conditions, `while` bodies and conditions, single-form and parallel `for` bodies and iterables, `match` discriminants and arms, `let ... else:` initializers and else bodies, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
 - `defer` is supported in async functions, including cleanup bodies that `await`
 
 ## 11. Linting

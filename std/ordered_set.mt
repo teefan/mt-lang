@@ -101,7 +101,7 @@ methods OrderedSet[T]:
                 let parent_ptr = ptr[Node[T]]<-parent
                 if read(parent_ptr).left == previous:
                     read(parent_ptr).left = replacement
-                elif read(parent_ptr).right == previous:
+                else if read(parent_ptr).right == previous:
                     read(parent_ptr).right = replacement
                 else:
                     fatal(c"ordered_set.OrderedSet.replace_child missing previous child")
@@ -181,7 +181,7 @@ methods OrderedSet[T]:
 
                 let rotated = OrderedSet[T].rotate_right(current, cursor_ptr)
                 cursor = unsafe: read(rotated).parent
-            elif balance < -1:
+            else if balance < -1:
                 let right = unsafe: read(cursor_ptr).right
                 if OrderedSet[T].balance_factor(right) > 0:
                     if right == null:
@@ -208,7 +208,7 @@ methods OrderedSet[T]:
                 parent = node
                 unsafe:
                     node = read(node_ptr).left
-            elif compare > 0:
+            else if compare > 0:
                 parent = node
                 unsafe:
                     node = read(node_ptr).right

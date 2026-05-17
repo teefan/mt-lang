@@ -128,44 +128,44 @@ methods str:
             let first = this.byte_at(index)
             if first < ubyte<-0x80:
                 index += 1
-            elif first >= ubyte<-0xC2 and first <= ubyte<-0xDF:
+            else if first >= ubyte<-0xC2 and first <= ubyte<-0xDF:
                 if index + 1 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)):
                     return false
                 index += 2
-            elif first == ubyte<-0xE0:
+            else if first == ubyte<-0xE0:
                 if index + 2 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)
                 if second < ubyte<-0xA0 or second > ubyte<-0xBF or not utf8_continuation_byte(this.byte_at(index + 2)):
                     return false
                 index += 3
-            elif first >= ubyte<-0xE1 and first <= ubyte<-0xEC:
+            else if first >= ubyte<-0xE1 and first <= ubyte<-0xEC:
                 if index + 2 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)):
                     return false
                 index += 3
-            elif first == ubyte<-0xED:
+            else if first == ubyte<-0xED:
                 if index + 2 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)
                 if second < ubyte<-0x80 or second > ubyte<-0x9F or not utf8_continuation_byte(this.byte_at(index + 2)):
                     return false
                 index += 3
-            elif first >= ubyte<-0xEE and first <= ubyte<-0xEF:
+            else if first >= ubyte<-0xEE and first <= ubyte<-0xEF:
                 if index + 2 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)):
                     return false
                 index += 3
-            elif first == ubyte<-0xF0:
+            else if first == ubyte<-0xF0:
                 if index + 3 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)
                 if second < ubyte<-0x90 or second > ubyte<-0xBF or not utf8_continuation_byte(this.byte_at(index + 2)) or not utf8_continuation_byte(this.byte_at(index + 3)):
                     return false
                 index += 4
-            elif first >= ubyte<-0xF1 and first <= ubyte<-0xF3:
+            else if first >= ubyte<-0xF1 and first <= ubyte<-0xF3:
                 if index + 3 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)) or not utf8_continuation_byte(this.byte_at(index + 3)):
                     return false
                 index += 4
-            elif first == ubyte<-0xF4:
+            else if first == ubyte<-0xF4:
                 if index + 3 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)

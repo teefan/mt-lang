@@ -288,7 +288,7 @@ Supported statements:
 
 - local declaration (`let`, `var`)
 - assignment
-- `if` / `elif` / `else`
+- `if` / `else if` / `else`
 - `match`
 - `unsafe`
 - `static_assert`
@@ -572,7 +572,7 @@ Supported `await` contexts include:
 
 - plain expression positions
 - `if` expressions
-- `if` / `elif` / `else` bodies and conditions
+- `if` / `else if` / `else` bodies and conditions
 - `while` bodies and conditions
 - single-form and parallel `for` bodies and iterables
 - `match` discriminants and arms

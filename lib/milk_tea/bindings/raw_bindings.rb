@@ -327,6 +327,8 @@ module MilkTea
           "service" => "cstr?",
           "hints" => "const_ptr[addrinfo]?",
         },
+        "uv_udp_send" => { "addr" => "const_ptr[sockaddr]?" },
+        "uv_udp_try_send" => { "addr" => "const_ptr[sockaddr]?" },
         "uv_freeaddrinfo" => { "ai" => "ptr[addrinfo]?" },
       }.merge(libuv_fs_param_overrides).freeze
 
