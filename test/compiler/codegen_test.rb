@@ -5013,6 +5013,94 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/demo_generic_variant_codegen_Maybe_int_some payload = .*\.data\.some;/, generated)
   end
 
+  def test_generate_c_for_async_variant_payload_match
+    source = [
+      "# module demo.async_variant_payload_codegen",
+      "",
+      "import std.status as status",
+      "",
+      "async function helper() -> status.Status[int, int]:",
+      "    return status.Status[int, int].ok(value= 7)",
+      "",
+      "async function main() -> int:",
+      "    let result = await helper()",
+      "    match result:",
+      "        status.Status.ok as payload:",
+      "            let value = payload.value",
+      "            return value",
+      "        status.Status.err as payload:",
+      "            let error = payload.error",
+      "            return error",
+      "    return 9",
+    ].join("\n")
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/std_status_Status_int_int_ok payload = .*\.data\.ok;/, generated)
+    assert_match(/std_status_Status_int_int_err .*\.data\.err;/, generated)
+  end
+
+  def test_run_program_with_struct_field_of_generic_variant
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.status_field_codegen
+
+      import std.status as status
+
+      struct Holder:
+          result: status.Status[int, int]
+
+      function main() -> int:
+          let holder = Holder(result = status.Status[int, int].ok(value= 7))
+          match holder.result:
+              status.Status.ok:
+                  return 0
+              status.Status.err:
+                  return 1
+          return 2
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_run_program_for_async_status_result
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "# module demo.async_status_codegen",
+      "",
+      "import std.status as status",
+      "",
+      "async function helper() -> status.Status[int, int]:",
+      "    return status.Status[int, int].ok(value= 7)",
+      "",
+      "async function main() -> int:",
+      "    let result = await helper()",
+      "    match result:",
+      "        status.Status.ok as payload:",
+      "            let value = payload.value",
+      "            return value",
+      "        status.Status.err as payload:",
+      "            let error = payload.error",
+      "            return error",
+      "    return 9",
+    ].join("\n")
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 7, result.exit_status
+    assert_includes result.link_flags, "-luv"
+  end
+
   def test_generate_c_for_union_with_proc_field
     source = <<~MT
       # module demo.union_proc_codegen
@@ -5129,6 +5217,31 @@ class MilkTeaCodegenTest < Minitest::Test
 
       program = MilkTea::ModuleLoader.new(module_roots: [dir, MilkTea.root]).check_program(root_path)
       MilkTea::Codegen.generate_c(program)
+    end
+  end
+
+  def run_program_from_source(source, compiler:, imported_sources: {})
+    Dir.mktmpdir("milk-tea-codegen-run") do |dir|
+      root_path = File.join(dir, source_relative_path(source, default: File.join("demo", "main.mt")))
+      FileUtils.mkdir_p(File.dirname(root_path))
+      File.write(root_path, source)
+
+      imported_sources.each do |relative_path, imported_source|
+        path = File.join(dir, relative_path)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, imported_source)
+      end
+
+      MilkTea::Run.run(root_path, cc: compiler)
+    end
+  end
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
     end
   end
 end
