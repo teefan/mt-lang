@@ -120,43 +120,43 @@ external function SDL_wcscmp(str1: const_ptr[int], str2: const_ptr[int]) -> int
 external function SDL_wcsncmp(str1: const_ptr[int], str2: const_ptr[int], maxlen: ptr_uint) -> int
 external function SDL_wcscasecmp(str1: const_ptr[int], str2: const_ptr[int]) -> int
 external function SDL_wcsncasecmp(str1: const_ptr[int], str2: const_ptr[int], maxlen: ptr_uint) -> int
-external function SDL_wcstol(str: const_ptr[int], endp: ptr[ptr[int]], base: int) -> ptr_int
-external function SDL_strlen(str: cstr) -> ptr_uint
-external function SDL_strnlen(str: cstr, maxlen: ptr_uint) -> ptr_uint
+external function SDL_wcstol(str_: const_ptr[int], endp: ptr[ptr[int]], base: int) -> ptr_int
+external function SDL_strlen(str_: cstr) -> ptr_uint
+external function SDL_strnlen(str_: cstr, maxlen: ptr_uint) -> ptr_uint
 external function SDL_strlcpy(dst: ptr[char], src: cstr, maxlen: ptr_uint) -> ptr_uint
 external function SDL_utf8strlcpy(dst: ptr[char], src: cstr, dst_bytes: ptr_uint) -> ptr_uint
 external function SDL_strlcat(dst: ptr[char], src: cstr, maxlen: ptr_uint) -> ptr_uint
-external function SDL_strdup(str: cstr) -> ptr[char]?
-external function SDL_strndup(str: cstr, maxlen: ptr_uint) -> ptr[char]
-external function SDL_strrev(str: ptr[char]) -> ptr[char]
-external function SDL_strupr(str: ptr[char]) -> ptr[char]
-external function SDL_strlwr(str: ptr[char]) -> ptr[char]
-external function SDL_strchr(str: cstr, c: int) -> ptr[char]?
-external function SDL_strrchr(str: cstr, c: int) -> ptr[char]?
+external function SDL_strdup(str_: cstr) -> ptr[char]?
+external function SDL_strndup(str_: cstr, maxlen: ptr_uint) -> ptr[char]
+external function SDL_strrev(str_: ptr[char]) -> ptr[char]
+external function SDL_strupr(str_: ptr[char]) -> ptr[char]
+external function SDL_strlwr(str_: ptr[char]) -> ptr[char]
+external function SDL_strchr(str_: cstr, c: int) -> ptr[char]?
+external function SDL_strrchr(str_: cstr, c: int) -> ptr[char]?
 external function SDL_strstr(haystack: cstr, needle: cstr) -> ptr[char]?
 external function SDL_strnstr(haystack: cstr, needle: cstr, maxlen: ptr_uint) -> ptr[char]?
 external function SDL_strcasestr(haystack: cstr, needle: cstr) -> ptr[char]?
-external function SDL_strtok_r(str: ptr[char]?, delim: cstr, saveptr: ptr[ptr[char]]) -> ptr[char]?
-external function SDL_utf8strlen(str: cstr) -> ptr_uint
-external function SDL_utf8strnlen(str: cstr, bytes: ptr_uint) -> ptr_uint
-external function SDL_itoa(value: int, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_uitoa(value: uint, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_ltoa(value: ptr_int, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_ultoa(value: ptr_uint, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_lltoa(value: long, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_ulltoa(value: ulong, str: ptr[char], radix: int) -> ptr[char]
-external function SDL_atoi(str: cstr) -> int
-external function SDL_atof(str: cstr) -> double
-external function SDL_strtol(str: cstr, endp: ptr[ptr[char]], base: int) -> ptr_int
-external function SDL_strtoul(str: cstr, endp: ptr[ptr[char]], base: int) -> ptr_uint
-external function SDL_strtoll(str: cstr, endp: ptr[ptr[char]], base: int) -> long
-external function SDL_strtoull(str: cstr, endp: ptr[ptr[char]], base: int) -> ulong
-external function SDL_strtod(str: cstr, endp: ptr[ptr[char]]) -> double
+external function SDL_strtok_r(str_: ptr[char]?, delim: cstr, saveptr: ptr[ptr[char]]) -> ptr[char]?
+external function SDL_utf8strlen(str_: cstr) -> ptr_uint
+external function SDL_utf8strnlen(str_: cstr, bytes: ptr_uint) -> ptr_uint
+external function SDL_itoa(value: int, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_uitoa(value: uint, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_ltoa(value: ptr_int, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_ultoa(value: ptr_uint, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_lltoa(value: long, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_ulltoa(value: ulong, str_: ptr[char], radix: int) -> ptr[char]
+external function SDL_atoi(str_: cstr) -> int
+external function SDL_atof(str_: cstr) -> double
+external function SDL_strtol(str_: cstr, endp: ptr[ptr[char]], base: int) -> ptr_int
+external function SDL_strtoul(str_: cstr, endp: ptr[ptr[char]], base: int) -> ptr_uint
+external function SDL_strtoll(str_: cstr, endp: ptr[ptr[char]], base: int) -> long
+external function SDL_strtoull(str_: cstr, endp: ptr[ptr[char]], base: int) -> ulong
+external function SDL_strtod(str_: cstr, endp: ptr[ptr[char]]) -> double
 external function SDL_strcmp(str1: cstr, str2: cstr) -> int
 external function SDL_strncmp(str1: cstr, str2: cstr, maxlen: ptr_uint) -> int
 external function SDL_strcasecmp(str1: cstr, str2: cstr) -> int
 external function SDL_strncasecmp(str1: cstr, str2: cstr, maxlen: ptr_uint) -> int
-external function SDL_strpbrk(str: cstr, breakset: cstr) -> ptr[char]
+external function SDL_strpbrk(str_: cstr, breakset: cstr) -> ptr[char]
 external function SDL_StepUTF8(pstr: ptr[cstr], pslen: ptr[ptr_uint]?) -> Uint32
 external function SDL_StepBackUTF8(start: cstr, pstr: ptr[cstr]) -> Uint32
 external function SDL_UCS4ToUTF8(codepoint: uint, dst: ptr[char]) -> ptr[char]
@@ -1616,13 +1616,13 @@ external function SDL_SetGamepadEventsEnabled(enabled: bool) -> void
 external function SDL_GamepadEventsEnabled() -> bool
 external function SDL_GetGamepadBindings(gamepad: ptr[SDL_Gamepad], count: ptr[int]) -> ptr[ptr[SDL_GamepadBinding]]?
 external function SDL_UpdateGamepads() -> void
-external function SDL_GetGamepadTypeFromString(str: cstr) -> SDL_GamepadType
+external function SDL_GetGamepadTypeFromString(str_: cstr) -> SDL_GamepadType
 external function SDL_GetGamepadStringForType(type_: SDL_GamepadType) -> cstr?
-external function SDL_GetGamepadAxisFromString(str: cstr) -> SDL_GamepadAxis
+external function SDL_GetGamepadAxisFromString(str_: cstr) -> SDL_GamepadAxis
 external function SDL_GetGamepadStringForAxis(axis: SDL_GamepadAxis) -> cstr?
 external function SDL_GamepadHasAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> bool
 external function SDL_GetGamepadAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> Sint16
-external function SDL_GetGamepadButtonFromString(str: cstr) -> SDL_GamepadButton
+external function SDL_GetGamepadButtonFromString(str_: cstr) -> SDL_GamepadButton
 external function SDL_GetGamepadStringForButton(button: SDL_GamepadButton) -> cstr?
 external function SDL_GamepadHasButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
 external function SDL_GetGamepadButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> bool
@@ -3830,7 +3830,7 @@ external function SDL_GetRenderMetalCommandEncoder(renderer: ptr[SDL_Renderer]) 
 external function SDL_AddVulkanRenderSemaphores(renderer: ptr[SDL_Renderer], wait_stage_mask: uint, wait_semaphore: ptr_int, signal_semaphore: ptr_int) -> bool
 external function SDL_SetRenderVSync(renderer: ptr[SDL_Renderer], vsync: int) -> bool
 external function SDL_GetRenderVSync(renderer: ptr[SDL_Renderer], vsync: ptr[int]) -> bool
-external function SDL_RenderDebugText(renderer: ptr[SDL_Renderer], x: float, y: float, str: cstr) -> bool
+external function SDL_RenderDebugText(renderer: ptr[SDL_Renderer], x: float, y: float, str_: cstr) -> bool
 external function SDL_RenderDebugTextFormat(renderer: ptr[SDL_Renderer], x: float, y: float, fmt: cstr, ...) -> bool
 external function SDL_SetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: SDL_ScaleMode) -> bool
 external function SDL_GetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: ptr[SDL_ScaleMode]) -> bool

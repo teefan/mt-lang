@@ -11,7 +11,7 @@ class MilkTeaStdBytesTest < Minitest::Test
     source = [
       "import std.bytes as bytes",
       "import std.maybe as maybe",
-      "import std.str as str",
+      "import std.str as text",
       "",
       "function main() -> int:",
       "    var source = array[ubyte, 3](65, 66, 67)",

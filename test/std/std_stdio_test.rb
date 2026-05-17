@@ -10,7 +10,7 @@ class MilkTeaStdStdioTest < Minitest::Test
 
     source = [
       "import std.stdio as stdio",
-      "import std.str as str",
+      "import std.str as text_ops",
       "",
       "function byte_at(text: str, index: ptr_uint) -> int:",
       "    unsafe:",
@@ -20,7 +20,7 @@ class MilkTeaStdStdioTest < Minitest::Test
       "    var buffer = zero[array[char, 64]]",
       "    if stdio.format_to(ptr_of(buffer[0]), 64, \"n=%d\", 7) < 0:",
       "        return 1",
-      "    let view = str.chars_as_str(ptr_of(buffer[0]))",
+      "    let view = text_ops.chars_as_str(ptr_of(buffer[0]))",
       "    if not view.equal(\"n=7\"):",
       "        return 2",
       "    if stdio.print(\"ok=%d\\n\", 1) < 0:",
@@ -43,7 +43,7 @@ class MilkTeaStdStdioTest < Minitest::Test
 
     source = [
       "import std.stdio as stdio",
-      "import std.str as str",
+      "import std.str as text_ops",
       "",
       "function main() -> int:",
       "    let writer = stdio.open(\"stream.txt\", \"w\")",
@@ -66,7 +66,7 @@ class MilkTeaStdStdioTest < Minitest::Test
       "    var line = zero[array[char, 16]]",
       "    if stdio.read_line(ptr_of(line[0]), 16, reader) == null:",
       "        return 8",
-      "    let view = str.chars_as_str(ptr_of(line[0]))",
+      "    let view = text_ops.chars_as_str(ptr_of(line[0]))",
       "    if not view.equal(\"n=7!\\n\"):",
       "        return 9",
       "    if stdio.read_char(reader) != stdio.EOF:",
@@ -191,7 +191,7 @@ class MilkTeaStdStdioTest < Minitest::Test
 
     source = [
       "import std.stdio as stdio",
-      "import std.str as str",
+      "import std.str as text_ops",
       "",
       "function main() -> int:",
       "    let temp = stdio.temporary_file()",
@@ -203,7 +203,7 @@ class MilkTeaStdStdioTest < Minitest::Test
       "    var temp_line = zero[array[char, 8]]",
       "    if stdio.read_line(ptr_of(temp_line[0]), 8, temp) == null:",
       "        return 3",
-      "    let temp_view = str.chars_as_str(ptr_of(temp_line[0]))",
+      "    let temp_view = text_ops.chars_as_str(ptr_of(temp_line[0]))",
       "    if not temp_view.equal(\"temp\"):",
       "        return 4",
       "    if stdio.close(temp) != 0:",
@@ -227,7 +227,7 @@ class MilkTeaStdStdioTest < Minitest::Test
       "        return 11",
       "    if stdio.close(reader) != 0:",
       "        return 12",
-      "    let renamed_view = str.chars_as_str(ptr_of(renamed[0]))",
+      "    let renamed_view = text_ops.chars_as_str(ptr_of(renamed[0]))",
       "    if not renamed_view.equal(\"done\"):",
       "        return 13",
       "    if stdio.remove(\"rename-target.txt\") != 0:",

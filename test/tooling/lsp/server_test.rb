@@ -5546,8 +5546,8 @@ class LSPServerTest < Minitest::Test
 
     def test_semantic_tokens_prefer_parameter_binding_over_builtin_type_name
       source = <<~MT
-        function is_ascii_space(byte: ubyte) -> bool:
-            return byte == 32
+        function is_ascii_space(ch: ubyte) -> bool:
+            return ch == 32
       MT
 
       with_server do |client|
@@ -5564,8 +5564,8 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        byte_decl = semantic_entry_for_lexeme_on_line(source, entries, "byte", 0)
-        byte_ref = semantic_entry_for_lexeme_on_line(source, entries, "byte", 1)
+        byte_decl = semantic_entry_for_lexeme_on_line(source, entries, "ch", 0)
+        byte_ref = semantic_entry_for_lexeme_on_line(source, entries, "ch", 1)
 
         assert_equal "parameter", byte_decl.fetch("tokenType")
         assert_includes byte_decl.fetch("modifierNames"), "declaration"
@@ -6374,6 +6374,41 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_code_action_quickfix_reserved_primitive_name
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_reserved_primitive_name.mt"
+      source = <<~MT
+        function is_ascii_space(byte: ubyte) -> bool:
+            let byte_value = byte
+            return byte == 32 and byte_value == 32
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      reserved_diag = {
+        "source" => "milk-tea",
+        "code" => "reserved-primitive-name",
+        "range" => { "start" => { "line" => 0, "character" => 24 }, "end" => { "line" => 0, "character" => 28 } },
+        "message" => "parameter 'byte' uses reserved primitive type name 'byte'; rename it before this becomes a hard error"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 0, "character" => 24 }, "end" => { "line" => 0, "character" => 28 } },
+        "context" => { "diagnostics" => [reserved_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Rename 'byte' to 'byte_value_2'" }
+      assert quickfix, "expected a quickFix action for reserved-primitive-name"
+      edits = quickfix.dig("edit", "changes", uri)
+      assert_equal 3, edits.length
+      assert_equal ["byte_value_2"], edits.map { |edit| edit["newText"] }.uniq
+    end
+  end
+
   def test_code_action_quickfix_redundant_else
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -6496,8 +6531,8 @@ class LSPServerTest < Minitest::Test
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_cast.mt"
       source = <<~MT
-        function is_ascii_space(byte: ubyte) -> bool:
-            return byte == ubyte<-32
+        function is_ascii_space(ch: ubyte) -> bool:
+            return ch == ubyte<-32
       MT
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
@@ -6506,13 +6541,13 @@ class LSPServerTest < Minitest::Test
       redundant_diag = {
         "source" => "milk-tea",
         "code" => "redundant-cast",
-        "range" => { "start" => { "line" => 1, "character" => 19 }, "end" => { "line" => 1, "character" => 28 } },
+        "range" => { "start" => { "line" => 1, "character" => 17 }, "end" => { "line" => 1, "character" => 26 } },
         "message" => "cast to ubyte is redundant here; remove the cast"
       }
 
       response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
-        "range" => { "start" => { "line" => 1, "character" => 19 }, "end" => { "line" => 1, "character" => 28 } },
+        "range" => { "start" => { "line" => 1, "character" => 17 }, "end" => { "line" => 1, "character" => 26 } },
         "context" => { "diagnostics" => [redundant_diag] }
       })
 

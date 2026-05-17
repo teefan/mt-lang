@@ -71,7 +71,7 @@ methods String:
         return
 
 
-    public editable function push_byte(byte: ubyte) -> void:
+    public editable function push_byte(value: ubyte) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -80,7 +80,7 @@ methods String:
 
         unsafe:
             let data_ptr = ptr[ubyte]<-data
-            read(data_ptr + this.len) = byte
+            read(data_ptr + this.len) = value
         this.len += 1
         return
 

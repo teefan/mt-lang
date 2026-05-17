@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../core/token"
+require_relative "../core/types"
 require_relative "../tooling/formatter"
 
 module MilkTea
@@ -978,7 +980,7 @@ module MilkTea
         else
           raw_declaration.params.map do |param|
             {
-              "name" => snake_case(param.name),
+              "name" => generated_foreign_param_name(param.name),
               "type" => render_public_foreign_type(param.type),
             }
           end
@@ -1198,7 +1200,7 @@ module MilkTea
       end
 
       def render_raw_foreign_param(param)
-        "#{snake_case(param.name)}: #{render_public_foreign_type(param.type)}"
+        "#{generated_foreign_param_name(param.name)}: #{render_public_foreign_type(param.type)}"
       end
 
       def render_method_param(param)
@@ -1209,7 +1211,7 @@ module MilkTea
         type = param.type
 
         if type.is_a?(AST::TypeRef) && type.name.to_s == "cstr" && type.arguments.empty? && !type.nullable
-          name = snake_case(param.name)
+          name = generated_foreign_param_name(param.name)
           return render_foreign_param({ "name" => name, "type" => "str", "boundary_type" => "cstr" })
         end
 
@@ -1220,11 +1222,22 @@ module MilkTea
         type = param.type
 
         if type.is_a?(AST::TypeRef) && type.name.to_s == "cstr" && type.arguments.empty? && !type.nullable
-          name = snake_case(param.name)
+          name = generated_foreign_param_name(param.name)
           return { "name" => name, "type" => "str", "boundary_type" => "cstr" }
         end
 
-        { "name" => snake_case(param.name), "type" => render_public_foreign_type(param.type) }
+        { "name" => generated_foreign_param_name(param.name), "type" => render_public_foreign_type(param.type) }
+      end
+
+      def generated_foreign_param_name(name)
+        normalized = snake_case(name)
+        return normalized unless generated_binding_name_conflict?(normalized)
+
+        "#{normalized}_"
+      end
+
+      def generated_binding_name_conflict?(name)
+        Token::KEYWORDS.key?(name) || Types::BUILTIN_PRIMITIVE_NAMES.include?(name)
       end
 
       def render_public_foreign_type(type)

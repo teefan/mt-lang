@@ -3389,7 +3389,7 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "# module demo.str_methods_surface",
       "",
-      "import std.str",
+      "import std.str as text_ops",
       "import std.mem.arena as arena",
       "",
       "function main() -> int:",

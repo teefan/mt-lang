@@ -9,7 +9,7 @@ class MilkTeaStdTimeTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.str as str",
+      "import std.str as text",
       "import std.time as time",
       "",
       "function main() -> int:",
@@ -23,14 +23,14 @@ class MilkTeaStdTimeTest < Minitest::Test
       "    var local_buffer = zero[array[char, 32]]",
       "    if time.format_local_time_into(ptr_of(local_buffer[0]), 32, \"%Y\", now) != ptr_uint<-4:",
       "        return 3",
-      "    let local_view = str.chars_as_str(ptr_of(local_buffer[0]))",
+      "    let local_view = text.chars_as_str(ptr_of(local_buffer[0]))",
       "    if local_view.len != ptr_uint<-4:",
       "        return 4",
       "",
       "    var utc_buffer = zero[array[char, 32]]",
       "    if time.format_utc_time_into(ptr_of(utc_buffer[0]), 32, \"%m\", now) != ptr_uint<-2:",
       "        return 5",
-      "    let utc_view = str.chars_as_str(ptr_of(utc_buffer[0]))",
+      "    let utc_view = text.chars_as_str(ptr_of(utc_buffer[0]))",
       "    if utc_view.len != ptr_uint<-2:",
       "        return 6",
       "",

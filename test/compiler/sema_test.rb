@@ -1905,6 +1905,142 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/duplicate value width/, error.message)
   end
 
+  def test_rejects_function_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function double() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/function double uses reserved primitive type name double/, error.message)
+  end
+
+  def test_rejects_parameter_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function main(byte: int) -> int:
+          return byte
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/parameter byte uses reserved primitive type name byte/, error.message)
+  end
+
+  def test_rejects_local_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function main() -> int:
+          let byte = 1
+          return byte
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/local byte uses reserved primitive type name byte/, error.message)
+  end
+
+  def test_rejects_let_else_error_binding_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.status_bad
+
+      import std.status as status
+
+      function parse(input: int) -> status.Status[int, int]:
+          if input < 0:
+              return status.Status[int, int].err(error= 7)
+          return status.Status[int, int].ok(value= input + 1)
+
+      function main(input: int) -> int:
+          let value = parse(input) else as byte:
+              return byte
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/let-else error binding byte uses reserved primitive type name byte/, error.message)
+  end
+
+  def test_rejects_for_binding_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function main() -> int:
+          for byte in 0..2:
+              return byte
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/for binding byte uses reserved primitive type name byte/, error.message)
+  end
+
+  def test_rejects_proc_parameter_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function main() -> int:
+          let callback = proc(byte: int) -> int:
+              return byte
+          return callback(1)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/parameter byte uses reserved primitive type name byte/, error.message)
+  end
+
+  def test_rejects_import_alias_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      import std.status as str
+
+      function main() -> int:
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/import alias str uses reserved primitive type name str/, error.message)
+  end
+
+  def test_rejects_type_parameter_named_after_reserved_primitive_type
+    source = <<~MT
+      # module demo.bad
+
+      function identity[byte](value: byte) -> byte:
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type parameter byte uses reserved primitive type name byte/, error.message)
+  end
+
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
       # module demo.ffi
@@ -3625,7 +3761,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.str_methods
 
-      import std.str
+      import std.str as text_ops
       import std.mem.arena as arena
 
       function main() -> int:

@@ -6,9 +6,7 @@ require "uri"
 
 module MilkTea
   class Linter
-    BUILTIN_TYPE_STYLE_NAMES = %w[
-      bool short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
-    ].to_set.freeze
+    RESERVED_PRIMITIVE_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES.to_set.freeze
 
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
@@ -23,12 +21,15 @@ module MilkTea
     # mutated: true if ever the target of a plain `=` or compound assignment
     Binding = Struct.new(
       :name, :line, :column, :used, :binding_kind, :allow_prefer_let, :mutated,
+      :replacement_name, :replacement_base_name, :fix_index,
       keyword_init: true
     )
     PrefixCastSite = Data.define(
       :line, :column, :length, :target_text, :replacement_text,
       :start_offset, :end_offset, :pointer_like, :literal_source
     )
+    ReservedPrimitiveNameSite = Data.define(:line, :column, :length)
+    ReservedPrimitiveNameFix = Data.define(:kind, :original_name, :replacement_name, :sites)
 
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil)
       context = nil
@@ -52,6 +53,20 @@ module MilkTea
 
       warnings = filter_by_rules(warnings, select:, ignore:)
       warnings
+    end
+
+    def self.collect_reserved_primitive_name_fixes(source, path: nil, sema_analysis: nil, unresolved_import_paths: nil)
+      context = nil
+      if sema_analysis.nil? || unresolved_import_paths.nil?
+        context = best_effort_lint_context(source, path:)
+        sema_analysis ||= context[:analysis]
+        unresolved_import_paths ||= context[:unresolved_import_paths]
+      end
+
+      ast = sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
+      linter = new(path:, sema_analysis:, source:, unresolved_import_paths:)
+      linter.lint(ast)
+      linter.reserved_primitive_name_fixes
     end
 
     # Load the nearest .mt-lint.yml walking up from the source file's directory.
@@ -236,23 +251,38 @@ module MilkTea
       redundant_cast_warnings = lint_source(fixed_source, path:).select do |w|
         w.code == "redundant-cast" && w.line && w.column && w.length
       end
-      return fixed_source if redundant_cast_warnings.empty?
+      unless redundant_cast_warnings.empty?
+        fixed_lines = fixed_source.lines
+        redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
+          idx = w.line - 1
+          next unless fixed_lines[idx]
 
-      fixed_lines = fixed_source.lines
-      redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-        idx = w.line - 1
-        next unless fixed_lines[idx]
+          start_char = w.column - 1
+          cast_text = fixed_lines[idx][start_char, w.length]
+          replacement = extract_prefix_cast_source_text(cast_text)
+          next unless replacement
 
-        start_char = w.column - 1
-        cast_text = fixed_lines[idx][start_char, w.length]
-        replacement = extract_prefix_cast_source_text(cast_text)
-        next unless replacement
+          fixed_lines[idx] = fixed_lines[idx].dup
+          fixed_lines[idx][start_char, w.length] = replacement
+        end
 
-        fixed_lines[idx] = fixed_lines[idx].dup
-        fixed_lines[idx][start_char, w.length] = replacement
+        fixed_source = fixed_lines.join
       end
 
-      fixed_lines.join
+      reserved_warnings = lint_source(fixed_source, path:).select do |w|
+        w.code == "reserved-primitive-name" && w.line && w.column && w.symbol_name
+      end
+      return fixed_source if reserved_warnings.empty?
+
+      warning_sites = reserved_warnings.each_with_object(Set.new) do |warning, sites|
+        sites << [warning.line, warning.column, warning.symbol_name]
+      end
+      reserved_fixes = collect_reserved_primitive_name_fixes(fixed_source, path:).select do |fix|
+        declaration_site = fix.sites.first
+        warning_sites.include?([declaration_site.line, declaration_site.column, fix.original_name])
+      end
+
+      apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
     end
 
     def self.extract_prefix_cast_source_text(text)
@@ -264,6 +294,41 @@ module MilkTea
       replacement = text[(separator + 2)..]
       replacement = replacement.sub(/\A\s+/, "")
       replacement unless replacement.nil? || replacement.empty?
+    end
+
+    def self.apply_reserved_primitive_name_fixes(source, fixes)
+      return source if fixes.empty?
+
+      line_offsets = line_start_offsets(source)
+      edits = fixes.flat_map do |fix|
+        fix.sites.uniq { |site| [site.line, site.column] }.filter_map do |site|
+          next unless site.line && site.column
+          next unless site.line >= 1 && site.line <= line_offsets.length
+
+          {
+            start_offset: line_offsets[site.line - 1] + site.column - 1,
+            length: site.length,
+            replacement: fix.replacement_name,
+          }
+        end
+      end
+      return source if edits.empty?
+
+      updated_source = source.dup
+      edits.sort_by { |edit| [edit[:start_offset], edit[:length]] }.reverse_each do |edit|
+        updated_source[edit[:start_offset], edit[:length]] = edit[:replacement]
+      end
+      updated_source
+    end
+
+    def self.line_start_offsets(source)
+      offsets = []
+      start_offset = 0
+      source.lines.each do |line|
+        offsets << start_offset
+        start_offset += line.length
+      end
+      offsets
     end
 
     def self.rewrite_directional_ffi_argument(line)
@@ -394,7 +459,9 @@ module MilkTea
     def self.line_prefix_cast_sites(line, line_number, analysis: nil)
       return [] unless line.include?("<-")
 
-      tokens = Lexer.lex(line)
+      indent_width = line[/\A\s*/].length
+      lexed_line = line[indent_width..] || ""
+      tokens = Lexer.lex(lexed_line)
       less_indices = tokens.each_index.select do |index|
         token = tokens[index]
         minus = tokens[index + 1]
@@ -406,11 +473,21 @@ module MilkTea
       less_indices.each_with_object([]) do |less_index, sites|
         matching_site = nil
         tokens[0...less_index].each_index.select { |index| tokens[index].type == :identifier }.each do |start_index|
-          site = parse_prefix_cast_site(line, line_number, tokens[start_index].start_offset, analysis:)
+          site = parse_prefix_cast_site(lexed_line, line_number, tokens[start_index].start_offset, analysis:)
           next unless site
           next unless site.start_offset <= tokens[less_index].start_offset && tokens[less_index].start_offset < site.end_offset
 
-          matching_site = site
+          matching_site = PrefixCastSite.new(
+            line: site.line,
+            column: site.column + indent_width,
+            length: site.length,
+            target_text: site.target_text,
+            replacement_text: site.replacement_text,
+            start_offset: site.start_offset + indent_width,
+            end_offset: site.end_offset + indent_width,
+            pointer_like: site.pointer_like,
+            literal_source: site.literal_source,
+          )
           break
         end
         next unless matching_site
@@ -552,12 +629,14 @@ module MilkTea
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
       @warnings = []
       @scopes = []
+      @module_bindings = {}
       @declared_callable_names = Set.new
       @declared_directional_functions = {}
       @generic_function_depth = 0
       @current_function_stack = []
       @prefix_cast_sites = nil
       @redundant_cast_context_site_keys = Set.new
+      @reserved_primitive_name_fixes = []
     end
 
     def lint(ast)
@@ -566,32 +645,102 @@ module MilkTea
       @warnings
     end
 
+    def reserved_primitive_name_fixes
+      @reserved_primitive_name_fixes
+    end
+
     private
 
     def visit_source_file(source_file)
       @declared_callable_names = declared_callable_names(source_file)
       @declared_directional_functions = declared_directional_functions(source_file)
+      seed_module_bindings(source_file)
       check_unused_imports(source_file)
       check_platform_api_drift(source_file)
       source_file.declarations.each do |declaration|
         case declaration
-        when AST::FunctionDef, AST::MethodDef
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
+        when AST::FunctionDef
+          visit_function(declaration)
+        when AST::MethodDef
+          warn_reserved_primitive_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
           visit_function(declaration)
         when AST::MethodsBlock
           generic_context = methods_block_generic?(declaration)
           declaration.methods.each do |method|
-            warn_builtin_type_style_name(method.name, line: method.line, column: method.column, kind_label: "function")
+            warn_reserved_primitive_name(method.name, line: method.line, column: method.column, kind_label: "function")
             visit_function(method, generic_context:)
           end
-        when AST::ExternFunctionDecl, AST::ForeignFunctionDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "function")
-        when AST::ConstDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "constant")
-        when AST::VarDecl
-          warn_builtin_type_style_name(declaration.name, line: declaration.line, column: declaration_column(declaration), kind_label: "module variable")
         end
       end
+    end
+
+    def seed_module_bindings(source_file)
+      @module_bindings = {}
+
+      import_names = source_file.imports.filter_map do |import|
+        import.alias_name || import.path.parts.last
+      end
+      source_file.imports.each do |import|
+        local_name = import.alias_name || import.path.parts.last
+        next if ignored_binding_name?(local_name)
+
+        declare_reserved_primitive_module_binding(
+          local_name,
+          kind_label: "import alias",
+          line: import.line,
+          column: import.column,
+          unavailable_names: import_names,
+        )
+      end
+
+      source_file.declarations.each do |declaration|
+        kind_label = case declaration
+                     when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+                       "function"
+                     when AST::ConstDecl
+                       "constant"
+                     when AST::VarDecl
+                       "module variable"
+                     else
+                       nil
+                     end
+        next unless kind_label
+        next if ignored_binding_name?(declaration.name)
+
+        declare_reserved_primitive_module_binding(
+          declaration.name,
+          kind_label:,
+          line: declaration.line,
+          column: declaration_column(declaration),
+          unavailable_names: @declared_callable_names,
+        )
+      end
+    end
+
+    def declare_reserved_primitive_module_binding(name, kind_label:, line:, column:, unavailable_names:)
+      replacement_name = nil
+      replacement_base_name = nil
+      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+        replacement_base_name = suggested_reserved_primitive_name(name, kind_label:)
+        replacement_name = next_available_reserved_primitive_name(
+          replacement_base_name,
+          unavailable_names,
+        )
+      end
+
+      binding = Binding.new(
+        name:,
+        line:,
+        column:,
+        used: false,
+        binding_kind: :module,
+        allow_prefer_let: false,
+        mutated: false,
+        replacement_name:,
+        replacement_base_name:,
+      )
+      register_reserved_primitive_name_fix(binding, kind_label:, replacement_name:) if replacement_name
+      @module_bindings[name] = binding
     end
 
     def methods_block_generic?(declaration)
@@ -1144,6 +1293,7 @@ module MilkTea
       @generic_function_depth += 1 if generic_body
       @current_function_stack << function
       with_scope do
+        warn_reserved_primitive_type_params(function.type_params, kind_label: "type parameter")
         function.params.each do |param|
           declare_param(
             param.name,
@@ -1419,7 +1569,7 @@ module MilkTea
       when nil
         nil
       when AST::Identifier
-        mark_used(expression.name)
+        mark_used(expression.name, identifier: expression)
       when AST::MemberAccess
         visit_expression(expression.receiver)
       when AST::IndexAccess
@@ -1514,7 +1664,7 @@ module MilkTea
     def mark_assignment_target_reads(target, operator)
       return if operator == "="
 
-      mark_used(target.name) if target.is_a?(AST::Identifier)
+      mark_used(target.name, identifier: target) if target.is_a?(AST::Identifier)
     end
 
     def mark_mutated(target)
@@ -1600,7 +1750,17 @@ module MilkTea
     def declare_local(name, line, column: nil, var: false)
       return if ignored_binding_name?(name)
 
-      warn_builtin_type_style_name(name, line:, column:, kind_label: "local")
+      resolve_reserved_primitive_name_conflicts!(name)
+
+      replacement_name = nil
+      replacement_base_name = nil
+      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+        replacement_base_name = suggested_reserved_primitive_name(name, kind_label: "local")
+        replacement_name = next_available_reserved_primitive_name(
+          replacement_base_name,
+          visible_binding_names(excluding_name: name),
+        )
+      end
 
       # shadow: check whether any outer scope already has a binding for this name
       if @scopes.length > 1
@@ -1620,36 +1780,126 @@ module MilkTea
         name:, line:, column:, used: false,
         binding_kind: :local,
         allow_prefer_let: var && !generic_function_context?,
-        mutated: false
+        mutated: false,
+        replacement_name:,
+        replacement_base_name:,
       )
+      register_reserved_primitive_name_fix(@scopes.last[name], kind_label: "local", replacement_name:) if replacement_name
     end
 
     def declare_param(name, line: nil, column: nil)
       return if ignored_binding_name?(name)
 
-      warn_builtin_type_style_name(name, line:, column:, kind_label: "parameter")
+      resolve_reserved_primitive_name_conflicts!(name)
+
+      replacement_name = nil
+      replacement_base_name = nil
+      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+        replacement_base_name = suggested_reserved_primitive_name(name, kind_label: "parameter")
+        replacement_name = next_available_reserved_primitive_name(
+          replacement_base_name,
+          visible_binding_names(excluding_name: name),
+        )
+      end
 
       @scopes.last[name] = Binding.new(
         name:, line:, column:, used: false,
         binding_kind: :param,
         allow_prefer_let: false,
-        mutated: false
+        mutated: false,
+        replacement_name:,
+        replacement_base_name:,
       )
+      register_reserved_primitive_name_fix(@scopes.last[name], kind_label: "parameter", replacement_name:) if replacement_name
     end
 
-    def warn_builtin_type_style_name(name, line:, column:, kind_label:)
-      return unless BUILTIN_TYPE_STYLE_NAMES.include?(name)
+    def warn_reserved_primitive_name(name, line:, column:, kind_label:)
+      return unless RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
 
       @warnings << Warning.new(
         path: @path,
         line:,
         column:,
         length: name.length,
-        code: "builtin-type-name",
-        message: "#{kind_label} '#{name}' reuses builtin type name '#{name}'; choose a less ambiguous name",
+        code: "reserved-primitive-name",
+        message: "#{kind_label} '#{name}' uses reserved primitive type name '#{name}'; rename it before this becomes a hard error",
         severity: :warning,
         symbol_name: name,
       )
+    end
+
+    def warn_reserved_primitive_type_params(type_params, kind_label:)
+      Array(type_params).each do |type_param|
+        warn_reserved_primitive_name(type_param.name, line: nil, column: nil, kind_label:)
+      end
+    end
+
+    def register_reserved_primitive_name_fix(binding, kind_label:, replacement_name:)
+      warn_reserved_primitive_name(binding.name, line: binding.line, column: binding.column, kind_label:)
+      return unless binding.line && binding.column
+
+      binding.fix_index = @reserved_primitive_name_fixes.length
+      @reserved_primitive_name_fixes << ReservedPrimitiveNameFix.new(
+        kind: kind_label,
+        original_name: binding.name,
+        replacement_name: replacement_name,
+        sites: [ReservedPrimitiveNameSite.new(line: binding.line, column: binding.column, length: binding.name.length)],
+      )
+    end
+
+    def suggested_reserved_primitive_name(name, kind_label:)
+      case kind_label
+      when "function"
+        "#{name}_fn"
+      when "import alias"
+        "#{name}_module"
+      else
+        "#{name}_value"
+      end
+    end
+
+    def next_available_reserved_primitive_name(base_name, unavailable_names)
+      unavailable = unavailable_names.to_set
+      return base_name unless unavailable.include?(base_name)
+
+      suffix = 2
+      loop do
+        candidate = "#{base_name}_#{suffix}"
+        return candidate unless unavailable.include?(candidate)
+
+        suffix += 1
+      end
+    end
+
+    def visible_binding_names(excluding_name: nil)
+      names = visible_bindings.each_with_object(Set.new) do |binding, result|
+        result << binding.name
+        result << binding.replacement_name if binding.replacement_name
+      end
+      names.delete(excluding_name) if excluding_name
+      names
+    end
+
+    def visible_bindings
+      @module_bindings.values + @scopes.flat_map(&:values)
+    end
+
+    def resolve_reserved_primitive_name_conflicts!(declared_name)
+      visible_bindings.each do |binding|
+        next unless binding.replacement_name == declared_name
+
+        replacement_name = next_available_reserved_primitive_name(
+          binding.replacement_base_name || binding.replacement_name,
+          visible_binding_names(excluding_name: binding.name),
+        )
+        next if replacement_name == binding.replacement_name
+
+        binding.replacement_name = replacement_name
+        next unless binding.fix_index
+
+        fix = @reserved_primitive_name_fixes[binding.fix_index]
+        @reserved_primitive_name_fixes[binding.fix_index] = fix.with(replacement_name:)
+      end
     end
 
     def param_line(param, fallback: nil)
@@ -1891,14 +2141,32 @@ module MilkTea
       end
     end
 
-    def mark_used(name)
+    def mark_used(name, identifier: nil)
       @scopes.reverse_each do |scope|
         binding = scope[name]
         next unless binding
 
         binding.used = true
+        record_reserved_primitive_identifier_use(binding, identifier)
         return
       end
+
+      binding = @module_bindings[name]
+      return unless binding
+
+      binding.used = true
+      record_reserved_primitive_identifier_use(binding, identifier)
+    end
+
+    def record_reserved_primitive_identifier_use(binding, identifier)
+      return unless binding.fix_index
+      return unless identifier&.line && identifier&.column
+
+      @reserved_primitive_name_fixes[binding.fix_index].sites << ReservedPrimitiveNameSite.new(
+        line: identifier.line,
+        column: identifier.column,
+        length: binding.name.length,
+      )
     end
 
     def emit_dead_assignment_warnings(stmts)

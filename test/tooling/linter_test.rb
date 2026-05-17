@@ -6,34 +6,34 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaLinterTest < Minitest::Test
-  def test_warns_on_local_named_after_builtin_type
+  def test_warns_on_local_named_after_reserved_primitive_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> int:
-          let double = 1
-          return double
+          let byte = 1
+          return byte
     MT
 
     assert_equal 1, warnings.length
     warning = warnings.first
-    assert_equal "builtin-type-name", warning.code
+    assert_equal "reserved-primitive-name", warning.code
     assert_equal 2, warning.line
-    assert_match(/local 'double' reuses builtin type name 'double'/, warning.message)
+    assert_match(/local 'byte' uses reserved primitive type name 'byte'/, warning.message)
   end
 
-  def test_warns_on_parameter_named_after_builtin_type
+  def test_warns_on_parameter_named_after_reserved_primitive_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-param"])
-      function main(int: int) -> int:
-          return int
+      function main(byte: int) -> int:
+          return byte
     MT
 
     assert_equal 1, warnings.length
     warning = warnings.first
-    assert_equal "builtin-type-name", warning.code
+    assert_equal "reserved-primitive-name", warning.code
     assert_equal 1, warning.line
-    assert_match(/parameter 'int' reuses builtin type name 'int'/, warning.message)
+    assert_match(/parameter 'byte' uses reserved primitive type name 'byte'/, warning.message)
   end
 
-  def test_warns_on_function_named_after_builtin_type
+  def test_warns_on_function_named_after_reserved_primitive_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function double(value: int) -> int:
           return value * 2
@@ -44,12 +44,12 @@ class MilkTeaLinterTest < Minitest::Test
 
     assert_equal 1, warnings.length
     warning = warnings.first
-    assert_equal "builtin-type-name", warning.code
+    assert_equal "reserved-primitive-name", warning.code
     assert_equal 1, warning.line
-    assert_match(/function 'double' reuses builtin type name 'double'/, warning.message)
+    assert_match(/function 'double' uses reserved primitive type name 'double'/, warning.message)
   end
 
-  def test_builtin_type_name_lint_handles_declarations_without_column_metadata
+  def test_reserved_primitive_name_lint_handles_declarations_without_column_metadata
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       const float: int = 1
       var double: int = 2
@@ -60,20 +60,25 @@ class MilkTeaLinterTest < Minitest::Test
       external function int() -> void
     MT
 
-    assert_equal ["builtin-type-name", "builtin-type-name", "builtin-type-name"], warnings.map(&:code)
+    assert_equal ["reserved-primitive-name", "reserved-primitive-name", "reserved-primitive-name"], warnings.map(&:code)
     assert_equal [1, 2, 3], warnings.map(&:line)
     assert_equal ["float", "double", "int"], warnings.map(&:symbol_name)
     assert_equal [nil, nil, nil], warnings.map(&:column)
   end
 
-  def test_does_not_warn_on_byte_local_name
-    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      function main() -> int:
-          let byte = 1
-          return byte
+  def test_fix_source_renames_reserved_primitive_parameter_and_local_uses
+    source = <<~MT
+      function is_ascii_space(byte: ubyte) -> bool:
+          let byte_value = byte
+          return byte == 32 and byte_value == 32
     MT
 
-    assert_equal [], warnings
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "function is_ascii_space(byte_value_2: ubyte) -> bool:"
+    assert_includes fixed, "let byte_value = byte_value_2"
+    assert_includes fixed, "return byte_value_2 == 32 and byte_value == 32"
+    refute_includes fixed, "function is_ascii_space(byte: ubyte) -> bool:"
   end
 
   def test_reports_unused_local_with_line_number
@@ -1771,8 +1776,8 @@ end
 class MilkTeaLinterRedundantCastTest < Minitest::Test
   def test_warns_on_redundant_numeric_literal_cast_in_comparison
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      function is_ascii_space(byte: ubyte) -> bool:
-          return byte == ubyte<-32 or byte == ubyte<-9
+      function is_ascii_space(ch: ubyte) -> bool:
+          return ch == ubyte<-32 or ch == ubyte<-9
     MT
 
     redundant_casts = warnings.select { |warning| warning.code == "redundant-cast" }
@@ -1824,13 +1829,13 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
 
   def test_fix_source_removes_redundant_casts
     source = <<~MT
-      function is_ascii_space(byte: ubyte) -> bool:
-          return byte == ubyte<-32 or byte == ubyte<-9
+      function is_ascii_space(ch: ubyte) -> bool:
+          return ch == ubyte<-32 or ch == ubyte<-9
     MT
 
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
 
-    assert_includes fixed, "return byte == 32 or byte == 9"
+    assert_includes fixed, "return ch == 32 or ch == 9"
     refute_includes fixed, "ubyte<-32"
     refute_includes fixed, "ubyte<-9"
   end

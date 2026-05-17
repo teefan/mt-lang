@@ -12,11 +12,11 @@ public function normalize_separators(path: str) -> string.String:
 
     var index: ptr_uint = 0
     while index < path.len:
-        let byte = path.byte_at(index)
-        if byte == ubyte<-92:
+        let value = path.byte_at(index)
+        if value == ubyte<-92:
             result.push_byte(ubyte<-47)
         else:
-            result.push_byte(byte)
+            result.push_byte(value)
         index += 1
 
     return result
@@ -155,9 +155,9 @@ function extension_dot(name: str) -> maybe.Maybe[ptr_uint]:
     return maybe.Maybe[ptr_uint].none
 
 
-function is_separator(byte: ubyte) -> bool:
-    return byte == ubyte<-47 or byte == ubyte<-92
+function is_separator(value: ubyte) -> bool:
+    return value == ubyte<-47 or value == ubyte<-92
 
 
-function is_ascii_letter(byte: ubyte) -> bool:
-    return (byte >= ubyte<-65 and byte <= ubyte<-90) or (byte >= ubyte<-97 and byte <= ubyte<-122)
+function is_ascii_letter(value: ubyte) -> bool:
+    return (value >= ubyte<-65 and value <= ubyte<-90) or (value >= ubyte<-97 and value <= ubyte<-122)

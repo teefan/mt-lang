@@ -302,6 +302,7 @@ module MilkTea
         @ast.imports.each do |import|
           with_error_node(import) do
             alias_name = import.alias_name || import.path.parts.last
+            ensure_non_reserved_primitive_name!(alias_name, kind_label: "import alias", line: import.line, column: import.column)
             raise_sema_error("duplicate import alias #{alias_name}") if @imports.key?(alias_name)
 
             module_binding = @imported_modules[import.path.to_s]
@@ -570,7 +571,7 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
-              ensure_available_value_name!(decl.name)
+              ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               type = resolve_type_ref(decl.type)
               validate_stored_ref_type!(type, "constant #{decl.name}")
               raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
@@ -581,7 +582,7 @@ module MilkTea
                 kind: :const,
               )
             when AST::VarDecl
-              ensure_available_value_name!(decl.name)
+              ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type
 
               type = resolve_type_ref(decl.type)
@@ -603,13 +604,13 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::FunctionDef
-              ensure_available_value_name!(decl.name)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               @top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExternFunctionDecl
-              ensure_available_value_name!(decl.name)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
             when AST::ForeignFunctionDecl
-              ensure_available_value_name!(decl.name)
+              ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               @top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::MethodsBlock
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
@@ -634,6 +635,9 @@ module MilkTea
       def declare_function_binding(decl, receiver_type: nil, declared_receiver_type: nil, receiver_type_param_names: [], receiver_type_param_constraints: {}, external: false)
         foreign = decl.is_a?(AST::ForeignFunctionDecl)
         async_function = decl.respond_to?(:async) ? decl.async : false
+        if decl.is_a?(AST::MethodDef)
+          ensure_non_reserved_primitive_name!(decl.name, kind_label: "function", line: decl.line, column: decl.column)
+        end
         type_param_names = receiver_type_param_names + decl.type_params.map(&:name)
         type_param_constraints = receiver_type_param_constraints.merge(resolve_type_param_constraints(decl.type_params))
         raise_sema_error("external function #{decl.name} cannot be generic") if external && type_param_names.any?
@@ -663,6 +667,7 @@ module MilkTea
 
         public_params = []
         decl.params.each do |param|
+          ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
           type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
           validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
           validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
@@ -768,6 +773,7 @@ module MilkTea
 
       def resolve_type_param_constraints(type_params)
         type_params.each_with_object({}) do |type_param, constraints|
+          ensure_non_reserved_primitive_name!(type_param.name, kind_label: "type parameter")
           next if type_param.constraints.empty?
 
           resolved_interfaces = []
@@ -1802,6 +1808,7 @@ module MilkTea
         current_scope = current_actual_scope(scopes)
         discard_binding = let_else_discard_binding_syntax?(statement)
         raise_sema_error("duplicate local #{statement.name}") if !discard_binding && current_scope.key?(statement.name)
+        ensure_non_reserved_primitive_name!(statement.name, kind_label: "local", line: statement.line, column: statement.column) unless discard_binding
 
         declared_type = statement.type ? resolve_type_ref(statement.type) : nil
         if statement.value
@@ -1876,6 +1883,7 @@ module MilkTea
 
           else_scopes = scopes
           if statement.else_binding
+            ensure_non_reserved_primitive_name!(statement.else_binding.name, kind_label: "let-else error binding", line: statement.else_binding.line, column: statement.else_binding.column)
             else_binding = value_binding(
               name: statement.else_binding.name,
               type: error_type,
@@ -2168,6 +2176,7 @@ module MilkTea
 
           arm_scopes = scopes.dup
           if arm.binding_name
+            ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
             fields = scrutinee_type.arm(arm_name)
             if fields.nil? || fields.empty?
               raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed")
@@ -2205,6 +2214,7 @@ module MilkTea
       def check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
         arm_scopes = scopes.dup
         if arm.binding_name
+          ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
           binding = value_binding(
             name: arm.binding_name,
             type: @error_type,
@@ -2270,6 +2280,7 @@ module MilkTea
         with_nested_scope(scopes) do |loop_scopes|
           binding_infos.each do |entry|
             binding = entry[:binding]
+            ensure_non_reserved_primitive_name!(binding.name, kind_label: "for binding", line: binding.line, column: binding.column)
             current_actual_scope(loop_scopes)[binding.name] = value_binding(
               name: binding.name,
               type: entry[:type],
@@ -2844,6 +2855,7 @@ module MilkTea
         arm_entries = expression.arms.map do |arm|
           arm_scopes = scopes
           if arm.binding_name
+            ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
             binding = value_binding(
               name: arm.binding_name,
               type: @error_type,
@@ -2966,6 +2978,7 @@ module MilkTea
 
           arm_scopes = scopes.dup
           if arm.binding_name
+            ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
             fields = scrutinee_type.arm(arm_name)
             if fields.nil? || fields.empty?
               raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed")
@@ -3035,6 +3048,7 @@ module MilkTea
         proc_scopes = scopes.map { |scope| freeze_scope_bindings(scope) }
         proc_scope = {}
         expression.params.each do |param|
+          ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : nil, column: param.respond_to?(:column) ? param.column : nil)
           param_type = resolve_type_ref(param.type)
           validate_parameter_ref_type!(param_type, function_name: "proc", parameter_name: param.name, external: false)
           validate_parameter_proc_type!(param_type, function_name: "proc", parameter_name: param.name, external: false, foreign: false)
@@ -4223,8 +4237,15 @@ module MilkTea
         raise_sema_error("duplicate type #{name}") if @types.key?(name) || @interfaces.key?(name)
       end
 
-      def ensure_available_value_name!(name)
+      def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil)
+        ensure_non_reserved_primitive_name!(name, kind_label:, line:, column:)
         raise_sema_error("duplicate value #{name}") if @top_level_values.key?(name) || @top_level_functions.key?(name)
+      end
+
+      def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil)
+        return unless Types::BUILTIN_PRIMITIVE_NAMES.include?(name)
+
+        raise_sema_error("#{kind_label} #{name} uses reserved primitive type name #{name}", line:, column:)
       end
 
       def current_type_params
