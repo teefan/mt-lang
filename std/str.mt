@@ -53,7 +53,7 @@ function utf8_boundary(text: str, index: ptr_uint) -> bool:
 
 
 function is_ascii_space(byte: ubyte) -> bool:
-    return byte == ubyte<-32 or byte == ubyte<-9 or byte == ubyte<-10 or byte == ubyte<-13 or byte == ubyte<-12
+    return byte == 32 or byte == 9 or byte == 10 or byte == 13 or byte == 12
 
 
 methods str:

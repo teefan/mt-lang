@@ -376,6 +376,29 @@ class LSPServerTest < Minitest::Test
         return first + view[1]
   MT
 
+    SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS = [
+    "struct Key:",
+    "    value: int",
+    "",
+    "methods Key:",
+    "    public static function hash(value: const_ptr[Key]) -> uint:",
+    "        unsafe:",
+    "            return uint<-read(value).value",
+    "",
+    "    public static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
+    "        unsafe:",
+    "            return read(left).value == read(right).value",
+    "",
+    "    public static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
+    "        unsafe:",
+    "            return read(left).value - read(right).value",
+    "",
+    "function probe(key: Key, other: Key) -> int:",
+    "    let hashed = hash[Key](key)",
+    "    let same = equal[Key](key, other)",
+    "    return int<-hashed + order[Key](key, other) + (if same: 1 else: 0)",
+    ].join("\n") + "\n"
+
   SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS = <<~MT
     function cast(value: int) -> int:
         return value
@@ -388,6 +411,22 @@ class LSPServerTest < Minitest::Test
         let from_range = range(value)
         return from_cast + from_range
   MT
+
+  SOURCE_WITH_USER_DEFINED_ASSOCIATED_HOOK_NAMES = [
+    "function hash[T](value: T) -> uint:",
+    "    return 0",
+    "",
+    "function equal[T](left: T, right: T) -> bool:",
+    "    return true",
+    "",
+    "function order[T](left: T, right: T) -> int:",
+    "    return 0",
+    "",
+    "function main(value: int) -> int:",
+    "    let hashed = hash[int](value)",
+    "    let same = equal[int](value, value)",
+    "    return order[int](value, value) + int<-hashed + (if same: 1 else: 0)",
+  ].join("\n") + "\n"
 
   SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS = <<~MT
     function add_one(value: int) -> int:
@@ -1055,6 +1094,51 @@ class LSPServerTest < Minitest::Test
       })
       read_hover_value = read_hover.dig("result", "contents", "value")
       assert_includes read_hover_value, "builtin read(value) -> T"
+    end
+  end
+
+  def test_hover_shows_builtin_associated_hook_signatures
+    source = SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_builtin_associated_hooks_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source,
+        },
+      })
+
+      hash_line = source.lines.index { |text| text.include?("let hashed = hash[Key](key)") }
+      equal_line = source.lines.index { |text| text.include?("let same = equal[Key](key, other)") }
+      order_line = source.lines.index { |text| text.include?("order[Key](key, other)") }
+
+      hash_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => hash_line, "character" => source.lines.fetch(hash_line).index("hash[") + 1 },
+      })
+      hash_hover_value = hash_hover.dig("result", "contents", "value")
+      assert_includes hash_hover_value, "builtin hash[Key](value) -> uint"
+      assert_includes hash_hover_value, "lowers to `T.hash(value: const_ptr[T]) -> uint`"
+
+      equal_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => equal_line, "character" => source.lines.fetch(equal_line).index("equal") + 1 },
+      })
+      equal_hover_value = equal_hover.dig("result", "contents", "value")
+      assert_includes equal_hover_value, "builtin equal[Key](left, right) -> bool"
+
+      order_hover = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => order_line, "character" => source.lines.fetch(order_line).index("order") + 1 },
+      })
+      order_hover_value = order_hover.dig("result", "contents", "value")
+      assert_includes order_hover_value, "builtin order[Key](left, right) -> int"
     end
   end
 
@@ -4572,6 +4656,102 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_hover_and_definition_resolve_imported_generic_member_chain_segments
+    Dir.mktmpdir("milk-tea-lsp-imported-generic-member") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      foo_source = <<~MT
+        public struct Bucket[K, V]:
+            value: V
+
+        methods Bucket[K, V]:
+            public editable function get_or_insert(key: K, value: V) -> ptr[V]:
+                let _ = key
+                this.value = value
+                return ptr_of(this.value)
+      MT
+
+      main_source = <<~MT
+        import std.foo as foo
+
+        struct Counter[T]:
+            values: foo.Bucket[T, ptr_uint]
+
+        methods Counter[T]:
+            editable function add(value: T) -> ptr_uint:
+                let current = this.values.get_or_insert(value, 0)
+                unsafe:
+                    return read(current)
+      MT
+
+      foo_path = File.join(std_dir, "foo.mt")
+      main_path = File.join(dir, "main.mt")
+      File.write(foo_path, foo_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      foo_uri = path_to_uri(foo_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source,
+          }
+        })
+
+        access_line = main_source.lines.index { |line| line.include?("this.values.get_or_insert") }
+        access_text = main_source.lines.fetch(access_line)
+        values_char = access_text.index("values") + 1
+        method_char = access_text.index("get_or_insert") + 1
+
+        field_definition_line = main_source.lines.index { |line| line.include?("values: foo.Bucket") }
+        field_definition_char = main_source.lines.fetch(field_definition_line).index("values")
+        method_definition_line = foo_source.lines.index { |line| line.include?("function get_or_insert") }
+        method_definition_char = foo_source.lines.fetch(method_definition_line).index("get_or_insert")
+
+        values_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => access_line, "character" => values_char }
+        })
+        values_hover_value = values_hover.dig("result", "contents", "value")
+        assert_includes values_hover_value, "field values: std.foo.Bucket[T, ptr_uint]"
+
+        method_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => access_line, "character" => method_char }
+        })
+        method_hover_value = method_hover.dig("result", "contents", "value")
+        assert_includes method_hover_value, "editable function get_or_insert(key: K, value: V) -> ptr[V]"
+        assert_includes method_hover_value, "Defined at: [std/foo.mt:#{method_definition_line + 1}](#{foo_uri}#L#{method_definition_line + 1})"
+
+        values_definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => access_line, "character" => values_char }
+        })
+        values_definition_result = values_definition.fetch("result")
+        assert_equal main_uri, values_definition_result.fetch("uri")
+        assert_equal field_definition_line, values_definition_result.dig("range", "start", "line")
+        assert_equal field_definition_char, values_definition_result.dig("range", "start", "character")
+
+        method_definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => access_line, "character" => method_char }
+        })
+        method_definition_result = method_definition.fetch("result")
+        assert_equal foo_uri, method_definition_result.fetch("uri")
+        assert_equal method_definition_line, method_definition_result.dig("range", "start", "line")
+        assert_equal method_definition_char, method_definition_result.dig("range", "start", "character")
+      end
+    end
+  end
+
   def test_definition_returns_current_module_field_declaration_in_tetris
     with_server do |client|
       client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
@@ -5364,6 +5544,35 @@ class LSPServerTest < Minitest::Test
       end
     end
 
+    def test_semantic_tokens_prefer_parameter_binding_over_builtin_type_name
+      source = <<~MT
+        function is_ascii_space(byte: ubyte) -> bool:
+            return byte == 32
+      MT
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_byte_parameter_test.mt"
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        byte_decl = semantic_entry_for_lexeme_on_line(source, entries, "byte", 0)
+        byte_ref = semantic_entry_for_lexeme_on_line(source, entries, "byte", 1)
+
+        assert_equal "parameter", byte_decl.fetch("tokenType")
+        assert_includes byte_decl.fetch("modifierNames"), "declaration"
+        assert_equal "parameter", byte_ref.fetch("tokenType")
+      end
+    end
+
     def test_semantic_tokens_classify_ordered_map_receiver_type_parameters_and_members
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => path_to_uri(Dir.pwd), "capabilities" => {} })
@@ -5691,6 +5900,72 @@ class LSPServerTest < Minitest::Test
         assert_equal "function", range_call.fetch("tokenType")
         refute_includes cast_call.fetch("modifierNames"), "defaultLibrary"
         refute_includes range_call.fetch("modifierNames"), "defaultLibrary"
+      end
+    end
+
+    def test_semantic_tokens_mark_builtin_associated_hooks_as_default_library
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_builtin_associated_hooks_test.mt"
+        source = SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        hash_line = source.lines.index { |text| text.include?("let hashed = hash[Key](key)") }
+        equal_line = source.lines.index { |text| text.include?("let same = equal[Key](key, other)") }
+        order_line = source.lines.index { |text| text.include?("order[Key](key, other)") }
+
+        hash_call = semantic_entry_for_lexeme_on_line(source, entries, "hash", hash_line)
+        equal_call = semantic_entry_for_lexeme_on_line(source, entries, "equal", equal_line)
+        order_call = semantic_entry_for_lexeme_on_line(source, entries, "order", order_line)
+
+        assert_equal "function", hash_call.fetch("tokenType")
+        assert_equal "function", equal_call.fetch("tokenType")
+        assert_equal "function", order_call.fetch("tokenType")
+        assert_includes hash_call.fetch("modifierNames"), "defaultLibrary"
+        assert_includes equal_call.fetch("modifierNames"), "defaultLibrary"
+        assert_includes order_call.fetch("modifierNames"), "defaultLibrary"
+      end
+    end
+
+    def test_semantic_tokens_do_not_mark_user_defined_hash_equal_order_as_default_library
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_user_defined_associated_hooks_test.mt"
+        source = SOURCE_WITH_USER_DEFINED_ASSOCIATED_HOOK_NAMES
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        hash_line = source.lines.index { |text| text.include?("let hashed = hash[int](value)") }
+        equal_line = source.lines.index { |text| text.include?("let same = equal[int](value, value)") }
+        order_line = source.lines.index { |text| text.include?("return order[int](value, value)") }
+
+        hash_call = semantic_entry_for_lexeme_on_line(source, entries, "hash", hash_line)
+        equal_call = semantic_entry_for_lexeme_on_line(source, entries, "equal", equal_line)
+        order_call = semantic_entry_for_lexeme_on_line(source, entries, "order", order_line)
+
+        assert_equal "function", hash_call.fetch("tokenType")
+        assert_equal "function", equal_call.fetch("tokenType")
+        assert_equal "function", order_call.fetch("tokenType")
+        refute_includes hash_call.fetch("modifierNames"), "defaultLibrary"
+        refute_includes equal_call.fetch("modifierNames"), "defaultLibrary"
+        refute_includes order_call.fetch("modifierNames"), "defaultLibrary"
       end
     end
 
@@ -6213,6 +6488,39 @@ class LSPServerTest < Minitest::Test
       assert quickfix, "expected a quickFix action for redundant-read-cast"
       edit = quickfix.dig("edit", "changes", uri, 0)
       assert_equal "value_ptr", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_redundant_cast
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_cast.mt"
+      source = <<~MT
+        function is_ascii_space(byte: ubyte) -> bool:
+            return byte == ubyte<-32
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code" => "redundant-cast",
+        "range" => { "start" => { "line" => 1, "character" => 19 }, "end" => { "line" => 1, "character" => 28 } },
+        "message" => "cast to ubyte is redundant here; remove the cast"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 1, "character" => 19 }, "end" => { "line" => 1, "character" => 28 } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Remove redundant cast" }
+      assert quickfix, "expected a quickFix action for redundant-cast"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "32", edit["newText"]
     end
   end
 
