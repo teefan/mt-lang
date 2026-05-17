@@ -698,6 +698,7 @@ function finish_connect(state: ptr[ConnectState], result_value: status.Status[Tc
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         connect_cleanup_and_release(state)
@@ -1054,6 +1055,7 @@ function finish_write(state: ptr[WriteState], result_value: status.Status[ptr_ui
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         write_cleanup_and_release(state)
@@ -1278,6 +1280,7 @@ function finish_stream_read(state: ptr[ReadState], result_value: status.Status[b
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         stream_read_cleanup_and_release(state)
@@ -1516,6 +1519,7 @@ function finish_shutdown(state: ptr[ShutdownState], result_value: status.Status[
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         shutdown_cleanup_and_release(state)
@@ -1705,6 +1709,7 @@ function finish_udp_send(state: ptr[UdpSendState], result_value: status.Status[p
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         udp_send_cleanup_and_release(state)
@@ -1929,6 +1934,7 @@ function finish_udp_receive(state: ptr[UdpReceiveState], result_value: status.St
 
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
+        return
 
     if unsafe: read(state).released:
         udp_receive_cleanup_and_release(state)
