@@ -36,6 +36,8 @@ public struct Metadata:
     kind: MetadataKind
     mode: int
     size: ptr_uint
+    modified_seconds: ptr_int
+    modified_nanoseconds: ptr_int
 
 
 function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
@@ -187,6 +189,39 @@ public function read_text(path: str) -> Result[string.String, Error]:
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.read_text requires UTF-8 text")
 
 
+public function read_lines(path: str) -> Result[Entries, Error]:
+    match read_text(path):
+        Result.failure as payload:
+            return Result[Entries, Error].failure(error= payload.error)
+        Result.success as payload:
+            var content = payload.value
+            defer content.release()
+
+            var values = vec.Vec[string.String].create()
+            let content_text = content.as_str()
+            var start: ptr_uint = 0
+            var index: ptr_uint = 0
+            while index < content_text.len:
+                if content_text.byte_at(index) == ubyte<-10:
+                    var stop = index
+                    if stop > start and content_text.byte_at(stop - 1) == ubyte<-13:
+                        stop -= 1
+
+                    values.push(string.String.from_str(content_text.slice(start, stop - start)))
+                    start = index + 1
+
+                index += 1
+
+            if start < content_text.len:
+                var stop = content_text.len
+                if stop > start and content_text.byte_at(stop - 1) == ubyte<-13:
+                    stop -= 1
+
+                values.push(string.String.from_str(content_text.slice(start, stop - start)))
+
+            return Result[Entries, Error].success(value= Entries(values = values))
+
+
 public function read_bytes(path: str) -> Result[bytes.Bytes, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
@@ -214,6 +249,8 @@ public function metadata(path: str) -> Result[Metadata, Error]:
         kind = metadata_kind(raw_metadata.kind),
         mode = raw_metadata.mode,
         size = raw_metadata.size,
+        modified_seconds = raw_metadata.modified_seconds,
+        modified_nanoseconds = raw_metadata.modified_nanoseconds,
     ))
 
 
@@ -270,7 +307,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
         match create_directories(path_ops.dirname(target_path)):
             Result.failure as payload:
                 return Result[bool, Error].failure(error= payload.error)
-            Result.success as ignored_payload:
+            Result.success as _:
                 pass
 
         match read_bytes(source_path):
@@ -285,7 +322,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
         match create_directories(target_path):
             Result.failure as payload:
                 return Result[bool, Error].failure(error= payload.error)
-            Result.success as ignored_payload:
+            Result.success as _:
                 pass
 
         match list_entries(source_path):
@@ -308,7 +345,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                                     child_source.release()
                                     child_target.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
-                                Result.success as ignored_child_payload:
+                                Result.success as _:
                                     pass
                             child_source.release()
                             child_target.release()
@@ -354,7 +391,7 @@ public function remove_tree(path: str) -> Result[bool, Error]:
                                 Result.failure as child_payload:
                                     child_path.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
-                                Result.success as ignored_child_payload:
+                                Result.success as _:
                                     pass
                             child_path.release()
                     index += 1
@@ -530,3 +567,89 @@ public function list_entries(path: str) -> Result[Entries, Error]:
     heap.release(raw_entries.data)
     heap.release(raw_entries.lengths)
     return Result[Entries, Error].success(value= Entries(values = values))
+
+
+public function list_files_recursive(path: str) -> Result[Entries, Error]:
+    if is_file(path):
+        var values = vec.Vec[string.String].create()
+        values.push(string.String.from_str(path))
+        return Result[Entries, Error].success(value= Entries(values = values))
+
+    if not is_directory(path):
+        if exists(path):
+            return Result[Entries, Error].failure(error= static_error("fs.list_files_recursive supports only regular files and directories"))
+
+        return Result[Entries, Error].failure(error= static_error("fs.list_files_recursive path does not exist"))
+
+    var values = vec.Vec[string.String].create()
+    match collect_files_recursive(path, ref_of(values)):
+        Result.failure as payload:
+            release_string_values(ref_of(values))
+            return Result[Entries, Error].failure(error= payload.error)
+        Result.success as _:
+            return Result[Entries, Error].success(value= Entries(values = values))
+
+
+function collect_files_recursive(path: str, output: ref[vec.Vec[string.String]]) -> Result[bool, Error]:
+    if is_file(path):
+        insert_sorted_string(output, string.String.from_str(path))
+        return Result[bool, Error].success(value= true)
+
+    if not is_directory(path):
+        return Result[bool, Error].success(value= true)
+
+    match list_entries(path):
+        Result.failure as payload:
+            return Result[bool, Error].failure(error= payload.error)
+        Result.success as payload:
+            var entries = payload.value
+            defer entries.release()
+
+            var index: ptr_uint = 0
+            while index < entries.len():
+                match entries.get(index):
+                    Option.none:
+                        return Result[bool, Error].failure(error= static_error("fs.list_files_recursive missing entry"))
+                    Option.some as entry_payload:
+                        var child_path = path_ops.join(path, entry_payload.value)
+                        match collect_files_recursive(child_path.as_str(), output):
+                            Result.failure as child_payload:
+                                child_path.release()
+                                return Result[bool, Error].failure(error= child_payload.error)
+                            Result.success as _:
+                                pass
+                        child_path.release()
+                index += 1
+
+            return Result[bool, Error].success(value= true)
+
+
+function insert_sorted_string(values: ref[vec.Vec[string.String]], value: string.String) -> void:
+    var index: ptr_uint = 0
+    while index < values.len():
+        let existing_ptr = values.get(index) else:
+            fatal(c"fs.insert_sorted_string missing value")
+
+        unsafe:
+            if string_less(value.as_str(), read(existing_ptr).as_str()):
+                break
+
+        index += 1
+
+    if not values.insert(index, value):
+        fatal(c"fs.insert_sorted_string insert failed")
+
+
+function string_less(left: str, right: str) -> bool:
+    var index: ptr_uint = 0
+    let shared_len = if left.len < right.len: left.len else: right.len
+    while index < shared_len:
+        let left_value = left.byte_at(index)
+        let right_value = right.byte_at(index)
+        if left_value < right_value:
+            return true
+        if left_value > right_value:
+            return false
+        index += 1
+
+    return left.len < right.len

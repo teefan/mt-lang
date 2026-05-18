@@ -100,6 +100,77 @@ class MilkTeaStdFsTest < Minitest::Test
     end
   end
 
+  def test_read_lines_splits_text_with_chomp_behavior
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-std-fs-lines") do |dir|
+      source = [
+        "import std.fs as fs",
+        "import std.path as path",
+        "",
+        "function main() -> int:",
+        "    var file_path = path.join(\"#{dir}\", \"lines.txt\")",
+        "    defer file_path.release()",
+        "",
+        "    match fs.write_text(file_path.as_str(), \"alpha\\r\\nbeta\\n\\ngamma\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 1",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.read_lines(file_path.as_str()):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 2",
+        "        Result.success as payload:",
+        "            var lines = payload.value",
+        "            defer lines.release()",
+        "            if lines.len() != 4:",
+        "                return 3",
+        "",
+        "            match lines.get(0):",
+        "                Option.some as line_payload:",
+        "                    if line_payload.value != \"alpha\":",
+        "                        return 4",
+        "                Option.none:",
+        "                    return 5",
+        "",
+        "            match lines.get(1):",
+        "                Option.some as line_payload:",
+        "                    if line_payload.value != \"beta\":",
+        "                        return 6",
+        "                Option.none:",
+        "                    return 7",
+        "",
+        "            match lines.get(2):",
+        "                Option.some as line_payload:",
+        "                    if line_payload.value != \"\":",
+        "                        return 8",
+        "                Option.none:",
+        "                    return 9",
+        "",
+        "            match lines.get(3):",
+        "                Option.some as line_payload:",
+        "                    if line_payload.value != \"gamma\":",
+        "                        return 10",
+        "                Option.none:",
+        "                    return 11",
+        "",
+        "    return 0",
+      ].join("\n")
+
+      result = run_program(source, compiler:)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+    end
+  end
+
   def test_filesystem_binary_roundtrip_rename_and_remove
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -440,6 +511,113 @@ class MilkTeaStdFsTest < Minitest::Test
     end
   end
 
+  def test_list_files_recursive_collects_sorted_nested_files
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-std-fs-list-files") do |dir|
+      source = [
+        "import std.fs as fs",
+        "import std.path as path",
+        "",
+        "function main() -> int:",
+        "    var root = path.join(\"#{dir}\", \"tree\")",
+        "    defer root.release()",
+        "    var nested = path.join(root.as_str(), \"src/app\")",
+        "    defer nested.release()",
+        "    var docs = path.join(root.as_str(), \"docs\")",
+        "    defer docs.release()",
+        "",
+        "    match fs.create_directories(nested.as_str()):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 1",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.create_directories(docs.as_str()):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 2",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    var top_file = path.join(root.as_str(), \"README.txt\")",
+        "    defer top_file.release()",
+        "    var nested_file = path.join(nested.as_str(), \"main.mt\")",
+        "    defer nested_file.release()",
+        "    var docs_file = path.join(docs.as_str(), \"guide.md\")",
+        "    defer docs_file.release()",
+        "",
+        "    match fs.write_text(top_file.as_str(), \"top\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 3",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.write_text(nested_file.as_str(), \"main\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 4",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.write_text(docs_file.as_str(), \"docs\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 5",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.list_files_recursive(root.as_str()):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 6",
+        "        Result.success as payload:",
+        "            var entries = payload.value",
+        "            defer entries.release()",
+        "            if entries.len() != 3:",
+        "                return 7",
+        "",
+        "            match entries.get(0):",
+        "                Option.some as file_payload:",
+        "                    if file_payload.value != top_file.as_str():",
+        "                        return 8",
+        "                Option.none:",
+        "                    return 9",
+        "",
+        "            match entries.get(1):",
+        "                Option.some as file_payload:",
+        "                    if file_payload.value != path.join(root.as_str(), \"docs/guide.md\").as_str():",
+        "                        return 10",
+        "                Option.none:",
+        "                    return 11",
+        "",
+        "            match entries.get(2):",
+        "                Option.some as file_payload:",
+        "                    if file_payload.value != nested_file.as_str():",
+        "                        return 12",
+        "                Option.none:",
+        "                    return 13",
+        "",
+        "    return 0",
+      ].join("\n")
+
+      result = run_program(source, compiler:)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+    end
+  end
+
   def test_copy_entry_and_remove_tree_for_nested_directories
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
@@ -595,24 +773,30 @@ class MilkTeaStdFsTest < Minitest::Test
         "                return 4",
         "            if info.size != ptr_uint<-5:",
         "                return 5",
-        "            if (info.mode & 511) == 0:",
+        "            if info.modified_seconds <= 0:",
         "                return 6",
+        "            if info.modified_nanoseconds < 0 or info.modified_nanoseconds >= ptr_int<-1000000000:",
+        "                return 7",
+        "            if (info.mode & 511) == 0:",
+        "                return 8",
         "",
         "    match fs.metadata(dir_path.as_str()):",
         "        Result.failure as payload:",
         "            var error = payload.error",
         "            defer error.release()",
-        "            return 7",
+        "            return 9",
         "        Result.success as payload:",
         "            let info = payload.value",
         "            if not info.is_directory():",
-        "                return 8",
+        "                return 10",
+        "            if info.modified_seconds <= 0:",
+        "                return 11",
         "",
         "    match fs.set_permissions(file_path.as_str(), 384):",
         "        Result.failure as payload:",
         "            var error = payload.error",
         "            defer error.release()",
-        "            return 9",
+        "            return 12",
         "        Result.success as ignored_payload:",
         "            pass",
         "",
@@ -620,11 +804,11 @@ class MilkTeaStdFsTest < Minitest::Test
         "        Result.failure as payload:",
         "            var error = payload.error",
         "            defer error.release()",
-        "            return 10",
+        "            return 13",
         "        Result.success as payload:",
         "            let info = payload.value",
         "            if (info.mode & 511) != 384:",
-        "                return 11",
+        "                return 14",
         "",
         "    return 0",
       ].join("\n")

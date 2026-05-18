@@ -4,6 +4,7 @@ require "cgi/escape"
 require "json"
 require "pathname"
 require "pp"
+require_relative "source_index_tool"
 
 module MilkTea
   class CLI
@@ -196,7 +197,7 @@ module MilkTea
     end
 
     def format_directory(dir, options)
-      paths = Dir.glob(File.join(dir, "**/*.mt")).sort
+      paths = SourceIndexTool.list_milk_tea_files(root_path: dir)
       if paths.empty?
         @out.puts("no .mt files found in #{dir}")
         return 0
@@ -301,7 +302,7 @@ module MilkTea
 
       paths = input_paths.flat_map do |path|
         if File.directory?(path)
-          Dir.glob(File.join(path, "**/*.mt")).sort
+          SourceIndexTool.list_milk_tea_files(root_path: path)
         else
           [path]
         end
@@ -829,7 +830,7 @@ module MilkTea
     end
 
     def handled_error_classes
-      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
+      classes = [LexError, ParseError, ModuleLoadError, SemaError, LoweringError, BuildError, RunError, FormatterError, SourceIndexToolError, PackageManifestError, PackageManifestEditorError, PackageGraphError, PackageLockError, PackageSourceResolverError, PackageSourceFetcherError, PackageRegistryStoreError, PackageRegistryMetadataProviderError, PackageDependencySolverError, PackageVersionError, ProjectScaffoldError]
       classes << BindgenError if MilkTea.const_defined?(:BindgenError, false)
       classes << UpstreamSources::Error if MilkTea.const_defined?(:UpstreamSources, false)
       classes

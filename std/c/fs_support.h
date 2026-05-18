@@ -41,6 +41,8 @@ typedef struct mt_fs_metadata {
   int kind;
   int mode;
   uintptr_t size;
+  intptr_t modified_seconds;
+  intptr_t modified_nanoseconds;
 } mt_fs_metadata;
 
 enum {
@@ -87,6 +89,8 @@ static inline void mt_fs_reset_metadata(mt_fs_metadata* value) {
   value->kind = MT_FS_KIND_NONE;
   value->mode = 0;
   value->size = 0;
+  value->modified_seconds = 0;
+  value->modified_nanoseconds = 0;
 }
 
 static inline int mt_fs_set_message(mt_fs_error* error, int code, const char* prefix, const char* detail) {
@@ -173,6 +177,8 @@ static inline int mt_fs_get_metadata(const char* path, mt_fs_metadata* out_metad
 
   out_metadata->mode = (int) (info.st_mode & 07777);
   out_metadata->size = (uintptr_t) info.st_size;
+  out_metadata->modified_seconds = (intptr_t) info.st_mtim.tv_sec;
+  out_metadata->modified_nanoseconds = (intptr_t) info.st_mtim.tv_nsec;
   if (S_ISREG(info.st_mode)) {
     out_metadata->kind = MT_FS_KIND_FILE;
   } else if (S_ISDIR(info.st_mode)) {
