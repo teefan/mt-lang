@@ -469,7 +469,7 @@
           },
           {
             "name": "text_value",
-            "type": "str_builder[N]",
+            "type": "str_buffer[N]",
             "boundary_type": "ptr[char]"
           },
           {
@@ -496,7 +496,7 @@
           },
           {
             "name": "text",
-            "type": "str_builder[N]",
+            "type": "str_buffer[N]",
             "boundary_type": "ptr[char]"
           },
           {
@@ -533,7 +533,7 @@
           },
           {
             "name": "text",
-            "type": "str_builder[N]",
+            "type": "str_buffer[N]",
             "boundary_type": "ptr[char]"
           },
           {

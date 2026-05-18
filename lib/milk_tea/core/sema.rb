@@ -2713,9 +2713,9 @@ module MilkTea
         return @error_type if error_type?(field_receiver_type) || error_type?(method_receiver_type)
 
         if char_array_removed_text_method?(method_receiver_type, expression.member)
-          raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
+          raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
         end
-        if str_builder_type?(method_receiver_type) && str_builder_method_kind(method_receiver_type, expression.member)
+        if str_buffer_type?(method_receiver_type) && str_buffer_method_kind(method_receiver_type, expression.member)
           raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
         end
 
@@ -2816,7 +2816,7 @@ module MilkTea
           left_type
         when "+", "-", "*", "/"
           if expression.operator == "+" && (string_like_type?(left_type) || string_like_type?(right_type))
-            raise_sema_error("operator + does not support str/cstr concatenation; use continued string literals for static text or string.String/str_builder for dynamic text")
+            raise_sema_error("operator + does not support str/cstr concatenation; use continued string literals for static text or string.String/str_buffer for dynamic text")
           end
 
           pointer_result = pointer_arithmetic_result(expression.operator, left_type, right_type)
@@ -3186,8 +3186,8 @@ module MilkTea
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
           callable.return_type
-        when :str_builder_clear, :str_builder_assign, :str_builder_append, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
-          check_str_builder_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
+          check_str_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
         when :variant_arm_ctor
@@ -3510,11 +3510,11 @@ module MilkTea
           return [:method, method, callee.receiver] if method
 
           if char_array_removed_text_method?(method_receiver_type, callee.member)
-            raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_builder[N] or an explicit helper")
+            raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
           end
 
-          if (str_builder_method = str_builder_method_kind(method_receiver_type, callee.member))
-            return [str_builder_method, method_receiver_type, callee.receiver]
+          if (str_buffer_method = str_buffer_method_kind(method_receiver_type, callee.member))
+            return [str_buffer_method, method_receiver_type, callee.receiver]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
@@ -4088,29 +4088,29 @@ module MilkTea
         raise_sema_error("#{operation}[#{target_type}] expects a safe #{target_type} lvalue, ref[#{target_type}], ptr[#{target_type}], or const_ptr[#{target_type}], got #{actual_type}")
       end
 
-      def check_str_builder_method_call(kind, receiver, arguments, scopes:)
-        method_name = str_builder_method_name(kind)
+      def check_str_buffer_method_call(kind, receiver, arguments, scopes:)
+        method_name = str_buffer_method_name(kind)
         receiver_type = infer_expression(receiver, scopes:)
-        raise_sema_error("unknown method #{receiver_type}.#{method_name}") unless str_builder_type?(receiver_type)
+        raise_sema_error("unknown method #{receiver_type}.#{method_name}") unless str_buffer_type?(receiver_type)
 
         case kind
-        when :str_builder_clear, :str_builder_len, :str_builder_capacity, :str_builder_as_str, :str_builder_as_cstr
+        when :str_buffer_clear, :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
           raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
           raise_sema_error("#{method_name} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
-        when :str_builder_assign, :str_builder_append
+        when :str_buffer_assign, :str_buffer_append
           raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
           raise_sema_error("#{method_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
         else
-          raise_sema_error("unsupported str_builder method #{kind}")
+          raise_sema_error("unsupported str_buffer method #{kind}")
         end
 
         case kind
-        when :str_builder_clear
+        when :str_buffer_clear
           record_mutable_receiver_expression(receiver)
           raise_sema_error("cannot call mutable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
-        when :str_builder_assign, :str_builder_append
+        when :str_buffer_assign, :str_buffer_append
           record_mutable_receiver_expression(receiver)
           raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
@@ -4124,18 +4124,18 @@ module MilkTea
           )
 
           @types.fetch("void")
-        when :str_builder_len, :str_builder_capacity
+        when :str_buffer_len, :str_buffer_capacity
           @types.fetch("ptr_uint")
-        when :str_builder_as_str
+        when :str_buffer_as_str
           raise_sema_error("#{receiver_type}.as_str requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("str")
-        when :str_builder_as_cstr
+        when :str_buffer_as_cstr
           raise_sema_error("#{receiver_type}.as_cstr requires a safe stored receiver") unless safe_reference_source_expression?(receiver, scopes:)
 
           @types.fetch("cstr")
         else
-          raise_sema_error("unsupported str_builder method #{kind}")
+          raise_sema_error("unsupported str_buffer method #{kind}")
         end
       end
 
@@ -4249,36 +4249,36 @@ module MilkTea
         name == "as_str" || name == "as_cstr"
       end
 
-      def str_builder_method_kind(receiver_type, name)
-        return unless str_builder_type?(receiver_type)
+      def str_buffer_method_kind(receiver_type, name)
+        return unless str_buffer_type?(receiver_type)
 
         case name
         when "clear"
-          :str_builder_clear
+          :str_buffer_clear
         when "assign"
-          :str_builder_assign
+          :str_buffer_assign
         when "append"
-          :str_builder_append
+          :str_buffer_append
         when "len"
-          :str_builder_len
+          :str_buffer_len
         when "capacity"
-          :str_builder_capacity
+          :str_buffer_capacity
         when "as_str"
-          :str_builder_as_str
+          :str_buffer_as_str
         when "as_cstr"
-          :str_builder_as_cstr
+          :str_buffer_as_cstr
         end
       end
 
-      def str_builder_method_name(kind)
+      def str_buffer_method_name(kind)
         {
-          str_builder_clear: "clear",
-          str_builder_assign: "assign",
-          str_builder_append: "append",
-          str_builder_len: "len",
-          str_builder_capacity: "capacity",
-          str_builder_as_str: "as_str",
-          str_builder_as_cstr: "as_cstr",
+          str_buffer_clear: "clear",
+          str_buffer_assign: "assign",
+          str_buffer_append: "append",
+          str_buffer_len: "len",
+          str_buffer_capacity: "capacity",
+          str_buffer_as_str: "as_str",
+          str_buffer_as_cstr: "as_cstr",
         }.fetch(kind)
       end
 
@@ -5103,7 +5103,7 @@ module MilkTea
         when Types::Nullable
           true
         when Types::GenericInstance
-          pointer_type?(type) || array_type?(type) || str_builder_type?(type)
+          pointer_type?(type) || array_type?(type) || str_buffer_type?(type)
         else
           false
         end
@@ -5128,7 +5128,7 @@ module MilkTea
         return true if pointer_type?(type)
         return true if type.is_a?(Types::Opaque) && !type.external
         return true if array_type?(type)
-        return true if str_builder_type?(type)
+        return true if str_buffer_type?(type)
 
         raise_sema_error("#{operation} does not support type #{type}")
       end
@@ -5166,12 +5166,12 @@ module MilkTea
         array_type?(type) && array_element_type(type) == @types.fetch("char")
       end
 
-      def str_builder_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "str_builder" && type.arguments.length == 1 &&
+      def str_buffer_type?(type)
+        type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
           generic_integer_type_argument?(type.arguments.first)
       end
 
-      def str_builder_capacity(type)
+      def str_buffer_capacity(type)
         type.arguments.first.value
       end
 
@@ -5287,10 +5287,10 @@ module MilkTea
           raise_sema_error("array element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
           raise_sema_error("array length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
           raise_sema_error("array length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "str_builder"
-          raise_sema_error("str_builder requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("str_builder capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
-          raise_sema_error("str_builder capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+        when "str_buffer"
+          raise_sema_error("str_buffer requires exactly one type argument") unless arguments.length == 1
+          raise_sema_error("str_buffer capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
+          raise_sema_error("str_buffer capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
         when "Task"
           raise_sema_error("Task requires exactly one type argument") unless arguments.length == 1
           raise_sema_error("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
@@ -6179,7 +6179,7 @@ module MilkTea
           return true
         end
 
-        if str_builder_type?(actual_type)
+        if str_buffer_type?(actual_type)
           return false unless expected_type.element_type == @types.fetch("char")
 
           infer_addr_source_type(expression, scopes:)

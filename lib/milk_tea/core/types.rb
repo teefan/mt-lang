@@ -14,7 +14,7 @@ module MilkTea
       Option Result
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_builder Task Option Result
+      ptr const_ptr ref span array str_buffer Task Option Result
     ]).freeze
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 

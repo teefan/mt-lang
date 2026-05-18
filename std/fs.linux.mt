@@ -1,7 +1,9 @@
 import std.c.fs as c
 import std.bytes as bytes
+import std.libc as libc
 import std.mem.arena as arena
 import std.mem.heap as heap
+import std.path as path_ops
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -10,6 +12,7 @@ import std.vec as vec
 const path_kind_none: int = 0
 const path_kind_file: int = 1
 const path_kind_directory: int = 2
+const temp_template_capacity: int = 4096
 
 
 public struct Error:
@@ -229,6 +232,10 @@ public function current_directory() -> Result[string.String, Error]:
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.current_directory requires UTF-8 text")
 
 
+function static_error(message: str) -> Error:
+    return Error(code = -1, message = string.String.from_str(message))
+
+
 public function canonicalize(path: str) -> Result[string.String, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
@@ -240,6 +247,29 @@ public function canonicalize(path: str) -> Result[string.String, Error]:
         return Result[string.String, Error].failure(error= take_error(raw_error, "fs canonicalize failed"))
 
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.canonicalize requires UTF-8 text")
+
+
+public function create_temporary_directory(parent_dir: str, prefix: str) -> Result[string.String, Error]:
+    if prefix.len == 0:
+        return Result[string.String, Error].failure(error= static_error("fs.create_temporary_directory requires a non-empty prefix"))
+
+    var template_name = string.String.from_str(prefix)
+    defer template_name.release()
+    template_name.append("-XXXXXX")
+
+    var template_path = path_ops.join(parent_dir, template_name.as_str())
+    defer template_path.release()
+
+    var buffer: str_buffer[temp_template_capacity]
+    if template_path.len() > ptr_uint<-temp_template_capacity:
+        return Result[string.String, Error].failure(error= static_error("fs.create_temporary_directory path exceeds buffer capacity"))
+
+    buffer.assign(template_path.as_str())
+
+    let created_path = libc.create_temp_directory(buffer) else:
+        return Result[string.String, Error].failure(error= static_error("fs create temporary directory failed"))
+
+    return Result[string.String, Error].success(value= string.String.from_str(text.cstr_as_str(created_path)))
 
 
 public function list_entries(path: str) -> Result[Entries, Error]:

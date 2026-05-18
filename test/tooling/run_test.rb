@@ -1530,12 +1530,12 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_executes_program_using_str_builder_methods
+  def test_run_with_host_compiler_executes_program_using_str_buffer_methods
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     Dir.mktmpdir("milk-tea-run-str-builder") do |dir|
-      source_path = File.join(dir, "str_builder.mt")
+      source_path = File.join(dir, "str_buffer.mt")
 
       File.write(source_path, [
         "function write_raw(items: span[char]) -> void:",
@@ -1547,7 +1547,7 @@ class MilkTeaRunTest < Minitest::Test
         "    return items.len",
         "",
         "function main() -> int:",
-        "    var buffer: str_builder[8]",
+        "    var buffer: str_buffer[8]",
         "    buffer.assign(\"ab\")",
         "    buffer.append(\"cd\")",
         "    if view(buffer) != ptr_uint<-9:",
@@ -1579,12 +1579,12 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  def test_run_with_host_compiler_rejects_str_builder_as_str_after_invalid_raw_write
+  def test_run_with_host_compiler_rejects_str_buffer_as_str_after_invalid_raw_write
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     Dir.mktmpdir("milk-tea-run-str-builder-bad-str") do |dir|
-      source_path = File.join(dir, "str_builder_bad_str.mt")
+      source_path = File.join(dir, "str_buffer_bad_str.mt")
 
       File.write(source_path, [
         "function corrupt(items: span[char]) -> void:",
@@ -1593,7 +1593,7 @@ class MilkTeaRunTest < Minitest::Test
         "        items.data[1] = 0",
         "",
         "function main() -> int:",
-        "    var buffer: str_builder[4]",
+        "    var buffer: str_buffer[4]",
         "    corrupt(buffer)",
         "    let text = buffer.as_str()",
         "    return int<-text.len",
@@ -1603,7 +1603,7 @@ class MilkTeaRunTest < Minitest::Test
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
-      assert_includes result.stderr, "str_builder text must be valid UTF-8"
+      assert_includes result.stderr, "str_buffer text must be valid UTF-8"
       assert_equal 134, result.exit_status
       assert_nil result.output_path
       assert_nil result.c_path

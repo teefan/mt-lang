@@ -66,7 +66,7 @@ The intended reductions are deliberate:
 
 - borrowed text is `str`
 - raw ABI text is `cstr`
-- fixed-capacity mutable text is `str_builder[N]`
+- fixed-capacity mutable text is `str_buffer[N]`
 - growable owned text is `std.string.String`
 - raw character storage is `array[char, N]` or `span[char]`, not an alternate text object
 - safe single-object aliasing is `ref[T]`
@@ -189,7 +189,7 @@ flags DrawFlags: uint
 ```mt
 let width: int = 1280
 var score: int = 0
-var name_input: str_builder[64]
+var name_input: str_buffer[64]
 const max_players: int = 4
 ```
 
@@ -491,7 +491,7 @@ Notes:
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `external` files and low-level interop code.
 - `char` is the ABI-facing single-byte character type for C text and raw buffers. It is not a general arithmetic integer type.
 - String literals produce `str`.
-- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, `str_builder.as_str()`, slicing an existing `str`, imported foreign boundaries that declare borrowed text, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
+- Safe code does not fabricate `str` values from raw parts. Source code ordinarily obtains `str` values from literals, `str_buffer.as_str()`, slicing an existing `str`, imported foreign boundaries that declare borrowed text, or other compiler/runtime surfaces that preserve the UTF-8 invariant.
 - Low-level code may construct `str(data = ..., len = ...)` only inside `unsafe`, and the caller is then responsible for pointer validity, lifetime, and the UTF-8 invariant.
 - A string literal may satisfy an expected `cstr` directly when the compiler has contextual type information, such as a typed local, an `array[cstr, N]` element, or a borrowed C-string argument position, because static storage is known.
 - `c"hello"` produces `cstr` with static storage for raw ABI work and low-level interop.
@@ -504,7 +504,7 @@ Notes:
 
 ```mt
 array[T, N]      # fixed-size array
-str_builder[N]   # fixed-capacity mutable UTF-8 text buffer
+str_buffer[N]   # fixed-capacity mutable UTF-8 text buffer
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
 fn(A, B) -> R    # function pointer type
@@ -514,7 +514,7 @@ Examples:
 
 ```mt
 let pixels: span[ubyte]
-let name_input: str_builder[64]
+let name_input: str_buffer[64]
 let labels: array[str, 8]
 let texture_ptr: ptr[Texture]
 let normal_table: array[float, 256]
@@ -526,11 +526,11 @@ Notes:
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
 - `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. They are not alternate text objects and should not grow a parallel everyday text API.
-- `str_builder[N]` is the one source-level mutable UTF-8 text type. It owns `N` writable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
+- `str_buffer[N]` is the one source-level mutable UTF-8 text type. It owns `N` writable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
 - If low-level code needs to validate raw `array[char, N]` storage as text, that conversion belongs in an explicit helper or imported boundary, not as a built-in method family on raw arrays.
-- Addressable `str_builder[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
-- `str_builder[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_builder[N]` is the caller-side text object.
-- `str_builder[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
+- Addressable `str_buffer[N]` values also coerce to `span[char]`, so writable foreign text APIs can still accept builders directly when they do not want a second application-facing text abstraction.
+- `str_buffer[N]` is not an ABI type. Raw bindings still spell writable text as `ptr[char]` or `span[char]`; `str_buffer[N]` is the caller-side text object.
+- `str_buffer[N]` has a built-in text surface: `.clear()`, `.assign(str)`, `.append(str)`, `.len()`, `.capacity()`, `.as_str()`, and `.as_cstr()`.
 - `.assign(...)` replaces the current contents and traps at runtime if the new text exceeds capacity.
 - `.append(...)` extends the current contents and traps at runtime if the appended text would exceed capacity.
 - `.len()` returns the tracked text length, revalidating UTF-8 and rescanning for the trailing NUL if the builder was passed through a writable `span[char]` or `ptr[char]` alias.
@@ -538,8 +538,8 @@ Notes:
 - `.as_str()` and `.as_cstr()` borrow from the same builder storage and revalidate through that same dirty-refresh path before returning.
 - `str.slice(start, len)` uses byte offsets and byte lengths, but both the start and end position must be UTF-8 code-unit boundaries or the slice traps at runtime.
 - Ordinary string lists stay `array[str, N]` or `span[str]` in source. If an imported foreign declaration chooses that public surface for a raw `char **`, `span[cstr]`, or pointer-plus-length text-list API, the boundary owns the temporary marshalling.
-- Imported foreign declarations may map `str_builder[N] as ptr[char]` directly when the public surface wants writable UTF-8 text with fixed caller capacity.
-- If the raw call also needs the caller buffer size, a `str_builder[N]` public signature should pass `text_public.capacity() + 1` in the foreign mapping so the raw side sees the full writable byte count including the trailing NUL slot.
+- Imported foreign declarations may map `str_buffer[N] as ptr[char]` directly when the public surface wants writable UTF-8 text with fixed caller capacity.
+- If the raw call also needs the caller buffer size, a `str_buffer[N]` public signature should pass `text_public.capacity() + 1` in the foreign mapping so the raw side sees the full writable byte count including the trailing NUL slot.
 - `span[char] as ptr[char]` remains the right public surface when the writable storage is not semantically UTF-8 text or when the caller capacity is intentionally runtime-sized instead of part of the type.
 - In an explicit foreign mapping, a parameter declared with `as` keeps the boundary value under its original name and exposes the public value as `<name>_public`.
 - Pointer indexing follows the raw pointer model and requires `unsafe`.
@@ -664,14 +664,14 @@ function first[T](items: Slice[T]) -> ptr[T]?:
 		return null
 	return items.data
 
-function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
 	return buffer.capacity()
 
-function explicit_capacity(buffer: str_builder[32]) -> ptr_uint:
+function explicit_capacity(buffer: str_buffer[32]) -> ptr_uint:
 	return capacity_of[32](buffer)
 ```
 
-Explicit specialization arguments may be type references like `bytes_for[int](4)` or numeric literals like `capacity_of[32](buffer)` when the generic parameter is used in a literal slot such as `str_builder[N]` or `array[T, N]`.
+Explicit specialization arguments may be type references like `bytes_for[int](4)` or numeric literals like `capacity_of[32](buffer)` when the generic parameter is used in a literal slot such as `str_buffer[N]` or `array[T, N]`.
 
 ## Expressions and conversions
 
@@ -898,7 +898,7 @@ Implemented core modules:
 
 - `Option[T]` is a built-in type for APIs where an explicit optional value is clearer than a nullable pointer.
 - `Result[T, E]` is a built-in type for explicit success/failure flows where both paths carry typed values.
-- `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_builder[N]`: method-style `len`, `capacity`, `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches, but `as_str` and `to_cstr` still enforce valid UTF-8 at the borrowed-text boundary.
+- `std.string.String` is the normal growable owned UTF-8 text surface. Its public API should mirror the mutable-text shape of `str_buffer[N]`: method-style `len`, `capacity`, `append`, `assign`, `clear`, `as_str`, `to_cstr`, and explicit constructors, not a parallel module-function vocabulary. Byte-level appends exist as low-level escape hatches, but `as_str` and `to_cstr` still enforce valid UTF-8 at the borrowed-text boundary.
 - `std.str` provides borrowed string helpers: UTF-8 validation, byte lookup, prefix/suffix/equality, ASCII trimming, and byte search.
 - `std.fmt` is the explicit formatting subsystem. It should be the single normal formatting engine for owned and fixed-capacity text rather than one option among many formatting styles. `f"..."` produces borrowed `str`; `fmt.format(f"...")` is the explicit owned-text allocation path when you need a `std.string.String`. Low-level append helpers remain implementation building blocks.
 - `std.async` provides the first-party async runtime surface.

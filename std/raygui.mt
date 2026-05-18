@@ -73,8 +73,8 @@ public foreign function combo_box(bounds: Rectangle, text: str as cstr, inout ac
 public foreign function dropdown_box(bounds: Rectangle, text: str as cstr, inout active: int, edit_mode: bool) -> int = c.GuiDropdownBox
 public foreign function spinner(bounds: Rectangle, text: str as cstr, inout value: int, min_value: int, max_value: int, edit_mode: bool) -> int = c.GuiSpinner
 public foreign function value_box(bounds: Rectangle, text: str as cstr, inout value: int, min_value: int, max_value: int, edit_mode: bool) -> int = c.GuiValueBox
-public foreign function value_box_float[N](bounds: Rectangle, text: str as cstr, text_value: str_builder[N] as ptr[char], inout value: float, edit_mode: bool) -> int = c.GuiValueBoxFloat(bounds, text, text_value, value, edit_mode)
-public foreign function text_box[N](bounds: Rectangle, text: str_builder[N] as ptr[char], edit_mode: bool) -> int = c.GuiTextBox(bounds, text, int<-(text_public.capacity() + 1), edit_mode)
+public foreign function value_box_float[N](bounds: Rectangle, text: str as cstr, text_value: str_buffer[N] as ptr[char], inout value: float, edit_mode: bool) -> int = c.GuiValueBoxFloat(bounds, text, text_value, value, edit_mode)
+public foreign function text_box[N](bounds: Rectangle, text: str_buffer[N] as ptr[char], edit_mode: bool) -> int = c.GuiTextBox(bounds, text, int<-(text_public.capacity() + 1), edit_mode)
 public foreign function slider(bounds: Rectangle, text_left: str as cstr, text_right: str as cstr, inout value: float, min_value: float, max_value: float) -> int = c.GuiSlider
 public foreign function slider_bar(bounds: Rectangle, text_left: str as cstr, text_right: str as cstr, inout value: float, min_value: float, max_value: float) -> int = c.GuiSliderBar
 public foreign function progress_bar(bounds: Rectangle, text_left: str as cstr, text_right: str as cstr, inout value: float, min_value: float, max_value: float) -> int = c.GuiProgressBar
@@ -84,7 +84,7 @@ public foreign function grid(bounds: Rectangle, text: str as cstr, spacing: floa
 public foreign function list_view(bounds: Rectangle, text: str as cstr, inout scroll_index: int, inout active: int) -> int = c.GuiListView
 public foreign function list_view_ex(bounds: Rectangle, text: span[str] as span[ptr[char]], inout scroll_index: int, inout active: int, inout focus: int) -> int = c.GuiListViewEx(bounds, text.data, int<-text.len, scroll_index, active, focus)
 public foreign function message_box(bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr) -> int = c.GuiMessageBox
-public foreign function text_input_box[N](bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_builder[N] as ptr[char], inout secret_view_active: bool) -> int = c.GuiTextInputBox(bounds, title, message, buttons, text, int<-(text_public.capacity() + 1), secret_view_active)
+public foreign function text_input_box[N](bounds: Rectangle, title: str as cstr, message: str as cstr, buttons: str as cstr, text: str_buffer[N] as ptr[char], inout secret_view_active: bool) -> int = c.GuiTextInputBox(bounds, title, message, buttons, text, int<-(text_public.capacity() + 1), secret_view_active)
 public foreign function color_picker(bounds: Rectangle, text: str as cstr, inout color: Color) -> int = c.GuiColorPicker
 public foreign function color_panel(bounds: Rectangle, text: str as cstr, inout color: Color) -> int = c.GuiColorPanel
 public foreign function color_bar_alpha(bounds: Rectangle, text: str as cstr, inout alpha: float) -> int = c.GuiColorBarAlpha

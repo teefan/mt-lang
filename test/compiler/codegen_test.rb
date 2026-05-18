@@ -2988,18 +2988,18 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "# module demo.generic_builder",
       "",
-      "function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
+      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
       "function main() -> int:",
-      "    var buffer: str_builder[32]",
+      "    var buffer: str_buffer[32]",
       "    return int<-(capacity_of(buffer) + capacity_of(buffer))",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
     assert_match(/return \(\(int32_t\) \(demo_generic_builder_capacity_of_32\(buffer\) \+ demo_generic_builder_capacity_of_32\(buffer\)\)\);/, generated)
   end
@@ -3008,18 +3008,18 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "# module demo.generic_builder_explicit",
       "",
-      "function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
+      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
       "function main() -> int:",
-      "    var buffer: str_builder[32]",
+      "    var buffer: str_buffer[32]",
       "    return int<-capacity_of[32](buffer)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
     assert_match(/return \(\(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\)\);/, generated)
   end
@@ -3031,18 +3031,18 @@ class MilkTeaCodegenTest < Minitest::Test
       "const BASE: int = 28",
       "const CAPACITY: int = BASE + 4",
       "",
-      "function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:",
+      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
       "    return buffer.capacity()",
       "",
       "function main() -> int:",
-      "    var buffer: str_builder[CAPACITY]",
+      "    var buffer: str_buffer[CAPACITY]",
       "    return int<-capacity_of[CAPACITY](buffer)",
       "",
     ].join("\n")
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
+    assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
     assert_match(/return \(\(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\)\);/, generated)
   end
@@ -4169,15 +4169,15 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/array\[char, 16\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
   end
 
-  def test_generate_c_for_str_builder_methods_and_span_char_calls
+  def test_generate_c_for_str_buffer_methods_and_span_char_calls
     source = [
-      "# module demo.str_builder_surface",
+      "# module demo.str_buffer_surface",
       "",
       "function view(items: span[char]) -> ptr_uint:",
       "    return items.len",
       "",
       "function main() -> int:",
-      "    var buffer: str_builder[32]",
+      "    var buffer: str_buffer[32]",
       "    buffer.assign(\"hi\")",
       "    buffer.append(\"!\")",
       "    let text = buffer.as_str()",
@@ -4190,34 +4190,34 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef struct mt_str_builder_32 mt_str_builder_32;/, generated)
-    assert_match(/struct mt_str_builder_32 \{/, generated)
+    assert_match(/typedef struct mt_str_buffer_32 mt_str_buffer_32;/, generated)
+    assert_match(/struct mt_str_buffer_32 \{/, generated)
     assert_match(/char data\[33\];/, generated)
     assert_match(/uintptr_t len;/, generated)
     assert_match(/bool dirty;/, generated)
-    assert_match(/static char\* mt_str_builder_prepare_write\(char\* data, uintptr_t cap, bool\* dirty\)/, generated)
-    assert_match(/static uintptr_t mt_str_builder_len\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
-    assert_match(/static const char\* mt_str_builder_as_cstr\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
-    assert_match(/static void mt_str_builder_assign\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
-    assert_match(/static void mt_str_builder_append\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
-    assert_match(/static void mt_str_builder_clear\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
-    assert_match(/mt_str_builder_32 buffer = \{ 0 \};/, generated)
-    assert_match(/mt_str_builder_assign\(\(mt_str\)\{ \.data = "hi", \.len = 2 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
-    assert_match(/mt_str_builder_append\(\(mt_str\)\{ \.data = "!", \.len = 1 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
-    assert_match(/mt_str text = \{ \.data = &buffer\.data\[0\], \.len = mt_str_builder_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
-    assert_match(/const char\* label = mt_str_builder_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
-    assert_match(/\(mt_span_char\)\{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
-    assert_match(/mt_str_builder_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/static char\* mt_str_buffer_prepare_write\(char\* data, uintptr_t cap, bool\* dirty\)/, generated)
+    assert_match(/static uintptr_t mt_str_buffer_len\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static const char\* mt_str_buffer_as_cstr\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_buffer_assign\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_buffer_append\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/static void mt_str_buffer_clear\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
+    assert_match(/mt_str_buffer_32 buffer = \{ 0 \};/, generated)
+    assert_match(/mt_str_buffer_assign\(\(mt_str\)\{ \.data = "hi", \.len = 2 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str_buffer_append\(\(mt_str\)\{ \.data = "!", \.len = 1 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str text = \{ \.data = &buffer\.data\[0\], \.len = mt_str_buffer_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
+    assert_match(/const char\* label = mt_str_buffer_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/\(mt_span_char\)\{ \.data = mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
+    assert_match(/mt_str_buffer_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
   end
 
-  def test_generate_c_for_foreign_defs_with_str_builder_and_span_char_ptr_char_boundary
+  def test_generate_c_for_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary
     root_source = <<~MT
       # module demo.main
 
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box(buffer)
     MT
 
@@ -4240,7 +4240,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/mt_span_char __mt_foreign_arg_public_1 = \{ \.data = mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
+    assert_match(/mt_span_char __mt_foreign_arg_public_1 = \{ \.data = mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
     assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
   end
 
@@ -4277,14 +4277,14 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return demo_default_call_interface_codegen_Counter_value\(item\);/, generated)
   end
 
-  def test_generate_c_for_generic_foreign_defs_with_str_builder_public_capacity_mapping
+  def test_generate_c_for_generic_foreign_defs_with_str_buffer_public_capacity_mapping
     root_source = <<~MT
       # module demo.main
 
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box(buffer)
     MT
 
@@ -4301,13 +4301,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+        public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
   end
 
   def test_generate_c_for_explicit_literal_specialization_on_imported_generic_foreign_defs
@@ -4317,7 +4317,7 @@ class MilkTeaCodegenTest < Minitest::Test
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box[32](buffer)
     MT
 
@@ -4334,13 +4334,13 @@ class MilkTeaCodegenTest < Minitest::Test
 
         import std.c.ui as c
 
-        public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+        public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
   end
 
   def test_generate_c_for_explicit_literal_specialization_on_local_generic_foreign_defs
@@ -4349,10 +4349,10 @@ class MilkTeaCodegenTest < Minitest::Test
 
       import std.c.ui as c
 
-      public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+      public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           text_box[32](buffer)
     MT
 
@@ -4368,7 +4368,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_builder_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
   end
 
   def test_rejects_codegen_for_removed_cstr_list_buffer_type

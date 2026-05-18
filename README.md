@@ -411,7 +411,7 @@ Type constructors:
 - `ref[T]`
 - `span[T]`
 - `array[T, N]`
-- `str_builder[N]`
+- `str_buffer[N]`
 - `Task[T]`
 - `Option[T]`
 - `Result[T, E]`
@@ -509,9 +509,9 @@ Text categories:
 
 - `str` -> string view
 - `cstr` -> C ABI string
-- `str_builder[N]` -> fixed-capacity mutable UTF-8 text buffer
+- `str_buffer[N]` -> fixed-capacity mutable UTF-8 text buffer
 
-`str_builder[N]` methods:
+`str_buffer[N]` methods:
 
 - `clear()`
 - `assign(str)`
