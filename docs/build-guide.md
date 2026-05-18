@@ -375,7 +375,7 @@ That contract layer is now the preferred portability gate for a rewrite: keep th
 
 ### 2.3 Bootstrap scope for a rewrite
 
-The recommended bootstrap-v1 scope for a non-Ruby compiler implementation is:
+The recommended bootstrap-v1 scope for a non-Ruby compiler extending is:
 
 - compiler frontend and backend parity sufficient to satisfy the existing CLI contracts
 - stdio LSP parity sufficient to satisfy the existing LSP contract fixtures
@@ -527,7 +527,7 @@ For native `--bundle` and `--archive` package builds, Milk Tea writes one determ
 
 - `assets = "assets"` stores `assets/...` entries inside `<bundle-dir>/assets.mtpack`
 - `assets = ["assets", "credits.txt"]` also stores `credits.txt` inside the same pack
-- `std.asset_pack` is the generic MTAP reader; `std.raylib.packed_assets` wraps it with a single `rl_assets.Error` enum for raylib-facing code, including packed image, texture, wave, sound, and music loading. Apps that support both packed bundle/archive runs and unpacked dev runs can prefer `std.raylib.packed_assets.open_assets_pack_if_present()`, treat `Maybe.none` as the unpacked case, and fall back to `std.raylib.runtime.enter_assets_directory()` there
+- `std.asset_pack` is the generic MTAP reader; `std.raylib.packed_assets` wraps it with a single `rl_assets.Error` enum for raylib-facing code, including packed image, texture, wave, sound, and music loading. Apps that support both packed bundle/archive runs and unpacked dev runs can prefer `std.raylib.packed_assets.open_assets_pack_if_present()`, treat `Option.none` as the unpacked case, and fall back to `std.raylib.runtime.enter_assets_directory()` there
 - `std.raylib.packed_assets.load_music()` returns `rl_assets.PackedMusic`, which retains the packed source bytes for the lifetime of the raylib music stream; call `music.release()` when done instead of unloading the raw `rl.Music` handle directly
 
 `mtc run` also stages `build.assets` entries beside its temporary native binary before launch.

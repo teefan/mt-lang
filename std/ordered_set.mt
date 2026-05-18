@@ -25,7 +25,7 @@ public struct OrderedSet[T]:
     len: ptr_uint
 
 
-methods OrderedSet[T]:
+extending OrderedSet[T]:
     public static function create() -> OrderedSet[T]:
         return OrderedSet[T](root = null, len = 0)
 
@@ -287,19 +287,19 @@ methods OrderedSet[T]:
         return Iter[T](node = OrderedSet[T].minimum(this.root))
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         OrderedSet[T].release_subtree(this.root)
         this.root = null
         this.len = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.clear()
         return
 
 
-    public editable function insert(value: T) -> bool:
+    public mutable function insert(value: T) -> bool:
         let location = OrderedSet[T].locate(this, value)
         if location.found:
             return false
@@ -324,7 +324,7 @@ methods OrderedSet[T]:
         return true
 
 
-    public editable function remove(value: T) -> bool:
+    public mutable function remove(value: T) -> bool:
         let location = OrderedSet[T].locate(this, value)
         if not location.found:
             return false
@@ -339,12 +339,12 @@ methods OrderedSet[T]:
         return true
 
 
-methods Iter[T]:
+extending Iter[T]:
     public function iter() -> Iter[T]:
         return this
 
 
-    public editable function next() -> const_ptr[T]?:
+    public mutable function next() -> const_ptr[T]?:
         let current = this.node
         if current == null:
             return null

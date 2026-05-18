@@ -7,6 +7,32 @@ require "uri"
 module MilkTea
   class Linter
     RESERVED_PRIMITIVE_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES.to_set.freeze
+    AUTO_FIXABLE_RULE_CODES = %w[
+      prefer-let
+      redundant-read-cast
+      redundant-read-release-temp
+      prefer-let-else
+      directional-ffi-arg
+      redundant-else
+      redundant-unsafe
+      redundant-return
+      unused-import
+      dead-assignment
+      redundant-cast
+      reserved-primitive-name
+    ].freeze
+    STATIC_QUICK_FIX_TITLES = {
+      "prefer-let" => "Replace 'var' with 'let'",
+      "redundant-else" => "Remove redundant else",
+      "redundant-unsafe" => "Remove redundant unsafe",
+      "redundant-return" => "Remove redundant return",
+      "redundant-read-cast" => "Remove redundant read cast",
+      "redundant-cast" => "Remove redundant cast",
+      "redundant-read-release-temp" => "Inline read(...).release()",
+      "prefer-let-else" => "Rewrite as let-else",
+      "directional-ffi-arg" => "Pass lvalue directly",
+    }.freeze
+    FIX_ALL_TITLE = "Apply all auto-fixes".freeze
 
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
@@ -53,6 +79,10 @@ module MilkTea
 
       warnings = filter_by_rules(warnings, select:, ignore:)
       warnings
+    end
+
+    def self.quick_fix_title(code)
+      STATIC_QUICK_FIX_TITLES[code]
     end
 
     def self.collect_reserved_primitive_name_fixes(source, path: nil, sema_analysis: nil, unresolved_import_paths: nil)
@@ -112,7 +142,8 @@ module MilkTea
     # redundant-return, redundant-cast.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_analysis: nil)
-      warnings = lint_source(source, path:, sema_analysis: sema_analysis || best_effort_sema_analysis(source, path:))
+      working_sema_analysis = sema_analysis || best_effort_sema_analysis(source, path:)
+      warnings = lint_source(source, path:, sema_analysis: working_sema_analysis)
       lines = source.lines
 
       # prefer-let: simple var→let substitution on the declaration line
@@ -289,7 +320,9 @@ module MilkTea
       reserved_warnings = lint_source(fixed_source, path:).select do |w|
         w.code == "reserved-primitive-name" && w.line && w.column && w.symbol_name
       end
-      return fixed_source if reserved_warnings.empty?
+      if reserved_warnings.empty?
+        return validated_fixed_source(source, fixed_source, path:, original_analysis: working_sema_analysis)
+      end
 
       warning_sites = reserved_warnings.each_with_object(Set.new) do |warning, sites|
         sites << [warning.line, warning.column, warning.symbol_name]
@@ -299,7 +332,16 @@ module MilkTea
         warning_sites.include?([declaration_site.line, declaration_site.column, fix.original_name])
       end
 
-      apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
+      fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
+      validated_fixed_source(source, fixed_source, path:, original_analysis: working_sema_analysis)
+    end
+
+    def self.validated_fixed_source(original_source, fixed_source, path:, original_analysis:)
+      return fixed_source if fixed_source == original_source
+      return fixed_source unless original_analysis
+      return fixed_source if best_effort_sema_analysis(fixed_source, path:)
+
+      original_source
     end
 
     def self.extract_prefix_cast_source_text(text)
@@ -695,7 +737,7 @@ module MilkTea
         when AST::MethodDef
           warn_reserved_primitive_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
           visit_function(declaration)
-        when AST::MethodsBlock
+        when AST::ExtendingBlock
           generic_context = methods_block_generic?(declaration)
           declaration.methods.each do |method|
             warn_reserved_primitive_name(method.name, line: method.line, column: method.column, kind_label: "function")
@@ -902,7 +944,7 @@ module MilkTea
           surface << render_callable_surface("external function", declaration, variadic: declaration.variadic) if exported_declaration?(source_file, declaration)
         when AST::ForeignFunctionDecl
           surface << render_callable_surface("foreign function", declaration, variadic: declaration.variadic) if exported_declaration?(source_file, declaration)
-        when AST::MethodsBlock
+        when AST::ExtendingBlock
           next unless exported_type_names.include?(declaration.type_name.to_s)
 
           declaration.methods.each do |method|
@@ -1123,7 +1165,7 @@ module MilkTea
         decl.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
         collect_names_from_type(decl.return_type, used) if decl.return_type
         decl.body.each { |stmt| collect_names_from_statement(stmt, used) }
-      when AST::MethodsBlock
+      when AST::ExtendingBlock
         decl.methods.each { |m| collect_names_from_declaration(m, used) }
       when AST::StructDecl
         decl.fields.each { |f| collect_names_from_type(f.type, used) }
@@ -1237,7 +1279,7 @@ module MilkTea
       case decl
       when AST::FunctionDef, AST::MethodDef
         decl.body.each { |stmt| collect_called_members_from_statement(stmt, called_members) }
-      when AST::MethodsBlock
+      when AST::ExtendingBlock
         decl.methods.each { |method| collect_called_members_from_declaration(method, called_members) }
       when AST::ConstDecl, AST::VarDecl
         collect_called_members_from_expr(decl.value, called_members) if decl.value
@@ -1788,7 +1830,7 @@ module MilkTea
     end
 
     def editable_receiver_expression?(expression)
-      @sema_analysis&.binding_resolution&.editable_receiver_expression_ids&.key?(expression.object_id)
+      @sema_analysis&.binding_resolution&.mutable_receiver_expression_ids&.key?(expression.object_id)
     end
 
     def with_scope

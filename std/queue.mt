@@ -1,12 +1,11 @@
 import std.deque as deque
-import std.maybe as maybe
 
 
 public struct Queue[T]:
     values: deque.Deque[T]
 
 
-methods Queue[T]:
+extending Queue[T]:
     public static function create() -> Queue[T]:
         return Queue[T](values = deque.Deque[T].create())
 
@@ -37,25 +36,25 @@ methods Queue[T]:
         return this.values.first()
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.values.clear()
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.values.release()
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
         return
 
 
-    public editable function enqueue(value: T) -> void:
+    public mutable function enqueue(value: T) -> void:
         this.values.push_back(value)
         return
 
 
-    public editable function dequeue() -> maybe.Maybe[T]:
+    public mutable function dequeue() -> Option[T]:
         return this.values.pop_front()

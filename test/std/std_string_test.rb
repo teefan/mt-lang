@@ -191,7 +191,7 @@ class MilkTeaStdStringTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.maybe as maybe",
+      "",
       "import std.str as text",
       "",
       "function main() -> int:",
@@ -206,9 +206,9 @@ class MilkTeaStdStringTest < Minitest::Test
       "        return 4",
       "    let found = trimmed.find_byte(ubyte<-32)",
       "    match found:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return 5",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            return int<-trimmed.len + int<-payload.value",
       "    return 5",
       "",

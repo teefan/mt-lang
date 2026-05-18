@@ -14,7 +14,7 @@ class MilkTeaStdLinkedSetTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function hash(value: const_ptr[Key]) -> uint:",
       "        unsafe:",
       "            return uint<-(read(ptr[Key]<-value).value & 1)",

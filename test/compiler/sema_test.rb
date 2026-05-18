@@ -10,7 +10,7 @@ class MilkTeaSemaTest < Minitest::Test
 
     assert_equal "test.fixtures.language_fixture", result.module_name
     assert_equal %w[describe main], result.functions.keys.sort
-    assert_equal true, result.imports.key?("maybe")
+    refute result.imports.key?("maybe")
     assert_equal true, result.imports.key?("runtime")
     assert_equal true, result.imports.key?("types")
   end
@@ -53,14 +53,14 @@ class MilkTeaSemaTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          editable function take_damage(amount: int) -> void
+          mutable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
           hp: int
 
-      methods NPC:
-          editable function take_damage(amount: int):
+      extending NPC:
+          mutable function take_damage(amount: int):
               this.hp -= amount
 
           function is_alive() -> bool:
@@ -86,14 +86,14 @@ class MilkTeaSemaTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          editable function take_damage(amount: int) -> void
+          mutable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC:
           hp: int
 
-      methods NPC:
-          editable function take_damage(amount: int):
+      extending NPC:
+          mutable function take_damage(amount: int):
               this.hp -= amount
 
           function is_alive() -> bool:
@@ -121,14 +121,14 @@ class MilkTeaSemaTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          editable function take_damage(amount: int) -> void
+          mutable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
           hp: int
 
-      methods NPC:
-          editable function take_damage(amount: int):
+      extending NPC:
+          mutable function take_damage(amount: int):
               this.hp -= amount
 
       function main() -> int:
@@ -152,7 +152,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Screen implements Drawable:
           ticks: int
 
-      methods Screen:
+      extending Screen:
           function draw[T]() -> void:
               return
     MT
@@ -169,7 +169,7 @@ class MilkTeaSemaTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          editable function take_damage(amount: int) -> void
+          mutable function take_damage(amount: int) -> void
 
       interface Named:
           function name() -> str
@@ -178,8 +178,8 @@ class MilkTeaSemaTest < Minitest::Test
           label: str
           hp: int
 
-      methods NPC:
-          editable function take_damage(amount: int):
+      extending NPC:
+          mutable function take_damage(amount: int):
               this.hp -= amount
 
           function name() -> str:
@@ -212,7 +212,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter implements Named:
           count: int
 
-      methods Counter:
+      extending Counter:
           static function default() -> Counter:
               return Counter(count = 7)
 
@@ -242,7 +242,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter implements Tagged:
           value: int
 
-      methods Counter:
+      extending Counter:
           static function tag() -> int:
               return 17
 
@@ -271,7 +271,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter implements Tagged:
           value: int
 
-      methods Counter:
+      extending Counter:
           function tag() -> int:
               return this.value
     MT
@@ -290,7 +290,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function hash(value: const_ptr[Key]) -> uint:
               return uint<-0
 
@@ -320,7 +320,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function hash(value: const_ptr[Key]) -> uint:
               unsafe:
                   return uint<-read(ptr[Key]<-value).value
@@ -356,7 +356,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function hash(value: Key) -> uint:
               return uint<-value.value
 
@@ -397,7 +397,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.hash_equal_str_ok
 
-      methods str:
+      extending str:
           static function hash(value: const_ptr[str]) -> uint:
               return uint<-0
 
@@ -425,7 +425,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
               unsafe:
                   let left_value = read(ptr[Key]<-left).value
@@ -459,7 +459,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
               unsafe:
                   let left_value = read(ptr[Key]<-left).value
@@ -497,7 +497,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function order(left: Key, right: Key) -> int:
               return left.value - right.value
 
@@ -524,7 +524,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Key:
           value: int
 
-      methods Key:
+      extending Key:
           static function hash(value: const_ptr[Key]) -> uint:
               return uint<-0
 
@@ -549,7 +549,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct NPC implements Damageable:
           value: int
 
-      methods NPC:
+      extending NPC:
           function hp() -> int:
               return this.value
 
@@ -663,14 +663,14 @@ class MilkTeaSemaTest < Minitest::Test
         # module std.sample
 
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
             function is_alive() -> bool
 
         public struct NPC implements Damageable:
             hp: int
 
-        methods NPC:
-            public editable function take_damage(amount: int):
+        extending NPC:
+            public mutable function take_damage(amount: int):
                 this.hp -= amount
 
             public function is_alive() -> bool:
@@ -705,7 +705,7 @@ class MilkTeaSemaTest < Minitest::Test
         # module std.contracts
 
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
@@ -716,8 +716,8 @@ class MilkTeaSemaTest < Minitest::Test
         public struct NPC implements contracts.Damageable:
             hp: int
 
-        methods NPC:
-            public editable function take_damage(amount: int):
+        extending NPC:
+            public mutable function take_damage(amount: int):
                 this.hp -= amount
 
             public function is_alive() -> bool:
@@ -752,7 +752,7 @@ class MilkTeaSemaTest < Minitest::Test
         # module std.contracts
 
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
@@ -763,8 +763,8 @@ class MilkTeaSemaTest < Minitest::Test
         public struct NPC implements contracts.Damageable:
             hp: int
 
-        methods NPC:
-            editable function take_damage(amount: int):
+        extending NPC:
+            mutable function take_damage(amount: int):
                 this.hp -= amount
 
             function is_alive() -> bool:
@@ -916,12 +916,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.status_flow
 
-      import std.status as status
 
-      function parse(input: int) -> status.Status[int, int]:
+
+      function parse(input: int) -> Result[int, int]:
           if input < 0:
-              return status.Status[int, int].err(error= 7)
-          return status.Status[int, int].ok(value= input + 1)
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
 
       function read_value(input: int) -> int:
           let value = parse(input) else:
@@ -938,12 +938,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.maybe_flow
 
-      import std.maybe as maybe
 
-      function parse(input: int) -> maybe.Maybe[int]:
+
+      function parse(input: int) -> Option[int]:
           if input < 0:
-              return maybe.Maybe[int].none
-          return maybe.Maybe[int].some(value= input + 1)
+              return Option[int].none
+          return Option[int].some(value= input + 1)
 
       function read_value(input: int) -> int:
           let value = parse(input) else:
@@ -960,12 +960,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.status_flow
 
-      import std.status as status
 
-      function parse(input: int) -> status.Status[int, int]:
+
+      function parse(input: int) -> Result[int, int]:
           if input < 0:
-              return status.Status[int, int].err(error= 7)
-          return status.Status[int, int].ok(value= input + 1)
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
 
       function read_value(input: int) -> int:
           let value = parse(input) else as error:
@@ -982,15 +982,15 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.status_void_flow
 
-      import std.status as status
+
 
       function done() -> void:
           return
 
-      function parse(input: int) -> status.Status[void, int]:
+      function parse(input: int) -> Result[void, int]:
           if input < 0:
-              return status.Status[void, int].err(error= 7)
-          return status.Status[void, int].ok(value= done())
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
 
       function read_value(input: int) -> int:
           let _ = parse(input) else as error:
@@ -1007,13 +1007,13 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.status_void_flow
 
-      import std.status as status
+
 
       function done() -> void:
           return
 
-      function parse() -> status.Status[void, int]:
-          return status.Status[void, int].ok(value= done())
+      function parse() -> Result[void, int]:
+          return Result[void, int].success(value= done())
 
       function main() -> int:
           let _: void = parse() else:
@@ -1043,7 +1043,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/let-else error binding for value requires std\.status\.Status\[T, E\]/, error.message)
+    assert_match(/let-else error binding for value requires Result\[T, E\]/, error.message)
   end
 
   def test_type_checks_for_loop_over_custom_iterator_protocol
@@ -1058,12 +1058,12 @@ class MilkTeaSemaTest < Minitest::Test
           stop: int
           current: int
 
-      methods Numbers:
+      extending Numbers:
           public function iter() -> NumbersIter:
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
-      methods NumbersIter:
-          public editable function next() -> ptr[int]?:
+      extending NumbersIter:
+          public mutable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -1094,12 +1094,12 @@ class MilkTeaSemaTest < Minitest::Test
       struct NumbersIter:
           index: int
 
-      methods Numbers:
+      extending Numbers:
           public function iter() -> NumbersIter:
               return NumbersIter(index = this.stop)
 
-      methods NumbersIter:
-          public editable function next() -> ptr[int]:
+      extending NumbersIter:
+          public mutable function next() -> ptr[int]:
               unsafe:
                   return ptr_of(this.index)
 
@@ -1128,12 +1128,12 @@ class MilkTeaSemaTest < Minitest::Test
           index: int
           stop: int
 
-      methods Numbers:
+      extending Numbers:
           public function iter() -> NumbersIter:
               return NumbersIter(index = 0, stop = this.stop)
 
-      methods NumbersIter:
-          public editable function next() -> bool:
+      extending NumbersIter:
+          public mutable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -1436,11 +1436,11 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           async function read() -> int:
               return this.value
 
-          async editable function bump() -> void:
+          async mutable function bump() -> void:
               this.value += 1
 
       async function main() -> int:
@@ -1977,12 +1977,12 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.status_bad
 
-      import std.status as status
 
-      function parse(input: int) -> status.Status[int, int]:
+
+      function parse(input: int) -> Result[int, int]:
           if input < 0:
-              return status.Status[int, int].err(error= 7)
-          return status.Status[int, int].ok(value= input + 1)
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
 
       function main(input: int) -> int:
           let value = parse(input) else as byte:
@@ -2035,7 +2035,7 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.bad
 
-      import std.status as str
+      import std.async as str
 
       function main() -> int:
           return 0
@@ -2212,7 +2212,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
+      extending Box:
           function echo[T](item: T) -> T:
               return item
 
@@ -2236,11 +2236,11 @@ class MilkTeaSemaTest < Minitest::Test
       struct Stack:
           box: Box
 
-      methods Box:
+      extending Box:
           function echo[T](item: T) -> T:
               return item
 
-      methods Stack:
+      extending Stack:
           function forward[T](item: T) -> T:
               return this.box.echo[T](item)
 
@@ -3561,7 +3561,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
+      extending Box:
           function echo[T](input: T) -> T:
               return input
 
@@ -3593,11 +3593,11 @@ class MilkTeaSemaTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           function get() -> T:
               return this.value
 
-          editable function set(value: T) -> void:
+          mutable function set(value: T) -> void:
               this.value = value
 
           static function zero() -> Box[T]:
@@ -3633,7 +3633,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           static function create() -> Box[T]:
               return Box[T](value = zero[T])
 
@@ -3677,25 +3677,6 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal 32, result.values.fetch("CAPACITY").const_value
     assert_equal ["N"], result.functions.fetch("capacity_of").type_params
     assert_equal true, result.functions.key?("main")
-  end
-
-  def test_rejects_removed_builtin_result_type
-    source = <<~MT
-      # module demo.result
-
-      enum LoadError: ubyte
-          file_not_found = 1
-          invalid_format = 2
-
-      function load(available: bool) -> Result[int, LoadError]:
-          return 0
-    MT
-
-    error = assert_raises(MilkTea::SemaError) do
-      check_source(source)
-    end
-
-    assert_match(/unknown generic type Result/, error.message)
   end
 
   def test_rejects_removed_builtin_ok_and_err_helpers
@@ -4407,7 +4388,7 @@ class MilkTeaSemaTest < Minitest::Test
         "public struct Counter:",
         "    value: int",
         "",
-        "methods Counter:",
+        "extending Counter:",
         "    public function read() -> int:",
         "        return this.value",
         "",
@@ -4444,7 +4425,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function read() -> int:
                 return this.value
 
@@ -4464,7 +4445,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       opaque Handle
 
-      methods Handle:
+      extending Handle:
           public function ready() -> bool:
               return true
 
@@ -4483,7 +4464,7 @@ class MilkTeaSemaTest < Minitest::Test
 
       opaque Handle
 
-      methods ptr[Handle]:
+      extending ptr[Handle]:
           public function ready() -> bool:
               return true
 
@@ -4503,7 +4484,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Point:
           x: int
 
-      methods const_ptr[T]:
+      extending const_ptr[T]:
           public function read_value() -> T:
               return unsafe: read(this)
 
@@ -4523,7 +4504,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Point:
           x: int
 
-      methods const_ptr[T]?:
+      extending const_ptr[T]?:
           public function require_value(message: str) -> const_ptr[T]:
               if this == null:
                   fatal(message)
@@ -4583,7 +4564,7 @@ class MilkTeaSemaTest < Minitest::Test
         public struct Counter:
             value: int
 
-        methods Counter:
+        extending Counter:
             function times_two() -> int:
                 return this.value * 2
       MT
@@ -4621,7 +4602,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function tag() -> int:
                 return 1
       MT
@@ -4630,7 +4611,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function tag() -> int:
                 return 2
       MT
@@ -4670,7 +4651,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public static function zero() -> dep.Counter:
                 return dep.Counter(value = 1)
       MT
@@ -4679,7 +4660,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public static function zero() -> dep.Counter:
                 return dep.Counter(value = 2)
       MT
@@ -5150,8 +5131,8 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
-          editable function add(delta: int):
+      extending Counter:
+          mutable function add(delta: int):
               this.value += delta
 
           function read() -> int:
@@ -5178,7 +5159,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Vec:
           x: int
 
-      methods Vec:
+      extending Vec:
           static function zero() -> Vec:
               return Vec(x = 0)
 
@@ -5355,14 +5336,14 @@ class MilkTeaSemaTest < Minitest::Test
       struct Player:
           hp: int
 
-      methods Player:
+      extending Player:
           static function default() -> Player:
               return Player(hp = 100)
 
       struct Plain:
           hp: int
 
-      methods Plain:
+      extending Plain:
           static function default() -> Plain:
               return Plain(hp = 7)
 
@@ -5427,7 +5408,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Player:
           hp: int
 
-      methods Player:
+      extending Player:
           static function default(seed: int) -> Player:
               return Player(hp = seed)
 
@@ -5578,7 +5559,7 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           function read() -> int:
               return this.value
 
@@ -5602,8 +5583,8 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
-          editable function add(delta: int):
+      extending Counter:
+          mutable function add(delta: int):
               this.value += delta
 
       function main() -> int:
@@ -5618,7 +5599,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/cannot call editable method add on an immutable receiver/, error.message)
+    assert_match(/cannot call mutable method add on an immutable receiver/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values
@@ -6537,8 +6518,8 @@ class MilkTeaSemaTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
-          editable function add(delta: int):
+      extending Counter:
+          mutable function add(delta: int):
               this.value += delta
 
           function read() -> int:
@@ -7248,7 +7229,7 @@ class MilkTeaSemaTest < Minitest::Test
     public struct OrderedSet[T]:
         root: ptr[void]?
 
-    methods OrderedSet[T]:
+    extending OrderedSet[T]:
         public static function create() -> OrderedSet[T]:
             return OrderedSet[T](root = null)
 
@@ -7262,7 +7243,7 @@ class MilkTeaSemaTest < Minitest::Test
             heap.release(node)
             return
 
-        public editable function release() -> void:
+        public mutable function release() -> void:
             OrderedSet[T].probe(unsafe: ptr[Node[T]]<-this.root)
             this.root = null
             return

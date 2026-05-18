@@ -36,8 +36,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     assert_includes loaded_modules, "test.fixtures.language_fixture"
     assert_includes loaded_modules, "test.fixtures.language_fixture.external_runtime"
     assert_includes loaded_modules, "test.fixtures.language_fixture.types"
-    assert_includes loaded_modules, "std.status"
-    assert_equal :module, program.analyses_by_module_name.fetch("std.status").module_kind
     assert_equal :raw_module, program.analyses_by_module_name.fetch("test.fixtures.language_fixture.external_runtime").module_kind
   end
 
@@ -163,7 +161,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
         struct Hidden:
             value: int
 
-        methods Counter:
+        extending Counter:
             public function read() -> int:
                 return this.value
 
@@ -760,7 +758,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(ext_path, <<~MT)
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function read() -> int:
                 return this.value
 
@@ -800,7 +798,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       File.write(ext_path, <<~MT)
         import demo.dep as dep
 
-        methods ptr[dep.Handle]:
+        extending ptr[dep.Handle]:
             public function read_code() -> int:
                 return 7
       MT
@@ -829,7 +827,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(ext_path, <<~MT)
-        methods const_ptr[T]:
+        extending const_ptr[T]:
             public function read_value() -> T:
                 return unsafe: read(this)
       MT
@@ -857,7 +855,7 @@ class MilkTeaModuleLoaderTest < Minitest::Test
       MT
 
       File.write(ext_path, <<~MT)
-        methods const_ptr[T]?:
+        extending const_ptr[T]?:
             public function require_value(message: str) -> const_ptr[T]:
                 if this == null:
                     fatal(message)

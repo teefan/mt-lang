@@ -51,7 +51,7 @@ module MilkTea
 
     # Enforce blank-line rules:
     #   - exactly 2 blank lines before top-level function definitions with a body
-    #   - exactly 2 blank lines before top-level methods blocks
+    #   - exactly 2 blank lines before top-level extending blocks
     #   - bodyless function declarations: 1 blank line before the first declaration,
     #     then 0 blank lines between consecutive declarations
     #   - at most 1 blank line everywhere else (constants, variable declarations, expressions)
@@ -68,8 +68,8 @@ module MilkTea
           blank_run += 1
         else
           if emitted_content
-            needed = if methods_block_header_line?(line)
-              2 # exactly 2 blank lines before methods blocks
+            needed = if extending_block_header_line?(line)
+              2 # exactly 2 blank lines before extending blocks
             elsif function_line?(line)
               if bodyless_function_line?(line)
                 if previous_content_line && function_line?(previous_content_line) && bodyless_function_line?(previous_content_line)
@@ -79,8 +79,8 @@ module MilkTea
                 else
                   1 # Separate declaration-style functions from preceding non-function content.
                 end
-              elsif previous_content_line && methods_block_header_line?(previous_content_line)
-                0 # First method in a methods block should not have leading blank lines.
+              elsif previous_content_line && extending_block_header_line?(previous_content_line)
+                0 # First method in an extending block should not have leading blank lines.
               else
                 2 # exactly 2 blank lines before function definitions
               end
@@ -148,11 +148,11 @@ module MilkTea
       bytes[i] != 58 # ':'
     end
 
-    def self.methods_block_header_line?(line)
+    def self.extending_block_header_line?(line)
       stripped = line.strip
       return false unless stripped.end_with?(":")
 
-      stripped.start_with?("methods ")
+      stripped.start_with?("extending ")
     end
 
     def self.interface_block_header_line?(line)

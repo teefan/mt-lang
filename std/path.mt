@@ -1,4 +1,3 @@
-import std.maybe as maybe
 import std.str as text
 import std.string as string
 
@@ -103,21 +102,21 @@ public function dirname(path: str) -> str:
     return "."
 
 
-public function extension(path: str) -> maybe.Maybe[str]:
+public function extension(path: str) -> Option[str]:
     let name = basename(path)
     match extension_dot(name):
-        maybe.Maybe.some as payload:
-            return maybe.Maybe[str].some(value= name.slice(payload.value, name.len - payload.value))
-        maybe.Maybe.none:
-            return maybe.Maybe[str].none
+        Option.some as payload:
+            return Option[str].some(value= name.slice(payload.value, name.len - payload.value))
+        Option.none:
+            return Option[str].none
 
 
 public function stem(path: str) -> str:
     let name = basename(path)
     match extension_dot(name):
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             return name.slice(0, payload.value)
-        maybe.Maybe.none:
+        Option.none:
             return name
 
 
@@ -142,17 +141,17 @@ function trim_trailing_separators(path: str, minimum: ptr_uint) -> ptr_uint:
     return stop
 
 
-function extension_dot(name: str) -> maybe.Maybe[ptr_uint]:
+function extension_dot(name: str) -> Option[ptr_uint]:
     var index = name.len
     while index > 0:
         index -= 1
         if name.byte_at(index) == ubyte<-46:
             if index == 0:
-                return maybe.Maybe[ptr_uint].none
+                return Option[ptr_uint].none
 
-            return maybe.Maybe[ptr_uint].some(value= index)
+            return Option[ptr_uint].some(value= index)
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
 function is_separator(value: ubyte) -> bool:

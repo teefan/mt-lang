@@ -63,7 +63,7 @@ module MilkTea
 
     TOP_LEVEL_RECOVERY_START_TYPES = %i[
       module import public packed align const var type struct union enum flags variant interface
-      opaque methods foreign async function external static_assert link include compiler_flag
+      opaque extending foreign async function external static_assert link include compiler_flag
     ].freeze
 
     def parse_source_file(errors: nil)
@@ -160,12 +160,12 @@ module MilkTea
         parse_interface_decl(visibility:)
       elsif match(:opaque)
         parse_opaque_decl(visibility:)
-      elsif match(:methods)
-        raise error(visibility_token, "public is not allowed on methods blocks") if visibility == :public
+      elsif match(:extending)
+        raise error(visibility_token, "public is not allowed on extending blocks") if visibility == :public
 
-        parse_methods_block
-      elsif check(:editable) || check(:static)
-        raise error(peek, "#{peek.lexeme} function is only allowed inside methods blocks")
+        parse_extending_block
+      elsif check(:mutable) || check(:static)
+        raise error(peek, "#{peek.lexeme} function is only allowed inside extending blocks")
       elsif match(:foreign)
         parse_foreign_decl(visibility:)
       elsif match(:async)
@@ -303,7 +303,7 @@ module MilkTea
         "imports must appear before external directives and declarations"
       when :link, :include, :compiler_flag
         "#{token.lexeme} directives must appear before external declarations"
-      when :var, :variant, :interface, :methods, :foreign, :function, :static_assert
+      when :var, :variant, :interface, :extending, :foreign, :function, :static_assert
         "#{token.lexeme} is not allowed in external files"
       when :async
         "async function is not allowed in external files"
@@ -497,29 +497,29 @@ module MilkTea
       AST::InterfaceDecl.new(name:, methods:, visibility:, line:)
     end
 
-    def parse_methods_block
+    def parse_extending_block
       line = previous.line
       type_name = parse_type_ref
-      receiver_type_param_names = methods_target_type_param_names(type_name)
+      receiver_type_param_names = extending_target_type_param_names(type_name)
       methods = with_type_param_names(receiver_type_param_names) do
         parse_named_block do
           parse_method_def
         end
       end
-      AST::MethodsBlock.new(type_name:, methods:, line:)
+      AST::ExtendingBlock.new(type_name:, methods:, line:)
     end
 
-    def methods_target_type_param_names(type_name)
+    def extending_target_type_param_names(type_name)
       type_name.arguments.flat_map do |argument|
-        methods_target_type_param_names_from_argument(argument.value)
+        extending_target_type_param_names_from_argument(argument.value)
       end.uniq
     end
 
-    def methods_target_type_param_names_from_argument(value)
+    def extending_target_type_param_names_from_argument(value)
       case value
       when AST::TypeRef
         nested_names = value.arguments.flat_map do |argument|
-          methods_target_type_param_names_from_argument(argument.value)
+          extending_target_type_param_names_from_argument(argument.value)
         end
         if value.name.parts.length == 1 && value.arguments.empty? && !value.nullable
           name = value.name.parts.first
@@ -527,8 +527,8 @@ module MilkTea
         end
         nested_names
       when AST::FunctionType, AST::ProcType
-        value.params.flat_map { |param| methods_target_type_param_names_from_argument(param.type) } +
-          methods_target_type_param_names_from_argument(value.return_type)
+        value.params.flat_map { |param| extending_target_type_param_names_from_argument(param.type) } +
+          extending_target_type_param_names_from_argument(value.return_type)
       else
         []
       end
@@ -554,8 +554,8 @@ module MilkTea
       visibility, _visibility_token = parse_visibility
       async = match(:async)
 
-      kind = if match(:editable)
-           :editable
+      kind = if match(:mutable)
+           :mutable
              elsif match(:static)
                :static
              else
@@ -583,8 +583,8 @@ module MilkTea
       raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
 
       async = match(:async)
-      kind = if match(:editable)
-               :editable
+      kind = if match(:mutable)
+               :mutable
              elsif match(:static)
                :static
              else

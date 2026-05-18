@@ -1,7 +1,6 @@
 import std.counter as counter
 import std.linked_map as linked_map
 import std.linked_map_view as linked_map_view
-import std.maybe as maybe
 
 
 public struct Entry[T]:
@@ -17,7 +16,7 @@ public struct MultiSet[T]:
     values: counter.Counter[T]
 
 
-methods MultiSet[T]:
+extending MultiSet[T]:
     public static function create() -> MultiSet[T]:
         return MultiSet[T](values = counter.Counter[T].create())
 
@@ -153,43 +152,43 @@ methods MultiSet[T]:
         return result
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.values.clear()
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.values.release()
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
         return
 
 
-    public editable function insert(value: T) -> ptr_uint:
+    public mutable function insert(value: T) -> ptr_uint:
         return this.values.increment(value)
 
 
-    public editable function add(value: T, amount: ptr_uint) -> ptr_uint:
+    public mutable function add(value: T, amount: ptr_uint) -> ptr_uint:
         return this.values.add(value, amount)
 
 
-    public editable function remove_one(value: T) -> bool:
+    public mutable function remove_one(value: T) -> bool:
         return this.values.remove_one(value)
 
 
-    public editable function remove_all(value: T) -> maybe.Maybe[ptr_uint]:
+    public mutable function remove_all(value: T) -> Option[ptr_uint]:
         return this.values.remove(value)
 
 
-methods Entries[T]:
+extending Entries[T]:
     public function iter() -> Entries[T]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         return this.values.next()
 
 

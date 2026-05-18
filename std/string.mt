@@ -7,7 +7,7 @@ public struct String:
     len: ptr_uint
     capacity: ptr_uint
 
-methods String:
+extending String:
     public static function create() -> String:
         return String(data = null, len = 0, capacity = 0)
 
@@ -36,12 +36,12 @@ methods String:
         return this.len == 0
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.len = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
@@ -49,7 +49,7 @@ methods String:
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -71,7 +71,7 @@ methods String:
         return
 
 
-    public editable function push_byte(value: ubyte) -> void:
+    public mutable function push_byte(value: ubyte) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -85,7 +85,7 @@ methods String:
         return
 
 
-    public editable function append(suffix: str) -> void:
+    public mutable function append(suffix: str) -> void:
         if suffix.len == 0:
             return
 
@@ -118,7 +118,7 @@ methods String:
         return
 
 
-    public editable function assign(value_text: str) -> void:
+    public mutable function assign(value_text: str) -> void:
         this.clear()
         this.append(value_text)
         return

@@ -1,5 +1,4 @@
 import std.mem.heap as heap
-import std.maybe as maybe
 
 
 public struct Vec[T]:
@@ -14,7 +13,7 @@ public struct Iter[T]:
     len: ptr_uint
 
 
-methods Vec[T]:
+extending Vec[T]:
     public static function create() -> Vec[T]:
         return Vec[T](data = null, len = 0, capacity = 0)
 
@@ -70,12 +69,12 @@ methods Vec[T]:
         return this.get(this.len - 1)
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.len = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
@@ -83,7 +82,7 @@ methods Vec[T]:
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -106,7 +105,7 @@ methods Vec[T]:
         return
 
 
-    public editable function append_span(values: span[T]) -> void:
+    public mutable function append_span(values: span[T]) -> void:
         if values.len == 0:
             return
 
@@ -152,13 +151,13 @@ methods Vec[T]:
         return
 
 
-    public editable function append_array[N](values: array[T, N]) -> void:
+    public mutable function append_array[N](values: array[T, N]) -> void:
         var local_values = values
         this.append_span(local_values)
         return
 
 
-    public editable function insert(index: ptr_uint, value: T) -> bool:
+    public mutable function insert(index: ptr_uint, value: T) -> bool:
         if index > this.len:
             return false
 
@@ -182,7 +181,7 @@ methods Vec[T]:
         return true
 
 
-    public editable function push(value: T) -> void:
+    public mutable function push(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -198,9 +197,9 @@ methods Vec[T]:
         return
 
 
-    public editable function pop() -> maybe.Maybe[T]:
+    public mutable function pop() -> Option[T]:
         if this.len == 0:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         let data = this.data
         if data == null:
@@ -211,12 +210,12 @@ methods Vec[T]:
             let data_ptr = ptr[T]<-data
             let value = read(data_ptr + last_index)
             this.len = last_index
-            return maybe.Maybe[T].some(value = value)
+            return Option[T].some(value = value)
 
 
-    public editable function remove(index: ptr_uint) -> maybe.Maybe[T]:
+    public mutable function remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         let data = this.data
         if data == null:
@@ -232,12 +231,12 @@ methods Vec[T]:
                 read(data_ptr + current) = read(data_ptr + next_index)
                 current = next_index
             this.len = last_index
-            return maybe.Maybe[T].some(value = removed)
+            return Option[T].some(value = removed)
 
 
-    public editable function swap_remove(index: ptr_uint) -> maybe.Maybe[T]:
+    public mutable function swap_remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         let data = this.data
         if data == null:
@@ -250,15 +249,15 @@ methods Vec[T]:
             if index != last_index:
                 read(data_ptr + index) = read(data_ptr + last_index)
             this.len = last_index
-            return maybe.Maybe[T].some(value = removed)
+            return Option[T].some(value = removed)
 
 
-methods Iter[T]:
+extending Iter[T]:
     public function iter() -> Iter[T]:
         return this
 
 
-    public editable function next() -> ptr[T]?:
+    public mutable function next() -> ptr[T]?:
         if this.index >= this.len:
             return null
 

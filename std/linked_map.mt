@@ -1,5 +1,4 @@
 import std.mem.heap as heap
-import std.maybe as maybe
 
 
 struct Node[K, V]:
@@ -42,7 +41,7 @@ public struct LinkedMap[K, V]:
     tail: ptr[Node[K, V]]?
 
 
-methods LinkedMap[K, V]:
+extending LinkedMap[K, V]:
     public static function create() -> LinkedMap[K, V]:
         return LinkedMap[K, V](buckets = null, len = 0, capacity = 0, head = null, tail = null)
 
@@ -148,7 +147,7 @@ methods LinkedMap[K, V]:
         return this.get(key) != null
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         if this.len == 0:
             return
 
@@ -175,7 +174,7 @@ methods LinkedMap[K, V]:
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.clear()
         heap.release(this.buckets)
         this.buckets = null
@@ -183,7 +182,7 @@ methods LinkedMap[K, V]:
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -217,7 +216,7 @@ methods LinkedMap[K, V]:
         return
 
 
-    public editable function set(key: K, value: V) -> maybe.Maybe[V]:
+    public mutable function set(key: K, value: V) -> Option[V]:
         let key_hash = hash[K](key)
         let existing = LinkedMap[K, V].find_node(this, key, key_hash)
         if existing != null:
@@ -225,7 +224,7 @@ methods LinkedMap[K, V]:
                 let node_ptr = ptr[Node[K, V]]<-existing
                 let previous = read(node_ptr).value
                 read(node_ptr).value = value
-                return maybe.Maybe[V].some(value = previous)
+                return Option[V].some(value = previous)
 
         if this.len == this.capacity:
             this.reserve(this.len + 1)
@@ -255,10 +254,10 @@ methods LinkedMap[K, V]:
             this.tail = node
 
         this.len += 1
-        return maybe.Maybe[V].none
+        return Option[V].none
 
 
-    public editable function get_or_insert(key: K, value: V) -> ptr[V]:
+    public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
         let key_hash = hash[K](key)
         let existing = LinkedMap[K, V].find_node(this, key, key_hash)
         if existing != null:
@@ -267,18 +266,18 @@ methods LinkedMap[K, V]:
 
         let inserted = this.set(key, value)
         match inserted:
-            maybe.Maybe.none:
+            Option.none:
                 let current = LinkedMap[K, V].find_node(this, key, key_hash) else:
                     fatal(c"linked_map.LinkedMap.get_or_insert missing inserted value")
                 unsafe:
                     return ptr_of(read(ptr[Node[K, V]]<-current).value)
-            maybe.Maybe.some:
+            Option.some as ignored_payload:
                 fatal(c"linked_map.LinkedMap.get_or_insert replaced unexpectedly")
 
 
-    public editable function remove_entry(key: K) -> maybe.Maybe[RemovedEntry[K, V]]:
+    public mutable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
         if this.len == 0:
-            return maybe.Maybe[RemovedEntry[K, V]].none
+            return Option[RemovedEntry[K, V]].none
 
         let buckets = this.buckets else:
             fatal(c"linked_map.LinkedMap.remove_entry missing buckets")
@@ -304,29 +303,29 @@ methods LinkedMap[K, V]:
                     LinkedMap[K, V].unlink_order_node(this, node_ptr)
                     heap.release(node)
                     this.len -= 1
-                    return maybe.Maybe[RemovedEntry[K, V]].some(value = removed)
+                    return Option[RemovedEntry[K, V]].some(value = removed)
 
                 previous = node
                 node = read(node_ptr).bucket_next
 
-        return maybe.Maybe[RemovedEntry[K, V]].none
+        return Option[RemovedEntry[K, V]].none
 
 
-    public editable function remove(key: K) -> maybe.Maybe[V]:
+    public mutable function remove(key: K) -> Option[V]:
         let removed = this.remove_entry(key)
         match removed:
-            maybe.Maybe.none:
-                return maybe.Maybe[V].none
-            maybe.Maybe.some as payload:
-                return maybe.Maybe[V].some(value = payload.value.value)
+            Option.none:
+                return Option[V].none
+            Option.some as payload:
+                return Option[V].some(value = payload.value.value)
 
 
-methods Keys[K, V]:
+extending Keys[K, V]:
     public function iter() -> Keys[K, V]:
         return this
 
 
-    public editable function next() -> const_ptr[K]?:
+    public mutable function next() -> const_ptr[K]?:
         let current = this.node else:
             return null
 
@@ -336,12 +335,12 @@ methods Keys[K, V]:
             return const_ptr_of(read(current_ptr).key)
 
 
-methods Values[K, V]:
+extending Values[K, V]:
     public function iter() -> Values[K, V]:
         return this
 
 
-    public editable function next() -> ptr[V]?:
+    public mutable function next() -> ptr[V]?:
         let current = this.node else:
             return null
 
@@ -351,12 +350,12 @@ methods Values[K, V]:
             return ptr_of(read(current_ptr).value)
 
 
-methods Entries[K, V]:
+extending Entries[K, V]:
     public function iter() -> Entries[K, V]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         let current = this.node else:
             return false
 

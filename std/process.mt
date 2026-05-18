@@ -1,8 +1,6 @@
 import std.c.process as c
 import std.mem.arena as arena
 import std.mem.heap as heap
-import std.maybe as maybe
-import std.status as status
 import std.str as text
 import std.string as string
 
@@ -46,7 +44,7 @@ function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
     return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len)
 
 
-function safe_text_view(value: string.String) -> maybe.Maybe[str]:
+function safe_text_view(value: string.String) -> Option[str]:
     return text.utf8_byte_span_as_str(unsafe: span[ubyte](data = ptr[ubyte]<-value.data, len = value.len))
 
 
@@ -73,7 +71,7 @@ function clear_pointer_slot(slot: ptr[ptr[char]]) -> void:
     return
 
 
-function total_storage_bytes(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> ptr_uint:
+function total_storage_bytes(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> ptr_uint:
     var total = pointer_storage_bytes(command.len + 1)
     if env.len != 0:
         total += pointer_storage_bytes(env.len + 1)
@@ -87,11 +85,11 @@ function total_storage_bytes(command: span[str], cwd: maybe.Maybe[str], env: spa
         index += 1
 
     match cwd:
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             if total > heap.ptr_uint_max() - (payload.value.len + 1):
                 fatal(c"process cwd storage overflow")
             total += payload.value.len + 1
-        maybe.Maybe.none:
+        Option.none:
             pass
 
     index = 0
@@ -124,9 +122,9 @@ function write_environment_value(space: ref[arena.Arena], entry: EnvironmentEntr
         return cstr<-buffer
 
 
-function prepare_command(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> status.Status[PreparedCommand, ProcessError]:
+function prepare_command(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[PreparedCommand, ProcessError]:
     if command.len == 0:
-        return status.Status[PreparedCommand, ProcessError].err(error= ProcessError(code = -1, message = string.String.from_str("process command cannot be empty")))
+        return Result[PreparedCommand, ProcessError].failure(error= ProcessError(code = -1, message = string.String.from_str("process command cannot be empty")))
 
     let total_bytes = total_storage_bytes(command, cwd, env)
     var storage = arena.create_aligned(total_bytes, ptr_uint<-align_of(ptr[char]))
@@ -170,12 +168,12 @@ function prepare_command(command: span[str], cwd: maybe.Maybe[str], env: span[En
     let file = unsafe: cstr<-read(args_ptr)
     var prepared_cwd: cstr? = null
     match cwd:
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             prepared_cwd = storage.to_cstr(payload.value)
-        maybe.Maybe.none:
+        Option.none:
             pass
 
-    return status.Status[PreparedCommand, ProcessError].ok(
+    return Result[PreparedCommand, ProcessError].success(
         value= PreparedCommand(storage = storage, file = file, args = args_ptr, env = env_ptr, cwd = prepared_cwd)
     )
 
@@ -187,12 +185,12 @@ function take_process_error(raw: c.mt_process_error) -> ProcessError:
     return ProcessError(code = raw.code, message = take_owned_string(raw.message_data, raw.message_len))
 
 
-function capture_internal(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> status.Status[CaptureResult, ProcessError]:
+function capture_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[CaptureResult, ProcessError]:
     let prepared_result = prepare_command(command, cwd, env)
     match prepared_result:
-        status.Status.err as payload:
-            return status.Status[CaptureResult, ProcessError].err(error= payload.error)
-        status.Status.ok as payload:
+        Result.failure as payload:
+            return Result[CaptureResult, ProcessError].failure(error= payload.error)
+        Result.success as payload:
             var prepared = payload.value
             defer prepared.release()
 
@@ -200,9 +198,9 @@ function capture_internal(command: span[str], cwd: maybe.Maybe[str], env: span[E
             var raw_error = zero[c.mt_process_error]
             let status_code = unsafe: c.mt_process_capture(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_result, raw_error)
             if status_code != 0:
-                return status.Status[CaptureResult, ProcessError].err(error= take_process_error(raw_error))
+                return Result[CaptureResult, ProcessError].failure(error= take_process_error(raw_error))
 
-            return status.Status[CaptureResult, ProcessError].ok(
+            return Result[CaptureResult, ProcessError].success(
                 value= CaptureResult(
                     stdout = take_owned_string(raw_result.stdout_data, raw_result.stdout_len),
                     stderr = take_owned_string(raw_result.stderr_data, raw_result.stderr_len),
@@ -211,12 +209,12 @@ function capture_internal(command: span[str], cwd: maybe.Maybe[str], env: span[E
             )
 
 
-function spawn_detached_internal(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> status.Status[int, ProcessError]:
+function spawn_detached_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[int, ProcessError]:
     let prepared_result = prepare_command(command, cwd, env)
     match prepared_result:
-        status.Status.err as payload:
-            return status.Status[int, ProcessError].err(error= payload.error)
-        status.Status.ok as payload:
+        Result.failure as payload:
+            return Result[int, ProcessError].failure(error= payload.error)
+        Result.success as payload:
             var prepared = payload.value
             defer prepared.release()
 
@@ -224,12 +222,12 @@ function spawn_detached_internal(command: span[str], cwd: maybe.Maybe[str], env:
             var raw_error = zero[c.mt_process_error]
             let status_code = unsafe: c.mt_process_spawn_detached(prepared.file, prepared.args, prepared.env, prepared.cwd, pid, raw_error)
             if status_code != 0:
-                return status.Status[int, ProcessError].err(error= take_process_error(raw_error))
+                return Result[int, ProcessError].failure(error= take_process_error(raw_error))
 
-            return status.Status[int, ProcessError].ok(value= pid)
+            return Result[int, ProcessError].success(value= pid)
 
 
-methods ExitStatus:
+extending ExitStatus:
     public function success() -> bool:
         return this.exit_code == 0 and this.term_signal == 0
 
@@ -241,56 +239,56 @@ methods ExitStatus:
         return int<-this.exit_code
 
 
-methods CaptureResult:
+extending CaptureResult:
     public function success() -> bool:
         return this.status.success()
 
 
-    public function stdout_text() -> maybe.Maybe[str]:
+    public function stdout_text() -> Option[str]:
         return safe_text_view(this.stdout)
 
 
-    public function stderr_text() -> maybe.Maybe[str]:
+    public function stderr_text() -> Option[str]:
         return safe_text_view(this.stderr)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.stdout.release()
         this.stderr.release()
         return
 
 
-methods ProcessError:
-    public editable function release() -> void:
+extending ProcessError:
+    public mutable function release() -> void:
         this.message.release()
         return
 
 
-methods PreparedCommand:
-    editable function release() -> void:
+extending PreparedCommand:
+    mutable function release() -> void:
         this.storage.release()
         return
 
 
-public function capture(command: span[str]) -> status.Status[CaptureResult, ProcessError]:
-    return capture_internal(command, maybe.Maybe[str].none, empty_environment())
+public function capture(command: span[str]) -> Result[CaptureResult, ProcessError]:
+    return capture_internal(command, Option[str].none, empty_environment())
 
 
-public function capture_in(command: span[str], cwd: str) -> status.Status[CaptureResult, ProcessError]:
-    return capture_internal(command, maybe.Maybe[str].some(value= cwd), empty_environment())
+public function capture_in(command: span[str], cwd: str) -> Result[CaptureResult, ProcessError]:
+    return capture_internal(command, Option[str].some(value= cwd), empty_environment())
 
 
-public function capture_with_env(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> status.Status[CaptureResult, ProcessError]:
+public function capture_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[CaptureResult, ProcessError]:
     return capture_internal(command, cwd, env)
 
 
-public function spawn_detached(command: span[str]) -> status.Status[int, ProcessError]:
-    return spawn_detached_internal(command, maybe.Maybe[str].none, empty_environment())
+public function spawn_detached(command: span[str]) -> Result[int, ProcessError]:
+    return spawn_detached_internal(command, Option[str].none, empty_environment())
 
 
-public function spawn_detached_in(command: span[str], cwd: str) -> status.Status[int, ProcessError]:
-    return spawn_detached_internal(command, maybe.Maybe[str].some(value= cwd), empty_environment())
+public function spawn_detached_in(command: span[str], cwd: str) -> Result[int, ProcessError]:
+    return spawn_detached_internal(command, Option[str].some(value= cwd), empty_environment())
 
 
-public function spawn_detached_with_env(command: span[str], cwd: maybe.Maybe[str], env: span[EnvironmentEntry]) -> status.Status[int, ProcessError]:
+public function spawn_detached_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[int, ProcessError]:
     return spawn_detached_internal(command, cwd, env)

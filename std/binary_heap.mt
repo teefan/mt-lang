@@ -1,4 +1,3 @@
-import std.maybe as maybe
 import std.vec as vec
 
 
@@ -12,7 +11,7 @@ public struct Iter[T]:
     len: ptr_uint
 
 
-methods BinaryHeap[T]:
+extending BinaryHeap[T]:
     public static function create() -> BinaryHeap[T]:
         return BinaryHeap[T](values = vec.Vec[T].create())
 
@@ -126,44 +125,44 @@ methods BinaryHeap[T]:
             return const_ptr_of(read(ptr[T]<-current))
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.values.clear()
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.values.release()
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
         return
 
 
-    public editable function push(value: T) -> void:
+    public mutable function push(value: T) -> void:
         this.values.push(value)
         BinaryHeap[T].sift_up(this, this.values.len() - 1)
         return
 
 
-    public editable function pop() -> maybe.Maybe[T]:
+    public mutable function pop() -> Option[T]:
         let removed = this.values.swap_remove(0)
         match removed:
-            maybe.Maybe.none:
-                return maybe.Maybe[T].none
-            maybe.Maybe.some as payload:
+            Option.none:
+                return Option[T].none
+            Option.some as payload:
                 if not this.values.is_empty():
                     BinaryHeap[T].sift_down(this, 0)
-                return maybe.Maybe[T].some(value = payload.value)
+                return Option[T].some(value = payload.value)
 
 
-methods Iter[T]:
+extending Iter[T]:
     public function iter() -> Iter[T]:
         return this
 
 
-    public editable function next() -> const_ptr[T]?:
+    public mutable function next() -> const_ptr[T]?:
         if this.index >= this.len:
             return null
 

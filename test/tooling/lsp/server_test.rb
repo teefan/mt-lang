@@ -106,13 +106,13 @@ class LSPServerTest < Minitest::Test
         return add(1, 2)
   MT
 
-  # Source with a struct + methods block so method completion/hover can be tested.
+  # Source with a struct + extending block so method completion/hover can be tested.
   SOURCE_WITH_METHODS = <<~MT
     struct Point:
         x: int
         y: int
 
-    methods Point:
+    extending Point:
         function zero() -> int:
             return 0
 
@@ -124,8 +124,8 @@ class LSPServerTest < Minitest::Test
     struct Counter:
         value: int
 
-    methods Counter:
-        editable function reset():
+    extending Counter:
+        mutable function reset():
             this.value = 0
   MT
 
@@ -136,7 +136,7 @@ class LSPServerTest < Minitest::Test
     struct Game:
         active: Piece
 
-    methods Game:
+    extending Game:
         function current_kind() -> int:
             return this.active.kind
   MT
@@ -173,7 +173,7 @@ class LSPServerTest < Minitest::Test
   SOURCE_WITH_LOCAL_INTERFACES = <<~MT
     ## Shared gameplay contract.
     interface ScreenState:
-        editable function update(effect: int) -> void
+        mutable function update(effect: int) -> void
         function draw(texture: int) -> void
 
     struct TitleScreen implements ScreenState:
@@ -182,15 +182,15 @@ class LSPServerTest < Minitest::Test
     struct PauseScreen implements ScreenState:
         ticks: int
 
-    methods TitleScreen:
-        editable function update(effect: int):
+    extending TitleScreen:
+        mutable function update(effect: int):
             this.ticks += effect
 
         function draw(texture: int) -> void:
             let sink = texture
 
-    methods PauseScreen:
-        editable function update(effect: int):
+    extending PauseScreen:
+        mutable function update(effect: int):
             this.ticks += effect
 
         function draw(texture: int) -> void:
@@ -202,7 +202,7 @@ class LSPServerTest < Minitest::Test
         x: int
         y: int
 
-    methods Point:
+    extending Point:
         function length() -> int:
             return this.x + this.y
 
@@ -265,7 +265,7 @@ class LSPServerTest < Minitest::Test
         x: int
         y: int
 
-    methods Point:
+    extending Point:
         function area() -> int:
             return this.x * this.y
 
@@ -350,7 +350,7 @@ class LSPServerTest < Minitest::Test
     struct Box:
         value: int
 
-    methods Box:
+    extending Box:
         static function default() -> Box:
             return Box(value = 7)
 
@@ -380,7 +380,7 @@ class LSPServerTest < Minitest::Test
     "struct Key:",
     "    value: int",
     "",
-    "methods Key:",
+    "extending Key:",
     "    public static function hash(value: const_ptr[Key]) -> uint:",
     "        unsafe:",
     "            return uint<-read(value).value",
@@ -452,7 +452,7 @@ class LSPServerTest < Minitest::Test
   MT
 
       SOURCE_WITH_GENERIC_PARAMETER_SHADOWING_IMPORT_SEMANTICS = <<~MT
-      import std.status as status
+
 
       function wrap[T](status: int, value: T) -> int:
           if status != 0:
@@ -485,7 +485,7 @@ class LSPServerTest < Minitest::Test
       MT
 
       SOURCE_WITH_GENERIC_LOCAL_AND_SPECIALIZED_FUNCTION_VALUE_SEMANTICS = <<~MT
-      import std.status as status
+
 
       function invoke(callback: fn() -> int) -> int:
           return callback()
@@ -502,15 +502,15 @@ class LSPServerTest < Minitest::Test
       MT
 
     SOURCE_WITH_GENERIC_VARIANT_SEMANTICS = <<~MT
-      variant Maybe[T]:
+      variant PayloadBox[T]:
           some(value: T)
           none
 
-      function has_payload(value: Maybe[int]) -> bool:
+      function has_payload(value: PayloadBox[int]) -> bool:
           match value:
-              Maybe.some as payload:
+              PayloadBox.some as payload:
                   return payload.value > 0
-              Maybe.none:
+              PayloadBox.none:
                   return false
     MT
 
@@ -528,7 +528,7 @@ class LSPServerTest < Minitest::Test
     struct Screen:
         snapshot: Snapshot
 
-    methods Screen:
+    extending Screen:
         function label() -> str:
             return f"score #{this.snapshot.score}"
   MT
@@ -709,7 +709,7 @@ class LSPServerTest < Minitest::Test
 
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "interface ScreenState"
-      assert_includes hover_value, "editable function update(effect: int) -> void"
+      assert_includes hover_value, "mutable function update(effect: int) -> void"
       assert_includes hover_value, "function draw(texture: int) -> void"
       assert_includes hover_value, "Shared gameplay contract."
       refute_includes hover_value, "local ScreenState"
@@ -724,7 +724,7 @@ class LSPServerTest < Minitest::Test
       contracts_source = <<~MT
         ## Damage contract.
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
         import std.contracts as contracts
@@ -732,8 +732,8 @@ class LSPServerTest < Minitest::Test
         struct NPC implements contracts.Damageable:
             hp: int
 
-        methods NPC:
-            editable function take_damage(amount: int):
+        extending NPC:
+            mutable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -769,7 +769,7 @@ class LSPServerTest < Minitest::Test
         })
         hover_value = hover.dig("result", "contents", "value")
         assert_includes hover_value, "interface Damageable"
-        assert_includes hover_value, "editable function take_damage(amount: int) -> void"
+        assert_includes hover_value, "mutable function take_damage(amount: int) -> void"
         assert_includes hover_value, "Damage contract."
         assert_includes hover_value, "Defined at: [std/contracts.mt:#{definition_line + 1}](#{contracts_uri}#L#{definition_line + 1})"
 
@@ -849,10 +849,10 @@ class LSPServerTest < Minitest::Test
 
   def test_hover_shows_let_else_error_binding_declaration_type
     source = <<~MT
-      import std.status as status
 
-      function load() -> status.Status[int, int]:
-          return status.Status[int, int].err(error = 1)
+
+      function load() -> Result[int, int]:
+          return Result[int, int].failure(error = 1)
 
       function main() -> int:
           let value = load() else as error:
@@ -969,7 +969,7 @@ class LSPServerTest < Minitest::Test
       struct TitleScreen implements ScreenState:
           ticks: int
 
-      methods TitleScreen:
+      extending TitleScreen:
           function update(effect: int) -> void:
               let sink = effect
 
@@ -1309,7 +1309,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             public static function zero() -> int:
                 return 0
       MT
@@ -1429,7 +1429,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             public static function zero() -> int:
                 return 0
 
@@ -1838,11 +1838,11 @@ class LSPServerTest < Minitest::Test
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
 
-      interface_line = source.lines.index { |line| line.include?("editable function update(effect: int) -> void") }
+      interface_line = source.lines.index { |line| line.include?("mutable function update(effect: int) -> void") }
       interface_char = source.lines[interface_line].index("update") + 1
 
       update_lines = source.lines.each_index.select do |index|
-        source.lines[index].include?("editable function update(effect: int):")
+        source.lines[index].include?("mutable function update(effect: int):")
       end
       title_line, pause_line = update_lines
       title_char = source.lines[title_line].index("update")
@@ -1869,7 +1869,7 @@ class LSPServerTest < Minitest::Test
 
       contracts_source = <<~MT
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
       MT
       entities_source = <<~MT
         import std.contracts as contracts
@@ -1877,8 +1877,8 @@ class LSPServerTest < Minitest::Test
         public struct NPC implements contracts.Damageable:
             hp: int
 
-        methods NPC:
-            public editable function take_damage(amount: int):
+        extending NPC:
+            public mutable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -1905,7 +1905,7 @@ class LSPServerTest < Minitest::Test
 
         interface_line = contracts_source.lines.index { |line| line.include?("take_damage") }
         interface_char = contracts_source.lines[interface_line].index("take_damage") + 1
-        method_line = entities_source.lines.index { |line| line.include?("editable function take_damage") }
+        method_line = entities_source.lines.index { |line| line.include?("mutable function take_damage") }
         method_char = entities_source.lines[method_line].index("take_damage")
 
         implementation = client.send_request("textDocument/implementation", {
@@ -2399,7 +2399,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             public static function zero() -> int:
                 return 0
       MT
@@ -2458,7 +2458,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             public static function zero() -> int:
                 return 0
       MT
@@ -2609,38 +2609,28 @@ class LSPServerTest < Minitest::Test
   def test_document_diagnostic_refreshes_after_imported_module_did_change
     Dir.mktmpdir("milk-tea-lsp-didchange-diagnostics") do |dir|
       Dir.mkdir(File.join(dir, "std"))
-      maybe_path = File.join(dir, "maybe.mt")
+      helper_path = File.join(dir, "helper.mt")
       main_path = File.join(dir, "main.mt")
 
-      maybe_initial = <<~MT
-        public struct Maybe[T]:
-            is_some: bool
-            value: T
+      helper_initial = <<~MT
       MT
-      maybe_updated = <<~MT
-        public struct Maybe[T]:
-            is_some: bool
-            value: T
-
-        methods Maybe[T]:
-            public function is_none() -> bool:
-                return not this.is_some
+      helper_updated = <<~MT
+        extending str:
+            public function excited() -> int:
+                return 1
       MT
       main_source = <<~MT
-        import maybe as maybe
+        import helper as helper
 
         function main() -> int:
-            let value = maybe.Maybe[int](is_some = false, value = 0)
-            if value.is_none():
-                return 1
-            return 0
+            return "milk".excited()
       MT
 
-      File.write(maybe_path, maybe_initial)
+      File.write(helper_path, helper_initial)
       File.write(main_path, main_source)
 
       root_uri = path_to_uri(dir)
-      maybe_uri = path_to_uri(maybe_path)
+      helper_uri = path_to_uri(helper_path)
       main_uri = path_to_uri(main_path)
 
       with_server do |client|
@@ -2648,10 +2638,10 @@ class LSPServerTest < Minitest::Test
         client.send_notification("initialized", {})
         client.send_notification("textDocument/didOpen", {
           "textDocument" => {
-            "uri" => maybe_uri,
+            "uri" => helper_uri,
             "languageId" => "milk-tea",
             "version" => 1,
-            "text" => maybe_initial
+            "text" => helper_initial
           }
         })
         client.send_notification("textDocument/didOpen", {
@@ -2667,13 +2657,15 @@ class LSPServerTest < Minitest::Test
           "textDocument" => { "uri" => main_uri }
         })
         first_result = first.fetch("result")
+        first_codes = first_result.fetch("items").map { |item| item["code"] }
 
         assert_equal "full", first_result["kind"]
         assert_operator first_result.fetch("items").length, :>=, 1
+        assert_includes first_codes, "sema/error"
 
         client.send_notification("textDocument/didChange", {
-          "textDocument" => { "uri" => maybe_uri, "version" => 2 },
-          "contentChanges" => [{ "text" => maybe_updated }]
+          "textDocument" => { "uri" => helper_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => helper_updated }]
         })
 
         second = client.send_request("textDocument/diagnostic", {
@@ -2681,10 +2673,11 @@ class LSPServerTest < Minitest::Test
           "previousResultId" => first_result["resultId"]
         })
         second_result = second.fetch("result")
+        second_codes = second_result.fetch("items").map { |item| item["code"] }
 
         assert_equal "full", second_result["kind"]
         refute_equal first_result["resultId"], second_result["resultId"]
-        assert_equal [], second_result["items"]
+        refute_includes second_codes, "sema/error"
       end
     end
   end
@@ -3348,7 +3341,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             function length() -> int:
                 return this.x + this.y
 
@@ -3494,7 +3487,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             function length() -> int:
                 return this.x + this.y
 
@@ -4304,7 +4297,7 @@ class LSPServerTest < Minitest::Test
             x: int
             y: int
 
-        methods Point:
+        extending Point:
             public static function zero() -> int:
                 return 0
 
@@ -4665,8 +4658,8 @@ class LSPServerTest < Minitest::Test
         public struct Bucket[K, V]:
             value: V
 
-        methods Bucket[K, V]:
-            public editable function get_or_insert(key: K, value: V) -> ptr[V]:
+        extending Bucket[K, V]:
+            public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
                 let _ = key
                 this.value = value
                 return ptr_of(this.value)
@@ -4678,8 +4671,8 @@ class LSPServerTest < Minitest::Test
         struct Counter[T]:
             values: foo.Bucket[T, ptr_uint]
 
-        methods Counter[T]:
-            editable function add(value: T) -> ptr_uint:
+        extending Counter[T]:
+            mutable function add(value: T) -> ptr_uint:
                 let current = this.values.get_or_insert(value, 0)
                 unsafe:
                     return read(current)
@@ -4728,7 +4721,7 @@ class LSPServerTest < Minitest::Test
           "position" => { "line" => access_line, "character" => method_char }
         })
         method_hover_value = method_hover.dig("result", "contents", "value")
-        assert_includes method_hover_value, "editable function get_or_insert(key: K, value: V) -> ptr[V]"
+        assert_includes method_hover_value, "mutable function get_or_insert(key: K, value: V) -> ptr[V]"
         assert_includes method_hover_value, "Defined at: [std/foo.mt:#{method_definition_line + 1}](#{foo_uri}#L#{method_definition_line + 1})"
 
         values_definition = client.send_request("textDocument/definition", {
@@ -4850,7 +4843,7 @@ class LSPServerTest < Minitest::Test
       })
       hover_value = hover.dig("result", "contents", "value")
 
-      assert_includes hover_value, "editable function reset() -> void"
+      assert_includes hover_value, "mutable function reset() -> void"
       refute_includes hover_value, "local reset"
     end
   end
@@ -4999,7 +4992,7 @@ class LSPServerTest < Minitest::Test
       File.write(File.join(demo_dir, "a.mt"), <<~MT)
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function tag() -> int:
                 return 1
       MT
@@ -5007,7 +5000,7 @@ class LSPServerTest < Minitest::Test
       File.write(File.join(demo_dir, "b.mt"), <<~MT)
         import demo.dep as dep
 
-        methods dep.Counter:
+        extending dep.Counter:
             public function tag() -> int:
                 return 2
       MT
@@ -5258,7 +5251,7 @@ class LSPServerTest < Minitest::Test
       main_source = <<~MT
         import api as api
 
-        public type Result = api.Answer
+        public type Reply = api.Answer
       MT
 
       File.write(api_path, api_initial)
@@ -5308,7 +5301,7 @@ class LSPServerTest < Minitest::Test
       struct PauseScreen implements ScreenState:
           ticks: int
 
-      methods PauseScreen:
+      extending PauseScreen:
           function draw(texture: int) -> void:
               let sink = texture
 
@@ -5348,7 +5341,7 @@ class LSPServerTest < Minitest::Test
 
       contracts_source = <<~MT
         public interface Damageable:
-            editable function take_damage(amount: int) -> void
+            mutable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
         import std.contracts as contracts
@@ -5356,8 +5349,8 @@ class LSPServerTest < Minitest::Test
         struct NPC implements contracts.Damageable:
             hp: int
 
-        methods NPC:
-            editable function take_damage(amount: int):
+        extending NPC:
+            mutable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -5486,7 +5479,7 @@ class LSPServerTest < Minitest::Test
             key: K
             value: V
 
-        methods Cache[K, V]:
+        extending Cache[K, V]:
             function read_key() -> K:
                 return this.key
 
@@ -5590,8 +5583,8 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        header_line = source.lines.index { |line| line == "methods OrderedMap[K, V]:\n" } or flunk("expected OrderedMap methods header")
-        set_line = source.lines.index { |line| line.include?("public editable function set(key: K, value: V) -> maybe.Maybe[V]:") } or flunk("expected OrderedMap.set declaration")
+        header_line = source.lines.index { |line| line == "extending OrderedMap[K, V]:\n" } or flunk("expected OrderedMap extending header")
+        set_line = source.lines.index { |line| line.include?("public mutable function set(key: K, value: V) -> Option[V]:") } or flunk("expected OrderedMap.set declaration")
         entries_line = source.lines.index { |line| line.include?("return this.entries()") } or flunk("expected OrderedMap.iter body")
         next_line = source.lines.index { |line| line.include?("if not this.started:") } or flunk("expected Entries.next guard")
         current_line = source.lines.index { |line| line.include?("public function current() -> Entry[K, V]:") } or flunk("expected Entries.current declaration")
@@ -5599,7 +5592,7 @@ class LSPServerTest < Minitest::Test
 
         header_k = semantic_entry_for_lexeme_on_line(source, entries, "K", header_line)
         header_v = semantic_entry_for_lexeme_on_line(source, entries, "V", header_line)
-        maybe_alias = semantic_entry_for_lexeme_on_line(source, entries, "maybe", set_line)
+        option_type = semantic_entry_for_lexeme_on_line(source, entries, "Option", set_line)
         entries_call = semantic_entry_for_lexeme_on_line(source, entries, "entries", entries_line)
         next_this = semantic_entry_for_lexeme_on_line(source, entries, "this", next_line)
         next_started = semantic_entry_for_lexeme_on_line(source, entries, "started", next_line)
@@ -5614,7 +5607,7 @@ class LSPServerTest < Minitest::Test
         assert_includes header_k.fetch("modifierNames"), "declaration"
         assert_equal "typeParameter", header_v.fetch("tokenType")
         assert_includes header_v.fetch("modifierNames"), "declaration"
-        assert_equal "namespace", maybe_alias.fetch("tokenType")
+        assert_equal "type", option_type.fetch("tokenType")
         assert_equal "method", entries_call.fetch("tokenType")
         assert_equal "parameter", next_this.fetch("tokenType")
         assert_equal "property", next_started.fetch("tokenType")
@@ -5644,7 +5637,7 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        header_line = source.lines.index { |line| line == "methods BinaryHeap[T]:\n" } or flunk("expected BinaryHeap methods header")
+        header_line = source.lines.index { |line| line == "extending BinaryHeap[T]:\n" } or flunk("expected BinaryHeap extending header")
         create_line = source.lines.index { |line| line.include?("return BinaryHeap[T](values = vec.Vec[T].create())") } or flunk("expected BinaryHeap.create body")
         push_line = source.lines.index { |line| line.include?("this.values.push(value)") } or flunk("expected BinaryHeap.push body")
 
@@ -5680,7 +5673,7 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        header_line = source.lines.index { |line| line == "methods PriorityQueue[T]:\n" } or flunk("expected PriorityQueue methods header")
+        header_line = source.lines.index { |line| line == "extending PriorityQueue[T]:\n" } or flunk("expected PriorityQueue extending header")
         iter_signature_line = source.lines.index { |line| line.include?("public function iter() -> binary_heap.Iter[T]:") } or flunk("expected PriorityQueue.iter signature")
         iter_line = source.lines.index { |line| line.include?("return this.values.iter()") } or flunk("expected PriorityQueue.iter body")
         enqueue_line = source.lines.index { |line| line.include?("this.values.push(value)") } or flunk("expected PriorityQueue.enqueue body")
@@ -5722,7 +5715,7 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        header_line = source.lines.index { |line| line == "methods OrderedSet[T]:\n" } or flunk("expected OrderedSet methods header")
+        header_line = source.lines.index { |line| line == "extending OrderedSet[T]:\n" } or flunk("expected OrderedSet extending header")
         contains_line = source.lines.index { |line| line.include?("return this.get(value) != null") } or flunk("expected OrderedSet.contains body")
         iter_line = source.lines.index { |line| line.include?("return Iter[T](node = OrderedSet[T].minimum(this.root))") } or flunk("expected OrderedSet.iter body")
         next_line = source.lines.index { |line| line.include?("this.node = OrderedSet[T].successor(current)") } or flunk("expected OrderedSet.Iter.next body")
@@ -6195,25 +6188,25 @@ class LSPServerTest < Minitest::Test
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_variant_constructor_labels_test.mt"
         source = <<~MT
-          variant Maybe[T]:
-              some(value: T)
-              none
+            variant Choice[T]:
+                some(value: T)
+                none
 
-          variant Status[T, E]:
-              ok(value: T)
-              err(error: E)
+            variant Outcome[T, E]:
+                success(value: T)
+                failure(error: E)
 
-          struct Entry[T]:
-              key: T
-              count: int
+            struct Entry[T]:
+                key: T
+                count: int
 
-          function classify(entry: Entry[int]) -> Status[int, int]:
-              let rebuilt = Entry[int](key = entry.key, count = entry.count)
-              match Maybe[int].some(value = rebuilt.count):
-                  Maybe.some as payload:
-                      return Status[int, int].ok(value = payload.value)
-                  Maybe.none:
-                      return Status[int, int].err(error = rebuilt.count)
+            function classify(entry: Entry[int]) -> Outcome[int, int]:
+                let rebuilt = Entry[int](key = entry.key, count = entry.count)
+                match Choice[int].some(value = rebuilt.count):
+                    Choice.some as payload:
+                        return Outcome[int, int].success(value = payload.value)
+                    Choice.none:
+                        return Outcome[int, int].failure(error = rebuilt.count)
         MT
 
         client.send_notification("textDocument/didOpen", {
@@ -6234,7 +6227,7 @@ class LSPServerTest < Minitest::Test
         some_ctor = semantic_entry_for_lexeme_on_line(source, entries, "some", 14)
         some_match = semantic_entry_for_lexeme_on_line(source, entries, "some", 15)
         none_match = semantic_entry_for_lexeme_on_line(source, entries, "none", 17)
-        err_return = semantic_entry_for_lexeme_on_line(source, entries, "err", 18)
+        failure_return = semantic_entry_for_lexeme_on_line(source, entries, "failure", 18)
         error_label = semantic_entry_for_lexeme_on_line(source, entries, "error", 18)
 
         assert_equal "enumMember", some_decl.fetch("tokenType")
@@ -6246,7 +6239,7 @@ class LSPServerTest < Minitest::Test
         assert_equal "enumMember", some_ctor.fetch("tokenType")
         assert_equal "enumMember", some_match.fetch("tokenType")
         assert_equal "enumMember", none_match.fetch("tokenType")
-        assert_equal "enumMember", err_return.fetch("tokenType")
+        assert_equal "enumMember", failure_return.fetch("tokenType")
         assert_equal "property", error_label.fetch("tokenType")
       end
     end
@@ -6698,8 +6691,8 @@ class LSPServerTest < Minitest::Test
         struct Box:
             value: int
 
-        methods Box:
-            editable function release() -> void:
+        extending Box:
+            mutable function release() -> void:
                 pass
 
         function main(box_ptr: ptr[Box]) -> void:

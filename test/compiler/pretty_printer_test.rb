@@ -117,7 +117,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       public struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           public function read() -> int:
               return this.value
 
@@ -139,7 +139,7 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           function get() -> T:
               return this.value
     MT

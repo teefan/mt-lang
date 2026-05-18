@@ -74,18 +74,18 @@ class MilkTeaBuildTest < Minitest::Test
       c_path = File.join(dir, "match-bind.c")
 
       File.write(source_path, <<~MT)
-        import std.maybe as maybe
+        
         import std.str as text
 
-        function match_scrutinee_once() -> maybe.Maybe[str]:
-            return maybe.Maybe[str].some(value= "milk")
+        function match_scrutinee_once() -> Option[str]:
+            return Option[str].some(value= "milk")
 
         function main() -> int:
             match match_scrutinee_once():
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     if not payload.value.equal("milk"):
                         return 1
-                maybe.Maybe.none:
+                Option.none:
                     return 2
             return 0
       MT
@@ -1105,7 +1105,7 @@ class MilkTeaBuildTest < Minitest::Test
 
       source_path = File.join(src_dir, "main.mt")
       File.write(source_path, [
-        "import std.maybe as maybe",
+        "",
         "import game_types as gt",
         "",
         "function main() -> int:",

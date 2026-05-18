@@ -408,16 +408,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function text_subtext\(text: str as cstr, position: int, length: int\) -> cstr = c\.TextSubtext$/, source)
     assert_match(/^public foreign function text_remove_spaces\(text: str as cstr\) -> cstr = c\.TextRemoveSpaces$/, source)
     assert_match(/^public foreign function load_fragment_shader\(fs_file_name: str as cstr\) -> Shader = c\.LoadShader\(null, fs_file_name\)$/, source)
-    assert_match(/methods Color:.*?public function alpha\(alpha: float\) -> Color:\n\s+return color_alpha\(this, alpha\)/m, source)
-    assert_match(/methods Color:.*?public static function from_hsv\(hue: float, saturation: float, value: float\) -> Color:\n\s+return color_from_hsv\(hue, saturation, value\)/m, source)
-    assert_match(/methods Image:.*?public static function text\(text: str, font_size: int, color: Color\) -> Image:\n\s+return image_text\(text, font_size, color\)/m, source)
-    assert_match(/methods Image:.*?public editable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
-    assert_match(/methods Wave:.*?public function copy\(\) -> Wave:\n\s+return wave_copy\(this\)/m, source)
-    assert_match(/methods ptr\[Wave\]:.*?public function crop\(init_frame: int, final_frame: int\) -> void:\n\s+wave_crop\(this, init_frame, final_frame\).*?public function format\(sample_rate: int, sample_size: int, channels: int\) -> void:\n\s+wave_format\(this, sample_rate, sample_size, channels\)/m, source)
-    assert_match(/methods Vector2:.*?public static function zero\(\) -> Vector2:\n\s+return math\.vector2_zero\(\).*?public function add\(v2: Vector2\) -> Vector2:\n\s+return math\.vector2_add\(this, v2\)/m, source)
-    assert_match(/methods Vector3:.*?public function to_float_v\(\) -> array\[float, 3\]:\n\s+return math\.vector3_to_float_v\(this\)/m, source)
-    assert_match(/methods Matrix:.*?public function determinant\(\) -> float:\n\s+return math\.matrix_determinant\(this\).*?public static function identity\(\) -> Matrix:\n\s+return math\.matrix_identity\(\).*?public function to_float_v\(\) -> array\[float, 16\]:\n\s+return math\.matrix_to_float_v\(this\)/m, source)
-    assert_match(/methods Quaternion:.*?public static function identity\(\) -> Quaternion:\n\s+return math\.quaternion_identity\(\).*?public function nlerp\(q2: Vector4, amount: float\) -> Quaternion:\n\s+return math\.quaternion_nlerp\(this, q2, amount\)/m, source)
+    assert_match(/extending Color:.*?public function alpha\(alpha: float\) -> Color:\n\s+return color_alpha\(this, alpha\)/m, source)
+    assert_match(/extending Color:.*?public static function from_hsv\(hue: float, saturation: float, value: float\) -> Color:\n\s+return color_from_hsv\(hue, saturation, value\)/m, source)
+    assert_match(/extending Image:.*?public static function text\(text: str, font_size: int, color: Color\) -> Image:\n\s+return image_text\(text, font_size, color\)/m, source)
+    assert_match(/extending Image:.*?public mutable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
+    assert_match(/extending Wave:.*?public function copy\(\) -> Wave:\n\s+return wave_copy\(this\)/m, source)
+    assert_match(/extending ptr\[Wave\]:.*?public function crop\(init_frame: int, final_frame: int\) -> void:\n\s+wave_crop\(this, init_frame, final_frame\).*?public function format\(sample_rate: int, sample_size: int, channels: int\) -> void:\n\s+wave_format\(this, sample_rate, sample_size, channels\)/m, source)
+    assert_match(/extending Vector2:.*?public static function zero\(\) -> Vector2:\n\s+return math\.vector2_zero\(\).*?public function add\(v2: Vector2\) -> Vector2:\n\s+return math\.vector2_add\(this, v2\)/m, source)
+    assert_match(/extending Vector3:.*?public function to_float_v\(\) -> array\[float, 3\]:\n\s+return math\.vector3_to_float_v\(this\)/m, source)
+    assert_match(/extending Matrix:.*?public function determinant\(\) -> float:\n\s+return math\.matrix_determinant\(this\).*?public static function identity\(\) -> Matrix:\n\s+return math\.matrix_identity\(\).*?public function to_float_v\(\) -> array\[float, 16\]:\n\s+return math\.matrix_to_float_v\(this\)/m, source)
+    assert_match(/extending Quaternion:.*?public static function identity\(\) -> Quaternion:\n\s+return math\.quaternion_identity\(\).*?public function nlerp\(q2: Vector4, amount: float\) -> Quaternion:\n\s+return math\.quaternion_nlerp\(this, q2, amount\)/m, source)
     refute_match(/^public foreign function begin_mode2_d\(/, source)
     refute_match(/^public foreign function get_world_to_screen2_d\(/, source)
     refute_match(/^public foreign function draw_line3_d\(/, source)
@@ -479,9 +479,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function vector3_ortho_normalize\(inout v1: rl\.Vector3, inout v2: rl\.Vector3\) -> void = c\.Vector3OrthoNormalize$/, source)
     assert_match(/^public foreign function quaternion_to_axis_angle\(q: rl\.Quaternion, out axis: rl\.Vector3, out angle: float\) -> void = c\.QuaternionToAxisAngle$/, source)
     assert_match(/^public foreign function matrix_decompose\(mat: rl\.Matrix, out translation: rl\.Vector3, out rotation: rl\.Quaternion, out scale: rl\.Vector3\) -> void = c\.MatrixDecompose$/, source)
-    refute_match(/^methods rl\.Vector2:$/, source)
-    refute_match(/^methods rl\.Matrix:$/, source)
-    refute_match(/^methods rl\.Quaternion:$/, source)
+    refute_match(/^extending rl\.Vector2:$/, source)
+    refute_match(/^extending rl\.Matrix:$/, source)
+    refute_match(/^extending rl\.Quaternion:$/, source)
   end
 
   def test_checked_in_raygui_binding_matches_policy_and_loads
@@ -914,7 +914,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         public type Vector2 = c.Vector2
 
 
-        methods Vector2:
+        extending Vector2:
             public static function zero() -> Vector2:
                 return helper.vector2_zero()
 

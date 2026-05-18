@@ -1,6 +1,4 @@
 import std.async.libuv_runtime as backend
-import std.status as status
-
 
 public type Runtime = backend.Runtime
 
@@ -32,7 +30,7 @@ public function sleep(timeout: ptr_uint) -> Task[int]:
     return backend.sleep(timeout)
 
 
-public function create_runtime() -> status.Status[Runtime, int]:
+public function create_runtime() -> Result[Runtime, int]:
     return backend.create_runtime()
 
 

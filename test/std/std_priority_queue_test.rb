@@ -9,13 +9,13 @@ class MilkTeaStdPriorityQueueTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.maybe as maybe",
+      "",
       "import std.priority_queue as priority_queue",
       "",
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
       "        unsafe:",
       "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",
@@ -23,9 +23,9 @@ class MilkTeaStdPriorityQueueTest < Minitest::Test
       "function dequeue_value(values: ref[priority_queue.PriorityQueue[Key]]) -> int:",
       "    let removed = values.dequeue()",
       "    match removed:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return -1",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            return payload.value.value",
       "",
       "function main() -> int:",

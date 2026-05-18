@@ -229,7 +229,7 @@ class MilkTeaFormatterTest < Minitest::Test
       struct Ball:
           x: int
 
-      methods Ball:
+      extending Ball:
 
 
           function draw() -> void:
@@ -238,8 +238,8 @@ class MilkTeaFormatterTest < Minitest::Test
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
 
-    assert_includes formatted, "methods Ball:\n    function draw() -> void:"
-    refute_includes formatted, "methods Ball:\n\n    function draw() -> void:"
+    assert_includes formatted, "extending Ball:\n    function draw() -> void:"
+    refute_includes formatted, "extending Ball:\n\n    function draw() -> void:"
   end
 
   def test_tidy_mode_does_not_insert_blank_lines_before_first_interface_method
@@ -247,30 +247,30 @@ class MilkTeaFormatterTest < Minitest::Test
       interface ScreenState:
 
 
-          editable function update(effect: rl.Sound) -> void
+          mutable function update(effect: rl.Sound) -> void
           function draw(texture: rl.Texture2D) -> void
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
 
-    assert_includes formatted, "interface ScreenState:\n    editable function update(effect: rl.Sound) -> void"
-    refute_includes formatted, "interface ScreenState:\n\n    editable function update(effect: rl.Sound) -> void"
+    assert_includes formatted, "interface ScreenState:\n    mutable function update(effect: rl.Sound) -> void"
+    refute_includes formatted, "interface ScreenState:\n\n    mutable function update(effect: rl.Sound) -> void"
   end
 
-  def test_tidy_mode_inserts_two_blank_lines_before_methods_block
+  def test_tidy_mode_inserts_two_blank_lines_before_extending_block
     source = <<~MT
       function helper() -> void:
           return
 
-      methods Ball:
+      extending Ball:
           function draw() -> void:
               return
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
 
-    assert_includes formatted, "    return\n\n\nmethods Ball:"
-    refute_includes formatted, "    return\n\nmethods Ball:"
+    assert_includes formatted, "    return\n\n\nextending Ball:"
+    refute_includes formatted, "    return\n\nextending Ball:"
   end
 
   def test_tidy_mode_preserves_utf8_string_literals

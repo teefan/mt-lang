@@ -13,10 +13,10 @@ module MilkTea
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
 
       # Token types that introduce a named definition, in order of precedence
-      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let methods opaque interface].freeze
+      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface].freeze
       DOC_COMMENT_PREFIX = '##'
-      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque|interface)\s+/m
-      DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|methods|opaque|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
+      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface)\s+/m
+      DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
       def initialize(error_output: nil)
         @error_output = error_output
@@ -737,7 +737,7 @@ module MilkTea
                  when :type    then 'type_alias'
                  when :const   then 'constant'
                  when :var     then 'variable'
-                 when :methods then 'struct'
+                 when :extending then 'struct'
                  when :opaque  then 'struct'
                when :interface then 'interface'
                  end

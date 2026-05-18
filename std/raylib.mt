@@ -694,7 +694,7 @@ public foreign function attach_audio_mixed_processor(processor: fn(arg0: ptr[voi
 public foreign function detach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.DetachAudioMixedProcessor
 
 
-methods Color:
+extending Color:
     public function is_equal(col2: Color) -> bool:
         return color_is_equal(this, col2)
 
@@ -743,7 +743,7 @@ methods Color:
         return color_lerp(this, color2, factor)
 
 
-methods Image:
+extending Image:
     public function copy() -> Image:
         return image_copy(this)
 
@@ -756,200 +756,200 @@ methods Image:
         return image_text_ex(font, text, font_size, spacing, tint)
 
 
-    public editable function format(new_format: int) -> void:
+    public mutable function format(new_format: int) -> void:
         image_format(this, new_format)
 
 
-    public editable function to_pot(fill: Color) -> void:
+    public mutable function to_pot(fill: Color) -> void:
         image_to_pot(this, fill)
 
 
-    public editable function crop(crop: Rectangle) -> void:
+    public mutable function crop(crop: Rectangle) -> void:
         image_crop(this, crop)
 
 
-    public editable function alpha_crop(threshold: float) -> void:
+    public mutable function alpha_crop(threshold: float) -> void:
         image_alpha_crop(this, threshold)
 
 
-    public editable function alpha_clear(color: Color, threshold: float) -> void:
+    public mutable function alpha_clear(color: Color, threshold: float) -> void:
         image_alpha_clear(this, color, threshold)
 
 
-    public editable function alpha_mask(alpha_mask: Image) -> void:
+    public mutable function alpha_mask(alpha_mask: Image) -> void:
         image_alpha_mask(this, alpha_mask)
 
 
-    public editable function alpha_premultiply() -> void:
+    public mutable function alpha_premultiply() -> void:
         image_alpha_premultiply(this)
 
 
-    public editable function blur_gaussian(blur_size: int) -> void:
+    public mutable function blur_gaussian(blur_size: int) -> void:
         image_blur_gaussian(this, blur_size)
 
 
-    public editable function kernel_convolution(kernel: span[float]) -> void:
+    public mutable function kernel_convolution(kernel: span[float]) -> void:
         image_kernel_convolution(this, kernel)
 
 
-    public editable function resize(new_width: int, new_height: int) -> void:
+    public mutable function resize(new_width: int, new_height: int) -> void:
         image_resize(this, new_width, new_height)
 
 
-    public editable function resize_nn(new_width: int, new_height: int) -> void:
+    public mutable function resize_nn(new_width: int, new_height: int) -> void:
         image_resize_nn(this, new_width, new_height)
 
 
-    public editable function resize_canvas(new_width: int, new_height: int, offset_x: int, offset_y: int, fill: Color) -> void:
+    public mutable function resize_canvas(new_width: int, new_height: int, offset_x: int, offset_y: int, fill: Color) -> void:
         image_resize_canvas(this, new_width, new_height, offset_x, offset_y, fill)
 
 
-    public editable function mipmaps() -> void:
+    public mutable function mipmaps() -> void:
         image_mipmaps(this)
 
 
-    public editable function dither(r_bpp: int, g_bpp: int, b_bpp: int, a_bpp: int) -> void:
+    public mutable function dither(r_bpp: int, g_bpp: int, b_bpp: int, a_bpp: int) -> void:
         image_dither(this, r_bpp, g_bpp, b_bpp, a_bpp)
 
 
-    public editable function flip_vertical() -> void:
+    public mutable function flip_vertical() -> void:
         image_flip_vertical(this)
 
 
-    public editable function flip_horizontal() -> void:
+    public mutable function flip_horizontal() -> void:
         image_flip_horizontal(this)
 
 
-    public editable function rotate(degrees: int) -> void:
+    public mutable function rotate(degrees: int) -> void:
         image_rotate(this, degrees)
 
 
-    public editable function rotate_cw() -> void:
+    public mutable function rotate_cw() -> void:
         image_rotate_cw(this)
 
 
-    public editable function rotate_ccw() -> void:
+    public mutable function rotate_ccw() -> void:
         image_rotate_ccw(this)
 
 
-    public editable function color_tint(color: Color) -> void:
+    public mutable function color_tint(color: Color) -> void:
         image_color_tint(this, color)
 
 
-    public editable function color_invert() -> void:
+    public mutable function color_invert() -> void:
         image_color_invert(this)
 
 
-    public editable function color_grayscale() -> void:
+    public mutable function color_grayscale() -> void:
         image_color_grayscale(this)
 
 
-    public editable function color_contrast(contrast: float) -> void:
+    public mutable function color_contrast(contrast: float) -> void:
         image_color_contrast(this, contrast)
 
 
-    public editable function color_brightness(brightness: int) -> void:
+    public mutable function color_brightness(brightness: int) -> void:
         image_color_brightness(this, brightness)
 
 
-    public editable function color_replace(color: Color, replace: Color) -> void:
+    public mutable function color_replace(color: Color, replace: Color) -> void:
         image_color_replace(this, color, replace)
 
 
-    public editable function clear_background(color: Color) -> void:
+    public mutable function clear_background(color: Color) -> void:
         image_clear_background(this, color)
 
 
-    public editable function draw_pixel(pos_x: int, pos_y: int, color: Color) -> void:
+    public mutable function draw_pixel(pos_x: int, pos_y: int, color: Color) -> void:
         image_draw_pixel(this, pos_x, pos_y, color)
 
 
-    public editable function draw_pixel_v(position: Vector2, color: Color) -> void:
+    public mutable function draw_pixel_v(position: Vector2, color: Color) -> void:
         image_draw_pixel_v(this, position, color)
 
 
-    public editable function draw_line(start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void:
+    public mutable function draw_line(start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void:
         image_draw_line(this, start_pos_x, start_pos_y, end_pos_x, end_pos_y, color)
 
 
-    public editable function draw_line_v(start: Vector2, end: Vector2, color: Color) -> void:
+    public mutable function draw_line_v(start: Vector2, end: Vector2, color: Color) -> void:
         image_draw_line_v(this, start, end, color)
 
 
-    public editable function draw_line_ex(start: Vector2, end: Vector2, thick: int, color: Color) -> void:
+    public mutable function draw_line_ex(start: Vector2, end: Vector2, thick: int, color: Color) -> void:
         image_draw_line_ex(this, start, end, thick, color)
 
 
-    public editable function draw_circle(center_x: int, center_y: int, radius: int, color: Color) -> void:
+    public mutable function draw_circle(center_x: int, center_y: int, radius: int, color: Color) -> void:
         image_draw_circle(this, center_x, center_y, radius, color)
 
 
-    public editable function draw_circle_v(center: Vector2, radius: int, color: Color) -> void:
+    public mutable function draw_circle_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_v(this, center, radius, color)
 
 
-    public editable function draw_circle_lines(center_x: int, center_y: int, radius: int, color: Color) -> void:
+    public mutable function draw_circle_lines(center_x: int, center_y: int, radius: int, color: Color) -> void:
         image_draw_circle_lines(this, center_x, center_y, radius, color)
 
 
-    public editable function draw_circle_lines_v(center: Vector2, radius: int, color: Color) -> void:
+    public mutable function draw_circle_lines_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_lines_v(this, center, radius, color)
 
 
-    public editable function draw_rectangle(pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void:
+    public mutable function draw_rectangle(pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void:
         image_draw_rectangle(this, pos_x, pos_y, width, height, color)
 
 
-    public editable function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void:
+    public mutable function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void:
         image_draw_rectangle_v(this, position, size, color)
 
 
-    public editable function draw_rectangle_rec(rec: Rectangle, color: Color) -> void:
+    public mutable function draw_rectangle_rec(rec: Rectangle, color: Color) -> void:
         image_draw_rectangle_rec(this, rec, color)
 
 
-    public editable function draw_rectangle_lines(rec: Rectangle, thick: int, color: Color) -> void:
+    public mutable function draw_rectangle_lines(rec: Rectangle, thick: int, color: Color) -> void:
         image_draw_rectangle_lines(this, rec, thick, color)
 
 
-    public editable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
+    public mutable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle(this, v_1, v_2, v_3, color)
 
 
-    public editable function draw_triangle_ex(v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void:
+    public mutable function draw_triangle_ex(v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void:
         image_draw_triangle_ex(this, v_1, v_2, v_3, c_1, c_2, c_3)
 
 
-    public editable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
+    public mutable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle_lines(this, v_1, v_2, v_3, color)
 
 
-    public editable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
+    public mutable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_fan(this, points, point_count, color)
 
 
-    public editable function draw_triangle_strip(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
+    public mutable function draw_triangle_strip(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_strip(this, points, point_count, color)
 
 
-    public editable function draw(src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void:
+    public mutable function draw(src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void:
         image_draw(this, src, src_rec, dst_rec, tint)
 
 
-    public editable function draw_text(text: str, pos_x: int, pos_y: int, font_size: int, color: Color) -> void:
+    public mutable function draw_text(text: str, pos_x: int, pos_y: int, font_size: int, color: Color) -> void:
         image_draw_text(this, text, pos_x, pos_y, font_size, color)
 
 
-    public editable function draw_text_ex(font: Font, text: str, position: Vector2, font_size: float, spacing: float, tint: Color) -> void:
+    public mutable function draw_text_ex(font: Font, text: str, position: Vector2, font_size: float, spacing: float, tint: Color) -> void:
         image_draw_text_ex(this, font, text, position, font_size, spacing, tint)
 
 
-methods Wave:
+extending Wave:
     public function copy() -> Wave:
         return wave_copy(this)
 
 
-methods ptr[Wave]:
+extending ptr[Wave]:
     public function crop(init_frame: int, final_frame: int) -> void:
         wave_crop(this, init_frame, final_frame)
 
@@ -958,7 +958,7 @@ methods ptr[Wave]:
         wave_format(this, sample_rate, sample_size, channels)
 
 
-methods Vector2:
+extending Vector2:
     public static function zero() -> Vector2:
         return math.vector2_zero()
 
@@ -1083,7 +1083,7 @@ methods Vector2:
         return math.vector2_refract(this, n, r)
 
 
-methods Vector3:
+extending Vector3:
     public static function zero() -> Vector3:
         return math.vector3_zero()
 
@@ -1236,7 +1236,7 @@ methods Vector3:
         return math.vector3_refract(this, n, r)
 
 
-methods Vector4:
+extending Vector4:
     public static function zero() -> Vector4:
         return math.vector4_zero()
 
@@ -1325,7 +1325,7 @@ methods Vector4:
         return math.vector4_equals(this, q)
 
 
-methods Matrix:
+extending Matrix:
     public function determinant() -> float:
         return math.matrix_determinant(this)
 
@@ -1418,7 +1418,7 @@ methods Matrix:
         return math.matrix_compose(translation, rotation, scale)
 
 
-methods Quaternion:
+extending Quaternion:
     public static function identity() -> Quaternion:
         return math.quaternion_identity()
 
