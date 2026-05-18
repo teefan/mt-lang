@@ -2,10 +2,9 @@
 
 require "fileutils"
 require "open3"
-require "rubygems/package"
 require "tempfile"
-require "zlib"
 
+require_relative "archive_tool"
 require_relative "asset_pack"
 require_relative "debug_map"
 
@@ -13,6 +12,15 @@ module MilkTea
   class BuildError < StandardError; end
 
   class Build
+    FrontendModule = Data.define(:name, :kind, :link_libraries, :compiler_flags)
+
+    class RubyFrontend
+      def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:)
+        program = ModuleLoader.new(module_roots:, package_graph:, platform:).check_program(path)
+        Build.frontend_build_artifacts(program, emit_line_directives:, binary_path:)
+      end
+    end
+
     DEFAULT_WASM_SHELL_TEMPLATE_PATH = File.expand_path("templates/wasm_shell.html", __dir__).freeze
     WASM_SHELL_SCRIPT_PLACEHOLDER = "{{{ SCRIPT }}}".freeze
     WASM_SHELL_CANVAS_PLACEHOLDER = "{{{ MILK_TEA_CANVAS }}}".freeze
@@ -60,9 +68,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, debug:, profile:, platform:, bundle:, archive:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
@@ -81,7 +89,7 @@ module MilkTea
       ).clean
     end
 
-    def self.frontend_build_artifacts(program, emit_line_directives: false)
+    def self.frontend_build_artifacts(program, emit_line_directives: false, binary_path: nil)
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
       ensure_program_has_entrypoint!(program, ir_program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
@@ -89,8 +97,25 @@ module MilkTea
       {
         ir_program: ir_program,
         compiled_c: compiled_c,
+        debug_map: binary_path ? DebugMap.from_ir(ir_program, binary_path:) : nil,
+        modules: frontend_modules(program),
       }
     end
+
+    def self.frontend_modules(program)
+      return [].freeze if program.is_a?(IR::Program)
+
+      program.analyses_by_module_name.keys.sort.map do |module_name|
+        analysis = program.analyses_by_module_name.fetch(module_name)
+        FrontendModule.new(
+          name: module_name,
+          kind: analysis.module_kind,
+          link_libraries: analysis.directives.grep(AST::LinkDirective).map(&:value).freeze,
+          compiler_flags: analysis.directives.grep(AST::CompilerFlagDirective).map(&:value).freeze,
+        )
+      end.freeze
+    end
+    private_class_method :frontend_modules
 
     def self.default_raw_bindings(root: MilkTea.root)
       require_relative "../bindings"
@@ -99,7 +124,7 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       manifest = PackageManifest.load(path)
       @package_build = true
       @source_path = manifest.source_path
@@ -134,6 +159,7 @@ module MilkTea
       @raw_bindings = raw_bindings
       @package_graph = package_graph
       @module_roots = (module_roots || @package_graph&.source_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)).dup
+      @frontend = frontend || RubyFrontend.new
       @debug = debug
     rescue PackageManifestError => e
       raise BuildError, e.message if package_manifest_required_for?(path)
@@ -159,6 +185,7 @@ module MilkTea
       @raw_bindings = raw_bindings
       @package_graph = package_graph
       @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
+      @frontend = frontend || RubyFrontend.new
       @debug = debug
     end
 
@@ -177,15 +204,22 @@ module MilkTea
 
     def build
       ensure_compiler_available!
-      program = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform).check_program(@resolved_source_path)
-      prepare_bindings(program)
       emit_line_directives = line_directives_required?
-      artifacts = self.class.frontend_build_artifacts(program, emit_line_directives: emit_line_directives)
-      ir_program = artifacts.fetch(:ir_program)
+      artifacts = @frontend.compile(
+        path: @resolved_source_path,
+        module_roots: @module_roots,
+        package_graph: @package_graph,
+        platform: @platform,
+        emit_line_directives: emit_line_directives,
+        binary_path: @output_path,
+      )
+      ir_program = artifacts[:ir_program]
       compiled_c = artifacts.fetch(:compiled_c)
-      debug_map = DebugMap.from_ir(ir_program, binary_path: @output_path)
-      compiler_flags = collect_compiler_flags(program)
-      link_flags = collect_link_flags(program)
+      debug_map = artifacts.fetch(:debug_map)
+      frontend_modules = artifacts.fetch(:modules)
+      prepare_bindings(frontend_modules)
+      compiler_flags = collect_compiler_flags(frontend_modules)
+      link_flags = collect_link_flags(frontend_modules)
       debug_map_path = DebugMap.sidecar_path_for(@output_path)
 
       FileUtils.mkdir_p(File.dirname(@output_path))
@@ -322,12 +356,11 @@ module MilkTea
       requested_cc
     end
 
-    def prepare_bindings(program)
-      program.analyses_by_module_name.keys.sort.each do |module_name|
-        analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :raw_module
+    def prepare_bindings(frontend_modules)
+      frontend_modules.each do |mod|
+        next unless mod.kind == :raw_module
 
-        binding = @raw_bindings.find_by_module_name(module_name)
+        binding = @raw_bindings.find_by_module_name(mod.name)
         next unless binding
 
         binding.prepare!(cc: @cc, platform: @platform)
@@ -357,20 +390,19 @@ module MilkTea
       raise BuildError, "C compiler not found: #{@cc}"
     end
 
-    def collect_link_flags(program)
-      program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
-        analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :raw_module
+    def collect_link_flags(frontend_modules)
+      frontend_modules.each_with_object([]) do |mod, flags|
+        next unless mod.kind == :raw_module
 
-        binding = @raw_bindings.find_by_module_name(module_name)
+        binding = @raw_bindings.find_by_module_name(mod.name)
         if binding
           binding.link_flags(platform: @platform).grep(/\A-L/).each do |flag|
             flags << flag unless flags.include?(flag)
           end
         end
 
-        analysis.directives.grep(AST::LinkDirective).each do |directive|
-          flag = "-l#{directive.value}"
+        mod.link_libraries.each do |link_library|
+          flag = "-l#{link_library}"
           flags << flag unless flags.include?(flag)
         end
 
@@ -382,22 +414,21 @@ module MilkTea
       end
     end
 
-    def collect_compiler_flags(program)
+    def collect_compiler_flags(frontend_modules)
       std_c_include_flag = "-I#{MilkTea.root.join('std/c')}"
 
-      program.analyses_by_module_name.keys.sort.each_with_object([]) do |module_name, flags|
-        analysis = program.analyses_by_module_name.fetch(module_name)
-        next unless analysis.module_kind == :raw_module
+      frontend_modules.each_with_object([]) do |mod, flags|
+        next unless mod.kind == :raw_module
 
-        if module_name.start_with?("std.c.")
+        if mod.name.start_with?("std.c.")
           flags << std_c_include_flag unless flags.include?(std_c_include_flag)
         end
 
-        analysis.directives.grep(AST::CompilerFlagDirective).each do |directive|
-          flags << directive.value unless flags.include?(directive.value)
+        mod.compiler_flags.each do |compiler_flag|
+          flags << compiler_flag unless flags.include?(compiler_flag)
         end
 
-        binding = @raw_bindings.find_by_module_name(module_name)
+        binding = @raw_bindings.find_by_module_name(mod.name)
         next unless binding
 
         binding.build_flags(platform: @platform).each do |flag|
@@ -547,41 +578,20 @@ module MilkTea
       FileUtils.rm_f(archive_path)
       FileUtils.mkdir_p(File.dirname(archive_path))
 
-      Tempfile.create(["milk-tea-bundle", ".tar"]) do |tar_file|
-        Gem::Package::TarWriter.new(tar_file) do |tar|
-          add_archive_tree(tar, @bundle_root, File.basename(@bundle_root))
-        end
-
-        tar_file.flush
-        tar_file.rewind
-
-        Zlib::GzipWriter.open(archive_path) do |gzip|
-          IO.copy_stream(tar_file, gzip)
-        end
-      end
+      ArchiveTool.archive_directory(
+        source_root: @bundle_root,
+        archive_path:,
+        archive_root_name: File.basename(@bundle_root),
+        include_hidden: true,
+      )
 
       archive_path
+    rescue ArchiveToolError => e
+      raise BuildError, e.message
     end
 
     def bundle_archive_path
       "#{@bundle_root}.tar.gz"
-    end
-
-    def add_archive_tree(tar, source_path, archive_path)
-      stat = File.lstat(source_path)
-
-      if stat.directory?
-        tar.mkdir(archive_path, stat.mode & 0o777)
-        Dir.children(source_path).sort.each do |child|
-          add_archive_tree(tar, File.join(source_path, child), File.join(archive_path, child))
-        end
-      elsif stat.file?
-        tar.add_file(archive_path, stat.mode & 0o777) do |io|
-          File.open(source_path, "rb") do |file|
-            IO.copy_stream(file, io)
-          end
-        end
-      end
     end
 
     def runtime_asset_mappings_for(target_path)

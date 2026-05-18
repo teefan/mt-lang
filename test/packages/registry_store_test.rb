@@ -1,5 +1,59 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "tmpdir"
+require_relative "../test_helper"
+
+class MilkTeaPackageRegistryStoreTest < Minitest::Test
+  def test_publish_writes_archive_and_helper_extract_restores_package_tree
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-package-registry-store") do |dir|
+      registry_root = File.join(dir, "registry")
+      published_root = File.join(dir, "published-ui")
+      scratch_root = File.join(dir, "scratch")
+      destination_root = File.join(dir, "extracted")
+      source_root = File.join(published_root, "src", "teefan", "ui")
+
+      FileUtils.mkdir_p(source_root)
+      FileUtils.mkdir_p(scratch_root)
+      File.write(File.join(published_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+      File.write(File.join(source_root, "layout.mt"), "")
+      File.write(File.join(published_root, ".secret"), "hidden")
+
+      registry_store = MilkTea::PackageRegistryStore.new(root: registry_root)
+      registry_store.publish(published_root)
+
+      archive_path = File.join(registry_root, "packages", "teefan.ui", "1.2.3.tar.gz")
+      assert File.file?(archive_path)
+
+      registry_store.send(:extract_archive_to_root, File.binread(archive_path), destination_root, scratch_root)
+
+      assert File.file?(File.join(destination_root, "package.toml"))
+      assert File.file?(File.join(destination_root, "src", "teefan", "ui", "layout.mt"))
+      refute File.exist?(File.join(destination_root, ".secret"))
+    end
+  end
+
+  private
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
+    end
+  end
+end# frozen_string_literal: true
+
 require "tmpdir"
 require_relative "../test_helper"
 

@@ -3,11 +3,10 @@
 require "cgi/escape"
 require "fileutils"
 require "net/http"
-require "rubygems/package"
-require "stringio"
 require "tmpdir"
 require "uri"
-require "zlib"
+
+require_relative "../tooling/archive_tool"
 
 module MilkTea
   class PackageRegistryStoreError < StandardError; end
@@ -260,35 +259,14 @@ module MilkTea
     def write_package_archive!(archive_path, package_root)
       FileUtils.mkdir_p(File.dirname(archive_path))
 
-      tar_buffer = StringIO.new(+"")
-      Gem::Package::TarWriter.new(tar_buffer) do |tar|
-        add_directory_to_archive(tar, package_root, package_root)
-      end
-      tar_buffer.rewind
-
-      Zlib::GzipWriter.open(archive_path) do |gzip|
-        gzip.write(tar_buffer.string)
-      end
-    end
-
-    def add_directory_to_archive(tar, root_path, path)
-      Dir.children(path).sort.each do |entry|
-        next if entry.start_with?(".")
-
-        child_path = File.join(path, entry)
-        relative_path = child_path.delete_prefix(root_path + File::SEPARATOR)
-        stat = File.lstat(child_path)
-        if stat.directory?
-          tar.mkdir(relative_path, stat.mode)
-          add_directory_to_archive(tar, root_path, child_path)
-        elsif stat.file?
-          tar.add_file(relative_path, stat.mode) do |file|
-            File.open(child_path, "rb") do |source|
-              IO.copy_stream(source, file)
-            end
-          end
-        end
-      end
+      ArchiveTool.archive_directory(
+        source_root: package_root,
+        archive_path:,
+        archive_root_name: "",
+        include_hidden: false,
+      )
+    rescue ArchiveToolError => e
+      raise PackageRegistryStoreError, e.message
     end
 
     def write_versions_index!(root, package_name)
@@ -302,32 +280,11 @@ module MilkTea
       archive_path = File.join(scratch_dir, "package.tar.gz")
       extract_root = File.join(scratch_dir, "extract")
       File.binwrite(archive_path, archive_body)
-      FileUtils.mkdir_p(extract_root)
-
-      Zlib::GzipReader.open(archive_path) do |gzip|
-        Gem::Package::TarReader.new(gzip) do |tar|
-          tar.each do |entry|
-            relative_path = entry.full_name
-            next if relative_path.nil? || relative_path.empty?
-
-            destination_path = File.expand_path(relative_path, extract_root)
-            unless destination_path == extract_root || destination_path.start_with?(extract_root + File::SEPARATOR)
-              raise PackageRegistryStoreError, "registry package archive contains an invalid path #{relative_path.inspect}"
-            end
-
-            if entry.directory?
-              FileUtils.mkdir_p(destination_path)
-            elsif entry.file?
-              FileUtils.mkdir_p(File.dirname(destination_path))
-              File.open(destination_path, "wb", entry.header.mode) do |file|
-                IO.copy_stream(entry, file)
-              end
-            end
-          end
-        end
-      end
+      ArchiveTool.extract_archive(archive_path:, destination_root: extract_root)
 
       FileUtils.mv(extract_root, destination_root)
+    rescue ArchiveToolError => e
+      raise PackageRegistryStoreError, e.message
     end
 
     def package_versions_url(package_name)

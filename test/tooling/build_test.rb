@@ -65,6 +65,76 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
+  def test_frontend_build_artifacts_capture_plain_module_metadata
+    Dir.mktmpdir("milk-tea-build-frontend-modules") do |dir|
+      source_path = File.join(dir, "frontend-modules.mt")
+      output_path = File.join(dir, "frontend-modules")
+
+      File.write(source_path, [
+        "import std.c.zlib as zlib_c",
+        "",
+        "function main() -> int:",
+        "    return 0",
+        "",
+      ].join("\n"))
+
+      program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(source_path)).check_program(source_path)
+      artifacts = MilkTea::Build.frontend_build_artifacts(program, binary_path: output_path)
+
+      zlib_module = artifacts.fetch(:modules).find { |mod| mod.name == "std.c.zlib" }
+      refute_nil zlib_module
+      assert_equal :raw_module, zlib_module.kind
+      assert_equal ["z"], zlib_module.link_libraries
+      assert_equal [], zlib_module.compiler_flags
+      refute_nil artifacts.fetch(:debug_map)
+      assert_equal File.expand_path(output_path), artifacts.fetch(:debug_map).binary_path
+    end
+  end
+
+  def test_build_accepts_custom_frontend_compiler
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-custom-frontend") do |dir|
+      source_path = File.join(dir, "custom-frontend.mt")
+      output_path = File.join(dir, "custom-frontend")
+      calls = []
+
+      File.write(source_path, "function main() -> int:\n    return 99\n")
+
+      frontend = Object.new
+      frontend.define_singleton_method(:compile) do |path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:|
+        calls << {
+          path:,
+          module_roots: module_roots.dup,
+          package_graph:,
+          platform:,
+          emit_line_directives:,
+          binary_path:,
+        }
+
+        {
+          compiled_c: "#include <stdint.h>\nint main(void) { return 0; }\n",
+          debug_map: MilkTea::DebugMap.new(binary_path:, program_source_path: path, functions: []),
+          modules: [],
+        }
+      end
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler, frontend: frontend)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+      assert_equal 1, calls.length
+      assert_equal File.expand_path(source_path), calls[0].fetch(:path)
+      assert_equal File.expand_path(output_path), calls[0].fetch(:binary_path)
+      assert_equal :linux, calls[0].fetch(:platform)
+    end
+  end
+
   def test_build_variant_match_payload_binding_evaluates_scrutinee_once
     Dir.mktmpdir("milk-tea-build-match-bind") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -74,7 +144,7 @@ class MilkTeaBuildTest < Minitest::Test
       c_path = File.join(dir, "match-bind.c")
 
       File.write(source_path, <<~MT)
-        
+
         import std.str as text
 
         function match_scrutinee_once() -> Option[str]:

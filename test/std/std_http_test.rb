@@ -183,6 +183,38 @@ class MilkTeaStdHttpTest < Minitest::Test
     end
   end
 
+  def test_http_https_urls_fail_at_transport_dispatch
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "import std.http as http",
+      "",
+      "import std.str as text",
+      "",
+      "async function main() -> int:",
+      "    let response_result = await http.get(\"https://example.com/resource\")",
+      "    match response_result:",
+      "        Result.failure as payload:",
+      "            var error = payload.error",
+      "            defer error.release()",
+      "            if not error.message.as_str().equal(\"https transport is not implemented yet\"):",
+      "                return 1",
+      "            return 0",
+      "        Result.success as payload:",
+      "            var response = payload.value",
+      "            defer response.release()",
+      "            return 2",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def with_http_test_server(handler)
