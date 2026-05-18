@@ -704,6 +704,17 @@ module MilkTea
         when AST::UnsafeExpr
           inner = render_expression(expression.expression, IF_EXPRESSION_PRECEDENCE)
           wrap("unsafe: #{inner}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+        when AST::ProcExpr
+          params = expression.params.map { |param| render_param(param) }.join(', ')
+          if expression.body.length == 1 && expression.body.first.is_a?(AST::ReturnStmt) && expression.body.first.value
+            body_expression = render_expression(expression.body.first.value, IF_EXPRESSION_PRECEDENCE)
+            wrap("proc(#{params}) -> #{render_type(expression.return_type)}: #{body_expression}", parent_precedence, IF_EXPRESSION_PRECEDENCE)
+          else
+            rendered_body = expression.body.map do |statement|
+              render_statement(statement) || raise(ArgumentError, "unsupported proc body statement #{statement.class.name}")
+            end.join("\n#{INDENT}")
+            "proc(#{params}) -> #{render_type(expression.return_type)}:\n#{INDENT}#{rendered_body}"
+          end
         when AST::SizeofExpr
           "size_of(#{render_type(expression.type)})"
         when AST::AlignofExpr

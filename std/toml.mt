@@ -172,18 +172,7 @@ extending Object:
 
 
     static function find_entry(current: Object, key: str) -> ptr[Entry]?:
-        var index: ptr_uint = 0
-        while index < current.entries.len():
-            let entry = current.entries.get(index) else:
-                fatal(c"toml.Object.find_entry missing entry")
-
-            unsafe:
-                if read(entry).key.as_str().equal(key):
-                    return entry
-
-            index += 1
-
-        return null
+        return current.entries.find(proc(entry: ptr[Entry]) -> bool: unsafe: read(entry).key.as_str().equal(key))
 
 
     public function contains(key: str) -> bool:
@@ -914,33 +903,11 @@ function parse_value(parser: ref[Parser]) -> Result[Value, ParseError]:
 
 
 function document_find_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
-    var index: ptr_uint = 0
-    while index < document.tables.len():
-        let table_ptr = document.tables.get(index) else:
-            fatal(c"toml.document_find_table_index missing table")
-
-        unsafe:
-            if read(table_ptr).name.as_str().equal(name):
-                return Option[ptr_uint].some(value= index)
-
-        index += 1
-
-    return Option[ptr_uint].none
+    return document.tables.find_index(proc(table_ptr: ptr[Table]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name))
 
 
 function document_find_array_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
-    var index: ptr_uint = 0
-    while index < document.array_tables.len():
-        let table_ptr = document.array_tables.get(index) else:
-            fatal(c"toml.document_find_array_table_index missing table")
-
-        unsafe:
-            if read(table_ptr).name.as_str().equal(name):
-                return Option[ptr_uint].some(value= index)
-
-        index += 1
-
-    return Option[ptr_uint].none
+    return document.array_tables.find_index(proc(table_ptr: ptr[ArrayTable]) -> bool: unsafe: read(table_ptr).name.as_str().equal(name))
 
 
 function current_object_contains(document: ref[Document], cursor: Cursor, key: str) -> bool:

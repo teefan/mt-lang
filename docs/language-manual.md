@@ -223,7 +223,7 @@ return Result[Output, Error].success(value= lowered)
 - on failure, `expr?` returns `Result[_, E].failure(error= ...)` from the enclosing function or proc
 - as an expression statement, `expr?` also accepts `Result[void, E]`; success continues and failure returns early
 - `expr?` is only allowed inside function and proc bodies
-- `expr?` is not supported inside `async` functions yet
+- inside `async` functions, failure completes the task early with the same `Result` failure
 - `expr?` is not allowed inside `defer` blocks
 - the enclosing function or proc must return `Result[_, E]` with the same error type `E`
 - `let _ = expr else:` is still useful when you need an explicit `else` block or `else as error:` binding
@@ -587,6 +587,7 @@ Rules:
 - `align_of(T)`
 - `offset_of(T, field)`
 - `proc(...) -> T: ...` — anonymous function expression, e.g. `let fn_ptr = proc(x: int) -> int: return x + 1`
+- `proc(...) -> T: expr` — expression-bodied anonymous function, implicitly returning `expr`
 - `if cond: a else: b`
 
 ### 5.2 Postfix
