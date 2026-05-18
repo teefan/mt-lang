@@ -3505,6 +3505,23 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/str construction requires unsafe/, error.message)
   end
 
+  def test_rejects_codegen_for_str_addition
+    source = <<~MT
+      # module demo.bad_str_addition
+
+      function main() -> str:
+          let left = "left"
+          let right = "right"
+          return left + right
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_source(source)
+    end
+
+    assert_match(/operator \+ does not support str\/cstr concatenation/, error.message)
+  end
+
   def test_generate_c_for_packed_and_aligned_structs
     source = [
       "# module demo.layout_modifiers_surface",

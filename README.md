@@ -95,7 +95,7 @@ Supported top-level declarations:
 - `enum`
 - `flags`
 - `opaque`
-- `methods`
+- `extending`
 - `function`
 - `async function`
 - `external function`
@@ -110,7 +110,7 @@ File-kind note:
 Visibility:
 
 - `public` is allowed on exportable ordinary declarations.
-- `public` is rejected on `methods` blocks.
+- `public` is rejected on `extending` blocks.
 - `public` is rejected on ordinary `external` declarations and `static_assert`.
 - In external files, declarations are implicitly exported and `public` is rejected.
 
