@@ -81,6 +81,17 @@ module MilkTea
       ).clean
     end
 
+    def self.frontend_build_artifacts(program, emit_line_directives: false)
+      ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
+      ensure_program_has_entrypoint!(program, ir_program)
+      compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
+
+      {
+        ir_program: ir_program,
+        compiled_c: compiled_c,
+      }
+    end
+
     def self.default_raw_bindings(root: MilkTea.root)
       require_relative "../bindings"
 
@@ -168,10 +179,10 @@ module MilkTea
       ensure_compiler_available!
       program = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform).check_program(@resolved_source_path)
       prepare_bindings(program)
-      ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
-      ensure_program_has_entrypoint!(program, ir_program)
       emit_line_directives = line_directives_required?
-      compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
+      artifacts = self.class.frontend_build_artifacts(program, emit_line_directives: emit_line_directives)
+      ir_program = artifacts.fetch(:ir_program)
+      compiled_c = artifacts.fetch(:compiled_c)
       debug_map = DebugMap.from_ir(ir_program, binary_path: @output_path)
       compiler_flags = collect_compiler_flags(program)
       link_flags = collect_link_flags(program)
@@ -227,7 +238,7 @@ module MilkTea
       raise BuildError, "bundle mode is supported only for native package builds" if target_wasm?
     end
 
-    def ensure_program_has_entrypoint!(program, ir_program)
+    def self.ensure_program_has_entrypoint!(program, ir_program)
       return if ir_program.functions.any?(&:entry_point)
       return if program.is_a?(IR::Program)
 
@@ -237,6 +248,7 @@ module MilkTea
 
       raise BuildError, "no executable entrypoint found; define `main` with one of the supported executable signatures"
     end
+    private_class_method :ensure_program_has_entrypoint!
 
     def package_manifest_required_for?(path)
       expanded_path = File.expand_path(path)

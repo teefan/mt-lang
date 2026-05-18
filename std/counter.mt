@@ -75,18 +75,15 @@ extending Counter[T]:
     public mutable function clear() -> void:
         this.values.clear()
         this.total = 0
-        return
 
 
     public mutable function release() -> void:
         this.values.release()
         this.total = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
-        return
 
 
     public mutable function add(value: T, amount: ptr_uint) -> ptr_uint:
@@ -126,7 +123,7 @@ extending Counter[T]:
                 match removed:
                     Option.none:
                         fatal(c"counter.Counter.remove_one missing value")
-                    Option.some as ignored_payload:
+                    Option.some as _:
                         if this.total == 0:
                             fatal(c"counter.Counter.remove_one missing total")
                         this.total -= 1

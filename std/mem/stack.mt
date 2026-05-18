@@ -25,7 +25,6 @@ extending Stack:
 
     public mutable function reset(mark: Mark) -> void:
         this.arena.reset(mark)
-        return
 
 
     public function remaining_bytes() -> ptr_uint:
@@ -46,4 +45,3 @@ extending Stack:
 
     public mutable function release() -> void:
         this.arena.release()
-        return

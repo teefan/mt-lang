@@ -9,7 +9,7 @@ public function require_ptr[T](value: ptr[T]?, message: str) -> ptr[T]:
     if value == null:
         fatal(message)
 
-    return unsafe: ptr[T]<-value
+    return ptr[T]<-value
 
 
 public function enter_asset_directory(directory_name: str) -> bool:

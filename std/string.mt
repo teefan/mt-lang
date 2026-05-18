@@ -1,6 +1,6 @@
+import std.str as text_ops
 import std.mem.arena as arena
 import std.mem.heap as heap
-import std.str as text_ops
 
 public struct String:
     data: ptr[ubyte]?
@@ -38,7 +38,6 @@ extending String:
 
     public mutable function clear() -> void:
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
@@ -46,7 +45,6 @@ extending String:
         this.data = null
         this.len = 0
         this.capacity = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
@@ -68,7 +66,6 @@ extending String:
 
         this.data = resized
         this.capacity = new_capacity
-        return
 
 
     public mutable function push_byte(value: ubyte) -> void:
@@ -82,7 +79,6 @@ extending String:
             let data_ptr = ptr[ubyte]<-data
             read(data_ptr + this.len) = value
         this.len += 1
-        return
 
 
     public mutable function append(suffix: str) -> void:
@@ -115,13 +111,11 @@ extending String:
                 heap.copy_bytes(destination, ptr[ubyte]<-suffix.data, suffix.len)
 
         this.len = new_len
-        return
 
 
     public mutable function assign(value_text: str) -> void:
         this.clear()
         this.append(value_text)
-        return
 
 
     public function as_str() -> str:

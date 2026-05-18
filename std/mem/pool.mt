@@ -71,7 +71,7 @@ public function slot_size_for[T]() -> ptr_uint:
 
 
 public function create_for[T](slot_count: ptr_uint) -> Pool:
-    return create_aligned(slot_size_for[T](), slot_count, ptr_uint<-align_of(T))
+    return create_aligned(slot_size_for[T](), slot_count, align_of(T))
 
 
 extending Pool:
@@ -111,8 +111,7 @@ extending Pool:
         if this.slot_size < slot_size:
             return null
 
-        let memory = this.alloc_bytes()
-        if memory == null:
+        let memory = this.alloc_bytes() else:
             return null
 
         return unsafe: ptr[T]<-memory

@@ -5,6 +5,56 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaSemaTest < Minitest::Test
+  def test_rejects_local_named_after_reserved_builtin_result_type
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            let Result = 1
+            return Result
+      MT
+    end
+
+    assert_equal "local Result uses reserved built-in type name Result", error.message
+  end
+
+  def test_allows_local_named_after_non_reserved_builtin_type_name
+    analysis = check_source(<<~MT)
+      function main() -> int:
+          let span = 1
+          return span
+    MT
+
+    assert_equal true, analysis.functions.key?("main")
+  end
+
+  def test_allows_import_alias_named_after_primitive_type
+    program = check_program_source(<<~MT)
+      # module demo.ok
+
+      import std.async as str
+
+      function main() -> int:
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_import_alias_named_after_reserved_builtin_result_type
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.bad
+
+        import std.async as Result
+
+        function main() -> int:
+            return 0
+      MT
+    end
+
+    assert_match(/import alias Result uses reserved built-in type name Result/, error.message)
+  end
+
   def test_language_fixture_file_type_checks
     result = MilkTea::ModuleLoader.check_file(language_fixture_path)
 
@@ -1939,7 +1989,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/function double uses reserved primitive type name double/, error.message)
+    assert_match(/function double uses reserved built-in type name double/, error.message)
   end
 
   def test_rejects_parameter_named_after_reserved_primitive_type
@@ -1954,7 +2004,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/parameter byte uses reserved primitive type name byte/, error.message)
+    assert_match(/parameter byte uses reserved built-in type name byte/, error.message)
   end
 
   def test_rejects_local_named_after_reserved_primitive_type
@@ -1970,7 +2020,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/local byte uses reserved primitive type name byte/, error.message)
+    assert_match(/local byte uses reserved built-in type name byte/, error.message)
   end
 
   def test_rejects_let_else_error_binding_named_after_reserved_primitive_type
@@ -1994,7 +2044,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/let-else error binding byte uses reserved primitive type name byte/, error.message)
+    assert_match(/let-else error binding byte uses reserved built-in type name byte/, error.message)
   end
 
   def test_rejects_for_binding_named_after_reserved_primitive_type
@@ -2011,7 +2061,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/for binding byte uses reserved primitive type name byte/, error.message)
+    assert_match(/for binding byte uses reserved built-in type name byte/, error.message)
   end
 
   def test_rejects_proc_parameter_named_after_reserved_primitive_type
@@ -2028,10 +2078,10 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/parameter byte uses reserved primitive type name byte/, error.message)
+    assert_match(/parameter byte uses reserved built-in type name byte/, error.message)
   end
 
-  def test_rejects_import_alias_named_after_reserved_primitive_type
+  def test_allows_import_alias_named_after_reserved_primitive_type
     source = <<~MT
       # module demo.bad
 
@@ -2041,11 +2091,8 @@ class MilkTeaSemaTest < Minitest::Test
           return 0
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
-
-    assert_match(/import alias str uses reserved primitive type name str/, error.message)
+    program = check_program_source(source)
+    assert_equal true, program.root_analysis.functions.key?("main")
   end
 
   def test_rejects_type_parameter_named_after_reserved_primitive_type
@@ -2060,7 +2107,22 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/type parameter byte uses reserved primitive type name byte/, error.message)
+    assert_match(/type parameter byte uses reserved built-in type name byte/, error.message)
+  end
+
+  def test_rejects_type_parameter_named_after_non_primitive_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      function identity[span](value: span) -> span:
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type parameter span uses reserved built-in type name span/, error.message)
   end
 
   def test_type_checks_ffi_declaration_surface

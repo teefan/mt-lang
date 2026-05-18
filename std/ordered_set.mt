@@ -48,7 +48,6 @@ extending OrderedSet[T]:
         unsafe:
             read(node).height = next_height + 1
 
-        return
 
 
     static function balance_factor(node: ptr[Node[T]]?) -> int:
@@ -114,8 +113,7 @@ extending OrderedSet[T]:
 
 
     static function rotate_left(current: ref[OrderedSet[T]], node: ptr[Node[T]]) -> ptr[Node[T]]:
-        let pivot = unsafe: read(node).right
-        if pivot == null:
+        let pivot = unsafe: read(node).right else:
             fatal(c"ordered_set.OrderedSet.rotate_left missing pivot")
 
         let pivot_ptr = unsafe: ptr[Node[T]]<-pivot
@@ -140,8 +138,7 @@ extending OrderedSet[T]:
 
 
     static function rotate_right(current: ref[OrderedSet[T]], node: ptr[Node[T]]) -> ptr[Node[T]]:
-        let pivot = unsafe: read(node).left
-        if pivot == null:
+        let pivot = unsafe: read(node).left else:
             fatal(c"ordered_set.OrderedSet.rotate_right missing pivot")
 
         let pivot_ptr = unsafe: ptr[Node[T]]<-pivot
@@ -235,8 +232,7 @@ extending OrderedSet[T]:
         let left = unsafe: read(node).left
         let right = unsafe: read(node).right
         if left != null and right != null:
-            let successor = OrderedSet[T].minimum(right)
-            if successor == null:
+            let successor = OrderedSet[T].minimum(right) else:
                 fatal(c"ordered_set.OrderedSet.detach_node missing successor")
 
             unsafe:
@@ -271,8 +267,7 @@ extending OrderedSet[T]:
         if not location.found:
             return null
 
-        let candidate = location.node
-        if candidate == null:
+        let candidate = location.node else:
             fatal(c"ordered_set.OrderedSet.get missing node")
 
         unsafe:
@@ -329,8 +324,7 @@ extending OrderedSet[T]:
         if not location.found:
             return false
 
-        let node = location.node
-        if node == null:
+        let node = location.node else:
             fatal(c"ordered_set.OrderedSet.remove missing node")
 
         let rebalance_from = OrderedSet[T].detach_node(this, unsafe: ptr[Node[T]]<-node)
@@ -345,8 +339,7 @@ extending Iter[T]:
 
 
     public mutable function next() -> const_ptr[T]?:
-        let current = this.node
-        if current == null:
+        let current = this.node else:
             return null
 
         this.node = OrderedSet[T].successor(current)

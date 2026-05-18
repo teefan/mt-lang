@@ -6,7 +6,10 @@ require "uri"
 
 module MilkTea
   class Linter
-    RESERVED_PRIMITIVE_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES.to_set.freeze
+    UNSET = Object.new.freeze
+    RESERVED_VALUE_TYPE_NAMES = Types::RESERVED_VALUE_TYPE_NAMES.to_set.freeze
+    RESERVED_IMPORT_ALIAS_NAMES = Types::RESERVED_IMPORT_ALIAS_NAMES.to_set.freeze
+    RESERVED_TYPE_BINDING_NAMES = Types::RESERVED_TYPE_BINDING_NAMES.to_set.freeze
     AUTO_FIXABLE_RULE_CODES = %w[
       prefer-let
       redundant-read-cast
@@ -33,6 +36,22 @@ module MilkTea
       "directional-ffi-arg" => "Pass lvalue directly",
     }.freeze
     FIX_ALL_TITLE = "Apply all auto-fixes".freeze
+    INTEGER_SURFACE_INFO = {
+      "byte" => { width: 8, signed: true },
+      "ubyte" => { width: 8, signed: false },
+      "short" => { width: 16, signed: true },
+      "ushort" => { width: 16, signed: false },
+      "int" => { width: 32, signed: true },
+      "uint" => { width: 32, signed: false },
+      "long" => { width: 64, signed: true },
+      "ulong" => { width: 64, signed: false },
+      "ptr_int" => { width: 64, signed: true },
+      "ptr_uint" => { width: 64, signed: false },
+    }.freeze
+    FLOAT_SURFACE_WIDTHS = {
+      "float" => 32,
+      "double" => 64,
+    }.freeze
 
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
@@ -92,22 +111,24 @@ module MilkTea
       end
     end
 
-    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil, profile: nil)
+    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_facts: UNSET, unresolved_import_paths: UNSET, profile: nil)
+      sema_facts_provided = !sema_facts.equal?(UNSET)
+      unresolved_import_paths_provided = !unresolved_import_paths.equal?(UNSET)
       context = nil
-      if sema_analysis.nil? || unresolved_import_paths.nil?
+      if !sema_facts_provided || !unresolved_import_paths_provided
         context = best_effort_lint_context(source, path:, profile:, label: "context_bootstrap")
-        sema_analysis ||= context[:analysis]
-        unresolved_import_paths ||= context[:unresolved_import_paths]
+        sema_facts = context[:facts] unless sema_facts_provided
+        unresolved_import_paths = context[:unresolved_import_paths] unless unresolved_import_paths_provided
       end
 
       ast = profile_phase(profile, "resolve_ast") do
-        sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
+        sema_facts&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
       end
       imported_modules = context&.fetch(:imported_modules, nil)
-      imported_modules ||= imported_modules_from_analysis(ast, sema_analysis)
+      imported_modules ||= imported_modules_from_facts(ast, sema_facts)
       trivia = profile_phase(profile, "lex_trivia") { Lexer.lex_with_trivia(source, path:).trivia }
       suppressions = profile_phase(profile, "parse_suppressions") { parse_suppressions(trivia) }
-      warnings = new(path:, sema_analysis:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast, profile:).lint(ast)
+      warnings = new(path:, sema_facts:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast, profile:).lint(ast)
       warnings = profile_phase(profile, "apply_suppressions") { apply_suppressions(warnings, suppressions) }
 
       # Layer in config-file defaults before per-call overrides
@@ -124,18 +145,20 @@ module MilkTea
       STATIC_QUICK_FIX_TITLES[code]
     end
 
-    def self.collect_reserved_primitive_name_fixes(source, path: nil, sema_analysis: nil, unresolved_import_paths: nil)
+    def self.collect_reserved_primitive_name_fixes(source, path: nil, sema_facts: UNSET, unresolved_import_paths: UNSET)
+      sema_facts_provided = !sema_facts.equal?(UNSET)
+      unresolved_import_paths_provided = !unresolved_import_paths.equal?(UNSET)
       context = nil
-      if sema_analysis.nil? || unresolved_import_paths.nil?
+      if !sema_facts_provided || !unresolved_import_paths_provided
         context = best_effort_lint_context(source, path:)
-        sema_analysis ||= context[:analysis]
-        unresolved_import_paths ||= context[:unresolved_import_paths]
+        sema_facts = context[:facts] unless sema_facts_provided
+        unresolved_import_paths = context[:unresolved_import_paths] unless unresolved_import_paths_provided
       end
 
-      ast = sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
+      ast = sema_facts&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
       imported_modules = context&.fetch(:imported_modules, nil)
-      imported_modules ||= imported_modules_from_analysis(ast, sema_analysis)
-      linter = new(path:, sema_analysis:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast)
+      imported_modules ||= imported_modules_from_facts(ast, sema_facts)
+      linter = new(path:, sema_facts:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast)
       linter.lint(ast)
       linter.reserved_primitive_name_fixes
     end
@@ -183,12 +206,12 @@ module MilkTea
       profile.measure(name) { yield }
     end
 
-    def self.imported_modules_from_analysis(ast, sema_analysis)
-      return {} unless ast && sema_analysis
+    def self.imported_modules_from_facts(ast, sema_facts)
+      return {} unless ast && sema_facts
 
       ast.imports.each_with_object({}) do |import, imported_modules|
         alias_name = import.alias_name || import.path.parts.last
-        module_binding = sema_analysis.imports[alias_name]
+        module_binding = sema_facts.imports[alias_name]
         imported_modules[import.path.to_s] = module_binding if module_binding
       end
     end
@@ -198,9 +221,15 @@ module MilkTea
     # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe,
     # redundant-return, redundant-cast.
     # Returns the fixed source (may be identical if nothing was fixable).
-    def self.fix_source(source, path: nil, sema_analysis: nil)
-      working_sema_analysis = sema_analysis || best_effort_sema_analysis(source, path:)
-      warnings = lint_source(source, path:, sema_analysis: working_sema_analysis)
+    def self.fix_source(source, path: nil, sema_facts: nil)
+      working_context = best_effort_lint_context(source, path:)
+      working_sema_facts = sema_facts || working_context[:facts]
+      warnings = lint_source(
+        source,
+        path:,
+        sema_facts: working_sema_facts,
+        unresolved_import_paths: working_context[:unresolved_import_paths],
+      )
       lines = source.lines
 
       # prefer-let: simple var→let substitution on the declaration line
@@ -378,7 +407,7 @@ module MilkTea
         w.code == "reserved-primitive-name" && w.line && w.column && w.symbol_name
       end
       if reserved_warnings.empty?
-        return validated_fixed_source(source, fixed_source, path:, original_analysis: working_sema_analysis)
+        return validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context[:errors])
       end
 
       warning_sites = reserved_warnings.each_with_object(Set.new) do |warning, sites|
@@ -390,15 +419,31 @@ module MilkTea
       end
 
       fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
-      validated_fixed_source(source, fixed_source, path:, original_analysis: working_sema_analysis)
+      validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context[:errors])
     end
 
-    def self.validated_fixed_source(original_source, fixed_source, path:, original_analysis:)
+    def self.validated_fixed_source(original_source, fixed_source, path:, baseline_errors:)
       return fixed_source if fixed_source == original_source
-      return fixed_source unless original_analysis
-      return fixed_source if best_effort_sema_analysis(fixed_source, path:)
+
+      fixed_context = best_effort_lint_context(fixed_source, path:)
+      return fixed_source if fixed_context[:facts] && !introduces_new_errors?(
+        error_signature_counts(fixed_context[:errors]),
+        error_signature_counts(baseline_errors),
+      )
 
       original_source
+    end
+
+    def self.error_signature_counts(errors)
+      Array(errors).each_with_object(Hash.new(0)) do |error, counts|
+        counts[[error.line, error.column, error.message]] += 1
+      end
+    end
+
+    def self.introduces_new_errors?(modified_counts, baseline_counts)
+      modified_counts.any? do |signature, count|
+        count > baseline_counts.fetch(signature, 0)
+      end
     end
 
     def self.extract_prefix_cast_source_text(text)
@@ -505,10 +550,12 @@ module MilkTea
 
       resolved_path = resolve_lint_path(path)
       if resolved_path && File.file?(resolved_path)
+        effective_platform = ModuleLoader.effective_platform_for_path(resolved_path)
         loader = ModuleLoader.new(
           module_roots: MilkTea::ModuleRoots.roots_for_path(resolved_path),
           package_graph: load_lint_package_graph(resolved_path),
           source_overrides: { resolved_path => source },
+          platform: effective_platform,
         )
         ast = profile_phase(profile, "#{label}.load_root") { loader.load_file(resolved_path) }
         resolution = profile_phase(profile, "#{label}.imports") do
@@ -518,23 +565,24 @@ module MilkTea
         unresolved_import_paths.merge(resolution.errors.filter_map { |entry| entry.import&.path&.to_s })
       end
 
-      result = profile_phase(profile, "#{label}.sema") do
-        Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+      sema_snapshot = profile_phase(profile, "#{label}.sema") do
+        Sema.tooling_snapshot(ast, imported_modules: imported_modules, path: resolved_path || path)
       end
 
       {
         ast: ast,
-        analysis: result[:analysis],
-        errors: result[:errors],
+        facts: sema_snapshot.facts,
+        sema_snapshot: sema_snapshot,
+        errors: sema_snapshot.diagnostics,
         imported_modules: imported_modules,
         unresolved_import_paths: unresolved_import_paths,
       }
     rescue StandardError
-      { ast: nil, analysis: nil, errors: nil, imported_modules: {}, unresolved_import_paths: Set.new }
+      { ast: nil, facts: nil, sema_snapshot: nil, errors: nil, imported_modules: {}, unresolved_import_paths: Set.new }
     end
 
-    def self.best_effort_sema_analysis(source, path: nil)
-      best_effort_lint_context(source, path:).fetch(:analysis)
+    def self.best_effort_sema_facts(source, path: nil)
+      best_effort_lint_context(source, path:).fetch(:facts)
     end
 
     def self.resolve_lint_path(path)
@@ -566,13 +614,13 @@ module MilkTea
       nil
     end
 
-    def self.prefix_cast_sites(source, analysis: nil)
+    def self.prefix_cast_sites(source, facts: nil)
       byte_offset = 0
       sites = []
 
       source.each_line.with_index(1) do |raw_line, line_number|
         line = raw_line.delete_suffix("\n")
-        line_prefix_cast_sites(line, line_number, analysis:).each do |site|
+        line_prefix_cast_sites(line, line_number, facts:).each do |site|
           sites << PrefixCastSite.new(
             line: site.line,
             column: site.column,
@@ -591,7 +639,7 @@ module MilkTea
       sites
     end
 
-    def self.line_prefix_cast_sites(line, line_number, analysis: nil)
+    def self.line_prefix_cast_sites(line, line_number, facts: nil)
       return [] unless line.include?("<-")
 
       indent_width = line[/\A\s*/].length
@@ -608,7 +656,7 @@ module MilkTea
       less_indices.each_with_object([]) do |less_index, sites|
         matching_site = nil
         tokens[0...less_index].each_index.select { |index| tokens[index].type == :identifier }.each do |start_index|
-          site = parse_prefix_cast_site(lexed_line, line_number, tokens[start_index].start_offset, analysis:)
+          site = parse_prefix_cast_site(lexed_line, line_number, tokens[start_index].start_offset, facts:)
           next unless site
           next unless site.start_offset <= tokens[less_index].start_offset && tokens[less_index].start_offset < site.end_offset
 
@@ -635,7 +683,7 @@ module MilkTea
       end
     end
 
-    def self.parse_prefix_cast_site(line, line_number, start_offset, analysis: nil)
+    def self.parse_prefix_cast_site(line, line_number, start_offset, facts: nil)
       snippet = line.byteslice(start_offset, line.bytesize - start_offset)
       return nil unless snippet&.include?("<-")
 
@@ -656,7 +704,7 @@ module MilkTea
       end
 
       parser = Parser.new(tokens)
-      seed_prefix_cast_parser!(parser, analysis)
+      seed_prefix_cast_parser!(parser, facts)
       expression = parser.send(:parse_unary)
       return nil unless prefix_cast_expression?(expression)
 
@@ -695,15 +743,15 @@ module MilkTea
       nil
     end
 
-    def self.seed_prefix_cast_parser!(parser, analysis)
-      return unless analysis
+    def self.seed_prefix_cast_parser!(parser, facts)
+      return unless facts
 
       known_type_names = parser.instance_variable_get(:@known_type_names)
-      analysis.types.each_key { |name| known_type_names[name] = true }
-      analysis.interfaces.each_key { |name| known_type_names[name] = true }
+      facts.types.each_key { |name| known_type_names[name] = true }
+      facts.interfaces.each_key { |name| known_type_names[name] = true }
 
       known_import_aliases = parser.instance_variable_get(:@known_import_aliases)
-      analysis.imports.each_key { |name| known_import_aliases[name] = true }
+      facts.imports.each_key { |name| known_import_aliases[name] = true }
     end
 
     def self.prefix_cast_expression?(expression)
@@ -756,9 +804,9 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_analysis: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil)
+    def initialize(path: nil, sema_facts: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil)
       @path = path
-      @sema_analysis = sema_analysis
+      @sema_facts = sema_facts
       @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
       @imported_modules = (imported_modules || {}).dup
       @source = source.to_s
@@ -774,6 +822,7 @@ module MilkTea
       @current_function_stack = []
       @prefix_cast_sites = nil
       @redundant_cast_context_site_keys = Set.new
+      @contextual_redundant_cast_details = {}
       @recheck_context_cache = {}
       @reserved_primitive_name_fixes = []
     end
@@ -830,7 +879,7 @@ module MilkTea
         local_name = import.alias_name || import.path.parts.last
         next if ignored_binding_name?(local_name)
 
-        declare_reserved_primitive_module_binding(
+        declare_reserved_import_alias_module_binding(
           local_name,
           kind_label: "import alias",
           line: import.line,
@@ -863,10 +912,32 @@ module MilkTea
       end
     end
 
-    def declare_reserved_primitive_module_binding(name, kind_label:, line:, column:, unavailable_names:)
+    def declare_reserved_value_type_module_binding(name, kind_label:, line:, column:, unavailable_names:)
+      declare_reserved_module_binding(
+        name,
+        kind_label:,
+        line:,
+        column:,
+        unavailable_names:,
+        reserved_names: RESERVED_VALUE_TYPE_NAMES,
+      )
+    end
+
+    def declare_reserved_import_alias_module_binding(name, kind_label:, line:, column:, unavailable_names:)
+      declare_reserved_module_binding(
+        name,
+        kind_label:,
+        line:,
+        column:,
+        unavailable_names:,
+        reserved_names: RESERVED_IMPORT_ALIAS_NAMES,
+      )
+    end
+
+    def declare_reserved_module_binding(name, kind_label:, line:, column:, unavailable_names:, reserved_names:)
       replacement_name = nil
       replacement_base_name = nil
-      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+      if reserved_names.include?(name)
         replacement_base_name = suggested_reserved_primitive_name(name, kind_label:)
         replacement_name = next_available_reserved_primitive_name(
           replacement_base_name,
@@ -887,6 +958,10 @@ module MilkTea
       )
       register_reserved_primitive_name_fix(binding, kind_label:, replacement_name:) if replacement_name
       @module_bindings[name] = binding
+    end
+
+    def declare_reserved_primitive_module_binding(name, kind_label:, line:, column:, unavailable_names:)
+      declare_reserved_value_type_module_binding(name, kind_label:, line:, column:, unavailable_names:)
     end
 
     def methods_block_generic?(declaration)
@@ -1216,7 +1291,7 @@ module MilkTea
     end
 
     def collect_method_only_import_uses(source_file)
-      return Set.new unless @sema_analysis
+      return Set.new unless @sema_facts
 
       called_members = Set.new
       source_file.declarations.each do |decl|
@@ -1224,7 +1299,7 @@ module MilkTea
       end
       return Set.new if called_members.empty?
 
-      @sema_analysis.imports.each_with_object(Set.new) do |(local_name, imported_module), used|
+      @sema_facts.imports.each_with_object(Set.new) do |(local_name, imported_module), used|
         method_names = imported_module.methods.each_value.each_with_object(Set.new) do |bindings, names|
           names.merge(bindings.keys)
         end
@@ -1886,7 +1961,7 @@ module MilkTea
     def mutating_argument_identifier?(expression)
       return false unless expression.is_a?(AST::Identifier)
 
-      @sema_analysis&.binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
+      @sema_facts&.binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
     end
 
     def mark_call_receiver_mutated(expression)
@@ -1907,7 +1982,9 @@ module MilkTea
     end
 
     def editable_receiver_expression?(expression)
-      @sema_analysis&.binding_resolution&.mutable_receiver_expression_ids&.key?(expression.object_id)
+      return true unless @sema_facts
+
+      @sema_facts&.binding_resolution&.mutable_receiver_expression_ids&.key?(expression.object_id)
     end
 
     def with_scope
@@ -1924,7 +2001,7 @@ module MilkTea
 
       replacement_name = nil
       replacement_base_name = nil
-      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+      if RESERVED_VALUE_TYPE_NAMES.include?(name)
         replacement_base_name = suggested_reserved_primitive_name(name, kind_label: "local")
         replacement_name = next_available_reserved_primitive_name(
           replacement_base_name,
@@ -1964,7 +2041,7 @@ module MilkTea
 
       replacement_name = nil
       replacement_base_name = nil
-      if RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+      if RESERVED_VALUE_TYPE_NAMES.include?(name)
         replacement_base_name = suggested_reserved_primitive_name(name, kind_label: "parameter")
         replacement_name = next_available_reserved_primitive_name(
           replacement_base_name,
@@ -1983,8 +2060,8 @@ module MilkTea
       register_reserved_primitive_name_fix(@scopes.last[name], kind_label: "parameter", replacement_name:) if replacement_name
     end
 
-    def warn_reserved_primitive_name(name, line:, column:, kind_label:)
-      return unless RESERVED_PRIMITIVE_TYPE_NAMES.include?(name)
+    def warn_reserved_primitive_name(name, line:, column:, kind_label:, reserved_names: RESERVED_VALUE_TYPE_NAMES)
+      return unless reserved_names.include?(name)
 
       @warnings << Warning.new(
         path: @path,
@@ -1992,7 +2069,7 @@ module MilkTea
         column:,
         length: name.length,
         code: "reserved-primitive-name",
-        message: "#{kind_label} '#{name}' uses reserved primitive type name '#{name}'; rename it before this becomes a hard error",
+        message: "#{kind_label} '#{name}' uses reserved built-in type name '#{name}'; rename it before this becomes a hard error",
         severity: :warning,
         symbol_name: name,
       )
@@ -2000,7 +2077,13 @@ module MilkTea
 
     def warn_reserved_primitive_type_params(type_params, kind_label:)
       Array(type_params).each do |type_param|
-        warn_reserved_primitive_name(type_param.name, line: nil, column: nil, kind_label:)
+        warn_reserved_primitive_name(
+          type_param.name,
+          line: nil,
+          column: nil,
+          kind_label:,
+          reserved_names: RESERVED_TYPE_BINDING_NAMES,
+        )
       end
     end
 
@@ -2461,7 +2544,7 @@ module MilkTea
     end
 
     def cfg_binding_resolution
-      binding_resolution = @sema_analysis&.binding_resolution
+      binding_resolution = @sema_facts&.binding_resolution
       return nil unless binding_resolution
 
       CFG::BindingResolution.new(
@@ -2762,7 +2845,7 @@ module MilkTea
     end
 
     def binding_type_for_declaration(statement)
-      binding_resolution = @sema_analysis&.binding_resolution
+      binding_resolution = @sema_facts&.binding_resolution
       return nil unless binding_resolution&.binding_types
 
       binding_id = binding_resolution.declaration_binding_ids[statement.object_id]
@@ -2776,7 +2859,7 @@ module MilkTea
     def emit_redundant_read_cast_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      binding_resolution = @sema_analysis&.binding_resolution
+      binding_resolution = @sema_facts&.binding_resolution
       binding_types = binding_resolution&.binding_types
       cfg_resolution = cfg_binding_resolution
       return unless binding_resolution && binding_types && cfg_resolution
@@ -2879,6 +2962,10 @@ module MilkTea
       return unless site
 
       @redundant_cast_context_site_keys << prefix_cast_site_key(site)
+      @contextual_redundant_cast_details[prefix_cast_site_key(site)] = {
+        source_expression: expression.arguments.first.value,
+        expected_type_text: expected_type_text,
+      }
     end
 
     def remember_contextual_call_argument_cast_sites(expression)
@@ -2927,17 +3014,17 @@ module MilkTea
     end
 
     def callable_params_for_expression(callee)
-      return unless @sema_analysis
+      return unless @sema_facts
 
       case callee
       when AST::Specialization
         callable_params_for_expression(callee.callee)
       when AST::Identifier
-        if (binding = @sema_analysis.functions[callee.name])
+        if (binding = @sema_facts.functions[callee.name])
           return binding.type.params
         end
 
-        if (binding = @sema_analysis.values[callee.name]) && binding.type.respond_to?(:params)
+        if (binding = @sema_facts.values[callee.name]) && binding.type.respond_to?(:params)
           return binding.type.params
         end
 
@@ -2945,7 +3032,7 @@ module MilkTea
       when AST::MemberAccess
         return nil unless callee.receiver.is_a?(AST::Identifier)
 
-        imported_module = @sema_analysis.imports[callee.receiver.name]
+        imported_module = @sema_facts.imports[callee.receiver.name]
         return nil unless imported_module
 
         binding = imported_module.functions[callee.member]
@@ -2974,7 +3061,7 @@ module MilkTea
     end
 
     def emit_redundant_cast_warnings
-      return unless @sema_analysis
+      return unless @sema_facts
       return if @source.empty?
 
       prefix_cast_sites.each do |site|
@@ -2996,14 +3083,21 @@ module MilkTea
 
     def prefix_cast_sites
       @prefix_cast_sites ||= profile_phase("rule.redundant_cast.scan_candidates") do
-        self.class.prefix_cast_sites(@source, analysis: @sema_analysis)
+        self.class.prefix_cast_sites(@source, facts: @sema_facts)
       end
     end
 
     def redundant_cast_site?(site)
       modified_source = @source.dup
       modified_source[site.start_offset...site.end_offset] = site.replacement_text
-      recheck_context(modified_source, label: "redundant_cast_recheck").fetch(:analysis, nil)
+      context = recheck_context(modified_source, label: "redundant_cast_recheck")
+      return false unless context[:facts]
+
+      modified_counts = error_signature_counts(context[:errors])
+      baseline_counts = current_error_signature_counts
+      return true unless introduces_new_errors?(modified_counts, baseline_counts)
+
+      contextual_redundant_cast_site?(site) && contextual_cast_source_implicitly_compatible?(site)
     end
 
     def pointer_like_type_ref?(type_ref)
@@ -3195,7 +3289,7 @@ module MilkTea
       when AST::Specialization
         resolve_directional_ffi_call(callee.callee)
       when AST::Identifier
-        if @sema_analysis && (binding = @sema_analysis.functions[callee.name]) && directional_ffi_binding?(binding)
+        if @sema_facts && (binding = @sema_facts.functions[callee.name]) && directional_ffi_binding?(binding)
           return { name: binding.name, params: binding.type.params }
         end
 
@@ -3206,9 +3300,9 @@ module MilkTea
         nil
       when AST::MemberAccess
         return nil unless callee.receiver.is_a?(AST::Identifier)
-        return nil unless @sema_analysis
+        return nil unless @sema_facts
 
-        imported_module = @sema_analysis.imports[callee.receiver.name]
+        imported_module = @sema_facts.imports[callee.receiver.name]
         return nil unless imported_module
 
         binding = imported_module.functions[callee.member]
@@ -3257,7 +3351,7 @@ module MilkTea
     def emit_redundant_unsafe_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      required_unsafe_lines = @sema_analysis&.required_unsafe_lines
+      required_unsafe_lines = @sema_facts&.required_unsafe_lines
       return unless required_unsafe_lines
 
       walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
@@ -3314,7 +3408,7 @@ module MilkTea
       return false unless modified_source
 
       context = recheck_context(modified_source, label: "redundant_unsafe_recheck")
-      return false unless context[:analysis]
+      return false unless context[:facts]
 
       !introduces_new_errors?(error_signature_counts(context[:errors]), current_error_signature_counts)
     end
@@ -3347,20 +3441,22 @@ module MilkTea
       @recheck_context_cache[source] ||= begin
         ast = profile_phase("#{label}.parse") { Parser.parse(source, path: @path) }
         ast = with_recheck_module_identity(ast)
-        result = profile_phase("#{label}.sema") do
-          Sema.check_collecting_errors(ast, imported_modules: @imported_modules)
+        sema_snapshot = profile_phase("#{label}.sema") do
+          Sema.tooling_snapshot(ast, imported_modules: @imported_modules, path: @path)
         end
         {
           ast: ast,
-          analysis: result[:analysis],
-          errors: result[:errors],
+          facts: sema_snapshot.facts,
+          sema_snapshot: sema_snapshot,
+          errors: sema_snapshot.diagnostics,
           imported_modules: @imported_modules,
           unresolved_import_paths: @unresolved_import_paths,
         }
       rescue StandardError
         {
           ast: nil,
-          analysis: nil,
+          facts: nil,
+          sema_snapshot: nil,
           errors: nil,
           imported_modules: @imported_modules,
           unresolved_import_paths: @unresolved_import_paths,
@@ -3386,6 +3482,65 @@ module MilkTea
       Array(errors).each_with_object(Hash.new(0)) do |error, counts|
         counts[[error.line, error.column, error.message]] += 1
       end
+    end
+
+    def contextual_cast_source_implicitly_compatible?(site)
+      detail = @contextual_redundant_cast_details[prefix_cast_site_key(site)]
+      return false unless detail
+
+      actual_type_text = expression_type_surface(detail[:source_expression])
+      return false unless actual_type_text
+
+      lossless_contextual_type_surface_compatibility?(actual_type_text, detail[:expected_type_text])
+    end
+
+    def expression_type_surface(expression)
+      return nil unless @sema_facts
+
+      case expression
+      when AST::Identifier
+        binding_id = @sema_facts.binding_resolution&.identifier_binding_ids&.[](expression.object_id)
+        @sema_facts.binding_resolution&.binding_types&.[](binding_id)&.to_s
+      else
+        nil
+      end
+    end
+
+    def lossless_contextual_type_surface_compatibility?(actual_type_text, expected_type_text)
+      return true if actual_type_text == expected_type_text
+      return true if lossless_integer_surface_compatibility?(actual_type_text, expected_type_text)
+      return true if lossless_float_surface_compatibility?(actual_type_text, expected_type_text)
+      return true if integer_to_float_surface_compatibility?(actual_type_text, expected_type_text)
+
+      false
+    end
+
+    def lossless_integer_surface_compatibility?(actual_type_text, expected_type_text)
+      actual = integer_surface_info(actual_type_text)
+      expected = integer_surface_info(expected_type_text)
+      return false unless actual && expected
+
+      if actual[:signed] == expected[:signed]
+        return expected[:width] >= actual[:width]
+      end
+
+      return false if actual[:signed]
+
+      expected[:signed] && expected[:width] > actual[:width]
+    end
+
+    def lossless_float_surface_compatibility?(actual_type_text, expected_type_text)
+      actual_width = FLOAT_SURFACE_WIDTHS[actual_type_text]
+      expected_width = FLOAT_SURFACE_WIDTHS[expected_type_text]
+      actual_width && expected_width && expected_width >= actual_width
+    end
+
+    def integer_to_float_surface_compatibility?(actual_type_text, expected_type_text)
+      integer_surface_info(actual_type_text) && FLOAT_SURFACE_WIDTHS.key?(expected_type_text)
+    end
+
+    def integer_surface_info(type_text)
+      INTEGER_SURFACE_INFO[type_text]
     end
 
     def introduces_new_errors?(modified_counts, baseline_counts)
@@ -3563,7 +3718,7 @@ module MilkTea
       end
     end
 
-    # ── borrow analysis helpers ───────────────────────────────────────────────
+    # ── borrow facts helpers ──────────────────────────────────────────────────
 
     BORROW_CALL_NAMES = %w[ref_of ptr_of].freeze
 

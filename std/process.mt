@@ -68,7 +68,6 @@ function clear_pointer_slot(slot: ptr[ptr[char]]) -> void:
         while index < slot_bytes:
             read(buffer + index) = ubyte<-0
             index += 1
-    return
 
 
 function total_storage_bytes(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> ptr_uint:
@@ -255,19 +254,16 @@ extending CaptureResult:
     public mutable function release() -> void:
         this.stdout.release()
         this.stderr.release()
-        return
 
 
 extending ProcessError:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending PreparedCommand:
     mutable function release() -> void:
         this.storage.release()
-        return
 
 
 public function capture(command: span[str]) -> Result[CaptureResult, ProcessError]:

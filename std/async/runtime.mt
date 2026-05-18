@@ -9,17 +9,14 @@ public function runtime_create() -> Runtime:
 
 public function runtime_activate(runtime: Runtime) -> void:
     backend.runtime_activate(runtime)
-    return
 
 
 public function runtime_deactivate() -> void:
     backend.runtime_deactivate()
-    return
 
 
 public function runtime_release(runtime: ref[Runtime]) -> void:
     backend.runtime_release(runtime)
-    return
 
 
 public function runtime_poll(runtime: Runtime) -> int:
@@ -56,7 +53,6 @@ public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
 
 public function pump(runtime: Runtime) -> void:
     backend.pump(runtime)
-    return
 
 
 public function completed[T](task: Task[T]) -> bool:
@@ -73,7 +69,6 @@ public function wait_on[T](runtime: Runtime, task: Task[T]) -> T:
 
 public function run_on(runtime: Runtime, task: Task[void]) -> void:
     backend.run_on(runtime, task)
-    return
 
 
 public function wait[T](root: proc() -> Task[T]) -> T:
@@ -82,7 +77,6 @@ public function wait[T](root: proc() -> Task[T]) -> T:
 
 public function run(root: proc() -> Task[void]) -> void:
     backend.run(root)
-    return
 
 
 public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
@@ -91,4 +85,3 @@ public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
 
 public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
     backend.run_with_runtime(body)
-    return

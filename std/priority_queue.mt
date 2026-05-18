@@ -38,22 +38,18 @@ extending PriorityQueue[T]:
 
     public mutable function clear() -> void:
         this.values.clear()
-        return
 
 
     public mutable function release() -> void:
         this.values.release()
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
-        return
 
 
     public mutable function enqueue(value: T) -> void:
         this.values.push(value)
-        return
 
 
     public mutable function dequeue() -> Option[T]:

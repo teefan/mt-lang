@@ -61,8 +61,7 @@ function validate_utf8_string(text_value: string.String, error_message: str) -> 
 function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
     var index: ptr_uint = 0
     while index < values.len():
-        let value_ptr = values.get(index)
-        if value_ptr == null:
+        let value_ptr = values.get(index) else:
             fatal(c"fs.release_string_values missing value")
 
         unsafe:
@@ -93,8 +92,7 @@ extending Entries:
 
 
     public function get(index: ptr_uint) -> Option[str]:
-        let value_ptr = this.values.get(index)
-        if value_ptr == null:
+        let value_ptr = this.values.get(index) else:
             return Option[str].none
 
         unsafe:
@@ -104,8 +102,7 @@ extending Entries:
     public function contains(name: str) -> bool:
         var index: ptr_uint = 0
         while index < this.values.len():
-            let value_ptr = this.values.get(index)
-            if value_ptr == null:
+            let value_ptr = this.values.get(index) else:
                 fatal(c"fs.Entries.contains missing value")
 
             unsafe:

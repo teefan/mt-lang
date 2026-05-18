@@ -41,7 +41,6 @@ public foreign function message(error: Code) -> cstr? = c.mt_errno_strerror
 
 public function clear() -> void:
     set_current(NONE)
-    return
 
 
 public function current_message() -> cstr?:

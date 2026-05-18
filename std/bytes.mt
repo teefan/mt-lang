@@ -26,14 +26,14 @@ extending Bytes:
         heap.release(this.data)
         this.data = null
         this.len = 0
-        return
 
 
     public function as_span() -> span[ubyte]:
         if this.data == null and this.len != 0:
             fatal(c"bytes.Bytes.as_span missing storage")
 
-        return unsafe: span[ubyte](data = ptr[ubyte]<-this.data, len = this.len)
+        unsafe:
+            return span[ubyte](data = ptr[ubyte]<-this.data, len = this.len)
 
 
     public function as_str() -> Option[str]:

@@ -39,7 +39,6 @@ extending PackedMusic:
 
     public function play() -> void:
         rl.play_music_stream(this.music)
-        return
 
 
     public function is_playing() -> bool:
@@ -48,42 +47,34 @@ extending PackedMusic:
 
     public function update() -> void:
         rl.update_music_stream(this.music)
-        return
 
 
     public function stop() -> void:
         rl.stop_music_stream(this.music)
-        return
 
 
     public function pause() -> void:
         rl.pause_music_stream(this.music)
-        return
 
 
     public function resume() -> void:
         rl.resume_music_stream(this.music)
-        return
 
 
     public function seek(position: float) -> void:
         rl.seek_music_stream(this.music, position)
-        return
 
 
     public function set_volume(volume: float) -> void:
         rl.set_music_volume(this.music, volume)
-        return
 
 
     public function set_pitch(pitch: float) -> void:
         rl.set_music_pitch(this.music, pitch)
-        return
 
 
     public function set_pan(pan: float) -> void:
         rl.set_music_pan(this.music, pan)
-        return
 
 
     public function time_length() -> float:
@@ -100,7 +91,6 @@ extending PackedMusic:
 
         this.music = zero[rl.Music]
         this.backing_data.release()
-        return
 
 
 public function open_assets_pack_if_present() -> Result[Option[Reader], Error]:

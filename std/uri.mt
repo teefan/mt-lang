@@ -79,14 +79,12 @@ function append_percent_encoded_path(output: ref[string.String], path_text: str)
             append_percent_encoded_byte(output, value)
         index += 1
 
-    return
 
 
 function append_percent_encoded_byte(output: ref[string.String], value: ubyte) -> void:
     output.push_byte(ubyte<-37)
     output.push_byte(hex_digit(value >> ubyte<-4))
     output.push_byte(hex_digit(value & ubyte<-0x0F))
-    return
 
 
 function hex_digit(value: ubyte) -> ubyte:

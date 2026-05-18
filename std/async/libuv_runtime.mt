@@ -86,7 +86,6 @@ function work_as_req(work: ptr[libuv.uv_work_t]) -> ptr[libuv.uv_req_t]:
 
 function noop_waiter(frame: ptr[void]) -> void:
     unsafe: ptr[void]<-frame
-    return
 
 
 function require_current_runtime() -> Runtime:
@@ -98,7 +97,6 @@ function require_current_runtime() -> Runtime:
 function require_live_runtime(runtime: Runtime) -> void:
     if not runtime.active or runtime.loop == null:
         fatal(c"async runtime requires a live runtime")
-    return
 
 
 function live_loop(runtime: Runtime) -> ptr[NativeLoopHandle]:
@@ -117,13 +115,11 @@ public function runtime_loop(runtime: Runtime) -> ptr[NativeLoopHandle]:
 function activate_current_runtime(runtime: Runtime) -> void:
     current_runtime = runtime
     current_runtime_active = true
-    return
 
 
 function deactivate_current_runtime() -> void:
     current_runtime = zero[Runtime]
     current_runtime_active = false
-    return
 
 
 function sleep_task(state: ptr[SleepState]) -> Task[int]:
@@ -161,7 +157,6 @@ function sleep_timer_close(handle: ptr[libuv.uv_handle_t]) -> void:
 
         if state.released:
             heap.release(state)
-    return
 
 
 function sleep_timer_fire(timer: ptr[libuv.uv_timer_t]) -> void:
@@ -180,8 +175,7 @@ function sleep_timer_fire(timer: ptr[libuv.uv_timer_t]) -> void:
             libuv.close(handle, sleep_timer_close)
 
         if state.waiter_registered:
-            state.waiter(unsafe: ptr[void]<-state.waiter_frame)
-    return
+            state.waiter(ptr[void]<-state.waiter_frame)
 
 
 public function runtime_create() -> Runtime:
@@ -198,18 +192,15 @@ public function runtime_create() -> Runtime:
 public function runtime_activate(runtime: Runtime) -> void:
     require_live_runtime(runtime)
     activate_current_runtime(runtime)
-    return
 
 
 public function runtime_deactivate() -> void:
     deactivate_current_runtime()
-    return
 
 
 public function runtime_release(runtime: ref[Runtime]) -> void:
     if release_runtime(runtime) != 0:
         fatal(c"async runtime release failed")
-    return
 
 
 public function runtime_poll(runtime: Runtime) -> int:
@@ -230,7 +221,6 @@ public function sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], wait
         state.waiter_frame = waiter_frame
         state.waiter = waiter
         state.waiter_registered = true
-    return
 
 
 public function sleep_release(frame: ptr[void]) -> void:
@@ -250,7 +240,6 @@ public function sleep_release(frame: ptr[void]) -> void:
             state.closing = true
             let handle = timer_as_handle(ptr[libuv.uv_timer_t]<-state.timer)
             libuv.close(handle, sleep_timer_close)
-    return
 
 
 public function sleep_take_result(frame: ptr[void]) -> int:
@@ -268,7 +257,6 @@ function work_execute(req: ptr[libuv.uv_work_t]) -> void:
     let state = work_state_base(state_raw)
     unsafe:
         state.execute(ptr[void]<-state)
-    return
 
 
 function work_complete(req: ptr[libuv.uv_work_t], status_code: int) -> void:
@@ -290,7 +278,6 @@ function work_complete(req: ptr[libuv.uv_work_t], status_code: int) -> void:
                 heap.release_bytes(ptr[void]<-state.work)
                 state.work = null
             heap.release(state)
-    return
 
 
 function work_execute_state[T](state_frame: ptr[void]) -> void:
@@ -440,13 +427,13 @@ public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
         libuv.req_set_data(work_as_req(req), ptr[void]<-state)
 
     let queue_status = libuv.queue_work(loop, req, work_execute, work_complete)
-    if queue_status != 0:
-        unsafe:
+    unsafe:
+        if queue_status != 0:
             state.status = queue_status
             state.ready = true
             state.queued = false
-    else:
-        unsafe: state.queued = true
+        else:
+            state.queued = true
 
     return work_task[T](state)
 

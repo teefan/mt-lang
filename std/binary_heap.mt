@@ -35,8 +35,7 @@ extending BinaryHeap[T]:
 
 
     static function slot(current: ref[BinaryHeap[T]], index: ptr_uint) -> ptr[T]:
-        let value = current.values.get(index)
-        if value == null:
+        let value = current.values.get(index) else:
             fatal(c"binary_heap.BinaryHeap.slot missing value")
 
         return unsafe: ptr[T]<-value
@@ -117,8 +116,7 @@ extending BinaryHeap[T]:
 
 
     public function peek() -> const_ptr[T]?:
-        let current = this.values.get(0)
-        if current == null:
+        let current = this.values.get(0) else:
             return null
 
         unsafe:
@@ -166,8 +164,7 @@ extending Iter[T]:
         if this.index >= this.len:
             return null
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"binary_heap.Iter.next missing storage")
 
         let current_index = this.index

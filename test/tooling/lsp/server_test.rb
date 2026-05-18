@@ -2268,6 +2268,111 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_document_diagnostic_strict_current_root_diagnostics_can_be_enabled_live
+    Dir.mktmpdir("milk-tea-lsp-strict-current-root") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(dependency_path, <<~MT)
+        public function answer() -> int:
+            return 42
+
+        public function broken() -> int:
+            return "wrong type"
+      MT
+
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      File.write(main_path, main_source)
+
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        initial = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        assert_equal [], initial.fetch("result").fetch("items")
+
+        client.send_notification("workspace/didChangeConfiguration", {
+          "settings" => {
+            "milkTea" => {
+              "lsp" => {
+                "strictCurrentRootDiagnostics" => true
+              }
+            }
+          }
+        })
+
+        updated = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        items = updated.fetch("result").fetch("items")
+        strict_root = items.find { |item| item.dig("data", "stage") == "strict-root" }
+
+        refute_nil strict_root, "expected strict-root diagnostic, got: #{items.inspect}"
+        assert_includes strict_root.fetch("message"), "strict current-root check failed"
+        assert_match(/return type mismatch|wrong type/, strict_root.fetch("message"))
+      end
+    end
+  end
+
+  def test_document_diagnostic_strict_current_root_diagnostics_reports_invalid_entrypoint
+    Dir.mktmpdir("milk-tea-lsp-strict-entrypoint") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        function main(value: int) -> int:
+            return value
+      MT
+      File.write(path, source)
+
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => path_to_uri(dir),
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "strictCurrentRootDiagnostics" => true
+              }
+            }
+          }
+        })
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri }
+        })
+        items = response.fetch("result").fetch("items")
+        strict_root = items.find { |item| item.dig("data", "stage") == "strict-root" }
+
+        refute_nil strict_root, "expected strict-root diagnostic, got: #{items.inspect}"
+        assert_equal "build/error", strict_root.fetch("code")
+        assert_includes strict_root.fetch("message"), "root main is not a valid executable entrypoint"
+      end
+    end
+  end
+
   def test_declaration_and_type_definition_delegate_to_definition_location
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -3380,7 +3485,7 @@ class LSPServerTest < Minitest::Test
           "position" => { "line" => hover_line, "character" => p_char },
         })
         p_hover_value = p_hover.dig("result", "contents", "value")
-        assert_includes p_hover_value, "let p: Point (immutable)"
+        assert_includes p_hover_value, "let p: main.Point (immutable)"
 
         x_hover = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => uri },
@@ -4126,7 +4231,7 @@ class LSPServerTest < Minitest::Test
     end
   end
 
-  def test_hover_frozen_stops_using_stale_analysis_after_manifest_watched_change
+  def test_hover_frozen_stops_using_stale_facts_after_manifest_watched_change
     Dir.mktmpdir("milk-tea-lsp-frozen-hover-watch") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")
       ui_root = File.join(dir, "libs", "ui")
@@ -4266,7 +4371,7 @@ class LSPServerTest < Minitest::Test
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_METHODS }
       })
       # Simulate user editing to a mid-state with "p." on the last line (breaks sema,
-      # but last-good analysis is retained so method completions still work).
+      # but last-good facts are retained so method completions still work).
       partial_source = SOURCE_WITH_METHODS.sub("    return 1\n", "    return p.\n")
       client.send_notification("textDocument/didChange", {
         "textDocument" => { "uri" => uri, "version" => 2 },
@@ -6445,7 +6550,7 @@ class LSPServerTest < Minitest::Test
         "source" => "milk-tea",
         "code" => "reserved-primitive-name",
         "range" => { "start" => { "line" => 0, "character" => 24 }, "end" => { "line" => 0, "character" => 28 } },
-        "message" => "parameter 'byte' uses reserved primitive type name 'byte'; rename it before this becomes a hard error"
+        "message" => "parameter 'byte' uses reserved built-in type name 'byte'; rename it before this becomes a hard error"
       }
 
       response = client.send_request("textDocument/codeAction", {

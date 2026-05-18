@@ -99,17 +99,14 @@ extending Set[T]:
 
     public mutable function clear() -> void:
         this.values.clear()
-        return
 
 
     public mutable function release() -> void:
         this.values.release()
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
-        return
 
 
     public mutable function insert(value: T) -> bool:
@@ -117,7 +114,7 @@ extending Set[T]:
         match previous:
             Option.none:
                 return true
-            Option.some as ignored_payload:
+            Option.some as _:
                 return false
 
 
@@ -126,5 +123,5 @@ extending Set[T]:
         match removed:
             Option.none:
                 return false
-            Option.some as ignored_payload:
+            Option.some as _:
                 return true

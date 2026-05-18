@@ -1,5 +1,5 @@
+import std.str as text_ops
 import std.fmt as fmt
-import std.str as text
 import std.string as string
 import std.vec as vec
 import std.mem.heap as heap
@@ -118,7 +118,6 @@ public function release_value(value: Value) -> void:
             read(nested_object).release()
             heap.release(nested_object)
 
-    return
 
 
 function value_as_string(value: Value) -> Option[str]:
@@ -159,14 +158,12 @@ function value_as_object(value: Value) -> ptr[Object]?:
 extending ParseError:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Entry:
     public mutable function release() -> void:
         this.key.release()
         release_value(this.value)
-        return
 
 
 extending Object:
@@ -245,7 +242,6 @@ extending Object:
             index += 1
 
         this.entries.release()
-        return
 
 
 extending Array:
@@ -309,7 +305,6 @@ extending Array:
             index += 1
 
         this.values.release()
-        return
 
 
 extending Table:
@@ -336,7 +331,6 @@ extending Table:
     public mutable function release() -> void:
         this.name.release()
         this.entries.release()
-        return
 
 
 extending ArrayTable:
@@ -362,7 +356,6 @@ extending ArrayTable:
             index += 1
 
         this.tables.release()
-        return
 
 
 extending Document:
@@ -445,7 +438,6 @@ extending Document:
 
         this.tables.release()
         this.array_tables.release()
-        return
 
 
 function parse_error(parser: ref[Parser], message: str) -> ParseError:
@@ -1154,7 +1146,6 @@ function append_quoted_string(output: ref[string.String], text_value: str) -> vo
         index += 1
 
     output.push_byte(byte_quote)
-    return
 
 
 function bare_header_name(text_value: str) -> bool:
@@ -1175,12 +1166,10 @@ function append_header_name(output: ref[string.String], name: str) -> void:
         output.append(name)
     else:
         append_quoted_string(output, name)
-    return
 
 
 function append_entry_key(output: ref[string.String], key: str) -> void:
     append_quoted_string(output, key)
-    return
 
 
 function append_value(output: ref[string.String], value: Value) -> void:
@@ -1236,7 +1225,6 @@ function append_value(output: ref[string.String], value: Value) -> void:
                 index += 1
 
     output.push_byte(byte_right_brace)
-    return
 
 
 function append_table_entries(output: ref[string.String], object_entries: Object) -> void:
@@ -1252,7 +1240,6 @@ function append_table_entries(output: ref[string.String], object_entries: Object
         output.append("\n")
         index += 1
 
-    return
 
 
 public function render(document: Document) -> string.String:

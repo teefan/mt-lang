@@ -7,14 +7,15 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
-      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil)
+      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false)
         total_start = perf_logging? ? monotonic_time : nil
         diagnostics = []
-        sema_analysis = nil
+        sema_facts = nil
         unresolved_import_paths = []
         parse_ms = 0.0
         imports_ms = 0.0
         sema_ms = 0.0
+        strict_root_ms = 0.0
         lint_ms = 0.0
         lint_profile = total_start ? Linter::Profile.new : nil
         path = uri_to_path(uri)
@@ -32,17 +33,17 @@ module MilkTea
                   Parser.parse(content, path: uri)
                 end
           parse_ms = elapsed_ms(parse_start) if parse_start
-          return { diagnostics: diagnostics, analysis: sema_analysis } unless ast
+          return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot } unless ast
 
           if resolution.error_message
             diagnostics << format_error(SemaError.new(resolution.error_message, line: 1, column: 1))
-            return { diagnostics: diagnostics, analysis: sema_analysis }
+            return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
           end
 
           conflict_error = root_platform_conflict_error(path, effective_platform)
           if conflict_error
             diagnostics << format_error(SemaError.new(conflict_error.message, line: 1, column: 1))
-            return { diagnostics: diagnostics, analysis: sema_analysis }
+            return { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
           end
 
           imports_start = total_start ? monotonic_time : nil
@@ -62,13 +63,34 @@ module MilkTea
           # Semantic analysis — collect errors from all functions, not just first.
           begin
             sema_start = total_start ? monotonic_time : nil
-            result = Sema.check_collecting_errors(ast, imported_modules: imported_modules.fetch(:modules))
-            sema_analysis = result[:analysis]
-            result[:errors].reject { |e| redundant_unknown_import_error?(e, unresolved_import_paths) }
-                           .each { |e| diagnostics << format_error(e) }
+            sema_snapshot ||= Sema.tooling_snapshot(ast, imported_modules: imported_modules.fetch(:modules), path: path)
+            sema_facts = sema_snapshot.facts
+            sema_snapshot.diagnostics.reject { |diagnostic| redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths) }
+                           .each { |diagnostic| diagnostics << format_tooling_diagnostic(diagnostic, stage: 'sema') }
             sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
+          end
+
+          begin
+            if strict_current_root_diagnostics
+              strict_root_start = total_start ? monotonic_time : nil
+              collect_strict_root_diagnostics(
+                path,
+                ast,
+                sema_facts,
+                diagnostics,
+                resolution:,
+                effective_platform:,
+                shared_module_cache:,
+                source_overrides:,
+              ).each do |diagnostic|
+                diagnostics << diagnostic
+              end
+              strict_root_ms = elapsed_ms(strict_root_start) if strict_root_start
+            end
+          rescue StandardError => e
+            warn "Error collecting strict root diagnostics: #{e.message}"
           end
         rescue MilkTea::LexError => e
           diagnostics << format_error(e)
@@ -82,7 +104,7 @@ module MilkTea
           Linter.lint_source(
             content,
             path: uri,
-            sema_analysis: sema_analysis,
+            sema_facts: sema_facts,
             unresolved_import_paths: unresolved_import_paths,
             profile: lint_profile,
           ).each do |w|
@@ -96,11 +118,11 @@ module MilkTea
           warn "Error collecting lint diagnostics: #{e.message}"
         end
 
-        { diagnostics: diagnostics, analysis: sema_analysis }
+        { diagnostics: diagnostics, facts: sema_facts, sema_snapshot: sema_snapshot }
       ensure
         if total_start
           lint_breakdown = lint_profile&.summary(limit: 12)
-          detail = "uri=#{uri} diagnostics=#{diagnostics.length} analysis=#{sema_analysis ? 'ok' : 'nil'} stages_ms=parse:#{parse_ms},imports:#{imports_ms},sema:#{sema_ms},lint:#{lint_ms}"
+          detail = "uri=#{uri} diagnostics=#{diagnostics.length} facts=#{sema_facts ? 'ok' : 'nil'} stages_ms=parse:#{parse_ms},imports:#{imports_ms},sema:#{sema_ms},strict_root:#{strict_root_ms},lint:#{lint_ms}"
           detail += " lint_passes_ms=#{lint_breakdown}" unless lint_breakdown.nil? || lint_breakdown.empty?
           log_perf_breakdown(
             'diagnostics.collect',
@@ -146,11 +168,10 @@ module MilkTea
         { modules: {}, unresolved_import_paths: [] }
       end
 
-      def self.redundant_unknown_import_error?(error, unresolved_import_paths)
-        return false unless error.is_a?(SemaError)
-        return false unless error.message.start_with?("unknown import ")
+      def self.redundant_unknown_import_diagnostic?(diagnostic, unresolved_import_paths)
+        return false unless diagnostic&.message.to_s.start_with?("unknown import ")
 
-        unresolved_import_paths.include?(error.message.delete_prefix("unknown import "))
+        unresolved_import_paths.include?(diagnostic.message.delete_prefix("unknown import "))
       end
 
       def self.uri_to_path(uri)
@@ -213,14 +234,79 @@ module MilkTea
       end
       private_class_method :root_platform_conflict_error
 
-      def self.format_warning(warning, content: nil)
-        line = warning.line.to_i
-        line_index = [line - 1, 0].max
-        start_char, end_char = extract_warning_range(warning, content)
+      def self.collect_strict_root_diagnostics(path, ast, sema_facts, existing_diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil)
+        return [] unless strict_root_check_eligible?(path, ast, sema_facts, existing_diagnostics)
 
-        lsp_severity = case warning.severity
+        loader = ModuleLoader.new(
+          module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+          package_graph: load_package_graph(path, locked: resolution.locked),
+          shared_cache: shared_module_cache,
+          source_overrides: source_overrides,
+          platform: effective_platform,
+        )
+        program = loader.check_program(path)
+        Build.frontend_build_artifacts(program)
+        []
+      rescue ModuleLoadError, PackageLockError, SemaError, LoweringError, BuildError => e
+        [format_strict_root_error(e, path: path)]
+      end
+      private_class_method :collect_strict_root_diagnostics
+
+      def self.strict_root_check_eligible?(path, ast, sema_facts, existing_diagnostics)
+        return false unless path && File.file?(path)
+        return false unless sema_facts
+        return false if ast&.module_kind == :external
+
+        existing_diagnostics.none? do |diagnostic|
+          diagnostic[:severity] == 1 && diagnostic.dig(:data, :stage) != 'lint'
+        end
+      end
+      private_class_method :strict_root_check_eligible?
+
+      def self.format_strict_root_error(error, path:)
+        diagnostic = Diagnostic.new(
+          path: path,
+          line: 1,
+          column: 1,
+          code: strict_root_diagnostic_code(error),
+          message: "strict current-root check failed: #{error.message}",
+          severity: :error,
+        )
+        format_tooling_diagnostic(diagnostic, stage: 'strict-root')
+      end
+      private_class_method :format_strict_root_error
+
+      def self.strict_root_diagnostic_code(error)
+        case error
+        when MilkTea::ModuleLoadError
+          'import/load-error'
+        when MilkTea::SemaError
+          'sema/error'
+        when MilkTea::LoweringError
+          'lowering/error'
+        when MilkTea::BuildError
+          'build/error'
+        when MilkTea::PackageLockError
+          'package/lock-error'
+        else
+          'tooling/error'
+        end
+      end
+      private_class_method :strict_root_diagnostic_code
+
+      def self.format_warning(warning, content: nil)
+        format_tooling_diagnostic(warning.to_diagnostic, content:, stage: 'lint')
+      end
+
+      def self.format_tooling_diagnostic(diagnostic, content: nil, stage:)
+        line = diagnostic.line.to_i
+        line_index = [line - 1, 0].max
+        start_char, end_char = extract_warning_range(diagnostic, content)
+
+        lsp_severity = case diagnostic.severity
                        when :error   then 1
                        when :warning then 2
+                       when :info    then 3
                        when :hint    then 4
                        else               2
                        end
@@ -230,11 +316,11 @@ module MilkTea
             end:   { line: line_index, character: end_char }
           },
           severity: lsp_severity,
-          code: warning.code,
-          message: warning.message.to_s,
+          code: diagnostic.code,
+          message: diagnostic.message.to_s,
           source: 'milk-tea',
           data: {
-            stage: 'lint'
+            stage: stage
           }
         }
       end

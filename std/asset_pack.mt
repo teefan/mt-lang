@@ -97,14 +97,13 @@ extending Reader:
 
         this.file = null
         this.entry_count = 0
-        return
 
 
     public function read_bytes(logical_path: str) -> Result[bytes.Bytes, Error]:
         if this.file == null:
             return Result[bytes.Bytes, Error].failure(error= Error.closed)
 
-        if stdio.seek(this.file, ptr_int<-HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
+        if stdio.seek(this.file, HEADER_SIZE_BYTES, stdio.SEEK_SET) != 0:
             return Result[bytes.Bytes, Error].failure(error= Error.io)
 
         var entry_index: uint = 0
@@ -189,10 +188,10 @@ function read_path_matches(file: stdio.File?, path_length: ptr_uint, logical_pat
     let path_buffer = heap.must_alloc[ubyte](path_length)
     defer heap.release(path_buffer)
 
-    if not read_exact(file, unsafe: ptr[ubyte]<-path_buffer, path_length):
+    if not read_exact(file, ptr[ubyte]<-path_buffer, path_length):
         return Result[bool, Error].failure(error= Error.malformed_index)
 
-    return Result[bool, Error].success(value= bytes_equal_str(unsafe: ptr[ubyte]<-path_buffer, path_length, logical_path))
+    return Result[bool, Error].success(value= bytes_equal_str(ptr[ubyte]<-path_buffer, path_length, logical_path))
 
 
 function read_payload(file: stdio.File?, size_bytes: ptr_uint) -> Result[bytes.Bytes, Error]:
@@ -200,11 +199,11 @@ function read_payload(file: stdio.File?, size_bytes: ptr_uint) -> Result[bytes.B
         return Result[bytes.Bytes, Error].success(value= bytes.Bytes.empty())
 
     let data = heap.must_alloc[ubyte](size_bytes)
-    if not read_exact(file, unsafe: ptr[ubyte]<-data, size_bytes):
+    if not read_exact(file, ptr[ubyte]<-data, size_bytes):
         heap.release(data)
         return Result[bytes.Bytes, Error].failure(error= Error.io)
 
-    return Result[bytes.Bytes, Error].success(value= bytes.Bytes(data = unsafe: ptr[ubyte]<-data, len = size_bytes))
+    return Result[bytes.Bytes, Error].success(value= bytes.Bytes(data = ptr[ubyte]<-data, len = size_bytes))
 
 
 function read_exact(file: stdio.File?, buffer: ptr[ubyte], size_bytes: ptr_uint) -> bool:
