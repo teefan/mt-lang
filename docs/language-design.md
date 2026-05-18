@@ -294,7 +294,7 @@ extending NPC:
 		return this.hp > 0
 ```
 
-Conformance belongs on the nominal type declaration, not on a `methods` block.
+Conformance belongs on the nominal type declaration, not on an `extending` block.
 That keeps the contract visible at the owning type and avoids import-sensitive structural matching.
 
 Rules for interfaces in v1:
@@ -1138,7 +1138,7 @@ The checker should treat `foreign function` as its own declaration kind with ded
 
 Declaration rules:
 
-- `foreign function` is allowed only in ordinary modules, not inside `external`, `methods`, or function bodies
+- `foreign function` is allowed only in ordinary modules, not inside `external`, `extending` blocks, or function bodies
 - the right-hand side must resolve to an imported raw external symbol from a `std.c.*` module
 - `= c.Symbol` is shorthand symbol mapping; `c.Symbol` must resolve to an imported `external function`
 - `= c.Symbol(...)` is declarative RHS mapping; the callee must resolve to an imported `external function`

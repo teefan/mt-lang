@@ -2798,6 +2798,10 @@ module MilkTea
 
           left_type
         when "+", "-", "*", "/"
+          if expression.operator == "+" && (string_like_type?(left_type) || string_like_type?(right_type))
+            raise_sema_error("operator + does not support str/cstr concatenation; use continued string literals for static text or string.String/str_builder for dynamic text")
+          end
+
           pointer_result = pointer_arithmetic_result(expression.operator, left_type, right_type)
           return pointer_result if pointer_result
 
@@ -4689,9 +4693,9 @@ module MilkTea
       end
 
       def common_numeric_type(left_type, right_type)
-        return left_type if left_type == right_type
         return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
         return unless left_type.numeric? && right_type.numeric?
+        return left_type if left_type == right_type
 
         return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
         return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
@@ -4703,9 +4707,9 @@ module MilkTea
       end
 
       def common_integer_type(left_type, right_type)
-        return left_type if left_type == right_type
         return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
         return unless left_type.integer? && right_type.integer?
+        return left_type if left_type == right_type
         return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
         return unless left_type.signed_integer? == right_type.signed_integer?
 

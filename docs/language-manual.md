@@ -104,7 +104,7 @@ Rules for documentation comments:
 - Contiguous `##` lines form one markdown block.
 - A blank line breaks attachment.
 - Plain `#` comments are ignored by hover documentation.
-- Documentation attaches only to declarations (`function`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `methods`, `opaque`).
+- Documentation attaches only to declarations (`function`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `extending`, `opaque`).
 
 ### 2.3 Literals
 
@@ -152,7 +152,7 @@ Top-level declarations:
 - `enum`
 - `flags`
 - `opaque`
-- `methods`
+- `extending`
 - `function`
 - `async function`
 - `external function`
@@ -167,7 +167,7 @@ File-kind note:
 ### 3.1 Visibility
 
 - `public` is supported for exportable ordinary declarations.
-- `public` is rejected on `methods` blocks.
+- `public` is rejected on `extending` blocks.
 - `public` is rejected on ordinary `external` declarations and `static_assert`.
 - In external files, declarations are implicitly exported and `public` is rejected.
 
@@ -257,12 +257,12 @@ opaque SDL_Window implements Closable
 
 ```mt
 variant Option[T]:
-    just(value: T)
-    nothing
+    some(value: T)
+    none
 
 variant Result[T, E]:
-    ok(value: T)
-    err(error: E)
+    success(value: T)
+    failure(error: E)
 ```
 
 Arm constructors:
@@ -841,21 +841,35 @@ mtc lint --ignore shadow file.mt
 
 ### 11.2 Rules
 
+The auto-fix column corresponds to `mtc lint --fix`.
+
 | Code | Severity | Auto-fix | Description |
 |---|---|---|---|
-| `unused-import` | warning | yes | Import alias is never referenced |
+| `borrow-and-mutate` | warning | — | Local is borrowed with `ref_of` or `ptr_of` and also mutated in the same scope |
+| `constant-condition` | warning | — | Branch or loop condition is provably always `true` or always `false` |
+| `dead-assignment` | warning | yes | Assigned value is overwritten before any read |
+| `directional-ffi-arg` | hint | yes | Legacy `ptr_of` / `ref_of` / `out` call-site wrapper is redundant for directional FFI parameters |
+| `loop-single-iteration` | warning | — | Loop body always exits on the first iteration |
 | `missing-return` | error | — | Function with a non-void return type lacks a guaranteed return on all paths |
-| `prefer-let` | warning | yes | `var` binding is never mutated; use `let` instead |
-| `dead-assignment` | warning | yes | Assignment result is never read |
+| `platform-api-drift` | warning | — | Public API differs across sibling platform-specific variants of the same module |
+| `prefer-let` | hint | yes | `var` binding is never mutated; use `let` instead |
+| `prefer-let-else` | hint | yes | Nullable guard can be rewritten as `let ... else:` |
+| `redundant-cast` | hint | yes | Prefix cast is unnecessary in its current type context |
 | `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
-| `unreachable-code` | warning | — | Code after `return`, `break`, or `continue` |
-| `useless-expression` | warning | — | Expression statement with no side effects |
+| `redundant-null-check` | hint | — | Null check on a value already known to be non-null by flow analysis |
+| `redundant-read-cast` | hint | yes | Pointer-like cast inside `read(...)` is unnecessary |
+| `redundant-read-release-temp` | hint | yes | Temporary that only stores `read(...)` to call `.release()` can be inlined |
+| `redundant-return` | hint | yes | Final bare `return` in a `void` function is unnecessary |
+| `redundant-unsafe` | hint | yes | `unsafe` block or inline `unsafe:` expression is unnecessary |
+| `reserved-primitive-name` | warning | yes | Local or parameter uses a reserved primitive type name |
+| `self-assignment` | warning | — | Variable is assigned to itself |
+| `self-comparison` | warning | — | Value is compared to itself, making the condition constant |
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |
-| `borrow-and-mutate` | warning | — | Variable is borrowed via `ref_of` or `ptr_of` and also directly mutated |
-| `constant-condition` | warning | — | `if` condition is always `true` or always `false` |
-| `platform-api-drift` | warning | — | Public API differs across sibling platform-specific source variants of the same module |
-| `redundant-null-check` | warning | — | Null check on a value already known to be non-null by flow analysis |
-| `loop-single-iteration` | warning | — | `while` loop that always exits after at most one iteration |
+| `unreachable-code` | warning | — | Code after a guaranteed terminator cannot execute |
+| `unused-import` | warning | yes | Import alias is never referenced |
+| `unused-local` | warning | — | Local binding is never referenced |
+| `unused-param` | warning | — | Parameter is never referenced |
+| `useless-expression` | warning | — | Expression statement has no side effects and its result is unused |
 
 ### 11.3 Config file
 
