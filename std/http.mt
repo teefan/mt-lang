@@ -4,6 +4,7 @@ import std.mem.heap as heap
 import std.net as net
 import std.str as text
 import std.string as string
+import std.tls as tls
 import std.vec as vec
 
 
@@ -60,6 +61,18 @@ function status_error(message: str) -> Error:
 
 function status_net_error(net_error: net.Error) -> Error:
     var owned_error = net_error
+    let text_value = owned_error.message.as_str()
+    var message = string.String.with_capacity(text_value.len)
+    var index: ptr_uint = 0
+    while index < text_value.len:
+        message.push_byte(text_value.byte_at(index))
+        index += 1
+    owned_error.release()
+    return Error(message = message)
+
+
+function status_tls_error(tls_error: tls.Error) -> Error:
+    var owned_error = tls_error
     let text_value = owned_error.message.as_str()
     var message = string.String.with_capacity(text_value.len)
     var index: ptr_uint = 0
@@ -637,6 +650,102 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
     return Result[ResponseHead, Error].success(value = head)
 
 
+function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Bytes, Error]:
+    var body = vec.Vec[ubyte].with_capacity(encoded.len)
+    defer body.release()
+
+    var cursor: ptr_uint = 0
+    while true:
+        let line_end = find_crlf_bytes(encoded, cursor) else:
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk size"))
+
+        let line_bytes = unsafe: span[ubyte](data = encoded.data + cursor, len = line_end - cursor)
+        let line_text = text.utf8_byte_span_as_str(line_bytes) else:
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunk size line is not valid UTF-8"))
+
+        let chunk_size = parse_chunk_size(line_text) else:
+            return Result[bytes.Bytes, Error].failure(error = response_error("invalid chunk size"))
+
+        cursor = line_end + 2
+
+        if chunk_size == 0:
+            while true:
+                let trailer_end = find_crlf_bytes(encoded, cursor) else:
+                    return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before trailers were complete"))
+
+                if trailer_end == cursor:
+                    if trailer_end + 2 != encoded.len:
+                        return Result[bytes.Bytes, Error].failure(error = response_error("unexpected bytes after chunked body"))
+
+                    return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
+
+                cursor = trailer_end + 2
+
+        if encoded.len < cursor or encoded.len - cursor < chunk_size:
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk data"))
+
+        let remaining = encoded.len - cursor - chunk_size
+        if remaining < 2:
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk terminator"))
+
+        let chunk_bytes = unsafe: span[ubyte](data = encoded.data + cursor, len = chunk_size)
+        body.append_span(chunk_bytes)
+        cursor += chunk_size
+
+        if unsafe: read(encoded.data + cursor) != ubyte<-13 or read(encoded.data + cursor + 1) != ubyte<-10:
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunk data must end with CRLF"))
+
+        cursor += 2
+
+
+function parse_buffered_body(body_bytes: span[ubyte], content_length: Option[ptr_uint], chunked: bool) -> Result[bytes.Bytes, Error]:
+    if chunked:
+        return decode_buffered_chunked_body(body_bytes)
+
+    match content_length:
+        Option.none:
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body_bytes))
+        Option.some as payload:
+            if body_bytes.len != payload.value:
+                return Result[bytes.Bytes, Error].failure(error = response_error("body length did not match Content-Length"))
+
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body_bytes))
+
+
+function parse_buffered_response(raw_response: span[ubyte]) -> Result[Response, Error]:
+    let header_length = find_header_terminator(raw_response) else:
+        return Result[Response, Error].failure(error = response_error("response ended before headers were complete"))
+
+    let header_bytes = unsafe: span[ubyte](data = raw_response.data, len = header_length)
+    let header_text = text.utf8_byte_span_as_str(header_bytes) else:
+        return Result[Response, Error].failure(error = response_error("headers are not valid UTF-8"))
+
+    let head_result = parse_response_head(header_text)
+    match head_result:
+        Result.failure as payload:
+            return Result[Response, Error].failure(error = payload.error)
+        Result.success as payload:
+            var head = payload.value
+            let body_start = header_length + 4
+            let body_bytes = unsafe: span[ubyte](data = raw_response.data + body_start, len = raw_response.len - body_start)
+
+            let body_result = parse_buffered_body(body_bytes, head.content_length, head.chunked)
+            match body_result:
+                Result.failure as body_payload:
+                    head.release()
+                    return Result[Response, Error].failure(error = body_payload.error)
+                Result.success as body_payload:
+                    let body = body_payload.value
+                    return Result[Response, Error].success(
+                        value = Response(
+                            status_code = head.status_code,
+                            reason = head.reason,
+                            headers = head.headers,
+                            body = body,
+                        )
+                    )
+
+
 async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> Result[bytes.Bytes, Error]:
     var body = vec.Vec[ubyte].with_capacity(prefix.len)
     defer body.release()
@@ -881,12 +990,23 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
                     return await read_response(stream)
 
 
+async function request_https(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
+    let exchange_result = tls.exchange(parsed.host.as_str(), parsed.port, request_bytes)
+    match exchange_result:
+        Result.failure as payload:
+            return Result[Response, Error].failure(error = status_tls_error(payload.error))
+        Result.success as payload:
+            var raw_response = payload.value
+            defer raw_response.release()
+            return parse_buffered_response(raw_response.as_span())
+
+
 async function request_with_transport(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
     match parsed.scheme:
         UrlScheme.http:
             return await request_http(parsed, request_bytes)
         UrlScheme.https:
-            return Result[Response, Error].failure(error = transport_error("https transport is not implemented yet"))
+            return await request_https(parsed, request_bytes)
 
 
 extending Error:
