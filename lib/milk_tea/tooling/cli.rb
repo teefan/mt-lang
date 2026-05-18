@@ -58,6 +58,8 @@ module MilkTea
         lower_command
       when "emit-c"
         emit_c_command
+      when "frontend-artifacts"
+        frontend_artifacts_command
       when "build"
         build_command
       when "run"
@@ -409,6 +411,51 @@ module MilkTea
       0
     end
 
+    def frontend_artifacts_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      options = parse_frontend_artifacts_options
+      return 1 unless options
+      json_output = options.delete(:json)
+
+      with_contract_error_handling("frontendArtifacts", enabled: json_output, input_path: path) do
+        ensure_current_lockfile!(path) if options.delete(:frozen)
+        locked = options.delete(:locked)
+
+        artifacts = Build::RubyFrontend.new.compile(
+          path:,
+          module_roots: module_roots_for(path, locked:),
+          package_graph: package_graph_for(path, locked:),
+          platform: options.fetch(:platform),
+          emit_line_directives: options.fetch(:emit_line_directives),
+          binary_path: options.fetch(:binary_path),
+        )
+
+        FileUtils.mkdir_p(File.dirname(options.fetch(:compiled_c_path)))
+        File.write(options.fetch(:compiled_c_path), artifacts.fetch(:compiled_c))
+        FileUtils.mkdir_p(File.dirname(options.fetch(:saved_c_path)))
+        File.write(options.fetch(:saved_c_path), artifacts.fetch(:saved_c))
+
+        debug_map = artifacts.fetch(:debug_map)
+        raise BuildError, "frontend artifacts require --binary-path to generate a debug map" unless debug_map
+
+        FileUtils.mkdir_p(File.dirname(options.fetch(:debug_map_path)))
+        debug_map.write(options.fetch(:debug_map_path))
+
+        if json_output
+          @out.puts(JSON.pretty_generate(frontend_artifacts_contract_payload(path, artifacts, options)))
+        else
+          @out.puts("wrote frontend artifacts for #{path}")
+        end
+        0
+      end
+    end
+
     def build_command
       path = nil
       if @argv.first && !@argv.first.start_with?("-")
@@ -440,11 +487,13 @@ module MilkTea
           return 0
         end
 
-        ensure_current_lockfile!(path) if options.delete(:frozen)
+        frozen = options.delete(:frozen)
+        ensure_current_lockfile!(path) if frozen
         locked = options.delete(:locked)
+        frontend = frontend_from_options(options, locked:, frozen:)
         bundle = options[:bundle]
         package_graph = package_graph_for(path, locked:)
-        result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
+        result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend:, **options)
         if json_output
           @out.puts(JSON.pretty_generate(build_result_contract_payload(path, result)))
         elsif bundle
@@ -480,8 +529,10 @@ module MilkTea
       end
 
       with_contract_error_handling("runResult", enabled: json_output, input_path: path) do
-        ensure_current_lockfile!(path) if options.delete(:frozen)
+        frozen = options.delete(:frozen)
+        ensure_current_lockfile!(path) if frozen
         locked = options.delete(:locked)
+        frontend = frontend_from_options(options, locked:, frozen:)
         package_graph = package_graph_for(path, locked:)
         preview_notice_emitted = false
         preview_started = nil
@@ -497,6 +548,7 @@ module MilkTea
           path,
           module_roots: module_roots_for(path, locked:),
           package_graph:,
+          frontend:,
           preview_started:,
           **options
         )
@@ -562,6 +614,7 @@ module MilkTea
         output_path: nil,
         cc: ENV.fetch("CC", "cc"),
         keep_c_path: nil,
+        frontend_command: nil,
         profile: nil,
         platform: nil,
         bundle: false,
@@ -590,6 +643,12 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:keep_c_path] = value
+        when "--frontend-command"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:frontend_command] ||= []
+          options[:frontend_command] << value
         when "--profile"
           value = @argv.shift
           return missing_option_value(option) unless value
@@ -628,6 +687,99 @@ module MilkTea
       end
 
       options
+    end
+
+    def frontend_from_options(options, locked:, frozen:)
+      command = options.delete(:frontend_command)
+      if command&.any?
+        return Build::CommandFrontend.new(command:, locked:, frozen:)
+      end
+
+      Build.default_frontend_from_env(locked:, frozen:)
+    end
+
+    def parse_frontend_artifacts_options
+      options = {
+        platform: :linux,
+        json: false,
+        locked: false,
+        frozen: false,
+        emit_line_directives: false,
+      }
+
+      until @argv.empty?
+        option = @argv.shift
+        case option
+        when "--compiled-c"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:compiled_c_path] = value
+        when "--saved-c"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:saved_c_path] = value
+        when "--debug-map"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:debug_map_path] = value
+        when "--binary-path"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:binary_path] = value
+        when "--platform"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:platform] = case value
+                               when "linux" then :linux
+                               when "windows", "win", "win32" then :windows
+                               when "wasm", "web", "html5", "browser" then :wasm
+                               else
+                                 @err.puts("unknown platform #{value}; expected linux|windows|wasm")
+                                 print_usage(@err)
+                                 return nil
+                               end
+        when "--json"
+          options[:json] = true
+        when "--locked"
+          options[:locked] = true
+        when "--frozen"
+          options[:locked] = true
+          options[:frozen] = true
+        when "--line-directives"
+          options[:emit_line_directives] = true
+        when "--no-line-directives"
+          options[:emit_line_directives] = false
+        else
+          @err.puts("unknown frontend-artifacts option #{option}")
+          print_usage(@err)
+          return nil
+        end
+      end
+
+      %i[compiled_c_path saved_c_path debug_map_path binary_path].each do |key|
+        next if options[key]
+
+        @err.puts("missing required option #{frontend_artifact_option_name(key)}")
+        print_usage(@err)
+        return nil
+      end
+
+      options
+    end
+
+    def frontend_artifact_option_name(key)
+      case key
+      when :compiled_c_path then "--compiled-c"
+      when :saved_c_path then "--saved-c"
+      when :debug_map_path then "--debug-map"
+      when :binary_path then "--binary-path"
+      else key.to_s
+      end
     end
 
     def parse_format_options
@@ -804,7 +956,7 @@ module MilkTea
     end
 
     def command_supports_include_paths?(command)
-      %w[semantic-tokens parse lint diagnostics check lower emit-c build run].include?(command)
+      %w[semantic-tokens parse lint diagnostics check lower emit-c frontend-artifacts build run].include?(command)
     end
 
     def semantic_tokens_contract_payload(payload, source_path:)
@@ -895,6 +1047,29 @@ module MilkTea
         bundleRoot: contract_path(result.bundle_root),
         archivePath: contract_path(result.archive_path),
       }.compact
+    end
+
+    def frontend_artifacts_contract_payload(input_path, artifacts, options)
+      {
+        version: CONTRACT_VERSION,
+        contract: "frontendArtifacts",
+        success: true,
+        inputPath: contract_path(input_path),
+        compiledCPath: contract_path(options.fetch(:compiled_c_path)),
+        savedCPath: contract_path(options.fetch(:saved_c_path)),
+        debugMapPath: contract_path(options.fetch(:debug_map_path)),
+        binaryPath: contract_path(options.fetch(:binary_path)),
+        platform: options.fetch(:platform).to_s,
+        emitLineDirectives: options.fetch(:emit_line_directives),
+        modules: artifacts.fetch(:modules).map do |mod|
+          {
+            name: mod.name,
+            kind: mod.kind.to_s,
+            linkLibraries: mod.link_libraries,
+            compilerFlags: mod.compiler_flags,
+          }
+        end,
+      }
     end
 
     def run_result_contract_payload(input_path, result)
@@ -1095,6 +1270,25 @@ module MilkTea
       "check"           => "Usage: mtc check PATH [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on a source file and report errors.",
       "lower"           => "Usage: mtc lower PATH [--locked] [--frozen] [-I PATH]\n\n  Lower a source file to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen] [-I PATH]\n\n  Compile a source file to C and print the output.",
+      "frontend-artifacts" => <<~HELP,
+        Usage: mtc frontend-artifacts PATH [OPTIONS]
+
+          Compile frontend artifacts without invoking a C compiler. This is the
+          external-frontend handoff contract used by Build command frontends.
+
+          Options:
+            --compiled-c PATH          Write the C used for compilation.
+            --saved-c PATH             Write the normalized C used for --keep-c.
+            --debug-map PATH           Write the debug map JSON.
+            --binary-path PATH         Binary path to encode into the debug map.
+            --platform PLATFORM        linux (default) | windows | wasm.
+            --line-directives          Emit #line directives in compiled C.
+            --no-line-directives       Omit #line directives (default).
+            --json                     Emit a versioned frontend artifact contract as JSON.
+            --locked                   Resolve dependencies from package.lock.
+            --frozen                   Require a current package.lock and use locked resolution.
+            -I, --include-path PATH    Add an extra module root.
+        HELP
       "build"           => <<~HELP,
         Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -1104,6 +1298,7 @@ module MilkTea
           Options:
             -o, --output OUTPUT          Output path for the compiled artifact.
             --cc COMPILER                C compiler to use (default: $CC or cc).
+            --frontend-command ARG       External frontend command argv element (repeatable).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
@@ -1134,6 +1329,7 @@ module MilkTea
           Options:
             -o, --output OUTPUT          Output path for the compiled binary.
             --cc COMPILER                C compiler to use (default: $CC or cc).
+            --frontend-command ARG       External frontend command argv element (repeatable).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
@@ -1212,9 +1408,10 @@ module MilkTea
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--json] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc frontend-artifacts PATH --compiled-c PATH --saved-c PATH --debug-map PATH --binary-path PATH [--platform linux|windows|wasm] [--line-directives|--no-line-directives] [--json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--frontend-command ARG]... [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--json] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--frontend-command ARG]... [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")

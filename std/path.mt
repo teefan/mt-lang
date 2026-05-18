@@ -110,6 +110,46 @@ public function relative_path(path: str, base: str) -> Option[string.String]:
     return Option[string.String].some(value= result)
 
 
+public function is_within_root(path: str, root: str) -> bool:
+    var normalized_path = normalize_separators(path)
+    defer normalized_path.release()
+    var normalized_root = normalize_separators(root)
+    defer normalized_root.release()
+
+    let path_text = normalized_path.as_str()
+    let root_text = normalized_root.as_str()
+    let path_root = root_length(path_text)
+    let root_root = root_length(root_text)
+    if not roots_compatible(path_text, path_root, root_text, root_root):
+        return false
+
+    var path_segments = vec.Vec[Segment].create()
+    defer path_segments.release()
+    collect_normalized_segments(path_text, path_root, ref_of(path_segments))
+
+    var root_segments = vec.Vec[Segment].create()
+    defer root_segments.release()
+    collect_normalized_segments(root_text, root_root, ref_of(root_segments))
+
+    if path_segments.len() < root_segments.len():
+        return false
+
+    var index: ptr_uint = 0
+    while index < root_segments.len():
+        let path_segment_ptr = path_segments.get(index) else:
+            fatal(c"path.is_within_root missing path segment")
+        let root_segment_ptr = root_segments.get(index) else:
+            fatal(c"path.is_within_root missing root segment")
+
+        unsafe:
+            if not segments_equal(path_text, read(path_segment_ptr), root_text, read(root_segment_ptr)):
+                return false
+
+        index += 1
+
+    return true
+
+
 public function basename(path: str) -> str:
     if path.len == 0:
         return "."

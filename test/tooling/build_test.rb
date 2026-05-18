@@ -2,7 +2,9 @@
 
 require "json"
 require "open3"
+require "rbconfig"
 require "rubygems/package"
+require "shellwords"
 require "tmpdir"
 require "zlib"
 require_relative "../test_helper"
@@ -132,6 +134,76 @@ class MilkTeaBuildTest < Minitest::Test
       assert_equal File.expand_path(source_path), calls[0].fetch(:path)
       assert_equal File.expand_path(output_path), calls[0].fetch(:binary_path)
       assert_equal :linux, calls[0].fetch(:platform)
+    end
+  end
+
+  def test_build_accepts_command_frontend_compiler_with_kept_c
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-command-frontend") do |dir|
+      source_path = File.join(dir, "command-frontend.mt")
+      output_path = File.join(dir, "command-frontend")
+      c_path = File.join(dir, "command-frontend.c")
+
+      File.write(source_path, <<~MT)
+        function main() -> int:
+            return 0
+      MT
+
+      frontend = MilkTea::Build::CommandFrontend.new(
+        command: [RbConfig.ruby, File.expand_path("../../bin/mtc", __dir__), "frontend-artifacts"],
+      )
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler, keep_c_path: c_path, frontend: frontend)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert_equal File.expand_path(c_path), result.c_path
+      assert File.exist?(output_path)
+      assert File.exist?(c_path)
+      refute_match(/^#line\s+/m, File.read(c_path))
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+    end
+  end
+
+  def test_build_uses_env_frontend_command_with_kept_c
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-env-frontend") do |dir|
+      source_path = File.join(dir, "env-frontend.mt")
+      output_path = File.join(dir, "env-frontend")
+      c_path = File.join(dir, "env-frontend.c")
+
+      File.write(source_path, <<~MT)
+        function main() -> int:
+            return 0
+      MT
+
+      with_env(
+        "MILK_TEA_FRONTEND_CMD" => Shellwords.join([
+          RbConfig.ruby,
+          File.expand_path("../../bin/mtc", __dir__),
+          "frontend-artifacts",
+        ])
+      ) do
+        result = MilkTea::Build.build(source_path, output_path:, cc: compiler, keep_c_path: c_path)
+
+        assert_equal File.expand_path(output_path), result.output_path
+        assert_equal File.expand_path(c_path), result.c_path
+        assert File.exist?(output_path)
+        assert File.exist?(c_path)
+        refute_match(/^#line\s+/m, File.read(c_path))
+
+        stdout, stderr, status = Open3.capture3(output_path)
+        assert_equal "", stdout
+        assert_equal "", stderr
+        assert_equal 0, status.exitstatus
+      end
     end
   end
 
@@ -1661,6 +1733,29 @@ class MilkTeaBuildTest < Minitest::Test
     if original_defined
       singleton_class.alias_method(method_name, original_name)
       singleton_class.remove_method(original_name)
+    end
+  end
+
+  def with_env(overrides)
+    previous = {}
+
+    overrides.each do |key, value|
+      previous[key] = ENV.key?(key) ? ENV[key] : :__missing__
+      if value.nil?
+        ENV.delete(key)
+      else
+        ENV[key] = value
+      end
+    end
+
+    yield
+  ensure
+    previous.each do |key, value|
+      if value == :__missing__
+        ENV.delete(key)
+      else
+        ENV[key] = value
+      end
     end
   end
 end

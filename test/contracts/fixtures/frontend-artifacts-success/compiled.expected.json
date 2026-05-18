@@ -1,0 +1,4 @@
+[
+  "^#line\\s+",
+  "int32_t main\\(void\\)"
+]

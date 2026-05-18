@@ -1,0 +1,43 @@
+{
+  "name": "frontend_artifacts_success",
+  "argv": [
+    "frontend-artifacts",
+    "main.mt",
+    "--compiled-c", "compiled.c",
+    "--saved-c", "saved.c",
+    "--debug-map", "artifact.mtdbg.json",
+    "--binary-path", "artifact.bin",
+    "--line-directives",
+    "--json"
+  ],
+  "cwd": ".",
+  "exitStatus": 0,
+  "stderr": "",
+  "stdout": {
+    "type": "json-projection",
+    "path": "expected.stdout.json"
+  },
+  "files": [
+    {
+      "path": "compiled.c",
+      "expectation": {
+        "type": "text-regexp-all",
+        "path": "compiled.expected.json"
+      }
+    },
+    {
+      "path": "saved.c",
+      "expectation": {
+        "type": "text-regexp-all",
+        "path": "saved.expected.json"
+      }
+    },
+    {
+      "path": "artifact.mtdbg.json",
+      "expectation": {
+        "type": "json-projection",
+        "path": "debug-map.expected.json"
+      }
+    }
+  ]
+}

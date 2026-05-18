@@ -43,7 +43,22 @@ class MilkTeaCliContractTest < Minitest::Test
       stdout_expectation = contract_case.fetch("stdout")
       expected_path = File.join(case_dir, stdout_expectation.fetch("path"))
       assert_stdout_expectation(stdout, stdout_expectation.fetch("type"), expected_path)
+
+      Array(contract_case["files"]).each do |file_expectation|
+        assert_file_expectation(case_dir, sandbox, file_expectation)
+      end
     end
+  end
+
+  def assert_file_expectation(case_dir, sandbox, file_expectation)
+    actual_path = File.join(sandbox, file_expectation.fetch("path"))
+    assert File.exist?(actual_path), "expected file #{file_expectation.fetch('path')} to exist"
+
+    expectation = file_expectation["expectation"]
+    return unless expectation
+
+    expected_path = File.join(case_dir, expectation.fetch("path"))
+    assert_stdout_expectation(File.read(actual_path), expectation.fetch("type"), expected_path)
   end
 
   def assert_stdout_expectation(stdout, type, expected_path)
