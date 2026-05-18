@@ -2,7 +2,6 @@ import platform_info as platform_info
 import std.raylib as rl
 import std.raylib.packed_assets as rl_assets
 import std.raylib.runtime as rl_runtime
-
 import tetris.pieces.defs as pieces
 import tetris.rules.scoring as scoring
 
