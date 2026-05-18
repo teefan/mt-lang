@@ -266,6 +266,32 @@ module MilkTea
         warn "[LSP perf] breakdown #{method_name} #{elapsed_ms_value}ms#{id_detail} #{detail}"
       end
 
+      def new_perf_stages
+        perf_logging? ? [] : nil
+      end
+
+      def measure_perf_stage(stages, name)
+        return yield unless stages
+
+        start_time = monotonic_time
+        result = yield
+        stages << [name, elapsed_ms(start_time)]
+        result
+      end
+
+      def log_request_stage_breakdown(method_name, total_start, uri: nil, stages: nil, summary: nil)
+        return unless total_start
+
+        detail = []
+        detail << "uri=#{shorten_uri(uri) || uri}" if uri
+        detail << summary if summary && !summary.empty?
+        unless stages.nil? || stages.empty?
+          detail << "stages_ms=#{stages.map { |name, ms| "#{name}:#{ms}" }.join(',')}"
+        end
+
+        log_perf_breakdown(method_name, elapsed_ms(total_start), detail.join(' '))
+      end
+
       def perf_log_context(method_name, params, verbose: false)
         return "" unless params.is_a?(Hash)
 
@@ -481,7 +507,11 @@ module MilkTea
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
-        analysis_detail = "on(#{open_stats[:analysis_mode] || :unknown})"
+        analysis_detail = if open_stats[:eager_analysis]
+                            "on(#{open_stats[:analysis_mode] || :unknown})"
+                          else
+                            "off(#{open_stats[:skip_reason] || :unknown})"
+                          end
         log_perf_breakdown(
           'textDocument/didOpen',
           elapsed,
@@ -601,95 +631,152 @@ module MilkTea
       # ── Enhancement 1: Hover — real type signatures ──────────────────────────
 
       def handle_hover(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
         uri       = params['textDocument']['uri']
         lsp_line  = params['position']['line']
         lsp_char  = params['position']['character']
+        token_kind = 'none'
+        result_state = 'miss'
 
-        context = token_context_at(uri, lsp_line, lsp_char)
+        context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
         token = context&.fetch(:token, nil)
-        return nil unless token&.type == :identifier
+        token_kind = token&.type || :none
+        unless token&.type == :identifier
+          result_state = 'not-identifier'
+          return nil
+        end
 
-        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index])
+        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index], stages: stages)
         return nil unless info
 
-        {
-          contents: {
-            kind: 'markdown',
-            value: render_hover_markdown(info)
-          },
-          range: token_to_range(token)
-        }
+        result = measure_perf_stage(stages, 'render') do
+          {
+            contents: {
+              kind: 'markdown',
+              value: render_hover_markdown(info)
+            },
+            range: token_to_range(token)
+          }
+        end
+        result_state = 'hit'
+        result
       rescue StandardError => e
+        result_state = 'error'
         warn "Error in hover handler: #{e.message}"
         nil
+      ensure
+        log_request_stage_breakdown('textDocument/hover', total_start, uri: uri, stages: stages, summary: "token=#{token_kind} result=#{result_state}")
       end
 
       # Enhancement 2: Goto Definition ──────────────────────────────────────────
 
       def handle_definition(params)
-        location = resolve_definition_location(params)
-        location
-      rescue StandardError => e
-        warn "Error in definition handler: #{e.message}"
-        nil
+        handle_definition_request('textDocument/definition', params, error_label: 'definition')
       end
 
       def handle_declaration(params)
-        location = resolve_definition_location(params)
-        location
-      rescue StandardError => e
-        warn "Error in declaration handler: #{e.message}"
-        nil
+        handle_definition_request('textDocument/declaration', params, error_label: 'declaration')
       end
 
       def handle_type_definition(params)
-        location = resolve_definition_location(params)
-        location
-      rescue StandardError => e
-        warn "Error in typeDefinition handler: #{e.message}"
-        nil
+        handle_definition_request('textDocument/typeDefinition', params, error_label: 'typeDefinition')
       end
 
       def handle_implementation(params)
-        resolve_implementation_locations(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
+        uri = params.dig('textDocument', 'uri')
+        result_state = 'miss'
+
+        locations = resolve_implementation_locations(params, stages: stages)
+        result_state = locations.empty? ? 'miss' : 'hit'
+        locations
       rescue StandardError => e
+        result_state = 'error'
         warn "Error in implementation handler: #{e.message}"
         []
+      ensure
+        log_request_stage_breakdown('textDocument/implementation', total_start, uri: uri, stages: stages, summary: "result=#{result_state}")
+      end
+
+      def handle_definition_request(method_name, params, error_label:)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
+        uri = params.dig('textDocument', 'uri')
+        result_state = 'miss'
+
+        location = resolve_definition_location(params, stages: stages)
+        result_state = location ? 'hit' : 'miss'
+        location
+      rescue StandardError => e
+        result_state = 'error'
+        warn "Error in #{error_label} handler: #{e.message}"
+        nil
+      ensure
+        log_request_stage_breakdown(method_name, total_start, uri: uri, stages: stages, summary: "result=#{result_state}")
       end
 
       # ── References ──────────────────────────────────────────────────────────
 
       def handle_references(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
+        result_count = 0
+        result_state = 'miss'
 
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
-        return [] unless token&.type == :identifier
-
-        analysis = @workspace.get_analysis(uri)
-        include_declaration = params.dig('context', 'includeDeclaration') != false
-        if analysis && (target = resolve_static_type_reference_target(uri, token, analysis))
-          return static_type_method_references(target, include_declaration: include_declaration)
+        token = measure_perf_stage(stages, 'token') { @workspace.find_token_at(uri, lsp_line, lsp_char) }
+        unless token&.type == :identifier
+          result_state = 'not-identifier'
+          return []
         end
 
-        refs = @workspace.find_all_references(token.lexeme)
-        return refs if include_declaration
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
+        include_declaration = params.dig('context', 'includeDeclaration') != false
+        target = analysis ? measure_perf_stage(stages, 'static_target') { resolve_static_type_reference_target(uri, token, analysis) } : nil
+        if target
+          refs = measure_perf_stage(stages, 'static_refs') { static_type_method_references(target, include_declaration: include_declaration) }
+          result_count = refs.length
+          result_state = refs.empty? ? 'miss' : 'hit'
+          return refs
+        end
 
-        found = @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri)
-        return refs unless found
+        refs = measure_perf_stage(stages, 'refs_scan') { @workspace.find_all_references(token.lexeme) }
+        if include_declaration
+          result_count = refs.length
+          result_state = refs.empty? ? 'miss' : 'hit'
+          return refs
+        end
+
+        found = measure_perf_stage(stages, 'definition_lookup') { @workspace.find_definition_token_global(token.lexeme, preferred_uri: uri) }
+        unless found
+          result_count = refs.length
+          result_state = refs.empty? ? 'miss' : 'hit'
+          return refs
+        end
 
         def_uri = found[:uri]
         def_line = found[:token].line - 1
         def_char = found[:token].column - 1
-        refs.reject do |r|
-          r[:uri] == def_uri &&
-            r[:range][:start][:line] == def_line &&
-            r[:range][:start][:character] == def_char
+        filtered = measure_perf_stage(stages, 'filter') do
+          refs.reject do |r|
+            r[:uri] == def_uri &&
+              r[:range][:start][:line] == def_line &&
+              r[:range][:start][:character] == def_char
+          end
         end
+        result_count = filtered.length
+        result_state = filtered.empty? ? 'miss' : 'hit'
+        filtered
       rescue StandardError => e
+        result_state = 'error'
         warn "Error in references handler: #{e.message}"
         []
+      ensure
+        log_request_stage_breakdown('textDocument/references', total_start, uri: uri, stages: stages, summary: "result=#{result_state} refs=#{result_count}")
       end
 
       def handle_document_link(params)
@@ -729,32 +816,42 @@ module MilkTea
       # ── Signature Help ───────────────────────────────────────────────────────
 
       def handle_signature_help(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
+        result_state = 'miss'
 
-        ctx = @workspace.find_call_context(uri, lsp_line, lsp_char)
+        ctx = measure_perf_stage(stages, 'call_context') { @workspace.find_call_context(uri, lsp_line, lsp_char) }
         return nil unless ctx
 
-        analysis = @workspace.get_analysis(uri)
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
         return nil unless analysis
 
-        binding = analysis.functions[ctx[:name]]
+        binding = measure_perf_stage(stages, 'binding') { analysis.functions[ctx[:name]] }
         return nil unless binding
 
-        params_list = binding.type.params
-        params_str  = format_params(params_list)
-        label       = "#{ctx[:name]}(#{params_str}) -> #{binding.type.return_type}"
-        parameters  = params_list.map { |p| { label: "#{p.name}: #{p.type}" } }
+        result = measure_perf_stage(stages, 'build') do
+          params_list = binding.type.params
+          params_str  = format_params(params_list)
+          label       = "#{ctx[:name]}(#{params_str}) -> #{binding.type.return_type}"
+          parameters  = params_list.map { |p| { label: "#{p.name}: #{p.type}" } }
 
-        {
-          signatures:      [{ label: label, parameters: parameters }],
-          activeSignature: 0,
-          activeParameter: ctx[:active_parameter]
-        }
+          {
+            signatures:      [{ label: label, parameters: parameters }],
+            activeSignature: 0,
+            activeParameter: ctx[:active_parameter]
+          }
+        end
+        result_state = 'hit'
+        result
       rescue StandardError => e
+        result_state = 'error'
         warn "Error in signatureHelp handler: #{e.message}"
         nil
+      ensure
+        log_request_stage_breakdown('textDocument/signatureHelp', total_start, uri: uri, stages: stages, summary: "result=#{result_state}")
       end
 
       # ── Prepare Rename / Rename ──────────────────────────────────────────────
@@ -799,12 +896,18 @@ module MilkTea
       # ── Document symbols (position-accurate, token-based) ───────────────────
 
       def handle_document_symbols(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
         uri     = params['textDocument']['uri']
-        symbols = @workspace.get_symbols(uri)
-        symbols.map { |sym| format_symbol(sym, uri) }
+        symbols = measure_perf_stage(stages, 'symbols') { @workspace.get_symbols(uri) }
+        result = measure_perf_stage(stages, 'format') { symbols.map { |sym| format_symbol(sym, uri) } }
+        result
       rescue StandardError => e
         warn "Error in documentSymbol handler: #{e.message}"
         []
+      ensure
+        symbol_count = defined?(result) && result ? result.length : 0
+        log_request_stage_breakdown('textDocument/documentSymbol', total_start, uri: uri, stages: stages, summary: "symbols=#{symbol_count}")
       end
 
       # ── Formatting ───────────────────────────────────────────────────────────
@@ -1574,188 +1677,234 @@ module MilkTea
       # ── Enhancement 6: Completion ────────────────────────────────────────────
 
       def handle_completion(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
+        branch = 'none'
+        item_count = 0
 
-        analysis = @workspace.get_analysis(uri)
-        return { isIncomplete: false, items: [] } unless analysis
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
+        unless analysis
+          branch = 'no-analysis'
+          return { isIncomplete: false, items: [] }
+        end
 
-        prefix = current_word_prefix(uri, lsp_line, lsp_char)
+        prefix = measure_perf_stage(stages, 'prefix') { current_word_prefix(uri, lsp_line, lsp_char) }
 
         # When user is typing after '.', return module members or method completions.
-        dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
-        dot_recv_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
+        dot_recv = nil
+        dot_recv_path = nil
+        measure_perf_stage(stages, 'receiver_context') do
+          dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          dot_recv_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
+        end
         if dot_recv
           # Module member access: rl.init_window, rl.RAYWHITE, etc.
           if (module_binding = analysis.imports[dot_recv])
-            items = []
-            module_binding.functions.each do |fname, binding|
-              next unless prefix.empty? || fname.start_with?(prefix)
-              params_str = format_params(binding.type.params)
-              items << {
-                label:      fname,
-                kind:       3,  # Function
-                detail:     "function #{fname}(#{params_str}) -> #{binding.type.return_type}",
-                insertText: fname,
-                sortText:   "0_#{fname}"
-              }
+            branch = 'module'
+            items = measure_perf_stage(stages, 'build') do
+              result = []
+              module_binding.functions.each do |fname, binding|
+                next unless prefix.empty? || fname.start_with?(prefix)
+                params_str = format_params(binding.type.params)
+                result << {
+                  label:      fname,
+                  kind:       3,  # Function
+                  detail:     "function #{fname}(#{params_str}) -> #{binding.type.return_type}",
+                  insertText: fname,
+                  sortText:   "0_#{fname}"
+                }
+              end
+              module_binding.values.each do |vname, binding|
+                next unless prefix.empty? || vname.start_with?(prefix)
+                result << {
+                  label:      vname,
+                  kind:       6,  # Variable
+                  detail:     "#{vname}: #{binding.type}",
+                  insertText: vname,
+                  sortText:   "1_#{vname}"
+                }
+              end
+              module_binding.types.each do |tname, _type|
+                next unless prefix.empty? || tname.start_with?(prefix)
+                result << {
+                  label:      tname,
+                  kind:       7,  # Class
+                  detail:     "type #{tname}",
+                  insertText: tname,
+                  sortText:   "2_#{tname}"
+                }
+              end
+              result
             end
-            module_binding.values.each do |vname, binding|
-              next unless prefix.empty? || vname.start_with?(prefix)
-              items << {
-                label:      vname,
-                kind:       6,  # Variable
-                detail:     "#{vname}: #{binding.type}",
-                insertText: vname,
-                sortText:   "1_#{vname}"
-              }
-            end
-            module_binding.types.each do |tname, _type|
-              next unless prefix.empty? || tname.start_with?(prefix)
-              items << {
-                label:      tname,
-                kind:       7,  # Class
-                detail:     "type #{tname}",
-                insertText: tname,
-                sortText:   "2_#{tname}"
-              }
-            end
+            item_count = items.length
             return { isIncomplete: false, items: items }
           end
-          if (type_receiver = resolve_type_receiver_info(analysis, dot_recv, dot_recv_path))
+          if (type_receiver = measure_perf_stage(stages, 'type_receiver') { resolve_type_receiver_info(analysis, dot_recv, dot_recv_path) })
             receiver_label = type_receiver[:label]
             type = type_receiver[:type]
 
             # Enum/Flags member access: Color.RED, KeyboardKey.A, etc.
             if type.is_a?(Types::EnumBase)
-              items = type.members.filter_map do |mname|
-                next if !prefix.empty? && !mname.start_with?(prefix)
-                {
-                  label:      mname,
-                  kind:       20, # EnumMember
-                  detail:     "#{receiver_label}.#{mname}",
-                  insertText: mname,
-                  sortText:   "0_#{mname}"
-                }
+              branch = 'enum-members'
+              items = measure_perf_stage(stages, 'build') do
+                type.members.filter_map do |mname|
+                  next if !prefix.empty? && !mname.start_with?(prefix)
+                  {
+                    label:      mname,
+                    kind:       20, # EnumMember
+                    detail:     "#{receiver_label}.#{mname}",
+                    insertText: mname,
+                    sortText:   "0_#{mname}"
+                  }
+                end
               end
+              item_count = items.length
               return { isIncomplete: false, items: items }
             end
 
             # Variant arm access: Option.none, Result.success, etc.
             if type.is_a?(Types::Variant)
-              items = type.arm_names.filter_map do |aname|
-                next if !prefix.empty? && !aname.start_with?(prefix)
-                {
-                  label:      aname,
-                  kind:       20, # EnumMember
-                  detail:     "#{receiver_label}.#{aname}",
-                  insertText: aname,
-                  sortText:   "0_#{aname}"
-                }
+              branch = 'variant-arms'
+              items = measure_perf_stage(stages, 'build') do
+                type.arm_names.filter_map do |aname|
+                  next if !prefix.empty? && !aname.start_with?(prefix)
+                  {
+                    label:      aname,
+                    kind:       20, # EnumMember
+                    detail:     "#{receiver_label}.#{aname}",
+                    insertText: aname,
+                    sortText:   "0_#{aname}"
+                  }
+                end
               end
+              item_count = items.length
               return { isIncomplete: false, items: items }
             end
 
-            items = completion_items_for_type_receiver(analysis, type, prefix)
-            return { isIncomplete: false, items: items } unless items.empty?
+            items = measure_perf_stage(stages, 'build') { completion_items_for_type_receiver(analysis, type, prefix) }
+            unless items.empty?
+              branch = 'type-receiver'
+              item_count = items.length
+              return { isIncomplete: false, items: items }
+            end
           end
 
-          if (receiver_type = resolve_dot_receiver_value_type(analysis, dot_recv, lsp_line + 1, lsp_char + 1))
-            items = completion_items_for_value_receiver(analysis, receiver_type, prefix)
-            return { isIncomplete: false, items: items } unless items.empty?
+          if (receiver_type = measure_perf_stage(stages, 'value_receiver') { resolve_dot_receiver_value_type(analysis, dot_recv, lsp_line + 1, lsp_char + 1) })
+            items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(analysis, receiver_type, prefix) }
+            unless items.empty?
+              branch = 'value-receiver'
+              item_count = items.length
+              return { isIncomplete: false, items: items }
+            end
           end
 
           # Method completions on a non-module receiver.
-          method_items = []
-          analysis.methods.each do |_recv_type, methods|
-            methods.each do |mname, binding|
-              next unless prefix.empty? || mname.start_with?(prefix)
+          branch = 'method-fallback'
+          method_items = measure_perf_stage(stages, 'build') do
+            result = []
+            analysis.methods.each do |_recv_type, methods|
+              methods.each do |mname, binding|
+                next unless prefix.empty? || mname.start_with?(prefix)
 
-              params_str = format_params(binding.type.params)
-              method_items << {
-                label:      mname,
-                kind:       2,  # Method
-                detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
-                insertText: mname,
-                sortText:   "0_#{mname}"
-              }
+                params_str = format_params(binding.type.params)
+                result << {
+                  label:      mname,
+                  kind:       2,  # Method
+                  detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
+                  insertText: mname,
+                  sortText:   "0_#{mname}"
+                }
+              end
             end
+            result
           end
+          item_count = method_items.length
           return { isIncomplete: false, items: method_items }
         end
 
-        items = []
+        branch = 'global'
+        items = measure_perf_stage(stages, 'build') do
+          result = []
 
-        # Functions
-        analysis.functions.each do |name, binding|
-          next unless prefix.empty? || name.start_with?(prefix)
+          # Functions
+          analysis.functions.each do |name, binding|
+            next unless prefix.empty? || name.start_with?(prefix)
 
-          params_str = format_params(binding.type.params)
-          items << {
-            label:        name,
-            kind:         3,  # Function
-            detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
-            insertText:   name,
-            insertTextFormat: 1,
-            sortText:     "0_#{name}"
-          }
+            params_str = format_params(binding.type.params)
+            result << {
+              label:        name,
+              kind:         3,  # Function
+              detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
+              insertText:   name,
+              insertTextFormat: 1,
+              sortText:     "0_#{name}"
+            }
+          end
+
+          # Types
+          builtin_names = Sema::BUILTIN_TYPE_NAMES
+          analysis.types.each do |name, type|
+            next if builtin_names.include?(name)
+            next unless prefix.empty? || name.start_with?(prefix)
+
+            kind = case type
+                   when Types::StructInstance then 22 # Struct
+                   when Types::EnumBase, Types::Variant then 13 # Enum
+                   else 7 # Class/type
+                   end
+
+            result << {
+              label:        name,
+              kind:         kind,
+              detail:       "type #{name}",
+              insertText:   name,
+              insertTextFormat: 1,
+              sortText:     "1_#{name}"
+            }
+          end
+
+          # Imported modules
+          analysis.imports.each do |name, module_binding|
+            next unless prefix.empty? || name.start_with?(prefix)
+
+            result << {
+              label:        name,
+              kind:         9,  # Module
+              detail:       "module #{module_binding.name}",
+              insertText:   name,
+              insertTextFormat: 1,
+              sortText:     "2_#{name}"
+            }
+          end
+
+          # Values
+          analysis.values.each do |name, binding|
+            next unless prefix.empty? || name.start_with?(prefix)
+
+            result << {
+              label:        name,
+              kind:         6,  # Variable
+              detail:       "#{name}: #{binding.type}",
+              insertText:   name,
+              insertTextFormat: 1,
+              sortText:     "3_#{name}"
+            }
+          end
+
+          result
         end
 
-        # Types
-        builtin_names = Sema::BUILTIN_TYPE_NAMES
-        analysis.types.each do |name, type|
-          next if builtin_names.include?(name)
-          next unless prefix.empty? || name.start_with?(prefix)
-
-          kind = case type
-                 when Types::StructInstance then 22 # Struct
-                 when Types::EnumBase, Types::Variant then 13 # Enum
-                 else 7 # Class/type
-                 end
-
-          items << {
-            label:        name,
-            kind:         kind,
-            detail:       "type #{name}",
-            insertText:   name,
-            insertTextFormat: 1,
-            sortText:     "1_#{name}"
-          }
-        end
-
-        # Imported modules
-        analysis.imports.each do |name, module_binding|
-          next unless prefix.empty? || name.start_with?(prefix)
-
-          items << {
-            label:        name,
-            kind:         9,  # Module
-            detail:       "module #{module_binding.name}",
-            insertText:   name,
-            insertTextFormat: 1,
-            sortText:     "2_#{name}"
-          }
-        end
-
-        # Values
-        analysis.values.each do |name, binding|
-          next unless prefix.empty? || name.start_with?(prefix)
-
-          items << {
-            label:        name,
-            kind:         6,  # Variable
-            detail:       "#{name}: #{binding.type}",
-            insertText:   name,
-            insertTextFormat: 1,
-            sortText:     "3_#{name}"
-          }
-        end
-
+        item_count = items.length
         { isIncomplete: false, items: items }
       rescue StandardError => e
+        branch = 'error'
         warn "Error in completion handler: #{e.message}"
         { isIncomplete: false, items: [] }
+      ensure
+        log_request_stage_breakdown('textDocument/completion', total_start, uri: uri, stages: stages, summary: "branch=#{branch} items=#{item_count}")
       end
 
       def completion_items_for_type_receiver(analysis, receiver_type, prefix)
@@ -2074,9 +2223,9 @@ module MilkTea
 
       # ── Enhancement 1 helpers: hover type resolution ─────────────────────────
 
-      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil, tokens: nil, token_index: nil)
+      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil, tokens: nil, token_index: nil, stages: nil)
         if token.nil?
-          context = token_context_at(uri, lsp_line, lsp_char)
+          context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
           return nil unless context
 
           token = context[:token]
@@ -2116,7 +2265,7 @@ module MilkTea
           end
         end
 
-        analysis = @workspace.get_analysis(uri)
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
         return nil unless analysis
 
         if token_index && field_declaration_token?(tokens, token_index)
@@ -2224,14 +2373,16 @@ module MilkTea
         end
 
         definition_entry = if source_location
-                             hover_definition_entry_from_location(source_location)
+                             measure_perf_stage(stages, 'definition_entry') { hover_definition_entry_from_location(source_location) }
                            else
-                             @workspace.find_definition_token_global(
-                               name,
-                               preferred_uri: uri,
-                               before_line: lsp_line + 1,
-                               before_char: lsp_char + 1,
-                             )
+                             measure_perf_stage(stages, 'global_definition') do
+                               @workspace.find_definition_token_global(
+                                 name,
+                                 preferred_uri: uri,
+                                 before_line: lsp_line + 1,
+                                 before_char: lsp_char + 1,
+                               )
+                             end
                            end
 
         source_uri = hover_source_uri_for_definition(definition_entry) || hover_source_uri_from_location(source_location)
@@ -2433,12 +2584,12 @@ module MilkTea
         { uri: location[:uri], token: token }
       end
 
-      def resolve_definition_location(params)
+      def resolve_definition_location(params, stages: nil)
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
 
-        context = token_context_at(uri, lsp_line, lsp_char)
+        context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
         token = context&.fetch(:token, nil)
         return nil unless token&.type == :identifier
 
@@ -2447,50 +2598,56 @@ module MilkTea
         return nil if token_index && module_declaration_info_at(tokens, token_index)
         return nil if token_index && builtin_hover_info(token.lexeme, tokens, token_index)
 
-        if token_index && (import_info = import_path_info_at(tokens, token_index))
+        import_info = token_index ? measure_perf_stage(stages, 'import_path') { import_path_info_at(tokens, token_index) } : nil
+        if import_info
           return module_definition_location(uri, import_info[:module_name])
         end
 
-        analysis = @workspace.get_analysis(uri)
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
         if analysis
-          if token_index && (field_location = resolve_field_member_definition_location(uri, analysis, tokens, token_index))
-            return field_location
-          end
+          analysis_location = measure_perf_stage(stages, 'analysis_lookup') do
+            location = nil
 
-          if token_index && (member_access = module_member_access_info(tokens, token_index))
-            if (import_binding = analysis.imports[member_access[:receiver]])
-              module_name = import_binding.name
-              member_location = module_member_definition_location(uri, module_name, token.lexeme)
-              return member_location if member_location
-              return module_definition_location(uri, module_name)
+            if token_index && (field_location = resolve_field_member_definition_location(uri, analysis, tokens, token_index))
+              location = field_location
+            elsif token_index && (member_access = module_member_access_info(tokens, token_index))
+              if (import_binding = analysis.imports[member_access[:receiver]])
+                module_name = import_binding.name
+                location = module_member_definition_location(uri, module_name, token.lexeme)
+                location ||= module_definition_location(uri, module_name)
+              end
+            elsif token_index && (enum_member_location = resolve_enum_member_definition_location(uri, analysis, tokens, token_index))
+              location = enum_member_location
+            else
+              dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+              dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
+              if dot_receiver && analysis.imports.key?(dot_receiver)
+                module_name = analysis.imports.fetch(dot_receiver).name
+                location = module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
+              elsif (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, token.lexeme))
+                location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
+                  module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
+                  module_definition_location(uri, type_method[:module_name])
+              elsif analysis.imports.key?(token.lexeme)
+                module_name = analysis.imports.fetch(token.lexeme).name
+                location = module_definition_location(uri, module_name)
+              end
             end
+
+            location
           end
 
-          if token_index && (enum_member_location = resolve_enum_member_definition_location(uri, analysis, tokens, token_index))
-            return enum_member_location
-          end
-
-          dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
-          dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
-          if dot_receiver && analysis.imports.key?(dot_receiver)
-            module_name = analysis.imports.fetch(dot_receiver).name
-            return module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
-          elsif (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, token.lexeme))
-            return module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
-              module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
-              module_definition_location(uri, type_method[:module_name])
-          elsif analysis.imports.key?(token.lexeme)
-            module_name = analysis.imports.fetch(token.lexeme).name
-            return module_definition_location(uri, module_name)
-          end
+          return analysis_location if analysis_location
         end
 
-        found = @workspace.find_definition_token_global(
-          token.lexeme,
-          preferred_uri: uri,
-          before_line: lsp_line + 1,
-          before_char: lsp_char + 1,
-        )
+        found = measure_perf_stage(stages, 'global_lookup') do
+          @workspace.find_definition_token_global(
+            token.lexeme,
+            preferred_uri: uri,
+            before_line: lsp_line + 1,
+            before_char: lsp_char + 1,
+          )
+        end
         return nil unless found
 
         {
@@ -2538,25 +2695,30 @@ module MilkTea
         nil
       end
 
-      def resolve_implementation_locations(params)
+      def resolve_implementation_locations(params, stages: nil)
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
 
-        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        token = measure_perf_stage(stages, 'token') { @workspace.find_token_at(uri, lsp_line, lsp_char) }
         return [] unless token&.type == :identifier
 
-        analysis = @workspace.get_analysis(uri)
+        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
         return [] unless analysis
 
-        if (target = resolve_interface_method_target_at_token(analysis, token))
-          return interface_method_implementation_locations(target[:interface], target[:method])
+        target = measure_perf_stage(stages, 'target_lookup') { resolve_interface_method_target_at_token(analysis, token) }
+        if target
+          return measure_perf_stage(stages, 'implementation_lookup') do
+            interface_method_implementation_locations(target[:interface], target[:method])
+          end
         end
 
-        interface_binding = resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
+        interface_binding = measure_perf_stage(stages, 'binding_lookup') do
+          resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
+        end
         return [] unless interface_binding
 
-        interface_implementation_locations(interface_binding)
+        measure_perf_stage(stages, 'implementation_lookup') { interface_implementation_locations(interface_binding) }
       end
 
       def resource_document_link(uri, file_path, token)

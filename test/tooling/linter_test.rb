@@ -2186,6 +2186,23 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     assert_equal :hint, warning.severity
   end
 
+  def test_profile_records_redundant_unsafe_recheck_phases
+    profile = MilkTea::Linter::Profile.new
+
+    warnings = lint_with_sema(<<~MT, path: "demo.mt", profile:)
+      function main() -> ptr[int]:
+          var value: int = 0
+          return unsafe: ptr[int]<-ptr_of(value)
+    MT
+
+    assert warnings.any? { |warning| warning.code == "redundant-unsafe" }
+    assert_includes profile.timings_ms.keys, "rule.redundant_unsafe"
+    assert_includes profile.timings_ms.keys, "redundant_unsafe_recheck.sema"
+    assert_includes profile.timings_ms.keys, "redundant_unsafe_baseline.sema"
+    assert_operator profile.counts.fetch("redundant_unsafe_recheck.sema", 0), :>=, 1
+    assert_includes profile.summary(limit: 20), "redundant_unsafe_recheck.sema"
+  end
+
   def test_warns_on_redundant_inline_unsafe_expression_even_with_unrelated_later_error
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> ptr[int]:
