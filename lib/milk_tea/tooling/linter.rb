@@ -24,6 +24,8 @@ module MilkTea
       redundant-cast
       reserved-primitive-name
     ].freeze
+    LINT_TIERS = %i[fast full].freeze
+    EXPENSIVE_LINT_RULE_CODES = %w[redundant-unsafe redundant-cast].to_set.freeze
     STATIC_QUICK_FIX_TITLES = {
       "prefer-let" => "Replace 'var' with 'let'",
       "redundant-else" => "Remove redundant else",
@@ -111,7 +113,15 @@ module MilkTea
       end
     end
 
-    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_facts: UNSET, unresolved_import_paths: UNSET, profile: nil)
+    StatementFlowAnalysis = Data.define(:graph, :reachability, :nullability, :constant_propagation, :loop_body_nodes)
+    DeadAssignmentAnalysis = Data.define(:graph, :liveness, :readable_bindings, :locally_declared)
+
+    def self.normalize_lint_tier(tier)
+      normalized = tier.to_s.strip.downcase.to_sym
+      LINT_TIERS.include?(normalized) ? normalized : :full
+    end
+
+    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_facts: UNSET, unresolved_import_paths: UNSET, profile: nil, lint_tier: :full)
       sema_facts_provided = !sema_facts.equal?(UNSET)
       unresolved_import_paths_provided = !unresolved_import_paths.equal?(UNSET)
       context = nil
@@ -128,7 +138,16 @@ module MilkTea
       imported_modules ||= imported_modules_from_facts(ast, sema_facts)
       trivia = profile_phase(profile, "lex_trivia") { Lexer.lex_with_trivia(source, path:).trivia }
       suppressions = profile_phase(profile, "parse_suppressions") { parse_suppressions(trivia) }
-      warnings = new(path:, sema_facts:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast, profile:).lint(ast)
+      warnings = new(
+        path:,
+        sema_facts:,
+        source:,
+        unresolved_import_paths:,
+        imported_modules:,
+        source_ast: ast,
+        profile:,
+        lint_tier: normalize_lint_tier(lint_tier),
+      ).lint(ast)
       warnings = profile_phase(profile, "apply_suppressions") { apply_suppressions(warnings, suppressions) }
 
       # Layer in config-file defaults before per-call overrides
@@ -804,7 +823,7 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_facts: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil)
+    def initialize(path: nil, sema_facts: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil, lint_tier: :full)
       @path = path
       @sema_facts = sema_facts
       @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
@@ -825,12 +844,17 @@ module MilkTea
       @contextual_redundant_cast_details = {}
       @recheck_context_cache = {}
       @reserved_primitive_name_fixes = []
+      @lint_tier = self.class.normalize_lint_tier(lint_tier)
+      @cfg_binding_resolution = nil
+      @cfg_binding_resolution_computed = false
+      @statement_flow_analysis_cache = {}
+      @dead_assignment_analysis_cache = {}
     end
 
     def lint(ast)
       @source_ast ||= ast
       visit_source_file(ast)
-      profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings }
+      profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings } if expensive_lint_rules_enabled?
       @warnings
     end
 
@@ -1535,7 +1559,7 @@ module MilkTea
         profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
         profile_phase("rule.redundant_read_cast") { emit_redundant_read_cast_warnings(function.body) }
         profile_phase("rule.redundant_read_release_temp") { emit_redundant_read_release_temp_warnings(function.body) }
-        profile_phase("rule.redundant_unsafe") { emit_redundant_unsafe_warnings(function.body) }
+        profile_phase("rule.redundant_unsafe") { emit_redundant_unsafe_warnings(function.body) } if expensive_lint_rules_enabled?
         profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
         profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
       end
@@ -1869,7 +1893,7 @@ module MilkTea
           emit_prefer_let_else_warnings(expression.body)
           emit_redundant_read_cast_warnings(expression.body)
           emit_redundant_read_release_temp_warnings(expression.body)
-          emit_redundant_unsafe_warnings(expression.body)
+          emit_redundant_unsafe_warnings(expression.body) if expensive_lint_rules_enabled?
           emit_loop_single_iteration_warnings(expression.body)
         end
       when AST::AwaitExpr
@@ -2423,23 +2447,13 @@ module MilkTea
     end
 
     def emit_dead_assignment_warnings(stmts)
-      graph = CFG::Builder.new(
-        ignore_name: method(:ignored_binding_name?),
-        binding_resolution: cfg_binding_resolution,
-        local_decl_without_initializer_writes: true,
-      ).build(stmts)
-      liveness = CFG::Liveness.solve(graph)
-      readable_bindings = graph.read_bindings
+      analysis = dead_assignment_analysis(stmts)
+      return unless analysis
 
-      # Only flag assignments to locally declared bindings. Writes to globals
-      # (names that are assigned but never declared in this function's body)
-      # always escape via persistent state and must never be flagged.
-      locally_declared = Set.new
-      graph.each_node do |node|
-        node.writes_info.each do |w|
-          locally_declared << w[:binding_key] if w[:origin] == :declaration
-        end
-      end
+      graph = analysis.graph
+      liveness = analysis.liveness
+      readable_bindings = analysis.readable_bindings
+      locally_declared = analysis.locally_declared
 
       graph.each_node do |node|
         node.writes_info.each do |write|
@@ -2466,8 +2480,11 @@ module MilkTea
     end
 
     def emit_unreachable_warnings(stmts)
-      graph      = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution).build(stmts)
-      reachable  = CFG::Reachability.solve(graph)
+      analysis = statement_flow_analysis(stmts)
+      return unless analysis
+
+      graph = analysis.graph
+      reachable = analysis.reachability
 
       graph.each_node do |node|
         next if reachable.reachable_ids.include?(node.id)
@@ -2544,14 +2561,65 @@ module MilkTea
     end
 
     def cfg_binding_resolution
-      binding_resolution = @sema_facts&.binding_resolution
-      return nil unless binding_resolution
+      return @cfg_binding_resolution if @cfg_binding_resolution_computed
 
-      CFG::BindingResolution.new(
-        identifier_binding_ids: binding_resolution.identifier_binding_ids,
-        declaration_binding_ids: binding_resolution.declaration_binding_ids,
-        mutating_argument_identifier_ids: binding_resolution.mutating_argument_identifier_ids,
-      )
+      binding_resolution = @sema_facts&.binding_resolution
+      @cfg_binding_resolution = if binding_resolution
+                                  CFG::BindingResolution.new(
+                                    identifier_binding_ids: binding_resolution.identifier_binding_ids,
+                                    declaration_binding_ids: binding_resolution.declaration_binding_ids,
+                                    mutating_argument_identifier_ids: binding_resolution.mutating_argument_identifier_ids,
+                                  )
+                                end
+      @cfg_binding_resolution_computed = true
+      @cfg_binding_resolution
+    end
+
+    def statement_flow_analysis(stmts)
+      return nil if stmts.nil? || stmts.empty?
+
+      @statement_flow_analysis_cache[stmts.object_id] ||= begin
+        binding_resolution = cfg_binding_resolution
+        graph = profile_phase("flow.graph") do
+          CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
+        end
+        reachability = profile_phase("flow.reachability") { CFG::Reachability.solve(graph) }
+        nullability = profile_phase("flow.nullability") { CFG::NullabilityFlow.solve(graph) }
+        constant_propagation = profile_phase("flow.constant_propagation") do
+          CFG::ConstantPropagation.solve(graph, binding_resolution:, strict_binding_ids: !binding_resolution.nil?)
+        end
+        loop_body_nodes = profile_phase("flow.loop_body_nodes") { compute_loop_body_nodes(graph) }
+        StatementFlowAnalysis.new(graph:, reachability:, nullability:, constant_propagation:, loop_body_nodes:)
+      end
+    end
+
+    def dead_assignment_analysis(stmts)
+      return nil if stmts.nil? || stmts.empty?
+
+      @dead_assignment_analysis_cache[stmts.object_id] ||= begin
+        binding_resolution = cfg_binding_resolution
+        graph = profile_phase("dead_assignment.graph") do
+          CFG::Builder.new(
+            ignore_name: method(:ignored_binding_name?),
+            binding_resolution:,
+            local_decl_without_initializer_writes: true,
+          ).build(stmts)
+        end
+        liveness = profile_phase("dead_assignment.liveness") { CFG::Liveness.solve(graph) }
+        locally_declared = profile_phase("dead_assignment.locals") do
+          graph.each_node.each_with_object(Set.new) do |node, bindings|
+            node.writes_info.each do |write|
+              bindings << write[:binding_key] if write[:origin] == :declaration
+            end
+          end
+        end
+        DeadAssignmentAnalysis.new(
+          graph:,
+          liveness:,
+          readable_bindings: graph.read_bindings,
+          locally_declared:,
+        )
+      end
     end
 
     def cfg_identifier_binding_key(identifier)
@@ -2563,6 +2631,10 @@ module MilkTea
 
     def ignored_binding_name?(name)
       name == "_" || name.start_with?("_")
+    end
+
+    def expensive_lint_rules_enabled?
+      @lint_tier == :full
     end
 
     # ── self-assignment ────────────────────────────────────────────────────
@@ -2613,12 +2685,13 @@ module MilkTea
     def emit_constant_condition_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      binding_resolution = cfg_binding_resolution
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
-      cp    = CFG::ConstantPropagation.solve(graph, binding_resolution:, strict_binding_ids: !binding_resolution.nil?)
+      analysis = statement_flow_analysis(stmts)
+      return unless analysis
 
-      # Precompute which nodes are inside loops by finding back-edges (a node reachable from its successors).
-      loop_bodies = compute_loop_body_nodes(graph)
+      binding_resolution = cfg_binding_resolution
+      graph = analysis.graph
+      cp = analysis.constant_propagation
+      loop_bodies = analysis.loop_body_nodes
 
       graph.each_node do |node|
         cond_expr, line, keyword_pattern, skip_node =
@@ -2725,9 +2798,11 @@ module MilkTea
     def emit_redundant_null_check_warnings(stmts)
       return if stmts.nil? || stmts.empty?
 
-      binding_resolution = cfg_binding_resolution
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution:).build(stmts)
-      nf    = CFG::NullabilityFlow.solve(graph)
+      analysis = statement_flow_analysis(stmts)
+      return unless analysis
+
+      graph = analysis.graph
+      nf = analysis.nullability
 
       graph.each_node do |node|
         next unless node.kind == :if_condition
@@ -2864,8 +2939,11 @@ module MilkTea
       cfg_resolution = cfg_binding_resolution
       return unless binding_resolution && binding_types && cfg_resolution
 
-      graph = CFG::Builder.new(ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_resolution).build(stmts)
-      nf = CFG::NullabilityFlow.solve(graph)
+      analysis = statement_flow_analysis(stmts)
+      return unless analysis
+
+      graph = analysis.graph
+      nf = analysis.nullability
       seen = Set.new
 
       graph.each_node do |node|

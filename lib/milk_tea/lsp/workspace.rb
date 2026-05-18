@@ -40,9 +40,11 @@ module MilkTea
         @facts_cache_mutex = Mutex.new
         @facts_generation = Hash.new(0)
         @facts_state_mutex = Mutex.new
-        # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
-        # Avoids re-running Sema.check_collecting_errors when content is unchanged.
+        # Diagnostics cache: uri -> { fast: { content_hash:, diagnostics: }, full: { ... } }
         @diagnostics_cache = {}
+        @dependency_module_name_by_uri = {}
+        @dependency_imports_by_uri = {}
+        @reverse_import_dependents = Hash.new { |hash, key| hash[key] = Set.new }
         # Definition index: name -> { uri:, token: } — built lazily from symbols cache.
         # Caches known matching definitions without forcing a full-workspace index
         # build on the first global lookup.
@@ -73,6 +75,7 @@ module MilkTea
             @diagnostics_cache.clear
             @last_good_facts_cache.clear
             @last_good_tooling_snapshot_cache.clear
+            clear_dependency_index
           end
         end
       end
@@ -94,6 +97,7 @@ module MilkTea
             @diagnostics_cache.clear
             @last_good_facts_cache.clear
             @last_good_tooling_snapshot_cache.clear
+            clear_dependency_index
           end
         end
       end
@@ -142,10 +146,11 @@ module MilkTea
       end
 
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
-      def collect_diagnostics(uri)
+      def collect_diagnostics(uri, mode: :full)
         total_start = perf_logging? ? monotonic_time : nil
         content = get_content(uri)
         hash = content.hash
+        normalized_mode = normalize_diagnostics_mode(mode)
         cache_state = 'miss'
         lock_wait_ms = 0.0
         collect_ms = 0.0
@@ -155,7 +160,7 @@ module MilkTea
         @facts_cache_mutex.synchronize do
           generation = @facts_generation[uri]
           cached_snapshot = @tooling_snapshot_cache[uri]
-          entry = @diagnostics_cache[uri]
+          entry = @diagnostics_cache.dig(uri, normalized_mode)
           if entry && entry[:content_hash] == hash
             cache_state = 'hit'
             diagnostics = entry[:diagnostics]
@@ -169,7 +174,7 @@ module MilkTea
           @facts_cache_mutex.synchronize do
             generation = @facts_generation[uri]
             cached_snapshot = @tooling_snapshot_cache[uri]
-            entry = @diagnostics_cache[uri]
+            entry = @diagnostics_cache.dig(uri, normalized_mode)
             if entry && entry[:content_hash] == hash
               cache_state = 'hit'
               diagnostics = entry[:diagnostics]
@@ -187,6 +192,7 @@ module MilkTea
               platform_override: @platform_override,
               sema_snapshot: cached_snapshot,
               strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
+              lint_tier: normalized_mode == :fast ? :fast : :full,
             )
             collect_ms = elapsed_ms(collect_start) if collect_start
             diagnostics = result[:diagnostics]
@@ -198,7 +204,9 @@ module MilkTea
                 @last_good_tooling_snapshot_cache[uri] = snapshot if snapshot&.facts
                 @facts_cache[uri] = facts if facts
                 @last_good_facts_cache[uri] = facts if facts
-                @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
+                update_dependency_index(uri, facts)
+                @diagnostics_cache[uri] ||= {}
+                @diagnostics_cache[uri][normalized_mode] = { content_hash: hash, diagnostics: diagnostics }
               else
                 cache_state = 'stale'
               end
@@ -216,7 +224,7 @@ module MilkTea
           log_perf_breakdown(
             'workspace/collect_diagnostics',
             elapsed_ms(total_start),
-            "uri=#{uri} cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
+            "uri=#{uri} mode=#{normalized_mode} cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
           )
         end
       end
@@ -357,6 +365,7 @@ module MilkTea
                   @facts_cache[uri] = snapshot.facts
                   @last_good_facts_cache[uri] = snapshot.facts
                   @last_good_tooling_snapshot_cache[uri] = snapshot
+                  update_dependency_index(uri, snapshot.facts)
                 end
               else
                 cache_state = 'stale'
@@ -681,6 +690,7 @@ module MilkTea
           @diagnostics_cache.delete(uri)
           @last_good_facts_cache.delete(uri) if clear_last_good
           @last_good_tooling_snapshot_cache.delete(uri) if clear_last_good
+          delete_dependency_index(uri) if clear_last_good
         end
         @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
@@ -690,57 +700,95 @@ module MilkTea
         end
       end
 
-      def refresh_import_dependent_caches(changed_uri: nil)
-        open_document_uris = @document_state_mutex.synchronize do
-          @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
+      def normalize_diagnostics_mode(mode)
+        mode.to_s == 'fast' ? :fast : :full
+      end
+
+      def clear_dependency_index
+        @dependency_module_name_by_uri.clear
+        @dependency_imports_by_uri.clear
+        @reverse_import_dependents.clear
+      end
+
+      def update_dependency_index(uri, facts)
+        return unless facts
+
+        delete_dependency_index(uri)
+
+        @dependency_module_name_by_uri[uri] = facts.module_name if facts.module_name
+        imported_module_names = facts.imports.each_value.filter_map(&:name).to_set
+        @dependency_imports_by_uri[uri] = imported_module_names
+        imported_module_names.each do |module_name|
+          @reverse_import_dependents[module_name] << uri
         end
-        preserve_open_document_facts = changed_uri && @document_state_mutex.synchronize { @open_documents.key?(changed_uri) }
+      end
+
+      def delete_dependency_index(uri)
+        imported_module_names = @dependency_imports_by_uri.delete(uri) || Set.new
+        imported_module_names.each do |module_name|
+          dependents = @reverse_import_dependents[module_name]
+          dependents.delete(uri)
+          @reverse_import_dependents.delete(module_name) if dependents.empty?
+        end
+        @dependency_module_name_by_uri.delete(uri)
+      end
+
+      def dependent_open_document_uris_for(changed_uri, open_document_uris)
+        return open_document_uris.reject { |open_uri| open_uri == changed_uri } unless changed_uri
+
+        module_name = @dependency_module_name_by_uri[changed_uri] || infer_module_name_for_uri(changed_uri)
+        return open_document_uris.reject { |open_uri| open_uri == changed_uri } unless module_name
+
+        dependents = @reverse_import_dependents[module_name]
+        open_document_uris.select { |open_uri| open_uri != changed_uri && dependents.include?(open_uri) }
+      end
+
+      def infer_module_name_for_uri(uri)
+        path = uri_to_path(uri)
+        return nil unless path && File.file?(path)
+
+        resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
+        return nil if resolution.error_message
+
+        loader = ModuleLoader.new(
+          module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+          package_graph: package_graph_for_path(path, locked: resolution.locked),
+          platform: effective_platform_for_path(path),
+        )
+        loader.send(:inferred_module_name_for_path, path)
+      rescue StandardError
+        nil
+      end
+
+      def refresh_import_dependent_caches(changed_uri: nil)
+        all_open_document_uris = @document_state_mutex.synchronize do
+          @open_documents.keys
+        end
+        open_document_uris = @facts_cache_mutex.synchronize do
+          dependent_open_document_uris_for(changed_uri, all_open_document_uris)
+        end
 
         @facts_state_mutex.synchronize do
           @facts_cache_mutex.synchronize do
-            preserved_open_facts = {}
-            preserved_open_snapshots = {}
-            preserved_open_last_good_facts = if preserve_open_document_facts
-                                               open_document_uris.each_with_object({}) do |open_uri, preserved|
-                                                 facts = @last_good_facts_cache[open_uri]
-                                                 preserved[open_uri] = facts if facts
-                                               end
-                                             else
-                                               {}
-                                             end
-            preserved_open_last_good_snapshots = if preserve_open_document_facts
-                                                   open_document_uris.each_with_object({}) do |open_uri, preserved|
-                                                     snapshot = @last_good_tooling_snapshot_cache[open_uri]
-                                                     preserved[open_uri] = snapshot if snapshot
-                                                   end
-                                                 else
-                                                   {}
-                                                 end
-            preserved_changed_last_good_facts = preserve_open_document_facts && changed_uri ? @last_good_facts_cache[changed_uri] : nil
-            preserved_changed_last_good_snapshot = preserve_open_document_facts && changed_uri ? @last_good_tooling_snapshot_cache[changed_uri] : nil
+            preserved_open_last_good_facts = all_open_document_uris.each_with_object({}) do |open_uri, preserved|
+              facts = @last_good_facts_cache[open_uri]
+              preserved[open_uri] = facts if facts
+            end
+            preserved_open_last_good_snapshots = all_open_document_uris.each_with_object({}) do |open_uri, preserved|
+              snapshot = @last_good_tooling_snapshot_cache[open_uri]
+              preserved[open_uri] = snapshot if snapshot
+            end
             @shared_module_cache.clear
             @facts_cache.clear
             @tooling_snapshot_cache.clear
             @diagnostics_cache.clear
             @last_good_facts_cache.clear
             @last_good_tooling_snapshot_cache.clear
-            preserved_open_snapshots.each do |open_uri, snapshot|
-              @tooling_snapshot_cache[open_uri] = snapshot
-            end
-            preserved_open_facts.each do |open_uri, facts|
-              @facts_cache[open_uri] = facts
-            end
             preserved_open_last_good_snapshots.each do |open_uri, snapshot|
               @last_good_tooling_snapshot_cache[open_uri] = snapshot
             end
             preserved_open_last_good_facts.each do |open_uri, facts|
               @last_good_facts_cache[open_uri] = facts
-            end
-            if changed_uri && preserved_changed_last_good_facts
-              @last_good_facts_cache[changed_uri] = preserved_changed_last_good_facts
-            end
-            if changed_uri && preserved_changed_last_good_snapshot
-              @last_good_tooling_snapshot_cache[changed_uri] = preserved_changed_last_good_snapshot
             end
           end
         end

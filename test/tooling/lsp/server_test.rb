@@ -1604,6 +1604,55 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_publish_diagnostics_uses_fast_lane_until_save
+    protocol = RecordingProtocol.new
+    server = MilkTea::LSP::Server.new(protocol: protocol)
+    uri = "file:///tmp/lsp_fast_publish_diagnostics.mt"
+    source = <<~MT
+      function main(value: int) -> int:
+          unsafe:
+              let copy = value + 1
+          return int<-value
+    MT
+
+    server.send(:handle_did_open, {
+      "textDocument" => {
+        "uri" => uri,
+        "text" => source,
+      }
+    })
+
+    open_publish = Timeout.timeout(5) do
+      loop do
+        message = protocol.notifications.pop
+        break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
+      end
+    end
+    open_codes = open_publish.dig("params", :diagnostics).map { |diagnostic| diagnostic[:code] }
+
+    refute_includes open_codes, "redundant-unsafe"
+    refute_includes open_codes, "redundant-cast"
+
+    server.send(:handle_did_save, {
+      "textDocument" => {
+        "uri" => uri,
+      }
+    })
+
+    save_publish = Timeout.timeout(5) do
+      loop do
+        message = protocol.notifications.pop
+        break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
+      end
+    end
+    save_codes = save_publish.dig("params", :diagnostics).map { |diagnostic| diagnostic[:code] }
+
+    assert_includes save_codes, "redundant-unsafe"
+    assert_includes save_codes, "redundant-cast"
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
   def test_perf_log_context_includes_short_uri_for_threshold_logs
     server = MilkTea::LSP::Server.new
     root_path = File.join(Dir.tmpdir, "milk-tea-lsp-perf")
