@@ -7,11 +7,12 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
-      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false)
+      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false, lint_tier: :full)
         total_start = perf_logging? ? monotonic_time : nil
         diagnostics = []
         sema_facts = nil
         unresolved_import_paths = []
+        normalized_lint_tier = Linter.normalize_lint_tier(lint_tier)
         parse_ms = 0.0
         imports_ms = 0.0
         sema_ms = 0.0
@@ -73,7 +74,7 @@ module MilkTea
           end
 
           begin
-            if strict_current_root_diagnostics
+            if strict_current_root_diagnostics && normalized_lint_tier == :full
               strict_root_start = total_start ? monotonic_time : nil
               collect_strict_root_diagnostics(
                 path,
@@ -107,6 +108,7 @@ module MilkTea
             sema_facts: sema_facts,
             unresolved_import_paths: unresolved_import_paths,
             profile: lint_profile,
+            lint_tier: normalized_lint_tier,
           ).each do |w|
             diagnostics << format_warning(w, content: content)
           end
@@ -122,7 +124,7 @@ module MilkTea
       ensure
         if total_start
           lint_breakdown = lint_profile&.summary(limit: 12)
-          detail = "uri=#{uri} diagnostics=#{diagnostics.length} facts=#{sema_facts ? 'ok' : 'nil'} stages_ms=parse:#{parse_ms},imports:#{imports_ms},sema:#{sema_ms},strict_root:#{strict_root_ms},lint:#{lint_ms}"
+          detail = "uri=#{uri} lint_tier=#{normalized_lint_tier} diagnostics=#{diagnostics.length} facts=#{sema_facts ? 'ok' : 'nil'} stages_ms=parse:#{parse_ms},imports:#{imports_ms},sema:#{sema_ms},strict_root:#{strict_root_ms},lint:#{lint_ms}"
           detail += " lint_passes_ms=#{lint_breakdown}" unless lint_breakdown.nil? || lint_breakdown.empty?
           log_perf_breakdown(
             'diagnostics.collect',

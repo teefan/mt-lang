@@ -2351,6 +2351,44 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     assert_includes profile.summary(limit: 20), "redundant_unsafe_recheck.sema"
   end
 
+  def test_fast_lint_tier_skips_expensive_recheck_rules
+    warnings = lint_with_sema(<<~MT, path: "demo.mt", lint_tier: :fast, ignore: Set["unused-local"])
+      function main(value: int) -> int:
+          unsafe:
+              let copy = value + 1
+          return int<-value
+    MT
+
+    codes = warnings.map(&:code)
+    refute_includes codes, "redundant-unsafe"
+    refute_includes codes, "redundant-cast"
+  end
+
+  def test_profile_reuses_shared_flow_analyses_across_rules
+    profile = MilkTea::Linter::Profile.new
+
+    warnings = lint_with_sema(<<~MT, path: "demo.mt", profile:, ignore: Set["unused-local", "prefer-let"])
+      function main(handle: ptr[int]?) -> int:
+          var copy = 0
+          if true:
+              copy = 1
+          let value_ptr = handle
+          if value_ptr == null:
+              fatal("missing")
+          unsafe:
+              return read(ptr[int]<-value_ptr)
+    MT
+
+    assert warnings.any? { |warning| warning.code == "constant-condition" }
+    assert warnings.any? { |warning| warning.code == "redundant-read-cast" }
+    assert_equal 1, profile.counts.fetch("flow.graph", 0)
+    assert_equal 1, profile.counts.fetch("flow.reachability", 0)
+    assert_equal 1, profile.counts.fetch("flow.nullability", 0)
+    assert_equal 1, profile.counts.fetch("flow.constant_propagation", 0)
+    assert_equal 1, profile.counts.fetch("dead_assignment.graph", 0)
+    assert_equal 1, profile.counts.fetch("dead_assignment.liveness", 0)
+  end
+
   def test_warns_on_redundant_inline_unsafe_expression_even_with_unrelated_later_error
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> ptr[int]:

@@ -464,6 +464,106 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_get_facts_uses_last_good_fallback_after_dependency_refresh_from_closed_document
+    Dir.mktmpdir("lsp_workspace_closed_dependency_refresh") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+      dependency_source = <<~MT
+        public function answer() -> int:
+            return 42
+      MT
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      File.write(dependency_path, dependency_source)
+      File.write(main_path, main_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(dependency_uri, dependency_source)
+      workspace.open_document(main_uri, main_source)
+      refute_nil workspace.get_facts(main_uri)
+
+      workspace.close_document(dependency_uri)
+
+      assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
+      assert_nil workspace.instance_variable_get(:@tooling_snapshot_cache)[main_uri]
+      refute_nil workspace.instance_variable_get(:@last_good_tooling_snapshot_cache)[main_uri]
+      assert_nil workspace.instance_variable_get(:@facts_cache)[main_uri]
+      refute_nil workspace.instance_variable_get(:@last_good_facts_cache)[main_uri]
+
+      state_mutex = workspace.instance_variable_get(:@facts_state_mutex)
+      state_lock_held = Queue.new
+      release_state_lock = Queue.new
+      holder = Thread.new do
+        state_mutex.synchronize do
+          state_lock_held << true
+          release_state_lock.pop
+        end
+      end
+      state_lock_held.pop
+
+      result = Queue.new
+      reader = Thread.new do
+        result << workspace.get_facts(main_uri)
+      end
+
+      assert reader.join(0.2), "expected last-good facts to bypass facts-state lock after closed-document dependency refresh"
+      refute_nil result.pop
+    ensure
+      release_state_lock << true if release_state_lock
+      holder&.join(1)
+      reader&.join(1)
+      workspace&.shutdown
+    end
+  end
+
+  def test_refresh_import_dependent_caches_only_returns_actual_open_dependents
+    Dir.mktmpdir("lsp_workspace_reverse_import_dependents") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+      unrelated_path = File.join(dir, "other.mt")
+
+      File.write(dependency_path, <<~MT)
+        public function answer() -> int:
+            return 42
+      MT
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      unrelated_source = <<~MT
+        function other() -> int:
+            return 7
+      MT
+      File.write(main_path, main_source)
+      File.write(unrelated_path, unrelated_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      unrelated_uri = path_to_uri(unrelated_path)
+      workspace.open_document(dependency_uri, File.read(dependency_path))
+      workspace.open_document(main_uri, main_source)
+      workspace.open_document(unrelated_uri, unrelated_source)
+
+      refute_nil workspace.get_facts(main_uri)
+      refute_nil workspace.get_facts(unrelated_uri)
+
+      assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_open_background_document_does_not_wait_for_facts_state_mutex
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background_lock.mt"
