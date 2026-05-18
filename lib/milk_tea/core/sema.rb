@@ -26,7 +26,7 @@ module MilkTea
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :editable_receiver_expression_ids, :binding_types)
+    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :mutable_receiver_expression_ids, :binding_types)
     class FlowScope
       def initialize = (@bindings = {})
       def [](key) = @bindings[key]
@@ -114,7 +114,7 @@ module MilkTea
       end
     end
 
-    BUILTIN_TYPE_NAMES = Types::BUILTIN_PRIMITIVE_NAMES
+    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[Option Result]).freeze
 
     def self.check(ast, imported_modules: {}, allow_missing_imports: false)
       Checker.new(ast, imported_modules:, allow_missing_imports:).check
@@ -170,7 +170,7 @@ module MilkTea
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
         @mutating_argument_identifier_ids = {}
-        @editable_receiver_expression_ids = {}
+        @mutable_receiver_expression_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @unsafe_statement_lines = []
@@ -282,8 +282,25 @@ module MilkTea
 
       def install_builtin_types
         BUILTIN_TYPE_NAMES.each do |name|
-          @types[name] = name == "str" ? Types::StringView.new : Types::Primitive.new(name)
+          @types[name] = case name
+                         when "str"
+                           Types::StringView.new
+                         when "Option"
+                           builtin_option_type
+                         when "Result"
+                           builtin_result_type
+                         else
+                           Types::Primitive.new(name)
+                         end
         end
+      end
+
+      def builtin_option_type
+        Types::BUILTIN_OPTION_TYPE
+      end
+
+      def builtin_result_type
+        Types::BUILTIN_RESULT_TYPE
       end
 
       def snapshot_methods
@@ -612,7 +629,7 @@ module MilkTea
             when AST::ForeignFunctionDecl
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
               @top_level_functions[decl.name] = declare_function_binding(decl)
-            when AST::MethodsBlock
+            when AST::ExtendingBlock
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
               decl.methods.each do |method|
@@ -660,7 +677,7 @@ module MilkTea
           body_params << value_binding(
             name: "this",
             type: receiver_type,
-            mutable: method_kind == :editable,
+            mutable: method_kind == :mutable,
             kind: :param,
           )
         end
@@ -714,7 +731,7 @@ module MilkTea
         call_params = body_params
         function_receiver_type = nil
         if instance_method
-          receiver_mutable = method_kind == :editable
+          receiver_mutable = method_kind == :mutable
           call_params = body_params.drop(1)
           function_receiver_type = receiver_type
         end
@@ -1153,7 +1170,7 @@ module MilkTea
         else
           raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: method kind does not match") if method.type.receiver_type.nil?
 
-          expected_mutable = interface_method.kind == :editable
+          expected_mutable = interface_method.kind == :mutable
           actual_mutable = method.type.receiver_mutable
           if actual_mutable != expected_mutable
             raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver mutability does not match")
@@ -1488,7 +1505,7 @@ module MilkTea
           identifier_binding_ids: identifier_binding_ids,
           declaration_binding_ids: declaration_binding_ids,
           mutating_argument_identifier_ids: {},
-          editable_receiver_expression_ids: {},
+          mutable_receiver_expression_ids: {},
           binding_types: {},
         )
       end
@@ -1841,7 +1858,7 @@ module MilkTea
             success_type ||= declared_type || @error_type
             error_type ||= @error_type if statement.else_binding
           else
-            raise_sema_error("let-else initializer for #{statement.name} must be nullable, std.maybe.Maybe[T], or std.status.Status[T, E], got #{inferred_type}") unless success_type
+            raise_sema_error("let-else initializer for #{statement.name} must be nullable, Option[T], or Result[T, E], got #{inferred_type}") unless success_type
           end
 
           if discard_binding && declared_type
@@ -1849,7 +1866,7 @@ module MilkTea
           end
 
           if statement.else_binding && !error_type
-            raise_sema_error("let-else error binding for #{statement.name} requires std.status.Status[T, E], got #{inferred_type}")
+            raise_sema_error("let-else error binding for #{statement.name} requires Result[T, E], got #{inferred_type}")
           end
 
           if declared_type && let_else_source_type?(declared_type)
@@ -2122,28 +2139,28 @@ module MilkTea
       end
 
       def let_else_source_type?(type)
-        type.is_a?(Types::Nullable) || status_let_else_type?(type) || maybe_let_else_type?(type)
+        type.is_a?(Types::Nullable) || result_let_else_type?(type) || option_let_else_type?(type)
       end
 
       def let_else_success_type(type)
         return @error_type if error_type?(type)
         return type.base if type.is_a?(Types::Nullable)
-        return type.arm("some").fetch("value") if maybe_let_else_type?(type)
-        return unless status_let_else_type?(type)
+        return type.arm("some").fetch("value") if option_let_else_type?(type)
+        return unless result_let_else_type?(type)
 
-        type.arm("ok").fetch("value")
+        type.arm("success").fetch("value")
       end
 
       def let_else_error_type(type)
         return @error_type if error_type?(type)
-        return unless status_let_else_type?(type)
+        return unless result_let_else_type?(type)
 
-        type.arm("err").fetch("error")
+        type.arm("failure").fetch("error")
       end
 
-      def maybe_let_else_type?(type)
+      def option_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name == "std.maybe" && type.name == "Maybe"
+        return false unless type.module_name.nil? && type.name == "Option"
 
         some_fields = type.arm("some")
         none_fields = type.arm("none")
@@ -2151,14 +2168,14 @@ module MilkTea
           none_fields && none_fields.empty?
       end
 
-      def status_let_else_type?(type)
+      def result_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name == "std.status" && type.name == "Status"
+        return false unless type.module_name.nil? && type.name == "Result"
 
-        ok_fields = type.arm("ok")
-        err_fields = type.arm("err")
-        ok_fields && ok_fields.length == 1 && ok_fields.key?("value") &&
-          err_fields && err_fields.length == 1 && err_fields.key?("error")
+        success_fields = type.arm("success")
+        failure_fields = type.arm("failure")
+        success_fields && success_fields.length == 1 && success_fields.key?("value") &&
+          failure_fields && failure_fields.length == 1 && failure_fields.key?("error")
       end
 
       def check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
@@ -3139,8 +3156,8 @@ module MilkTea
             scopes:,
             receiver_type: infer_method_receiver_type(receiver, scopes:, member_name: expression.callee.member),
           ) if callable.type_params.any?
-          record_editable_receiver_expression(receiver) if callable.type.receiver_mutable
-          raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
+          record_mutable_receiver_expression(receiver) if callable.type.receiver_mutable
+          raise_sema_error("cannot call mutable method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -3605,10 +3622,10 @@ module MilkTea
         @mutating_argument_identifier_ids[argument.value.object_id] = true
       end
 
-      def record_editable_receiver_expression(receiver)
+      def record_mutable_receiver_expression(receiver)
         return unless receiver
 
-        @editable_receiver_expression_ids[receiver.object_id] = true
+        @mutable_receiver_expression_ids[receiver.object_id] = true
       end
 
       def check_format_string_literal(format_string, scopes:)
@@ -4068,13 +4085,13 @@ module MilkTea
 
         case kind
         when :str_builder_clear
-          record_editable_receiver_expression(receiver)
-          raise_sema_error("cannot call editable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          record_mutable_receiver_expression(receiver)
+          raise_sema_error("cannot call mutable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_builder_assign, :str_builder_append
-          record_editable_receiver_expression(receiver)
-          raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          record_mutable_receiver_expression(receiver)
+          raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
           ensure_argument_assignable!(
@@ -5281,7 +5298,7 @@ module MilkTea
           raise_sema_error("for iterator #{type}.iter expects 0 arguments")
         end
         if iter_method.type.receiver_mutable
-          raise_sema_error("for iterator #{type}.iter cannot be an editable method")
+          raise_sema_error("for iterator #{type}.iter cannot be a mutable method")
         end
 
         iterator_type = iter_method.type.return_type
@@ -5436,7 +5453,7 @@ module MilkTea
           begin
             receiver_type = resolve_type_ref(type_ref)
             unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView)
-              raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
+              raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
             end
 
             return [receiver_type, receiver_type, [], {}]
@@ -5452,7 +5469,7 @@ module MilkTea
 
         receiver_type = resolve_type_ref(type_ref)
         unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView)
-          raise_sema_error("methods target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
+          raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
         end
 
         [receiver_type, receiver_type, [], {}]
@@ -5467,7 +5484,7 @@ module MilkTea
           value.name.parts.first
         end
 
-        raise_sema_error("methods target #{type_ref} must use the receiver type parameters directly") if names.any?(&:nil?)
+        raise_sema_error("extending target #{type_ref} must use the receiver type parameters directly") if names.any?(&:nil?)
 
         names
       end
@@ -5483,7 +5500,7 @@ module MilkTea
 
         expected_names = generic_type.type_params
         unless names == expected_names
-          raise_sema_error("methods target #{type_ref} must use the receiver type parameters directly")
+          raise_sema_error("extending target #{type_ref} must use the receiver type parameters directly")
         end
 
         expected_names
@@ -6390,7 +6407,7 @@ module MilkTea
           identifier_binding_ids: @identifier_binding_ids.dup.freeze,
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
           mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
-          editable_receiver_expression_ids: @editable_receiver_expression_ids.dup.freeze,
+          mutable_receiver_expression_ids: @mutable_receiver_expression_ids.dup.freeze,
           binding_types: @binding_type_by_id.dup.freeze,
         )
       end

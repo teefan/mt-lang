@@ -138,11 +138,11 @@ let _ = initialize() else:
 Rules for `let ... else:`:
 
 - Only `let` supports an `else` block.
-- The initializer must have type `T?`, `std.maybe.Maybe[T]`, or `std.status.Status[T, E]`.
+- The initializer must have type `T?`, `Option[T]`, or `Result[T, E]`.
 - For `T?`, the bound name has type `T`.
-- For `std.maybe.Maybe[T]`, the bound name is `some.value`.
-- For `std.status.Status[T, E]`, the bound name is `ok.value`.
-- `else as error:` optionally binds the `err.error` value.
+- For `Option[T]`, the bound name is `some.value`.
+- For `Result[T, E]`, the bound name is `success.value`.
+- `else as error:` optionally binds the `failure.error` value.
 - `let _ = expr else:` checks success without binding a name.
 - The `else` block must terminate control flow.
 
@@ -191,7 +191,7 @@ Rules:
 - No-payload arms are bare member expressions: `Token.eof`.
 - `align(...)` must be a positive power of two.
 
-Generic variants and structs are supported, for example `Maybe[int]`.
+Generic variants and structs are supported, for example `Option[int]`.
 
 ## 6. Interfaces And Methods
 
@@ -199,13 +199,13 @@ Interface example:
 
 ```mt
 public interface Damageable:
-    editable function take_damage(amount: int) -> void
+    mutable function take_damage(amount: int) -> void
     function is_alive() -> bool
 ```
 
 Interface rules:
 
-- Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface bodies contain `function`, `mutable function`, or `static function` signatures.
 - Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
@@ -215,7 +215,7 @@ Interface rules:
 Method kinds:
 
 - `function` -> value receiver
-- `editable function` -> mutable receiver
+- `mutable function` -> mutable receiver
 - `static function` -> no receiver
 
 Method notes:
@@ -323,7 +323,7 @@ Loop forms:
 
 - `for i in 0..count:` for exclusive integer ranges
 - `for item in items:` for arrays, spans, and custom iterables
-- Custom iterable protocol: `items.iter()` must take no arguments, be a non-editable method, and return the iterator value.
+- Custom iterable protocol: `items.iter()` must take no arguments, be a non-mutable method, and return the iterator value.
 - Iterator forms: either `next() ->` nullable pointer-like item, or `next() -> bool` together with `current() -> T`.
 - `for left, right in xs, ys:` for parallel array/span iteration
 - Parallel `for` does not accept ranges.
@@ -413,6 +413,8 @@ Type constructors:
 - `array[T, N]`
 - `str_builder[N]`
 - `Task[T]`
+- `Option[T]`
+- `Result[T, E]`
 - `fn(params...) -> R`
 - `proc(params...) -> R`
 
@@ -584,7 +586,7 @@ Supported `await` contexts include:
 
 ## 15. Common Rejections
 
-Current implementation rejects:
+Current extending rejects:
 
 - interface methods with `async` or generic signatures
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
@@ -599,8 +601,8 @@ Current implementation rejects:
 struct Counter:
     value: int
 
-methods Counter:
-    editable function bump() -> void:
+extending Counter:
+    mutable function bump() -> void:
         this.value += 1
 
     function read() -> int:

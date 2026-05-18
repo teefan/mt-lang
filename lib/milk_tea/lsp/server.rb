@@ -1041,7 +1041,7 @@ module MilkTea
 
             new_line = source_line.sub(/\bvar\b/, 'let')
             actions << {
-              title: "Replace 'var' with 'let'",
+              title: Linter.quick_fix_title('prefer-let'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1092,7 +1092,7 @@ module MilkTea
             # Build the replacement: dedented body lines replacing `else:\nbody`
             new_body = lines[first_body_idx..body_end_idx].map { |l| l.sub(/\A    /, '') }.join
             actions << {
-              title: "Remove redundant else",
+              title: Linter.quick_fix_title('redundant-else'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1132,7 +1132,7 @@ module MilkTea
 
               new_body = lines[first_body_idx..body_end_idx].map { |line| line.sub(/\A    /, '') }.join
               actions << {
-                title: 'Remove redundant unsafe',
+                title: Linter.quick_fix_title('redundant-unsafe'),
                 kind: 'quickFix',
                 diagnostics: [diag],
                 edit: {
@@ -1152,7 +1152,7 @@ module MilkTea
               next if new_line == source_line
 
               actions << {
-                title: 'Remove redundant unsafe',
+                title: Linter.quick_fix_title('redundant-unsafe'),
                 kind: 'quickFix',
                 diagnostics: [diag],
                 edit: {
@@ -1173,7 +1173,7 @@ module MilkTea
             next unless source_line.match?(/\A\s*return\s*\z/)
 
             actions << {
-              title: 'Remove redundant return',
+              title: Linter.quick_fix_title('redundant-return'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1199,7 +1199,7 @@ module MilkTea
             next unless replacement
 
             actions << {
-              title: 'Remove redundant read cast',
+              title: Linter.quick_fix_title('redundant-read-cast'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1225,7 +1225,7 @@ module MilkTea
             next unless replacement
 
             actions << {
-              title: 'Remove redundant cast',
+              title: Linter.quick_fix_title('redundant-cast'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1246,7 +1246,7 @@ module MilkTea
             next unless fix
 
             actions << {
-              title: 'Inline read(...).release()',
+              title: Linter.quick_fix_title('redundant-read-release-temp'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1267,7 +1267,7 @@ module MilkTea
             next unless fix
 
             actions << {
-              title: 'Rewrite as let-else',
+              title: Linter.quick_fix_title('prefer-let-else'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1293,7 +1293,7 @@ module MilkTea
             next if replacement == argument_text
 
             actions << {
-              title: 'Pass lvalue directly',
+              title: Linter.quick_fix_title('directional-ffi-arg'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
@@ -1427,7 +1427,7 @@ module MilkTea
             end
             line_count = content.count("\n")
             actions << {
-              title: 'Apply all auto-fixes',
+              title: Linter::FIX_ALL_TITLE,
               kind: 'source.fixAll',
               edit: {
                 changes: {
@@ -1642,7 +1642,7 @@ module MilkTea
               return { isIncomplete: false, items: items }
             end
 
-            # Variant arm access: Option.None, Result.Ok, etc.
+            # Variant arm access: Option.none, Result.success, etc.
             if type.is_a?(Types::Variant)
               items = type.arm_names.filter_map do |aname|
                 next if !prefix.empty? && !aname.start_with?(prefix)
@@ -3077,8 +3077,8 @@ module MilkTea
       end
 
       def generic_function_lexical_scopes_for_declaration(decl, end_line: Float::INFINITY)
-        if decl.is_a?(AST::MethodsBlock)
-          receiver_type_params = generic_type_parameter_names_for_methods_block(decl)
+        if decl.is_a?(AST::ExtendingBlock)
+          receiver_type_params = generic_type_parameter_names_for_extending_block(decl)
           methods = Array(decl.methods)
           return methods.each_with_index.flat_map do |method, index|
             generic_method_lexical_scopes(
@@ -3506,7 +3506,7 @@ module MilkTea
       end
 
       def generic_type_parameter_header_token?(type)
-        [:function, :struct, :union, :enum, :flags, :variant, :type, :methods].include?(type)
+        [:function, :struct, :union, :enum, :flags, :variant, :type, :extending].include?(type)
       end
 
       def type_parameter_names_in_scope(analysis, line)
@@ -3531,8 +3531,8 @@ module MilkTea
       end
 
       def type_parameter_scopes_for_declaration(decl, end_line: Float::INFINITY)
-        if decl.is_a?(AST::MethodsBlock)
-          receiver_names = generic_type_parameter_names_for_methods_block(decl)
+        if decl.is_a?(AST::ExtendingBlock)
+          receiver_names = generic_type_parameter_names_for_extending_block(decl)
           methods = Array(decl.methods)
           return methods.each_with_index.filter_map do |method, index|
             names = receiver_names + generic_type_parameter_names_for_declaration(method)
@@ -3562,7 +3562,7 @@ module MilkTea
         Array(decl.type_params).filter_map { |type_param| type_param.respond_to?(:name) ? type_param.name : nil }
       end
 
-      def generic_type_parameter_names_for_methods_block(decl)
+      def generic_type_parameter_names_for_extending_block(decl)
         return [] unless decl.respond_to?(:type_name)
 
         type_ref = decl.type_name
@@ -3632,7 +3632,7 @@ module MilkTea
 
       # Returns true if the identifier at `index` is a variant/enum/flags member
       # declared directly in a type body — e.g. `none` or `some(value: T)` inside
-      # `variant Maybe[T]:`. Detects this by finding that the token is the first
+      # `variant Option[T]:`. Detects this by finding that the token is the first
       # non-trivia token on its (indented) line and the nearest less-indented line
       # starts with `variant`, `enum`, or `flags`.
       def variant_enum_member_declaration?(tokens, index)
@@ -3655,7 +3655,7 @@ module MilkTea
       end
 
       # Returns true if the token at `index` (accessed via `.`) is a member of a
-      # type name receiver, e.g. `Option.none`, `Outcome[int, str].ok`.
+      # type name receiver, e.g. `Option.none`, `Result[int, str].success`.
       def type_name_member_access?(tokens, index, analysis = nil)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return false unless dot_index && tokens[dot_index].type == :dot
@@ -4091,7 +4091,7 @@ module MilkTea
       end
 
       def interface_method_signature(binding)
-        keyword = binding.kind == :editable ? 'editable function' : 'function'
+        keyword = binding.kind == :mutable ? 'mutable function' : 'function'
         keyword = "async #{keyword}" if binding.async
         "#{keyword} #{binding.name}(#{format_params(binding.params)}) -> #{binding.return_type}"
       end
@@ -4402,8 +4402,8 @@ module MilkTea
       def method_signature(binding)
         params_str = format_params(binding.type.params)
         keyword = case binding.ast.kind
-                  when :editable
-                    "editable function"
+                  when :mutable
+                    "mutable function"
                   when :static
                     "static function"
                   else
@@ -4493,7 +4493,7 @@ module MilkTea
       end
 
       def builtin_type_constructor_hover_info(name, tokens, token_index)
-        return nil unless %w[array span].include?(name)
+        return nil unless %w[array span Option Result].include?(name)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -4521,10 +4521,15 @@ module MilkTea
           }
         end
 
-        docs = if name == 'array'
+        docs = case name
+               when 'array'
                  '`array[T, N]` is the built-in fixed-length array type.'
-               else
+               when 'span'
                  '`span[T]` is the built-in non-owning contiguous view type.'
+               when 'Option'
+                 '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
+               else
+                 '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
                end
 
         {

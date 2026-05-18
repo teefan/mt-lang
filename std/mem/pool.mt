@@ -74,12 +74,12 @@ public function create_for[T](slot_count: ptr_uint) -> Pool:
     return create_aligned(slot_size_for[T](), slot_count, ptr_uint<-align_of(T))
 
 
-methods Pool:
+extending Pool:
     public function remaining_slots() -> ptr_uint:
         return this.slot_count - this.used_count
 
 
-    public editable function alloc_bytes() -> ptr[ubyte]?:
+    public mutable function alloc_bytes() -> ptr[ubyte]?:
         let memory = this.memory else:
             return null
         let occupancy = this.occupancy else:
@@ -98,7 +98,7 @@ methods Pool:
         return null
 
 
-    public editable function alloc[T]() -> ptr[T]?:
+    public mutable function alloc[T]() -> ptr[T]?:
         let size = ptr_uint<-size_of(T)
         let alignment = ptr_uint<-align_of(T)
         let mask = alignment - 1
@@ -118,7 +118,7 @@ methods Pool:
         return unsafe: ptr[T]<-memory
 
 
-    public editable function release_bytes(slot: ptr[ubyte]?) -> bool:
+    public mutable function release_bytes(slot: ptr[ubyte]?) -> bool:
         if slot == null:
             return false
 
@@ -144,14 +144,14 @@ methods Pool:
         return false
 
 
-    public editable function release_slot[T](slot: ptr[T]?) -> bool:
+    public mutable function release_slot[T](slot: ptr[T]?) -> bool:
         if slot == null:
             return false
 
         return unsafe: this.release_bytes(ptr[ubyte]<-slot)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
         this.memory = null

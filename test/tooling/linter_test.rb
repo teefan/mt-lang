@@ -211,8 +211,8 @@ class MilkTeaLinterTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
-          editable function bump():
+      extending Counter:
+          mutable function bump():
               this.value += 1
 
       function main() -> int:
@@ -244,8 +244,8 @@ class MilkTeaLinterTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
-          editable function set(value: T):
+      extending Box[T]:
+          mutable function set(value: T):
               this.value = value
 
           static function build(value: T) -> Box[T]:
@@ -433,7 +433,7 @@ class MilkTeaLinterTest < Minitest::Test
         public struct String:
             value: str
 
-        methods String:
+        extending String:
             public function as_str() -> str:
                 return this.value
       MT
@@ -489,14 +489,14 @@ class MilkTeaLinterTest < Minitest::Test
 
   def test_does_not_report_import_used_in_match_arm_pattern
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      import std.maybe as maybe
+
 
       function main() -> int:
-          let value = maybe.Maybe[int].none()
+          let value = Option[int].none()
           match value:
-              maybe.Maybe.none:
+              Option.none:
                   return 0
-              maybe.Maybe.some as payload:
+              Option.some as payload:
                   return payload.value
     MT
 
@@ -521,11 +521,11 @@ class MilkTeaLinterTest < Minitest::Test
     Dir.mktmpdir("linter_unresolved_import") do |dir|
       path = File.join(dir, "main.mt")
       source = <<~MT
-        import std.maybe as maybe
+
         import test
 
         function main() -> int:
-            let value = maybe.Maybe[int].some(7)
+            let value = Option[int].some(7)
             return value.value
       MT
       File.write(path, source)
@@ -1019,14 +1019,14 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal :warning, w.severity
   end
 
-  # ── MethodsBlock linting ──────────────────────────────────────────────
+  # ── ExtendingBlock linting ──────────────────────────────────────────────
 
   def test_lints_methods_inside_methods_block
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           function get() -> int:
               let unused = 1
               return this.value
@@ -1042,7 +1042,7 @@ class MilkTeaLinterTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           function get() -> int:
               return this.value
     MT
@@ -1081,7 +1081,7 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
         public struct Counter:
             value: int
 
-        methods Counter:
+        extending Counter:
             public function read() -> int:
                 return this.value
       MT
@@ -1089,7 +1089,7 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
         public struct Counter:
             value: str
 
-        methods Counter:
+        extending Counter:
             public function read() -> str:
                 return this.value
       MT
@@ -1783,6 +1783,9 @@ class MilkTeaLinterRedundantReadCastTest < Minitest::Test
 
     assert_includes fixed, "return read(value_ptr)"
     refute_includes fixed, "read(ptr[int]<-value_ptr)"
+
+    analysis = MilkTea::Sema.check(MilkTea::Parser.parse(fixed, path: "demo.mt"), imported_modules: {})
+    assert_equal true, analysis.functions.key?("main")
   end
 end
 
@@ -1853,6 +1856,9 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
     assert_includes fixed, "return ch == 32 or ch == 9"
     refute_includes fixed, "ubyte<-32"
     refute_includes fixed, "ubyte<-9"
+
+    analysis = MilkTea::Sema.check(MilkTea::Parser.parse(fixed, path: "demo.mt"), imported_modules: {})
+    assert_equal true, analysis.functions.key?("is_ascii_space")
   end
 end
 
@@ -1864,8 +1870,8 @@ class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
-          editable function release() -> void:
+      extending Box:
+          mutable function release() -> void:
               pass
 
       function main(box_ptr: ptr[Box]) -> void:
@@ -1885,8 +1891,8 @@ class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
-          editable function release() -> void:
+      extending Box:
+          mutable function release() -> void:
               pass
 
       function main(box_ptr: ptr[Box]) -> int:
@@ -1904,8 +1910,8 @@ class MilkTeaLinterRedundantReadReleaseTempTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
-          editable function release() -> void:
+      extending Box:
+          mutable function release() -> void:
               pass
 
       function main(box_ptr: ptr[Box]) -> void:
@@ -1994,8 +2000,8 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
       public struct Values[T]:
           node: ptr[Node[T]]?
 
-      methods Values[T]:
-          public editable function next() -> const_ptr[T]?:
+      extending Values[T]:
+          public mutable function next() -> const_ptr[T]?:
               let current = this.node
               if current == null:
                   return null
@@ -2021,8 +2027,8 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
       public struct Values[T]:
           node: ptr[Node[T]]?
 
-      methods Values[T]:
-          public editable function next() -> const_ptr[T]?:
+      extending Values[T]:
+          public mutable function next() -> const_ptr[T]?:
               let current = this.node
               if current == null:
                   return null
@@ -2199,8 +2205,8 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
       struct Box[T]:
           data: ptr[T]
 
-      methods Box[T]:
-          editable function load(index: ptr_uint) -> T:
+      extending Box[T]:
+          mutable function load(index: ptr_uint) -> T:
               unsafe:
                   let item = ptr[T]<-this.data + index
                   return read(item)
@@ -2214,7 +2220,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           function copy() -> T:
               unsafe:
                   return this.value

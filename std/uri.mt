@@ -1,4 +1,3 @@
-import std.maybe as maybe
 import std.path as path
 import std.str as text
 import std.string as string
@@ -16,32 +15,32 @@ public function file_uri_from_path(path_text: str) -> string.String:
     return result
 
 
-public function path_from_file_uri(uri: str) -> maybe.Maybe[string.String]:
+public function path_from_file_uri(uri: str) -> Option[string.String]:
     if not uri.starts_with(FILE_URI_PREFIX):
-        return maybe.Maybe[string.String].none
+        return Option[string.String].none
 
     let encoded_path = uri.slice(FILE_URI_PREFIX.len, uri.len - FILE_URI_PREFIX.len)
     let decoded_result = percent_decode(encoded_path)
     match decoded_result:
-        maybe.Maybe.none:
-            return maybe.Maybe[string.String].none
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Option[string.String].none
+        Option.some as payload:
             var decoded = payload.value
             match owned_utf8_view(decoded):
-                maybe.Maybe.none:
+                Option.none:
                     decoded.release()
-                    return maybe.Maybe[string.String].none
-                maybe.Maybe.some as view_payload:
+                    return Option[string.String].none
+                Option.some as view_payload:
                     let decoded_path = view_payload.value
                     if leading_slash_drive_path(decoded_path):
                         let normalized = string.String.from_str(decoded_path.slice(1, decoded_path.len - 1))
                         decoded.release()
-                        return maybe.Maybe[string.String].some(value= normalized)
+                        return Option[string.String].some(value= normalized)
 
-                    return maybe.Maybe[string.String].some(value= decoded)
+                    return Option[string.String].some(value= decoded)
 
 
-public function percent_decode(text_value: str) -> maybe.Maybe[string.String]:
+public function percent_decode(text_value: str) -> Option[string.String]:
     var result = string.String.with_capacity(text_value.len)
 
     var index: ptr_uint = 0
@@ -54,18 +53,18 @@ public function percent_decode(text_value: str) -> maybe.Maybe[string.String]:
 
         if index + 2 >= text_value.len:
             result.release()
-            return maybe.Maybe[string.String].none
+            return Option[string.String].none
 
         let high = hex_digit_value(text_value.byte_at(index + 1))
         let low = hex_digit_value(text_value.byte_at(index + 2))
         if high < 0 or low < 0:
             result.release()
-            return maybe.Maybe[string.String].none
+            return Option[string.String].none
 
         result.push_byte(ubyte<-(high * 16 + low))
         index += 3
 
-    return maybe.Maybe[string.String].some(value= result)
+    return Option[string.String].some(value= result)
 
 
 function append_percent_encoded_path(output: ref[string.String], path_text: str) -> void:
@@ -124,5 +123,5 @@ function leading_slash_drive_path(path_text: str) -> bool:
     return path_text.len >= 3 and path_text.byte_at(0) == ubyte<-47 and ascii_letter(path_text.byte_at(1)) and path_text.byte_at(2) == ubyte<-58
 
 
-function owned_utf8_view(value: string.String) -> maybe.Maybe[str]:
+function owned_utf8_view(value: string.String) -> Option[str]:
     return text.utf8_byte_span_as_str(unsafe: span[ubyte](data = ptr[ubyte]<-value.data, len = value.len))

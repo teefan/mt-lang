@@ -10,7 +10,7 @@ class MilkTeaStdBytesTest < Minitest::Test
 
     source = [
       "import std.bytes as bytes",
-      "import std.maybe as maybe",
+      "",
       "import std.str as text",
       "",
       "function main() -> int:",
@@ -20,9 +20,9 @@ class MilkTeaStdBytesTest < Minitest::Test
       "    source[0] = 90",
       "    let text_result = owned.as_str()",
       "    match text_result:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return 1",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            if not payload.value.equal(\"ABC\"):",
       "                return 2",
       "    return 0",
@@ -43,7 +43,7 @@ class MilkTeaStdBytesTest < Minitest::Test
 
     source = [
       "import std.bytes as bytes",
-      "import std.maybe as maybe",
+      "",
       "",
       "function main() -> int:",
       "    let empty = bytes.Bytes.empty()",
@@ -54,9 +54,9 @@ class MilkTeaStdBytesTest < Minitest::Test
       "    defer owned.release()",
       "    let text_result = owned.as_str()",
       "    match text_result:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return 0",
-      "        maybe.Maybe.some:",
+      "        Option.some as ignored_payload:",
       "            return 2",
       "    return 3",
       "",

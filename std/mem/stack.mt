@@ -18,12 +18,12 @@ public function create_for[T](count: ptr_uint) -> Stack:
     return Stack(arena = arena.create_for[T](count))
 
 
-methods Stack:
+extending Stack:
     public function mark() -> Mark:
         return this.arena.mark()
 
 
-    public editable function reset(mark: Mark) -> void:
+    public mutable function reset(mark: Mark) -> void:
         this.arena.reset(mark)
         return
 
@@ -32,18 +32,18 @@ methods Stack:
         return this.arena.remaining_bytes()
 
 
-    public editable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
+    public mutable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes(size_bytes)
 
 
-    public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public mutable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes_aligned(size_bytes, alignment)
 
 
-    public editable function alloc[T](count: ptr_uint) -> ptr[T]?:
+    public mutable function alloc[T](count: ptr_uint) -> ptr[T]?:
         return this.arena.alloc[T](count)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.arena.release()
         return

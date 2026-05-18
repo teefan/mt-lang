@@ -14,7 +14,7 @@ public struct SnapshotEntries[K, V]:
     values: linked_map.Entries[K, V]
 
 
-methods SnapshotValues[K, V]:
+extending SnapshotValues[K, V]:
     public static function create(values: linked_map.Entries[K, V]) -> SnapshotValues[K, V]:
         return SnapshotValues[K, V](values = values)
 
@@ -23,7 +23,7 @@ methods SnapshotValues[K, V]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         return this.values.next()
 
 
@@ -33,7 +33,7 @@ methods SnapshotValues[K, V]:
             return read(entry.value)
 
 
-methods SnapshotEntries[K, V]:
+extending SnapshotEntries[K, V]:
     public static function create(values: linked_map.Entries[K, V]) -> SnapshotEntries[K, V]:
         return SnapshotEntries[K, V](values = values)
 
@@ -42,7 +42,7 @@ methods SnapshotEntries[K, V]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         return this.values.next()
 
 

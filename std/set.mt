@@ -1,12 +1,11 @@
 import std.map as map
-import std.maybe as maybe
 
 
 public struct Set[T]:
     values: map.Map[T, bool]
 
 
-methods Set[T]:
+extending Set[T]:
     public static function create() -> Set[T]:
         return Set[T](values = map.Map[T, bool].create())
 
@@ -98,34 +97,34 @@ methods Set[T]:
         return result
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.values.clear()
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.values.release()
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
         return
 
 
-    public editable function insert(value: T) -> bool:
+    public mutable function insert(value: T) -> bool:
         let previous = this.values.set(value, true)
         match previous:
-            maybe.Maybe.none:
+            Option.none:
                 return true
-            maybe.Maybe.some:
+            Option.some as ignored_payload:
                 return false
 
 
-    public editable function remove(value: T) -> bool:
+    public mutable function remove(value: T) -> bool:
         let removed = this.values.remove(value)
         match removed:
-            maybe.Maybe.none:
+            Option.none:
                 return false
-            maybe.Maybe.some:
+            Option.some as ignored_payload:
                 return true

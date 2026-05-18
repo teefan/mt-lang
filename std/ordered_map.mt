@@ -1,5 +1,4 @@
 import std.mem.heap as heap
-import std.maybe as maybe
 
 
 struct Node[K, V]:
@@ -46,7 +45,7 @@ public struct OrderedMap[K, V]:
     len: ptr_uint
 
 
-methods OrderedMap[K, V]:
+extending OrderedMap[K, V]:
     public static function create() -> OrderedMap[K, V]:
         return OrderedMap[K, V](root = null, len = 0)
 
@@ -335,19 +334,19 @@ methods OrderedMap[K, V]:
         return this.get(key) != null
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         OrderedMap[K, V].release_subtree(this.root)
         this.root = null
         this.len = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.clear()
         return
 
 
-    public editable function set(key: K, value: V) -> maybe.Maybe[V]:
+    public mutable function set(key: K, value: V) -> Option[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
             let node = location.node
@@ -358,7 +357,7 @@ methods OrderedMap[K, V]:
                 let node_ptr = ptr[Node[K, V]]<-node
                 let previous = read(node_ptr).value
                 read(node_ptr).value = value
-                return maybe.Maybe[V].some(value = previous)
+                return Option[V].some(value = previous)
 
         let node = heap.must_alloc[Node[K, V]](1)
         unsafe:
@@ -377,10 +376,10 @@ methods OrderedMap[K, V]:
 
         this.len += 1
         OrderedMap[K, V].rebalance(this, parent)
-        return maybe.Maybe[V].none
+        return Option[V].none
 
 
-    public editable function get_or_insert(key: K, value: V) -> ptr[V]:
+    public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
             let node = location.node
@@ -412,10 +411,10 @@ methods OrderedMap[K, V]:
             return ptr_of(read(node).value)
 
 
-    public editable function remove_entry(key: K) -> maybe.Maybe[RemovedEntry[K, V]]:
+    public mutable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
         let location = OrderedMap[K, V].locate(this, key)
         if not location.found:
-            return maybe.Maybe[RemovedEntry[K, V]].none
+            return Option[RemovedEntry[K, V]].none
 
         let node = location.node
         if node == null:
@@ -426,24 +425,24 @@ methods OrderedMap[K, V]:
         let rebalance_from = OrderedMap[K, V].detach_node(this, node_ptr)
         this.len -= 1
         OrderedMap[K, V].rebalance(this, rebalance_from)
-        return maybe.Maybe[RemovedEntry[K, V]].some(value = removed)
+        return Option[RemovedEntry[K, V]].some(value = removed)
 
 
-    public editable function remove(key: K) -> maybe.Maybe[V]:
+    public mutable function remove(key: K) -> Option[V]:
         let removed = this.remove_entry(key)
         match removed:
-            maybe.Maybe.none:
-                return maybe.Maybe[V].none
-            maybe.Maybe.some as payload:
-                return maybe.Maybe[V].some(value = payload.value.value)
+            Option.none:
+                return Option[V].none
+            Option.some as payload:
+                return Option[V].some(value = payload.value.value)
 
 
-methods Keys[K, V]:
+extending Keys[K, V]:
     public function iter() -> Keys[K, V]:
         return this
 
 
-    public editable function next() -> const_ptr[K]?:
+    public mutable function next() -> const_ptr[K]?:
         let current = this.node
         if current == null:
             return null
@@ -454,12 +453,12 @@ methods Keys[K, V]:
             return const_ptr_of(read(ptr[Node[K, V]]<-current).key)
 
 
-methods Values[K, V]:
+extending Values[K, V]:
     public function iter() -> Values[K, V]:
         return this
 
 
-    public editable function next() -> ptr[V]?:
+    public mutable function next() -> ptr[V]?:
         let current = this.node
         if current == null:
             return null
@@ -470,12 +469,12 @@ methods Values[K, V]:
             return ptr_of(read(ptr[Node[K, V]]<-current).value)
 
 
-methods Entries[K, V]:
+extending Entries[K, V]:
     public function iter() -> Entries[K, V]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         let current = this.node
         if current == null:
             return false

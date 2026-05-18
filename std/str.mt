@@ -1,4 +1,3 @@
-import std.maybe as maybe
 import std.mem.arena as arena
 
 
@@ -19,24 +18,24 @@ public function chars_as_str(text: ptr[char]) -> str:
     return unsafe: str(data = text, len = cstr_len(cstr<-text))
 
 
-public function nullable_cstr_as_str(text: cstr?) -> maybe.Maybe[str]:
+public function nullable_cstr_as_str(text: cstr?) -> Option[str]:
     if text == null:
-        return maybe.Maybe[str].none
+        return Option[str].none
 
-    return maybe.Maybe[str].some(value= cstr_as_str(cstr<-text))
+    return Option[str].some(value= cstr_as_str(cstr<-text))
 
 
 public function as_byte_span(text: str) -> span[ubyte]:
     return unsafe: span[ubyte](data = ptr[ubyte]<-text.data, len = text.len)
 
 
-public function utf8_byte_span_as_str(bytes: span[ubyte]) -> maybe.Maybe[str]:
+public function utf8_byte_span_as_str(bytes: span[ubyte]) -> Option[str]:
     unsafe:
         let borrowed = str(data = ptr[char]<-bytes.data, len = bytes.len)
         if not borrowed.is_valid_utf8():
-            return maybe.Maybe[str].none
+            return Option[str].none
 
-        return maybe.Maybe[str].some(value= borrowed)
+        return Option[str].some(value= borrowed)
 
 
 public function utf8_continuation_byte(value: ubyte) -> bool:
@@ -56,7 +55,7 @@ function is_ascii_space(value: ubyte) -> bool:
     return value == 32 or value == 9 or value == 10 or value == 13 or value == 12
 
 
-methods str:
+extending str:
     public function byte_at(index: ptr_uint) -> ubyte:
         if index >= this.len:
             fatal(c"str.byte_at index out of bounds")
@@ -101,13 +100,13 @@ methods str:
         return true
 
 
-    public function find_byte(value: ubyte) -> maybe.Maybe[ptr_uint]:
+    public function find_byte(value: ubyte) -> Option[ptr_uint]:
         var index: ptr_uint = 0
         while index < this.len:
             if this.byte_at(index) == value:
-                return maybe.Maybe[ptr_uint].some(value= index)
+                return Option[ptr_uint].some(value= index)
             index += 1
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
 
     public function trim_ascii_whitespace() -> str:

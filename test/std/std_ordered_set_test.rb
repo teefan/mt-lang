@@ -14,7 +14,7 @@ class MilkTeaStdOrderedSetTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
       "        unsafe:",
       "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",

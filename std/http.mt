@@ -1,9 +1,7 @@
 import std.bytes as bytes
 import std.fmt as fmt
-import std.maybe as maybe
 import std.mem.heap as heap
 import std.net as net
-import std.status as status
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -41,7 +39,7 @@ struct ResponseHead:
     status_code: int
     reason: string.String
     headers: vec.Vec[Header]
-    content_length: maybe.Maybe[ptr_uint]
+    content_length: Option[ptr_uint]
     chunked: bool
 
 
@@ -53,19 +51,19 @@ function error_from_net(net_error: net.Error) -> Error:
     return Error(message = net_error.message)
 
 
-function status_error[T](message: str) -> status.Status[T, Error]:
-    return status.Status[T, Error].err(error = error_from_message(message))
+function status_error[T](message: str) -> Result[T, Error]:
+    return Result[T, Error].failure(error = error_from_message(message))
 
 
-function status_net_error[T](net_error: net.Error) -> status.Status[T, Error]:
-    return status.Status[T, Error].err(error = error_from_net(net_error))
+function status_net_error[T](net_error: net.Error) -> Result[T, Error]:
+    return Result[T, Error].failure(error = error_from_net(net_error))
 
 
-function url_error[T](detail: str) -> status.Status[T, Error]:
+function url_error[T](detail: str) -> Result[T, Error]:
     return status_error[T](f"invalid http url: #{detail}")
 
 
-function response_error[T](detail: str) -> status.Status[T, Error]:
+function response_error[T](detail: str) -> Result[T, Error]:
     return status_error[T](f"invalid http response: #{detail}")
 
 
@@ -89,14 +87,14 @@ function ascii_case_equal(left: str, right: str) -> bool:
     return true
 
 
-function find_byte_from(text_value: str, value: ubyte, start: ptr_uint) -> maybe.Maybe[ptr_uint]:
+function find_byte_from(text_value: str, value: ubyte, start: ptr_uint) -> Option[ptr_uint]:
     var index = start
     while index < text_value.len:
         if text_value.byte_at(index) == value:
-            return maybe.Maybe[ptr_uint].some(value = index)
+            return Option[ptr_uint].some(value = index)
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
 function count_byte(text_value: str, value: ubyte) -> ptr_uint:
@@ -110,65 +108,65 @@ function count_byte(text_value: str, value: ubyte) -> ptr_uint:
     return count
 
 
-function parse_decimal(text_value: str) -> maybe.Maybe[ptr_uint]:
+function parse_decimal(text_value: str) -> Option[ptr_uint]:
     if text_value.len == 0:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     var value: ptr_uint = 0
     var index: ptr_uint = 0
     while index < text_value.len:
         let current = text_value.byte_at(index)
         if current < ubyte<-48 or current > ubyte<-57:
-            return maybe.Maybe[ptr_uint].none
+            return Option[ptr_uint].none
 
         let digit = ptr_uint<-(current - ubyte<-48)
         if value > (heap.ptr_uint_max() - digit) / ptr_uint<-10:
-            return maybe.Maybe[ptr_uint].none
+            return Option[ptr_uint].none
 
         value = value * ptr_uint<-10 + digit
         index += 1
 
-    return maybe.Maybe[ptr_uint].some(value = value)
+    return Option[ptr_uint].some(value = value)
 
 
-function parse_port(text_value: str) -> maybe.Maybe[int]:
+function parse_port(text_value: str) -> Option[int]:
     let parsed = parse_decimal(text_value) else:
-        return maybe.Maybe[int].none
+        return Option[int].none
 
     if parsed > ptr_uint<-65535:
-        return maybe.Maybe[int].none
+        return Option[int].none
 
-    return maybe.Maybe[int].some(value = int<-parsed)
+    return Option[int].some(value = int<-parsed)
 
 
-function parse_target(rest: str) -> status.Status[string.String, Error]:
+function parse_target(rest: str) -> Result[string.String, Error]:
     if rest.len == 0:
-        return status.Status[string.String, Error].ok(value = string.String.from_str("/"))
+        return Result[string.String, Error].success(value = string.String.from_str("/"))
 
     let fragment_index = find_byte_from(rest, ubyte<-35, 0)
     var target_text = rest
     match fragment_index:
-        maybe.Maybe.none:
+        Option.none:
             pass
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             target_text = rest.slice(0, payload.value)
 
     if target_text.len == 0:
-        return status.Status[string.String, Error].ok(value = string.String.from_str("/"))
+        return Result[string.String, Error].success(value = string.String.from_str("/"))
 
     let first = target_text.byte_at(0)
     if first == ubyte<-47:
-        return status.Status[string.String, Error].ok(value = string.String.from_str(target_text))
+        return Result[string.String, Error].success(value = string.String.from_str(target_text))
 
     if first == ubyte<-63:
         var target = string.String.from_str("/")
         target.append(target_text)
-        return status.Status[string.String, Error].ok(value = target)
+        return Result[string.String, Error].success(value = target)
 
     return url_error[string.String]("path must start with '/' or '?'")
 
 
-function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
+function parse_url(url: str) -> Result[ParsedUrl, Error]:
     if url.starts_with("https://"):
         return url_error[ParsedUrl]("https is not supported yet")
 
@@ -200,9 +198,9 @@ function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
     if authority_text.byte_at(0) == ubyte<-91:
         var closing_bracket: ptr_uint = 0
         match find_byte_from(authority_text, ubyte<-93, 1):
-            maybe.Maybe.none:
+            Option.none:
                 return url_error[ParsedUrl]("missing closing ']' for IPv6 host")
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 closing_bracket = payload.value
 
         if closing_bracket == 1:
@@ -216,9 +214,9 @@ function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
             let port_start = closing_bracket + 2
             let port_text = authority_text.slice(port_start, authority_text.len - port_start)
             match parse_port(port_text):
-                maybe.Maybe.none:
+                Option.none:
                     return url_error[ParsedUrl]("invalid port")
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     port = payload.value
     else:
         let colon_count = count_byte(authority_text, ubyte<-58)
@@ -228,9 +226,9 @@ function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
         if colon_count == 1:
             var colon_index: ptr_uint = 0
             match authority_text.find_byte(ubyte<-58):
-                maybe.Maybe.none:
+                Option.none:
                     fatal(c"http.parse_url missing authority port separator")
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     colon_index = payload.value
 
             if colon_index == 0:
@@ -240,9 +238,9 @@ function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
             let port_start = colon_index + 1
             let port_text = authority_text.slice(port_start, authority_text.len - port_start)
             match parse_port(port_text):
-                maybe.Maybe.none:
+                Option.none:
                     return url_error[ParsedUrl]("invalid port")
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     port = payload.value
 
     if host_text.len == 0:
@@ -251,11 +249,11 @@ function parse_url(url: str) -> status.Status[ParsedUrl, Error]:
     let rest = remainder.slice(authority_end, remainder.len - authority_end)
     let target_result = parse_target(rest)
     match target_result:
-        status.Status.err as payload:
-            return status.Status[ParsedUrl, Error].err(error = payload.error)
-        status.Status.ok as payload:
+        Result.failure as payload:
+            return Result[ParsedUrl, Error].failure(error = payload.error)
+        Result.success as payload:
             let target = payload.value
-            return status.Status[ParsedUrl, Error].ok(
+            return Result[ParsedUrl, Error].success(
                 value = ParsedUrl(
                     host = string.String.from_str(host_text),
                     authority = string.String.from_str(authority_text),
@@ -303,15 +301,15 @@ function valid_http_header_value(value: str) -> bool:
     return true
 
 
-function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader], body: maybe.Maybe[span[ubyte]]) -> status.Status[vec.Vec[ubyte], Error]:
+function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader], body: Option[span[ubyte]]) -> Result[vec.Vec[ubyte], Error]:
     if not valid_http_token(method):
         return status_error[vec.Vec[ubyte]]("invalid http method")
 
     var body_length: ptr_uint = 0
     match body:
-        maybe.Maybe.none:
+        Option.none:
             pass
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             body_length = payload.value.len
 
     var request = vec.Vec[ubyte].with_capacity(url.target.len + url.authority.len + method.len + body_length + 128)
@@ -383,106 +381,106 @@ function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader]
     append_request_text(ref_of(request), "\r\n")
 
     match body:
-        maybe.Maybe.none:
+        Option.none:
             pass
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             request.append_span(payload.value)
 
-    return status.Status[vec.Vec[ubyte], Error].ok(value = request)
+    return Result[vec.Vec[ubyte], Error].success(value = request)
 
 
-function find_crlf(text_value: str, start: ptr_uint) -> maybe.Maybe[ptr_uint]:
+function find_crlf(text_value: str, start: ptr_uint) -> Option[ptr_uint]:
     if text_value.len < 2 or start + 1 >= text_value.len:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     var index = start
     while index + 1 < text_value.len:
         if text_value.byte_at(index) == ubyte<-13 and text_value.byte_at(index + 1) == ubyte<-10:
-            return maybe.Maybe[ptr_uint].some(value = index)
+            return Option[ptr_uint].some(value = index)
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
-function find_header_terminator(data: span[ubyte]) -> maybe.Maybe[ptr_uint]:
+function find_header_terminator(data: span[ubyte]) -> Option[ptr_uint]:
     if data.len < 4:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     var index: ptr_uint = 0
     while index + 3 < data.len:
         if unsafe: read(data.data + index) == ubyte<-13 and read(data.data + index + 1) == ubyte<-10 and read(data.data + index + 2) == ubyte<-13 and read(data.data + index + 3) == ubyte<-10:
-            return maybe.Maybe[ptr_uint].some(value = index)
+            return Option[ptr_uint].some(value = index)
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
-function find_crlf_bytes(data: span[ubyte], start: ptr_uint) -> maybe.Maybe[ptr_uint]:
+function find_crlf_bytes(data: span[ubyte], start: ptr_uint) -> Option[ptr_uint]:
     if data.len < 2 or start + 1 >= data.len:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     var index = start
     while index + 1 < data.len:
         if unsafe: read(data.data + index) == ubyte<-13 and read(data.data + index + 1) == ubyte<-10:
-            return maybe.Maybe[ptr_uint].some(value = index)
+            return Option[ptr_uint].some(value = index)
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
-function hexadecimal_digit_value(current: ubyte) -> maybe.Maybe[ptr_uint]:
+function hexadecimal_digit_value(current: ubyte) -> Option[ptr_uint]:
     if current < ubyte<-48:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     if current <= ubyte<-57:
-        return maybe.Maybe[ptr_uint].some(value = ptr_uint<-(current - ubyte<-48))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-48))
 
     if current < ubyte<-65:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     if current <= ubyte<-70:
-        return maybe.Maybe[ptr_uint].some(value = ptr_uint<-(current - ubyte<-55))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-55))
 
     if current < ubyte<-97:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     if current <= ubyte<-102:
-        return maybe.Maybe[ptr_uint].some(value = ptr_uint<-(current - ubyte<-87))
+        return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-87))
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
-function parse_hexadecimal(text_value: str) -> maybe.Maybe[ptr_uint]:
+function parse_hexadecimal(text_value: str) -> Option[ptr_uint]:
     if text_value.len == 0:
-        return maybe.Maybe[ptr_uint].none
+        return Option[ptr_uint].none
 
     var value: ptr_uint = 0
     var index: ptr_uint = 0
     while index < text_value.len:
         let current = text_value.byte_at(index)
         let digit = hexadecimal_digit_value(current) else:
-            return maybe.Maybe[ptr_uint].none
+            return Option[ptr_uint].none
 
         if value > (heap.ptr_uint_max() - digit) / ptr_uint<-16:
-            return maybe.Maybe[ptr_uint].none
+            return Option[ptr_uint].none
 
         value = value * ptr_uint<-16 + digit
         index += 1
 
-    return maybe.Maybe[ptr_uint].some(value = value)
+    return Option[ptr_uint].some(value = value)
 
 
-function parse_chunk_size(text_value: str) -> maybe.Maybe[ptr_uint]:
+function parse_chunk_size(text_value: str) -> Option[ptr_uint]:
     var size_text = text_value
     let extension = find_byte_from(text_value, ubyte<-59, 0) else:
         let parsed = parse_hexadecimal(size_text.trim_ascii_whitespace()) else:
-            return maybe.Maybe[ptr_uint].none
-        return maybe.Maybe[ptr_uint].some(value = parsed)
+            return Option[ptr_uint].none
+        return Option[ptr_uint].some(value = parsed)
 
     size_text = text_value.slice(0, extension)
     let parsed = parse_hexadecimal(size_text.trim_ascii_whitespace()) else:
-        return maybe.Maybe[ptr_uint].none
-    return maybe.Maybe[ptr_uint].some(value = parsed)
+        return Option[ptr_uint].none
+    return Option[ptr_uint].some(value = parsed)
 
 
 function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> void:
@@ -509,13 +507,13 @@ function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> 
     return
 
 
-function parse_response_head(header_text: str) -> status.Status[ResponseHead, Error]:
+function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
     var line_end = header_text.len
     var header_index = header_text.len
     match find_crlf(header_text, 0):
-        maybe.Maybe.none:
+        Option.none:
             pass
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             line_end = payload.value
             header_index = line_end + 2
 
@@ -525,9 +523,9 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
 
     var first_space: ptr_uint = 0
     match status_line.find_byte(ubyte<-32):
-        maybe.Maybe.none:
+        Option.none:
             return response_error[ResponseHead]("missing status code")
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             first_space = payload.value
 
     if first_space + 4 > status_line.len:
@@ -536,9 +534,9 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
     let status_code_text = status_line.slice(first_space + 1, 3)
     var status_code = 0
     match parse_decimal(status_code_text):
-        maybe.Maybe.none:
+        Option.none:
             return response_error[ResponseHead]("invalid status code")
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             status_code = int<-payload.value
 
     var reason = string.String.create()
@@ -553,7 +551,7 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
         status_code = status_code,
         reason = reason,
         headers = vec.Vec[Header].create(),
-        content_length = maybe.Maybe[ptr_uint].none,
+        content_length = Option[ptr_uint].none,
         chunked = false,
     )
 
@@ -561,9 +559,9 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
     while index < header_text.len:
         var next_line_end = header_text.len
         match find_crlf(header_text, index):
-            maybe.Maybe.none:
+            Option.none:
                 pass
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 next_line_end = payload.value
 
         let line = header_text.slice(index, next_line_end - index)
@@ -573,10 +571,10 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
 
         var separator: ptr_uint = 0
         match line.find_byte(ubyte<-58):
-            maybe.Maybe.none:
+            Option.none:
                 head.release()
                 return response_error[ResponseHead]("header line is missing ':'")
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 separator = payload.value
 
         if separator == 0:
@@ -591,11 +589,11 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
 
         if ascii_case_equal(name_text, "Content-Length"):
             match parse_decimal(value_text):
-                maybe.Maybe.none:
+                Option.none:
                     head.release()
                     return response_error[ResponseHead]("Content-Length must be a decimal integer")
-                maybe.Maybe.some as payload:
-                    head.content_length = maybe.Maybe[ptr_uint].some(value = payload.value)
+                Option.some as payload:
+                    head.content_length = Option[ptr_uint].some(value = payload.value)
 
         if ascii_case_equal(name_text, "Transfer-Encoding"):
             if ascii_case_equal(value_text, "chunked"):
@@ -610,12 +608,12 @@ function parse_response_head(header_text: str) -> status.Status[ResponseHead, Er
             index = next_line_end + 2
 
     if head.chunked:
-        head.content_length = maybe.Maybe[ptr_uint].none
+        head.content_length = Option[ptr_uint].none
 
-    return status.Status[ResponseHead, Error].ok(value = head)
+    return Result[ResponseHead, Error].success(value = head)
 
 
-async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> status.Status[bytes.Bytes, Error]:
+async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> Result[bytes.Bytes, Error]:
     var body = vec.Vec[ubyte].with_capacity(prefix.len)
     defer body.release()
 
@@ -628,16 +626,16 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
         var line_end: ptr_uint = 0
         while true:
             match find_crlf_bytes(buffer.as_span(), cursor):
-                maybe.Maybe.none:
+                Option.none:
                     if cursor > 0:
                         discard_buffer_prefix(ref_of(buffer), cursor)
                         cursor = 0
 
                     let chunk_result = await stream.read_once(4096)
                     match chunk_result:
-                        status.Status.err as error_payload:
+                        Result.failure as error_payload:
                             return status_net_error[bytes.Bytes](error_payload.error)
-                        status.Status.ok as ok_payload:
+                        Result.success as ok_payload:
                             var chunk = ok_payload.value
                             if chunk.len == 0:
                                 chunk.release()
@@ -646,7 +644,7 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                             buffer.append_span(chunk.as_span())
                             chunk.release()
                             continue
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     line_end = payload.value
                     break
 
@@ -664,16 +662,16 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                 var trailer_end: ptr_uint = 0
                 while true:
                     match find_crlf_bytes(buffer.as_span(), cursor):
-                        maybe.Maybe.none:
+                        Option.none:
                             if cursor > 0:
                                 discard_buffer_prefix(ref_of(buffer), cursor)
                                 cursor = 0
 
                             let chunk_result = await stream.read_once(4096)
                             match chunk_result:
-                                status.Status.err as error_payload:
+                                Result.failure as error_payload:
                                     return status_net_error[bytes.Bytes](error_payload.error)
-                                status.Status.ok as ok_payload:
+                                Result.success as ok_payload:
                                     var chunk = ok_payload.value
                                     if chunk.len == 0:
                                         chunk.release()
@@ -682,12 +680,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                                     buffer.append_span(chunk.as_span())
                                     chunk.release()
                                     continue
-                        maybe.Maybe.some as payload:
+                        Option.some as payload:
                             trailer_end = payload.value
                             break
 
                 if trailer_end == cursor:
-                    return status.Status[bytes.Bytes, Error].ok(value = bytes.Bytes.copy(body.as_span()))
+                    return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
 
                 cursor = trailer_end + 2
 
@@ -698,9 +696,9 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
 
             let chunk_result = await stream.read_once(4096)
             match chunk_result:
-                status.Status.err as error_payload:
+                Result.failure as error_payload:
                     return status_net_error[bytes.Bytes](error_payload.error)
-                status.Status.ok as ok_payload:
+                Result.success as ok_payload:
                     var chunk = ok_payload.value
                     if chunk.len == 0:
                         chunk.release()
@@ -720,12 +718,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
         cursor += 2
 
 
-async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_length: maybe.Maybe[ptr_uint], chunked: bool) -> status.Status[bytes.Bytes, Error]:
+async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_length: Option[ptr_uint], chunked: bool) -> Result[bytes.Bytes, Error]:
     if chunked:
         return await read_chunked_body(stream, prefix)
 
     match content_length:
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             let total_length = payload.value
             if prefix.len > total_length:
                 return response_error[bytes.Bytes]("body exceeded Content-Length")
@@ -739,15 +737,15 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
             if remaining > 0:
                 let chunk_result = await stream.read_exactly(remaining)
                 match chunk_result:
-                    status.Status.err as error_payload:
+                    Result.failure as error_payload:
                         return status_net_error[bytes.Bytes](error_payload.error)
-                    status.Status.ok as ok_payload:
+                    Result.success as ok_payload:
                         var chunk = ok_payload.value
                         body.append_span(chunk.as_span())
                         chunk.release()
 
-            return status.Status[bytes.Bytes, Error].ok(value = bytes.Bytes.copy(body.as_span()))
-        maybe.Maybe.none:
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
+        Option.none:
             var body = vec.Vec[ubyte].with_capacity(prefix.len)
             defer body.release()
 
@@ -756,9 +754,9 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
             while true:
                 let chunk_result = await stream.read_once(4096)
                 match chunk_result:
-                    status.Status.err as error_payload:
+                    Result.failure as error_payload:
                         return status_net_error[bytes.Bytes](error_payload.error)
-                    status.Status.ok as ok_payload:
+                    Result.success as ok_payload:
                         var chunk = ok_payload.value
                         if chunk.len == 0:
                             chunk.release()
@@ -767,10 +765,10 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
                         body.append_span(chunk.as_span())
                         chunk.release()
 
-            return status.Status[bytes.Bytes, Error].ok(value = bytes.Bytes.copy(body.as_span()))
+            return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
 
 
-async function read_response(stream: net.TcpStream) -> status.Status[Response, Error]:
+async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
     var received = vec.Vec[ubyte].create()
     defer received.release()
 
@@ -779,9 +777,9 @@ async function read_response(stream: net.TcpStream) -> status.Status[Response, E
     while not headers_ready:
         let chunk_result = await stream.read_once(4096)
         match chunk_result:
-            status.Status.err as error_payload:
+            Result.failure as error_payload:
                 return status_net_error[Response](error_payload.error)
-            status.Status.ok as ok_payload:
+            Result.success as ok_payload:
                 var chunk = ok_payload.value
                 if chunk.len == 0:
                     chunk.release()
@@ -791,9 +789,9 @@ async function read_response(stream: net.TcpStream) -> status.Status[Response, E
                 chunk.release()
 
                 match find_header_terminator(received.as_span()):
-                    maybe.Maybe.none:
+                    Option.none:
                         continue
-                    maybe.Maybe.some as payload:
+                    Option.some as payload:
                         header_length = payload.value
                         headers_ready = true
 
@@ -804,21 +802,21 @@ async function read_response(stream: net.TcpStream) -> status.Status[Response, E
 
     let head_result = parse_response_head(header_text)
     match head_result:
-        status.Status.err as payload:
-            return status.Status[Response, Error].err(error = payload.error)
-        status.Status.ok as payload:
+        Result.failure as payload:
+            return Result[Response, Error].failure(error = payload.error)
+        Result.success as payload:
             var head = payload.value
             let body_start = header_length + 4
             let body_prefix = unsafe: span[ubyte](data = raw.data + body_start, len = raw.len - body_start)
 
             let body_result = await read_body(stream, body_prefix, head.content_length, head.chunked)
             match body_result:
-                status.Status.err as body_error_payload:
+                Result.failure as body_error_payload:
                     head.release()
-                    return status.Status[Response, Error].err(error = body_error_payload.error)
-                status.Status.ok as body_payload:
+                    return Result[Response, Error].failure(error = body_error_payload.error)
+                Result.success as body_payload:
                     let body = body_payload.value
-                    return status.Status[Response, Error].ok(
+                    return Result[Response, Error].success(
                         value = Response(
                             status_code = head.status_code,
                             reason = head.reason,
@@ -828,21 +826,21 @@ async function read_response(stream: net.TcpStream) -> status.Status[Response, E
                     )
 
 
-methods Error:
-    public editable function release() -> void:
+extending Error:
+    public mutable function release() -> void:
         this.message.release()
         return
 
 
-methods Header:
-    public editable function release() -> void:
+extending Header:
+    public mutable function release() -> void:
         this.name.release()
         this.value.release()
         return
 
 
-methods Response:
-    public editable function release() -> void:
+extending Response:
+    public mutable function release() -> void:
         this.reason.release()
 
         var index: ptr_uint = 0
@@ -859,7 +857,7 @@ methods Response:
         return
 
 
-    public function header(name: str) -> maybe.Maybe[str]:
+    public function header(name: str) -> Option[str]:
         var index: ptr_uint = 0
         while index < this.headers.len:
             let current = this.headers.get(index) else:
@@ -867,23 +865,23 @@ methods Response:
 
             let header_value = unsafe: read(current)
             if ascii_case_equal(header_value.name.as_str(), name):
-                return maybe.Maybe[str].some(value = header_value.value.as_str())
+                return Option[str].some(value = header_value.value.as_str())
 
             index += 1
 
-        return maybe.Maybe[str].none
+        return Option[str].none
 
 
-methods ParsedUrl:
-    editable function release() -> void:
+extending ParsedUrl:
+    mutable function release() -> void:
         this.host.release()
         this.authority.release()
         this.target.release()
         return
 
 
-methods ResponseHead:
-    editable function release() -> void:
+extending ResponseHead:
+    mutable function release() -> void:
         this.reason.release()
 
         var index: ptr_uint = 0
@@ -899,24 +897,24 @@ methods ResponseHead:
         return
 
 
-public async function get(url: str) -> status.Status[Response, Error]:
-    return await request(url, "GET", zero[span[RequestHeader]], maybe.Maybe[span[ubyte]].none)
+public async function get(url: str) -> Result[Response, Error]:
+    return await request(url, "GET", zero[span[RequestHeader]], Option[span[ubyte]].none)
 
 
-public async function request(url: str, method: str, headers: span[RequestHeader], body: maybe.Maybe[span[ubyte]]) -> status.Status[Response, Error]:
+public async function request(url: str, method: str, headers: span[RequestHeader], body: Option[span[ubyte]]) -> Result[Response, Error]:
     let parsed_result = parse_url(url)
     match parsed_result:
-        status.Status.err as payload:
-            return status.Status[Response, Error].err(error = payload.error)
-        status.Status.ok as payload:
+        Result.failure as payload:
+            return Result[Response, Error].failure(error = payload.error)
+        Result.success as payload:
             var parsed = payload.value
             defer parsed.release()
 
             let request_result = build_request(parsed, method, headers, body)
             match request_result:
-                status.Status.err as request_error_payload:
-                    return status.Status[Response, Error].err(error = request_error_payload.error)
-                status.Status.ok as request_payload:
+                Result.failure as request_error_payload:
+                    return Result[Response, Error].failure(error = request_error_payload.error)
+                Result.success as request_payload:
                     var request_bytes = request_payload.value
                     defer request_bytes.release()
 
@@ -925,25 +923,25 @@ public async function request(url: str, method: str, headers: span[RequestHeader
 
                     let address_result = await net.resolve_first(parsed.host.as_str(), service.as_str())
                     match address_result:
-                        status.Status.err as address_error_payload:
+                        Result.failure as address_error_payload:
                             return status_net_error[Response](address_error_payload.error)
-                        status.Status.ok as address_payload:
+                        Result.success as address_payload:
                             var address = address_payload.value
                             defer address.release()
 
                             let connect_result = await net.connect(address)
                             match connect_result:
-                                status.Status.err as connect_error_payload:
+                                Result.failure as connect_error_payload:
                                     return status_net_error[Response](connect_error_payload.error)
-                                status.Status.ok as connect_payload:
+                                Result.success as connect_payload:
                                     var stream = connect_payload.value
                                     defer stream.release()
 
                                     let write_result = await stream.write_bytes(request_bytes.as_span())
                                     match write_result:
-                                        status.Status.err as write_error_payload:
+                                        Result.failure as write_error_payload:
                                             return status_net_error[Response](write_error_payload.error)
-                                        status.Status.ok as write_payload:
+                                        Result.success as write_payload:
                                             if write_payload.value != request_bytes.len:
                                                 return status_error[Response]("http request write did not send the full request")
 

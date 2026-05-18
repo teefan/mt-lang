@@ -8,7 +8,7 @@ module MilkTea
       bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_builder Task
+      ptr const_ptr ref span array str_builder Task Option Result
     ]).freeze
 
     def self.substitute_type_variables(type, substitutions)
@@ -872,5 +872,15 @@ module MilkTea
         "proc(#{params.map(&:type).join(', ')}) -> #{return_type}"
       end
     end
+
+    BUILTIN_OPTION_TYPE = GenericVariantDefinition.new("Option", ["T"]).define_arms(
+      "some" => { "value" => TypeVar.new("T") },
+      "none" => {},
+    )
+
+    BUILTIN_RESULT_TYPE = GenericVariantDefinition.new("Result", ["T", "E"]).define_arms(
+      "success" => { "value" => TypeVar.new("T") },
+      "failure" => { "error" => TypeVar.new("E") },
+    )
   end
 end

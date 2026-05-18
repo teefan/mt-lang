@@ -1,6 +1,4 @@
 import std.fmt as fmt
-import std.maybe as maybe
-import std.status as status
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -123,25 +121,25 @@ public function release_value(value: Value) -> void:
     return
 
 
-function value_as_string(value: Value) -> maybe.Maybe[str]:
+function value_as_string(value: Value) -> Option[str]:
     if value.kind == ValueKind.string:
-        return maybe.Maybe[str].some(value= value.string_value.as_str())
+        return Option[str].some(value= value.string_value.as_str())
 
-    return maybe.Maybe[str].none
+    return Option[str].none
 
 
-function value_as_integer(value: Value) -> maybe.Maybe[long]:
+function value_as_integer(value: Value) -> Option[long]:
     if value.kind == ValueKind.integer:
-        return maybe.Maybe[long].some(value= value.integer_value)
+        return Option[long].some(value= value.integer_value)
 
-    return maybe.Maybe[long].none
+    return Option[long].none
 
 
-function value_as_boolean(value: Value) -> maybe.Maybe[bool]:
+function value_as_boolean(value: Value) -> Option[bool]:
     if value.kind == ValueKind.boolean:
-        return maybe.Maybe[bool].some(value= value.boolean_value)
+        return Option[bool].some(value= value.boolean_value)
 
-    return maybe.Maybe[bool].none
+    return Option[bool].none
 
 
 function value_as_array(value: Value) -> ptr[Array]?:
@@ -158,20 +156,20 @@ function value_as_object(value: Value) -> ptr[Object]?:
     return null
 
 
-methods ParseError:
-    public editable function release() -> void:
+extending ParseError:
+    public mutable function release() -> void:
         this.message.release()
         return
 
 
-methods Entry:
-    public editable function release() -> void:
+extending Entry:
+    public mutable function release() -> void:
         this.key.release()
         release_value(this.value)
         return
 
 
-methods Object:
+extending Object:
     public static function create() -> Object:
         return Object(entries = vec.Vec[Entry].create())
 
@@ -195,25 +193,25 @@ methods Object:
         return Object.find_entry(this, key) != null
 
 
-    public function get_string(key: str) -> maybe.Maybe[str]:
+    public function get_string(key: str) -> Option[str]:
         let entry = Object.find_entry(this, key) else:
-            return maybe.Maybe[str].none
+            return Option[str].none
 
         unsafe:
             return value_as_string(read(entry).value)
 
 
-    public function get_integer(key: str) -> maybe.Maybe[long]:
+    public function get_integer(key: str) -> Option[long]:
         let entry = Object.find_entry(this, key) else:
-            return maybe.Maybe[long].none
+            return Option[long].none
 
         unsafe:
             return value_as_integer(read(entry).value)
 
 
-    public function get_boolean(key: str) -> maybe.Maybe[bool]:
+    public function get_boolean(key: str) -> Option[bool]:
         let entry = Object.find_entry(this, key) else:
-            return maybe.Maybe[bool].none
+            return Option[bool].none
 
         unsafe:
             return value_as_boolean(read(entry).value)
@@ -235,7 +233,7 @@ methods Object:
             return value_as_object(read(entry).value)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         var index: ptr_uint = 0
         while index < this.entries.len():
             let entry = this.entries.get(index) else:
@@ -250,7 +248,7 @@ methods Object:
         return
 
 
-methods Array:
+extending Array:
     public static function create() -> Array:
         return Array(values = vec.Vec[Value].create())
 
@@ -259,25 +257,25 @@ methods Array:
         return this.values.len()
 
 
-    public function get_string(index: ptr_uint) -> maybe.Maybe[str]:
+    public function get_string(index: ptr_uint) -> Option[str]:
         let value_ptr = this.values.get(index) else:
-            return maybe.Maybe[str].none
+            return Option[str].none
 
         unsafe:
             return value_as_string(read(value_ptr))
 
 
-    public function get_integer(index: ptr_uint) -> maybe.Maybe[long]:
+    public function get_integer(index: ptr_uint) -> Option[long]:
         let value_ptr = this.values.get(index) else:
-            return maybe.Maybe[long].none
+            return Option[long].none
 
         unsafe:
             return value_as_integer(read(value_ptr))
 
 
-    public function get_boolean(index: ptr_uint) -> maybe.Maybe[bool]:
+    public function get_boolean(index: ptr_uint) -> Option[bool]:
         let value_ptr = this.values.get(index) else:
-            return maybe.Maybe[bool].none
+            return Option[bool].none
 
         unsafe:
             return value_as_boolean(read(value_ptr))
@@ -299,7 +297,7 @@ methods Array:
             return value_as_object(read(value_ptr))
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         var index: ptr_uint = 0
         while index < this.values.len():
             let value_ptr = this.values.get(index) else:
@@ -314,16 +312,16 @@ methods Array:
         return
 
 
-methods Table:
-    public function get_string(key: str) -> maybe.Maybe[str]:
+extending Table:
+    public function get_string(key: str) -> Option[str]:
         return this.entries.get_string(key)
 
 
-    public function get_integer(key: str) -> maybe.Maybe[long]:
+    public function get_integer(key: str) -> Option[long]:
         return this.entries.get_integer(key)
 
 
-    public function get_boolean(key: str) -> maybe.Maybe[bool]:
+    public function get_boolean(key: str) -> Option[bool]:
         return this.entries.get_boolean(key)
 
 
@@ -335,13 +333,13 @@ methods Table:
         return this.entries.get_object(key)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.name.release()
         this.entries.release()
         return
 
 
-methods ArrayTable:
+extending ArrayTable:
     public function len() -> ptr_uint:
         return this.tables.len()
 
@@ -350,7 +348,7 @@ methods ArrayTable:
         return this.tables.get(index)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.name.release()
 
         var index: ptr_uint = 0
@@ -367,20 +365,20 @@ methods ArrayTable:
         return
 
 
-methods Document:
+extending Document:
     public static function create() -> Document:
         return Document(root = Object.create(), tables = vec.Vec[Table].create(), array_tables = vec.Vec[ArrayTable].create())
 
 
-    public function get_string(key: str) -> maybe.Maybe[str]:
+    public function get_string(key: str) -> Option[str]:
         return this.root.get_string(key)
 
 
-    public function get_integer(key: str) -> maybe.Maybe[long]:
+    public function get_integer(key: str) -> Option[long]:
         return this.root.get_integer(key)
 
 
-    public function get_boolean(key: str) -> maybe.Maybe[bool]:
+    public function get_boolean(key: str) -> Option[bool]:
         return this.root.get_boolean(key)
 
 
@@ -422,7 +420,7 @@ methods Document:
         return null
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.root.release()
 
         var table_index: ptr_uint = 0
@@ -474,27 +472,27 @@ function header_name_byte(value: ubyte) -> bool:
     return bare_key_byte(value)
 
 
-function parser_peek_byte(parser: ref[Parser]) -> maybe.Maybe[ubyte]:
+function parser_peek_byte(parser: ref[Parser]) -> Option[ubyte]:
     if parser.index >= parser.text_value.len:
-        return maybe.Maybe[ubyte].none
+        return Option[ubyte].none
 
-    return maybe.Maybe[ubyte].some(value= parser.text_value.byte_at(parser.index))
+    return Option[ubyte].some(value= parser.text_value.byte_at(parser.index))
 
 
-function parser_peek_offset_byte(parser: ref[Parser], offset: ptr_uint) -> maybe.Maybe[ubyte]:
+function parser_peek_offset_byte(parser: ref[Parser], offset: ptr_uint) -> Option[ubyte]:
     if offset > heap.ptr_uint_max() - parser.index:
-        return maybe.Maybe[ubyte].none
+        return Option[ubyte].none
 
     let index = parser.index + offset
     if index >= parser.text_value.len:
-        return maybe.Maybe[ubyte].none
+        return Option[ubyte].none
 
-    return maybe.Maybe[ubyte].some(value= parser.text_value.byte_at(index))
+    return Option[ubyte].some(value= parser.text_value.byte_at(index))
 
 
-function parser_advance(parser: ref[Parser]) -> maybe.Maybe[ubyte]:
+function parser_advance(parser: ref[Parser]) -> Option[ubyte]:
     if parser.index >= parser.text_value.len:
-        return maybe.Maybe[ubyte].none
+        return Option[ubyte].none
 
     let current = parser.text_value.byte_at(parser.index)
     if current == byte_carriage_return:
@@ -503,7 +501,7 @@ function parser_advance(parser: ref[Parser]) -> maybe.Maybe[ubyte]:
             parser.index += 1
         parser.line += 1
         parser.column = 1
-        return maybe.Maybe[ubyte].some(value= byte_newline)
+        return Option[ubyte].some(value= byte_newline)
 
     parser.index += 1
     if current == byte_newline:
@@ -512,14 +510,14 @@ function parser_advance(parser: ref[Parser]) -> maybe.Maybe[ubyte]:
     else:
         parser.column += 1
 
-    return maybe.Maybe[ubyte].some(value= current)
+    return Option[ubyte].some(value= current)
 
 
 function parser_consume_byte(parser: ref[Parser], expected: ubyte) -> bool:
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
+        Option.none:
             return false
-        maybe.Maybe.some as payload:
+        Option.some as payload:
             if payload.value != expected:
                 return false
 
@@ -530,9 +528,9 @@ function parser_consume_byte(parser: ref[Parser], expected: ubyte) -> bool:
 function parser_skip_inline_space(parser: ref[Parser]) -> void:
     while true:
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 return
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if not inline_space(payload.value):
                     return
         parser_advance(parser)
@@ -544,9 +542,9 @@ function parser_skip_comment(parser: ref[Parser]) -> void:
 
     while true:
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 return
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if payload.value == byte_newline or payload.value == byte_carriage_return:
                     return
         parser_advance(parser)
@@ -557,9 +555,9 @@ function parser_skip_layout(parser: ref[Parser]) -> void:
         parser_skip_inline_space(parser)
 
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 return
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if payload.value == byte_hash:
                     parser_skip_comment(parser)
                     continue
@@ -569,19 +567,19 @@ function parser_skip_layout(parser: ref[Parser]) -> void:
                 return
 
 
-function parser_finish_line(parser: ref[Parser]) -> status.Status[bool, ParseError]:
+function parser_finish_line(parser: ref[Parser]) -> Result[bool, ParseError]:
     parser_skip_inline_space(parser)
     parser_skip_comment(parser)
 
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[bool, ParseError].ok(value= true)
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[bool, ParseError].success(value= true)
+        Option.some as payload:
             if payload.value == byte_newline or payload.value == byte_carriage_return:
                 parser_advance(parser)
-                return status.Status[bool, ParseError].ok(value= true)
+                return Result[bool, ParseError].success(value= true)
 
-    return status.Status[bool, ParseError].err(error= parse_error(parser, "expected end of line"))
+    return Result[bool, ParseError].failure(error= parse_error(parser, "expected end of line"))
 
 
 function parser_starts_with(parser: ref[Parser], literal: str) -> bool:
@@ -609,24 +607,24 @@ function parser_consume_literal(parser: ref[Parser], literal: str) -> bool:
     return true
 
 
-function parse_string(parser: ref[Parser]) -> status.Status[string.String, ParseError]:
+function parse_string(parser: ref[Parser]) -> Result[string.String, ParseError]:
     if not parser_consume_byte(parser, byte_quote):
-        return status.Status[string.String, ParseError].err(error= parse_error(parser, "expected string"))
+        return Result[string.String, ParseError].failure(error= parse_error(parser, "expected string"))
 
     var result = string.String.create()
     while true:
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 result.release()
-                return status.Status[string.String, ParseError].err(error= parse_error(parser, "unterminated string"))
-            maybe.Maybe.some as payload:
+                return Result[string.String, ParseError].failure(error= parse_error(parser, "unterminated string"))
+            Option.some as payload:
                 let current = payload.value
                 if current == byte_quote:
                     parser_advance(parser)
-                    return status.Status[string.String, ParseError].ok(value= result)
+                    return Result[string.String, ParseError].success(value= result)
                 if current == byte_newline or current == byte_carriage_return:
                     result.release()
-                    return status.Status[string.String, ParseError].err(error= parse_error(parser, "unterminated string"))
+                    return Result[string.String, ParseError].failure(error= parse_error(parser, "unterminated string"))
                 if current != byte_backslash:
                     result.push_byte(current)
                     parser_advance(parser)
@@ -634,10 +632,10 @@ function parse_string(parser: ref[Parser]) -> status.Status[string.String, Parse
 
         parser_advance(parser)
         match parser_advance(parser):
-            maybe.Maybe.none:
+            Option.none:
                 result.release()
-                return status.Status[string.String, ParseError].err(error= parse_error(parser, "unterminated escape"))
-            maybe.Maybe.some as payload:
+                return Result[string.String, ParseError].failure(error= parse_error(parser, "unterminated escape"))
+            Option.some as payload:
                 let escaped = payload.value
                 if escaped == ubyte<-98:
                     result.push_byte(ubyte<-8)
@@ -655,26 +653,26 @@ function parse_string(parser: ref[Parser]) -> status.Status[string.String, Parse
                     result.push_byte(byte_backslash)
                 else:
                     result.release()
-                    return status.Status[string.String, ParseError].err(error= parse_error(parser, "unsupported string escape"))
+                    return Result[string.String, ParseError].failure(error= parse_error(parser, "unsupported string escape"))
 
 
-function parse_key(parser: ref[Parser]) -> status.Status[string.String, ParseError]:
+function parse_key(parser: ref[Parser]) -> Result[string.String, ParseError]:
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[string.String, ParseError].err(error= parse_error(parser, "expected key"))
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[string.String, ParseError].failure(error= parse_error(parser, "expected key"))
+        Option.some as payload:
             if payload.value == byte_quote:
                 return parse_string(parser)
             if not bare_key_byte(payload.value):
-                return status.Status[string.String, ParseError].err(error= parse_error(parser, "expected key"))
+                return Result[string.String, ParseError].failure(error= parse_error(parser, "expected key"))
 
     let start = parser.index
     while true:
         var advance = false
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 pass
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if not bare_key_byte(payload.value):
                     pass
                 else:
@@ -686,26 +684,26 @@ function parse_key(parser: ref[Parser]) -> status.Status[string.String, ParseErr
         parser_advance(parser)
 
     let key_text = parser.text_value.slice(start, parser.index - start)
-    return status.Status[string.String, ParseError].ok(value= string.String.from_str(key_text))
+    return Result[string.String, ParseError].success(value= string.String.from_str(key_text))
 
 
-function parse_header_name(parser: ref[Parser]) -> status.Status[string.String, ParseError]:
+function parse_header_name(parser: ref[Parser]) -> Result[string.String, ParseError]:
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[string.String, ParseError].err(error= parse_error(parser, "expected header name"))
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[string.String, ParseError].failure(error= parse_error(parser, "expected header name"))
+        Option.some as payload:
             if payload.value == byte_quote:
                 return parse_string(parser)
             if not header_name_byte(payload.value):
-                return status.Status[string.String, ParseError].err(error= parse_error(parser, "expected header name"))
+                return Result[string.String, ParseError].failure(error= parse_error(parser, "expected header name"))
 
     let start = parser.index
     while true:
         var advance = false
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 pass
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if not header_name_byte(payload.value):
                     pass
                 else:
@@ -717,15 +715,15 @@ function parse_header_name(parser: ref[Parser]) -> status.Status[string.String, 
         parser_advance(parser)
 
     let name_text = parser.text_value.slice(start, parser.index - start)
-    return status.Status[string.String, ParseError].ok(value= string.String.from_str(name_text))
+    return Result[string.String, ParseError].success(value= string.String.from_str(name_text))
 
 
-function parse_integer(parser: ref[Parser]) -> status.Status[long, ParseError]:
+function parse_integer(parser: ref[Parser]) -> Result[long, ParseError]:
     var negative = false
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[long, ParseError].err(error= parse_error(parser, "expected integer"))
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[long, ParseError].failure(error= parse_error(parser, "expected integer"))
+        Option.some as payload:
             if payload.value == byte_minus:
                 negative = true
                 parser_advance(parser)
@@ -733,19 +731,19 @@ function parse_integer(parser: ref[Parser]) -> status.Status[long, ParseError]:
                 parser_advance(parser)
 
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[long, ParseError].err(error= parse_error(parser, "expected integer"))
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[long, ParseError].failure(error= parse_error(parser, "expected integer"))
+        Option.some as payload:
             if not ascii_digit(payload.value):
-                return status.Status[long, ParseError].err(error= parse_error(parser, "expected integer"))
+                return Result[long, ParseError].failure(error= parse_error(parser, "expected integer"))
 
     var result: long = 0
     while true:
         var advance = false
         match parser_peek_byte(parser):
-            maybe.Maybe.none:
+            Option.none:
                 pass
-            maybe.Maybe.some as payload:
+            Option.some as payload:
                 if not ascii_digit(payload.value):
                     pass
                 else:
@@ -760,21 +758,21 @@ function parse_integer(parser: ref[Parser]) -> status.Status[long, ParseError]:
     if negative:
         result = -result
 
-    return status.Status[long, ParseError].ok(value= result)
+    return Result[long, ParseError].success(value= result)
 
 
-function parse_boolean(parser: ref[Parser]) -> status.Status[bool, ParseError]:
+function parse_boolean(parser: ref[Parser]) -> Result[bool, ParseError]:
     if parser_consume_literal(parser, "true"):
-        return status.Status[bool, ParseError].ok(value= true)
+        return Result[bool, ParseError].success(value= true)
     if parser_consume_literal(parser, "false"):
-        return status.Status[bool, ParseError].ok(value= false)
+        return Result[bool, ParseError].success(value= false)
 
-    return status.Status[bool, ParseError].err(error= parse_error(parser, "expected boolean"))
+    return Result[bool, ParseError].failure(error= parse_error(parser, "expected boolean"))
 
 
-function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseError]:
+function parse_array(parser: ref[Parser]) -> Result[ptr[Array]?, ParseError]:
     if not parser_consume_byte(parser, byte_left_bracket):
-        return status.Status[ptr[Array]?, ParseError].err(error= parse_error(parser, "expected array"))
+        return Result[ptr[Array]?, ParseError].failure(error= parse_error(parser, "expected array"))
 
     let array_ptr = heap.must_alloc[Array](1)
     unsafe:
@@ -782,18 +780,18 @@ function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseErr
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_bracket):
-        return status.Status[ptr[Array]?, ParseError].ok(value= array_ptr)
+        return Result[ptr[Array]?, ParseError].success(value= array_ptr)
 
     while true:
         parser_skip_inline_space(parser)
         let value_result = parse_value(parser)
         match value_result:
-            status.Status.err as payload:
+            Result.failure as payload:
                 unsafe:
                     read(array_ptr).release()
                 heap.release(array_ptr)
-                return status.Status[ptr[Array]?, ParseError].err(error= payload.error)
-            status.Status.ok as payload:
+                return Result[ptr[Array]?, ParseError].failure(error= payload.error)
+            Result.success as payload:
                 unsafe:
                     read(array_ptr).values.push(payload.value)
 
@@ -801,17 +799,17 @@ function parse_array(parser: ref[Parser]) -> status.Status[ptr[Array]?, ParseErr
         if parser_consume_byte(parser, byte_comma):
             continue
         if parser_consume_byte(parser, byte_right_bracket):
-            return status.Status[ptr[Array]?, ParseError].ok(value= array_ptr)
+            return Result[ptr[Array]?, ParseError].success(value= array_ptr)
 
         unsafe:
             read(array_ptr).release()
         heap.release(array_ptr)
-        return status.Status[ptr[Array]?, ParseError].err(error= parse_error(parser, "expected ',' or ']'"))
+        return Result[ptr[Array]?, ParseError].failure(error= parse_error(parser, "expected ',' or ']'"))
 
 
-function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?, ParseError]:
+function parse_inline_object(parser: ref[Parser]) -> Result[ptr[Object]?, ParseError]:
     if not parser_consume_byte(parser, byte_left_brace):
-        return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "expected inline table"))
+        return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected inline table"))
 
     let object_ptr = heap.must_alloc[Object](1)
     unsafe:
@@ -819,18 +817,18 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
 
     parser_skip_inline_space(parser)
     if parser_consume_byte(parser, byte_right_brace):
-        return status.Status[ptr[Object]?, ParseError].ok(value= object_ptr)
+        return Result[ptr[Object]?, ParseError].success(value= object_ptr)
 
     while true:
         parser_skip_inline_space(parser)
         let key_result = parse_key(parser)
         match key_result:
-            status.Status.err as payload:
+            Result.failure as payload:
                 unsafe:
                     read(object_ptr).release()
                 heap.release(object_ptr)
-                return status.Status[ptr[Object]?, ParseError].err(error= payload.error)
-            status.Status.ok as key_payload:
+                return Result[ptr[Object]?, ParseError].failure(error= payload.error)
+            Result.success as key_payload:
                 var key = key_payload.value
                 parser_skip_inline_space(parser)
                 if not parser_consume_byte(parser, byte_equal):
@@ -838,18 +836,18 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                     unsafe:
                         read(object_ptr).release()
                     heap.release(object_ptr)
-                    return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "expected '='"))
+                    return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected '='"))
 
                 parser_skip_inline_space(parser)
                 let value_result = parse_value(parser)
                 match value_result:
-                    status.Status.err as payload:
+                    Result.failure as payload:
                         key.release()
                         unsafe:
                             read(object_ptr).release()
                         heap.release(object_ptr)
-                        return status.Status[ptr[Object]?, ParseError].err(error= payload.error)
-                    status.Status.ok as value_payload:
+                        return Result[ptr[Object]?, ParseError].failure(error= payload.error)
+                    Result.success as value_payload:
                         let key_text = key.as_str()
                         if unsafe: read(object_ptr).contains(key_text):
                             key.release()
@@ -857,7 +855,7 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                             unsafe:
                                 read(object_ptr).release()
                             heap.release(object_ptr)
-                            return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "duplicate key"))
+                            return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "duplicate key"))
 
                         unsafe:
                             read(object_ptr).entries.push(Entry(key = key, value = value_payload.value))
@@ -866,64 +864,64 @@ function parse_inline_object(parser: ref[Parser]) -> status.Status[ptr[Object]?,
                 if parser_consume_byte(parser, byte_comma):
                     continue
                 if parser_consume_byte(parser, byte_right_brace):
-                    return status.Status[ptr[Object]?, ParseError].ok(value= object_ptr)
+                    return Result[ptr[Object]?, ParseError].success(value= object_ptr)
 
                 unsafe:
                     read(object_ptr).release()
                 heap.release(object_ptr)
-                return status.Status[ptr[Object]?, ParseError].err(error= parse_error(parser, "expected ',' or '}'"))
+                return Result[ptr[Object]?, ParseError].failure(error= parse_error(parser, "expected ',' or '}'"))
 
 
-function parse_value(parser: ref[Parser]) -> status.Status[Value, ParseError]:
+function parse_value(parser: ref[Parser]) -> Result[Value, ParseError]:
     match parser_peek_byte(parser):
-        maybe.Maybe.none:
-            return status.Status[Value, ParseError].err(error= parse_error(parser, "expected value"))
-        maybe.Maybe.some as payload:
+        Option.none:
+            return Result[Value, ParseError].failure(error= parse_error(parser, "expected value"))
+        Option.some as payload:
             let current = payload.value
             if current == byte_quote:
                 let string_result = parse_string(parser)
                 match string_result:
-                    status.Status.err as error_payload:
-                        return status.Status[Value, ParseError].err(error= error_payload.error)
-                    status.Status.ok as string_payload:
-                        return status.Status[Value, ParseError].ok(value= string_value(string_payload.value))
+                    Result.failure as error_payload:
+                        return Result[Value, ParseError].failure(error= error_payload.error)
+                    Result.success as string_payload:
+                        return Result[Value, ParseError].success(value= string_value(string_payload.value))
 
             if current == byte_left_bracket:
                 let array_result = parse_array(parser)
                 match array_result:
-                    status.Status.err as error_payload:
-                        return status.Status[Value, ParseError].err(error= error_payload.error)
-                    status.Status.ok as array_payload:
-                        return status.Status[Value, ParseError].ok(value= array_value(array_payload.value))
+                    Result.failure as error_payload:
+                        return Result[Value, ParseError].failure(error= error_payload.error)
+                    Result.success as array_payload:
+                        return Result[Value, ParseError].success(value= array_value(array_payload.value))
 
             if current == byte_left_brace:
                 let object_result = parse_inline_object(parser)
                 match object_result:
-                    status.Status.err as error_payload:
-                        return status.Status[Value, ParseError].err(error= error_payload.error)
-                    status.Status.ok as object_payload:
-                        return status.Status[Value, ParseError].ok(value= object_value(object_payload.value))
+                    Result.failure as error_payload:
+                        return Result[Value, ParseError].failure(error= error_payload.error)
+                    Result.success as object_payload:
+                        return Result[Value, ParseError].success(value= object_value(object_payload.value))
 
             if current == ubyte<-116 or current == ubyte<-102:
                 let boolean_result = parse_boolean(parser)
                 match boolean_result:
-                    status.Status.err as error_payload:
-                        return status.Status[Value, ParseError].err(error= error_payload.error)
-                    status.Status.ok as boolean_payload:
-                        return status.Status[Value, ParseError].ok(value= boolean_value(boolean_payload.value))
+                    Result.failure as error_payload:
+                        return Result[Value, ParseError].failure(error= error_payload.error)
+                    Result.success as boolean_payload:
+                        return Result[Value, ParseError].success(value= boolean_value(boolean_payload.value))
 
             if ascii_digit(current) or current == byte_minus or current == byte_plus:
                 let integer_result = parse_integer(parser)
                 match integer_result:
-                    status.Status.err as error_payload:
-                        return status.Status[Value, ParseError].err(error= error_payload.error)
-                    status.Status.ok as integer_payload:
-                        return status.Status[Value, ParseError].ok(value= integer_value(integer_payload.value))
+                    Result.failure as error_payload:
+                        return Result[Value, ParseError].failure(error= error_payload.error)
+                    Result.success as integer_payload:
+                        return Result[Value, ParseError].success(value= integer_value(integer_payload.value))
 
-    return status.Status[Value, ParseError].err(error= parse_error(parser, "unsupported value"))
+    return Result[Value, ParseError].failure(error= parse_error(parser, "unsupported value"))
 
 
-function document_find_table_index(document: ref[Document], name: str) -> maybe.Maybe[ptr_uint]:
+function document_find_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
     var index: ptr_uint = 0
     while index < document.tables.len():
         let table_ptr = document.tables.get(index) else:
@@ -931,14 +929,14 @@ function document_find_table_index(document: ref[Document], name: str) -> maybe.
 
         unsafe:
             if read(table_ptr).name.as_str().equal(name):
-                return maybe.Maybe[ptr_uint].some(value= index)
+                return Option[ptr_uint].some(value= index)
 
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
-function document_find_array_table_index(document: ref[Document], name: str) -> maybe.Maybe[ptr_uint]:
+function document_find_array_table_index(document: ref[Document], name: str) -> Option[ptr_uint]:
     var index: ptr_uint = 0
     while index < document.array_tables.len():
         let table_ptr = document.array_tables.get(index) else:
@@ -946,11 +944,11 @@ function document_find_array_table_index(document: ref[Document], name: str) -> 
 
         unsafe:
             if read(table_ptr).name.as_str().equal(name):
-                return maybe.Maybe[ptr_uint].some(value= index)
+                return Option[ptr_uint].some(value= index)
 
         index += 1
 
-    return maybe.Maybe[ptr_uint].none
+    return Option[ptr_uint].none
 
 
 function current_object_contains(document: ref[Document], cursor: Cursor, key: str) -> bool:
@@ -998,61 +996,64 @@ function current_object_push(document: ref[Document], cursor: Cursor, entry: Ent
             return
 
 
-function parse_assignment(document: ref[Document], cursor: Cursor, parser: ref[Parser]) -> status.Status[bool, ParseError]:
+function parse_assignment(document: ref[Document], cursor: Cursor, parser: ref[Parser]) -> Result[bool, ParseError]:
     let key_result = parse_key(parser)
     match key_result:
-        status.Status.err as payload:
-            return status.Status[bool, ParseError].err(error= payload.error)
-        status.Status.ok as key_payload:
+        Result.failure as payload:
+            return Result[bool, ParseError].failure(error= payload.error)
+        Result.success as key_payload:
             var key = key_payload.value
             parser_skip_inline_space(parser)
             if not parser_consume_byte(parser, byte_equal):
                 key.release()
-                return status.Status[bool, ParseError].err(error= parse_error(parser, "expected '='"))
+                return Result[bool, ParseError].failure(error= parse_error(parser, "expected '='"))
 
             parser_skip_inline_space(parser)
             let value_result = parse_value(parser)
             match value_result:
-                status.Status.err as payload:
+                Result.failure as payload:
                     key.release()
-                    return status.Status[bool, ParseError].err(error= payload.error)
-                status.Status.ok as value_payload:
+                    return Result[bool, ParseError].failure(error= payload.error)
+                Result.success as value_payload:
                     let key_text = key.as_str()
                     if current_object_contains(document, cursor, key_text):
                         key.release()
                         release_value(value_payload.value)
-                        return status.Status[bool, ParseError].err(error= parse_error(parser, "duplicate key"))
+                        return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate key"))
 
                     current_object_push(document, cursor, Entry(key = key, value = value_payload.value))
-                    return status.Status[bool, ParseError].ok(value= true)
+                    return Result[bool, ParseError].success(value= true)
 
 
-function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[Parser]) -> status.Status[bool, ParseError]:
+function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[Parser]) -> Result[bool, ParseError]:
     if not parser_consume_byte(parser, byte_left_bracket):
-        return status.Status[bool, ParseError].err(error= parse_error(parser, "expected table header"))
+        return Result[bool, ParseError].failure(error= parse_error(parser, "expected table header"))
 
     let array_table = parser_consume_byte(parser, byte_left_bracket)
     parser_skip_inline_space(parser)
 
     let name_result = parse_header_name(parser)
     match name_result:
-        status.Status.err as payload:
-            return status.Status[bool, ParseError].err(error= payload.error)
-        status.Status.ok as name_payload:
+        Result.failure as payload:
+            return Result[bool, ParseError].failure(error= payload.error)
+        Result.success as name_payload:
             var name = name_payload.value
             parser_skip_inline_space(parser)
 
             if array_table:
                 if not parser_consume_byte(parser, byte_right_bracket) or not parser_consume_byte(parser, byte_right_bracket):
                     name.release()
-                    return status.Status[bool, ParseError].err(error= parse_error(parser, "expected ']]'"))
+                    return Result[bool, ParseError].failure(error= parse_error(parser, "expected ']]'"))
 
-                if maybe.is_some(document_find_table_index(document, name.as_str())):
-                    name.release()
-                    return status.Status[bool, ParseError].err(error= parse_error(parser, "table name already used"))
+                match document_find_table_index(document, name.as_str()):
+                    Option.some as _:
+                        name.release()
+                        return Result[bool, ParseError].failure(error= parse_error(parser, "table name already used"))
+                    Option.none:
+                        pass
 
                 match document_find_array_table_index(document, name.as_str()):
-                    maybe.Maybe.some as payload:
+                    Option.some as payload:
                         let index = payload.value
                         name.release()
                         let array_table_ptr = document.array_tables.get(index) else:
@@ -1063,31 +1064,41 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
                             cursor.kind = SectionKind.array_table
                             cursor.array_table_index = index
                             cursor.array_item_index = read(array_table_ptr).tables.len() - 1
-                        return status.Status[bool, ParseError].ok(value= true)
-                    maybe.Maybe.none:
+                        return Result[bool, ParseError].success(value= true)
+                    Option.none:
                         var next = ArrayTable(name = name, tables = vec.Vec[Object].create())
                         next.tables.push(Object.create())
                         document.array_tables.push(next)
                         cursor.kind = SectionKind.array_table
                         cursor.array_table_index = document.array_tables.len() - 1
                         cursor.array_item_index = 0
-                        return status.Status[bool, ParseError].ok(value= true)
+                        return Result[bool, ParseError].success(value= true)
 
             if not parser_consume_byte(parser, byte_right_bracket):
                 name.release()
-                return status.Status[bool, ParseError].err(error= parse_error(parser, "expected ']'"))
+                return Result[bool, ParseError].failure(error= parse_error(parser, "expected ']'"))
 
-            if maybe.is_some(document_find_table_index(document, name.as_str())) or maybe.is_some(document_find_array_table_index(document, name.as_str())):
-                name.release()
-                return status.Status[bool, ParseError].err(error= parse_error(parser, "duplicate table"))
+            match document_find_table_index(document, name.as_str()):
+                Option.some as _:
+                    name.release()
+                    return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
+                Option.none:
+                    pass
+
+            match document_find_array_table_index(document, name.as_str()):
+                Option.some as _:
+                    name.release()
+                    return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
+                Option.none:
+                    pass
 
             document.tables.push(Table(name = name, entries = Object.create()))
             cursor.kind = SectionKind.table
             cursor.table_index = document.tables.len() - 1
-            return status.Status[bool, ParseError].ok(value= true)
+            return Result[bool, ParseError].success(value= true)
 
 
-public function parse(text_value: str) -> status.Status[Document, ParseError]:
+public function parse(text_value: str) -> Result[Document, ParseError]:
     var parser = Parser(text_value = text_value, index = 0, line = 1, column = 1)
     var document = Document.create()
     var cursor = Cursor(kind = SectionKind.root, table_index = 0, array_table_index = 0, array_item_index = 0)
@@ -1095,30 +1106,26 @@ public function parse(text_value: str) -> status.Status[Document, ParseError]:
     while true:
         parser_skip_layout(ref_of(parser))
 
-        if maybe.is_none(parser_peek_byte(ref_of(parser))):
-            return status.Status[Document, ParseError].ok(value= document)
+        let next_byte = parser_peek_byte(ref_of(parser)) else:
+            return Result[Document, ParseError].success(value= document)
 
-        var statement_result = status.Status[bool, ParseError].ok(value= true)
-        match parser_peek_byte(ref_of(parser)):
-            maybe.Maybe.none:
-                pass
-            maybe.Maybe.some as payload:
-                if payload.value == byte_left_bracket:
-                    statement_result = parse_header(ref_of(document), ref_of(cursor), ref_of(parser))
-                else:
-                    statement_result = parse_assignment(ref_of(document), cursor, ref_of(parser))
+        var statement_result = Result[bool, ParseError].success(value= true)
+        if next_byte == byte_left_bracket:
+            statement_result = parse_header(ref_of(document), ref_of(cursor), ref_of(parser))
+        else:
+            statement_result = parse_assignment(ref_of(document), cursor, ref_of(parser))
 
         match statement_result:
-            status.Status.err as payload:
+            Result.failure as payload:
                 document.release()
-                return status.Status[Document, ParseError].err(error= payload.error)
-            status.Status.ok:
+                return Result[Document, ParseError].failure(error= payload.error)
+            Result.success as _:
                 let line_result = parser_finish_line(ref_of(parser))
                 match line_result:
-                    status.Status.err as payload:
+                    Result.failure as payload:
                         document.release()
-                        return status.Status[Document, ParseError].err(error= payload.error)
-                    status.Status.ok:
+                        return Result[Document, ParseError].failure(error= payload.error)
+                    Result.success as _:
                         pass
 
 

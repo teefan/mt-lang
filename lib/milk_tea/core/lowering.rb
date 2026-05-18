@@ -171,7 +171,7 @@ module MilkTea
           case decl
           when AST::FunctionDef
             block_uses_fatal?(decl.body)
-          when AST::MethodsBlock
+          when AST::ExtendingBlock
             decl.methods.any? { |method| block_uses_fatal?(method.body) }
           else
             false
@@ -184,7 +184,7 @@ module MilkTea
           case decl
           when AST::FunctionDef
             block_uses_offsetof?(decl.body)
-          when AST::MethodsBlock
+          when AST::ExtendingBlock
             decl.methods.any? { |method| block_uses_offsetof?(method.body) }
           else
             false
@@ -295,9 +295,9 @@ module MilkTea
 
       def build_method_definitions
         @program.analyses_by_path.values.each_with_object({}) do |analysis, definitions|
-          analysis.ast.declarations.grep(AST::MethodsBlock).each do |methods_block|
-            receiver_type = resolve_methods_receiver_type(analysis, methods_block.type_name)
-            methods_block.methods.each do |method|
+          analysis.ast.declarations.grep(AST::ExtendingBlock).each do |extending_block|
+            receiver_type = resolve_extending_receiver_type(analysis, extending_block.type_name)
+            extending_block.methods.each do |method|
               definitions[[receiver_type, method.name]] = [analysis, method]
             end
           end
@@ -455,8 +455,8 @@ module MilkTea
                 end
                 changed = true
               end
-            when AST::MethodsBlock
-              receiver_type = resolve_methods_receiver_type(@analysis, decl.type_name)
+            when AST::ExtendingBlock
+              receiver_type = resolve_extending_receiver_type(@analysis, decl.type_name)
               decl.methods.each do |method|
                 binding = @analysis.methods.fetch(receiver_type).fetch(method.name)
                 if binding.type_params.any?
@@ -484,7 +484,7 @@ module MilkTea
         lowered
       end
 
-      def resolve_methods_receiver_type(analysis, type_name)
+      def resolve_extending_receiver_type(analysis, type_name)
         if type_name.is_a?(AST::TypeRef)
           generic_type = resolve_named_generic_type_for_analysis(analysis, type_name.name.parts)
           if generic_type.is_a?(Types::GenericStructDefinition)
@@ -514,7 +514,7 @@ module MilkTea
           return imported_module.types.fetch(parts.last)
         end
 
-        raise LoweringError, "unsupported methods target #{type_name}"
+        raise LoweringError, "unsupported extending target #{type_name}"
       end
 
       def lower_function_decl(binding, receiver_type: nil)
@@ -1529,7 +1529,7 @@ module MilkTea
               c_name: async_frame_field_c_name(field_info[:field_name]),
               mutable: false,
               pointer: false,
-              projection: :status_err_error,
+              projection: :result_failure_error,
             )
           end
           else_body = if statements_contain_await?(statement.else_body, async_info)
@@ -2392,7 +2392,6 @@ module MilkTea
             match_expr = IR::Name.new(name: scrutinee_c_name, type: match_type, pointer: false)
           end
 
-          outer_c = c_type_name(match_type)
           kind_type = @types.fetch("int")
           kind_expr = IR::Member.new(receiver: match_expr, member: "kind", type: kind_type)
           cases = statement.arms.map do |arm|
@@ -2407,7 +2406,7 @@ module MilkTea
               IR::SwitchDefaultCase.new(body: body)
             else
               arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-              IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+              IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(match_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body: body)
             end
           end
 
@@ -2516,7 +2515,6 @@ module MilkTea
                 expr = IR::Name.new(name: scrutinee_c_name, type: scrutinee_type, pointer: false)
               end
 
-              outer_c = c_type_name(scrutinee_type)
               kind_type = @types.fetch("int")
               kind_expr = IR::Member.new(receiver: expr, member: "kind", type: kind_type)
               cases = statement.arms.map do |arm|
@@ -2529,7 +2527,7 @@ module MilkTea
                   IR::SwitchDefaultCase.new(body: body)
                 else
                   arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-                  IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+                  IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body: body)
                 end
               end
               lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
@@ -3027,7 +3025,7 @@ module MilkTea
                 c_name: async_frame_field_c_name(field_info[:field_name]),
                 mutable: false,
                 pointer: false,
-                projection: :status_err_error,
+                projection: :result_failure_error,
               )
             end
             else_body = if statements_contain_await?(statement.else_body, async_info)
@@ -3282,7 +3280,7 @@ module MilkTea
                                c_name:,
                                mutable: false,
                                pointer: false,
-                               projection: :status_err_error,
+                               projection: :result_failure_error,
                              )
                            end
                          else
@@ -3460,7 +3458,6 @@ module MilkTea
             end
 
             if scrutinee_type.is_a?(Types::Variant)
-              outer_c = c_type_name(scrutinee_type)
               kind_type = @types.fetch("int")
               kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
@@ -3491,7 +3488,7 @@ module MilkTea
                   IR::SwitchDefaultCase.new(body:)
                 else
                   arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-                  IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body:)
+                  IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body:)
                 end
               end
               lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
@@ -4988,7 +4985,6 @@ module MilkTea
         cases = if scrutinee_type.is_a?(Types::Variant)
                   kind_type = @types.fetch("int")
                   switch_expression = IR::Member.new(receiver: lowered_expression, member: "kind", type: kind_type)
-                  outer_c = c_type_name(scrutinee_type)
                   expression.arms.map do |arm|
                     arm_env = duplicate_env(env)
                     binding_decl = if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
@@ -5010,7 +5006,7 @@ module MilkTea
                       IR::SwitchDefaultCase.new(body: body)
                     else
                       arm_name = variant_match_arm_name_from_pattern(arm.pattern)
-                      IR::SwitchCase.new(value: IR::Name.new(name: "#{outer_c}_kind_#{arm_name}", type: kind_type, pointer: false), body: body)
+                      IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body: body)
                     end
                   end
                 else
@@ -8231,7 +8227,7 @@ module MilkTea
 
         expected_names = generic_type.type_params
         unless names == expected_names
-          raise LoweringError, "methods target #{type_ref} must use the receiver type parameters directly"
+          raise LoweringError, "extending target #{type_ref} must use the receiver type parameters directly"
         end
 
         expected_names
@@ -8246,7 +8242,7 @@ module MilkTea
           value.name.parts.first
         end
 
-        raise LoweringError, "methods target #{type_ref} must use the receiver type parameters directly" if names.any?(&:nil?)
+        raise LoweringError, "extending target #{type_ref} must use the receiver type parameters directly" if names.any?(&:nil?)
 
         names
       end
@@ -9521,28 +9517,28 @@ module MilkTea
 
       def let_else_success_type(type)
         return type.base if type.is_a?(Types::Nullable)
-        return type.arm("some").fetch("value") if maybe_let_else_type?(type)
-        return unless status_let_else_type?(type)
+        return type.arm("some").fetch("value") if option_let_else_type?(type)
+        return unless result_let_else_type?(type)
 
-        type.arm("ok").fetch("value")
+        type.arm("success").fetch("value")
       end
 
       def let_else_error_type(type)
-        return unless status_let_else_type?(type)
+        return unless result_let_else_type?(type)
 
-        type.arm("err").fetch("error")
+        type.arm("failure").fetch("error")
       end
 
       def let_else_binding_projection(type)
-        return :status_ok_value if status_let_else_type?(type)
-        return :maybe_some_value if maybe_let_else_type?(type)
+        return :result_success_value if result_let_else_type?(type)
+        return :option_some_value if option_let_else_type?(type)
 
         nil
       end
 
-      def maybe_let_else_type?(type)
+      def option_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name == "std.maybe" && type.name == "Maybe"
+        return false unless type.module_name.nil? && type.name == "Option"
 
         some_fields = type.arm("some")
         none_fields = type.arm("none")
@@ -9550,14 +9546,14 @@ module MilkTea
           none_fields && none_fields.empty?
       end
 
-      def status_let_else_type?(type)
+      def result_let_else_type?(type)
         return false unless type.is_a?(Types::Variant)
-        return false unless type.module_name == "std.status" && type.name == "Status"
+        return false unless type.module_name.nil? && type.name == "Result"
 
-        ok_fields = type.arm("ok")
-        err_fields = type.arm("err")
-        ok_fields && ok_fields.length == 1 && ok_fields.key?("value") &&
-          err_fields && err_fields.length == 1 && err_fields.key?("error")
+        success_fields = type.arm("success")
+        failure_fields = type.arm("failure")
+        success_fields && success_fields.length == 1 && success_fields.key?("value") &&
+          failure_fields && failure_fields.length == 1 && failure_fields.key?("error")
       end
 
       def let_else_failure_condition(storage_expr, storage_type)
@@ -9570,17 +9566,17 @@ module MilkTea
           )
         end
 
-        if status_let_else_type?(storage_type)
+        if result_let_else_type?(storage_type)
           kind_type = @types.fetch("int")
           return IR::Binary.new(
             operator: "==",
             left: IR::Member.new(receiver: storage_expr, member: "kind", type: kind_type),
-            right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_err", type: kind_type, pointer: false),
+            right: IR::Name.new(name: "#{c_type_name(storage_type)}_kind_failure", type: kind_type, pointer: false),
             type: @types.fetch("bool"),
           )
         end
 
-        if maybe_let_else_type?(storage_type)
+        if option_let_else_type?(storage_type)
           kind_type = @types.fetch("int")
           return IR::Binary.new(
             operator: "==",
@@ -9598,17 +9594,17 @@ module MilkTea
         visible_type = binding[:type]
         projection = binding[:projection]
 
-        if projection == :status_ok_value
+        if projection == :result_success_value
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return variant_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "success", "value", visible_type)
         end
 
-        if projection == :status_err_error
+        if projection == :result_failure_error
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return variant_binding_projection_expression(local_ref, storage_type, "err", "error", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "failure", "error", visible_type)
         end
 
-        if projection == :maybe_some_value
+        if projection == :option_some_value
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
@@ -9616,12 +9612,12 @@ module MilkTea
         return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if visible_type == storage_type
         return IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer]) if storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type
 
-        if status_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
+        if result_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-          return variant_binding_projection_expression(local_ref, storage_type, "ok", "value", visible_type)
+          return variant_binding_projection_expression(local_ref, storage_type, "success", "value", visible_type)
         end
 
-        if maybe_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
+        if option_let_else_type?(storage_type) && let_else_success_type(storage_type) == visible_type
           local_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
           return variant_binding_projection_expression(local_ref, storage_type, "some", "value", visible_type)
         end
@@ -9658,9 +9654,8 @@ module MilkTea
         end
 
         return type.name if type.module_name&.start_with?("std.c.")
-        return type.name if type.module_name.nil?
 
-        base = "#{module_c_prefix(type.module_name)}_#{type.name}"
+        base = type.module_name ? "#{module_c_prefix(type.module_name)}_#{type.name}" : type.name
         return base unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
 
         "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"

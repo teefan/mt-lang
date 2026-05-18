@@ -39,7 +39,7 @@ class LSPWorkspaceTest < Minitest::Test
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "sample_text.mt")
       content = <<~MT
-        import std.maybe as maybe
+
         import std.string as string
 
         public function parse() -> int:
@@ -53,7 +53,7 @@ class LSPWorkspaceTest < Minitest::Test
       assert_equal true, stats[:eager_analysis]
       assert_equal :module_loader, stats[:analysis_mode]
       assert_nil stats[:skip_reason]
-      assert_equal 2, stats[:import_count]
+      assert_equal 1, stats[:import_count]
       assert_kind_of Numeric, stats[:analysis_ms]
     end
   end
@@ -451,11 +451,11 @@ class LSPWorkspaceTest < Minitest::Test
     Dir.mktmpdir("lsp_workspace_partial_import_resolution") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
-        import std.maybe as maybe
+
         import test # fake import for diagnostics coverage
 
         function main() -> int:
-            let value = maybe.Maybe[int].some(7)
+            let value = Option[int].some(7)
             return value.value
       MT
       File.write(path, content)
@@ -468,7 +468,7 @@ class LSPWorkspaceTest < Minitest::Test
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
 
       assert_includes messages, "module not found: test"
-      refute_includes messages, "unknown import std.maybe"
+      refute_includes messages, "unknown type Option"
       refute_includes messages, "unknown import test"
       refute_includes messages, "unused import 'test'"
     ensure
@@ -987,7 +987,7 @@ class LSPWorkspaceTest < Minitest::Test
         public struct String:
             value: str
 
-        methods String:
+        extending String:
             public function as_str() -> str:
                 return this.value
       MT

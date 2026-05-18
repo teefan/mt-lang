@@ -2,8 +2,6 @@ import std.c.fs as c
 import std.bytes as bytes
 import std.mem.arena as arena
 import std.mem.heap as heap
-import std.maybe as maybe
-import std.status as status
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -50,14 +48,14 @@ function take_error(raw: c.mt_fs_error, fallback: str) -> Error:
     return Error(code = raw.code, message = take_owned_string(raw.message_data, raw.message_len))
 
 
-function validate_utf8_string(value: string.String, error_message: str) -> status.Status[string.String, Error]:
-    match text.utf8_byte_span_as_str(unsafe: span[ubyte](data = ptr[ubyte]<-value.data, len = value.len)):
-        maybe.Maybe.some:
-            return status.Status[string.String, Error].ok(value= value)
-        maybe.Maybe.none:
-            var owned = value
+function validate_utf8_string(text_value: string.String, error_message: str) -> Result[string.String, Error]:
+    match text.utf8_byte_span_as_str(unsafe: span[ubyte](data = ptr[ubyte]<-text_value.data, len = text_value.len)):
+        Option.some as _:
+            return Result[string.String, Error].success(value= text_value)
+        Option.none:
+            var owned = text_value
             owned.release()
-            return status.Status[string.String, Error].err(error= Error(code = -1, message = string.String.from_str(error_message)))
+            return Result[string.String, Error].failure(error= Error(code = -1, message = string.String.from_str(error_message)))
 
 
 function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
@@ -83,24 +81,24 @@ function path_kind(path: str) -> int:
     return c.mt_fs_path_kind(storage.to_cstr(path))
 
 
-methods Error:
-    public editable function release() -> void:
+extending Error:
+    public mutable function release() -> void:
         this.message.release()
         return
 
 
-methods Entries:
+extending Entries:
     public function len() -> ptr_uint:
         return this.values.len()
 
 
-    public function get(index: ptr_uint) -> maybe.Maybe[str]:
+    public function get(index: ptr_uint) -> Option[str]:
         let value_ptr = this.values.get(index)
         if value_ptr == null:
-            return maybe.Maybe[str].none
+            return Option[str].none
 
         unsafe:
-            return maybe.Maybe[str].some(value= read(value_ptr).as_str())
+            return Option[str].some(value= read(value_ptr).as_str())
 
 
     public function contains(name: str) -> bool:
@@ -119,7 +117,7 @@ methods Entries:
         return false
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         release_string_values(ref_of(this.values))
         return
 
@@ -136,7 +134,7 @@ public function is_directory(path: str) -> bool:
     return path_kind(path) == path_kind_directory
 
 
-public function read_text(path: str) -> status.Status[string.String, Error]:
+public function read_text(path: str) -> Result[string.String, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
@@ -144,12 +142,12 @@ public function read_text(path: str) -> status.Status[string.String, Error]:
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_read_text(storage.to_cstr(path), raw_text, raw_error)
     if status_code != 0:
-        return status.Status[string.String, Error].err(error= take_error(raw_error, "fs read failed"))
+        return Result[string.String, Error].failure(error= take_error(raw_error, "fs read failed"))
 
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.read_text requires UTF-8 text")
 
 
-public function read_bytes(path: str) -> status.Status[bytes.Bytes, Error]:
+public function read_bytes(path: str) -> Result[bytes.Bytes, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
@@ -157,60 +155,60 @@ public function read_bytes(path: str) -> status.Status[bytes.Bytes, Error]:
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_read_bytes(storage.to_cstr(path), raw_bytes, raw_error)
     if status_code != 0:
-        return status.Status[bytes.Bytes, Error].err(error= take_error(raw_error, "fs read bytes failed"))
+        return Result[bytes.Bytes, Error].failure(error= take_error(raw_error, "fs read bytes failed"))
 
-    return status.Status[bytes.Bytes, Error].ok(value= take_owned_bytes(raw_bytes.data, raw_bytes.len))
+    return Result[bytes.Bytes, Error].success(value= take_owned_bytes(raw_bytes.data, raw_bytes.len))
 
 
-public function write_text(path: str, content: str) -> status.Status[bool, Error]:
+public function write_text(path: str, content: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_text(storage.to_cstr(path), content.data, content.len, raw_error)
     if status_code != 0:
-        return status.Status[bool, Error].err(error= take_error(raw_error, "fs write failed"))
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs write failed"))
 
-    return status.Status[bool, Error].ok(value= true)
+    return Result[bool, Error].success(value= true)
 
 
-public function write_bytes(path: str, content: span[ubyte]) -> status.Status[bool, Error]:
+public function write_bytes(path: str, content: span[ubyte]) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_write_bytes(storage.to_cstr(path), content.data, content.len, raw_error)
     if status_code != 0:
-        return status.Status[bool, Error].err(error= take_error(raw_error, "fs write bytes failed"))
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs write bytes failed"))
 
-    return status.Status[bool, Error].ok(value= true)
+    return Result[bool, Error].success(value= true)
 
 
-public function create_directories(path: str) -> status.Status[bool, Error]:
+public function create_directories(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_create_directories(storage.to_cstr(path), raw_error)
     if status_code != 0:
-        return status.Status[bool, Error].err(error= take_error(raw_error, "fs create directories failed"))
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs create directories failed"))
 
-    return status.Status[bool, Error].ok(value= true)
+    return Result[bool, Error].success(value= true)
 
 
-public function remove(path: str) -> status.Status[bool, Error]:
+public function remove(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_remove(storage.to_cstr(path), raw_error)
     if status_code != 0:
-        return status.Status[bool, Error].err(error= take_error(raw_error, "fs remove failed"))
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs remove failed"))
 
-    return status.Status[bool, Error].ok(value= true)
+    return Result[bool, Error].success(value= true)
 
 
-public function rename(source_path: str, target_path: str) -> status.Status[bool, Error]:
+public function rename(source_path: str, target_path: str) -> Result[bool, Error]:
     var source_storage = arena.create(source_path.len + 1)
     defer source_storage.release()
     var target_storage = arena.create(target_path.len + 1)
@@ -219,22 +217,22 @@ public function rename(source_path: str, target_path: str) -> status.Status[bool
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_rename(source_storage.to_cstr(source_path), target_storage.to_cstr(target_path), raw_error)
     if status_code != 0:
-        return status.Status[bool, Error].err(error= take_error(raw_error, "fs rename failed"))
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs rename failed"))
 
-    return status.Status[bool, Error].ok(value= true)
+    return Result[bool, Error].success(value= true)
 
 
-public function current_directory() -> status.Status[string.String, Error]:
+public function current_directory() -> Result[string.String, Error]:
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_current_directory(raw_text, raw_error)
     if status_code != 0:
-        return status.Status[string.String, Error].err(error= take_error(raw_error, "fs current directory failed"))
+        return Result[string.String, Error].failure(error= take_error(raw_error, "fs current directory failed"))
 
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.current_directory requires UTF-8 text")
 
 
-public function canonicalize(path: str) -> status.Status[string.String, Error]:
+public function canonicalize(path: str) -> Result[string.String, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
@@ -242,12 +240,12 @@ public function canonicalize(path: str) -> status.Status[string.String, Error]:
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_canonicalize(storage.to_cstr(path), raw_text, raw_error)
     if status_code != 0:
-        return status.Status[string.String, Error].err(error= take_error(raw_error, "fs canonicalize failed"))
+        return Result[string.String, Error].failure(error= take_error(raw_error, "fs canonicalize failed"))
 
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.canonicalize requires UTF-8 text")
 
 
-public function list_entries(path: str) -> status.Status[Entries, Error]:
+public function list_entries(path: str) -> Result[Entries, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
 
@@ -255,7 +253,7 @@ public function list_entries(path: str) -> status.Status[Entries, Error]:
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_list_entries(storage.to_cstr(path), raw_entries, raw_error)
     if status_code != 0:
-        return status.Status[Entries, Error].err(error= take_error(raw_error, "fs list entries failed"))
+        return Result[Entries, Error].failure(error= take_error(raw_error, "fs list entries failed"))
 
     var values = vec.Vec[string.String].with_capacity(raw_entries.count)
     var index: ptr_uint = 0
@@ -268,7 +266,7 @@ public function list_entries(path: str) -> status.Status[Entries, Error]:
         while index < raw_entries.count:
             let owned = take_owned_string(read(data_ptr + index), read(length_ptr + index))
             match validate_utf8_string(owned, "fs.list_entries requires UTF-8 entry names"):
-                status.Status.err as payload:
+                Result.failure as payload:
                     var remaining = index + 1
                     while remaining < raw_entries.count:
                         heap.release(read(data_ptr + remaining))
@@ -276,12 +274,12 @@ public function list_entries(path: str) -> status.Status[Entries, Error]:
                     heap.release(raw_entries.data)
                     heap.release(raw_entries.lengths)
                     release_string_values(ref_of(values))
-                    return status.Status[Entries, Error].err(error= payload.error)
-                status.Status.ok as validated_payload:
+                    return Result[Entries, Error].failure(error= payload.error)
+                Result.success as validated_payload:
                     values.push(validated_payload.value)
 
             index += 1
 
     heap.release(raw_entries.data)
     heap.release(raw_entries.lengths)
-    return status.Status[Entries, Error].ok(value= Entries(values = values))
+    return Result[Entries, Error].success(value= Entries(values = values))

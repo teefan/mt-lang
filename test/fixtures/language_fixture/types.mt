@@ -1,9 +1,9 @@
 public struct Counter:
     total: int
 
-methods Counter:
+extending Counter:
     public static function zero() -> Counter:
         return Counter(total = 0)
 
-    public editable function bump(step: int) -> void:
+    public mutable function bump(step: int) -> void:
         this.total += step

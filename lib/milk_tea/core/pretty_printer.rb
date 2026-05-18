@@ -191,7 +191,7 @@ module MilkTea
       end
 
       BLOCK_DECLARATION_TYPES = [
-        AST::FunctionDef, AST::ForeignFunctionDecl, AST::InterfaceDecl, AST::MethodsBlock,
+        AST::FunctionDef, AST::ForeignFunctionDecl, AST::InterfaceDecl, AST::ExtendingBlock,
         AST::StructDecl, AST::UnionDecl, AST::EnumDecl, AST::FlagsDecl, AST::VariantDecl,
       ].freeze
 
@@ -296,8 +296,8 @@ module MilkTea
               line(render_interface_method_signature(method))
             end
           end
-        when AST::MethodsBlock
-          line("methods #{render_type(declaration.type_name)}:")
+        when AST::ExtendingBlock
+          line("extending #{render_type(declaration.type_name)}:")
           with_indent do
             declaration.methods.each_with_index do |method, index|
               emit_function(method)
@@ -346,8 +346,8 @@ module MilkTea
       def render_function_signature(function, prefix: "")
         signature_prefix = if function.is_a?(AST::MethodDef)
                              case function.kind
-                             when :editable
-                               "editable function "
+                             when :mutable
+                               "mutable function "
                              when :static
                                "static function "
                              else
@@ -423,8 +423,8 @@ module MilkTea
         prefix = +""
         prefix << "async " if method.async
         prefix << case method.kind
-                  when :editable
-                    "editable function "
+                  when :mutable
+                    "mutable function "
                   else
                     "function "
                   end

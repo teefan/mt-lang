@@ -1,5 +1,4 @@
 import std.mem.heap as heap
-import std.maybe as maybe
 import std.str as text
 
 
@@ -8,7 +7,7 @@ public struct Bytes:
     len: ptr_uint
 
 
-methods Bytes:
+extending Bytes:
     public static function empty() -> Bytes:
         return Bytes(data = null, len = 0)
 
@@ -23,7 +22,7 @@ methods Bytes:
         return Bytes(data = data, len = source.len)
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
@@ -37,5 +36,5 @@ methods Bytes:
         return unsafe: span[ubyte](data = ptr[ubyte]<-this.data, len = this.len)
 
 
-    public function as_str() -> maybe.Maybe[str]:
+    public function as_str() -> Option[str]:
         return text.utf8_byte_span_as_str(this.as_span())

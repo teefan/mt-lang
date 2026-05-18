@@ -9,18 +9,16 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil ast.module_name
     assert_equal :module, ast.module_kind
     assert_equal [], ast.directives
-    assert_equal 4, ast.imports.length
+    assert_equal 2, ast.imports.length
     assert_equal(
       [
-        ["std.maybe", "maybe"],
-        ["std.status", "status"],
         ["test.fixtures.language_fixture.external_runtime", "runtime"],
         ["test.fixtures.language_fixture.types", "types"],
       ],
       ast.imports.map { |import| [import.path.to_s, import.alias_name] },
     )
     assert_equal(
-      %w[ConstDecl TypeAliasDecl StructDecl MethodsBlock FunctionDef FunctionDef],
+      %w[ConstDecl TypeAliasDecl StructDecl ExtendingBlock FunctionDef FunctionDef],
       ast.declarations.map { |node| node.class.name.split("::").last },
     )
 
@@ -37,7 +35,7 @@ class MilkTeaParserTest < Minitest::Test
 
     create_method, touch_method, read_method = methods_block.methods
     assert_equal :static, create_method.kind
-    assert_equal :editable, touch_method.kind
+    assert_equal :mutable, touch_method.kind
     assert_equal :plain, read_method.kind
 
     main_fn = ast.declarations[5]
@@ -139,7 +137,7 @@ class MilkTeaParserTest < Minitest::Test
       public struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           public function read() -> int:
               return this.value
 
@@ -168,7 +166,7 @@ class MilkTeaParserTest < Minitest::Test
   def test_parses_interfaces_implements_and_constrained_type_params
     source = <<~MT
       public interface Damageable:
-          editable function take_damage(amount: int) -> void
+          mutable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
@@ -187,7 +185,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::InterfaceDecl, interface_decl
     assert_equal :public, interface_decl.visibility
     assert_equal %w[take_damage is_alive], interface_decl.methods.map(&:name)
-    assert_equal :editable, interface_decl.methods.first.kind
+    assert_equal :mutable, interface_decl.methods.first.kind
 
     assert_instance_of MilkTea::AST::StructDecl, struct_decl
     assert_equal ["Damageable"], struct_decl.implements.map(&:to_s)
@@ -318,14 +316,14 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_pub_on_methods_block
     source = <<~MT
-      public methods Counter:
+      public extending Counter:
           function read() -> int:
               return 0
     MT
 
     error = assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
 
-    assert_match(/public is not allowed on methods blocks/, error.message)
+    assert_match(/public is not allowed on extending blocks/, error.message)
   end
 
   def test_parses_if_expression
@@ -1422,22 +1420,22 @@ class MilkTeaParserTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           async function read() -> int:
               return this.value
 
-          async editable function bump() -> void:
+          async mutable function bump() -> void:
               this.value += 1
     MT
 
     ast = MilkTea::Parser.parse(source)
     methods = ast.declarations[1]
 
-    assert_instance_of MilkTea::AST::MethodsBlock, methods
+    assert_instance_of MilkTea::AST::ExtendingBlock, methods
     assert_equal true, methods.methods[0].async
     assert_equal :plain, methods.methods[0].kind
     assert_equal true, methods.methods[1].async
-    assert_equal :editable, methods.methods[1].kind
+    assert_equal :mutable, methods.methods[1].kind
   end
 
   def test_parses_generic_methods_block_targets
@@ -1445,7 +1443,7 @@ class MilkTeaParserTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           function get() -> T:
               return this.value
     MT
@@ -1453,7 +1451,7 @@ class MilkTeaParserTest < Minitest::Test
     ast = MilkTea::Parser.parse(source)
     methods = ast.declarations[1]
 
-    assert_instance_of MilkTea::AST::MethodsBlock, methods
+    assert_instance_of MilkTea::AST::ExtendingBlock, methods
     assert_equal "Box[T]", methods.type_name.to_s
   end
 
@@ -1462,7 +1460,7 @@ class MilkTeaParserTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           static function create() -> Box[T]:
               return Box[T](value = zero[T])
 
@@ -1711,7 +1709,7 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       external
 
-      methods Counter:
+      extending Counter:
           function read() -> int:
               return 0
     MT
@@ -1720,7 +1718,7 @@ class MilkTeaParserTest < Minitest::Test
       MilkTea::Parser.parse(source)
     end
 
-    assert_match(/methods is not allowed in external files/, error.message)
+    assert_match(/extending is not allowed in external files/, error.message)
   end
 
   def test_rejects_late_imports_in_raw_modules

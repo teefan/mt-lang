@@ -44,12 +44,12 @@ public function create_for[T](count: ptr_uint) -> Arena:
 
     return create_aligned(count * element_size, ptr_uint<-align_of(T))
 
-methods Arena:
+extending Arena:
     public function mark() -> Mark:
         return this.offset
 
 
-    public editable function reset(mark: Mark) -> void:
+    public mutable function reset(mark: Mark) -> void:
         if mark > this.offset:
             fatal(c"arena.reset invalid mark")
 
@@ -61,11 +61,11 @@ methods Arena:
         return this.capacity - this.offset
 
 
-    public editable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
+    public mutable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.alloc_bytes_aligned(size_bytes, 1)
 
 
-    public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public mutable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         let backing = this.memory else:
             return null
         if alignment == 0:
@@ -91,7 +91,7 @@ methods Arena:
             return result
 
 
-    public editable function alloc[T](count: ptr_uint) -> ptr[T]?:
+    public mutable function alloc[T](count: ptr_uint) -> ptr[T]?:
         let element_size = ptr_uint<-size_of(T)
         if heap.mul_overflows(count, element_size):
             return null
@@ -103,7 +103,7 @@ methods Arena:
         return unsafe: ptr[T]<-memory
 
 
-    public editable function try_to_cstr(text: str) -> cstr?:
+    public mutable function try_to_cstr(text: str) -> cstr?:
         if text.len == heap.ptr_uint_max():
             return null
 
@@ -117,7 +117,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    public editable function to_cstr(text: str) -> cstr:
+    public mutable function to_cstr(text: str) -> cstr:
         if text.len == heap.ptr_uint_max():
             fatal(c"arena.to_cstr size overflow")
 
@@ -131,7 +131,7 @@ methods Arena:
             return cstr<-buffer
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.memory)
         this.memory = null
         this.capacity = 0

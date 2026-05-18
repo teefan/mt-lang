@@ -1,9 +1,8 @@
-import std.maybe as maybe
 import platform_info as platform_info
 import std.raylib as rl
 import std.raylib.packed_assets as rl_assets
 import std.raylib.runtime as rl_runtime
-import std.status as status
+
 import tetris.pieces.defs as pieces
 import tetris.rules.scoring as scoring
 
@@ -22,7 +21,7 @@ const horizontal_repeat_delay: float = 0.16
 const horizontal_repeat_interval: float = 0.05
 
 interface ScreenState:
-    editable function update(effect: rl.Sound) -> void
+    mutable function update(effect: rl.Sound) -> void
     function draw(texture: rl.Texture2D) -> void
 
 struct TitleScreen implements ScreenState:
@@ -105,47 +104,47 @@ function board_index(x: int, y: int) -> int:
     return y * board_width + x
 
 
-function load_runtime_assets() -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+function load_runtime_assets() -> Result[RuntimeAssets, RuntimeAssetsError]:
     let assets_pack = rl_assets.open_assets_pack_if_present() else as error:
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(error))
 
     match assets_pack:
-        maybe.Maybe.none:
+        Option.none:
             return load_directory_runtime_assets()
-        maybe.Maybe.some as reader_payload:
+        Option.some as reader_payload:
             var reader = reader_payload.value
             defer rl_assets.close_reader(ref_of(reader))
             return load_packed_runtime_assets(reader)
 
 
-function load_packed_runtime_assets(reader: rl_assets.Reader) -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+function load_packed_runtime_assets(reader: rl_assets.Reader) -> Result[RuntimeAssets, RuntimeAssetsError]:
     let tiles = rl_assets.load_texture(reader, "assets/tetris_tiles.png") else as error:
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(error))
 
     let clear_sound = rl_assets.load_sound(reader, "assets/line_clear.wav") else as error:
         rl.unload_texture(tiles)
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(error))
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(error))
 
-    return status.Status[RuntimeAssets, RuntimeAssetsError].ok(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
 
 
-function load_directory_runtime_assets() -> status.Status[RuntimeAssets, RuntimeAssetsError]:
+function load_directory_runtime_assets() -> Result[RuntimeAssets, RuntimeAssetsError]:
     if not rl_runtime.enter_assets_directory():
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= RuntimeAssetsError.missing_assets_directory)
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= RuntimeAssetsError.missing_assets_directory)
 
     let tiles = rl.load_texture("tetris_tiles.png")
     if not rl.is_texture_valid(tiles):
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(rl_assets.Error.invalid_texture))
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(rl_assets.Error.invalid_texture))
 
     let clear_sound = rl.load_sound("line_clear.wav")
     if not rl.is_sound_valid(clear_sound):
         rl.unload_texture(tiles)
-        return status.Status[RuntimeAssets, RuntimeAssetsError].err(error= packed_assets_error(rl_assets.Error.invalid_sound))
+        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(rl_assets.Error.invalid_sound))
 
-    return status.Status[RuntimeAssets, RuntimeAssetsError].ok(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
 
 
-methods TitleScreen:
+extending TitleScreen:
     static function default() -> TitleScreen:
         return TitleScreen(
             blink_timer = 0.0,
@@ -153,7 +152,7 @@ methods TitleScreen:
         )
 
 
-    editable function update(_effect: rl.Sound):
+    mutable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
@@ -175,14 +174,14 @@ methods TitleScreen:
             rl.draw_text("Press Enter or Space to start", 142, 544, 28, rl.WHITE)
 
 
-methods RuntimeAssets:
-    editable function release():
+extending RuntimeAssets:
+    mutable function release():
         rl.unload_texture(this.tiles)
         rl.unload_sound(this.clear_sound)
 
 
-methods PausedScreen:
-    editable function update(_effect: rl.Sound):
+extending PausedScreen:
+    mutable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) or rl.is_key_pressed(rl.KeyboardKey.KEY_P):
@@ -210,7 +209,7 @@ methods PausedScreen:
             rl.draw_text("Press a key to continue", 176, 526, 24, rl.WHITE)
 
 
-methods Game:
+extending Game:
     static function default() -> Game:
         var game = Game(
             board = zero[array[int, 200]],
@@ -231,7 +230,7 @@ methods Game:
         return game
 
 
-    editable function reset():
+    mutable function reset():
         this.board = zero[array[int, 200]]
         this.next_kind = random_kind()
         this.score = 0
@@ -247,7 +246,7 @@ methods Game:
         this.spawn_next_piece()
 
 
-    editable function spawn_next_piece():
+    mutable function spawn_next_piece():
         this.active = pieces.Piece(kind = this.next_kind, rotation = 0, x = 3, y = 0)
         this.next_kind = random_kind()
         this.drop_timer = 0.0
@@ -260,7 +259,7 @@ methods Game:
             this.game_over = true
 
 
-    editable function collides(piece: pieces.Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
+    mutable function collides(piece: pieces.Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
         let cells = pieces.shape_cells(piece.kind, next_rotation)
 
         for i in 0..4:
@@ -280,7 +279,7 @@ methods Game:
         return false
 
 
-    editable function try_move(delta_x: int, delta_y: int) -> bool:
+    mutable function try_move(delta_x: int, delta_y: int) -> bool:
         if this.collides(this.active, delta_x, delta_y, this.active.rotation):
             return false
 
@@ -289,7 +288,7 @@ methods Game:
         return true
 
 
-    editable function try_rotate(delta: int) -> bool:
+    mutable function try_rotate(delta: int) -> bool:
         let next_rotation = (this.active.rotation + delta + 4) % 4
         if not this.collides(this.active, 0, 0, next_rotation):
             this.active.rotation = next_rotation
@@ -308,7 +307,7 @@ methods Game:
         return false
 
 
-    editable function lock_piece(effect: rl.Sound):
+    mutable function lock_piece(effect: rl.Sound):
         let cells = pieces.shape_cells(this.active.kind, this.active.rotation)
 
         for i in 0..4:
@@ -331,7 +330,7 @@ methods Game:
         this.spawn_next_piece()
 
 
-    editable function clear_full_rows() -> int:
+    mutable function clear_full_rows() -> int:
         var cleared = 0
         var y = board_height
 
@@ -361,14 +360,14 @@ methods Game:
         return cleared
 
 
-    editable function hard_drop(effect: rl.Sound):
+    mutable function hard_drop(effect: rl.Sound):
         while this.try_move(0, 1):
             this.score += 2
 
         this.lock_piece(effect)
 
 
-    editable function update(effect: rl.Sound):
+    mutable function update(effect: rl.Sound):
         let frame_time = rl.get_frame_time()
         this.pause_requested = false
         this.exit_requested = false

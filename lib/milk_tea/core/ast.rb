@@ -71,7 +71,7 @@ module MilkTea
     InterfaceDecl = Data.define(:name, :methods, :visibility, :line) do
       def initialize(name:, methods:, visibility:, line: nil) = super
     end
-    MethodsBlock = Data.define(:type_name, :methods, :line) do
+    ExtendingBlock = Data.define(:type_name, :methods, :line) do
       def initialize(type_name:, methods:, line: nil) = super
     end
     InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :line, :column) do

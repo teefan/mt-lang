@@ -9,15 +9,15 @@ class MilkTeaStdStackTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.maybe as maybe",
+      "",
       "import std.stack as stack",
       "",
       "function pop_value(values: ref[stack.Stack[int]]) -> int:",
       "    let removed = values.pop()",
       "    match removed:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return -1",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            return payload.value",
       "",
       "function main() -> int:",

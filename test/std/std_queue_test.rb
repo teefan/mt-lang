@@ -9,15 +9,15 @@ class MilkTeaStdQueueTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.maybe as maybe",
+      "",
       "import std.queue as queue",
       "",
       "function dequeue_value(values: ref[queue.Queue[int]]) -> int:",
       "    let removed = values.dequeue()",
       "    match removed:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return -1",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            return payload.value",
       "",
       "function main() -> int:",

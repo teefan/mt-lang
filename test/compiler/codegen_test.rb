@@ -247,12 +247,12 @@ class MilkTeaCodegenTest < Minitest::Test
           stop: int
           current: int
 
-      methods Numbers:
+      extending Numbers:
           public function iter() -> NumbersIter:
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
-      methods NumbersIter:
-          public editable function next() -> ptr[int]?:
+      extending NumbersIter:
+          public mutable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -288,12 +288,12 @@ class MilkTeaCodegenTest < Minitest::Test
           index: int
           stop: int
 
-      methods Numbers:
+      extending Numbers:
           public function iter() -> NumbersIter:
               return NumbersIter(index = 0, stop = this.stop)
 
-      methods NumbersIter:
-          public editable function next() -> bool:
+      extending NumbersIter:
+          public mutable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -403,11 +403,11 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Counter:
           value: int
 
-      methods Counter:
+      extending Counter:
           async function read() -> int:
               return this.value
 
-          async editable function bump() -> void:
+          async mutable function bump() -> void:
               this.value += 1
 
       async function main() -> int:
@@ -431,7 +431,7 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
+      extending Box:
           function echo[T](input: T) -> T:
               return input
 
@@ -460,7 +460,7 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           function get() -> T:
               return this.value
 
@@ -495,7 +495,7 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Box[T]:
           value: T
 
-      methods Box[T]:
+      extending Box[T]:
           static function create() -> Box[T]:
               return Box[T](value = zero[T])
 
@@ -522,7 +522,7 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Box:
           value: int
 
-      methods Box:
+      extending Box:
           static function build() -> Box:
               return Box(value = 1)
 
@@ -551,7 +551,7 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Title implements Runner:
           value: int
 
-      methods Title:
+      extending Title:
           function tick(effect: int) -> int:
               return this.value
 
@@ -572,14 +572,14 @@ class MilkTeaCodegenTest < Minitest::Test
       struct Player:
           hp: int
 
-      methods Player:
+      extending Player:
           static function default() -> Player:
               return Player(hp = 100)
 
       struct Plain:
           hp: int
 
-      methods Plain:
+      extending Plain:
           static function default() -> Plain:
               return Plain(hp = 7)
 
@@ -1614,8 +1614,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
         public foreign function update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
 
-        methods Camera:
-            public editable function update(mode: CameraMode) -> void:
+        extending Camera:
+            public mutable function update(mode: CameraMode) -> void:
                 update_camera(this, mode)
       MT
     }
@@ -2105,12 +2105,12 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       # module demo.main
 
-      import std.status as status
 
-      function parse(input: int) -> status.Status[int, int]:
+
+      function parse(input: int) -> Result[int, int]:
           if input < 0:
-              return status.Status[int, int].err(error= 7)
-          return status.Status[int, int].ok(value= input + 1)
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
 
       function main() -> int:
           let value = parse(4) else:
@@ -2120,22 +2120,22 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/std_status_Status_int_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == std_status_Status_int_int_kind_err\)/, generated)
+    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
     assert_match(/return 1;/, generated)
-    assert_match(/return value\.data\.ok\.value \+ 10;/, generated)
+    assert_match(/return value\.data\.success\.value \+ 10;/, generated)
   end
 
   def test_generate_c_for_let_else_maybe_success_binding
     source = <<~MT
       # module demo.main
 
-      import std.maybe as maybe
 
-      function parse(input: int) -> maybe.Maybe[int]:
+
+      function parse(input: int) -> Option[int]:
           if input < 0:
-              return maybe.Maybe[int].none
-          return maybe.Maybe[int].some(value= input + 1)
+              return Option[int].none
+          return Option[int].some(value= input + 1)
 
       function main() -> int:
           let value = parse(4) else:
@@ -2145,8 +2145,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/std_maybe_Maybe_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == std_maybe_Maybe_int_kind_none\)/, generated)
+    assert_match(/Option_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == Option_int_kind_none\)/, generated)
     assert_match(/return 1;/, generated)
     assert_match(/return value\.data\.some\.value \+ 10;/, generated)
   end
@@ -2155,12 +2155,12 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       # module demo.main
 
-      import std.status as status
 
-      function parse(input: int) -> status.Status[int, int]:
+
+      function parse(input: int) -> Result[int, int]:
           if input < 0:
-              return status.Status[int, int].err(error= 7)
-          return status.Status[int, int].ok(value= input + 1)
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
 
       function main() -> int:
           let value = parse(4) else as error:
@@ -2170,25 +2170,25 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/std_status_Status_int_int value = demo_main_parse\(4\);/, generated)
-    assert_match(/if \(value\.kind == std_status_Status_int_int_kind_err\)/, generated)
-    assert_match(/return value\.data\.err\.error;/, generated)
-    assert_match(/return value\.data\.ok\.value \+ 10;/, generated)
+    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/return value\.data\.failure\.error;/, generated)
+    assert_match(/return value\.data\.success\.value \+ 10;/, generated)
   end
 
   def test_generate_c_for_let_else_status_void_discard_binding
     source = <<~MT
       # module demo.main
 
-      import std.status as status
+
 
       function done() -> void:
           return
 
-      function parse(flag: int) -> status.Status[void, int]:
+      function parse(flag: int) -> Result[void, int]:
           if flag < 0:
-              return status.Status[void, int].err(error= 7)
-          return status.Status[void, int].ok(value= done())
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
 
       function main(flag: int) -> int:
           let _ = parse(flag) else as error:
@@ -2198,12 +2198,12 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/struct std_status_Status_void_int_ok \{/, generated)
+    assert_match(/struct Result_void_int_success \{/, generated)
     assert_match(/uint8_t value;/, generated)
     assert_match(/\.value = \(demo_main_done\(\), 0\)/, generated)
-    assert_match(/std_status_Status_void_int __mt_let_else_discard_\d+ = demo_main_parse\(flag\);/, generated)
-    assert_match(/if \(__mt_let_else_discard_\d+\.kind == std_status_Status_void_int_kind_err\)/, generated)
-    assert_match(/return __mt_let_else_discard_\d+\.data\.err\.error;/, generated)
+    assert_match(/Result_void_int __mt_let_else_discard_\d+ = demo_main_parse\(flag\);/, generated)
+    assert_match(/if \(__mt_let_else_discard_\d+\.kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/return __mt_let_else_discard_\d+\.data\.failure\.error;/, generated)
   end
 
   def test_generate_c_for_async_let_else_status_void_discard_binding
@@ -2211,16 +2211,16 @@ class MilkTeaCodegenTest < Minitest::Test
       # module demo.async_status_void_codegen
 
       import std.async as aio
-      import std.status as status
+
 
       function done() -> void:
           return
 
-      async function parse(flag: int) -> status.Status[void, int]:
+      async function parse(flag: int) -> Result[void, int]:
           await aio.sleep(1)
           if flag < 0:
-              return status.Status[void, int].err(error= 7)
-          return status.Status[void, int].ok(value= done())
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
 
       async function main(flag: int) -> int:
           let _ = await parse(flag) else as error:
@@ -2232,8 +2232,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     assert_match(/demo_async_status_void_codegen___async_main__frame/, generated)
     assert_match(/local_let_else_discard_\d+/, generated)
-    assert_match(/if \(.*kind == std_status_Status_void_int_kind_err\)/, generated)
-    assert_match(/data\.err\.error;/, generated)
+    assert_match(/if \(.*kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/data\.failure\.error;/, generated)
   end
 
   def test_generate_c_for_defer_expression_owned_foreign_release_calls
@@ -2640,14 +2640,14 @@ class MilkTeaCodegenTest < Minitest::Test
       "# module demo.interface_codegen",
       "",
       "interface Damageable:",
-      "    editable function take_damage(amount: int) -> void",
+      "    mutable function take_damage(amount: int) -> void",
       "    function is_alive() -> bool",
       "",
       "struct NPC implements Damageable:",
       "    hp: int",
       "",
-      "methods NPC:",
-      "    editable function take_damage(amount: int):",
+      "extending NPC:",
+      "    mutable function take_damage(amount: int):",
       "        this.hp -= amount",
       "",
       "    function is_alive() -> bool:",
@@ -2681,7 +2681,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct NPC implements Damageable:",
       "    value: int",
       "",
-      "methods NPC:",
+      "extending NPC:",
       "    function hp() -> int:",
       "        return this.value",
       "",
@@ -2711,7 +2711,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Counter implements Tagged:",
       "    value: int",
       "",
-      "methods Counter:",
+      "extending Counter:",
       "    static function tag() -> int:",
       "        return 33",
       "",
@@ -2737,7 +2737,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function hash(value: const_ptr[Key]) -> uint:",
       "        return uint<-0",
       "",
@@ -2769,7 +2769,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function hash(value: const_ptr[Key]) -> uint:",
       "        return uint<-0",
       "",
@@ -2807,7 +2807,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function hash(value: const_ptr[Key]) -> uint:",
       "        return uint<-0",
       "",
@@ -2844,7 +2844,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
       "        unsafe:",
       "            let left_value = read(ptr[Key]<-left).value",
@@ -2880,7 +2880,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
       "        unsafe:",
       "            let left_value = read(ptr[Key]<-left).value",
@@ -2920,7 +2920,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
       "        unsafe:",
       "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",
@@ -3045,25 +3045,6 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_builder_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
     assert_match(/return \(\(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\)\);/, generated)
-  end
-
-  def test_generate_c_rejects_removed_builtin_result_type
-    source = [
-      "# module demo.result_surface",
-      "",
-      "enum LoadError: ubyte",
-      "    invalid_format = 1",
-      "",
-      "function load(available: bool) -> Result[int, LoadError]:",
-      "    return 0",
-      "",
-    ].join("\n")
-
-    error = assert_raises(MilkTea::SemaError) do
-      generate_c_from_source(source)
-    end
-
-    assert_match(/unknown generic type Result/, error.message)
   end
 
   def test_generate_c_for_builtin_fatal_helper
@@ -3606,8 +3587,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Counter:",
       "    value: int",
       "",
-      "methods Counter:",
-      "    editable function add(delta: int):",
+      "extending Counter:",
+      "    mutable function add(delta: int):",
       "        this.value += delta",
       "",
       "    function read() -> int:",
@@ -3669,8 +3650,8 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Counter:",
       "    value: int",
       "",
-      "methods Counter:",
-      "    editable function add(delta: int):",
+      "extending Counter:",
+      "    mutable function add(delta: int):",
       "        this.value += delta",
       "",
       "    function read() -> int:",
@@ -3719,7 +3700,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "function first_value(big: Big) -> int:",
       "    return big.data[0]",
       "",
-      "methods Big:",
+      "extending Big:",
       "    function first() -> int:",
       "        return first_value(this)",
       "",
@@ -3749,7 +3730,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "    calls += 1",
       "    return Counter(value = calls)",
       "",
-      "methods Counter:",
+      "extending Counter:",
       "    function answer() -> int:",
       "        return 7",
       "",
@@ -3802,7 +3783,7 @@ class MilkTeaCodegenTest < Minitest::Test
         "",
         "public type Vec = RawVec",
         "",
-        "methods RawVec:",
+        "extending RawVec:",
         "    public static function zero() -> Vec:",
         "        return Vec(x = 0)",
         "",
@@ -4256,7 +4237,7 @@ class MilkTeaCodegenTest < Minitest::Test
       "struct Counter implements Named:",
       "    count: int",
       "",
-      "methods Counter:",
+      "extending Counter:",
       "    static function default() -> Counter:",
       "        return Counter(count = 7)",
       "",
@@ -4923,27 +4904,27 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       # module demo.non_void_match_fallback
 
-      import std.maybe as maybe
 
-      function select_bool(value: maybe.Maybe[bool]) -> bool:
+
+      function select_bool(value: Option[bool]) -> bool:
           match value:
-              maybe.Maybe.none:
+              Option.none:
                   return false
-              maybe.Maybe.some as payload:
+              Option.some as payload:
                   return payload.value
 
-      function select_ptr(value: maybe.Maybe[ptr[int]], fallback: ptr[int]) -> ptr[int]:
+      function select_ptr(value: Option[ptr[int]], fallback: ptr[int]) -> ptr[int]:
           match value:
-              maybe.Maybe.none:
+              Option.none:
                   return fallback
-              maybe.Maybe.some as payload:
+              Option.some as payload:
                   return payload.value
 
       function main() -> int:
           var number = 7
-          if not select_bool(maybe.Maybe[bool].some(value = true)):
+          if not select_bool(Option[bool].some(value = true)):
               return 1
-          let chosen = select_ptr(maybe.Maybe[ptr[int]].none, ptr_of(number))
+          let chosen = select_ptr(Option[ptr[int]].none, ptr_of(number))
           unsafe:
               if read(chosen) != 7:
                   return 2
@@ -5051,49 +5032,49 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       # module demo.generic_variant_codegen
 
-      variant Maybe[T]:
+      variant Box[T]:
           some(value: T)
           none
 
-      function value_or_zero(value: Maybe[int]) -> int:
+      function value_or_zero(value: Box[int]) -> int:
           match value:
-              Maybe.some as payload:
+              Box.some as payload:
                   return payload.value
-              Maybe.none:
+              Box.none:
                   return 0
 
       function main() -> int:
-          let value: Maybe[int] = Maybe[int].some(value= 7)
+          let value: Box[int] = Box[int].some(value= 7)
           return value_or_zero(value)
     MT
 
     generated = generate_c_from_source(source)
 
-    assert_match(/typedef int32_t demo_generic_variant_codegen_Maybe_int_kind;/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Maybe_int_some \{/, generated)
-    assert_match(/struct demo_generic_variant_codegen_Maybe_int \{/, generated)
-    assert_match(/demo_generic_variant_codegen_Maybe_int_kind kind;/, generated)
-    assert_match(/case demo_generic_variant_codegen_Maybe_int_kind_some:/, generated)
-    assert_match(/case demo_generic_variant_codegen_Maybe_int_kind_none:/, generated)
-    assert_match(/demo_generic_variant_codegen_Maybe_int_some payload = .*\.data\.some;/, generated)
+    assert_match(/typedef int32_t demo_generic_variant_codegen_Box_int_kind;/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Box_int_some \{/, generated)
+    assert_match(/struct demo_generic_variant_codegen_Box_int \{/, generated)
+    assert_match(/demo_generic_variant_codegen_Box_int_kind kind;/, generated)
+    assert_match(/case demo_generic_variant_codegen_Box_int_kind_some:/, generated)
+    assert_match(/case demo_generic_variant_codegen_Box_int_kind_none:/, generated)
+    assert_match(/demo_generic_variant_codegen_Box_int_some payload = .*\.data\.some;/, generated)
   end
 
   def test_generate_c_for_async_variant_payload_match
     source = [
       "# module demo.async_variant_payload_codegen",
       "",
-      "import std.status as status",
       "",
-      "async function helper() -> status.Status[int, int]:",
-      "    return status.Status[int, int].ok(value= 7)",
+      "",
+      "async function helper() -> Result[int, int]:",
+      "    return Result[int, int].success(value= 7)",
       "",
       "async function main() -> int:",
       "    let result = await helper()",
       "    match result:",
-      "        status.Status.ok as payload:",
+      "        Result.success as payload:",
       "            let value = payload.value",
       "            return value",
-      "        status.Status.err as payload:",
+      "        Result.failure as payload:",
       "            let error = payload.error",
       "            return error",
       "    return 9",
@@ -5101,8 +5082,8 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/std_status_Status_int_int_ok payload = .*\.data\.ok;/, generated)
-    assert_match(/std_status_Status_int_int_err .*\.data\.err;/, generated)
+    assert_match(/Result_int_int_success payload = .*\.data\.success;/, generated)
+    assert_match(/Result_int_int_failure .*\.data\.failure;/, generated)
   end
 
   def test_run_program_with_struct_field_of_generic_variant
@@ -5112,17 +5093,17 @@ class MilkTeaCodegenTest < Minitest::Test
     source = <<~MT
       # module demo.status_field_codegen
 
-      import std.status as status
+
 
       struct Holder:
-          result: status.Status[int, int]
+          result: Result[int, int]
 
       function main() -> int:
-          let holder = Holder(result = status.Status[int, int].ok(value= 7))
+          let holder = Holder(result = Result[int, int].success(value= 7))
           match holder.result:
-              status.Status.ok:
+              Result.success as ignored_payload:
                   return 0
-              status.Status.err:
+              Result.failure as ignored_error:
                   return 1
           return 2
     MT
@@ -5141,18 +5122,18 @@ class MilkTeaCodegenTest < Minitest::Test
     source = [
       "# module demo.async_status_codegen",
       "",
-      "import std.status as status",
       "",
-      "async function helper() -> status.Status[int, int]:",
-      "    return status.Status[int, int].ok(value= 7)",
+      "",
+      "async function helper() -> Result[int, int]:",
+      "    return Result[int, int].success(value= 7)",
       "",
       "async function main() -> int:",
       "    let result = await helper()",
       "    match result:",
-      "        status.Status.ok as payload:",
+      "        Result.success as payload:",
       "            let value = payload.value",
       "            return value",
-      "        status.Status.err as payload:",
+      "        Result.failure as payload:",
       "            let error = payload.error",
       "            return error",
       "    return 9",

@@ -1,7 +1,5 @@
 import std.libuv as libuv
 import std.mem.heap as heap
-import std.status as status
-
 
 public type NativeLoopHandle = libuv.uv_loop_t
 
@@ -386,15 +384,15 @@ public function sleep(timeout: ptr_uint) -> Task[int]:
     return sleep_on(require_current_runtime(), timeout)
 
 
-public function create_runtime() -> status.Status[Runtime, int]:
+public function create_runtime() -> Result[Runtime, int]:
     let loop_size = libuv.loop_size()
     let loop = unsafe: ptr[libuv.uv_loop_t]<-heap.must_alloc_zeroed_bytes(1, loop_size)
     let init_status = libuv.loop_init(loop)
     if init_status != 0:
         unsafe: heap.release_bytes(ptr[void]<-loop)
-        return status.Status[Runtime, int].err(error= init_status)
+        return Result[Runtime, int].failure(error= init_status)
 
-    return status.Status[Runtime, int].ok(value= Runtime(loop = loop, active = true))
+    return Result[Runtime, int].success(value= Runtime(loop = loop, active = true))
 
 
 public function release_runtime(runtime: ref[Runtime]) -> int:

@@ -9,13 +9,13 @@ class MilkTeaStdMultiSetTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     source = [
-      "import std.maybe as maybe",
+      "",
       "import std.multiset as multiset",
       "",
       "struct Key:",
       "    value: int",
       "",
-      "methods Key:",
+      "extending Key:",
       "    static function hash(value: const_ptr[Key]) -> uint:",
       "        unsafe:",
       "            return uint<-(read(ptr[Key]<-value).value & 1)",
@@ -104,9 +104,9 @@ class MilkTeaStdMultiSetTest < Minitest::Test
       "",
       "    let removed = values.remove_all(Key(value = 4))",
       "    match removed:",
-      "        maybe.Maybe.none:",
+      "        Option.none:",
       "            return 29",
-      "        maybe.Maybe.some as payload:",
+      "        Option.some as payload:",
       "            if payload.value != 3:",
       "                return 30",
       "",

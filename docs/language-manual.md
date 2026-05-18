@@ -188,7 +188,7 @@ Rules:
   - `let` is immutable
   - `var` is mutable
 - A local declaration without initializer requires explicit type and must be zero-initializable.
-- `let` declarations may use a guard form over nullable values, `std.maybe.Maybe[T]`, and `std.status.Status[T, E]`:
+- `let` declarations may use a guard form over nullable values, `Option[T]`, and `Result[T, E]`:
 
 ```mt
 let window = maybe_window else:
@@ -201,13 +201,13 @@ let image = load_image(path) else:
 Rules for `let ... else:`:
 
 - only `let` supports an `else` block
-- the initializer must have type `T?`, `std.maybe.Maybe[T]`, or `std.status.Status[T, E]`
+- the initializer must have type `T?`, `Option[T]`, or `Result[T, E]`
 - an explicit type annotation, if present, must name the success type `T`
-- for `std.maybe.Maybe[T]`, the bound name is the `some.value`
-- for `std.status.Status[T, E]`, the bound name is the `ok.value`
+- for `Option[T]`, the bound name is the `some.value`
+- for `Result[T, E]`, the bound name is the `success.value`
 - `let _ = expr else:` discards the success value and does not introduce a local binding
-- for `std.status.Status[T, E]`, `else as error:` optionally binds the `err.error` value inside the `else` block
-- `std.status.Status[void, E]` uses the same surface via `let _ = expr else:`
+- for `Result[T, E]`, `else as error:` optionally binds the `failure.error` value inside the `else` block
+- `Result[void, E]` uses the same surface via `let _ = expr else:`
 - the `else` block must exit control flow (`return`, `break`, `continue`, or another terminating path)
 
 ### 3.3 Type aliases
@@ -253,14 +253,14 @@ struct NPC implements Damageable, Named:
 opaque SDL_Window implements Closable
 ```
 
-`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Maybe[int]`:
+`variant` is a tagged union. Each arm may optionally carry named payload fields. Generic variants are supported via type arguments, for example `Option[int]`:
 
 ```mt
-variant Maybe[T]:
+variant Option[T]:
     just(value: T)
     nothing
 
-variant Status[T, E]:
+variant Result[T, E]:
     ok(value: T)
     err(error: E)
 ```
@@ -286,13 +286,13 @@ align(16) struct Mat4:
 
 ```mt
 public interface Damageable:
-    editable function take_damage(amount: int) -> void
+    mutable function take_damage(amount: int) -> void
     function is_alive() -> bool
 ```
 
 Rules:
 
-- Interface bodies contain `function`, `editable function`, or `static function` signatures.
+- Interface bodies contain `function`, `mutable function`, or `static function` signatures.
 - Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
@@ -302,11 +302,11 @@ Rules:
 ### 3.6 Methods
 
 ```mt
-methods Counter:
+extending Counter:
     function read() -> int:
         return this.value
 
-    editable function bump() -> void:
+    mutable function bump() -> void:
         this.value += 1
 
     static function zero() -> Counter:
@@ -316,7 +316,7 @@ methods Counter:
 Kinds:
 
 - `function` (value receiver)
-- `editable function` (mutable receiver)
+- `mutable function` (mutable receiver)
 - `static function` (no receiver)
 
 Names such as `init` and `default` are ordinary static functions. There is no constructor keyword or hidden initializer syntax.
@@ -479,7 +479,7 @@ Single-form `for` supports:
 - `start..stop` — exclusive integer range via range expression
 - `array[T, N]`
 - `span[T]`
-- custom structural iterables with a non-editable zero-argument `iter()` method
+- custom structural iterables with a non-mutable zero-argument `iter()` method
 
 Iterator protocol for custom structural iterables:
 
@@ -695,7 +695,7 @@ There are no separate `hashes` or `equates` constraints; the builtins themselves
 
 There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
 
-For recoverable failures, use `import std.status as status` and the ordinary library type `status.Status[T, E]`. Its `.ok(...)` and `.err(...)` constructors are variant arms, not built-in callables.
+For recoverable failures, use `Result[T, E]`. Its `.success(...)` and `.failure(...)` constructors are variant arms, not built-in callables.
 
 For repeated pointer-plus-length span construction, use the built-in `span[T](data = ..., len = ...)` form directly. If the pattern repeats often in one codebase, define a small local helper in your own module instead of depending on a standard helper module.
 
@@ -883,7 +883,7 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 
 ## 12. Current Unsupported Or Rejected Surfaces
 
-Current implementation rejects:
+Current extending rejects:
 
 - interface methods with `async` or generic signatures
 - generic interface declarations
@@ -897,8 +897,8 @@ import std.fmt as fmt
 struct Counter:
     value: int
 
-methods Counter:
-    editable function bump() -> void:
+extending Counter:
+    mutable function bump() -> void:
         this.value += 1
 
     function read() -> int:

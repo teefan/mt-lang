@@ -1,5 +1,4 @@
 import std.mem.heap as heap
-import std.maybe as maybe
 
 
 public struct Deque[T]:
@@ -17,7 +16,7 @@ public struct Iter[T]:
     index: ptr_uint
 
 
-methods Deque[T]:
+extending Deque[T]:
     public static function create() -> Deque[T]:
         return Deque[T](data = null, head = 0, len = 0, capacity = 0)
 
@@ -87,13 +86,13 @@ methods Deque[T]:
         return this.get(this.len - 1)
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.head = 0
         this.len = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.head = 0
@@ -102,7 +101,7 @@ methods Deque[T]:
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -138,7 +137,7 @@ methods Deque[T]:
         return
 
 
-    public editable function push_back(value: T) -> void:
+    public mutable function push_back(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -154,7 +153,7 @@ methods Deque[T]:
         return
 
 
-    public editable function push_front(value: T) -> void:
+    public mutable function push_front(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -174,7 +173,7 @@ methods Deque[T]:
         return
 
 
-    public editable function insert(index: ptr_uint, value: T) -> bool:
+    public mutable function insert(index: ptr_uint, value: T) -> bool:
         if index > this.len:
             return false
 
@@ -219,9 +218,9 @@ methods Deque[T]:
         return true
 
 
-    public editable function pop_back() -> maybe.Maybe[T]:
+    public mutable function pop_back() -> Option[T]:
         if this.len == 0:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         let data = this.data else:
             fatal(c"deque.pop_back missing storage")
@@ -235,12 +234,12 @@ methods Deque[T]:
                 this.len = 0
             else:
                 this.len -= 1
-            return maybe.Maybe[T].some(value = value)
+            return Option[T].some(value = value)
 
 
-    public editable function pop_front() -> maybe.Maybe[T]:
+    public mutable function pop_front() -> Option[T]:
         if this.len == 0:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         let data = this.data else:
             fatal(c"deque.pop_front missing storage")
@@ -254,12 +253,12 @@ methods Deque[T]:
             else:
                 this.len -= 1
                 this.head = Deque[T].next_index(this.head, this.capacity)
-            return maybe.Maybe[T].some(value = value)
+            return Option[T].some(value = value)
 
 
-    public editable function remove(index: ptr_uint) -> maybe.Maybe[T]:
+    public mutable function remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
-            return maybe.Maybe[T].none
+            return Option[T].none
 
         if index == 0:
             return this.pop_front()
@@ -292,10 +291,10 @@ methods Deque[T]:
                     current += 1
 
             this.len -= 1
-            return maybe.Maybe[T].some(value = removed)
+            return Option[T].some(value = removed)
 
 
-    public editable function rotate_left(amount: ptr_uint) -> void:
+    public mutable function rotate_left(amount: ptr_uint) -> void:
         if this.len <= 1:
             return
 
@@ -311,15 +310,15 @@ methods Deque[T]:
         while remaining != 0:
             let rotated = this.pop_front()
             match rotated:
-                maybe.Maybe.none:
+                Option.none:
                     fatal(c"deque.rotate_left missing front value")
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     this.push_back(payload.value)
             remaining -= 1
         return
 
 
-    public editable function rotate_right(amount: ptr_uint) -> void:
+    public mutable function rotate_right(amount: ptr_uint) -> void:
         if this.len <= 1:
             return
 
@@ -335,20 +334,20 @@ methods Deque[T]:
         while remaining != 0:
             let rotated = this.pop_back()
             match rotated:
-                maybe.Maybe.none:
+                Option.none:
                     fatal(c"deque.rotate_right missing back value")
-                maybe.Maybe.some as payload:
+                Option.some as payload:
                     this.push_front(payload.value)
             remaining -= 1
         return
 
 
-methods Iter[T]:
+extending Iter[T]:
     public function iter() -> Iter[T]:
         return this
 
 
-    public editable function next() -> ptr[T]?:
+    public mutable function next() -> ptr[T]?:
         if this.index >= this.len:
             return null
 

@@ -403,7 +403,7 @@ module MilkTea
 
             seen_method_names = {}
             lines << "" unless lines.empty?
-            lines << "methods #{spec.fetch(:type)}:"
+            lines << "extending #{spec.fetch(:type)}:"
 
             selected_names.each do |source_name|
               method_name, wrapper_lines = render_method_wrapper(plan_method_source_function(source_entries.fetch(source_name), source:), spec:)
@@ -423,7 +423,7 @@ module MilkTea
 
           seen_method_names = {}
           lines << "" unless lines.empty?
-          lines << "methods #{spec.fetch(:type)}:"
+          lines << "extending #{spec.fetch(:type)}:"
 
           selected_names.each do |raw_name|
             generated_entries = entries_by_raw_name.fetch(raw_name)
@@ -1052,7 +1052,7 @@ module MilkTea
         when nil
           :instance
         when "inout"
-          :editable
+          :mutable
         else
           raise Error, "method generation for #{raw_name} in #{@policy_path} cannot use receiver mode #{first_param["mode"].inspect}"
         end
@@ -1074,8 +1074,8 @@ module MilkTea
         signature << case kind
                      when :static
                        "static function "
-                     when :editable
-                       "editable function "
+                     when :mutable
+                       "mutable function "
                      else
                        "function "
                      end

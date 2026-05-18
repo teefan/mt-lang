@@ -1,6 +1,5 @@
 import std.linked_map as linked_map
 import std.linked_map_view as linked_map_view
-import std.maybe as maybe
 import std.mem.heap as heap
 
 
@@ -18,7 +17,7 @@ public struct Counter[T]:
     total: ptr_uint
 
 
-methods Counter[T]:
+extending Counter[T]:
     public static function create() -> Counter[T]:
         return Counter[T](values = linked_map.LinkedMap[T, ptr_uint].create(), total = 0)
 
@@ -73,24 +72,24 @@ methods Counter[T]:
         return Entries[T](values = linked_map_view.SnapshotEntries[T, ptr_uint].create(this.values.entries()))
 
 
-    public editable function clear() -> void:
+    public mutable function clear() -> void:
         this.values.clear()
         this.total = 0
         return
 
 
-    public editable function release() -> void:
+    public mutable function release() -> void:
         this.values.release()
         this.total = 0
         return
 
 
-    public editable function reserve(min_capacity: ptr_uint) -> void:
+    public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
         return
 
 
-    public editable function add(value: T, amount: ptr_uint) -> ptr_uint:
+    public mutable function add(value: T, amount: ptr_uint) -> ptr_uint:
         if amount == 0:
             let stored = this.values.get(value) else:
                 return 0
@@ -112,11 +111,11 @@ methods Counter[T]:
             return read(current)
 
 
-    public editable function increment(value: T) -> ptr_uint:
+    public mutable function increment(value: T) -> ptr_uint:
         return this.add(value, 1)
 
 
-    public editable function remove_one(value: T) -> bool:
+    public mutable function remove_one(value: T) -> bool:
         let current = this.values.get(value) else:
             return false
 
@@ -125,9 +124,9 @@ methods Counter[T]:
             if count <= 1:
                 let removed = this.values.remove(value)
                 match removed:
-                    maybe.Maybe.none:
+                    Option.none:
                         fatal(c"counter.Counter.remove_one missing value")
-                    maybe.Maybe.some:
+                    Option.some as ignored_payload:
                         if this.total == 0:
                             fatal(c"counter.Counter.remove_one missing total")
                         this.total -= 1
@@ -141,24 +140,24 @@ methods Counter[T]:
         return true
 
 
-    public editable function remove(value: T) -> maybe.Maybe[ptr_uint]:
+    public mutable function remove(value: T) -> Option[ptr_uint]:
         let removed = this.values.remove(value)
         match removed:
-            maybe.Maybe.none:
-                return maybe.Maybe[ptr_uint].none
-            maybe.Maybe.some as payload:
+            Option.none:
+                return Option[ptr_uint].none
+            Option.some as payload:
                 if this.total < payload.value:
                     fatal(c"counter.Counter.remove total underflow")
                 this.total -= payload.value
-                return maybe.Maybe[ptr_uint].some(value = payload.value)
+                return Option[ptr_uint].some(value = payload.value)
 
 
-methods Entries[T]:
+extending Entries[T]:
     public function iter() -> Entries[T]:
         return this
 
 
-    public editable function next() -> bool:
+    public mutable function next() -> bool:
         return this.values.next()
 
 

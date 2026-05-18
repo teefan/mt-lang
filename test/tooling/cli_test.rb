@@ -88,8 +88,8 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "import std.maybe as maybe"
-    assert_includes out.string, "methods AppState:"
+    assert_includes out.string, ""
+    assert_includes out.string, "extending AppState:"
     assert_includes out.string, "function main() -> ExitCode:"
   end
 
@@ -101,7 +101,7 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
-    assert_includes out.string, "import std.maybe as maybe"
+    assert_includes out.string, ""
     assert_includes out.string, "function main() -> ExitCode:"
   end
 

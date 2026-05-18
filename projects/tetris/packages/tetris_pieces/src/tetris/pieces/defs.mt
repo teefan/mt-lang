@@ -84,6 +84,6 @@ public function shape_cells(kind: int, rotation: int) -> array[Cell, 4]:
     return cells_z_1
 
 
-methods Piece:
+extending Piece:
     public static function default() -> Piece:
         return Piece(kind = piece_t, rotation = 0, x = 3, y = 0)
