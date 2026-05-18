@@ -24,6 +24,8 @@ struct mt_fs_metadata = c"mt_fs_metadata":
     kind: int
     mode: int
     size: ptr_uint
+    modified_seconds: ptr_int
+    modified_nanoseconds: ptr_int
 
 
 external function mt_fs_path_kind(path: cstr) -> int

@@ -4,6 +4,7 @@ require 'cgi/escape'
 require 'set'
 require 'thread'
 require 'uri'
+require_relative '../tooling/source_index_tool'
 
 module MilkTea
   module LSP
@@ -288,7 +289,7 @@ module MilkTea
         root_path = uri_to_path(root_uri)
         return unless root_path && File.directory?(root_path)
 
-        Dir.glob(File.join(root_path, '**', '*.mt')).each do |path|
+        MilkTea::SourceIndexTool.list_milk_tea_files(root_path: root_path).each do |path|
           file_uri = path_to_uri(path)
           @document_state_mutex.synchronize do
             @indexed_documents[file_uri] ||= begin
@@ -298,6 +299,8 @@ module MilkTea
             end
           end
         end
+      rescue MilkTea::SourceIndexToolError => e
+        log_error("LSP workspace index error #{root_uri}: #{e.message}")
       end
 
       def shutdown
