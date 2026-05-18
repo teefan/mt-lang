@@ -604,7 +604,7 @@ module MilkTea
         tokens_ms = elapsed_ms(tokens_start)
 
         facts_start = monotonic_time
-        facts = @workspace.get_facts(uri)
+        facts = @workspace.get_facts(uri, allow_last_good_fallback: false)
         facts_ms = elapsed_ms(facts_start)
 
         build_start = monotonic_time

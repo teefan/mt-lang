@@ -320,12 +320,12 @@ module MilkTea
         @ast_cache[uri] ||= parse_document(uri)
       end
 
-      def get_facts(uri)
-        snapshot = get_tooling_snapshot(uri)
+      def get_facts(uri, allow_last_good_fallback: true)
+        snapshot = get_tooling_snapshot(uri, allow_last_good_fallback:)
         snapshot&.facts
       end
 
-      def get_tooling_snapshot(uri)
+      def get_tooling_snapshot(uri, allow_last_good_fallback: true)
         total_start = perf_logging? ? monotonic_time : nil
         cache_state = 'miss'
         lock_wait_ms = 0.0
@@ -365,8 +365,8 @@ module MilkTea
                   @facts_cache[uri] = snapshot.facts
                   @last_good_facts_cache[uri] = snapshot.facts
                   @last_good_tooling_snapshot_cache[uri] = snapshot
-                  update_dependency_index(uri, snapshot.facts)
                 end
+                update_dependency_index(uri, snapshot&.facts) if snapshot
               else
                 cache_state = 'stale'
                 snapshot = @tooling_snapshot_cache[uri] || @last_good_tooling_snapshot_cache[uri]
@@ -382,7 +382,7 @@ module MilkTea
           ensure
             @facts_state_mutex.unlock
           end
-        elsif last_good_snapshot
+        elsif allow_last_good_fallback && last_good_snapshot
           cache_state = 'last_good'
           snapshot = last_good_snapshot
         else
@@ -711,16 +711,41 @@ module MilkTea
       end
 
       def update_dependency_index(uri, facts)
-        return unless facts
+        imported_module_names = if facts
+                                  facts.imports.each_value.filter_map(&:name).to_set
+                                else
+                                  dependency_index_imports_for(uri)
+                                end
+        return if imported_module_names.nil? && facts.nil?
 
         delete_dependency_index(uri)
 
-        @dependency_module_name_by_uri[uri] = facts.module_name if facts.module_name
-        imported_module_names = facts.imports.each_value.filter_map(&:name).to_set
+        module_name = facts&.module_name || infer_module_name_for_uri(uri)
+        @dependency_module_name_by_uri[uri] = module_name if module_name
         @dependency_imports_by_uri[uri] = imported_module_names
         imported_module_names.each do |module_name|
           @reverse_import_dependents[module_name] << uri
         end
+      end
+
+      def dependency_index_imports_for(uri)
+        ast = @ast_cache[uri]
+        unless ast
+          content = get_content(uri)
+          return nil if content.empty?
+
+          path = uri_to_path(uri)
+          ast = if path && File.file?(path)
+                  MilkTea::Parser.parse_collecting_errors(content, path: uri).ast
+                else
+                  MilkTea::Parser.parse(content, path: uri)
+                end
+        end
+        return nil unless ast
+
+        ast.imports.map { |import| import.path.to_s }.to_set
+      rescue MilkTea::LexError, MilkTea::ParseError
+        nil
       end
 
       def delete_dependency_index(uri)
