@@ -4,8 +4,6 @@ require 'cgi/escape'
 require 'set'
 require 'thread'
 require 'uri'
-require_relative '../tooling/source_index_tool'
-
 module MilkTea
   module LSP
     # Manages open documents, AST cache, token cache, semantic facts cache, and symbol index.
@@ -299,7 +297,7 @@ module MilkTea
         root_path = uri_to_path(root_uri)
         return unless root_path && File.directory?(root_path)
 
-        MilkTea::SourceIndexTool.list_milk_tea_files(root_path: root_path).each do |path|
+        Dir.glob(File.join(root_path, '**', '*.mt')).sort.each do |path|
           file_uri = path_to_uri(path)
           @document_state_mutex.synchronize do
             @indexed_documents[file_uri] ||= begin
@@ -309,7 +307,7 @@ module MilkTea
             end
           end
         end
-      rescue MilkTea::SourceIndexToolError => e
+      rescue StandardError => e
         log_error("LSP workspace index error #{root_uri}: #{e.message}")
       end
 

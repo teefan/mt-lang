@@ -469,7 +469,6 @@ module MilkTea
       end
 
       def handle_initialized(_params)
-        # Enhancement 4: index all .mt files in the workspace root
         @workspace.index_workspace(@root_uri) if @root_uri
         nil
       end
@@ -2085,6 +2084,8 @@ module MilkTea
       def handle_workspace_symbol(params)
         query = (params['query'] || '').downcase
 
+        @workspace.index_workspace(@root_uri) if @root_uri
+
         results = []
         @workspace.all_documents.each do |uri|
           @workspace.get_symbols(uri).each do |sym|
@@ -2652,31 +2653,28 @@ module MilkTea
         if facts
           facts_location = measure_perf_stage(stages, 'facts_lookup') do
             location = nil
+            dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+            dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
+            imported_module_name = dot_receiver ? (facts.imports[dot_receiver]&.name || imported_module_name_from_ast(uri, dot_receiver)) : nil
 
-            if token_index && (member_access = module_member_access_info(tokens, token_index))
-              module_name = facts.imports[member_access[:receiver]]&.name || imported_module_name_from_ast(uri, member_access[:receiver])
-              if module_name
-                location = module_member_definition_location(uri, module_name, token.lexeme)
-                location ||= module_definition_location(uri, module_name)
-              end
-            elsif token_index && (field_location = resolve_field_member_definition_location(uri, facts, tokens, token_index))
+            if token_index && (field_location = resolve_field_member_definition_location(uri, facts, tokens, token_index))
               location = field_location
             elsif token_index && (enum_member_location = resolve_enum_member_definition_location(uri, facts, tokens, token_index))
               location = enum_member_location
+            elsif token_index && imported_module_name && module_member_access_info(tokens, token_index)
+              location = module_member_definition_location(uri, imported_module_name, token.lexeme)
+              location ||= module_definition_location(uri, imported_module_name)
+            elsif (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, token.lexeme))
+              location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
+                module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
+                module_definition_location(uri, type_method[:module_name])
             else
-              dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
-              dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
-              imported_module_name = dot_receiver ? (facts.imports[dot_receiver]&.name || imported_module_name_from_ast(uri, dot_receiver)) : nil
               if imported_module_name
                 location = module_member_definition_location(uri, imported_module_name, token.lexeme) || module_definition_location(uri, imported_module_name)
-              elsif (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, token.lexeme))
-                location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
-                  module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
-                  module_definition_location(uri, type_method[:module_name])
               elsif facts.imports.key?(token.lexeme)
                 module_name = facts.imports.fetch(token.lexeme).name
-              location = module_member_definition_location(uri, module_name, token.lexeme)
-              location ||= module_definition_location(uri, module_name)
+                location = module_member_definition_location(uri, module_name, token.lexeme)
+                location ||= module_definition_location(uri, module_name)
               elsif (module_name = imported_module_name_from_ast(uri, token.lexeme))
                 location = module_definition_location(uri, module_name)
               end
@@ -3101,7 +3099,11 @@ module MilkTea
         return [:function, []] if next_tok&.type == :lbracket && user_defined_function
 
         if facts && identifier_in_type_reference_position?(tokens, index)
-          return [:type, []] if facts.types.key?(name)
+          if facts.types.key?(name)
+            modifiers = []
+            modifiers << 'defaultLibrary' if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
+            return [:type, modifiers]
+          end
           return [:type, []] if facts.interfaces.key?(name)
 
           if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
@@ -3115,7 +3117,11 @@ module MilkTea
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
-          return [:type, []] if facts.types.key?(name)
+          if facts.types.key?(name)
+            modifiers = []
+            modifiers << 'defaultLibrary' if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
+            return [:type, modifiers]
+          end
           return [:type, []] if facts.interfaces.key?(name)
 
           return [:namespace, []] if facts.imports.key?(name)

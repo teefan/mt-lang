@@ -5830,7 +5830,7 @@ module MilkTea
           argument = arguments.fetch(index)
           expected_argument_type = if callable_type?(parameter.type)
                                      candidate_type = substitute_type(parameter.type, substitutions)
-                                     contains_type_var?(candidate_type) ? nil : candidate_type
+                                     callable_type?(candidate_type) ? candidate_type : (contains_type_var?(candidate_type) ? nil : candidate_type)
                                    end
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)

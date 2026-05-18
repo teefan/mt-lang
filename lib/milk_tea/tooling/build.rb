@@ -185,11 +185,7 @@ module MilkTea
       ir_program = program.is_a?(IR::Program) ? program : Lowering.lower(program)
       ensure_program_has_entrypoint!(program, ir_program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives: emit_line_directives)
-      saved_c = if emit_line_directives
-                  CBackend.emit(ir_program, emit_line_directives: false)
-                else
-                  compiled_c
-                end
+      saved_c = emit_line_directives ? nil : compiled_c
 
       {
         ir_program: ir_program,

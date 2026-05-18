@@ -638,6 +638,8 @@ module MilkTea
           type.nullable ? "#{text}?" : text
         when AST::FunctionType
           "fn(#{type.params.map { |param| render_param(param) }.join(', ')}) -> #{render_type(type.return_type)}"
+        when AST::ProcType
+          "proc(#{type.params.map { |param| render_param(param) }.join(', ')}) -> #{render_type(type.return_type)}"
         else
           type.to_s
         end
