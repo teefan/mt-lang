@@ -11,6 +11,7 @@ module MilkTea
     # Supports incremental document edits and workspace-wide indexing.
     class Workspace
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
+      PERF_LOG_THRESHOLD_MS = 1000
 
       # Token types that introduce a named definition, in order of precedence
       DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface].freeze
@@ -33,6 +34,8 @@ module MilkTea
         @doc_comments_cache = {} # uri -> {"line:column" => markdown_doc}
         @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
         @shared_module_cache = {}
+        @analysis_cache_mutex = Mutex.new
+        @analysis_generation = Hash.new(0)
         @analysis_state_mutex = Mutex.new
         # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
         # Avoids re-running Sema.check_collecting_errors when content is unchanged.
@@ -60,10 +63,12 @@ module MilkTea
 
         @dependency_resolution_mode = normalized
         @analysis_state_mutex.synchronize do
-          @shared_module_cache.clear
-          @analysis_cache.clear
-          @diagnostics_cache.clear
-          @last_good_analysis_cache.clear
+          @analysis_cache_mutex.synchronize do
+            @shared_module_cache.clear
+            @analysis_cache.clear
+            @diagnostics_cache.clear
+            @last_good_analysis_cache.clear
+          end
         end
       end
 
@@ -77,10 +82,12 @@ module MilkTea
 
         @platform_override = normalized
         @analysis_state_mutex.synchronize do
-          @shared_module_cache.clear
-          @analysis_cache.clear
-          @diagnostics_cache.clear
-          @last_good_analysis_cache.clear
+          @analysis_cache_mutex.synchronize do
+            @shared_module_cache.clear
+            @analysis_cache.clear
+            @diagnostics_cache.clear
+            @last_good_analysis_cache.clear
+          end
         end
       end
 
@@ -113,30 +120,74 @@ module MilkTea
 
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
       def collect_diagnostics(uri)
+        total_start = perf_logging? ? monotonic_time : nil
         content = get_content(uri)
         hash = content.hash
-        @analysis_state_mutex.synchronize do
+        cache_state = 'miss'
+        lock_wait_ms = 0.0
+        collect_ms = 0.0
+        diagnostics = nil
+        generation = nil
+        @analysis_cache_mutex.synchronize do
+          generation = @analysis_generation[uri]
           entry = @diagnostics_cache[uri]
-          return entry[:diagnostics] if entry && entry[:content_hash] == hash
-
-          result = Diagnostics.collect(
-            uri,
-            content,
-            shared_module_cache: @shared_module_cache,
-            source_overrides: file_backed_source_overrides,
-            dependency_resolution_mode: @dependency_resolution_mode,
-            platform_override: @platform_override,
-          )
-          diagnostics = result[:diagnostics]
-          analysis = result[:analysis]
-          @analysis_cache[uri] = analysis if analysis
-          @last_good_analysis_cache[uri] = analysis if analysis
-          @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
-          diagnostics
+          if entry && entry[:content_hash] == hash
+            cache_state = 'hit'
+            diagnostics = entry[:diagnostics]
+          end
         end
+        return diagnostics if diagnostics
+
+        lock_wait_start = total_start ? monotonic_time : nil
+        @analysis_state_mutex.synchronize do
+          lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
+          @analysis_cache_mutex.synchronize do
+            generation = @analysis_generation[uri]
+            entry = @diagnostics_cache[uri]
+            if entry && entry[:content_hash] == hash
+              cache_state = 'hit'
+              diagnostics = entry[:diagnostics]
+            end
+          end
+
+          unless diagnostics
+            collect_start = total_start ? monotonic_time : nil
+            result = Diagnostics.collect(
+              uri,
+              content,
+              shared_module_cache: @shared_module_cache,
+              source_overrides: file_backed_source_overrides,
+              dependency_resolution_mode: @dependency_resolution_mode,
+              platform_override: @platform_override,
+            )
+            collect_ms = elapsed_ms(collect_start) if collect_start
+            diagnostics = result[:diagnostics]
+            analysis = result[:analysis]
+            @analysis_cache_mutex.synchronize do
+              if @analysis_generation[uri] == generation
+                @analysis_cache[uri] = analysis if analysis
+                @last_good_analysis_cache[uri] = analysis if analysis
+                @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
+              else
+                cache_state = 'stale'
+              end
+            end
+          end
+        end
+        diagnostics
       rescue StandardError => e
+        cache_state = 'error'
         log_error("LSP diagnostics error #{uri}: #{e.message}")
         []
+      ensure
+        if total_start
+          result_count = diagnostics ? diagnostics.length : 0
+          log_perf_breakdown(
+            'workspace/collect_diagnostics',
+            elapsed_ms(total_start),
+            "uri=#{uri} cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
+          )
+        end
       end
 
       # ── Document lifecycle ──────────────────────────────────────────────────
@@ -156,8 +207,7 @@ module MilkTea
           @open_documents.delete(uri)
           @document_sources.delete(uri)
         end
-        @last_good_analysis_cache.delete(uri)
-        invalidate_cache(uri)
+        invalidate_cache(uri, clear_last_good: true)
       end
 
       def update_document(uri, content)
@@ -232,8 +282,57 @@ module MilkTea
       end
 
       def get_analysis(uri)
+        total_start = perf_logging? ? monotonic_time : nil
+        cache_state = 'miss'
+        lock_wait_ms = 0.0
+        analyze_ms = 0.0
+        analysis = nil
+        generation = nil
+        @analysis_cache_mutex.synchronize do
+          generation = @analysis_generation[uri]
+          cached = @analysis_cache[uri]
+          if cached
+            cache_state = 'hit'
+            analysis = cached
+          end
+        end
+        return analysis if analysis
+
+        lock_wait_start = total_start ? monotonic_time : nil
         @analysis_state_mutex.synchronize do
-          @analysis_cache[uri] ||= analyze_document(uri)
+          lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
+          @analysis_cache_mutex.synchronize do
+            generation = @analysis_generation[uri]
+            cached = @analysis_cache[uri]
+            if cached
+              cache_state = 'hit'
+              analysis = cached
+            end
+          end
+
+          unless analysis
+            analyze_start = total_start ? monotonic_time : nil
+            analysis = analyze_document(uri)
+            analyze_ms = elapsed_ms(analyze_start) if analyze_start
+            @analysis_cache_mutex.synchronize do
+              if @analysis_generation[uri] == generation
+                @analysis_cache[uri] = analysis if analysis
+              else
+                cache_state = 'stale'
+                analysis = @analysis_cache[uri] || @last_good_analysis_cache[uri]
+              end
+            end
+          end
+        end
+        analysis
+      ensure
+        if total_start
+          result_state = analysis.nil? ? 'nil' : 'ok'
+          log_perf_breakdown(
+            'workspace/get_analysis',
+            elapsed_ms(total_start),
+            "uri=#{uri} cache=#{cache_state} result=#{result_state} stages_ms=lock_wait:#{lock_wait_ms},analyze:#{analyze_ms}",
+          )
         end
       end
 
@@ -512,14 +611,16 @@ module MilkTea
 
       # ── Cache management ────────────────────────────────────────────────────
 
-      def invalidate_cache(uri)
+      def invalidate_cache(uri, clear_last_good: false)
         @tokens_cache.delete(uri)
         @ast_cache.delete(uri)
         @symbols_cache.delete(uri)
         @doc_comments_cache.delete(uri)
-        @analysis_state_mutex.synchronize do
+        @analysis_cache_mutex.synchronize do
+          @analysis_generation[uri] += 1
           @analysis_cache.delete(uri)
           @diagnostics_cache.delete(uri)
+          @last_good_analysis_cache.delete(uri) if clear_last_good
         end
         @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
@@ -530,17 +631,37 @@ module MilkTea
       end
 
       def refresh_import_dependent_caches(changed_uri: nil)
-        @analysis_state_mutex.synchronize do
-          preserved_last_good_analysis = changed_uri ? @last_good_analysis_cache[changed_uri] : nil
-          @shared_module_cache.clear
-          @analysis_cache.clear
-          @diagnostics_cache.clear
-          @last_good_analysis_cache.clear
-          @last_good_analysis_cache[changed_uri] = preserved_last_good_analysis if changed_uri && preserved_last_good_analysis
-        end
-        @document_state_mutex.synchronize do
+        open_document_uris = @document_state_mutex.synchronize do
           @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
         end
+
+        @analysis_state_mutex.synchronize do
+          @analysis_cache_mutex.synchronize do
+            preserved_open_analysis = open_document_uris.each_with_object({}) do |open_uri, preserved|
+              analysis = @analysis_cache[open_uri]
+              preserved[open_uri] = analysis if analysis
+            end
+            preserved_open_last_good_analysis = open_document_uris.each_with_object({}) do |open_uri, preserved|
+              analysis = @last_good_analysis_cache[open_uri]
+              preserved[open_uri] = analysis if analysis
+            end
+            preserved_changed_last_good_analysis = changed_uri ? @last_good_analysis_cache[changed_uri] : nil
+            @shared_module_cache.clear
+            @analysis_cache.clear
+            @diagnostics_cache.clear
+            @last_good_analysis_cache.clear
+            preserved_open_analysis.each do |open_uri, analysis|
+              @analysis_cache[open_uri] = analysis
+            end
+            preserved_open_last_good_analysis.each do |open_uri, analysis|
+              @last_good_analysis_cache[open_uri] = analysis
+            end
+            if changed_uri && preserved_changed_last_good_analysis
+              @last_good_analysis_cache[changed_uri] = preserved_changed_last_good_analysis
+            end
+          end
+        end
+        open_document_uris
       end
 
       # ── Compilation helpers ─────────────────────────────────────────────────
@@ -573,6 +694,32 @@ module MilkTea
         nil
       end
 
+      def perf_logging?
+        @perf_logging ||= !ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s.empty?
+      end
+
+      def perf_verbose?
+        @perf_verbose ||= ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s == 'verbose'
+      end
+
+      def perf_breakdown_logging?(elapsed_ms_value)
+        perf_logging? && (perf_verbose? || elapsed_ms_value > PERF_LOG_THRESHOLD_MS)
+      end
+
+      def monotonic_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def elapsed_ms(start_time)
+        ((monotonic_time - start_time) * 1000).round(1)
+      end
+
+      def log_perf_breakdown(name, elapsed_ms_value, detail)
+        return unless perf_breakdown_logging?(elapsed_ms_value)
+
+        warn "[LSP perf] breakdown #{name} #{elapsed_ms_value}ms #{detail}"
+      end
+
       def ast_for_content(uri, content)
         return get_ast(uri) if get_content(uri) == content
 
@@ -593,6 +740,11 @@ module MilkTea
           import_count: ast.respond_to?(:imports) ? ast.imports.length : 0,
           shared_module_cache_size: @shared_module_cache.length,
         }
+
+        if background_document?(uri)
+          stats[:skip_reason] = :background_document
+          return stats
+        end
 
         analysis_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         analysis_path = uri_to_path(uri)

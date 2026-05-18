@@ -8,15 +8,22 @@ module MilkTea
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
       def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil)
+        total_start = perf_logging? ? monotonic_time : nil
         diagnostics = []
         sema_analysis = nil
         unresolved_import_paths = []
+        parse_ms = 0.0
+        imports_ms = 0.0
+        sema_ms = 0.0
+        lint_ms = 0.0
+        lint_profile = total_start ? Linter::Profile.new : nil
         path = uri_to_path(uri)
         resolution = DependencyResolution.resolve(path, mode: dependency_resolution_mode)
         effective_platform = effective_platform_for_path(path, platform_override:)
 
         # Parse
         begin
+          parse_start = total_start ? monotonic_time : nil
           ast = if path && File.file?(path)
                   parse_result = Parser.parse_collecting_errors(content, path: uri)
                   parse_result.errors.each { |error| diagnostics << format_error(error) }
@@ -24,6 +31,7 @@ module MilkTea
                 else
                   Parser.parse(content, path: uri)
                 end
+          parse_ms = elapsed_ms(parse_start) if parse_start
           return { diagnostics: diagnostics, analysis: sema_analysis } unless ast
 
           if resolution.error_message
@@ -37,6 +45,7 @@ module MilkTea
             return { diagnostics: diagnostics, analysis: sema_analysis }
           end
 
+          imports_start = total_start ? monotonic_time : nil
           imported_modules = resolve_imported_modules(
             uri,
             ast,
@@ -47,14 +56,17 @@ module MilkTea
             source_overrides: source_overrides,
             content: content,
           )
+          imports_ms = elapsed_ms(imports_start) if imports_start
           unresolved_import_paths = imported_modules.fetch(:unresolved_import_paths)
 
           # Semantic analysis — collect errors from all functions, not just first.
           begin
+            sema_start = total_start ? monotonic_time : nil
             result = Sema.check_collecting_errors(ast, imported_modules: imported_modules.fetch(:modules))
             sema_analysis = result[:analysis]
             result[:errors].reject { |e| redundant_unknown_import_error?(e, unresolved_import_paths) }
                            .each { |e| diagnostics << format_error(e) }
+            sema_ms = elapsed_ms(sema_start) if sema_start
           rescue StandardError => e
             warn "Error collecting diagnostics: #{e.message}"
           end
@@ -66,9 +78,17 @@ module MilkTea
 
         # Lint warnings (severity: 2 = Warning)
         begin
-          Linter.lint_source(content, path: uri, sema_analysis: sema_analysis, unresolved_import_paths: unresolved_import_paths).each do |w|
+          lint_start = total_start ? monotonic_time : nil
+          Linter.lint_source(
+            content,
+            path: uri,
+            sema_analysis: sema_analysis,
+            unresolved_import_paths: unresolved_import_paths,
+            profile: lint_profile,
+          ).each do |w|
             diagnostics << format_warning(w, content: content)
           end
+          lint_ms = elapsed_ms(lint_start) if lint_start
         rescue MilkTea::LexError, MilkTea::ParseError
           # Best-effort only while the user is mid-edit; lex/parse failures are
           # already reported by the main diagnostics path.
@@ -77,6 +97,17 @@ module MilkTea
         end
 
         { diagnostics: diagnostics, analysis: sema_analysis }
+      ensure
+        if total_start
+          lint_breakdown = lint_profile&.summary(limit: 12)
+          detail = "uri=#{uri} diagnostics=#{diagnostics.length} analysis=#{sema_analysis ? 'ok' : 'nil'} stages_ms=parse:#{parse_ms},imports:#{imports_ms},sema:#{sema_ms},lint:#{lint_ms}"
+          detail += " lint_passes_ms=#{lint_breakdown}" unless lint_breakdown.nil? || lint_breakdown.empty?
+          log_perf_breakdown(
+            'diagnostics.collect',
+            elapsed_ms(total_start),
+            detail,
+          )
+        end
       end
 
       private
@@ -129,6 +160,32 @@ module MilkTea
         CGI.unescape(parsed.path)
       rescue URI::InvalidURIError
         nil
+      end
+
+      def self.perf_logging?
+        @perf_logging ||= !ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s.empty?
+      end
+
+      def self.perf_verbose?
+        @perf_verbose ||= ENV.fetch('MILK_TEA_LSP_PERF', nil).to_s == 'verbose'
+      end
+
+      def self.perf_breakdown_logging?(elapsed_ms_value)
+        perf_logging? && (perf_verbose? || elapsed_ms_value > Workspace::PERF_LOG_THRESHOLD_MS)
+      end
+
+      def self.monotonic_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def self.elapsed_ms(start_time)
+        ((monotonic_time - start_time) * 1000).round(1)
+      end
+
+      def self.log_perf_breakdown(name, elapsed_ms_value, detail)
+        return unless perf_breakdown_logging?(elapsed_ms_value)
+
+        warn "[LSP perf] breakdown #{name} #{elapsed_ms_value}ms #{detail}"
       end
 
       def self.load_package_graph(path, locked: false)

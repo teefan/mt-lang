@@ -137,7 +137,7 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_open_document_eagerly_analyzes_background_documents
+  def test_open_document_skips_eager_analysis_for_background_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background.mt"
     workspace.set_document_source(uri, "background-document")
@@ -147,11 +147,11 @@ class LSPWorkspaceTest < Minitest::Test
           return 0
     MT
 
-    assert_equal true, stats[:eager_analysis]
-    assert_equal :memory, stats[:analysis_mode]
-    assert_nil stats[:skip_reason]
+    assert_equal false, stats[:eager_analysis]
+    assert_nil stats[:analysis_mode]
+    assert_equal :background_document, stats[:skip_reason]
     assert_equal 0, stats[:import_count]
-    assert_kind_of Numeric, stats[:analysis_ms]
+    assert_nil stats[:analysis_ms]
   ensure
     workspace&.shutdown
   end
@@ -337,6 +337,135 @@ class LSPWorkspaceTest < Minitest::Test
     ensure
       workspace&.shutdown
     end
+  end
+
+  def test_get_analysis_cache_hit_does_not_wait_for_analysis_state_mutex
+    Dir.mktmpdir("lsp_workspace_analysis_cache_hit") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      path = File.join(std_dir, "demo.mt")
+      content = <<~MT
+        public function answer() -> int:
+            return 42
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+      state_lock_held = Queue.new
+      release_state_lock = Queue.new
+      holder = Thread.new do
+        state_mutex.synchronize do
+          state_lock_held << true
+          release_state_lock.pop
+        end
+      end
+      state_lock_held.pop
+
+      result = Queue.new
+      reader = Thread.new do
+        result << workspace.get_analysis(uri)
+      end
+
+      assert reader.join(0.2), "expected cached analysis to bypass the analysis-state mutex"
+      refute_nil result.pop
+    ensure
+      release_state_lock << true if release_state_lock
+      holder&.join(1)
+      reader&.join(1)
+      workspace&.shutdown
+    end
+  end
+
+  def test_get_analysis_cache_hit_survives_dependency_refresh_without_waiting
+    Dir.mktmpdir("lsp_workspace_dependency_refresh_cache_hit") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+      dependency_source = <<~MT
+        public function answer() -> int:
+            return 42
+      MT
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      File.write(dependency_path, dependency_source)
+      File.write(main_path, main_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(dependency_uri, dependency_source)
+      workspace.open_document(main_uri, main_source)
+      refute_nil workspace.get_analysis(main_uri)
+
+      assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
+
+      state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+      state_lock_held = Queue.new
+      release_state_lock = Queue.new
+      holder = Thread.new do
+        state_mutex.synchronize do
+          state_lock_held << true
+          release_state_lock.pop
+        end
+      end
+      state_lock_held.pop
+
+      result = Queue.new
+      reader = Thread.new do
+        result << workspace.get_analysis(main_uri)
+      end
+
+      assert reader.join(0.2), "expected preserved open-document analysis to bypass analysis-state lock during dependency refresh"
+      refute_nil result.pop
+    ensure
+      release_state_lock << true if release_state_lock
+      holder&.join(1)
+      reader&.join(1)
+      workspace&.shutdown
+    end
+  end
+
+  def test_open_background_document_does_not_wait_for_analysis_state_mutex
+    workspace = MilkTea::LSP::Workspace.new
+    uri = "file:///tmp/lsp_workspace_background_lock.mt"
+    workspace.set_document_source(uri, "background-document")
+
+    state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+    state_lock_held = Queue.new
+    release_state_lock = Queue.new
+    holder = Thread.new do
+      state_mutex.synchronize do
+        state_lock_held << true
+        release_state_lock.pop
+      end
+    end
+    state_lock_held.pop
+
+    result = Queue.new
+    opener = Thread.new do
+      result << workspace.open_document(uri, <<~MT)
+        function main() -> int:
+            return 0
+      MT
+    end
+
+    assert opener.join(0.2), "expected background-document open to avoid waiting on analysis-state lock during cache invalidation"
+    stats = result.pop
+    assert_equal false, stats[:eager_analysis]
+    assert_equal :background_document, stats[:skip_reason]
+  ensure
+    release_state_lock << true if release_state_lock
+    holder&.join(1)
+    opener&.join(1)
+    workspace&.shutdown
   end
 
   def test_get_analysis_keeps_open_shared_file_as_root_while_imports_follow_platform_override

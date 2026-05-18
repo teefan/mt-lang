@@ -57,19 +57,58 @@ module MilkTea
     ReservedPrimitiveNameSite = Data.define(:line, :column, :length)
     ReservedPrimitiveNameFix = Data.define(:kind, :original_name, :replacement_name, :sites)
 
-    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil)
+    class Profile
+      attr_reader :timings_ms, :counts
+
+      def initialize
+        @timings_ms = Hash.new(0.0)
+        @counts = Hash.new(0)
+      end
+
+      def measure(name)
+        start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = yield
+        @timings_ms[name] += (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0
+        @counts[name] += 1
+        result
+      end
+
+      def empty?
+        @timings_ms.empty?
+      end
+
+      def summary(limit: 10, min_ms: 0.1)
+        @timings_ms
+          .sort_by { |_name, total_ms| -total_ms }
+          .filter_map do |name, total_ms|
+            rounded_ms = total_ms.round(1)
+            next if rounded_ms < min_ms
+
+            count = @counts[name]
+            count > 1 ? "#{name}:#{count}x/#{rounded_ms}" : "#{name}:#{rounded_ms}"
+          end
+          .first(limit)
+          .join(',')
+      end
+    end
+
+    def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_analysis: nil, unresolved_import_paths: nil, profile: nil)
       context = nil
       if sema_analysis.nil? || unresolved_import_paths.nil?
-        context = best_effort_lint_context(source, path:)
+        context = best_effort_lint_context(source, path:, profile:, label: "context_bootstrap")
         sema_analysis ||= context[:analysis]
         unresolved_import_paths ||= context[:unresolved_import_paths]
       end
 
-      ast = sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
-      trivia = Lexer.lex_with_trivia(source, path:).trivia
-      suppressions = parse_suppressions(trivia)
-      warnings = new(path:, sema_analysis:, source:, unresolved_import_paths:).lint(ast)
-      warnings = apply_suppressions(warnings, suppressions)
+      ast = profile_phase(profile, "resolve_ast") do
+        sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
+      end
+      imported_modules = context&.fetch(:imported_modules, nil)
+      imported_modules ||= imported_modules_from_analysis(ast, sema_analysis)
+      trivia = profile_phase(profile, "lex_trivia") { Lexer.lex_with_trivia(source, path:).trivia }
+      suppressions = profile_phase(profile, "parse_suppressions") { parse_suppressions(trivia) }
+      warnings = new(path:, sema_analysis:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast, profile:).lint(ast)
+      warnings = profile_phase(profile, "apply_suppressions") { apply_suppressions(warnings, suppressions) }
 
       # Layer in config-file defaults before per-call overrides
       if (cfg = load_config(path))
@@ -77,7 +116,7 @@ module MilkTea
         ignore ||= cfg[:ignore]
       end
 
-      warnings = filter_by_rules(warnings, select:, ignore:)
+      warnings = profile_phase(profile, "filter_rules") { filter_by_rules(warnings, select:, ignore:) }
       warnings
     end
 
@@ -94,7 +133,9 @@ module MilkTea
       end
 
       ast = sema_analysis&.ast || context&.fetch(:ast, nil) || Parser.parse(source, path:)
-      linter = new(path:, sema_analysis:, source:, unresolved_import_paths:)
+      imported_modules = context&.fetch(:imported_modules, nil)
+      imported_modules ||= imported_modules_from_analysis(ast, sema_analysis)
+      linter = new(path:, sema_analysis:, source:, unresolved_import_paths:, imported_modules:, source_ast: ast)
       linter.lint(ast)
       linter.reserved_primitive_name_fixes
     end
@@ -134,6 +175,22 @@ module MilkTea
       result
     rescue StandardError
       {}
+    end
+
+    def self.profile_phase(profile, name)
+      return yield unless profile
+
+      profile.measure(name) { yield }
+    end
+
+    def self.imported_modules_from_analysis(ast, sema_analysis)
+      return {} unless ast && sema_analysis
+
+      ast.imports.each_with_object({}) do |import, imported_modules|
+        alias_name = import.alias_name || import.path.parts.last
+        module_binding = sema_analysis.imports[alias_name]
+        imported_modules[import.path.to_s] = module_binding if module_binding
+      end
     end
 
     # Apply auto-fixable rules to source text.
@@ -441,8 +498,8 @@ module MilkTea
       { start_line_idx: if_idx - 1, end_line_idx: if_idx, new_text: }
     end
 
-    def self.best_effort_lint_context(source, path: nil)
-      ast = Parser.parse(source, path:)
+    def self.best_effort_lint_context(source, path: nil, profile: nil, label: "best_effort_lint_context")
+      ast = profile_phase(profile, "#{label}.parse") { Parser.parse(source, path:) }
       imported_modules = {}
       unresolved_import_paths = Set.new
 
@@ -453,22 +510,27 @@ module MilkTea
           package_graph: load_lint_package_graph(resolved_path),
           source_overrides: { resolved_path => source },
         )
-        ast = loader.load_file(resolved_path)
-        resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path)
+        ast = profile_phase(profile, "#{label}.load_root") { loader.load_file(resolved_path) }
+        resolution = profile_phase(profile, "#{label}.imports") do
+          loader.imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path)
+        end
         imported_modules = resolution.modules
         unresolved_import_paths.merge(resolution.errors.filter_map { |entry| entry.import&.path&.to_s })
       end
 
-      result = Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+      result = profile_phase(profile, "#{label}.sema") do
+        Sema.check_collecting_errors(ast, imported_modules: imported_modules)
+      end
 
       {
         ast: ast,
         analysis: result[:analysis],
         errors: result[:errors],
+        imported_modules: imported_modules,
         unresolved_import_paths: unresolved_import_paths,
       }
     rescue StandardError
-      { ast: nil, analysis: nil, errors: nil, unresolved_import_paths: Set.new }
+      { ast: nil, analysis: nil, errors: nil, imported_modules: {}, unresolved_import_paths: Set.new }
     end
 
     def self.best_effort_sema_analysis(source, path: nil)
@@ -694,12 +756,15 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_analysis: nil, source: nil, unresolved_import_paths: nil)
+    def initialize(path: nil, sema_analysis: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil)
       @path = path
       @sema_analysis = sema_analysis
       @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
+      @imported_modules = (imported_modules || {}).dup
       @source = source.to_s
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
+      @source_ast = source_ast
+      @profile = profile
       @warnings = []
       @scopes = []
       @module_bindings = {}
@@ -709,12 +774,14 @@ module MilkTea
       @current_function_stack = []
       @prefix_cast_sites = nil
       @redundant_cast_context_site_keys = Set.new
+      @recheck_context_cache = {}
       @reserved_primitive_name_fixes = []
     end
 
     def lint(ast)
+      @source_ast ||= ast
       visit_source_file(ast)
-      emit_redundant_cast_warnings
+      profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings }
       @warnings
     end
 
@@ -724,12 +791,18 @@ module MilkTea
 
     private
 
+    def profile_phase(name)
+      return yield unless @profile
+
+      @profile.measure(name) { yield }
+    end
+
     def visit_source_file(source_file)
       @declared_callable_names = declared_callable_names(source_file)
       @declared_directional_functions = declared_directional_functions(source_file)
-      seed_module_bindings(source_file)
-      check_unused_imports(source_file)
-      check_platform_api_drift(source_file)
+      profile_phase("seed_module_bindings") { seed_module_bindings(source_file) }
+      profile_phase("rule.unused_imports") { check_unused_imports(source_file) }
+      profile_phase("rule.platform_api_drift") { check_platform_api_drift(source_file) }
       source_file.declarations.each do |declaration|
         case declaration
         when AST::FunctionDef
@@ -1366,28 +1439,32 @@ module MilkTea
       @generic_function_depth += 1 if generic_body
       @current_function_stack << function
       with_scope do
-        warn_reserved_primitive_type_params(function.type_params, kind_label: "type parameter")
-        function.params.each do |param|
-          declare_param(
-            param.name,
-            line: param_line(param, fallback: function.line),
-            column: param_column(param)
-          )
+        profile_phase("rule.reserved_primitive_type_params") do
+          warn_reserved_primitive_type_params(function.type_params, kind_label: "type parameter")
         end
-        visit_statement_list(function.body)
-        emit_dead_assignment_warnings(function.body)
-        emit_unreachable_warnings(function.body)
-        emit_borrow_warnings(function.body)
-        emit_constant_condition_warnings(function.body)
-        emit_redundant_null_check_warnings(function.body)
-        emit_prefer_let_else_warnings(function.body)
-        emit_redundant_read_cast_warnings(function.body)
-        emit_redundant_read_release_temp_warnings(function.body)
-        emit_redundant_unsafe_warnings(function.body)
-        emit_redundant_return_warnings(function)
-        emit_loop_single_iteration_warnings(function.body)
+        profile_phase("declare_params") do
+          function.params.each do |param|
+            declare_param(
+              param.name,
+              line: param_line(param, fallback: function.line),
+              column: param_column(param)
+            )
+          end
+        end
+        profile_phase("visit_statement_list") { visit_statement_list(function.body) }
+        profile_phase("rule.dead_assignment") { emit_dead_assignment_warnings(function.body) }
+        profile_phase("rule.unreachable") { emit_unreachable_warnings(function.body) }
+        profile_phase("rule.borrow") { emit_borrow_warnings(function.body) }
+        profile_phase("rule.constant_condition") { emit_constant_condition_warnings(function.body) }
+        profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
+        profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
+        profile_phase("rule.redundant_read_cast") { emit_redundant_read_cast_warnings(function.body) }
+        profile_phase("rule.redundant_read_release_temp") { emit_redundant_read_release_temp_warnings(function.body) }
+        profile_phase("rule.redundant_unsafe") { emit_redundant_unsafe_warnings(function.body) }
+        profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
+        profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
       end
-      check_missing_return(function)
+      profile_phase("rule.missing_return") { check_missing_return(function) }
     ensure
       @current_function_stack.pop
       @generic_function_depth -= 1 if generic_body
@@ -2918,13 +2995,15 @@ module MilkTea
     end
 
     def prefix_cast_sites
-      @prefix_cast_sites ||= self.class.prefix_cast_sites(@source, analysis: @sema_analysis)
+      @prefix_cast_sites ||= profile_phase("rule.redundant_cast.scan_candidates") do
+        self.class.prefix_cast_sites(@source, analysis: @sema_analysis)
+      end
     end
 
     def redundant_cast_site?(site)
       modified_source = @source.dup
       modified_source[site.start_offset...site.end_offset] = site.replacement_text
-      self.class.best_effort_lint_context(modified_source, path: @path).fetch(:analysis, nil)
+      recheck_context(modified_source, label: "redundant_cast_recheck").fetch(:analysis, nil)
     end
 
     def pointer_like_type_ref?(type_ref)
@@ -3234,7 +3313,7 @@ module MilkTea
       modified_source = source_without_inline_unsafe(expression.line, expression.column)
       return false unless modified_source
 
-      context = self.class.best_effort_lint_context(modified_source, path: @path)
+      context = recheck_context(modified_source, label: "redundant_unsafe_recheck")
       return false unless context[:analysis]
 
       !introduces_new_errors?(error_signature_counts(context[:errors]), current_error_signature_counts)
@@ -3255,9 +3334,52 @@ module MilkTea
 
     def current_error_signature_counts
       @current_error_signature_counts ||= begin
-        context = self.class.best_effort_lint_context(@source, path: @path)
+        context = recheck_context(@source, label: "redundant_unsafe_baseline")
         error_signature_counts(context[:errors])
       end
+    end
+
+    # Recheck helpers are only used for small expression-local rewrites, so the
+    # import graph and inferred module identity are unchanged. Reusing the
+    # current file's imported module bindings avoids routing every candidate back
+    # through ModuleLoader/import resolution.
+    def recheck_context(source, label:)
+      @recheck_context_cache[source] ||= begin
+        ast = profile_phase("#{label}.parse") { Parser.parse(source, path: @path) }
+        ast = with_recheck_module_identity(ast)
+        result = profile_phase("#{label}.sema") do
+          Sema.check_collecting_errors(ast, imported_modules: @imported_modules)
+        end
+        {
+          ast: ast,
+          analysis: result[:analysis],
+          errors: result[:errors],
+          imported_modules: @imported_modules,
+          unresolved_import_paths: @unresolved_import_paths,
+        }
+      rescue StandardError
+        {
+          ast: nil,
+          analysis: nil,
+          errors: nil,
+          imported_modules: @imported_modules,
+          unresolved_import_paths: @unresolved_import_paths,
+        }
+      end
+    end
+
+    def with_recheck_module_identity(ast)
+      return ast unless @source_ast&.module_name
+      return ast if ast.module_name&.to_s == @source_ast.module_name.to_s
+
+      AST::SourceFile.new(
+        module_name: @source_ast.module_name,
+        module_kind: ast.module_kind,
+        imports: ast.imports,
+        directives: ast.directives,
+        declarations: ast.declarations,
+        line: ast.line,
+      )
     end
 
     def error_signature_counts(errors)
