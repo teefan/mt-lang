@@ -1163,6 +1163,27 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "int", callback_decl.value.params.first.type.name.to_s
   end
 
+  def test_parses_expression_bodied_proc_expressions_in_call_arguments
+    source = <<~MT
+      function apply(callback: proc(value: int) -> bool, value: int) -> bool:
+          return callback(value)
+
+      function main() -> bool:
+          return apply(proc(value: int) -> bool: value > 3, 4)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[1]
+    return_stmt = main_fn.body.first
+    call = return_stmt.value
+    proc_argument = call.arguments.first.value
+
+    assert_instance_of MilkTea::AST::ProcExpr, proc_argument
+    assert_equal 1, proc_argument.body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, proc_argument.body.first
+    assert_instance_of MilkTea::AST::BinaryOp, proc_argument.body.first.value
+  end
+
   def test_parses_explicit_generic_function_specialization_call
     source = <<~MT
       function bytes_for[T](count: ptr_uint) -> ptr_uint:

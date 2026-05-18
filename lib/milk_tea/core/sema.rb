@@ -2790,7 +2790,6 @@ module MilkTea
         context = current_return_context
         raise_sema_error("propagation is only allowed inside function and proc bodies") unless context
         raise_sema_error("propagation is not allowed inside defer blocks") unless context[:allow_return]
-        raise_sema_error("propagation is not supported inside async functions yet") if inside_async_function?
 
         return_type = context[:return_type]
         unless result_let_else_type?(return_type)
@@ -3653,7 +3652,7 @@ module MilkTea
 
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name)
+          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: parameter.type)
           record_mutating_argument_identifier(argument, parameter)
           if foreign_cstr_boundary_parameter?(parameter)
             unless foreign_cstr_argument_compatible?(actual_type, parameter, expression: foreign_argument_expression(argument))
@@ -5277,6 +5276,33 @@ module MilkTea
         end
       end
 
+      def contains_type_var?(type)
+        case type
+        when Types::TypeVar
+          true
+        when Types::Nullable
+          contains_type_var?(type.base)
+        when Types::GenericInstance
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_type_var?(argument) }
+        when Types::Span
+          contains_type_var?(type.element_type)
+        when Types::Task
+          contains_type_var?(type.result_type)
+        when Types::StructInstance
+          type.arguments.any? { |argument| contains_type_var?(argument) }
+        when Types::VariantInstance
+          type.arguments.any? { |argument| contains_type_var?(argument) }
+        when Types::Proc
+          type.params.any? { |param| contains_type_var?(param.type) } || contains_type_var?(type.return_type)
+        when Types::Function
+          type.params.any? { |param| contains_type_var?(param.type) } ||
+            contains_type_var?(type.return_type) ||
+            (type.receiver_type && contains_type_var?(type.receiver_type))
+        else
+          false
+        end
+      end
+
       def resolve_named_generic_type(parts)
         if parts.length == 1
           type = @types[parts.first]
@@ -5802,7 +5828,10 @@ module MilkTea
         substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          expected_argument_type = callable_type?(parameter.type) ? parameter.type : nil
+          expected_argument_type = if callable_type?(parameter.type)
+                                     candidate_type = substitute_type(parameter.type, substitutions)
+                                     contains_type_var?(candidate_type) ? nil : candidate_type
+                                   end
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end

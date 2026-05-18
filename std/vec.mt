@@ -69,6 +69,16 @@ extending Vec[T]:
         return this.get(this.len - 1)
 
 
+    public function find(predicate: proc(value: ptr[T]) -> bool) -> ptr[T]?:
+        var iter = this.iter()
+        return iter.find(predicate)
+
+
+    public function find_index(predicate: proc(value: ptr[T]) -> bool) -> Option[ptr_uint]:
+        var iter = this.iter()
+        return iter.position(predicate)
+
+
     public mutable function clear() -> void:
         this.len = 0
         return
@@ -260,3 +270,45 @@ extending Iter[T]:
         let current_index = this.index
         this.index += 1
         return unsafe: ptr[T]<-data + current_index
+
+
+    public mutable function find(predicate: proc(value: ptr[T]) -> bool) -> ptr[T]?:
+        while true:
+            let current = this.next() else:
+                return null
+
+            if predicate(current):
+                return current
+
+
+    public mutable function position(predicate: proc(value: ptr[T]) -> bool) -> Option[ptr_uint]:
+        while true:
+            let current_index = this.index
+            let current = this.next() else:
+                return Option[ptr_uint].none
+
+            if predicate(current):
+                return Option[ptr_uint].some(value = current_index)
+
+
+    public mutable function any(predicate: proc(value: ptr[T]) -> bool) -> bool:
+        return this.find(predicate) != null
+
+
+    public mutable function all(predicate: proc(value: ptr[T]) -> bool) -> bool:
+        while true:
+            let current = this.next() else:
+                return true
+
+            if not predicate(current):
+                return false
+
+
+    public mutable function count(predicate: proc(value: ptr[T]) -> bool) -> ptr_uint:
+        var total: ptr_uint = 0
+        while true:
+            let current = this.next() else:
+                return total
+
+            if predicate(current):
+                total += 1

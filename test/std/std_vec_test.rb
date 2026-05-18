@@ -243,6 +243,72 @@ class MilkTeaStdVecTest < Minitest::Test
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_vec_search_helpers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = [
+      "import std.vec as vec",
+      "",
+      "function main() -> int:",
+      "    var values = vec.Vec[int].create()",
+      "    defer values.release()",
+      "    values.push(10)",
+      "    values.push(20)",
+      "    values.push(30)",
+      "    values.push(40)",
+      "",
+      "    let equals_thirty = proc(value: ptr[int]) -> bool:",
+      "        unsafe:",
+      "            return read(value) == 30",
+      "    let found = values.find(equals_thirty)",
+      "    if found == null:",
+      "        return 1",
+      "    unsafe:",
+      "        if read(ptr[int]<-found) != 30:",
+      "            return 2",
+      "",
+      "    if values.find(proc(value: ptr[int]) -> bool: unsafe: read(value) == 99) != null:",
+      "        return 3",
+      "",
+      "    match values.find_index(proc(value: ptr[int]) -> bool: unsafe: read(value) == 20):",
+      "        Option.none:",
+      "            return 4",
+      "        Option.some as payload:",
+      "            if payload.value != ptr_uint<-1:",
+      "                return 5",
+      "",
+      "    match values.find_index(proc(value: ptr[int]) -> bool: unsafe: read(value) == 99):",
+      "        Option.none:",
+      "            pass",
+      "        Option.some as ignored_payload:",
+      "            return 6",
+      "",
+      "    let threshold = 25",
+      "    var any_iter = values.iter()",
+      "    if not any_iter.any(proc(value: ptr[int]) -> bool: unsafe: read(value) > threshold):",
+      "        return 7",
+      "",
+      "    var all_iter = values.iter()",
+      "    if not all_iter.all(proc(value: ptr[int]) -> bool: unsafe: read(value) % 10 == 0):",
+      "        return 8",
+      "",
+      "    var count_iter = values.iter()",
+      "    if count_iter.count(proc(value: ptr[int]) -> bool: unsafe: read(value) >= 20) != ptr_uint<-3:",
+      "        return 9",
+      "",
+      "    return 0",
+      "",
+    ].join("\n")
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
   def test_host_runtime_executes_vec_insert_and_remove
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

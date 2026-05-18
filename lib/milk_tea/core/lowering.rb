@@ -927,6 +927,12 @@ module MilkTea
             pointer:,
           )
         end
+        env[:return_context] = {
+          return_type: binding.body_return_type,
+          active_defers: [],
+          local_defers: [],
+          allow_return: true,
+        }
 
         statements.each_with_index do |statement, index|
           case statement
@@ -1003,7 +1009,11 @@ module MilkTea
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::DeferStmt
-            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields) if statement.body
+            if statement.body
+              cleanup_env = duplicate_env(env)
+              cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
+              await_counter = analyze_async_statements!(statement.body, await_counter, cleanup_env, param_fields, local_fields, await_fields)
+            end
             if statement.expression.is_a?(AST::AwaitExpr)
               await_fields[statement.expression.object_id] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
@@ -1103,7 +1113,11 @@ module MilkTea
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::DeferStmt
-            await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields) if statement.body
+            if statement.body
+              cleanup_env = duplicate_env(env)
+              cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
+              await_counter = analyze_async_statements!(statement.body, await_counter, cleanup_env, param_fields, local_fields, await_fields)
+            end
             if statement.expression.is_a?(AST::AwaitExpr)
               await_fields[statement.expression.object_id] = build_async_await_field_info(statement.expression, await_counter, env:, param_fields:, local_fields:)
               await_counter += 1
@@ -1575,6 +1589,12 @@ module MilkTea
             pointer: false,
           )
         end
+        env[:return_context] = {
+          return_type: binding.body_return_type,
+          active_defers: [],
+          local_defers: [],
+          allow_return: true,
+        }
         normalize_async_statements(statements, counter, env, return_type: binding.body_return_type)
       end
 
@@ -1708,6 +1728,7 @@ module MilkTea
           [AST::UnsafeStmt.new(body: normalize_async_statements(statement.body, counter, unsafe_env, return_type:))]
         when AST::DeferStmt
           cleanup_env = duplicate_env(env)
+          cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)
           cleanup_body = if statement.body
                            normalize_async_statements(statement.body, counter, cleanup_env, return_type:)
                          else
@@ -2030,6 +2051,14 @@ module MilkTea
       def lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: [], loop_flow: nil)
         lowered = []
         local_defers = []
+        env[:return_context] = async_return_context(
+          return_type: async_info[:result_type],
+          active_defers:,
+          local_defers:,
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+        )
 
         statements.each do |statement|
           case statement
@@ -2433,6 +2462,14 @@ module MilkTea
         local_env = duplicate_env(env)
         lowered = []
         local_defers = []
+        local_env[:return_context] = async_return_context(
+          return_type: async_info[:result_type],
+          active_defers:,
+          local_defers:,
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+        )
 
         statements.each do |statement|
           case statement
@@ -2888,15 +2925,21 @@ module MilkTea
 
       def lower_async_expression_statement(statement, env:)
         lowered = []
+        expression_expected_type = if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
+                                     nil
+                                   else
+                                     infer_expression_type(statement.expression, env:)
+                                   end
         prepared_setup, prepared_expression = prepare_expression_for_inline_lowering(
           statement.expression,
           env:,
-          expected_type: infer_expression_type(statement.expression, env:),
+          expected_type: expression_expected_type,
           allow_root_statement_foreign: true,
+          allow_void_propagation: true,
         )
         lowered.concat(prepared_setup)
 
-        if (foreign_call = foreign_call_info(prepared_expression, env))
+        if prepared_expression && (foreign_call = foreign_call_info(prepared_expression, env))
           setup, = lower_foreign_call_statement(
             foreign_call,
             env:,
@@ -2905,7 +2948,7 @@ module MilkTea
             discard_result: true,
           )
           lowered.concat(setup)
-        else
+        elsif prepared_expression
           lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env:), line: statement.line, source_path: @current_analysis_path)
         end
 
@@ -3124,6 +3167,18 @@ module MilkTea
             )
           end
         end
+      end
+
+      def async_return_context(return_type:, active_defers:, local_defers:, frame_expr:, raw_frame_expr:, async_info:, allow_return: true)
+        {
+          return_type:,
+          active_defers:,
+          local_defers:,
+          allow_return:,
+          frame_expr:,
+          raw_frame_expr:,
+          async_info:,
+        }
       end
 
       def async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value:, result_already_stored: false)
@@ -9713,7 +9768,27 @@ module MilkTea
                              ],
                            )
                          end
-        failure_cleanup = operand_cleanups.flat_map(&:itself) + cleanup_statements(return_context[:local_defers], return_context[:active_defers])
+        failure_cleanup = operand_cleanups.flat_map(&:itself)
+        failure_terminator = if return_context[:async_info]
+                               failure_cleanup +
+                                 lower_async_cleanup_entries(
+                                   return_context[:local_defers],
+                                   return_context[:active_defers],
+                                   frame_expr: return_context.fetch(:frame_expr),
+                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
+                                   async_info: return_context.fetch(:async_info),
+                                 ) +
+                                 async_complete_statements(
+                                   frame_expr: return_context.fetch(:frame_expr),
+                                   raw_frame_expr: return_context.fetch(:raw_frame_expr),
+                                   async_info: return_context.fetch(:async_info),
+                                   value: failure_return,
+                                 )
+                             else
+                               failure_cleanup +
+                                 cleanup_statements(return_context[:local_defers], return_context[:active_defers]) +
+                                 [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)]
+                             end
 
         if success_type == @types.fetch("void")
           return [
@@ -9726,7 +9801,7 @@ module MilkTea
               ),
               IR::IfStmt.new(
                 condition: let_else_failure_condition(result_ref, storage_type),
-                then_body: failure_cleanup + [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)],
+                then_body: failure_terminator,
                 else_body: nil,
               ),
             ],
@@ -9746,7 +9821,7 @@ module MilkTea
             ),
             IR::IfStmt.new(
               condition: let_else_failure_condition(result_ref, storage_type),
-              then_body: failure_cleanup + [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)],
+              then_body: failure_terminator,
               else_body: nil,
             ),
           ],

@@ -1613,7 +1613,15 @@ module MilkTea
       consume(:rparen, "expected ')' after proc parameters")
       consume(:arrow, "expected '->' after proc parameters")
       return_type = parse_type_ref
-      body = parse_block
+      consume(:colon, "expected ':' before proc body")
+      body = if match(:newline)
+               consume(:indent, "expected indented block")
+               statements = parse_statement_block_body
+               consume(:dedent, "expected end of block")
+               statements
+             else
+               [AST::ReturnStmt.new(value: parse_expression)]
+             end
       AST::ProcExpr.new(params:, return_type:, body:)
     end
 

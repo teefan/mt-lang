@@ -1077,7 +1077,7 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("verify")
   end
 
-  def test_rejects_result_propagation_inside_async_function
+  def test_type_checks_result_propagation_inside_async_function
     source = <<~MT
       # module demo.status_void_flow
 
@@ -1086,16 +1086,59 @@ class MilkTeaSemaTest < Minitest::Test
       function parse(input: int) -> Result[int, int]:
           return Result[int, int].success(value= input + 1)
 
-      async function verify(input: int) -> Result[int, int]:
+      async function verify(input: int) -> Result[str, int]:
           let value = parse(input)?
-          return Result[int, int].success(value= value)
+          return Result[str, int].success(value= f"ok \#{value}")
     MT
 
-    error = assert_raises(MilkTea::SemaError) do
-      check_program_source(source)
-    end
+    result = check_program_source(source)
 
-    assert_match(/propagation is not supported inside async functions yet/, error.message)
+    assert_equal true, result.root_analysis.functions.key?("verify")
+  end
+
+  def test_type_checks_result_propagation_over_await_inside_async_function
+    source = <<~MT
+      # module demo.status_void_flow
+
+      import std.async as aio
+
+
+      async function parse(input: int) -> Result[int, int]:
+          await aio.sleep(1)
+          return Result[int, int].success(value= input + 1)
+
+      async function verify(input: int) -> Result[str, int]:
+          let value = (await parse(input))?
+          return Result[str, int].success(value= f"ok \#{value}")
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("verify")
+  end
+
+  def test_type_checks_result_void_propagation_statement_inside_async_function
+    source = <<~MT
+      # module demo.status_void_flow
+
+
+
+      function done() -> void:
+          return
+
+      function parse(input: int) -> Result[void, int]:
+          if input < 0:
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
+
+      async function verify(input: int) -> Result[void, int]:
+          parse(input)?
+          return Result[void, int].success(value= done())
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("verify")
   end
 
   def test_rejects_let_else_discard_binding_with_type_annotation

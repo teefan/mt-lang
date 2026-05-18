@@ -160,6 +160,20 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_formats_expression_bodied_proc_expressions_like_source
+    source = <<~MT
+      function apply(callback: proc(value: int) -> bool, value: int) -> bool:
+          return callback(value)
+
+      function main() -> bool:
+          return apply(proc(value: int) -> bool: value > 3, 4)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
+  end
+
   def test_formats_variadic_raw_module_ast_like_source
     source = <<~MT
       external

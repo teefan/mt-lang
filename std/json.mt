@@ -416,18 +416,7 @@ extending Object:
 
 
     static function find_entry(current: Object, key: str) -> ptr[Entry]?:
-        var index: ptr_uint = 0
-        while index < current.entries.len():
-            let entry = current.entries.get(index) else:
-                fatal(c"json.Object.find_entry missing entry")
-
-            unsafe:
-                if read(entry).key.as_str().equal(key):
-                    return entry
-
-            index += 1
-
-        return null
+        return current.entries.find(proc(entry: ptr[Entry]) -> bool: unsafe: read(entry).key.as_str().equal(key))
 
 
     public function len() -> ptr_uint:
