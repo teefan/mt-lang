@@ -1,5 +1,11 @@
 import std.str as text_ops
 import std.string as string
+import std.vec as vec
+
+
+struct Segment:
+    start: ptr_uint
+    len: ptr_uint
 
 
 public function is_absolute(path: str) -> bool:
@@ -45,6 +51,63 @@ public function join(left: str, right: str) -> string.String:
 
     result.append(right.slice(start, right.len - start))
     return result
+
+
+public function relative_path(path: str, base: str) -> Option[string.String]:
+    var normalized_path = normalize_separators(path)
+    defer normalized_path.release()
+    var normalized_base = normalize_separators(base)
+    defer normalized_base.release()
+
+    let path_text = normalized_path.as_str()
+    let base_text = normalized_base.as_str()
+    let path_root = root_length(path_text)
+    let base_root = root_length(base_text)
+    if not roots_compatible(path_text, path_root, base_text, base_root):
+        return Option[string.String].none
+
+    var path_segments = vec.Vec[Segment].create()
+    defer path_segments.release()
+    collect_normalized_segments(path_text, path_root, ref_of(path_segments))
+
+    var base_segments = vec.Vec[Segment].create()
+    defer base_segments.release()
+    collect_normalized_segments(base_text, base_root, ref_of(base_segments))
+
+    var common: ptr_uint = 0
+    let shared_len = min_ptr_uint(path_segments.len(), base_segments.len())
+    while common < shared_len:
+        let path_segment_ptr = path_segments.get(common) else:
+            fatal(c"path.relative_path missing path segment")
+        let base_segment_ptr = base_segments.get(common) else:
+            fatal(c"path.relative_path missing base segment")
+
+        unsafe:
+            if not segments_equal(path_text, read(path_segment_ptr), base_text, read(base_segment_ptr)):
+                break
+
+        common += 1
+
+    var result = string.String.with_capacity(path_text.len + base_text.len)
+    var index: ptr_uint = common
+    while index < base_segments.len():
+        append_relative_segment(ref_of(result), "..")
+        index += 1
+
+    index = common
+    while index < path_segments.len():
+        let path_segment_ptr = path_segments.get(index) else:
+            fatal(c"path.relative_path missing path segment for append")
+
+        unsafe:
+            append_relative_segment(ref_of(result), segment_text(path_text, read(path_segment_ptr)))
+
+        index += 1
+
+    if result.is_empty():
+        result.append(".")
+
+    return Option[string.String].some(value= result)
 
 
 public function basename(path: str) -> str:
@@ -131,6 +194,114 @@ function root_length(path: str) -> ptr_uint:
         return 3
 
     return 0
+
+
+function roots_compatible(left: str, left_root: ptr_uint, right: str, right_root: ptr_uint) -> bool:
+    if left_root != right_root:
+        return false
+
+    if left_root == 0:
+        return true
+
+    if left_root == 1:
+        return true
+
+    if left_root == 3 and left.byte_at(1) == ubyte<-58 and right.byte_at(1) == ubyte<-58:
+        return ascii_fold(left.byte_at(0)) == ascii_fold(right.byte_at(0))
+
+    var index: ptr_uint = 0
+    while index < left_root:
+        if left.byte_at(index) != right.byte_at(index):
+            return false
+
+        index += 1
+
+    return true
+
+
+function ascii_fold(value: ubyte) -> ubyte:
+    if value >= ubyte<-65 and value <= ubyte<-90:
+        return value + ubyte<-32
+
+    return value
+
+
+function collect_normalized_segments(path: str, root: ptr_uint, output: ref[vec.Vec[Segment]]) -> void:
+    var index = root
+    while index < path.len:
+        while index < path.len and is_separator(path.byte_at(index)):
+            index += 1
+
+        if index == path.len:
+            return
+
+        let segment_start = index
+        while index < path.len and not is_separator(path.byte_at(index)):
+            index += 1
+
+        let segment_len = index - segment_start
+        if segment_is_current_directory(path, segment_start, segment_len):
+            continue
+
+        if segment_is_parent_directory(path, segment_start, segment_len):
+            let last_segment_ptr = output.last()
+            if last_segment_ptr != null:
+                unsafe:
+                    let last_segment = read(last_segment_ptr)
+                    if not segment_is_parent_directory(path, last_segment.start, last_segment.len):
+                        match output.pop():
+                            Option.some as _:
+                                pass
+                            Option.none:
+                                fatal(c"path.collect_normalized_segments failed to pop segment")
+                        continue
+
+            if root == 0:
+                output.push(Segment(start = segment_start, len = segment_len))
+
+            continue
+
+        output.push(Segment(start = segment_start, len = segment_len))
+
+
+function segment_is_current_directory(path: str, start: ptr_uint, len: ptr_uint) -> bool:
+    return len == 1 and path.byte_at(start) == ubyte<-46
+
+
+function segment_is_parent_directory(path: str, start: ptr_uint, len: ptr_uint) -> bool:
+    return len == 2 and path.byte_at(start) == ubyte<-46 and path.byte_at(start + 1) == ubyte<-46
+
+
+function segments_equal(left: str, left_segment: Segment, right: str, right_segment: Segment) -> bool:
+    if left_segment.len != right_segment.len:
+        return false
+
+    var index: ptr_uint = 0
+    while index < left_segment.len:
+        if left.byte_at(left_segment.start + index) != right.byte_at(right_segment.start + index):
+            return false
+
+        index += 1
+
+    return true
+
+
+function segment_text(path: str, segment: Segment) -> str:
+    return path.slice(segment.start, segment.len)
+
+
+function append_relative_segment(output: ref[string.String], segment: str) -> void:
+    if not output.is_empty():
+        output.append("/")
+
+    output.append(segment)
+
+
+function min_ptr_uint(left: ptr_uint, right: ptr_uint) -> ptr_uint:
+    if left < right:
+        return left
+
+    return right
 
 
 function trim_trailing_separators(path: str, minimum: ptr_uint) -> ptr_uint:

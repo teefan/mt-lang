@@ -628,7 +628,7 @@ Primitive type names are reserved. They cannot be reused for value bindings, par
   - `ref` types are non-null and cannot be nullable
 - `span[T]`
 - `array[T, N]`
-- `str_builder[N]`
+- `str_buffer[N]`
 - `Task[T]`
 - `fn(params...) -> R`
 - `proc(params...) -> R`
@@ -746,9 +746,9 @@ String categories:
 
 - `str` (string view)
 - `cstr` (C ABI string)
-- `str_builder[N]` (fixed-capacity mutable string buffer)
+- `str_buffer[N]` (fixed-capacity mutable string buffer)
 
-`str_builder[N]` methods:
+`str_buffer[N]` methods:
 
 - `clear()`
 - `assign(str)`

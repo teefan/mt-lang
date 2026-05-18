@@ -148,7 +148,7 @@ module MilkTea
 
       return true if public_type.is_a?(Types::Span) && public_type.element_type == @types.fetch("char")
       return true if char_array_text_type?(public_type)
-      return true if str_builder_type?(public_type)
+      return true if str_buffer_type?(public_type)
 
       false
     end

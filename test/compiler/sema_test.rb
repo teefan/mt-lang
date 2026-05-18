@@ -3584,11 +3584,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.generic_builder
 
-      function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+      function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
           return buffer.capacity()
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           return int<-(capacity_of(buffer) + capacity_of(buffer))
     MT
 
@@ -3602,11 +3602,11 @@ class MilkTeaSemaTest < Minitest::Test
     source = <<~MT
       # module demo.generic_builder_explicit
 
-      function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+      function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
           return buffer.capacity()
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           return int<-capacity_of[32](buffer)
     MT
 
@@ -3724,11 +3724,11 @@ class MilkTeaSemaTest < Minitest::Test
       const BASE: int = 28
       const CAPACITY: int = BASE + 4
 
-      function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+      function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
           return buffer.capacity()
 
       function main() -> int:
-          var buffer: str_builder[CAPACITY]
+          var buffer: str_buffer[CAPACITY]
           var values = zero[array[int, CAPACITY]]
           values[0] = int<-capacity_of[CAPACITY](buffer)
           return values[0]
@@ -6090,19 +6090,21 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/array\[char, 16\]\.as_str is not available; array\[char, N\] is raw storage/, error.message)
   end
 
-  def test_rejects_removed_str_buffer_type
+  def test_rejects_removed_predecessor_of_str_buffer_type
+    removed_type_name = %w[str builder].join("_")
+
     source = <<~MT
       # module demo.main
 
       function main() -> void:
-          var buffer: str_buffer[8]
+          var buffer: #{removed_type_name}[8]
     MT
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
     end
 
-    assert_match(/unknown generic type str_buffer/, error.message)
+    assert_match(/unknown generic type #{Regexp.escape(removed_type_name)}/, error.message)
   end
 
   def test_rejects_removed_cstr_list_buffer_type
@@ -6277,15 +6279,15 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_type_checks_str_builder_methods_and_span_char_calls
+  def test_type_checks_str_buffer_methods_and_span_char_calls
     source = <<~MT
-      # module demo.str_builder_surface
+      # module demo.str_buffer_surface
 
       function view(items: span[char]) -> ptr_uint:
           return items.len
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           buffer.assign("hi")
           buffer.append("!")
           let text = buffer.as_str()
@@ -6302,14 +6304,14 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_foreign_mapping_public_alias_for_str_builder_boundary_length_pairs
+  def test_type_checks_foreign_mapping_public_alias_for_str_buffer_boundary_length_pairs
     root_source = <<~MT
       # module demo.main
 
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box(buffer)
     MT
 
@@ -6335,14 +6337,14 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
-  def test_type_checks_generic_foreign_mapping_public_alias_for_str_builder_capacity_pairs
+  def test_type_checks_generic_foreign_mapping_public_alias_for_str_buffer_capacity_pairs
     root_source = <<~MT
       # module demo.main
 
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box(buffer)
     MT
 
@@ -6359,7 +6361,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+        public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -6375,7 +6377,7 @@ class MilkTeaSemaTest < Minitest::Test
       import std.ui as ui
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box[32](buffer)
     MT
 
@@ -6392,7 +6394,7 @@ class MilkTeaSemaTest < Minitest::Test
 
         import std.c.ui as c
 
-        public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+        public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
       MT
     }
 
@@ -6407,10 +6409,10 @@ class MilkTeaSemaTest < Minitest::Test
 
       import std.c.ui as c
 
-      public foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
+      public foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text, int<-(text_public.capacity() + 1))
 
       function main() -> void:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           text_box[32](buffer)
     MT
 

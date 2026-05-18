@@ -275,9 +275,9 @@ class LSPServerTest < Minitest::Test
         return origin.x
   MT
 
-  SOURCE_WITH_STR_BUILDER_METHODS = <<~MT
+  SOURCE_WITH_STR_BUFFER_METHODS = <<~MT
     function main() -> int:
-        var editor_text: str_builder[64]
+        var editor_text: str_buffer[64]
         editor_text.assign("Milk Tea")
         let current = editor_text.as_str()
         if editor_text.capacity() == 64:
@@ -5537,11 +5537,11 @@ class LSPServerTest < Minitest::Test
   end
 
 
-    def test_semantic_tokens_classify_str_builder_and_value_receiver_methods
+    def test_semantic_tokens_classify_str_buffer_and_value_receiver_methods
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
-        uri = "file:///tmp/lsp_semantic_str_builder_test.mt"
-        source = SOURCE_WITH_STR_BUILDER_METHODS
+        uri = "file:///tmp/lsp_semantic_str_buffer_test.mt"
+        source = SOURCE_WITH_STR_BUFFER_METHODS
         client.send_notification("textDocument/didOpen", {
           "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
         })
@@ -5553,12 +5553,12 @@ class LSPServerTest < Minitest::Test
         legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
-        str_builder_entry = semantic_entry_for_lexeme(source, entries, "str_builder")
+        str_buffer_entry = semantic_entry_for_lexeme(source, entries, "str_buffer")
         assign_entry = semantic_entry_for_lexeme(source, entries, "assign")
         as_str_entry = semantic_entry_for_lexeme(source, entries, "as_str")
         capacity_entry = semantic_entry_for_lexeme(source, entries, "capacity")
 
-        assert_equal "type", str_builder_entry.fetch("tokenType")
+        assert_equal "type", str_buffer_entry.fetch("tokenType")
         assert_equal "method", assign_entry.fetch("tokenType")
         assert_equal "method", as_str_entry.fetch("tokenType")
         assert_equal "method", capacity_entry.fetch("tokenType")
@@ -6524,7 +6524,7 @@ class LSPServerTest < Minitest::Test
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_latency_test.mt"
-        source = [SOURCE_WITH_STR_BUILDER_METHODS, SOURCE_WITH_GENERIC_TYPE_SURFACES, SOURCE_WITH_FSTRING_INTERPOLATION].join("\n")
+        source = [SOURCE_WITH_STR_BUFFER_METHODS, SOURCE_WITH_GENERIC_TYPE_SURFACES, SOURCE_WITH_FSTRING_INTERPOLATION].join("\n")
         client.send_notification("textDocument/didOpen", {
           "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
         })

@@ -1166,11 +1166,11 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_generic_function_literal_specialization_call
     source = <<~MT
-      function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+      function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
           return buffer.capacity()
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           return int<-capacity_of[32](buffer)
     MT
 
@@ -1187,11 +1187,11 @@ class MilkTeaParserTest < Minitest::Test
     source = <<~MT
       const CAPACITY: int = 32
 
-      function capacity_of[N](buffer: str_builder[N]) -> ptr_uint:
+      function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
           return buffer.capacity()
 
       function main() -> int:
-          var buffer: str_builder[CAPACITY]
+          var buffer: str_buffer[CAPACITY]
           return int<-capacity_of[CAPACITY](buffer)
     MT
 
@@ -1209,7 +1209,7 @@ class MilkTeaParserTest < Minitest::Test
       import std.ui as ui
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           ui.text_box[32](buffer)
           return 0
     MT
@@ -1227,10 +1227,10 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_parses_explicit_local_foreign_literal_specialization_call
     source = <<~MT
-      foreign function text_box[N](text: str_builder[N] as ptr[char]) -> void = c.TextBox(text)
+      foreign function text_box[N](text: str_buffer[N] as ptr[char]) -> void = c.TextBox(text)
 
       function main() -> int:
-          var buffer: str_builder[32]
+          var buffer: str_buffer[32]
           text_box[32](buffer)
           return 0
     MT
