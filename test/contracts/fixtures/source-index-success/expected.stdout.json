@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "contract": "sourceIndex",
+  "success": true,
+  "inputPath": ".",
+  "paths": [
+    "main.mt",
+    "src/lib.mt"
+  ]
+}

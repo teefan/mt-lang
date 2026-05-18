@@ -22,6 +22,7 @@ module MilkTea
 
       def initialize(error_output: nil)
         @error_output = error_output
+        @workspace_root_path = nil
         @dependency_resolution_mode = :auto
         @platform_override = nil
         @strict_current_root_diagnostics_enabled = false
@@ -61,6 +62,14 @@ module MilkTea
 
       def shared_module_cache
         @shared_module_cache
+      end
+
+      def workspace_root_path=(path)
+        @workspace_root_path = normalize_workspace_root_path(path)
+      end
+
+      def workspace_root_path
+        @workspace_root_path
       end
 
       def dependency_resolution_mode=(mode)
@@ -189,6 +198,7 @@ module MilkTea
               content,
               shared_module_cache: @shared_module_cache,
               source_overrides: file_backed_source_overrides,
+              workspace_root_path: @workspace_root_path,
               dependency_resolution_mode: @dependency_resolution_mode,
               platform_override: @platform_override,
               sema_snapshot: cached_snapshot,
@@ -779,13 +789,36 @@ module MilkTea
         return nil if resolution.error_message
 
         loader = ModuleLoader.new(
-          module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+          module_roots: module_roots_for_path(path, locked: resolution.locked),
           package_graph: package_graph_for_path(path, locked: resolution.locked),
           platform: effective_platform_for_path(path),
         )
         loader.send(:inferred_module_name_for_path, path)
       rescue StandardError
         nil
+      end
+
+      def module_roots_for_path(path, locked: false)
+        roots = MilkTea::ModuleRoots.roots_for_path(path, locked: locked)
+        return roots unless workspace_root_applicable_for?(path)
+
+        [@workspace_root_path, *roots].uniq
+      end
+
+      def workspace_root_applicable_for?(path)
+        return false if @workspace_root_path.nil? || path.nil?
+
+        expanded_path = File.expand_path(path)
+        expanded_path == @workspace_root_path || expanded_path.start_with?(@workspace_root_path + File::SEPARATOR)
+      end
+
+      def normalize_workspace_root_path(path)
+        return nil if path.nil? || path.to_s.strip.empty?
+
+        expanded_path = File.expand_path(path.to_s)
+        return nil unless File.directory?(expanded_path)
+
+        expanded_path
       end
 
       def refresh_import_dependent_caches(changed_uri: nil)
@@ -925,7 +958,7 @@ module MilkTea
           effective_platform = effective_platform_for_path(path)
           ensure_root_platform_compatible!(path, effective_platform)
           loader = MilkTea::ModuleLoader.new(
-            module_roots: MilkTea::ModuleRoots.roots_for_path(path),
+            module_roots: module_roots_for_path(path),
             package_graph: package_graph_for_path(path),
             shared_cache: @shared_module_cache,
             source_overrides: file_backed_source_overrides,
@@ -962,7 +995,7 @@ module MilkTea
                    ensure_root_platform_compatible!(path, effective_platform)
 
                    loader = MilkTea::ModuleLoader.new(
-                     module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+                     module_roots: module_roots_for_path(path, locked: resolution.locked),
                      package_graph: package_graph_for_path(path, locked: resolution.locked),
                      shared_cache: @shared_module_cache,
                      source_overrides: file_backed_source_overrides,

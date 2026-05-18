@@ -47,6 +47,8 @@ module MilkTea
         semantic_tokens_command
       when "parse"
         parse_command
+      when "source-index"
+        source_index_command
       when "format"
         format_command
       when "lint"
@@ -152,6 +154,28 @@ module MilkTea
       ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
       0
+    end
+
+    def source_index_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source path")
+        print_usage(@err)
+        return 1
+      end
+
+      options = parse_source_index_options
+      return 1 unless options
+
+      with_contract_error_handling("sourceIndex", enabled: options.fetch(:json), input_path: path) do
+        paths = SourceIndexTool.list_milk_tea_files(root_path: path)
+        if options.fetch(:json)
+          @out.puts(JSON.pretty_generate(source_index_contract_payload(path, paths)))
+        else
+          paths.each { |entry| @out.puts(entry) }
+        end
+        0
+      end
     end
 
     def format_command
@@ -783,6 +807,26 @@ module MilkTea
       end
     end
 
+    def parse_source_index_options
+      options = {
+        json: false,
+      }
+
+      until @argv.empty?
+        option = @argv.shift
+        case option
+        when "--json"
+          options[:json] = true
+        else
+          @err.puts("unknown source-index option #{option}")
+          print_usage(@err)
+          return nil
+        end
+      end
+
+      options
+    end
+
     def parse_format_options
       options = {
         check: false,
@@ -973,6 +1017,16 @@ module MilkTea
           contract_semantic_token_entry(entry, line_texts)
         end,
       )
+    end
+
+    def source_index_contract_payload(input_path, paths)
+      {
+        version: CONTRACT_VERSION,
+        contract: "sourceIndex",
+        success: true,
+        inputPath: contract_path(input_path),
+        paths: paths.map { |path| contract_path(path) },
+      }
     end
 
     def diagnostics_contract_payload(path, source, locked: false)
@@ -1237,6 +1291,16 @@ module MilkTea
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
       "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned semantic token contract for a source file as JSON.",
       "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
+      "source-index"    => <<~HELP,
+        Usage: mtc source-index PATH [--json]
+
+          Emit deterministic Milk Tea source file paths under PATH.
+          Hidden files and hidden directories are skipped to match normal
+          directory-based CLI scans.
+
+          Options:
+            --json  Emit a versioned source index contract as JSON.
+        HELP
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [OPTIONS]
 
@@ -1403,6 +1467,7 @@ module MilkTea
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc source-index PATH [--json]")
       io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc diagnostics PATH [--locked] [--frozen] [-I PATH]")

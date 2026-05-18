@@ -136,6 +136,41 @@ class MilkTeaVendoredCLibraryTest < Minitest::Test
     end
   end
 
+  def test_cmake_link_flags_parse_pkg_config_with_compiled_read_lines_helper
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-vendored-c-library") do |dir|
+      source_root = File.join(dir, "src")
+      build_root = File.join(dir, "build")
+      install_root = File.join(dir, "install")
+      archive_path = File.join(install_root, "lib", "libsample.a")
+      pc_dir = File.join(install_root, "lib", "pkgconfig")
+
+      FileUtils.mkdir_p(source_root)
+      FileUtils.mkdir_p(pc_dir)
+      File.write(File.join(pc_dir, "sample.pc"), <<~PC)
+        prefix=#{install_root}
+        libdir=${prefix}/lib
+        includedir=${prefix}/include
+        Name: sample
+        Libs: -L${libdir} -lsample
+        Libs.private: -lm
+      PC
+
+      library = MilkTea::VendoredCLibrary::CMake.new(
+        name: "sample",
+        source_root:,
+        build_root:,
+        install_root:,
+        archive_path:,
+        pkg_config_name: "sample",
+      )
+
+      assert_equal ["-L#{File.dirname(archive_path)}", "-lsample", "-lm"], library.link_flags
+    end
+  end
+
   private
 
   def success_status
@@ -158,6 +193,15 @@ class MilkTeaVendoredCLibraryTest < Minitest::Test
     if original_defined
       singleton_class.alias_method(method_name, original_name)
       singleton_class.remove_method(original_name)
+    end
+  end
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
     end
   end
 end

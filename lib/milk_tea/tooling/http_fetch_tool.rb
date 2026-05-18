@@ -5,6 +5,8 @@ require "open3"
 require "tmpdir"
 require "uri"
 
+require_relative "read_lines_tool"
+
 module MilkTea
   class HttpFetchToolError < StandardError; end
 
@@ -106,7 +108,7 @@ module MilkTea
 
     def parse_metadata(meta_path)
       fields = {}
-      File.readlines(meta_path, chomp: true).each do |line|
+      ReadLinesTool.read_lines(path: meta_path, cc: @cc).each do |line|
         key, value = line.split("=", 2)
         raise HttpFetchToolError, "http fetch helper returned malformed metadata" if key.nil? || value.nil?
 

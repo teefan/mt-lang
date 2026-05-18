@@ -7,6 +7,7 @@ require "uri"
 
 require_relative "../tooling/archive_tool"
 require_relative "../tooling/http_fetch_tool"
+require_relative "../tooling/read_lines_tool"
 
 module MilkTea
   class PackageRegistryStoreError < StandardError; end
@@ -217,7 +218,7 @@ module MilkTea
         return [] if response.not_found?
         raise_http_error!(response, "list registry package versions") unless response.success?
 
-        return File.read(body_path).lines.map(&:strip).reject(&:empty?)
+        return ReadLinesTool.read_lines(path: body_path).map(&:strip).reject(&:empty?)
       end
     end
 
