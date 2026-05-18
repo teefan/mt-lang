@@ -7,7 +7,7 @@ module MilkTea
   module LSP
     # Collects parse and semantic errors and formats them as LSP Diagnostics
     class Diagnostics
-      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false, lint_tier: :full)
+      def self.collect(uri, content, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, dependency_resolution_mode: :auto, platform_override: nil, sema_snapshot: nil, strict_current_root_diagnostics: false, lint_tier: :full)
         total_start = perf_logging? ? monotonic_time : nil
         diagnostics = []
         sema_facts = nil
@@ -56,6 +56,7 @@ module MilkTea
             effective_platform:,
             shared_module_cache: shared_module_cache,
             source_overrides: source_overrides,
+            workspace_root_path: workspace_root_path,
             content: content,
           )
           imports_ms = elapsed_ms(imports_start) if imports_start
@@ -85,6 +86,7 @@ module MilkTea
                 effective_platform:,
                 shared_module_cache:,
                 source_overrides:,
+                workspace_root_path:,
               ).each do |diagnostic|
                 diagnostics << diagnostic
               end
@@ -136,12 +138,12 @@ module MilkTea
 
       private
 
-      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, content: nil)
+      def self.resolve_imported_modules(uri, ast, diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil, content: nil)
         path = uri_to_path(uri)
         return { modules: {}, unresolved_import_paths: [] } unless path && File.file?(path)
 
         loader = ModuleLoader.new(
-          module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+          module_roots: module_roots_for_path(path, locked: resolution.locked, workspace_root_path: workspace_root_path),
           package_graph: load_package_graph(path, locked: resolution.locked),
           shared_cache: shared_module_cache,
           source_overrides: source_overrides,
@@ -236,11 +238,11 @@ module MilkTea
       end
       private_class_method :root_platform_conflict_error
 
-      def self.collect_strict_root_diagnostics(path, ast, sema_facts, existing_diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil)
+      def self.collect_strict_root_diagnostics(path, ast, sema_facts, existing_diagnostics, resolution:, effective_platform:, shared_module_cache: nil, source_overrides: nil, workspace_root_path: nil)
         return [] unless strict_root_check_eligible?(path, ast, sema_facts, existing_diagnostics)
 
         loader = ModuleLoader.new(
-          module_roots: MilkTea::ModuleRoots.roots_for_path(path, locked: resolution.locked),
+          module_roots: module_roots_for_path(path, locked: resolution.locked, workspace_root_path: workspace_root_path),
           package_graph: load_package_graph(path, locked: resolution.locked),
           shared_cache: shared_module_cache,
           source_overrides: source_overrides,
@@ -277,6 +279,25 @@ module MilkTea
         format_tooling_diagnostic(diagnostic, stage: 'strict-root')
       end
       private_class_method :format_strict_root_error
+
+      def self.module_roots_for_path(path, locked:, workspace_root_path: nil)
+        roots = MilkTea::ModuleRoots.roots_for_path(path, locked: locked)
+        return roots unless workspace_root_applicable_for?(path, workspace_root_path)
+
+        [File.expand_path(workspace_root_path), *roots].uniq
+      end
+      private_class_method :module_roots_for_path
+
+      def self.workspace_root_applicable_for?(path, workspace_root_path)
+        return false if path.nil? || workspace_root_path.nil? || workspace_root_path.to_s.strip.empty?
+
+        expanded_root = File.expand_path(workspace_root_path)
+        return false unless File.directory?(expanded_root)
+
+        expanded_path = File.expand_path(path)
+        expanded_path == expanded_root || expanded_path.start_with?(expanded_root + File::SEPARATOR)
+      end
+      private_class_method :workspace_root_applicable_for?
 
       def self.strict_root_diagnostic_code(error)
         case error

@@ -328,6 +328,7 @@ Available contract surfaces:
 
 - `mtc semantic-tokens path/to/file.mt` emits a versioned semantic-token JSON payload.
 - `mtc diagnostics path/to/file.mt` emits a versioned diagnostics JSON payload.
+- `mtc source-index path/to/root --json` emits a versioned source-index JSON payload for deterministic visible `.mt` file discovery.
 - `mtc frontend-artifacts path/to/file.mt --compiled-c ... --saved-c ... --debug-map ... --binary-path ... --json` emits a versioned frontend-artifact handoff payload and writes the matching files.
 - `mtc build path/to/package --json` emits a versioned build-result JSON payload.
 - `mtc run path/to/package --json` emits a versioned run-result JSON payload.
@@ -336,6 +337,7 @@ Current contract conventions:
 
 - each payload includes `version = 1` and a `contract` name
 - paths are normalized with forward slashes and are relative to the current working directory when the target lives under it
+- `mtc source-index --json` intentionally skips hidden files and hidden directories so contract results match the normal directory-based CLI scan surface
 - diagnostics and semantic tokens expose explicit UTF-8 byte spans for stable machine checks
 - the frontend-artifact contract is file-backed on purpose: compiled C, saved C, and debug-map JSON stay available for an external backend driver or a future self-hosted frontend process
 - `mtc run --json` still returns the program exit status as the CLI process status while also including it in the JSON payload

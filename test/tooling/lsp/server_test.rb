@@ -2497,7 +2497,7 @@ class LSPServerTest < Minitest::Test
       Dir.mkdir(File.join(dir, "demo"))
 
       lib_source = <<~MT
-        function greet() -> int:
+        public function greet() -> int:
             return 1
       MT
       main_source = <<~MT
@@ -2527,7 +2527,7 @@ class LSPServerTest < Minitest::Test
         })
 
         call_line = main_source.lines.index { |line| line.include?("lib.greet") }
-        call_char = main_source.lines[call_line].index("greet") + 1
+        call_char = main_source.lines[call_line].index("greet")
 
         definition = client.send_request("textDocument/definition", {
           "textDocument" => { "uri" => main_uri },
@@ -2539,6 +2539,127 @@ class LSPServerTest < Minitest::Test
         assert_equal lib_uri, definition.dig("result", "uri")
         assert_equal definition_line, definition.dig("result", "range", "start", "line")
         assert_equal definition_char, definition.dig("result", "range", "start", "character")
+      end
+    end
+  end
+
+  def test_definition_on_imported_module_member_refreshes_when_closed_file_changes_within_same_second
+    Dir.mktmpdir("milk-tea-lsp-def-member-mtime") do |dir|
+      lib_path = File.join(dir, "demo", "lib.mt")
+      main_path = File.join(dir, "main.mt")
+      FileUtils.mkdir_p(File.join(dir, "demo"))
+
+      initial_lib_source = <<~MT
+        function greet() -> int:
+            return 1
+      MT
+      updated_lib_source = <<~MT
+        # shifted on purpose
+        function greet() -> int:
+            return 1
+      MT
+      main_source = <<~MT
+        import demo.lib as lib
+
+        function main() -> int:
+            return lib.greet()
+      MT
+
+      File.write(lib_path, initial_lib_source)
+      File.write(main_path, main_source)
+
+      first_time = Time.at(Time.now.to_i, 100_000_000, :nsec)
+      second_time = Time.at(first_time.to_i, 700_000_000, :nsec)
+      File.utime(first_time, first_time, lib_path)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("lib.greet") }
+        call_char = main_source.lines[call_line].index("greet") + 1
+
+        first_definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal lib_uri, first_definition.dig("result", "uri")
+        assert_equal 0, first_definition.dig("result", "range", "start", "line")
+
+        File.write(lib_path, updated_lib_source)
+        File.utime(second_time, second_time, lib_path)
+
+        second_definition = client.send_request("textDocument/definition", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        assert_equal lib_uri, second_definition.dig("result", "uri")
+        assert_equal 1, second_definition.dig("result", "range", "start", "line")
+      end
+    end
+  end
+
+  def test_hover_on_imported_module_member_uses_loose_workspace_root_for_import_resolution
+    Dir.mktmpdir("milk-tea-lsp-hover-imported-module") do |dir|
+      lib_path = File.join(dir, "demo", "lib.mt")
+      main_path = File.join(dir, "main.mt")
+      FileUtils.mkdir_p(File.join(dir, "demo"))
+
+      lib_source = <<~MT
+        public function greet() -> int:
+            return 1
+      MT
+      main_source = <<~MT
+        import demo.lib as lib
+
+        function main() -> int:
+            return lib.greet()
+      MT
+
+      File.write(lib_path, lib_source)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        call_line = main_source.lines.index { |line| line.include?("lib.greet") }
+        call_char = main_source.lines[call_line].index("greet")
+
+        hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => main_uri },
+          "position" => { "line" => call_line, "character" => call_char }
+        })
+
+        hover_value = hover.dig("result", "contents", "value")
+        assert_includes hover_value, "function greet() -> int"
+        assert_includes hover_value, "Defined at: [demo/lib.mt:1](#{lib_uri}#L1)"
       end
     end
   end
@@ -5230,6 +5351,49 @@ class LSPServerTest < Minitest::Test
 
         alias_entry = semantic_entry_for_lexeme(source, entries, "c")
         member_entry = semantic_entry_for_lexeme(source, entries, "SDL_SetWindowFillDocument")
+
+        assert_equal "namespace", alias_entry.fetch("tokenType")
+        assert_equal "function", member_entry.fetch("tokenType")
+      end
+    end
+  end
+
+  def test_semantic_tokens_classify_loose_workspace_imported_module_function_reference_as_function
+    Dir.mktmpdir("mt_lsp_semantic_tokens_loose_root") do |dir|
+      demo_dir = File.join(dir, "demo")
+      FileUtils.mkdir_p(demo_dir)
+
+      File.write(File.join(demo_dir, "lib.mt"), <<~MT)
+        public function greet() -> int:
+            return 1
+      MT
+
+      source_path = File.join(dir, "main.mt")
+      source = <<~MT
+        import demo.lib as lib
+
+        function main() -> int:
+            return lib.greet()
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        alias_entry = semantic_entry_for_lexeme(source, entries, "lib")
+        member_entry = semantic_entry_for_lexeme(source, entries, "greet")
 
         assert_equal "namespace", alias_entry.fetch("tokenType")
         assert_equal "function", member_entry.fetch("tokenType")

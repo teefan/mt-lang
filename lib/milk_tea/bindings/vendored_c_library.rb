@@ -5,6 +5,8 @@ require "open3"
 require "pathname"
 require "shellwords"
 
+require_relative "../tooling/read_lines_tool"
+
 module MilkTea
   module VendoredCLibrary
     class Error < RawBindings::Error; end
@@ -286,7 +288,7 @@ module MilkTea
         path = install_root.join("lib/pkgconfig/#{@pkg_config_name}.pc")
         return [] unless File.exist?(path)
 
-        lines = File.readlines(path, chomp: true)
+        lines = ReadLinesTool.read_lines(path: path.to_s)
         variables = pkg_config_variables(lines)
         lines.filter_map do |line|
           line.split(":", 2).last&.strip if line.start_with?("Libs:", "Libs.private:")

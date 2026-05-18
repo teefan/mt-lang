@@ -94,6 +94,36 @@ class MilkTeaCliTest < Minitest::Test
     assert_includes out.string, "function main() -> ExitCode:"
   end
 
+  def test_source_index_command_lists_sorted_visible_source_paths
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless executable_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-cli-source-index") do |dir|
+      root = File.join(dir, "workspace")
+      FileUtils.mkdir_p(File.join(root, "src", "nested"))
+      FileUtils.mkdir_p(File.join(root, ".hidden", "nested"))
+      File.write(File.join(root, "zeta.mt"), "function zeta() -> int:\n    return 0\n")
+      File.write(File.join(root, "README.txt"), "ignore\n")
+      File.write(File.join(root, ".secret.mt"), "function secret() -> int:\n    return 0\n")
+      File.write(File.join(root, "src", "alpha.mt"), "function alpha() -> int:\n    return 0\n")
+      File.write(File.join(root, "src", "nested", "beta.mt"), "function beta() -> int:\n    return 0\n")
+      File.write(File.join(root, ".hidden", "nested", "skip.mt"), "function skip() -> int:\n    return 0\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["source-index", root], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_equal [
+        File.join(root, "src", "alpha.mt"),
+        File.join(root, "src", "nested", "beta.mt"),
+        File.join(root, "zeta.mt")
+      ], out.string.lines(chomp: true)
+    end
+  end
+
   def test_format_command_prints_formatted_source
     out = StringIO.new
     err = StringIO.new

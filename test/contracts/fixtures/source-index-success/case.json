@@ -1,0 +1,15 @@
+{
+  "name": "source_index_success",
+  "argv": [
+    "source-index",
+    ".",
+    "--json"
+  ],
+  "cwd": ".",
+  "exitStatus": 0,
+  "stderr": "",
+  "stdout": {
+    "type": "json-exact",
+    "path": "expected.stdout.json"
+  }
+}

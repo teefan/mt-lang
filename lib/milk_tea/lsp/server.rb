@@ -419,6 +419,7 @@ module MilkTea
 
       def handle_initialize(params)
         @root_uri = params['rootUri']
+        @workspace.workspace_root_path = uri_to_path(@root_uri)
         apply_configuration_settings(params['initializationOptions'])
         apply_configuration_settings(params['settings'])
         {
@@ -2652,26 +2653,31 @@ module MilkTea
           facts_location = measure_perf_stage(stages, 'facts_lookup') do
             location = nil
 
-            if token_index && (field_location = resolve_field_member_definition_location(uri, facts, tokens, token_index))
+            if token_index && (member_access = module_member_access_info(tokens, token_index))
+              module_name = facts.imports[member_access[:receiver]]&.name || imported_module_name_from_ast(uri, member_access[:receiver])
+              if module_name
+                location = module_member_definition_location(uri, module_name, token.lexeme)
+                location ||= module_definition_location(uri, module_name)
+              end
+            elsif token_index && (field_location = resolve_field_member_definition_location(uri, facts, tokens, token_index))
               location = field_location
-            elsif token_index && (member_access = module_member_access_info(tokens, token_index)) && (import_binding = facts.imports[member_access[:receiver]])
-              module_name = import_binding.name
-              location = module_member_definition_location(uri, module_name, token.lexeme)
-              location ||= module_definition_location(uri, module_name)
             elsif token_index && (enum_member_location = resolve_enum_member_definition_location(uri, facts, tokens, token_index))
               location = enum_member_location
             else
               dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
               dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
-              if dot_receiver && facts.imports.key?(dot_receiver)
-                module_name = facts.imports.fetch(dot_receiver).name
-                location = module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
+              imported_module_name = dot_receiver ? (facts.imports[dot_receiver]&.name || imported_module_name_from_ast(uri, dot_receiver)) : nil
+              if imported_module_name
+                location = module_member_definition_location(uri, imported_module_name, token.lexeme) || module_definition_location(uri, imported_module_name)
               elsif (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, token.lexeme))
                 location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
                   module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
                   module_definition_location(uri, type_method[:module_name])
               elsif facts.imports.key?(token.lexeme)
                 module_name = facts.imports.fetch(token.lexeme).name
+              location = module_member_definition_location(uri, module_name, token.lexeme)
+              location ||= module_definition_location(uri, module_name)
+              elsif (module_name = imported_module_name_from_ast(uri, token.lexeme))
                 location = module_definition_location(uri, module_name)
               end
             end
@@ -4117,12 +4123,49 @@ module MilkTea
         return current_path if current_facts&.module_name == module_name
 
         resolution = DependencyResolution.resolve(current_path, mode: @workspace.dependency_resolution_mode)
-        return nil unless resolution.ok?
-
-        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path, locked: resolution.locked)
+        module_roots = if resolution.ok?
+                         MilkTea::ModuleRoots.roots_for_path(current_path, locked: resolution.locked)
+                       else
+                         MilkTea::ModuleRoots.roots_for_path(current_path)
+                       end
         relative_path = File.join(*module_name.split('.')) + '.mt'
-        module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+        resolved_path = module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+        return resolved_path if resolved_path
+
+        workspace_root = @root_uri ? uri_to_path(@root_uri) : nil
+        return nil unless workspace_root && File.directory?(workspace_root)
+
+        workspace_candidate = File.join(workspace_root, relative_path)
+        return workspace_candidate if File.file?(workspace_candidate)
+
+        nil
       rescue PackageLockError
+        module_roots = MilkTea::ModuleRoots.roots_for_path(current_path)
+        relative_path = File.join(*module_name.split('.')) + '.mt'
+        resolved_path = module_roots.lazy.map { |root| File.join(root, relative_path) }.find { |candidate| File.file?(candidate) }
+        return resolved_path if resolved_path
+
+        workspace_root = @root_uri ? uri_to_path(@root_uri) : nil
+        return nil unless workspace_root && File.directory?(workspace_root)
+
+        workspace_candidate = File.join(workspace_root, relative_path)
+        return workspace_candidate if File.file?(workspace_candidate)
+
+        nil
+      end
+
+      def imported_module_name_from_ast(uri, alias_name)
+        return nil if alias_name.nil? || alias_name.empty?
+
+        ast = @workspace.get_ast(uri)
+        return nil unless ast
+
+        import = ast.imports.find do |entry|
+          resolved_alias = entry.alias_name || entry.path.parts.last
+          resolved_alias == alias_name
+        end
+        import&.path&.to_s
+      rescue StandardError
         nil
       end
 
@@ -4241,9 +4284,14 @@ module MilkTea
         nil
       end
 
-      def definition_file_tokens(path)
-        mtime = File.mtime(path).to_i rescue 0
-        cache_key = "#{path}:#{mtime}"
+      def definition_file_mtime_key(path)
+        MilkTea::MtimeTool.mtime(path: path).cache_key
+      rescue MilkTea::MtimeToolError, SystemCallError
+        'missing'
+      end
+
+      def definition_file_tokens(path, mtime_key: nil)
+        cache_key = "#{path}:#{mtime_key || definition_file_mtime_key(path)}"
         @definition_file_token_cache[cache_key] ||= begin
           MilkTea::Lexer.lex(File.read(path), path: path_to_uri(path))
         end
@@ -4260,10 +4308,10 @@ module MilkTea
       end
 
       def definition_file_ast(path)
-        mtime = File.mtime(path).to_i rescue 0
-        cache_key = "#{path}:#{mtime}"
+        mtime_key = definition_file_mtime_key(path)
+        cache_key = "#{path}:#{mtime_key}"
         @definition_file_ast_cache[cache_key] ||= begin
-          MilkTea::Parser.parse(nil, path: path_to_uri(path), tokens: definition_file_tokens(path))
+          MilkTea::Parser.parse(nil, path: path_to_uri(path), tokens: definition_file_tokens(path, mtime_key: mtime_key))
         end
       end
 
