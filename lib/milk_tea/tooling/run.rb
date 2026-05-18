@@ -210,11 +210,11 @@ module MilkTea
 
     Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
-      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
+      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
       @input_path = File.expand_path(path)
       @project_root = File.directory?(@input_path) ? @input_path : File.dirname(@input_path)
       @output_path = output_path ? File.expand_path(output_path) : nil
@@ -222,6 +222,7 @@ module MilkTea
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @module_roots = module_roots
       @package_graph = package_graph
+      @frontend = frontend
       @profile = profile
       @platform = platform
       @bundle = bundle
@@ -256,6 +257,7 @@ module MilkTea
         keep_c_path: @keep_c_path,
         module_roots: @module_roots,
         package_graph: @package_graph,
+        frontend: @frontend,
         profile: @profile,
         platform: @platform,
         bundle: @bundle,

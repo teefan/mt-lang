@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "contract": "frontendArtifacts",
+  "success": true,
+  "inputPath": "main.mt",
+  "compiledCPath": "compiled.c",
+  "savedCPath": "saved.c",
+  "debugMapPath": "artifact.mtdbg.json",
+  "binaryPath": "artifact.bin",
+  "platform": "linux",
+  "emitLineDirectives": true,
+  "modules": [
+    {
+      "name": "main",
+      "kind": "module",
+      "linkLibraries": [],
+      "compilerFlags": []
+    }
+  ]
+}

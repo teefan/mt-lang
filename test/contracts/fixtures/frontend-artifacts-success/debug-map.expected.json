@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "binaryPath": "artifact.bin",
+  "programSourcePath": "main.mt",
+  "functions": [
+    {
+      "name": "main",
+      "cName": "main_main",
+      "sourcePath": "main.mt",
+      "line": 2
+    },
+    {
+      "name": "main",
+      "cName": "main",
+      "sourcePath": "main.mt"
+    }
+  ]
+}

@@ -391,6 +391,29 @@ public function current_directory() -> Result[string.String, Error]:
     return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.current_directory requires UTF-8 text")
 
 
+public function find_ancestor_containing(path: str, entry_name: str) -> Option[string.String]:
+    var current = path_ops.normalize_separators(path_ops.dirname(path))
+    if is_directory(path):
+        current.release()
+        current = path_ops.normalize_separators(path)
+
+    while true:
+        var candidate = path_ops.join(current.as_str(), entry_name)
+        let found = exists(candidate.as_str())
+        candidate.release()
+        if found:
+            return Option[string.String].some(value= current)
+
+        let parent_text = path_ops.dirname(current.as_str())
+        if parent_text == current.as_str():
+            current.release()
+            return Option[string.String].none
+
+        var parent = string.String.from_str(parent_text)
+        current.release()
+        current = parent
+
+
 function static_error(message: str) -> Error:
     return Error(code = -1, message = string.String.from_str(message))
 

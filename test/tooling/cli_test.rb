@@ -2,6 +2,7 @@
 
 require "digest"
 require "open3"
+require "rbconfig"
 require "stringio"
 require "tmpdir"
 require_relative "../test_helper"
@@ -372,7 +373,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_match(/#include <stdio\.h>/, out.string)
-    assert_match(/fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\);/, out.string)
+    assert_match(/\(void\)\(fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\)\);/, out.string)
     refute_match(/^#line\s+/m, out.string)
   end
 
@@ -386,6 +387,60 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/cannot emit C for external file std\.c\.raylib/, err.string)
+  end
+
+  def test_frontend_artifacts_command_emits_contract_and_writes_outputs
+    Dir.mktmpdir("milk-tea-cli-frontend-artifacts") do |dir|
+      source_path = File.join(dir, "frontend-artifacts.mt")
+      compiled_c_path = File.join(dir, "compiled.c")
+      saved_c_path = File.join(dir, "saved.c")
+      debug_map_path = File.join(dir, "artifact.mtdbg.json")
+      binary_path = File.join(dir, "artifact.bin")
+      out = StringIO.new
+      err = StringIO.new
+
+      File.write(source_path, <<~MT)
+        import std.c.zlib as zlib_c
+
+        function main() -> int:
+            return 0
+      MT
+
+      status = MilkTea::CLI.start([
+        "frontend-artifacts",
+        source_path,
+        "--compiled-c", compiled_c_path,
+        "--saved-c", saved_c_path,
+        "--debug-map", debug_map_path,
+        "--binary-path", binary_path,
+        "--line-directives",
+        "--json",
+      ], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+      assert_equal 1, payload.fetch("version")
+      assert_equal "frontendArtifacts", payload.fetch("contract")
+      assert_equal true, payload.fetch("success")
+      assert_equal File.expand_path(compiled_c_path).tr("\\", "/"), payload.fetch("compiledCPath")
+      assert_equal File.expand_path(saved_c_path).tr("\\", "/"), payload.fetch("savedCPath")
+      assert_equal File.expand_path(debug_map_path).tr("\\", "/"), payload.fetch("debugMapPath")
+      assert_equal File.expand_path(binary_path).tr("\\", "/"), payload.fetch("binaryPath")
+      assert_equal true, payload.fetch("emitLineDirectives")
+
+      zlib_module = payload.fetch("modules").find { |mod| mod.fetch("name") == "std.c.zlib" }
+      refute_nil zlib_module
+      assert_equal "raw_module", zlib_module.fetch("kind")
+      assert_equal ["z"], zlib_module.fetch("linkLibraries")
+
+      assert File.exist?(compiled_c_path)
+      assert File.exist?(saved_c_path)
+      assert File.exist?(debug_map_path)
+      assert_match(/^#line\s+/m, File.read(compiled_c_path))
+      refute_match(/^#line\s+/m, File.read(saved_c_path))
+    end
   end
 
   def test_build_command_compiles_with_fake_compiler
@@ -437,6 +492,38 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal "linux", payload.fetch("platform")
       assert File.exist?(output_path)
       assert File.exist?(c_path)
+    end
+  end
+
+  def test_build_command_accepts_external_frontend_command
+    Dir.mktmpdir("milk-tea-cli-build-external-frontend") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "language-fixture")
+      c_path = File.join(dir, "language-fixture.c")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start([
+        "build",
+        language_fixture_path,
+        "--cc", compiler_path,
+        "--frontend-command", RbConfig.ruby,
+        "--frontend-command", File.expand_path("../../bin/mtc", __dir__),
+        "--frontend-command", "frontend-artifacts",
+        "-o", output_path,
+        "--keep-c", c_path,
+      ], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/built .*language_fixture\.mt -> .*language-fixture/, out.string)
+      assert_match(/saved C to .*language-fixture\.c/, out.string)
+      assert File.exist?(output_path)
+      assert File.exist?(c_path)
+      refute_match(/^#line\s+/m, File.read(c_path))
+      invocation = File.read(compiler_log).lines(chomp: true)
+      refute_includes invocation, "-lm"
     end
   end
 
@@ -657,6 +744,7 @@ class MilkTeaCliTest < Minitest::Test
 
     assert_equal 0, status
     assert_equal "", err.string
+    assert_match(/--frontend-command\s+ARG\s+External frontend command argv element \(repeatable\)\./, out.string)
     assert_match(/--bundle\s+Package a native package build into a distributable directory\./, out.string)
     assert_match(/--archive\s+Also write a \.tar\.gz archive for the native bundle \(implies --bundle\)\./, out.string)
   end
@@ -745,6 +833,30 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 7, payload.fetch("exitStatus")
       assert_equal File.expand_path(compiler_path).tr("\\", "/"), payload.fetch("compiler")
       assert_equal "linux", payload.fetch("platform")
+    end
+  end
+
+  def test_run_command_accepts_external_frontend_command
+    Dir.mktmpdir("milk-tea-cli-run-external-frontend") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "run-ok\n", stderr: "run-err\n", exit_status: 7)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start([
+        "run",
+        language_fixture_path,
+        "--cc", compiler_path,
+        "--frontend-command", RbConfig.ruby,
+        "--frontend-command", File.expand_path("../../bin/mtc", __dir__),
+        "--frontend-command", "frontend-artifacts",
+      ], out:, err:)
+
+      assert_equal 7, status
+      assert_equal "run-ok\n", out.string
+      assert_equal "run-err\n", err.string
+      invocation = File.read(compiler_log).lines(chomp: true)
+      refute_includes invocation, "-lm"
     end
   end
 

@@ -360,6 +360,86 @@ class MilkTeaStdFsTest < Minitest::Test
     end
   end
 
+  def test_find_ancestor_containing_walks_up_from_file_and_directory
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-std-fs-ancestor") do |dir|
+      source = [
+        "import std.fs as fs",
+        "import std.path as path",
+        "",
+        "function main() -> int:",
+        "    var workspace = path.join(\"#{dir}\", \"workspace\")",
+        "    defer workspace.release()",
+        "    var nested = path.join(workspace.as_str(), \"packages/app/src\")",
+        "    defer nested.release()",
+        "",
+        "    match fs.create_directories(nested.as_str()):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 1",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    var manifest_path = path.join(workspace.as_str(), \"package.toml\")",
+        "    defer manifest_path.release()",
+        "    match fs.write_text(manifest_path.as_str(), \"[package]\\nname = \\\"demo\\\"\\n\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 2",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    var file_path = path.join(nested.as_str(), \"main.mt\")",
+        "    defer file_path.release()",
+        "    match fs.write_text(file_path.as_str(), \"function main() -> int:\\n    return 0\\n\"):",
+        "        Result.failure as payload:",
+        "            var error = payload.error",
+        "            defer error.release()",
+        "            return 3",
+        "        Result.success as ignored_payload:",
+        "            pass",
+        "",
+        "    match fs.find_ancestor_containing(file_path.as_str(), \"package.toml\"):",
+        "        Option.some as payload:",
+        "            var found = payload.value",
+        "            defer found.release()",
+        "            if found.as_str() != workspace.as_str():",
+        "                return 4",
+        "        Option.none:",
+        "            return 5",
+        "",
+        "    match fs.find_ancestor_containing(nested.as_str(), \"package.toml\"):",
+        "        Option.some as payload:",
+        "            var found = payload.value",
+        "            defer found.release()",
+        "            if found.as_str() != workspace.as_str():",
+        "                return 6",
+        "        Option.none:",
+        "            return 7",
+        "",
+        "    match fs.find_ancestor_containing(file_path.as_str(), \"missing.txt\"):",
+        "        Option.none:",
+        "            pass",
+        "        Option.some as payload:",
+        "            var found = payload.value",
+        "            defer found.release()",
+        "            return 8",
+        "",
+        "    return 0",
+      ].join("\n")
+
+      result = run_program(source, compiler:)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 0, result.exit_status
+    end
+  end
+
   def test_copy_entry_and_remove_tree_for_nested_directories
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
