@@ -28,7 +28,13 @@ public struct Response:
     body: bytes.Bytes
 
 
+enum UrlScheme: int
+    http = 1
+    https = 2
+
+
 struct ParsedUrl:
+    scheme: UrlScheme
     host: string.String
     authority: string.String
     target: string.String
@@ -70,6 +76,10 @@ function url_error(detail: str) -> Error:
 
 function response_error(detail: str) -> Error:
     return status_error(f"invalid http response: #{detail}")
+
+
+function transport_error(detail: str) -> Error:
+    return status_error(detail)
 
 
 function ascii_fold(value: ubyte) -> ubyte:
@@ -171,14 +181,25 @@ function parse_target(rest: str) -> Result[string.String, Error]:
     return Result[string.String, Error].failure(error = url_error("path must start with '/' or '?'") )
 
 
+function default_port_for_scheme(scheme: UrlScheme) -> int:
+    match scheme:
+        UrlScheme.http:
+            return 80
+        UrlScheme.https:
+            return 443
+
+
 function parse_url(url: str) -> Result[ParsedUrl, Error]:
-    if url.starts_with("https://"):
-        return Result[ParsedUrl, Error].failure(error = url_error("https is not supported yet"))
+    var scheme = UrlScheme.http
+    var remainder = url
+    if url.starts_with("http://"):
+        remainder = url.slice(7, url.len - 7)
+    else if url.starts_with("https://"):
+        scheme = UrlScheme.https
+        remainder = url.slice(8, url.len - 8)
+    else:
+        return Result[ParsedUrl, Error].failure(error = url_error("URL must start with http:// or https://"))
 
-    if not url.starts_with("http://"):
-        return Result[ParsedUrl, Error].failure(error = url_error("URL must start with http://"))
-
-    let remainder = url.slice(7, url.len - 7)
     if remainder.len == 0:
         return Result[ParsedUrl, Error].failure(error = url_error("missing authority"))
 
@@ -199,7 +220,7 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
         return Result[ParsedUrl, Error].failure(error = url_error("userinfo is not supported"))
 
     var host_text = authority_text
-    var port = 80
+    var port = default_port_for_scheme(scheme)
     if authority_text.byte_at(0) == ubyte<-91:
         var closing_bracket: ptr_uint = 0
         match find_byte_from(authority_text, ubyte<-93, 1):
@@ -260,6 +281,7 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
             let target = payload.value
             return Result[ParsedUrl, Error].success(
                 value = ParsedUrl(
+                    scheme = scheme,
                     host = string.String.from_str(host_text),
                     authority = string.String.from_str(authority_text),
                     target = target,
@@ -828,6 +850,45 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
                     )
 
 
+async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
+    var service = fmt.to_string_int(parsed.port)
+    defer service.release()
+
+    let address_result = await net.resolve_first(parsed.host.as_str(), service.as_str())
+    match address_result:
+        Result.failure as address_error_payload:
+            return Result[Response, Error].failure(error = status_net_error(address_error_payload.error))
+        Result.success as address_payload:
+            var address = address_payload.value
+            defer address.release()
+
+            let connect_result = await net.connect(address)
+            match connect_result:
+                Result.failure as connect_error_payload:
+                    return Result[Response, Error].failure(error = status_net_error(connect_error_payload.error))
+                Result.success as connect_payload:
+                    var stream = connect_payload.value
+                    defer stream.release()
+
+                    let write_result = await stream.write_bytes(request_bytes)
+                    match write_result:
+                        Result.failure as write_error_payload:
+                            return Result[Response, Error].failure(error = status_net_error(write_error_payload.error))
+                        Result.success as write_payload:
+                            if write_payload.value != request_bytes.len:
+                                return Result[Response, Error].failure(error = status_error("http request write did not send the full request"))
+
+                    return await read_response(stream)
+
+
+async function request_with_transport(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
+    match parsed.scheme:
+        UrlScheme.http:
+            return await request_http(parsed, request_bytes)
+        UrlScheme.https:
+            return Result[Response, Error].failure(error = transport_error("https transport is not implemented yet"))
+
+
 extending Error:
     public mutable function release() -> void:
         this.message.release()
@@ -920,31 +981,4 @@ public async function request(url: str, method: str, headers: span[RequestHeader
                     var request_bytes = request_payload.value
                     defer request_bytes.release()
 
-                    var service = fmt.to_string_int(parsed.port)
-                    defer service.release()
-
-                    let address_result = await net.resolve_first(parsed.host.as_str(), service.as_str())
-                    match address_result:
-                        Result.failure as address_error_payload:
-                            return Result[Response, Error].failure(error = status_net_error(address_error_payload.error))
-                        Result.success as address_payload:
-                            var address = address_payload.value
-                            defer address.release()
-
-                            let connect_result = await net.connect(address)
-                            match connect_result:
-                                Result.failure as connect_error_payload:
-                                    return Result[Response, Error].failure(error = status_net_error(connect_error_payload.error))
-                                Result.success as connect_payload:
-                                    var stream = connect_payload.value
-                                    defer stream.release()
-
-                                    let write_result = await stream.write_bytes(request_bytes.as_span())
-                                    match write_result:
-                                        Result.failure as write_error_payload:
-                                            return Result[Response, Error].failure(error = status_net_error(write_error_payload.error))
-                                        Result.success as write_payload:
-                                            if write_payload.value != request_bytes.len:
-                                                return Result[Response, Error].failure(error = status_error("http request write did not send the full request"))
-
-                                    return await read_response(stream)
+                    return await request_with_transport(parsed, request_bytes.as_span())

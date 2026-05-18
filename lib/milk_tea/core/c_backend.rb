@@ -21,6 +21,15 @@ module MilkTea
       lines = []
       constants = emitted_constants
       headers = @program.includes.map(&:header)
+      if headers.include?("\"fs_support.h\"")
+        lines << "#ifndef _GNU_SOURCE"
+        lines << "#define _GNU_SOURCE"
+        lines << "#endif"
+        lines << "#ifndef _POSIX_C_SOURCE"
+        lines << "#define _POSIX_C_SOURCE 200809L"
+        lines << "#endif"
+        lines << ""
+      end
       if uses_fatal_helper? || uses_format_helpers?
         headers << "<stdio.h>"
       end
@@ -1250,10 +1259,18 @@ module MilkTea
     end
 
     def emit_statement_sequence(statements, level, function:, used_labels:)
-      statements.flat_map { |statement| emit_statement(statement, level, function:, used_labels:) }
+      statements.each_with_index.flat_map do |statement, index|
+        emit_statement(
+          statement,
+          level,
+          function:,
+          used_labels:,
+          remaining_statements: statements[(index + 1)..] || [],
+        )
+      end
     end
 
-    def emit_statement(statement, level, function:, used_labels:)
+    def emit_statement(statement, level, function:, used_labels:, remaining_statements: [])
       indent = INDENT * level
       aliases = checked_index_aliases_for_statement(statement)
       alias_lines = emit_checked_index_alias_declarations(aliases, indent)
@@ -1269,13 +1286,18 @@ module MilkTea
           if array_type?(statement.type) && statement.value.is_a?(IR::Call)
             lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
             lines << emit_array_call_statement(statement.value, emit_array_out_argument(statement.c_name), indent)
+            lines << unused_local_suppression_line(statement, indent, remaining_statements)
             lines
           elsif array_type?(statement.type) && !statement.value.is_a?(IR::ArrayLiteral) && !statement.value.is_a?(IR::ZeroInit)
             lines = ["#{indent}#{c_declaration(statement.type, statement.c_name)};"]
             lines << emit_array_copy_statement(statement.c_name, statement.value, indent)
+            lines << unused_local_suppression_line(statement, indent, remaining_statements)
             lines
           else
-            ["#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};"]
+            [
+              "#{indent}#{c_declaration(statement.type, statement.c_name)} = #{emit_initializer(statement.value)};",
+              unused_local_suppression_line(statement, indent, remaining_statements),
+            ].compact
           end
         when IR::Assignment
           if array_type?(statement.target.type) && statement.operator == "=" && statement.value.is_a?(IR::Call)
@@ -1350,6 +1372,12 @@ module MilkTea
       end
 
       alias_lines + line_directive + statement_lines
+    end
+
+    def unused_local_suppression_line(statement, indent, remaining_statements)
+      return unless name_reference_count_in_statements(remaining_statements, statement.c_name).zero?
+
+      "#{indent}(void)#{statement.c_name};"
     end
 
     def compact_generated_statement_sequence(statements)
