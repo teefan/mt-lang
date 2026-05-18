@@ -28,6 +28,12 @@ typedef struct mt_fs_error {
   uintptr_t message_len;
 } mt_fs_error;
 
+typedef struct mt_fs_metadata {
+  int kind;
+  int mode;
+  uintptr_t size;
+} mt_fs_metadata;
+
 enum {
   MT_FS_KIND_NONE = 0,
   MT_FS_KIND_FILE = 1,
@@ -62,6 +68,16 @@ static inline void mt_fs_reset_error(mt_fs_error* error) {
   error->code = 0;
   error->message_data = NULL;
   error->message_len = 0;
+}
+
+static inline void mt_fs_reset_metadata(mt_fs_metadata* value) {
+  if (value == NULL) {
+    return;
+  }
+
+  value->kind = MT_FS_KIND_NONE;
+  value->mode = 0;
+  value->size = 0;
 }
 
 static inline int mt_fs_set_message(mt_fs_error* error, int code, const char* prefix, const char* detail) {
@@ -131,6 +147,32 @@ static inline int mt_fs_path_kind(const char* path) {
     return MT_FS_KIND_DIRECTORY;
   }
   return MT_FS_KIND_OTHER;
+}
+
+static inline int mt_fs_get_metadata(const char* path, mt_fs_metadata* out_metadata, mt_fs_error* out_error) {
+  mt_fs_reset_metadata(out_metadata);
+  mt_fs_reset_error(out_error);
+
+  if (path == NULL || path[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs metadata failed", "path cannot be empty");
+  }
+
+  struct stat info;
+  if (lstat(path, &info) != 0) {
+    return mt_fs_set_errno_error(out_error, errno, "fs metadata failed");
+  }
+
+  out_metadata->mode = (int) (info.st_mode & 07777);
+  out_metadata->size = (uintptr_t) info.st_size;
+  if (S_ISREG(info.st_mode)) {
+    out_metadata->kind = MT_FS_KIND_FILE;
+  } else if (S_ISDIR(info.st_mode)) {
+    out_metadata->kind = MT_FS_KIND_DIRECTORY;
+  } else {
+    out_metadata->kind = MT_FS_KIND_OTHER;
+  }
+
+  return 0;
 }
 
 static inline int mt_fs_read_text(const char* path, mt_fs_string* out_text, mt_fs_error* out_error) {
@@ -263,6 +305,20 @@ static inline int mt_fs_rename(const char* source_path, const char* target_path,
   return 0;
 }
 
+static inline int mt_fs_set_permissions(const char* path, int mode, mt_fs_error* out_error) {
+  mt_fs_reset_error(out_error);
+
+  if (path == NULL || path[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs set permissions failed", "path cannot be empty");
+  }
+
+  if (chmod(path, (mode_t) mode) != 0) {
+    return mt_fs_set_errno_error(out_error, errno, "fs set permissions failed");
+  }
+
+  return 0;
+}
+
 static inline int mt_fs_ensure_directory(const char* path, mt_fs_error* out_error) {
   if (mkdir(path, 0777) == 0) {
     return 0;
@@ -374,6 +430,72 @@ static inline int mt_fs_canonicalize(const char* path, mt_fs_string* out_text, m
 
   out_text->data = resolved;
   out_text->len = (uintptr_t) strlen(resolved);
+  return 0;
+}
+
+static inline int mt_fs_create_temporary_file(const char* parent_dir,
+                                              const char* prefix,
+                                              const char* suffix,
+                                              mt_fs_string* out_path,
+                                              mt_fs_error* out_error) {
+  mt_fs_reset_string(out_path);
+  mt_fs_reset_error(out_error);
+
+  if (parent_dir == NULL || parent_dir[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs create temporary file failed", "parent directory cannot be empty");
+  }
+  if (prefix == NULL || prefix[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs create temporary file failed", "prefix cannot be empty");
+  }
+
+  if (mt_fs_path_kind(parent_dir) != MT_FS_KIND_DIRECTORY) {
+    return mt_fs_set_message(out_error, ENOENT, "fs create temporary file failed", "parent directory does not exist");
+  }
+
+  size_t parent_len = strlen(parent_dir);
+  size_t prefix_len = strlen(prefix);
+  size_t suffix_len = suffix == NULL ? 0 : strlen(suffix);
+  bool needs_separator = parent_len != 0 && parent_dir[parent_len - 1] != '/';
+  size_t template_len = parent_len + (needs_separator ? 1 : 0) + prefix_len + 7 + suffix_len;
+
+  char* template_path = (char*) malloc(template_len + 1);
+  if (template_path == NULL) {
+    return mt_fs_set_errno_error(out_error, ENOMEM, "fs create temporary file failed");
+  }
+
+  size_t offset = 0;
+  memcpy(template_path + offset, parent_dir, parent_len);
+  offset += parent_len;
+  if (needs_separator) {
+    template_path[offset] = '/';
+    offset += 1;
+  }
+  memcpy(template_path + offset, prefix, prefix_len);
+  offset += prefix_len;
+  memcpy(template_path + offset, "-XXXXXX", 7);
+  offset += 7;
+  if (suffix_len != 0) {
+    memcpy(template_path + offset, suffix, suffix_len);
+    offset += suffix_len;
+  }
+  template_path[offset] = '\0';
+
+  int descriptor = suffix_len == 0 ? mkstemp(template_path) : mkstemps(template_path, (int) suffix_len);
+  if (descriptor < 0) {
+    int code = errno;
+    free(template_path);
+    return mt_fs_set_errno_error(out_error, code, "fs create temporary file failed");
+  }
+
+  if (close(descriptor) != 0) {
+    int code = errno;
+    remove(template_path);
+    free(template_path);
+    return mt_fs_set_errno_error(out_error, code, "fs create temporary file failed");
+  }
+
+  out_path->data = template_path;
+  out_path->len = (uintptr_t) strlen(template_path);
   return 0;
 }
 
