@@ -7,8 +7,8 @@ public type TimeSpec = c.timespec
 
 public const REALTIME_CLOCK: ClockId = c.CLOCK_REALTIME
 public const MONOTONIC_CLOCK: ClockId = c.CLOCK_MONOTONIC
-public const NANOSECONDS_PER_SECOND: ptr_uint = ptr_uint<-1000000000
-public const NANOSECONDS_PER_MILLISECOND: ptr_uint = ptr_uint<-1000000
+public const NANOSECONDS_PER_SECOND: ptr_uint = 1000000000
+public const NANOSECONDS_PER_MILLISECOND: ptr_uint = 1000000
 
 public foreign function current_timestamp(out value: Timestamp) -> Timestamp = c.time
 public foreign function timestamp_from_local_time(value: ptr[DateTime]) -> Timestamp = c.mktime
@@ -35,9 +35,9 @@ public function utc_time_ptr(value: Timestamp) -> ptr[DateTime]?:
 
 public function format_into(buffer: ptr[char], max_size: ptr_uint, format: str, value: ptr[DateTime]?) -> ptr_uint:
     if value == null:
-        return ptr_uint<-0
+        return 0
 
-    return format_date_time(buffer, max_size, format, unsafe: ptr[DateTime]<-value)
+    return format_date_time(buffer, max_size, format, ptr[DateTime]<-value)
 
 
 public function format_local_time_into(buffer: ptr[char], max_size: ptr_uint, format: str, value: Timestamp) -> ptr_uint:
@@ -65,7 +65,7 @@ public function monotonic(value: ref[TimeSpec]) -> int:
 
 
 public function seconds(value: ptr_int) -> TimeSpec:
-    return c.timespec(tv_sec = value, tv_nsec = ptr_int<-0)
+    return c.timespec(tv_sec = value, tv_nsec = 0)
 
 
 public function milliseconds(value: ptr_uint) -> TimeSpec:

@@ -44,15 +44,15 @@ extending Vec[T]:
         if this.data == null and this.len != 0:
             fatal(c"vec.Vec.as_span missing storage")
 
-        return unsafe: span[T](data = ptr[T]<-this.data, len = this.len)
+        unsafe:
+            return span[T](data = ptr[T]<-this.data, len = this.len)
 
 
     public function get(index: ptr_uint) -> ptr[T]?:
         if index >= this.len:
             return null
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.Vec.get missing storage")
 
         return unsafe: ptr[T]<-data + index
@@ -96,8 +96,7 @@ extending Vec[T]:
             else:
                 new_capacity *= 2
 
-        let resized = heap.resize[T](this.data, new_capacity)
-        if resized == null:
+        let resized = heap.resize[T](this.data, new_capacity) else:
             fatal(c"vec.reserve out of memory")
 
         this.data = resized
@@ -128,8 +127,7 @@ extending Vec[T]:
 
         this.reserve(new_len)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.append_span missing storage")
 
         unsafe:
@@ -164,8 +162,7 @@ extending Vec[T]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.insert missing storage")
 
         unsafe:
@@ -185,8 +182,7 @@ extending Vec[T]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.push missing storage")
 
         unsafe:
@@ -201,8 +197,7 @@ extending Vec[T]:
         if this.len == 0:
             return Option[T].none
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.pop missing storage")
 
         let last_index = this.len - 1
@@ -217,8 +212,7 @@ extending Vec[T]:
         if index >= this.len:
             return Option[T].none
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.remove missing storage")
 
         let last_index = this.len - 1
@@ -238,8 +232,7 @@ extending Vec[T]:
         if index >= this.len:
             return Option[T].none
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.swap_remove missing storage")
 
         let last_index = this.len - 1
@@ -261,8 +254,7 @@ extending Iter[T]:
         if this.index >= this.len:
             return null
 
-        let data = this.data
-        if data == null:
+        let data = this.data else:
             fatal(c"vec.Iter.next missing storage")
 
         let current_index = this.index

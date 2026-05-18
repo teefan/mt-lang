@@ -7,7 +7,7 @@ require 'uri'
 
 module MilkTea
   module LSP
-    # Manages open documents, AST cache, token cache, semantic analysis cache, and symbol index.
+    # Manages open documents, AST cache, token cache, semantic facts cache, and symbol index.
     # Supports incremental document edits and workspace-wide indexing.
     class Workspace
       DOCUMENT_SOURCES = %w[active-editor visible-editor background-document].freeze
@@ -23,20 +23,23 @@ module MilkTea
         @error_output = error_output
         @dependency_resolution_mode = :auto
         @platform_override = nil
+        @strict_current_root_diagnostics_enabled = false
         @open_documents = {}   # uri -> content String from didOpen/didChange
         @indexed_documents = {} # uri -> content String loaded from disk index
         @document_sources = {} # uri -> source string from the editor client
         @document_state_mutex = Mutex.new
         @tokens_cache = {}   # uri -> [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
-        @analysis_cache = {} # uri -> Sema::Analysis (nil on analysis failure)
+        @facts_cache = {} # uri -> Sema::Facts (projection of cached tooling snapshot facts)
+        @tooling_snapshot_cache = {} # uri -> Sema::ToolingSnapshot (facts may be nil on structural failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
         @doc_comments_cache = {} # uri -> {"line:column" => markdown_doc}
-        @last_good_analysis_cache = {} # uri -> last Sema::Analysis that succeeded
+        @last_good_facts_cache = {} # uri -> last Sema::Facts that succeeded
+        @last_good_tooling_snapshot_cache = {} # uri -> last Sema::ToolingSnapshot with facts that succeeded
         @shared_module_cache = {}
-        @analysis_cache_mutex = Mutex.new
-        @analysis_generation = Hash.new(0)
-        @analysis_state_mutex = Mutex.new
+        @facts_cache_mutex = Mutex.new
+        @facts_generation = Hash.new(0)
+        @facts_state_mutex = Mutex.new
         # Diagnostics cache: uri -> { content_hash: Integer, diagnostics: Array }
         # Avoids re-running Sema.check_collecting_errors when content is unchanged.
         @diagnostics_cache = {}
@@ -62,12 +65,14 @@ module MilkTea
         return if @dependency_resolution_mode == normalized
 
         @dependency_resolution_mode = normalized
-        @analysis_state_mutex.synchronize do
-          @analysis_cache_mutex.synchronize do
+        @facts_state_mutex.synchronize do
+          @facts_cache_mutex.synchronize do
             @shared_module_cache.clear
-            @analysis_cache.clear
+            @facts_cache.clear
+            @tooling_snapshot_cache.clear
             @diagnostics_cache.clear
-            @last_good_analysis_cache.clear
+            @last_good_facts_cache.clear
+            @last_good_tooling_snapshot_cache.clear
           end
         end
       end
@@ -81,18 +86,36 @@ module MilkTea
         return if @platform_override == normalized
 
         @platform_override = normalized
-        @analysis_state_mutex.synchronize do
-          @analysis_cache_mutex.synchronize do
+        @facts_state_mutex.synchronize do
+          @facts_cache_mutex.synchronize do
             @shared_module_cache.clear
-            @analysis_cache.clear
+            @facts_cache.clear
+            @tooling_snapshot_cache.clear
             @diagnostics_cache.clear
-            @last_good_analysis_cache.clear
+            @last_good_facts_cache.clear
+            @last_good_tooling_snapshot_cache.clear
           end
         end
       end
 
       def platform_override
         @platform_override
+      end
+
+      def strict_current_root_diagnostics_enabled=(enabled)
+        normalized = !!enabled
+        return if @strict_current_root_diagnostics_enabled == normalized
+
+        @strict_current_root_diagnostics_enabled = normalized
+        @facts_state_mutex.synchronize do
+          @facts_cache_mutex.synchronize do
+            @diagnostics_cache.clear
+          end
+        end
+      end
+
+      def strict_current_root_diagnostics_enabled
+        @strict_current_root_diagnostics_enabled
       end
 
       def set_document_source(uri, source)
@@ -128,8 +151,10 @@ module MilkTea
         collect_ms = 0.0
         diagnostics = nil
         generation = nil
-        @analysis_cache_mutex.synchronize do
-          generation = @analysis_generation[uri]
+        cached_snapshot = nil
+        @facts_cache_mutex.synchronize do
+          generation = @facts_generation[uri]
+          cached_snapshot = @tooling_snapshot_cache[uri]
           entry = @diagnostics_cache[uri]
           if entry && entry[:content_hash] == hash
             cache_state = 'hit'
@@ -139,10 +164,11 @@ module MilkTea
         return diagnostics if diagnostics
 
         lock_wait_start = total_start ? monotonic_time : nil
-        @analysis_state_mutex.synchronize do
+        @facts_state_mutex.synchronize do
           lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
-          @analysis_cache_mutex.synchronize do
-            generation = @analysis_generation[uri]
+          @facts_cache_mutex.synchronize do
+            generation = @facts_generation[uri]
+            cached_snapshot = @tooling_snapshot_cache[uri]
             entry = @diagnostics_cache[uri]
             if entry && entry[:content_hash] == hash
               cache_state = 'hit'
@@ -159,14 +185,19 @@ module MilkTea
               source_overrides: file_backed_source_overrides,
               dependency_resolution_mode: @dependency_resolution_mode,
               platform_override: @platform_override,
+              sema_snapshot: cached_snapshot,
+              strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
             )
             collect_ms = elapsed_ms(collect_start) if collect_start
             diagnostics = result[:diagnostics]
-            analysis = result[:analysis]
-            @analysis_cache_mutex.synchronize do
-              if @analysis_generation[uri] == generation
-                @analysis_cache[uri] = analysis if analysis
-                @last_good_analysis_cache[uri] = analysis if analysis
+            facts = result[:facts]
+            snapshot = result[:sema_snapshot]
+            @facts_cache_mutex.synchronize do
+              if @facts_generation[uri] == generation
+                @tooling_snapshot_cache[uri] = snapshot if snapshot
+                @last_good_tooling_snapshot_cache[uri] = snapshot if snapshot&.facts
+                @facts_cache[uri] = facts if facts
+                @last_good_facts_cache[uri] = facts if facts
                 @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
               else
                 cache_state = 'stale'
@@ -198,7 +229,7 @@ module MilkTea
         end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri) unless background_document?(uri)
-        warm_document_analysis(uri, content)
+        warm_document_facts(uri, content)
       end
 
       def close_document(uri)
@@ -216,7 +247,7 @@ module MilkTea
         end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri) unless background_document?(uri)
-        warm_document_analysis(uri, content)
+        warm_document_facts(uri, content)
       end
 
       # Apply one incremental change (LSP textDocumentSync == 2).
@@ -281,55 +312,82 @@ module MilkTea
         @ast_cache[uri] ||= parse_document(uri)
       end
 
-      def get_analysis(uri)
+      def get_facts(uri)
+        snapshot = get_tooling_snapshot(uri)
+        snapshot&.facts
+      end
+
+      def get_tooling_snapshot(uri)
         total_start = perf_logging? ? monotonic_time : nil
         cache_state = 'miss'
         lock_wait_ms = 0.0
         analyze_ms = 0.0
-        analysis = nil
+        snapshot = nil
+        last_good_snapshot = nil
         generation = nil
-        @analysis_cache_mutex.synchronize do
-          generation = @analysis_generation[uri]
-          cached = @analysis_cache[uri]
+        @facts_cache_mutex.synchronize do
+          generation = @facts_generation[uri]
+          cached = @tooling_snapshot_cache[uri]
+          last_good_snapshot = @last_good_tooling_snapshot_cache[uri]
           if cached
             cache_state = 'hit'
-            analysis = cached
+            snapshot = cached
           end
         end
-        return analysis if analysis
+        return snapshot if snapshot
 
-        lock_wait_start = total_start ? monotonic_time : nil
-        @analysis_state_mutex.synchronize do
-          lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
-          @analysis_cache_mutex.synchronize do
-            generation = @analysis_generation[uri]
-            cached = @analysis_cache[uri]
+        compute_snapshot = lambda do
+          @facts_cache_mutex.synchronize do
+            generation = @facts_generation[uri]
+            cached = @tooling_snapshot_cache[uri]
             if cached
               cache_state = 'hit'
-              analysis = cached
+              snapshot = cached
             end
           end
 
-          unless analysis
+          unless snapshot
             analyze_start = total_start ? monotonic_time : nil
-            analysis = analyze_document(uri)
+            snapshot = analyze_document(uri)
             analyze_ms = elapsed_ms(analyze_start) if analyze_start
-            @analysis_cache_mutex.synchronize do
-              if @analysis_generation[uri] == generation
-                @analysis_cache[uri] = analysis if analysis
+            @facts_cache_mutex.synchronize do
+              if @facts_generation[uri] == generation
+                @tooling_snapshot_cache[uri] = snapshot if snapshot
+                if snapshot&.facts
+                  @facts_cache[uri] = snapshot.facts
+                  @last_good_facts_cache[uri] = snapshot.facts
+                  @last_good_tooling_snapshot_cache[uri] = snapshot
+                end
               else
                 cache_state = 'stale'
-                analysis = @analysis_cache[uri] || @last_good_analysis_cache[uri]
+                snapshot = @tooling_snapshot_cache[uri] || @last_good_tooling_snapshot_cache[uri]
               end
             end
           end
         end
-        analysis
+
+        lock_wait_start = total_start ? monotonic_time : nil
+        if @facts_state_mutex.try_lock
+          begin
+            compute_snapshot.call
+          ensure
+            @facts_state_mutex.unlock
+          end
+        elsif last_good_snapshot
+          cache_state = 'last_good'
+          snapshot = last_good_snapshot
+        else
+          @facts_state_mutex.synchronize do
+            lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
+            compute_snapshot.call
+          end
+        end
+        snapshot
       ensure
         if total_start
-          result_state = analysis.nil? ? 'nil' : 'ok'
+          result_state = snapshot&.facts.nil? ? 'nil' : 'ok'
           log_perf_breakdown(
-            'workspace/get_analysis',
+            'workspace/get_tooling_snapshot',
             elapsed_ms(total_start),
             "uri=#{uri} cache=#{cache_state} result=#{result_state} stages_ms=lock_wait:#{lock_wait_ms},analyze:#{analyze_ms}",
           )
@@ -616,11 +674,13 @@ module MilkTea
         @ast_cache.delete(uri)
         @symbols_cache.delete(uri)
         @doc_comments_cache.delete(uri)
-        @analysis_cache_mutex.synchronize do
-          @analysis_generation[uri] += 1
-          @analysis_cache.delete(uri)
+        @facts_cache_mutex.synchronize do
+          @facts_generation[uri] += 1
+          @facts_cache.delete(uri)
+          @tooling_snapshot_cache.delete(uri)
           @diagnostics_cache.delete(uri)
-          @last_good_analysis_cache.delete(uri) if clear_last_good
+          @last_good_facts_cache.delete(uri) if clear_last_good
+          @last_good_tooling_snapshot_cache.delete(uri) if clear_last_good
         end
         @definition_cache_mutex.synchronize do
           @definition_index.each_value { |entries| entries.delete_if { |e| e[:uri] == uri } }
@@ -634,30 +694,53 @@ module MilkTea
         open_document_uris = @document_state_mutex.synchronize do
           @open_documents.keys.reject { |open_uri| open_uri == changed_uri }
         end
+        preserve_open_document_facts = changed_uri && @document_state_mutex.synchronize { @open_documents.key?(changed_uri) }
 
-        @analysis_state_mutex.synchronize do
-          @analysis_cache_mutex.synchronize do
-            preserved_open_analysis = open_document_uris.each_with_object({}) do |open_uri, preserved|
-              analysis = @analysis_cache[open_uri]
-              preserved[open_uri] = analysis if analysis
-            end
-            preserved_open_last_good_analysis = open_document_uris.each_with_object({}) do |open_uri, preserved|
-              analysis = @last_good_analysis_cache[open_uri]
-              preserved[open_uri] = analysis if analysis
-            end
-            preserved_changed_last_good_analysis = changed_uri ? @last_good_analysis_cache[changed_uri] : nil
+        @facts_state_mutex.synchronize do
+          @facts_cache_mutex.synchronize do
+            preserved_open_facts = {}
+            preserved_open_snapshots = {}
+            preserved_open_last_good_facts = if preserve_open_document_facts
+                                               open_document_uris.each_with_object({}) do |open_uri, preserved|
+                                                 facts = @last_good_facts_cache[open_uri]
+                                                 preserved[open_uri] = facts if facts
+                                               end
+                                             else
+                                               {}
+                                             end
+            preserved_open_last_good_snapshots = if preserve_open_document_facts
+                                                   open_document_uris.each_with_object({}) do |open_uri, preserved|
+                                                     snapshot = @last_good_tooling_snapshot_cache[open_uri]
+                                                     preserved[open_uri] = snapshot if snapshot
+                                                   end
+                                                 else
+                                                   {}
+                                                 end
+            preserved_changed_last_good_facts = preserve_open_document_facts && changed_uri ? @last_good_facts_cache[changed_uri] : nil
+            preserved_changed_last_good_snapshot = preserve_open_document_facts && changed_uri ? @last_good_tooling_snapshot_cache[changed_uri] : nil
             @shared_module_cache.clear
-            @analysis_cache.clear
+            @facts_cache.clear
+            @tooling_snapshot_cache.clear
             @diagnostics_cache.clear
-            @last_good_analysis_cache.clear
-            preserved_open_analysis.each do |open_uri, analysis|
-              @analysis_cache[open_uri] = analysis
+            @last_good_facts_cache.clear
+            @last_good_tooling_snapshot_cache.clear
+            preserved_open_snapshots.each do |open_uri, snapshot|
+              @tooling_snapshot_cache[open_uri] = snapshot
             end
-            preserved_open_last_good_analysis.each do |open_uri, analysis|
-              @last_good_analysis_cache[open_uri] = analysis
+            preserved_open_facts.each do |open_uri, facts|
+              @facts_cache[open_uri] = facts
             end
-            if changed_uri && preserved_changed_last_good_analysis
-              @last_good_analysis_cache[changed_uri] = preserved_changed_last_good_analysis
+            preserved_open_last_good_snapshots.each do |open_uri, snapshot|
+              @last_good_tooling_snapshot_cache[open_uri] = snapshot
+            end
+            preserved_open_last_good_facts.each do |open_uri, facts|
+              @last_good_facts_cache[open_uri] = facts
+            end
+            if changed_uri && preserved_changed_last_good_facts
+              @last_good_facts_cache[changed_uri] = preserved_changed_last_good_facts
+            end
+            if changed_uri && preserved_changed_last_good_snapshot
+              @last_good_tooling_snapshot_cache[changed_uri] = preserved_changed_last_good_snapshot
             end
           end
         end
@@ -728,14 +811,14 @@ module MilkTea
         nil
       end
 
-      def warm_document_analysis(uri, content)
+      def warm_document_facts(uri, content)
         ast = ast_for_content(uri, content)
         stats = {
           bytes: content.bytesize,
           lines: content.count("\n") + 1,
-          eager_analysis: false,
-          analysis_mode: nil,
-          analysis_ms: nil,
+          eager_facts: false,
+          facts_mode: nil,
+          facts_ms: nil,
           skip_reason: nil,
           import_count: ast.respond_to?(:imports) ? ast.imports.length : 0,
           shared_module_cache_size: @shared_module_cache.length,
@@ -746,17 +829,17 @@ module MilkTea
           return stats
         end
 
-        analysis_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        analysis_path = uri_to_path(uri)
-        get_analysis(uri)
-        stats[:eager_analysis] = true
-        stats[:analysis_mode] = analysis_path && File.file?(analysis_path) ? :module_loader : :memory
-        stats[:analysis_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - analysis_start) * 1000).round(1)
+        facts_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        facts_path = uri_to_path(uri)
+        get_facts(uri)
+        stats[:eager_facts] = true
+        stats[:facts_mode] = facts_path && File.file?(facts_path) ? :module_loader : :memory
+        stats[:facts_ms] = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - facts_start) * 1000).round(1)
         stats[:shared_module_cache_size] = @shared_module_cache.length
         stats
       end
 
-      def compute_analysis_for_content(uri, content)
+      def compute_facts_for_content(uri, content)
         path = uri_to_path(uri)
         if path && File.file?(path)
           parse_result = MilkTea::Parser.parse_collecting_errors(content, path: uri)
@@ -774,11 +857,12 @@ module MilkTea
           )
           ast = with_inferred_module_name(ast, loader:, path:)
           import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-          MilkTea::Sema.check_collecting_errors(
+          MilkTea::Sema.tooling_snapshot(
             ast,
             imported_modules: import_resolution.modules,
             allow_missing_imports: true,
-          )[:analysis]
+            path: path,
+          ).facts
         else
           ast = MilkTea::Parser.parse(content, path: uri)
           MilkTea::Sema.check(ast)
@@ -789,12 +873,12 @@ module MilkTea
 
       def analyze_document(uri)
         path = uri_to_path(uri)
-        result = if path && File.file?(path)
+        snapshot = if path && File.file?(path)
                    parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
                    ast = parse_result.ast
-                   # Fall back to the last successful analysis so completions/hover still
+                   # Fall back to the last successful facts so completions/hover still
                    # work when the user is mid-edit and the file does not parse/check.
-                   return @last_good_analysis_cache[uri] if ast.nil?
+                   return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
                    resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
                    return nil unless resolution.ok?
@@ -810,24 +894,29 @@ module MilkTea
                    )
                    ast = with_inferred_module_name(ast, loader:, path:)
                    import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-                   MilkTea::Sema.check_collecting_errors(
+                   MilkTea::Sema.tooling_snapshot(
                      ast,
                      imported_modules: import_resolution.modules,
                      allow_missing_imports: true,
-                   )[:analysis]
+                     path: path,
+                   )
                  else
                    ast = get_ast(uri)
-                   return @last_good_analysis_cache[uri] if ast.nil?
+                   return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                   MilkTea::Sema.check(ast)
+                   facts = MilkTea::Sema.check(ast)
+                   MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: [].freeze)
                  end
-        @last_good_analysis_cache[uri] = result
-        result
+        if snapshot&.facts
+          @last_good_tooling_snapshot_cache[uri] = snapshot
+          @last_good_facts_cache[uri] = snapshot.facts
+        end
+        snapshot
       rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
-        @last_good_analysis_cache[uri]
+        @last_good_tooling_snapshot_cache[uri]
       rescue StandardError => e
         warn "LSP sema error #{uri}: #{e.message}"
-        @last_good_analysis_cache[uri]
+        @last_good_tooling_snapshot_cache[uri]
       end
 
       def package_graph_for_path(path, locked: false)

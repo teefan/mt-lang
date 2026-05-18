@@ -43,28 +43,33 @@ struct ResponseHead:
     chunked: bool
 
 
-function error_from_message(message: str) -> Error:
-    return Error(message = string.String.from_str(message))
+function status_error(message: str) -> Error:
+    var owned_message = string.String.with_capacity(message.len)
+    var index: ptr_uint = 0
+    while index < message.len:
+        owned_message.push_byte(message.byte_at(index))
+        index += 1
+    return Error(message = owned_message)
 
 
-function error_from_net(net_error: net.Error) -> Error:
-    return Error(message = net_error.message)
+function status_net_error(net_error: net.Error) -> Error:
+    var owned_error = net_error
+    let text_value = owned_error.message.as_str()
+    var message = string.String.with_capacity(text_value.len)
+    var index: ptr_uint = 0
+    while index < text_value.len:
+        message.push_byte(text_value.byte_at(index))
+        index += 1
+    owned_error.release()
+    return Error(message = message)
 
 
-function status_error[T](message: str) -> Result[T, Error]:
-    return Result[T, Error].failure(error = error_from_message(message))
+function url_error(detail: str) -> Error:
+    return status_error(f"invalid http url: #{detail}")
 
 
-function status_net_error[T](net_error: net.Error) -> Result[T, Error]:
-    return Result[T, Error].failure(error = error_from_net(net_error))
-
-
-function url_error[T](detail: str) -> Result[T, Error]:
-    return status_error[T](f"invalid http url: #{detail}")
-
-
-function response_error[T](detail: str) -> Result[T, Error]:
-    return status_error[T](f"invalid http response: #{detail}")
+function response_error(detail: str) -> Error:
+    return status_error(f"invalid http response: #{detail}")
 
 
 function ascii_fold(value: ubyte) -> ubyte:
@@ -163,19 +168,19 @@ function parse_target(rest: str) -> Result[string.String, Error]:
         target.append(target_text)
         return Result[string.String, Error].success(value = target)
 
-    return url_error[string.String]("path must start with '/' or '?'")
+    return Result[string.String, Error].failure(error = url_error("path must start with '/' or '?'") )
 
 
 function parse_url(url: str) -> Result[ParsedUrl, Error]:
     if url.starts_with("https://"):
-        return url_error[ParsedUrl]("https is not supported yet")
+        return Result[ParsedUrl, Error].failure(error = url_error("https is not supported yet"))
 
     if not url.starts_with("http://"):
-        return url_error[ParsedUrl]("URL must start with http://")
+        return Result[ParsedUrl, Error].failure(error = url_error("URL must start with http://"))
 
     let remainder = url.slice(7, url.len - 7)
     if remainder.len == 0:
-        return url_error[ParsedUrl]("missing authority")
+        return Result[ParsedUrl, Error].failure(error = url_error("missing authority"))
 
     var authority_end = remainder.len
     var index: ptr_uint = 0
@@ -188,10 +193,10 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
 
     let authority_text = remainder.slice(0, authority_end)
     if authority_text.len == 0:
-        return url_error[ParsedUrl]("missing authority")
+        return Result[ParsedUrl, Error].failure(error = url_error("missing authority"))
 
     if count_byte(authority_text, ubyte<-64) != 0:
-        return url_error[ParsedUrl]("userinfo is not supported")
+        return Result[ParsedUrl, Error].failure(error = url_error("userinfo is not supported"))
 
     var host_text = authority_text
     var port = 80
@@ -199,29 +204,29 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
         var closing_bracket: ptr_uint = 0
         match find_byte_from(authority_text, ubyte<-93, 1):
             Option.none:
-                return url_error[ParsedUrl]("missing closing ']' for IPv6 host")
+                return Result[ParsedUrl, Error].failure(error = url_error("missing closing ']' for IPv6 host"))
             Option.some as payload:
                 closing_bracket = payload.value
 
         if closing_bracket == 1:
-            return url_error[ParsedUrl]("host is empty")
+            return Result[ParsedUrl, Error].failure(error = url_error("host is empty"))
 
         host_text = authority_text.slice(1, closing_bracket - 1)
         if closing_bracket + 1 < authority_text.len:
             if authority_text.byte_at(closing_bracket + 1) != ubyte<-58:
-                return url_error[ParsedUrl]("unexpected text after IPv6 host")
+                return Result[ParsedUrl, Error].failure(error = url_error("unexpected text after IPv6 host"))
 
             let port_start = closing_bracket + 2
             let port_text = authority_text.slice(port_start, authority_text.len - port_start)
             match parse_port(port_text):
                 Option.none:
-                    return url_error[ParsedUrl]("invalid port")
+                    return Result[ParsedUrl, Error].failure(error = url_error("invalid port"))
                 Option.some as payload:
                     port = payload.value
     else:
         let colon_count = count_byte(authority_text, ubyte<-58)
         if colon_count > 1:
-            return url_error[ParsedUrl]("IPv6 hosts must be wrapped in []")
+            return Result[ParsedUrl, Error].failure(error = url_error("IPv6 hosts must be wrapped in []"))
 
         if colon_count == 1:
             var colon_index: ptr_uint = 0
@@ -232,19 +237,19 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
                     colon_index = payload.value
 
             if colon_index == 0:
-                return url_error[ParsedUrl]("host is empty")
+                return Result[ParsedUrl, Error].failure(error = url_error("host is empty"))
 
             host_text = authority_text.slice(0, colon_index)
             let port_start = colon_index + 1
             let port_text = authority_text.slice(port_start, authority_text.len - port_start)
             match parse_port(port_text):
                 Option.none:
-                    return url_error[ParsedUrl]("invalid port")
+                    return Result[ParsedUrl, Error].failure(error = url_error("invalid port"))
                 Option.some as payload:
                     port = payload.value
 
     if host_text.len == 0:
-        return url_error[ParsedUrl]("host is empty")
+        return Result[ParsedUrl, Error].failure(error = url_error("host is empty"))
 
     let rest = remainder.slice(authority_end, remainder.len - authority_end)
     let target_result = parse_target(rest)
@@ -265,7 +270,6 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
 
 function append_request_text(output: ref[vec.Vec[ubyte]], value: str) -> void:
     output.append_span(text.as_byte_span(value))
-    return
 
 
 function append_request_header_line(output: ref[vec.Vec[ubyte]], name: str, value: str) -> void:
@@ -273,7 +277,6 @@ function append_request_header_line(output: ref[vec.Vec[ubyte]], name: str, valu
     append_request_text(output, ": ")
     append_request_text(output, value)
     append_request_text(output, "\r\n")
-    return
 
 
 function valid_http_token(value: str) -> bool:
@@ -303,7 +306,7 @@ function valid_http_header_value(value: str) -> bool:
 
 function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader], body: Option[span[ubyte]]) -> Result[vec.Vec[ubyte], Error]:
     if not valid_http_token(method):
-        return status_error[vec.Vec[ubyte]]("invalid http method")
+        return Result[vec.Vec[ubyte], Error].failure(error = status_error("invalid http method"))
 
     var body_length: ptr_uint = 0
     match body:
@@ -324,11 +327,11 @@ function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader]
         let header = unsafe: read(headers.data + index)
         if not valid_http_token(header.name):
             request.release()
-            return status_error[vec.Vec[ubyte]]("request header name is invalid")
+            return Result[vec.Vec[ubyte], Error].failure(error = status_error("request header name is invalid"))
 
         if not valid_http_header_value(header.value):
             request.release()
-            return status_error[vec.Vec[ubyte]]("request header value is invalid")
+            return Result[vec.Vec[ubyte], Error].failure(error = status_error("request header value is invalid"))
 
         if ascii_case_equal(header.name, "Host"):
             has_host = true
@@ -339,15 +342,15 @@ function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader]
         else if ascii_case_equal(header.name, "Content-Length"):
             if content_length_seen:
                 request.release()
-                return status_error[vec.Vec[ubyte]]("request Content-Length must not be repeated")
+                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length must not be repeated"))
 
             let content_length = parse_decimal(header.value.trim_ascii_whitespace()) else:
                 request.release()
-                return status_error[vec.Vec[ubyte]]("request Content-Length must be a decimal integer")
+                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length must be a decimal integer"))
 
             if content_length != body_length:
                 request.release()
-                return status_error[vec.Vec[ubyte]]("request Content-Length does not match body length")
+                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length does not match body length"))
 
             content_length_seen = true
 
@@ -491,8 +494,7 @@ function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> 
         buffer.clear()
         return
 
-    let data = buffer.data
-    if data == null:
+    let data = buffer.data else:
         fatal(c"http.discard_buffer_prefix missing storage")
 
     let remaining = buffer.len - count
@@ -519,30 +521,30 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
 
     let status_line = header_text.slice(0, line_end)
     if not status_line.starts_with("HTTP/1."):
-        return response_error[ResponseHead]("unsupported HTTP version")
+        return Result[ResponseHead, Error].failure(error = response_error("unsupported HTTP version"))
 
     var first_space: ptr_uint = 0
     match status_line.find_byte(ubyte<-32):
         Option.none:
-            return response_error[ResponseHead]("missing status code")
+            return Result[ResponseHead, Error].failure(error = response_error("missing status code"))
         Option.some as payload:
             first_space = payload.value
 
     if first_space + 4 > status_line.len:
-        return response_error[ResponseHead]("missing status code")
+        return Result[ResponseHead, Error].failure(error = response_error("missing status code"))
 
     let status_code_text = status_line.slice(first_space + 1, 3)
     var status_code = 0
     match parse_decimal(status_code_text):
         Option.none:
-            return response_error[ResponseHead]("invalid status code")
+            return Result[ResponseHead, Error].failure(error = response_error("invalid status code"))
         Option.some as payload:
             status_code = int<-payload.value
 
     var reason = string.String.create()
     if first_space + 4 < status_line.len:
         if status_line.byte_at(first_space + 4) != ubyte<-32:
-            return response_error[ResponseHead]("status line must separate code and reason with a space")
+            return Result[ResponseHead, Error].failure(error = response_error("status line must separate code and reason with a space"))
 
         let reason_start = first_space + 5
         reason = string.String.from_str(status_line.slice(reason_start, status_line.len - reason_start))
@@ -567,19 +569,19 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
         let line = header_text.slice(index, next_line_end - index)
         if line.len == 0:
             head.release()
-            return response_error[ResponseHead]("unexpected blank header line")
+            return Result[ResponseHead, Error].failure(error = response_error("unexpected blank header line"))
 
         var separator: ptr_uint = 0
         match line.find_byte(ubyte<-58):
             Option.none:
                 head.release()
-                return response_error[ResponseHead]("header line is missing ':'")
+                return Result[ResponseHead, Error].failure(error = response_error("header line is missing ':'"))
             Option.some as payload:
                 separator = payload.value
 
         if separator == 0:
             head.release()
-            return response_error[ResponseHead]("header name is empty")
+            return Result[ResponseHead, Error].failure(error = response_error("header name is empty"))
 
         let name_text = line.slice(0, separator)
         let value_start = separator + 1
@@ -591,7 +593,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
             match parse_decimal(value_text):
                 Option.none:
                     head.release()
-                    return response_error[ResponseHead]("Content-Length must be a decimal integer")
+                    return Result[ResponseHead, Error].failure(error = response_error("Content-Length must be a decimal integer"))
                 Option.some as payload:
                     head.content_length = Option[ptr_uint].some(value = payload.value)
 
@@ -600,7 +602,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
                 head.chunked = true
             else:
                 head.release()
-                return response_error[ResponseHead]("unsupported Transfer-Encoding")
+                return Result[ResponseHead, Error].failure(error = response_error("unsupported Transfer-Encoding"))
 
         if next_line_end == header_text.len:
             index = header_text.len
@@ -634,12 +636,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                     let chunk_result = await stream.read_once(4096)
                     match chunk_result:
                         Result.failure as error_payload:
-                            return status_net_error[bytes.Bytes](error_payload.error)
+                            return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
                         Result.success as ok_payload:
                             var chunk = ok_payload.value
                             if chunk.len == 0:
                                 chunk.release()
-                                return response_error[bytes.Bytes]("chunked response ended before chunk size")
+                                return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk size"))
 
                             buffer.append_span(chunk.as_span())
                             chunk.release()
@@ -650,10 +652,10 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
 
         let line_bytes = unsafe: span[ubyte](data = buffer.as_span().data + cursor, len = line_end - cursor)
         let line_text = text.utf8_byte_span_as_str(line_bytes) else:
-            return response_error[bytes.Bytes]("chunk size line is not valid UTF-8")
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunk size line is not valid UTF-8"))
 
         let chunk_size = parse_chunk_size(line_text) else:
-            return response_error[bytes.Bytes]("invalid chunk size")
+            return Result[bytes.Bytes, Error].failure(error = response_error("invalid chunk size"))
 
         cursor = line_end + 2
 
@@ -670,12 +672,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                             let chunk_result = await stream.read_once(4096)
                             match chunk_result:
                                 Result.failure as error_payload:
-                                    return status_net_error[bytes.Bytes](error_payload.error)
+                                    return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
                                 Result.success as ok_payload:
                                     var chunk = ok_payload.value
                                     if chunk.len == 0:
                                         chunk.release()
-                                        return response_error[bytes.Bytes]("chunked response ended before trailers were complete")
+                                        return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before trailers were complete"))
 
                                     buffer.append_span(chunk.as_span())
                                     chunk.release()
@@ -697,12 +699,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
             let chunk_result = await stream.read_once(4096)
             match chunk_result:
                 Result.failure as error_payload:
-                    return status_net_error[bytes.Bytes](error_payload.error)
+                    return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
                 Result.success as ok_payload:
                     var chunk = ok_payload.value
                     if chunk.len == 0:
                         chunk.release()
-                        return response_error[bytes.Bytes]("chunked response ended before chunk data")
+                        return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk data"))
 
                     buffer.append_span(chunk.as_span())
                     chunk.release()
@@ -713,7 +715,7 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
 
         let unread = buffer.as_span()
         if unsafe: read(unread.data + cursor) != ubyte<-13 or read(unread.data + cursor + 1) != ubyte<-10:
-            return response_error[bytes.Bytes]("chunk data must end with CRLF")
+            return Result[bytes.Bytes, Error].failure(error = response_error("chunk data must end with CRLF"))
 
         cursor += 2
 
@@ -726,7 +728,7 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
         Option.some as payload:
             let total_length = payload.value
             if prefix.len > total_length:
-                return response_error[bytes.Bytes]("body exceeded Content-Length")
+                return Result[bytes.Bytes, Error].failure(error = response_error("body exceeded Content-Length"))
 
             var body = vec.Vec[ubyte].with_capacity(total_length)
             defer body.release()
@@ -738,7 +740,7 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
                 let chunk_result = await stream.read_exactly(remaining)
                 match chunk_result:
                     Result.failure as error_payload:
-                        return status_net_error[bytes.Bytes](error_payload.error)
+                        return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
                     Result.success as ok_payload:
                         var chunk = ok_payload.value
                         body.append_span(chunk.as_span())
@@ -755,7 +757,7 @@ async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_len
                 let chunk_result = await stream.read_once(4096)
                 match chunk_result:
                     Result.failure as error_payload:
-                        return status_net_error[bytes.Bytes](error_payload.error)
+                        return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
                     Result.success as ok_payload:
                         var chunk = ok_payload.value
                         if chunk.len == 0:
@@ -778,12 +780,12 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
         let chunk_result = await stream.read_once(4096)
         match chunk_result:
             Result.failure as error_payload:
-                return status_net_error[Response](error_payload.error)
+                return Result[Response, Error].failure(error = status_net_error(error_payload.error))
             Result.success as ok_payload:
                 var chunk = ok_payload.value
                 if chunk.len == 0:
                     chunk.release()
-                    return response_error[Response]("response ended before headers were complete")
+                    return Result[Response, Error].failure(error = response_error("response ended before headers were complete"))
 
                 received.append_span(chunk.as_span())
                 chunk.release()
@@ -798,7 +800,7 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
     let raw = received.as_span()
     let header_bytes = unsafe: span[ubyte](data = raw.data, len = header_length)
     let header_text = text.utf8_byte_span_as_str(header_bytes) else:
-        return response_error[Response]("headers are not valid UTF-8")
+        return Result[Response, Error].failure(error = response_error("headers are not valid UTF-8"))
 
     let head_result = parse_response_head(header_text)
     match head_result:
@@ -924,7 +926,7 @@ public async function request(url: str, method: str, headers: span[RequestHeader
                     let address_result = await net.resolve_first(parsed.host.as_str(), service.as_str())
                     match address_result:
                         Result.failure as address_error_payload:
-                            return status_net_error[Response](address_error_payload.error)
+                            return Result[Response, Error].failure(error = status_net_error(address_error_payload.error))
                         Result.success as address_payload:
                             var address = address_payload.value
                             defer address.release()
@@ -932,7 +934,7 @@ public async function request(url: str, method: str, headers: span[RequestHeader
                             let connect_result = await net.connect(address)
                             match connect_result:
                                 Result.failure as connect_error_payload:
-                                    return status_net_error[Response](connect_error_payload.error)
+                                    return Result[Response, Error].failure(error = status_net_error(connect_error_payload.error))
                                 Result.success as connect_payload:
                                     var stream = connect_payload.value
                                     defer stream.release()
@@ -940,9 +942,9 @@ public async function request(url: str, method: str, headers: span[RequestHeader
                                     let write_result = await stream.write_bytes(request_bytes.as_span())
                                     match write_result:
                                         Result.failure as write_error_payload:
-                                            return status_net_error[Response](write_error_payload.error)
+                                            return Result[Response, Error].failure(error = status_net_error(write_error_payload.error))
                                         Result.success as write_payload:
                                             if write_payload.value != request_bytes.len:
-                                                return status_error[Response]("http request write did not send the full request")
+                                                return Result[Response, Error].failure(error = status_error("http request write did not send the full request"))
 
                                     return await read_response(stream)

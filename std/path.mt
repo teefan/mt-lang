@@ -1,4 +1,4 @@
-import std.str as text
+import std.str as text_ops
 import std.string as string
 
 

@@ -94,7 +94,6 @@ extending LinkedMap[K, V]:
             unsafe:
                 read(ptr[Node[K, V]]<-next).order_prev = previous
 
-        return
 
 
     public function len() -> ptr_uint:
@@ -171,7 +170,6 @@ extending LinkedMap[K, V]:
         this.len = 0
         this.head = null
         this.tail = null
-        return
 
 
     public mutable function release() -> void:
@@ -179,7 +177,6 @@ extending LinkedMap[K, V]:
         heap.release(this.buckets)
         this.buckets = null
         this.capacity = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
@@ -213,7 +210,6 @@ extending LinkedMap[K, V]:
         heap.release(old_buckets)
         this.buckets = new_buckets
         this.capacity = new_capacity
-        return
 
 
     public mutable function set(key: K, value: V) -> Option[V]:

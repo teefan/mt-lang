@@ -65,8 +65,7 @@ extending Map[K, V]:
         if current.len == 0:
             return null
 
-        let buckets = current.buckets
-        if buckets == null:
+        let buckets = current.buckets else:
             fatal(c"map.Map.find_node missing buckets")
 
         unsafe:
@@ -97,8 +96,7 @@ extending Map[K, V]:
 
     public function get(key: K) -> ptr[V]?:
         let key_hash = hash[K](key)
-        let node = Map[K, V].find_node(this, key, key_hash)
-        if node == null:
+        let node = Map[K, V].find_node(this, key, key_hash) else:
             return null
 
         unsafe:
@@ -107,8 +105,7 @@ extending Map[K, V]:
 
     public function get_key(key: K) -> const_ptr[K]?:
         let key_hash = hash[K](key)
-        let node = Map[K, V].find_node(this, key, key_hash)
-        if node == null:
+        let node = Map[K, V].find_node(this, key, key_hash) else:
             return null
 
         unsafe:
@@ -139,8 +136,7 @@ extending Map[K, V]:
         if this.len == 0:
             return
 
-        let buckets = this.buckets
-        if buckets == null:
+        let buckets = this.buckets else:
             fatal(c"map.Map.clear missing buckets")
 
         unsafe:
@@ -221,8 +217,7 @@ extending Map[K, V]:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
-        let current_buckets = this.buckets
-        if current_buckets == null:
+        let current_buckets = this.buckets else:
             fatal(c"map.Map.set missing buckets")
 
         unsafe:
@@ -252,12 +247,11 @@ extending Map[K, V]:
         let inserted = this.set(key, value)
         match inserted:
             Option.none:
-                let current = Map[K, V].find_node(this, key, key_hash)
-                if current == null:
+                let current = Map[K, V].find_node(this, key, key_hash) else:
                     fatal(c"map.Map.get_or_insert missing inserted value")
                 unsafe:
                     return ptr_of(read(ptr[Node[K, V]]<-current).value)
-            Option.some as ignored_payload:
+            Option.some as _:
                 fatal(c"map.Map.get_or_insert replaced unexpectedly")
 
 
@@ -265,8 +259,7 @@ extending Map[K, V]:
         if this.len == 0:
             return Option[RemovedEntry[K, V]].none
 
-        let buckets = this.buckets
-        if buckets == null:
+        let buckets = this.buckets else:
             fatal(c"map.Map.remove_entry missing buckets")
 
         let key_hash = hash[K](key)
@@ -320,8 +313,7 @@ extending Keys[K, V]:
                     this.node = next_node
                     return const_ptr_of(read(ptr[Node[K, V]]<-next_node).key)
 
-        let buckets = this.buckets
-        if buckets == null:
+        let buckets = this.buckets else:
             this.bucket_index = this.bucket_count
             this.node = null
             return null
@@ -356,8 +348,7 @@ extending Values[K, V]:
                     this.node = next_node
                     return ptr_of(read(ptr[Node[K, V]]<-next_node).value)
 
-        let buckets = this.buckets
-        if buckets == null:
+        let buckets = this.buckets else:
             this.bucket_index = this.bucket_count
             this.node = null
             return null
@@ -392,8 +383,7 @@ extending Entries[K, V]:
                     this.node = next_node
                     return true
 
-        let buckets = this.buckets
-        if buckets == null:
+        let buckets = this.buckets else:
             this.bucket_index = this.bucket_count
             this.node = null
             return false
@@ -415,8 +405,7 @@ extending Entries[K, V]:
 
 
     public function current() -> Entry[K, V]:
-        let current_node = this.node
-        if current_node == null:
+        let current_node = this.node else:
             fatal(c"map.Entries.current missing current node")
 
         unsafe:

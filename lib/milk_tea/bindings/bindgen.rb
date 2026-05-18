@@ -928,7 +928,7 @@ module MilkTea
       end
 
       def generated_binding_name_conflict?(name)
-        Token::KEYWORDS.key?(name) || Types::BUILTIN_PRIMITIVE_NAMES.include?(name)
+        Token::KEYWORDS.key?(name) || Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
       end
 
       def discover_synthetic_aggregate_dependencies(declarations)

@@ -3,7 +3,7 @@
 require_relative "../../test_helper"
 
 class LSPWorkspaceTest < Minitest::Test
-  def test_open_document_reports_eager_analysis_stats_for_small_documents
+  def test_open_document_reports_eager_facts_stats_for_small_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_open_stats.mt"
 
@@ -12,11 +12,11 @@ class LSPWorkspaceTest < Minitest::Test
           return 0
     MT
 
-    assert_equal true, stats[:eager_analysis]
-    assert_equal :memory, stats[:analysis_mode]
+    assert_equal true, stats[:eager_facts]
+    assert_equal :memory, stats[:facts_mode]
     assert_nil stats[:skip_reason]
-    assert_kind_of Numeric, stats[:analysis_ms]
-    assert_operator stats[:analysis_ms], :>=, 0
+    assert_kind_of Numeric, stats[:facts_ms]
+    assert_operator stats[:facts_ms], :>=, 0
     assert_operator stats[:lines], :>=, 3
   end
 
@@ -27,10 +27,10 @@ class LSPWorkspaceTest < Minitest::Test
 
     stats = workspace.open_document(uri, content)
 
-    assert_equal true, stats[:eager_analysis]
-    assert_equal :memory, stats[:analysis_mode]
+    assert_equal true, stats[:eager_facts]
+    assert_equal :memory, stats[:facts_mode]
     assert_nil stats[:skip_reason]
-    assert_kind_of Numeric, stats[:analysis_ms]
+    assert_kind_of Numeric, stats[:facts_ms]
   end
 
   def test_open_document_eagerly_analyzes_std_paths
@@ -50,11 +50,11 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
       assert_equal 1, stats[:import_count]
-      assert_kind_of Numeric, stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:facts_ms]
     end
   end
 
@@ -77,11 +77,11 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
       assert_equal 2, stats[:import_count]
-      assert_kind_of Numeric, stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:facts_ms]
     end
   end
 
@@ -103,11 +103,11 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
       assert_equal 4, stats[:import_count]
-      assert_kind_of Numeric, stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:facts_ms]
     end
   end
 
@@ -129,15 +129,15 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.open_document(path_to_uri(path), content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
       assert_equal 1, stats[:import_count]
-      assert_kind_of Numeric, stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:facts_ms]
     end
   end
 
-  def test_open_document_skips_eager_analysis_for_background_documents
+  def test_open_document_skips_eager_facts_for_background_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background.mt"
     workspace.set_document_source(uri, "background-document")
@@ -147,11 +147,11 @@ class LSPWorkspaceTest < Minitest::Test
           return 0
     MT
 
-    assert_equal false, stats[:eager_analysis]
-    assert_nil stats[:analysis_mode]
+    assert_equal false, stats[:eager_facts]
+    assert_nil stats[:facts_mode]
     assert_equal :background_document, stats[:skip_reason]
     assert_equal 0, stats[:import_count]
-    assert_nil stats[:analysis_ms]
+    assert_nil stats[:facts_ms]
   ensure
     workspace&.shutdown
   end
@@ -175,18 +175,18 @@ class LSPWorkspaceTest < Minitest::Test
       workspace = MilkTea::LSP::Workspace.new
       stats = workspace.update_document(path_to_uri(path), content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
       assert_equal 2, stats[:import_count]
-      assert_kind_of Numeric, stats[:analysis_ms]
+      assert_kind_of Numeric, stats[:facts_ms]
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_open_document_populates_analysis_cache_for_std_paths
-    Dir.mktmpdir("lsp_workspace_analysis_warmup") do |dir|
+  def test_open_document_populates_facts_cache_for_std_paths
+    Dir.mktmpdir("lsp_workspace_facts_warmup") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "demo.mt")
@@ -200,12 +200,14 @@ class LSPWorkspaceTest < Minitest::Test
       uri = path_to_uri(path)
       stats = workspace.open_document(uri, content)
 
-      assert_equal true, stats[:eager_analysis]
-      assert_equal :module_loader, stats[:analysis_mode]
+      assert_equal true, stats[:eager_facts]
+      assert_equal :module_loader, stats[:facts_mode]
       assert_nil stats[:skip_reason]
 
-      refute_nil workspace.instance_variable_get(:@analysis_cache)[uri]
-      refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@tooling_snapshot_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@last_good_tooling_snapshot_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@facts_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@last_good_facts_cache)[uri]
     ensure
       workspace&.shutdown
     end
@@ -305,8 +307,8 @@ class LSPWorkspaceTest < Minitest::Test
       workspace.open_document(root_uri, root_source)
       workspace.open_document(overlay_uri, overlay_source)
 
-      root_analysis = workspace.get_analysis(root_uri)
-      overlay_analysis = workspace.get_analysis(overlay_uri)
+      root_analysis = workspace.get_facts(root_uri)
+      overlay_analysis = workspace.get_facts(overlay_uri)
 
       assert_equal %w[default_width], root_analysis.imports.fetch("layout").functions.keys.sort
       assert_equal %w[default_width overlay_width], overlay_analysis.imports.fetch("layout").functions.keys.sort
@@ -316,7 +318,7 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_collect_diagnostics_populates_analysis_cache_for_open_documents
+  def test_collect_diagnostics_populates_facts_cache_for_open_documents
     Dir.mktmpdir("lsp_workspace_diagnostics_cache") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
@@ -332,15 +334,17 @@ class LSPWorkspaceTest < Minitest::Test
       workspace.open_document(uri, content)
 
       assert_equal [], workspace.collect_diagnostics(uri)
-      refute_nil workspace.instance_variable_get(:@analysis_cache)[uri]
-      refute_nil workspace.instance_variable_get(:@last_good_analysis_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@tooling_snapshot_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@last_good_tooling_snapshot_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@facts_cache)[uri]
+      refute_nil workspace.instance_variable_get(:@last_good_facts_cache)[uri]
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_get_analysis_cache_hit_does_not_wait_for_analysis_state_mutex
-    Dir.mktmpdir("lsp_workspace_analysis_cache_hit") do |dir|
+  def test_get_facts_cache_hit_does_not_wait_for_facts_state_mutex
+    Dir.mktmpdir("lsp_workspace_facts_cache_hit") do |dir|
       std_dir = File.join(dir, "std")
       FileUtils.mkdir_p(std_dir)
       path = File.join(std_dir, "demo.mt")
@@ -354,7 +358,7 @@ class LSPWorkspaceTest < Minitest::Test
       uri = path_to_uri(path)
       workspace.open_document(uri, content)
 
-      state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+      state_mutex = workspace.instance_variable_get(:@facts_state_mutex)
       state_lock_held = Queue.new
       release_state_lock = Queue.new
       holder = Thread.new do
@@ -367,10 +371,10 @@ class LSPWorkspaceTest < Minitest::Test
 
       result = Queue.new
       reader = Thread.new do
-        result << workspace.get_analysis(uri)
+        result << workspace.get_facts(uri)
       end
 
-      assert reader.join(0.2), "expected cached analysis to bypass the analysis-state mutex"
+      assert reader.join(0.2), "expected cached facts to bypass the facts-state mutex"
       refute_nil result.pop
     ensure
       release_state_lock << true if release_state_lock
@@ -380,7 +384,34 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_get_analysis_cache_hit_survives_dependency_refresh_without_waiting
+  def test_collect_diagnostics_reuses_cached_tooling_snapshot
+    Dir.mktmpdir("lsp_workspace_tooling_snapshot") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+      path = File.join(std_dir, "demo.mt")
+      content = <<~MT
+        public function answer() -> int:
+            return 42
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      facts = workspace.get_facts(uri)
+      snapshot = workspace.get_tooling_snapshot(uri)
+      diagnostics = workspace.collect_diagnostics(uri)
+
+      assert_equal [], diagnostics
+      assert_same snapshot, workspace.instance_variable_get(:@tooling_snapshot_cache)[uri]
+      assert_same facts, workspace.get_tooling_snapshot(uri).facts
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_get_facts_cache_hit_survives_dependency_refresh_without_waiting
     Dir.mktmpdir("lsp_workspace_dependency_refresh_cache_hit") do |dir|
       FileUtils.mkdir_p(File.join(dir, "std"))
       dependency_path = File.join(dir, "dep.mt")
@@ -403,11 +434,11 @@ class LSPWorkspaceTest < Minitest::Test
       main_uri = path_to_uri(main_path)
       workspace.open_document(dependency_uri, dependency_source)
       workspace.open_document(main_uri, main_source)
-      refute_nil workspace.get_analysis(main_uri)
+      refute_nil workspace.get_facts(main_uri)
 
       assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
 
-      state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+      state_mutex = workspace.instance_variable_get(:@facts_state_mutex)
       state_lock_held = Queue.new
       release_state_lock = Queue.new
       holder = Thread.new do
@@ -420,10 +451,10 @@ class LSPWorkspaceTest < Minitest::Test
 
       result = Queue.new
       reader = Thread.new do
-        result << workspace.get_analysis(main_uri)
+        result << workspace.get_facts(main_uri)
       end
 
-      assert reader.join(0.2), "expected preserved open-document analysis to bypass analysis-state lock during dependency refresh"
+      assert reader.join(0.2), "expected preserved open-document facts to bypass facts-state lock during dependency refresh"
       refute_nil result.pop
     ensure
       release_state_lock << true if release_state_lock
@@ -433,12 +464,12 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_open_background_document_does_not_wait_for_analysis_state_mutex
+  def test_open_background_document_does_not_wait_for_facts_state_mutex
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background_lock.mt"
     workspace.set_document_source(uri, "background-document")
 
-    state_mutex = workspace.instance_variable_get(:@analysis_state_mutex)
+    state_mutex = workspace.instance_variable_get(:@facts_state_mutex)
     state_lock_held = Queue.new
     release_state_lock = Queue.new
     holder = Thread.new do
@@ -457,9 +488,9 @@ class LSPWorkspaceTest < Minitest::Test
       MT
     end
 
-    assert opener.join(0.2), "expected background-document open to avoid waiting on analysis-state lock during cache invalidation"
+    assert opener.join(0.2), "expected background-document open to avoid waiting on facts-state lock during cache invalidation"
     stats = result.pop
-    assert_equal false, stats[:eager_analysis]
+    assert_equal false, stats[:eager_facts]
     assert_equal :background_document, stats[:skip_reason]
   ensure
     release_state_lock << true if release_state_lock
@@ -468,7 +499,7 @@ class LSPWorkspaceTest < Minitest::Test
     workspace&.shutdown
   end
 
-  def test_get_analysis_keeps_open_shared_file_as_root_while_imports_follow_platform_override
+  def test_get_facts_keeps_open_shared_file_as_root_while_imports_follow_platform_override
     Dir.mktmpdir("lsp_workspace_platform_override") do |dir|
       main_path = File.join(dir, "main.mt")
       main_windows_path = File.join(dir, "main.windows.mt")
@@ -507,11 +538,11 @@ class LSPWorkspaceTest < Minitest::Test
       main_uri = path_to_uri(main_path)
       workspace.open_document(main_uri, File.read(main_path))
 
-      analysis = workspace.get_analysis(main_uri)
+      facts = workspace.get_facts(main_uri)
 
-      refute_nil analysis
-      assert_equal "main", analysis.module_name
-      assert_equal %w[value], analysis.imports.fetch("support").functions.keys.sort
+      refute_nil facts
+      assert_equal "main", facts.module_name
+      assert_equal %w[value], facts.imports.fetch("support").functions.keys.sort
       assert_equal [], workspace.collect_diagnostics(main_uri)
     ensure
       workspace&.shutdown
@@ -605,7 +636,7 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_collect_diagnostics_and_analysis_recover_after_invalid_top_level_declaration
+  def test_collect_diagnostics_and_facts_recover_after_invalid_top_level_declaration
     Dir.mktmpdir("lsp_workspace_top_level_parse_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -624,19 +655,19 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert_includes messages, "expected end of statement at #{uri}:2:29"
-      refute_nil analysis
-      assert_equal %w[board_cells board_height board_width], analysis.values.keys.sort
-      assert_equal "int", analysis.values.fetch("board_height").type.to_s
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_equal %w[board_cells board_height board_width], facts.values.keys.sort
+      assert_equal "int", facts.values.fetch("board_height").type.to_s
+      assert_includes facts.functions.keys, "main"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_recover_after_invalid_statement_in_block
+  def test_collect_diagnostics_and_facts_recover_after_invalid_statement_in_block
     Dir.mktmpdir("lsp_workspace_block_parse_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -653,18 +684,18 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert_includes messages, "expected end of statement at #{uri}:3:20"
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
-      assert_operator analysis.local_completion_frames.length, :>, 0
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
+      assert_operator facts.local_completion_frames.length, :>, 0
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_preserve_typed_local_declaration_with_invalid_initializer
+  def test_collect_diagnostics_and_facts_preserve_typed_local_declaration_with_invalid_initializer
     Dir.mktmpdir("lsp_workspace_typed_local_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -680,21 +711,21 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      binding_names = analysis.local_completion_frames.flat_map do |frame|
+      facts = workspace.get_facts(uri)
+      binding_names = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.flat_map { |snapshot| snapshot.bindings.keys }
       end
 
       assert_includes messages, "expected end of statement at #{uri}:2:25"
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_names, "height"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_preserve_untyped_local_declaration_with_invalid_initializer
+  def test_collect_diagnostics_and_facts_preserve_untyped_local_declaration_with_invalid_initializer
     Dir.mktmpdir("lsp_workspace_untyped_local_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -710,21 +741,21 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      binding_types = analysis.local_completion_frames.flat_map do |frame|
+      facts = workspace.get_facts(uri)
+      binding_types = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map { |snapshot| snapshot.bindings["value"]&.type&.to_s }
       end
 
       assert_includes messages, "expected end of statement at #{uri}:2:19"
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_types, "<error>"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_preserve_recovered_let_else_declaration
+  def test_collect_diagnostics_and_facts_preserve_recovered_let_else_declaration
     Dir.mktmpdir("lsp_workspace_let_else_recovery") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -742,21 +773,21 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      binding_types = analysis.local_completion_frames.flat_map do |frame|
+      facts = workspace.get_facts(uri)
+      binding_types = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map { |snapshot| snapshot.bindings["value"]&.type&.to_s }
       end
 
       assert messages.any? { |message| message.include?("expected ':' before block") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_types, "ptr[int]"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_keep_completion_frame_on_invalid_last_statement
+  def test_collect_diagnostics_and_facts_keep_completion_frame_on_invalid_last_statement
     Dir.mktmpdir("lsp_workspace_error_stmt_frame") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -776,11 +807,11 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      main_frame = analysis.local_completion_frames.find { |frame| frame.function_name == "main" }
+      facts = workspace.get_facts(uri)
+      main_frame = facts.local_completion_frames.find { |frame| frame.function_name == "main" }
 
       assert messages.any? { |message| message.include?("expected member name after '.'") }
-      refute_nil analysis
+      refute_nil facts
       refute_nil main_frame
       assert_equal content.lines.length, main_frame.end_line
     ensure
@@ -788,7 +819,7 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
-  def test_collect_diagnostics_and_analysis_preserve_bindings_inside_invalid_block_header_body
+  def test_collect_diagnostics_and_facts_preserve_bindings_inside_invalid_block_header_body
     Dir.mktmpdir("lsp_workspace_error_block_body") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -806,21 +837,21 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      binding_names = analysis.local_completion_frames.flat_map do |frame|
+      facts = workspace.get_facts(uri)
+      binding_names = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.flat_map { |snapshot| snapshot.bindings.keys }
       end
 
       assert messages.any? { |message| message.include?("expected ':' after unsafe") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_names, "inner"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_treat_invalid_unsafe_block_body_as_unsafe
+  def test_collect_diagnostics_and_facts_treat_invalid_unsafe_block_body_as_unsafe
     Dir.mktmpdir("lsp_workspace_invalid_unsafe_semantics") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -841,18 +872,18 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert messages.any? { |message| message.include?("expected ':' after unsafe") }
       refute messages.any? { |message| message.include?("raw pointer dereference requires unsafe") }
-      refute_nil analysis
-      assert_includes analysis.required_unsafe_lines, 7
+      refute_nil facts
+      assert_includes facts.required_unsafe_lines, 7
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_refine_nullable_binding_inside_invalid_if_block
+  def test_collect_diagnostics_and_facts_refine_nullable_binding_inside_invalid_if_block
     Dir.mktmpdir("lsp_workspace_invalid_if_flow") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -873,9 +904,9 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
       return_line = content.lines.index { |line| line.include?("return p.x") } + 1
-      binding_types = analysis.local_completion_frames.flat_map do |frame|
+      binding_types = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map do |snapshot|
           next unless snapshot.line == return_line
 
@@ -884,15 +915,15 @@ class LSPWorkspaceTest < Minitest::Test
       end
 
       assert messages.any? { |message| message.include?("expected ':' before block") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
-      assert_includes binding_types, "Point"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
+      assert_includes binding_types, "main.Point"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_treat_continue_inside_invalid_while_block_as_loop_control
+  def test_collect_diagnostics_and_facts_treat_continue_inside_invalid_while_block_as_loop_control
     Dir.mktmpdir("lsp_workspace_invalid_while_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -913,18 +944,18 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert messages.any? { |message| message.include?("expected ':' before block") }
       refute messages.any? { |message| message.include?("continue must be inside a loop") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_recover_for_binding_inside_invalid_for_block
+  def test_collect_diagnostics_and_facts_recover_for_binding_inside_invalid_for_block
     Dir.mktmpdir("lsp_workspace_invalid_for_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -946,22 +977,22 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
-      binding_types = analysis.local_completion_frames.flat_map do |frame|
+      facts = workspace.get_facts(uri)
+      binding_types = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map { |snapshot| snapshot.bindings["item"]&.type&.to_s }
       end
 
       assert messages.any? { |message| message.include?("expected ':' before block") }
       refute messages.any? { |message| message.include?("continue must be inside a loop") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
-      assert_includes binding_types, "ref[Point]"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
+      assert_includes binding_types, "ref[main.Point]"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_treat_continue_inside_headerless_while_block_as_loop_control
+  def test_collect_diagnostics_and_facts_treat_continue_inside_headerless_while_block_as_loop_control
     Dir.mktmpdir("lsp_workspace_headerless_while_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -978,18 +1009,18 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert messages.any? { |message| message.include?("expected expression") }
       refute messages.any? { |message| message.include?("continue must be inside a loop") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_treat_continue_inside_headerless_for_block_as_loop_control
+  def test_collect_diagnostics_and_facts_treat_continue_inside_headerless_for_block_as_loop_control
     Dir.mktmpdir("lsp_workspace_headerless_for_loop") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -1006,18 +1037,18 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
 
       assert messages.any? { |message| message.include?("expected loop variable name") }
       refute messages.any? { |message| message.include?("continue must be inside a loop") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_recover_match_binding_inside_invalid_match_arm
+  def test_collect_diagnostics_and_facts_recover_match_binding_inside_invalid_match_arm
     Dir.mktmpdir("lsp_workspace_invalid_match_arm") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -1043,9 +1074,9 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
       target_line = content.lines.index { |line| line.include?("return payload.value.x") } + 1
-      binding_names = analysis.local_completion_frames.flat_map do |frame|
+      binding_names = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map do |snapshot|
           next unless snapshot.line == target_line
 
@@ -1054,15 +1085,15 @@ class LSPWorkspaceTest < Minitest::Test
       end
 
       assert messages.any? { |message| message.include?("expected ':' before block") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_names, "payload"
     ensure
       workspace&.shutdown
     end
   end
 
-  def test_collect_diagnostics_and_analysis_bind_missing_match_scrutinee_payload_as_error
+  def test_collect_diagnostics_and_facts_bind_missing_match_scrutinee_payload_as_error
     Dir.mktmpdir("lsp_workspace_invalid_match_scrutinee") do |dir|
       path = File.join(dir, "main.mt")
       content = <<~MT
@@ -1088,9 +1119,9 @@ class LSPWorkspaceTest < Minitest::Test
 
       diagnostics = workspace.collect_diagnostics(uri)
       messages = diagnostics.map { |diagnostic| diagnostic[:message] }
-      analysis = workspace.get_analysis(uri)
+      facts = workspace.get_facts(uri)
       target_line = content.lines.index { |line| line.include?("return payload") } + 1
-      binding_types = analysis.local_completion_frames.flat_map do |frame|
+      binding_types = facts.local_completion_frames.flat_map do |frame|
         frame.snapshots.filter_map do |snapshot|
           next unless snapshot.line == target_line
 
@@ -1099,8 +1130,8 @@ class LSPWorkspaceTest < Minitest::Test
       end
 
       assert messages.any? { |message| message.include?("expected expression") }
-      refute_nil analysis
-      assert_includes analysis.functions.keys, "main"
+      refute_nil facts
+      assert_includes facts.functions.keys, "main"
       assert_includes binding_types, "<error>"
     ensure
       workspace&.shutdown

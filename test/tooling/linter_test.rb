@@ -17,7 +17,69 @@ class MilkTeaLinterTest < Minitest::Test
     warning = warnings.first
     assert_equal "reserved-primitive-name", warning.code
     assert_equal 2, warning.line
-    assert_match(/local 'byte' uses reserved primitive type name 'byte'/, warning.message)
+    assert_match(/local 'byte' uses reserved built-in type name 'byte'/, warning.message)
+  end
+
+  def test_warns_on_local_named_after_reserved_builtin_result_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          let Result = 1
+          return Result
+    MT
+
+    assert_equal 1, warnings.length
+    warning = warnings.first
+    assert_equal "reserved-primitive-name", warning.code
+    assert_equal 2, warning.line
+    assert_match(/local 'Result' uses reserved built-in type name 'Result'/, warning.message)
+  end
+
+  def test_warns_on_import_alias_named_after_reserved_builtin_result_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      import std.async as Result
+
+      function main() -> int:
+          return 0
+    MT
+
+    warning = warnings.find { |entry| entry.code == "reserved-primitive-name" }
+    assert warning, "expected reserved-name warning for import alias Result"
+    assert_equal "reserved-primitive-name", warning.code
+    assert_equal 1, warning.line
+    assert_match(/import alias 'Result' uses reserved built-in type name 'Result'/, warning.message)
+  end
+
+  def test_does_not_warn_on_import_alias_named_after_primitive_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      import std.async as str
+
+      function main() -> int:
+          return 0
+    MT
+
+    refute warnings.any? { |warning| warning.code == "reserved-primitive-name" && warning.message.include?("str") }
+  end
+
+  def test_does_not_warn_on_local_named_after_non_reserved_builtin_type_name
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main() -> int:
+          let span = 1
+          return span
+    MT
+
+    refute warnings.any? { |warning| warning.code == "reserved-primitive-name" }
+  end
+
+  def test_warns_on_type_parameter_named_after_non_primitive_builtin_type
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function identity[span](value: span) -> span:
+          return value
+    MT
+
+    assert_equal 1, warnings.length
+    warning = warnings.first
+    assert_equal "reserved-primitive-name", warning.code
+    assert_match(/type parameter 'span' uses reserved built-in type name 'span'/, warning.message)
   end
 
   def test_warns_on_parameter_named_after_reserved_primitive_type
@@ -30,7 +92,7 @@ class MilkTeaLinterTest < Minitest::Test
     warning = warnings.first
     assert_equal "reserved-primitive-name", warning.code
     assert_equal 1, warning.line
-    assert_match(/parameter 'byte' uses reserved primitive type name 'byte'/, warning.message)
+    assert_match(/parameter 'byte' uses reserved built-in type name 'byte'/, warning.message)
   end
 
   def test_warns_on_function_named_after_reserved_primitive_type
@@ -46,7 +108,7 @@ class MilkTeaLinterTest < Minitest::Test
     warning = warnings.first
     assert_equal "reserved-primitive-name", warning.code
     assert_equal 1, warning.line
-    assert_match(/function 'double' uses reserved primitive type name 'double'/, warning.message)
+    assert_match(/function 'double' uses reserved built-in type name 'double'/, warning.message)
   end
 
   def test_reserved_primitive_name_lint_handles_declarations_without_column_metadata
@@ -223,9 +285,60 @@ class MilkTeaLinterTest < Minitest::Test
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
     analysis = MilkTea::Sema.check(ast, imported_modules: {})
-    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_analysis: analysis)
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: analysis)
 
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("counter") }
+  end
+
+  def test_no_prefer_let_when_var_is_only_mutated_via_method_and_sema_is_unavailable
+    warnings = MilkTea::Linter.lint_source(<<~MT)
+      import missing.module as missing
+
+      struct Counter:
+          value: int
+
+      extending Counter:
+          mutable function bump() -> void:
+              this.value += 1
+
+      function main() -> int:
+          var counter = Counter(value = 0)
+          counter.bump()
+          return counter.value
+    MT
+
+    refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("counter") }
+  end
+
+  def test_best_effort_lint_context_analyzes_std_string
+    path = File.join(MilkTea.root, "std/string.mt")
+    source = File.read(path)
+
+    context = MilkTea::Linter.best_effort_lint_context(source, path: path)
+
+    assert context[:facts], "expected std/string.mt to produce sema facts"
+    assert context[:sema_snapshot], "expected std/string.mt to expose sema snapshot"
+    assert_equal context[:facts], context[:sema_snapshot].facts
+    assert_equal [], Array(context[:errors])
+  end
+
+  def test_best_effort_lint_context_resolves_platform_imports_for_std_fs_linux
+    path = File.join(MilkTea.root, "std/fs.linux.mt")
+    source = File.read(path)
+
+    context = MilkTea::Linter.best_effort_lint_context(source, path: path)
+
+    assert context[:facts], "expected std/fs.linux.mt to produce sema facts"
+    assert_includes context[:imported_modules].keys, "std.c.fs"
+  end
+
+  def test_best_effort_lint_context_analyzes_std_uri_with_erroring_dependencies
+    path = File.join(MilkTea.root, "std/uri.mt")
+    source = File.read(path)
+
+    context = MilkTea::Linter.best_effort_lint_context(source, path: path)
+
+    assert context[:facts], "expected std/uri.mt to produce sema facts even when dependencies have collected errors"
   end
 
   def test_no_prefer_let_when_var_is_exposed_through_ptr_of_alias
@@ -256,7 +369,7 @@ class MilkTeaLinterTest < Minitest::Test
 
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
     analysis = MilkTea::Sema.check(ast, imported_modules: {})
-    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_analysis: analysis)
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: analysis)
 
     refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("result") }
   end
@@ -459,7 +572,7 @@ class MilkTeaLinterTest < Minitest::Test
       ast = MilkTea::Parser.parse(source, path: path)
       loader = MilkTea::ModuleLoader.new(module_roots: [dir])
       analysis = MilkTea::Sema.check(ast, imported_modules: loader.imported_modules_for_ast(ast))
-      warnings = MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis)
+      warnings = MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis)
 
       refute warnings.any? { |warning| warning.code == "unused-import" && warning.message.include?("string") }
     end
@@ -1734,7 +1847,7 @@ class MilkTeaLinterRedundantReadCastTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
     analysis = MilkTea::Sema.check(ast, imported_modules: {})
-    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+    MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis, **kwargs)
   end
 
   def test_warns_on_redundant_read_cast_after_fatal_guard
@@ -1764,6 +1877,15 @@ class MilkTeaLinterRedundantReadCastTest < Minitest::Test
     MT
 
     refute warnings.any? { |w| w.code == "redundant-read-cast" }
+  end
+
+  def test_explicit_nil_sema_facts_suppresses_redundant_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", sema_facts: nil, unresolved_import_paths: [])
+      function main() -> int:
+          return int<-42
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-cast" }
   end
 
   def test_fix_source_removes_redundant_read_cast
@@ -1835,6 +1957,18 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
     assert warnings.any? { |warning| warning.code == "redundant-cast" }
   end
 
+  def test_does_not_warn_on_required_call_argument_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function takes_offset(offset: ptr_int) -> ptr_int:
+          return offset
+
+      function main(offset: ptr_uint) -> ptr_int:
+          return takes_offset(ptr_int<-offset)
+    MT
+
+    refute warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
   def test_does_not_warn_on_inferred_local_cast_that_changes_binding_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function widen(value: int) -> long:
@@ -1859,6 +1993,20 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
 
     analysis = MilkTea::Sema.check(MilkTea::Parser.parse(fixed, path: "demo.mt"), imported_modules: {})
     assert_equal true, analysis.functions.key?("is_ascii_space")
+  end
+
+  def test_fix_source_keeps_required_call_argument_cast
+    source = <<~MT
+      function takes_offset(offset: ptr_int) -> ptr_int:
+          return offset
+
+      function main(offset: ptr_uint) -> ptr_int:
+          return takes_offset(ptr_int<-offset)
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_equal source, fixed
   end
 end
 
@@ -1934,7 +2082,7 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
     analysis = MilkTea::Sema.check(ast, imported_modules: {})
-    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+    MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis, **kwargs)
   end
 
   def test_warns_on_immediate_nullable_guard_return
@@ -2132,7 +2280,7 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
     analysis = MilkTea::Sema.check(ast, imported_modules: {})
-    MilkTea::Linter.lint_source(source, path: path, sema_analysis: analysis, **kwargs)
+    MilkTea::Linter.lint_source(source, path: path, sema_facts: analysis, **kwargs)
   end
 
   def test_warns_on_redundant_unsafe_block

@@ -42,7 +42,7 @@ public function create_for[T](count: ptr_uint) -> Arena:
     if heap.mul_overflows(count, element_size):
         fatal(c"arena.create_for size overflow")
 
-    return create_aligned(count * element_size, ptr_uint<-align_of(T))
+    return create_aligned(count * element_size, align_of(T))
 
 extending Arena:
     public function mark() -> Mark:
@@ -54,7 +54,6 @@ extending Arena:
             fatal(c"arena.reset invalid mark")
 
         this.offset = mark
-        return
 
 
     public function remaining_bytes() -> ptr_uint:
@@ -96,8 +95,7 @@ extending Arena:
         if heap.mul_overflows(count, element_size):
             return null
 
-        let memory = this.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T))
-        if memory == null:
+        let memory = this.alloc_bytes_aligned(count * element_size, ptr_uint<-align_of(T)) else:
             return null
 
         return unsafe: ptr[T]<-memory

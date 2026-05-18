@@ -12,11 +12,11 @@ module MilkTea
     # Main LSP server — JSON-RPC 2.0 message loop with full MVP feature set.
     #
     # Enhancements implemented:
-    #   1. Hover         — real type signature from semantic analysis
+    #   1. Hover         — real type signature from semantic facts
     #   2. Goto Def      — token-based definition site navigation
     #   3. Incremental   — textDocumentSync: 2 with range-based edits
     #   4. Multi-file    — workspace indexing via workspace/symbol
-    #   5. Completion    — function/type/value completions from analysis
+    #   5. Completion    — function/type/value completions from facts
     class Server
       SEMANTIC_TOKEN_TYPES = %w[
         namespace type class enum interface struct typeParameter parameter variable property enumMember event
@@ -44,18 +44,18 @@ module MilkTea
         roots = module_roots || MilkTea::ModuleRoots.roots_for_path(expanded_path)
         source = File.read(expanded_path)
         tokens = MilkTea::Lexer.lex(source, path: expanded_path)
-        analysis = MilkTea::ModuleLoader.new(
+        facts = MilkTea::ModuleLoader.new(
           module_roots: roots,
           package_graph: package_graph || load_package_graph(expanded_path),
         ).check_file(expanded_path)
 
         helper = allocate
-        entries = helper.send(:build_semantic_token_entries, tokens, analysis)
+        entries = helper.send(:build_semantic_token_entries, tokens, facts)
         data = helper.send(:encode_semantic_tokens, entries)
 
         {
           path: expanded_path,
-          moduleName: analysis.module_name,
+          moduleName: facts.module_name,
           legend: {
             tokenTypes: SEMANTIC_TOKEN_TYPES,
             tokenModifiers: SEMANTIC_TOKEN_MODIFIERS,
@@ -507,15 +507,15 @@ module MilkTea
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
-        analysis_detail = if open_stats[:eager_analysis]
-                            "on(#{open_stats[:analysis_mode] || :unknown})"
+        facts_detail = if open_stats[:eager_facts]
+                            "on(#{open_stats[:facts_mode] || :unknown})"
                           else
                             "off(#{open_stats[:skip_reason] || :unknown})"
                           end
         log_perf_breakdown(
           'textDocument/didOpen',
           elapsed,
-          "uri=#{short_uri} source=#{source} bytes=#{open_stats[:bytes]} lines=#{open_stats[:lines]} imports=#{open_stats[:import_count]} shared_modules=#{open_stats[:shared_module_cache_size]} eager_analysis=#{analysis_detail} stages_ms=open:#{open_ms},analysis:#{open_stats[:analysis_ms] || 0.0},diagnostics_enqueue:#{elapsed_ms(diagnostics_start)}"
+          "uri=#{short_uri} source=#{source} bytes=#{open_stats[:bytes]} lines=#{open_stats[:lines]} imports=#{open_stats[:import_count]} shared_modules=#{open_stats[:shared_module_cache_size]} eager_facts=#{facts_detail} stages_ms=open:#{open_ms},facts:#{open_stats[:facts_ms] || 0.0},diagnostics_enqueue:#{elapsed_ms(diagnostics_start)}"
         )
         nil
       end
@@ -603,12 +603,12 @@ module MilkTea
         tokens = @workspace.get_tokens(uri) || []
         tokens_ms = elapsed_ms(tokens_start)
 
-        analysis_start = monotonic_time
-        analysis = @workspace.get_analysis(uri)
-        analysis_ms = elapsed_ms(analysis_start)
+        facts_start = monotonic_time
+        facts = @workspace.get_facts(uri)
+        facts_ms = elapsed_ms(facts_start)
 
         build_start = monotonic_time
-        semantic_entries = build_semantic_token_entries(tokens, analysis)
+        semantic_entries = build_semantic_token_entries(tokens, facts)
         build_ms = elapsed_ms(build_start)
 
         encode_start = monotonic_time
@@ -620,7 +620,7 @@ module MilkTea
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
         log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
-                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} analysis=on stages_ms=tokens:#{tokens_ms},analysis:#{analysis_ms},build:#{build_ms},encode:#{encode_ms}")
+                           "uri=#{short_uri} bytes=#{content.bytesize} lines=#{content.count("\n") + 1} cache=miss tokens=#{tokens.length} entries=#{semantic_entries.length} data_len=#{data.length} facts=on stages_ms=tokens:#{tokens_ms},facts:#{facts_ms},build:#{build_ms},encode:#{encode_ms}")
 
         { data: data }
       rescue StandardError => e
@@ -734,9 +734,9 @@ module MilkTea
           return []
         end
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
         include_declaration = params.dig('context', 'includeDeclaration') != false
-        target = analysis ? measure_perf_stage(stages, 'static_target') { resolve_static_type_reference_target(uri, token, analysis) } : nil
+        target = facts ? measure_perf_stage(stages, 'static_target') { resolve_static_type_reference_target(uri, token, facts) } : nil
         if target
           refs = measure_perf_stage(stages, 'static_refs') { static_type_method_references(target, include_declaration: include_declaration) }
           result_count = refs.length
@@ -826,10 +826,10 @@ module MilkTea
         ctx = measure_perf_stage(stages, 'call_context') { @workspace.find_call_context(uri, lsp_line, lsp_char) }
         return nil unless ctx
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
-        return nil unless analysis
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        return nil unless facts
 
-        binding = measure_perf_stage(stages, 'binding') { analysis.functions[ctx[:name]] }
+        binding = measure_perf_stage(stages, 'binding') { facts.functions[ctx[:name]] }
         return nil unless binding
 
         result = measure_perf_stage(stages, 'build') do
@@ -970,6 +970,9 @@ module MilkTea
 
         platform_provided, platform_override = platform_override_from_settings(settings)
         apply_platform_override(platform_override) if platform_provided
+
+        strict_root_provided, strict_root_enabled = strict_current_root_diagnostics_from_settings(settings)
+        apply_strict_current_root_diagnostics(strict_root_enabled) if strict_root_provided
       end
 
       def formatter_mode_from_settings(settings)
@@ -1019,6 +1022,32 @@ module MilkTea
         [false, nil]
       end
 
+      def strict_current_root_diagnostics_from_settings(settings)
+        return [false, nil] unless settings.is_a?(Hash)
+
+        value =
+          settings.dig('milkTea', 'lsp', 'strictCurrentRootDiagnostics') ||
+          settings.dig('milk_tea', 'lsp', 'strictCurrentRootDiagnostics') ||
+          settings.dig('lsp', 'strictCurrentRootDiagnostics')
+        return [false, nil] if value.nil?
+
+        normalized = case value
+                     when true, false
+                       value
+                     else
+                       case value.to_s.strip.downcase
+                       when 'true', '1', 'yes', 'on'
+                         true
+                       when 'false', '0', 'no', 'off', ''
+                         false
+                       else
+                         return [false, nil]
+                       end
+                     end
+
+        [true, normalized]
+      end
+
       def apply_dependency_resolution_mode(mode)
         normalized = DependencyResolution.normalize_mode(mode)
         return if @dependency_resolution_mode == normalized
@@ -1039,6 +1068,19 @@ module MilkTea
 
         @platform_override = normalized
         @workspace.platform_override = normalized
+        @diagnostic_report_cache.clear
+        open_uris = @workspace.open_document_uris
+        invalidate_document_caches_for(open_uris)
+        open_uris.each do |uri|
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+        end
+      end
+
+      def apply_strict_current_root_diagnostics(enabled)
+        normalized = !!enabled
+        return if @workspace.strict_current_root_diagnostics_enabled == normalized
+
+        @workspace.strict_current_root_diagnostics_enabled = normalized
         @diagnostic_report_cache.clear
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
@@ -1606,9 +1648,9 @@ module MilkTea
         content = @workspace.get_content(uri)
         return [] if content && skip_expensive_work_reason(uri, content)
 
-        analysis = @workspace.get_analysis(uri)
+        facts = @workspace.get_facts(uri)
         tokens = @workspace.get_tokens(uri)
-        return [] unless analysis && tokens
+        return [] unless facts && tokens
 
         hints = []
         i = 0
@@ -1628,13 +1670,13 @@ module MilkTea
             lparen_index = nil
 
             if next_tok&.type == :lparen
-              binding = analysis.functions[callee.lexeme]
+              binding = facts.functions[callee.lexeme]
               lparen_index = i + 1
             elsif next_tok&.type == :dot
               member = tokens[i + 2]
               member_lparen = tokens[i + 3]
               if member&.type == :identifier && member_lparen&.type == :lparen
-                module_binding = analysis.imports[callee.lexeme]
+                module_binding = facts.imports[callee.lexeme]
                 binding = module_binding&.functions&.[](member.lexeme)
                 lparen_index = i + 3
               end
@@ -1685,9 +1727,9 @@ module MilkTea
         branch = 'none'
         item_count = 0
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
-        unless analysis
-          branch = 'no-analysis'
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        unless facts
+          branch = 'no-facts'
           return { isIncomplete: false, items: [] }
         end
 
@@ -1702,7 +1744,7 @@ module MilkTea
         end
         if dot_recv
           # Module member access: rl.init_window, rl.RAYWHITE, etc.
-          if (module_binding = analysis.imports[dot_recv])
+          if (module_binding = facts.imports[dot_recv])
             branch = 'module'
             items = measure_perf_stage(stages, 'build') do
               result = []
@@ -1742,7 +1784,7 @@ module MilkTea
             item_count = items.length
             return { isIncomplete: false, items: items }
           end
-          if (type_receiver = measure_perf_stage(stages, 'type_receiver') { resolve_type_receiver_info(analysis, dot_recv, dot_recv_path) })
+          if (type_receiver = measure_perf_stage(stages, 'type_receiver') { resolve_type_receiver_info(facts, dot_recv, dot_recv_path) })
             receiver_label = type_receiver[:label]
             type = type_receiver[:type]
 
@@ -1784,7 +1826,7 @@ module MilkTea
               return { isIncomplete: false, items: items }
             end
 
-            items = measure_perf_stage(stages, 'build') { completion_items_for_type_receiver(analysis, type, prefix) }
+            items = measure_perf_stage(stages, 'build') { completion_items_for_type_receiver(facts, type, prefix) }
             unless items.empty?
               branch = 'type-receiver'
               item_count = items.length
@@ -1792,8 +1834,8 @@ module MilkTea
             end
           end
 
-          if (receiver_type = measure_perf_stage(stages, 'value_receiver') { resolve_dot_receiver_value_type(analysis, dot_recv, lsp_line + 1, lsp_char + 1) })
-            items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(analysis, receiver_type, prefix) }
+          if (receiver_type = measure_perf_stage(stages, 'value_receiver') { resolve_dot_receiver_value_type(facts, dot_recv, lsp_line + 1, lsp_char + 1) })
+            items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(facts, receiver_type, prefix) }
             unless items.empty?
               branch = 'value-receiver'
               item_count = items.length
@@ -1805,7 +1847,7 @@ module MilkTea
           branch = 'method-fallback'
           method_items = measure_perf_stage(stages, 'build') do
             result = []
-            analysis.methods.each do |_recv_type, methods|
+            facts.methods.each do |_recv_type, methods|
               methods.each do |mname, binding|
                 next unless prefix.empty? || mname.start_with?(prefix)
 
@@ -1830,7 +1872,7 @@ module MilkTea
           result = []
 
           # Functions
-          analysis.functions.each do |name, binding|
+          facts.functions.each do |name, binding|
             next unless prefix.empty? || name.start_with?(prefix)
 
             params_str = format_params(binding.type.params)
@@ -1846,7 +1888,7 @@ module MilkTea
 
           # Types
           builtin_names = Sema::BUILTIN_TYPE_NAMES
-          analysis.types.each do |name, type|
+          facts.types.each do |name, type|
             next if builtin_names.include?(name)
             next unless prefix.empty? || name.start_with?(prefix)
 
@@ -1867,7 +1909,7 @@ module MilkTea
           end
 
           # Imported modules
-          analysis.imports.each do |name, module_binding|
+          facts.imports.each do |name, module_binding|
             next unless prefix.empty? || name.start_with?(prefix)
 
             result << {
@@ -1881,7 +1923,7 @@ module MilkTea
           end
 
           # Values
-          analysis.values.each do |name, binding|
+          facts.values.each do |name, binding|
             next unless prefix.empty? || name.start_with?(prefix)
 
             result << {
@@ -1907,8 +1949,8 @@ module MilkTea
         log_request_stage_breakdown('textDocument/completion', total_start, uri: uri, stages: stages, summary: "branch=#{branch} items=#{item_count}")
       end
 
-      def completion_items_for_type_receiver(analysis, receiver_type, prefix)
-        methods_for_receiver_type(analysis, receiver_type).filter_map do |mname, binding|
+      def completion_items_for_type_receiver(facts, receiver_type, prefix)
+        methods_for_receiver_type(facts, receiver_type).filter_map do |mname, binding|
           next unless binding.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
           next unless prefix.empty? || mname.start_with?(prefix)
 
@@ -1923,10 +1965,10 @@ module MilkTea
         end
       end
 
-      def resolve_type_receiver_info(analysis, receiver_name, receiver_path)
-        if analysis.types.key?(receiver_name)
-          type = analysis.types.fetch(receiver_name)
-          module_name = type.respond_to?(:module_name) ? type.module_name : analysis.module_name
+      def resolve_type_receiver_info(facts, receiver_name, receiver_path)
+        if facts.types.key?(receiver_name)
+          type = facts.types.fetch(receiver_name)
+          module_name = type.respond_to?(:module_name) ? type.module_name : facts.module_name
           return { label: receiver_name, type:, module_name: }
         end
 
@@ -1935,7 +1977,7 @@ module MilkTea
         module_alias, type_name = receiver_path.split('.', 2)
         return nil unless module_alias && type_name
 
-        module_binding = analysis.imports[module_alias]
+        module_binding = facts.imports[module_alias]
         return nil unless module_binding
 
         type = module_binding.types[type_name]
@@ -1944,50 +1986,50 @@ module MilkTea
         { label: receiver_path, type:, module_name: module_binding.name }
       end
 
-      def resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, method_name)
-        receiver_info = resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+      def resolve_static_type_receiver_method(facts, receiver_name, receiver_path, method_name)
+        receiver_info = resolve_type_receiver_info(facts, receiver_name, receiver_path)
         return nil unless receiver_info
 
-        binding = static_method_binding_for_receiver(analysis, receiver_info[:type], method_name)
+        binding = static_method_binding_for_receiver(facts, receiver_info[:type], method_name)
         return nil unless binding
 
         receiver_info.merge(binding:)
       end
 
-      def static_method_binding_for_receiver(analysis, receiver_type, method_name)
-        binding = methods_for_receiver_type(analysis, receiver_type)[method_name]
+      def static_method_binding_for_receiver(facts, receiver_type, method_name)
+        binding = methods_for_receiver_type(facts, receiver_type)[method_name]
         return nil unless binding&.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
 
         binding
       end
 
-      def resolve_static_type_reference_target(uri, token, analysis)
+      def resolve_static_type_reference_target(uri, token, facts)
         token_end_char = token.column - 1 + token.lexeme.length
         receiver_name = @workspace.find_dot_receiver(uri, token.line - 1, token_end_char)
         receiver_path = @workspace.find_dot_receiver_path(uri, token.line - 1, token_end_char)
 
-        if (target = resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, token.lexeme))
+        if (target = resolve_static_type_receiver_method(facts, receiver_name, receiver_path, token.lexeme))
           location = module_member_binding_location(uri, target[:module_name], token.lexeme, target[:binding])
           location ||= module_member_definition_location(uri, target[:module_name], token.lexeme)
           return target.merge(location:)
         end
 
-        binding = static_method_binding_at_token(analysis, token)
+        binding = static_method_binding_at_token(facts, token)
         return nil unless binding
 
-        location = module_member_binding_location(uri, analysis.module_name, token.lexeme, binding)
-        location ||= module_member_definition_location(uri, analysis.module_name, token.lexeme)
+        location = module_member_binding_location(uri, facts.module_name, token.lexeme, binding)
+        location ||= module_member_definition_location(uri, facts.module_name, token.lexeme)
         {
           label: token.lexeme,
           type: binding.declared_receiver_type,
-          module_name: analysis.module_name,
+          module_name: facts.module_name,
           binding:,
           location:,
         }
       end
 
-      def static_method_binding_at_token(analysis, token)
-        binding = method_binding_at_token(analysis, token)
+      def static_method_binding_at_token(facts, token)
+        binding = method_binding_at_token(facts, token)
         return nil unless binding&.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
 
         binding
@@ -2008,13 +2050,13 @@ module MilkTea
         token = @workspace.find_token_at(ref[:uri], ref.dig(:range, :start, :line), ref.dig(:range, :start, :character))
         return false unless token&.type == :identifier
 
-        analysis = @workspace.get_analysis(ref[:uri])
-        return false unless analysis
+        facts = @workspace.get_facts(ref[:uri])
+        return false unless facts
 
         token_end_char = ref.dig(:range, :end, :character)
         receiver_name = @workspace.find_dot_receiver(ref[:uri], ref.dig(:range, :start, :line), token_end_char)
         receiver_path = @workspace.find_dot_receiver_path(ref[:uri], ref.dig(:range, :start, :line), token_end_char)
-        candidate = resolve_static_type_receiver_method(analysis, receiver_name, receiver_path, token.lexeme)
+        candidate = resolve_static_type_receiver_method(facts, receiver_name, receiver_path, token.lexeme)
         return false unless candidate
 
         candidate_location = module_member_binding_location(ref[:uri], candidate[:module_name], token.lexeme, candidate[:binding])
@@ -2265,22 +2307,22 @@ module MilkTea
           end
         end
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
-        return nil unless analysis
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        return nil unless facts
 
         if token_index && field_declaration_token?(tokens, token_index)
-          return resolve_field_declaration_hover_info(uri, analysis, tokens, token_index)
+          return resolve_field_declaration_hover_info(uri, facts, tokens, token_index)
         end
 
         if token_index && named_argument_label_token?(tokens, token_index)
-          return resolve_named_argument_label_hover_info(uri, analysis, tokens, token_index)
+          return resolve_named_argument_label_hover_info(uri, facts, tokens, token_index)
         end
 
-        if token_index && (member_hover = resolve_member_access_hover_info(uri, analysis, tokens, token_index))
+        if token_index && (member_hover = resolve_member_access_hover_info(uri, facts, tokens, token_index))
           return member_hover
         end
 
-        if token_index && (enum_member_hover = resolve_enum_member_hover_info(uri, analysis, tokens, token_index))
+        if token_index && (enum_member_hover = resolve_enum_member_hover_info(uri, facts, tokens, token_index))
           return enum_member_hover
         end
 
@@ -2289,27 +2331,27 @@ module MilkTea
         docs = nil
         source_location = nil
 
-        if (binding = method_binding_at_token(analysis, token))
+        if (binding = method_binding_at_token(facts, token))
           signature = method_signature(binding)
-          source_location = module_member_binding_location(uri, analysis.module_name, name, binding)
-        elsif (binding = analysis.functions[name])
+          source_location = module_member_binding_location(uri, facts.module_name, name, binding)
+        elsif (binding = facts.functions[name])
           params_str = format_params(binding.type.params)
           signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
-        elsif (binding = analysis.interfaces[name])
+        elsif (binding = facts.interfaces[name])
           signature = interface_signature(binding)
           source_location = module_member_definition_location(uri, binding.module_name, name)
-        elsif analysis.types.key?(name)
-          type = analysis.types[name]
+        elsif facts.types.key?(name)
+          type = facts.types[name]
           signature = type_hover_signature(name, type)
-        elsif (binding = analysis.values[name])
+        elsif (binding = facts.values[name])
           signature = value_hover_signature(binding)
-        elsif (import_binding = analysis.imports[name])
+        elsif (import_binding = facts.imports[name])
           signature = "module #{import_binding.name}"
           source_location = module_definition_location(uri, import_binding.name)
         else
           dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
-          if dot_receiver && (module_binding = analysis.imports[dot_receiver])
+          if dot_receiver && (module_binding = facts.imports[dot_receiver])
             if (fn = module_binding.functions[name])
               params_str = format_params(fn.type.params)
               signature = "function #{name}(#{params_str}) -> #{fn.type.return_type}"
@@ -2330,7 +2372,7 @@ module MilkTea
           end
 
           unless signature
-            if (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, name))
+            if (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, name))
               signature = method_signature(type_method[:binding])
               source_location = module_member_binding_location(uri, type_method[:module_name], name, type_method[:binding])
               source_location ||= module_member_definition_location(uri, type_method[:module_name], name)
@@ -2347,14 +2389,14 @@ module MilkTea
 
           unless signature
             if token_index && match_arm_binding_token?(tokens, token_index)
-              if (local_binding = resolve_as_binding_declaration_hover_binding(analysis, name, lsp_line + 1, lsp_char + 1))
+              if (local_binding = resolve_as_binding_declaration_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
                 signature = value_hover_signature(local_binding)
               end
             end
           end
 
           unless signature
-            if (local_binding = resolve_local_hover_binding(analysis, name, lsp_line + 1, lsp_char + 1))
+            if (local_binding = resolve_local_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
               signature = value_hover_signature(local_binding)
             end
           end
@@ -2603,33 +2645,31 @@ module MilkTea
           return module_definition_location(uri, import_info[:module_name])
         end
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
-        if analysis
-          analysis_location = measure_perf_stage(stages, 'analysis_lookup') do
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        if facts
+          facts_location = measure_perf_stage(stages, 'facts_lookup') do
             location = nil
 
-            if token_index && (field_location = resolve_field_member_definition_location(uri, analysis, tokens, token_index))
+            if token_index && (field_location = resolve_field_member_definition_location(uri, facts, tokens, token_index))
               location = field_location
-            elsif token_index && (member_access = module_member_access_info(tokens, token_index))
-              if (import_binding = analysis.imports[member_access[:receiver]])
-                module_name = import_binding.name
-                location = module_member_definition_location(uri, module_name, token.lexeme)
-                location ||= module_definition_location(uri, module_name)
-              end
-            elsif token_index && (enum_member_location = resolve_enum_member_definition_location(uri, analysis, tokens, token_index))
+            elsif token_index && (member_access = module_member_access_info(tokens, token_index)) && (import_binding = facts.imports[member_access[:receiver]])
+              module_name = import_binding.name
+              location = module_member_definition_location(uri, module_name, token.lexeme)
+              location ||= module_definition_location(uri, module_name)
+            elsif token_index && (enum_member_location = resolve_enum_member_definition_location(uri, facts, tokens, token_index))
               location = enum_member_location
             else
               dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
               dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
-              if dot_receiver && analysis.imports.key?(dot_receiver)
-                module_name = analysis.imports.fetch(dot_receiver).name
+              if dot_receiver && facts.imports.key?(dot_receiver)
+                module_name = facts.imports.fetch(dot_receiver).name
                 location = module_member_definition_location(uri, module_name, token.lexeme) || module_definition_location(uri, module_name)
-              elsif (type_method = resolve_static_type_receiver_method(analysis, dot_receiver, dot_receiver_path, token.lexeme))
+              elsif (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, token.lexeme))
                 location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
                   module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
                   module_definition_location(uri, type_method[:module_name])
-              elsif analysis.imports.key?(token.lexeme)
-                module_name = analysis.imports.fetch(token.lexeme).name
+              elsif facts.imports.key?(token.lexeme)
+                module_name = facts.imports.fetch(token.lexeme).name
                 location = module_definition_location(uri, module_name)
               end
             end
@@ -2637,7 +2677,7 @@ module MilkTea
             location
           end
 
-          return analysis_location if analysis_location
+          return facts_location if facts_location
         end
 
         found = measure_perf_stage(stages, 'global_lookup') do
@@ -2656,7 +2696,7 @@ module MilkTea
         }
       end
 
-      def resolve_field_member_definition_location(current_uri, analysis, tokens, token_index)
+      def resolve_field_member_definition_location(current_uri, facts, tokens, token_index)
         chain = member_access_chain_at(tokens, token_index)
         return nil unless chain
 
@@ -2664,7 +2704,7 @@ module MilkTea
         return nil unless hovered_segment && hovered_segment[:position].positive?
 
         current_type = resolve_dot_receiver_value_type(
-          analysis,
+          facts,
           chain[:segments].first[:name],
           chain[:line],
           chain[:char],
@@ -2682,7 +2722,7 @@ module MilkTea
 
           if segment[:token_index] == token_index
             method_receiver_type = project_method_receiver_type_for_completion(current_type)
-            method_info = member_method_info_for_receiver_type(analysis, method_receiver_type, segment[:name])
+            method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
             return nil unless method_info
 
             return module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding]) ||
@@ -2703,10 +2743,10 @@ module MilkTea
         token = measure_perf_stage(stages, 'token') { @workspace.find_token_at(uri, lsp_line, lsp_char) }
         return [] unless token&.type == :identifier
 
-        analysis = measure_perf_stage(stages, 'analysis') { @workspace.get_analysis(uri) }
-        return [] unless analysis
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        return [] unless facts
 
-        target = measure_perf_stage(stages, 'target_lookup') { resolve_interface_method_target_at_token(analysis, token) }
+        target = measure_perf_stage(stages, 'target_lookup') { resolve_interface_method_target_at_token(facts, token) }
         if target
           return measure_perf_stage(stages, 'implementation_lookup') do
             interface_method_implementation_locations(target[:interface], target[:method])
@@ -2714,7 +2754,7 @@ module MilkTea
         end
 
         interface_binding = measure_perf_stage(stages, 'binding_lookup') do
-          resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
+          resolve_interface_binding_at_position(uri, facts, token, lsp_line, lsp_char)
         end
         return [] unless interface_binding
 
@@ -2756,7 +2796,7 @@ module MilkTea
         nil
       end
 
-      def build_semantic_token_entries(tokens, analysis = nil)
+      def build_semantic_token_entries(tokens, facts = nil)
         # Precompute line → non-trivia tokens index so non_trivia_tokens_on_line
         # is O(1) per call instead of O(n), turning the overall build from O(n²) to O(n).
         trivia_types = Set[:newline, :indent, :dedent, :eof]
@@ -2769,11 +2809,11 @@ module MilkTea
           next if [:newline, :indent, :dedent, :eof].include?(tok.type)
 
           if tok.type == :fstring
-            fstring_interpolation_entries(tok, analysis).each { |e| entries << e }
+            fstring_interpolation_entries(tok, facts).each { |e| entries << e }
             next
           end
 
-          semantic_type, modifiers = classify_semantic_token(tokens, index, analysis)
+          semantic_type, modifiers = classify_semantic_token(tokens, index, facts)
           next unless semantic_type
 
           token_semantic_entries(tok, semantic_type, modifiers).each { |entry| entries << entry }
@@ -2787,7 +2827,7 @@ module MilkTea
       # Decomposes an fstring token into non-overlapping semantic token entries.
       # Text segments are emitted as :string and interpolation expression segments
       # are emitted semantically. Delimiter punctuation is left to TextMate.
-      def fstring_interpolation_entries(fstring_tok, analysis)
+      def fstring_interpolation_entries(fstring_tok, facts)
         parts = fstring_tok.literal
         return [{ line: fstring_tok.line - 1, start_char: fstring_tok.column - 1, length: fstring_tok.lexeme.length, type: :string, modifiers: [] }] unless parts.is_a?(Array)
 
@@ -2817,7 +2857,7 @@ module MilkTea
             begin
               sub_tokens = interpolation_expression_tokens(part)
               sub_tokens.each_with_index do |sub_tok, i|
-                sem_type, modifiers = classify_semantic_token(sub_tokens, i, analysis)
+                sem_type, modifiers = classify_semantic_token(sub_tokens, i, facts)
                 next unless sem_type
                 result << {
                   line: sub_tok.line - 1,
@@ -2851,7 +2891,7 @@ module MilkTea
                 spec_tokens = MilkTea::Lexer.new(spec).lex
                                            .reject { |t| [:newline, :indent, :dedent, :eof].include?(t.type) }
                 spec_tokens.each_with_index do |spec_tok, i|
-                  spec_sem_type, spec_modifiers = classify_semantic_token(spec_tokens, i, analysis)
+                  spec_sem_type, spec_modifiers = classify_semantic_token(spec_tokens, i, facts)
                   next unless spec_sem_type
                   result << {
                     line: fstr_line,
@@ -2885,11 +2925,11 @@ module MilkTea
         result
       end
 
-      def classify_semantic_token(tokens, index, analysis = nil)
+      def classify_semantic_token(tokens, index, facts = nil)
         tok = tokens[index]
 
         if tok.type == :identifier || namespace_keyword_token?(tokens, index)
-          return classify_name_semantic(tok.lexeme, tokens, index, analysis)
+          return classify_name_semantic(tok.lexeme, tokens, index, facts)
         end
 
         if [:string, :cstring].include?(tok.type)
@@ -2936,12 +2976,12 @@ module MilkTea
         end
       end
 
-      def classify_name_semantic(name, tokens, index, analysis = nil)
+      def classify_name_semantic(name, tokens, index, facts = nil)
         tok = tokens[index]
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         parameter_declaration = parameter_declaration_token?(tokens, index)
-        user_defined_function = analysis ? analysis.functions.key?(name) : lexically_declared_free_function_name?(tokens, name)
+        user_defined_function = facts ? facts.functions.key?(name) : lexically_declared_free_function_name?(tokens, name)
 
         if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
@@ -2976,45 +3016,45 @@ module MilkTea
         return [:property, ['declaration']] if variant_payload_field_declaration_token?(tokens, index)
         return [:property, ['declaration']] if field_declaration_token?(tokens, index)
 
-        if analysis
-          return [:typeParameter, ['declaration']] if type_parameter_declaration_token?(analysis, tokens, index)
-          return [:typeParameter, []] if type_parameter_reference_token?(analysis, tokens, index)
+        if facts
+          return [:typeParameter, ['declaration']] if type_parameter_declaration_token?(facts, tokens, index)
+          return [:typeParameter, []] if type_parameter_reference_token?(facts, tokens, index)
         end
 
         return [:property, []] if named_argument_label_token?(tokens, index)
 
-        if analysis && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(analysis, tok))
+        if facts && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(facts, tok))
           return generic_binding
         end
 
-        if next_tok&.type == :dot && analysis
-          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
+        if next_tok&.type == :dot && facts
+          if (binding = local_semantic_value_binding(facts, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
-          return [:type, []] if analysis.types.key?(name)
-          return [:type, []] if analysis.interfaces.key?(name)
-          return [:namespace, []] if analysis.imports.key?(name)
+          return [:type, []] if facts.types.key?(name)
+          return [:type, []] if facts.interfaces.key?(name)
+          return [:namespace, []] if facts.imports.key?(name)
 
-          if (binding = analysis.values[name])
+          if (binding = facts.values[name])
             return semantic_value_binding_entry(binding)
           end
         end
 
-        if analysis && (analysis.types.key?(name) || analysis.interfaces.key?(name)) && identifier_in_type_argument_position?(tokens, index)
+        if facts && (facts.types.key?(name) || facts.interfaces.key?(name)) && identifier_in_type_argument_position?(tokens, index)
           return [:type, []]
         end
 
         return [:enumMember, ['declaration']] if variant_enum_member_declaration?(tokens, index)
 
         if prev_tok&.type == :dot
-          if analysis
-            module_binding = imported_module_binding_for_member(tokens, index, analysis)
+          if facts
+            module_binding = imported_module_binding_for_member(tokens, index, facts)
             if module_binding
               if module_binding.functions.key?(name)
                 return [:function, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
                 return [:function, []] if next_tok&.type == :lbracket
-                return [:function, []] if imported_module_function_value_member_access_site?(analysis, tokens, index)
+                return [:function, []] if imported_module_function_value_member_access_site?(facts, tokens, index)
                 return [:property, []]
               end
               return [:type, []] if module_binding.types.key?(name)
@@ -3024,19 +3064,19 @@ module MilkTea
                 modifiers << 'readonly' if value_binding.respond_to?(:mutable) && value_binding.mutable == false
                 return [:variable, modifiers]
               end
-              return [:namespace, []] if analysis.imports.key?(name)
+              return [:namespace, []] if facts.imports.key?(name)
             end
 
-            return [:property, []] if callable_field_member_access?(name, tokens, index, analysis)
+            return [:property, []] if callable_field_member_access?(name, tokens, index, facts)
           end
 
-          return [:enumMember, []] if type_name_member_access?(tokens, index, analysis)
+          return [:enumMember, []] if type_name_member_access?(tokens, index, facts)
           return [:method, []] if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
           return [:property, []]
         end
 
         if next_tok&.type == :lparen || specialized_call_with_type_args?(tokens, index)
-          if analysis && (resolved = resolved_call_callee_semantic(name, tok, parameter_declaration, analysis))
+          if facts && (resolved = resolved_call_callee_semantic(name, tok, parameter_declaration, facts))
             return resolved
           end
 
@@ -3052,31 +3092,31 @@ module MilkTea
 
         return [:function, []] if next_tok&.type == :lbracket && user_defined_function
 
-        if analysis && identifier_in_type_reference_position?(tokens, index)
-          return [:type, []] if analysis.types.key?(name)
-          return [:type, []] if analysis.interfaces.key?(name)
+        if facts && identifier_in_type_reference_position?(tokens, index)
+          return [:type, []] if facts.types.key?(name)
+          return [:type, []] if facts.interfaces.key?(name)
 
           if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
             return [:type, ['defaultLibrary']]
           end
         end
 
-        if analysis
+        if facts
 
-          if (binding = local_semantic_value_binding(analysis, tok, allow_same_line_future: parameter_declaration))
+          if (binding = local_semantic_value_binding(facts, tok, allow_same_line_future: parameter_declaration))
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
-          return [:type, []] if analysis.types.key?(name)
-          return [:type, []] if analysis.interfaces.key?(name)
+          return [:type, []] if facts.types.key?(name)
+          return [:type, []] if facts.interfaces.key?(name)
 
-          return [:namespace, []] if analysis.imports.key?(name)
+          return [:namespace, []] if facts.imports.key?(name)
 
-          if (binding = analysis.values[name])
+          if (binding = facts.values[name])
             return semantic_value_binding_entry(binding)
           end
 
-          return [:function, []] if bare_function_value_identifier_site?(analysis, tok)
+          return [:function, []] if bare_function_value_identifier_site?(facts, tok)
         end
 
         if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
@@ -3197,8 +3237,8 @@ module MilkTea
         end
       end
 
-      def generic_function_lexical_binding_semantic(analysis, token)
-        kind = generic_function_lexical_binding_kind_at(analysis, token.line, token.column, token.lexeme)
+      def generic_function_lexical_binding_semantic(facts, token)
+        kind = generic_function_lexical_binding_kind_at(facts, token.line, token.column, token.lexeme)
         case kind
         when :param
           [:parameter, []]
@@ -3209,8 +3249,8 @@ module MilkTea
         end
       end
 
-      def generic_function_lexical_binding_kind_at(analysis, line, column, name)
-        generic_function_lexical_binding_scopes(analysis).reverse_each do |scope|
+      def generic_function_lexical_binding_kind_at(facts, line, column, name)
+        generic_function_lexical_binding_scopes(facts).reverse_each do |scope|
           next if line < scope[:start_line] || line > scope[:end_line]
           next if line == scope[:start_line] && column < scope[:start_column]
 
@@ -3221,18 +3261,18 @@ module MilkTea
         nil
       end
 
-      def generic_function_lexical_binding_scopes(analysis)
+      def generic_function_lexical_binding_scopes(facts)
         scopes = @generic_function_lexical_binding_scope_cache ||= {}
-        cached = scopes[analysis.object_id]
+        cached = scopes[facts.object_id]
         unless cached
-          decls = Array(analysis.ast&.declarations)
+          decls = Array(facts.ast&.declarations)
           cached = decls.each_with_index.flat_map do |decl, index|
             generic_function_lexical_scopes_for_declaration(
               decl,
               end_line: declaration_scope_end_line(decls, index),
             )
           end
-          scopes[analysis.object_id] = cached
+          scopes[facts.object_id] = cached
         end
 
         cached
@@ -3392,10 +3432,10 @@ module MilkTea
 
       end
 
-      def local_semantic_value_binding(analysis, token, allow_same_line_future: false)
+      def local_semantic_value_binding(facts, token, allow_same_line_future: false)
         char = token.column - 1
         [token.line - 1, token.line].uniq.each do |line|
-          frame = enclosing_completion_frame(analysis, line)
+          frame = enclosing_completion_frame(facts, line)
           next unless frame
 
           snapshot = latest_completion_snapshot(frame, line, char)
@@ -3427,25 +3467,25 @@ module MilkTea
         end
       end
 
-      def resolved_call_callee_semantic(name, token, parameter_declaration, analysis)
-        if (binding = local_semantic_value_binding(analysis, token, allow_same_line_future: parameter_declaration))
+      def resolved_call_callee_semantic(name, token, parameter_declaration, facts)
+        if (binding = local_semantic_value_binding(facts, token, allow_same_line_future: parameter_declaration))
           return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
         end
 
-        if (binding = analysis.values[name])
+        if (binding = facts.values[name])
           return semantic_value_binding_entry(binding)
         end
 
         modifiers = []
         modifiers << 'defaultLibrary' if BUILTIN_FUNCTION_NAMES.include?(name)
         return [:function, modifiers] if BUILTIN_FUNCTION_NAMES.include?(name)
-        return [:function, modifiers] if analysis.functions.key?(name)
-        return [:type, []] if constructible_semantic_type?(analysis.types[name])
+        return [:function, modifiers] if facts.functions.key?(name)
+        return [:type, []] if constructible_semantic_type?(facts.types[name])
 
         nil
       end
 
-      def callable_field_member_access?(name, tokens, index, analysis)
+      def callable_field_member_access?(name, tokens, index, facts)
         next_tok = next_non_trivia_token(tokens, index + 1)
         return false unless next_tok&.type == :lparen
 
@@ -3458,7 +3498,7 @@ module MilkTea
         receiver_tok = tokens[receiver_index]
         return false unless receiver_tok.type == :identifier
 
-        resolve_receiver_value_type(analysis, receiver_tok).then do |receiver_type|
+        resolve_receiver_value_type(facts, receiver_tok).then do |receiver_type|
           next false unless receiver_type
 
           field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
@@ -3468,11 +3508,11 @@ module MilkTea
         end
       end
 
-      def resolve_receiver_value_type(analysis, token)
+      def resolve_receiver_value_type(facts, token)
         char = token.column
 
         [token.line - 1, token.line].uniq.each do |line|
-          receiver_type = resolve_dot_receiver_value_type(analysis, token.lexeme, line, char)
+          receiver_type = resolve_dot_receiver_value_type(facts, token.lexeme, line, char)
           return receiver_type if receiver_type
         end
 
@@ -3500,12 +3540,12 @@ module MilkTea
         after_bracket_index.nil? || tokens[after_bracket_index].type != :lparen
       end
 
-      def bare_function_value_identifier_site?(analysis, token)
-        analysis.functions.key?(token.lexeme) &&
-          analysis.callable_value_identifier_sites.fetch([token.line, token.column], false)
+      def bare_function_value_identifier_site?(facts, token)
+        facts.functions.key?(token.lexeme) &&
+          facts.callable_value_identifier_sites.fetch([token.line, token.column], false)
       end
 
-      def imported_module_function_value_member_access_site?(analysis, tokens, index)
+      def imported_module_function_value_member_access_site?(facts, tokens, index)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return false unless dot_index && tokens[dot_index].type == :dot
 
@@ -3515,13 +3555,13 @@ module MilkTea
         receiver = tokens[receiver_index]
         return false unless receiver.type == :identifier
 
-        analysis.callable_value_member_access_sites.fetch(
+        facts.callable_value_member_access_sites.fetch(
           [receiver.lexeme, receiver.line, receiver.column, tokens[index].lexeme],
           false,
         )
       end
 
-      def imported_module_binding_for_member(tokens, index, analysis)
+      def imported_module_binding_for_member(tokens, index, facts)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return nil unless dot_index && tokens[dot_index].type == :dot
 
@@ -3531,7 +3571,7 @@ module MilkTea
         receiver = tokens[receiver_index]
         return nil unless receiver.type == :identifier
 
-        analysis.imports[receiver.lexeme]
+        facts.imports[receiver.lexeme]
       end
 
       def specialized_call_with_type_args?(tokens, index)
@@ -3581,15 +3621,15 @@ module MilkTea
         next_index <= rbracket_index
       end
 
-      def type_parameter_declaration_token?(analysis, tokens, index)
+      def type_parameter_declaration_token?(facts, tokens, index)
         info = type_parameter_declaration_info_on_line(tokens, tokens[index].line)
         info && info[:tokens].any? { |token| token.equal?(tokens[index]) }
       end
 
-      def type_parameter_reference_token?(analysis, tokens, index)
+      def type_parameter_reference_token?(facts, tokens, index)
         tok = tokens[index]
-        return false unless type_parameter_names_in_scope(analysis, tok.line).include?(tok.lexeme)
-        return false if type_parameter_declaration_token?(analysis, tokens, index)
+        return false unless type_parameter_names_in_scope(facts, tok.line).include?(tok.lexeme)
+        return false if type_parameter_declaration_token?(facts, tokens, index)
 
         identifier_in_type_parameter_reference_position?(tokens, index)
       end
@@ -3671,18 +3711,18 @@ module MilkTea
         [:function, :struct, :union, :enum, :flags, :variant, :type, :extending].include?(type)
       end
 
-      def type_parameter_names_in_scope(analysis, line)
+      def type_parameter_names_in_scope(facts, line)
         scopes = @type_parameter_scope_cache ||= {}
-        cached = scopes[analysis.object_id]
+        cached = scopes[facts.object_id]
         unless cached
-          decls = Array(analysis.ast&.declarations)
+          decls = Array(facts.ast&.declarations)
           cached = decls.each_with_index.flat_map do |decl, index|
             type_parameter_scopes_for_declaration(
               decl,
               end_line: declaration_scope_end_line(decls, index),
             )
           end
-          scopes[analysis.object_id] = cached
+          scopes[facts.object_id] = cached
         end
 
         cached.reverse_each do |scope|
@@ -3818,25 +3858,25 @@ module MilkTea
 
       # Returns true if the token at `index` (accessed via `.`) is a member of a
       # type name receiver, e.g. `Option.none`, `Result[int, str].success`.
-      def type_name_member_access?(tokens, index, analysis = nil)
+      def type_name_member_access?(tokens, index, facts = nil)
         dot_index = previous_non_trivia_token_index(tokens, index)
         return false unless dot_index && tokens[dot_index].type == :dot
 
         receiver_index = previous_non_trivia_token_index(tokens, dot_index)
         return false unless receiver_index
 
-        type_name_receiver_token?(tokens, receiver_index, analysis)
+        type_name_receiver_token?(tokens, receiver_index, facts)
       end
 
-      def type_name_receiver_token?(tokens, index, analysis = nil)
+      def type_name_receiver_token?(tokens, index, facts = nil)
         receiver = tokens[index]
 
         if receiver.type == :identifier
           return true if receiver.lexeme.match?(/\A[A-Z]/)
-          return true if analysis && analysis.types.key?(receiver.lexeme)
+          return true if facts && facts.types.key?(receiver.lexeme)
 
-          if analysis
-            module_binding = imported_module_binding_for_member(tokens, index, analysis)
+          if facts
+            module_binding = imported_module_binding_for_member(tokens, index, facts)
             return true if module_binding && module_binding.types.key?(receiver.lexeme)
           end
 
@@ -3850,7 +3890,7 @@ module MilkTea
           base_index = previous_non_trivia_token_index(tokens, lbracket_i)
           return false unless base_index
 
-          return type_name_receiver_token?(tokens, base_index, analysis)
+          return type_name_receiver_token?(tokens, base_index, facts)
         end
 
         false
@@ -4071,8 +4111,8 @@ module MilkTea
         return nil unless current_path
         return current_path if module_name.nil? || module_name.empty?
 
-        current_analysis = @workspace.get_analysis(current_uri)
-        return current_path if current_analysis&.module_name == module_name
+        current_facts = @workspace.get_facts(current_uri)
+        return current_path if current_facts&.module_name == module_name
 
         resolution = DependencyResolution.resolve(current_path, mode: @workspace.dependency_resolution_mode)
         return nil unless resolution.ok?
@@ -4258,14 +4298,14 @@ module MilkTea
         "#{keyword} #{binding.name}(#{format_params(binding.params)}) -> #{binding.return_type}"
       end
 
-      def resolve_dot_receiver_value_type(analysis, receiver_name, line, char)
-        local_type = resolve_local_hover_type(analysis, receiver_name, line, char)
+      def resolve_dot_receiver_value_type(facts, receiver_name, line, char)
+        local_type = resolve_local_hover_type(facts, receiver_name, line, char)
         return local_type if local_type
 
-        analysis.values[receiver_name]&.type
+        facts.values[receiver_name]&.type
       end
 
-      def resolve_member_access_hover_info(current_uri, analysis, tokens, token_index)
+      def resolve_member_access_hover_info(current_uri, facts, tokens, token_index)
         chain = member_access_chain_at(tokens, token_index)
         return nil unless chain
 
@@ -4273,7 +4313,7 @@ module MilkTea
         return nil unless hovered_segment && hovered_segment[:position].positive?
 
         current_type = resolve_dot_receiver_value_type(
-          analysis,
+          facts,
           chain[:segments].first[:name],
           chain[:line],
           chain[:char],
@@ -4302,7 +4342,7 @@ module MilkTea
           next unless segment[:token_index] == token_index
 
           method_receiver_type = project_method_receiver_type_for_completion(current_type)
-          method_info = member_method_info_for_receiver_type(analysis, method_receiver_type, segment[:name])
+          method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
           return nil unless method_info
 
           source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
@@ -4320,26 +4360,26 @@ module MilkTea
         nil
       end
 
-      def member_method_info_for_receiver_type(analysis, receiver_type, method_name)
+      def member_method_info_for_receiver_type(facts, receiver_type, method_name)
         return nil unless receiver_type
 
         dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
 
-        if (binding = analysis.methods.fetch(receiver_type, {})[method_name])
+        if (binding = facts.methods.fetch(receiver_type, {})[method_name])
           return {
             binding: binding,
-            module_name: analysis.module_name,
+            module_name: facts.module_name,
           }
         end
 
-        if dispatch_receiver_type != receiver_type && (binding = analysis.methods.fetch(dispatch_receiver_type, {})[method_name])
+        if dispatch_receiver_type != receiver_type && (binding = facts.methods.fetch(dispatch_receiver_type, {})[method_name])
           return {
             binding: binding,
-            module_name: analysis.module_name,
+            module_name: facts.module_name,
           }
         end
 
-        analysis.imports.each_value do |module_binding|
+        facts.imports.each_value do |module_binding|
           binding = module_binding.methods.fetch(receiver_type, {})[method_name]
           if binding.nil? && dispatch_receiver_type != receiver_type
             binding = module_binding.methods.fetch(dispatch_receiver_type, {})[method_name]
@@ -4355,8 +4395,8 @@ module MilkTea
         nil
       end
 
-      def resolve_enum_member_hover_info(current_uri, analysis, tokens, token_index)
-        member_info = resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)
+      def resolve_enum_member_hover_info(current_uri, facts, tokens, token_index)
+        member_info = resolve_enum_member_access_info(current_uri, facts, tokens, token_index)
         return nil unless member_info
 
         signature = "#{member_info[:member_name]}: #{member_info[:receiver_label]}"
@@ -4371,18 +4411,18 @@ module MilkTea
         }
       end
 
-      def resolve_enum_member_definition_location(current_uri, analysis, tokens, token_index)
-        resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)&.fetch(:location, nil)
+      def resolve_enum_member_definition_location(current_uri, facts, tokens, token_index)
+        resolve_enum_member_access_info(current_uri, facts, tokens, token_index)&.fetch(:location, nil)
       end
 
-      def resolve_enum_member_access_info(current_uri, analysis, tokens, token_index)
-        return nil unless type_name_member_access?(tokens, token_index, analysis)
+      def resolve_enum_member_access_info(current_uri, facts, tokens, token_index)
+        return nil unless type_name_member_access?(tokens, token_index, facts)
 
         token = tokens[token_index]
         token_end_char = token.column - 1 + token.lexeme.length
         receiver_name = @workspace.find_dot_receiver(current_uri, token.line - 1, token_end_char)
         receiver_path = @workspace.find_dot_receiver_path(current_uri, token.line - 1, token_end_char)
-        receiver_info = resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+        receiver_info = resolve_type_receiver_info(facts, receiver_name, receiver_path)
         return nil unless receiver_info
 
         receiver_type = receiver_info[:type]
@@ -4399,8 +4439,8 @@ module MilkTea
         }
       end
 
-      def resolve_field_declaration_hover_info(current_uri, analysis, tokens, token_index)
-        receiver_info = field_declaration_receiver_info(analysis, tokens, token_index)
+      def resolve_field_declaration_hover_info(current_uri, facts, tokens, token_index)
+        receiver_info = field_declaration_receiver_info(facts, tokens, token_index)
         return nil unless receiver_info
 
         field_name = tokens[token_index].lexeme
@@ -4421,8 +4461,8 @@ module MilkTea
         }
       end
 
-      def resolve_named_argument_label_hover_info(current_uri, analysis, tokens, token_index)
-        receiver_info = named_argument_label_receiver_info(analysis, tokens, token_index)
+      def resolve_named_argument_label_hover_info(current_uri, facts, tokens, token_index)
+        receiver_info = named_argument_label_receiver_info(facts, tokens, token_index)
         return nil unless receiver_info
 
         field_name = tokens[token_index].lexeme
@@ -4443,7 +4483,7 @@ module MilkTea
         }
       end
 
-      def field_declaration_receiver_info(analysis, tokens, token_index)
+      def field_declaration_receiver_info(facts, tokens, token_index)
         token = tokens[token_index]
         return nil unless token
 
@@ -4463,13 +4503,13 @@ module MilkTea
           type_token = header_line_tokens[1]
           return nil unless type_token&.type == :identifier
 
-          return resolve_type_receiver_info(analysis, type_token.lexeme, type_token.lexeme)
+          return resolve_type_receiver_info(facts, type_token.lexeme, type_token.lexeme)
         end
 
         nil
       end
 
-      def named_argument_label_receiver_info(analysis, tokens, token_index)
+      def named_argument_label_receiver_info(facts, tokens, token_index)
         opener_index = parameter_list_opener_index(tokens, token_index)
         return nil unless opener_index
 
@@ -4498,7 +4538,7 @@ module MilkTea
           receiver_path = "#{tokens[module_index].lexeme}.#{receiver_name}"
         end
 
-        resolve_type_receiver_info(analysis, receiver_name, receiver_path)
+        resolve_type_receiver_info(facts, receiver_name, receiver_path)
       end
 
       def member_access_chain_at(tokens, token_index)
@@ -4546,8 +4586,8 @@ module MilkTea
         }
       end
 
-      def method_binding_at_token(analysis, token)
-        analysis.methods.each_value do |methods|
+      def method_binding_at_token(facts, token)
+        facts.methods.each_value do |methods|
           methods.each_value do |binding|
             next unless binding.name == token.lexeme
             next unless binding.ast.is_a?(AST::MethodDef)
@@ -4769,18 +4809,18 @@ module MilkTea
         end
       end
 
-      def resolve_interface_binding_at_position(uri, analysis, token, lsp_line, lsp_char)
-        binding = analysis.interfaces[token.lexeme]
+      def resolve_interface_binding_at_position(uri, facts, token, lsp_line, lsp_char)
+        binding = facts.interfaces[token.lexeme]
         return binding if binding
 
         dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
         return nil unless dot_receiver
 
-        analysis.imports[dot_receiver]&.interfaces&.fetch(token.lexeme, nil)
+        facts.imports[dot_receiver]&.interfaces&.fetch(token.lexeme, nil)
       end
 
-      def resolve_interface_method_target_at_token(analysis, token)
-        analysis.interfaces.each_value do |interface_binding|
+      def resolve_interface_method_target_at_token(facts, token)
+        facts.interfaces.each_value do |interface_binding|
           method_binding = interface_binding.methods[token.lexeme]
           next unless method_binding
           next unless method_binding.ast.line == token.line
@@ -4795,10 +4835,10 @@ module MilkTea
       def interface_implementation_locations(interface_binding)
         seen = Set.new
         @workspace.all_documents.filter_map do |doc_uri|
-          analysis = @workspace.get_analysis(doc_uri)
-          next unless analysis
+          facts = @workspace.get_facts(doc_uri)
+          next unless facts
 
-          analysis.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
+          facts.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
             next unless interfaces.any? { |candidate| same_interface_binding?(candidate, interface_binding) }
 
             location = interface_receiver_definition_location(doc_uri, receiver_type)
@@ -4816,13 +4856,13 @@ module MilkTea
       def interface_method_implementation_locations(interface_binding, interface_method)
         seen = Set.new
         @workspace.all_documents.filter_map do |doc_uri|
-          analysis = @workspace.get_analysis(doc_uri)
-          next unless analysis
+          facts = @workspace.get_facts(doc_uri)
+          next unless facts
 
-          analysis.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
+          facts.implemented_interfaces.each_with_object([]) do |(receiver_type, interfaces), locations|
             next unless interfaces.any? { |candidate| same_interface_binding?(candidate, interface_binding) }
 
-            method = methods_for_receiver_type(analysis, receiver_type)[interface_method.name]
+            method = methods_for_receiver_type(facts, receiver_type)[interface_method.name]
             next unless method
 
             module_name = receiver_module_name(receiver_type)
@@ -4875,11 +4915,11 @@ module MilkTea
         left.name == right.name && left.module_name == right.module_name
       end
 
-      def resolve_local_hover_binding(analysis, name, line, char)
-        declared_binding = declared_generic_local_hover_binding(analysis, name, line)
+      def resolve_local_hover_binding(facts, name, line, char)
+        declared_binding = declared_generic_local_hover_binding(facts, name, line)
         return declared_binding if declared_binding
 
-        frame = enclosing_completion_frame(analysis, line)
+        frame = enclosing_completion_frame(facts, line)
         return nil unless frame
 
         snapshot = latest_completion_snapshot(frame, line, char)
@@ -4890,8 +4930,8 @@ module MilkTea
         future_snapshot&.bindings&.dig(name)
       end
 
-      def resolve_as_binding_declaration_hover_binding(analysis, name, line, char)
-        frame = enclosing_completion_frame(analysis, line)
+      def resolve_as_binding_declaration_hover_binding(facts, name, line, char)
+        frame = enclosing_completion_frame(facts, line)
         return nil unless frame
 
         Array(frame.snapshots).each do |snapshot|
@@ -4905,19 +4945,19 @@ module MilkTea
         nil
       end
 
-      def resolve_local_hover_type(analysis, name, line, char)
-        resolve_local_hover_binding(analysis, name, line, char)&.type
+      def resolve_local_hover_type(facts, name, line, char)
+        resolve_local_hover_binding(facts, name, line, char)&.type
       end
 
-      def declared_generic_local_hover_binding(analysis, name, line)
-        binding = generic_function_binding_for_line(analysis, line)
+      def declared_generic_local_hover_binding(facts, name, line)
+        binding = generic_function_binding_for_line(facts, line)
         return nil unless binding
 
         binding.body_params.find { |param| param.name == name }
       end
 
-      def generic_function_binding_for_line(analysis, line)
-        generic_function_bindings(analysis).filter_map do |binding|
+      def generic_function_binding_for_line(facts, line)
+        generic_function_bindings(facts).filter_map do |binding|
           next unless binding.ast.respond_to?(:body) && binding.ast.respond_to?(:line)
 
           start_line = binding.ast.line
@@ -4928,13 +4968,13 @@ module MilkTea
         end.min_by { |span, start_line, _binding| [span, start_line] }&.last
       end
 
-      def generic_function_bindings(analysis)
-        analysis.functions.each_value.select { |binding| binding.type_params.any? } +
-          analysis.methods.each_value.flat_map(&:values).select { |binding| binding.type_params.any? }
+      def generic_function_bindings(facts)
+        facts.functions.each_value.select { |binding| binding.type_params.any? } +
+          facts.methods.each_value.flat_map(&:values).select { |binding| binding.type_params.any? }
       end
 
-      def enclosing_completion_frame(analysis, line)
-        frames = Array(analysis.local_completion_frames)
+      def enclosing_completion_frame(facts, line)
+        frames = Array(facts.local_completion_frames)
         containing = frames.select { |frame| frame.start_line && frame.end_line && frame.start_line <= line && line <= frame.end_line }
         containing.min_by { |frame| frame.end_line - frame.start_line }
       end
@@ -4961,7 +5001,7 @@ module MilkTea
         nil
       end
 
-      def completion_items_for_value_receiver(analysis, receiver_type, prefix)
+      def completion_items_for_value_receiver(facts, receiver_type, prefix)
         items = []
 
         field_receiver_type = project_field_receiver_type_for_completion(receiver_type)
@@ -4980,7 +5020,7 @@ module MilkTea
         end
 
         method_receiver_type = project_method_receiver_type_for_completion(receiver_type)
-        methods = methods_for_receiver_type(analysis, method_receiver_type)
+        methods = methods_for_receiver_type(facts, method_receiver_type)
         methods.each do |mname, binding|
           next unless prefix.empty? || mname.start_with?(prefix)
 
@@ -4997,7 +5037,7 @@ module MilkTea
         items
       end
 
-      def methods_for_receiver_type(analysis, receiver_type)
+      def methods_for_receiver_type(facts, receiver_type)
         methods = {}
         return methods unless receiver_type
 
@@ -5006,12 +5046,12 @@ module MilkTea
         receiver_candidates << dispatch_receiver_type if dispatch_receiver_type != receiver_type
 
         receiver_candidates.each do |candidate|
-          analysis.methods.fetch(candidate, {}).each do |name, binding|
+          facts.methods.fetch(candidate, {}).each do |name, binding|
             methods[name] ||= binding
           end
         end
 
-        analysis.imports.each_value do |module_binding|
+        facts.imports.each_value do |module_binding|
           receiver_candidates.each do |candidate|
             module_binding.methods.fetch(candidate, {}).each do |name, binding|
               methods[name] ||= binding

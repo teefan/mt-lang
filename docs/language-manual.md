@@ -861,7 +861,7 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `redundant-read-release-temp` | hint | yes | Temporary that only stores `read(...)` to call `.release()` can be inlined |
 | `redundant-return` | hint | yes | Final bare `return` in a `void` function is unnecessary |
 | `redundant-unsafe` | hint | yes | `unsafe` block or inline `unsafe:` expression is unnecessary |
-| `reserved-primitive-name` | warning | yes | Local or parameter uses a reserved primitive type name |
+| `reserved-primitive-name` | warning | yes | Binding uses a reserved built-in type name in its active namespace |
 | `self-assignment` | warning | — | Variable is assigned to itself |
 | `self-comparison` | warning | — | Value is compared to itself, making the condition constant |
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |

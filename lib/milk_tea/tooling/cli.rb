@@ -316,7 +316,7 @@ module MilkTea
       if fix
         paths.each do |p|
           source = read_source_file(p)
-          fixed = Linter.fix_source(source, path: p, sema_analysis: lint_sema_analysis_for(source, p, locked: resolution[:locked]))
+          fixed = Linter.fix_source(source, path: p, sema_facts: lint_sema_facts_for(source, p, locked: resolution[:locked]))
           if fixed != source
             File.write(p, fixed)
             @out.puts("fixed #{p}")
@@ -327,9 +327,9 @@ module MilkTea
 
       all_warnings = paths.flat_map do |p|
         source = read_source_file(p)
-        analysis = lint_sema_analysis_for(source, p, locked: resolution[:locked])
+        facts = lint_sema_facts_for(source, p, locked: resolution[:locked])
 
-        Linter.lint_source(source, path: p, select:, ignore:, sema_analysis: analysis)
+        Linter.lint_source(source, path: p, select:, ignore:, sema_facts: facts)
       end
 
       if output_format == :json
@@ -773,10 +773,10 @@ module MilkTea
       end
     end
 
-    def lint_sema_analysis_for(source, path, locked: false)
+    def lint_sema_facts_for(source, path, locked: false)
       ast = Parser.parse(source, path: path)
       imported_modules = make_module_loader(path, locked:).imported_modules_for_ast(ast, importer_path: path)
-      Sema.check_collecting_errors(ast, imported_modules: imported_modules)[:analysis]
+      Sema.tooling_snapshot(ast, imported_modules: imported_modules, path: path).facts
     rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
       nil
     end
@@ -835,7 +835,7 @@ module MilkTea
         contract: "diagnostics",
         positionEncoding: CONTRACT_POSITION_ENCODING,
         path: contract_path(path),
-        moduleName: result[:analysis]&.module_name,
+        moduleName: result[:facts]&.module_name,
         summary: diagnostics_summary_payload(diagnostics),
         diagnostics: diagnostics.map { |diagnostic| diagnostics_entry_payload(diagnostic, source) },
       }.compact

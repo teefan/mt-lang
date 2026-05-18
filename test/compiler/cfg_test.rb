@@ -72,7 +72,7 @@ class MilkTeaCFGTest < Minitest::Test
     MT
 
     graph = MilkTea::CFG::Builder.new(
-      binding_resolution: context[:analysis].binding_resolution,
+      binding_resolution: context[:facts].binding_resolution,
       strict_binding_ids: true,
     ).build(context[:function].body)
 
@@ -93,7 +93,7 @@ class MilkTeaCFGTest < Minitest::Test
     MT
 
     graph = MilkTea::CFG::Builder.new(
-      binding_resolution: context[:analysis].binding_resolution,
+      binding_resolution: context[:facts].binding_resolution,
       strict_binding_ids: true,
       local_decl_without_initializer_writes: false,
     ).build(context[:function].body)
@@ -299,7 +299,7 @@ class MilkTeaCFGTest < Minitest::Test
           return x
     MT
 
-    resolution = context[:analysis].binding_resolution
+    resolution = context[:facts].binding_resolution
     graph = MilkTea::CFG::Builder.new(
       binding_resolution: resolution,
       strict_binding_ids: true,
@@ -334,9 +334,9 @@ class MilkTeaCFGTest < Minitest::Test
 
   def sema_function_context(source, function_name = "main")
     ast = MilkTea::Parser.parse(source, path: "demo.mt")
-    analysis = MilkTea::Sema.check(ast)
+    facts = MilkTea::Sema.check(ast)
     function = ast.declarations.find { |decl| decl.is_a?(MilkTea::AST::FunctionDef) && decl.name == function_name }
-    binding = analysis.functions.fetch(function_name)
-    { analysis:, function:, binding: }
+    binding = facts.functions.fetch(function_name)
+    { facts:, function:, binding: }
   end
 end

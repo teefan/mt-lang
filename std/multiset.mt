@@ -154,17 +154,14 @@ extending MultiSet[T]:
 
     public mutable function clear() -> void:
         this.values.clear()
-        return
 
 
     public mutable function release() -> void:
         this.values.release()
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
-        return
 
 
     public mutable function insert(value: T) -> ptr_uint:

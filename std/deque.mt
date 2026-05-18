@@ -89,7 +89,6 @@ extending Deque[T]:
     public mutable function clear() -> void:
         this.head = 0
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
@@ -98,7 +97,6 @@ extending Deque[T]:
         this.head = 0
         this.len = 0
         this.capacity = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
@@ -134,7 +132,6 @@ extending Deque[T]:
         this.data = new_data
         this.head = 0
         this.capacity = new_capacity
-        return
 
 
     public mutable function push_back(value: T) -> void:
@@ -150,7 +147,6 @@ extending Deque[T]:
             read(data_ptr + tail_index) = value
 
         this.len += 1
-        return
 
 
     public mutable function push_front(value: T) -> void:
@@ -170,7 +166,6 @@ extending Deque[T]:
             read(data_ptr + this.head) = value
 
         this.len += 1
-        return
 
 
     public mutable function insert(index: ptr_uint, value: T) -> bool:
@@ -315,7 +310,6 @@ extending Deque[T]:
                 Option.some as payload:
                     this.push_back(payload.value)
             remaining -= 1
-        return
 
 
     public mutable function rotate_right(amount: ptr_uint) -> void:
@@ -339,7 +333,6 @@ extending Deque[T]:
                 Option.some as payload:
                     this.push_front(payload.value)
             remaining -= 1
-        return
 
 
 extending Iter[T]:

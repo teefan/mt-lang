@@ -68,7 +68,6 @@ extending OrderedMap[K, V]:
         unsafe:
             read(node).height = next_height + 1
 
-        return
 
 
     static function balance_factor(node: ptr[Node[K, V]]?) -> int:
@@ -134,8 +133,7 @@ extending OrderedMap[K, V]:
 
 
     static function rotate_left(current: ref[OrderedMap[K, V]], node: ptr[Node[K, V]]) -> ptr[Node[K, V]]:
-        let pivot = unsafe: read(node).right
-        if pivot == null:
+        let pivot = unsafe: read(node).right else:
             fatal(c"ordered_map.OrderedMap.rotate_left missing pivot")
 
         let pivot_ptr = unsafe: ptr[Node[K, V]]<-pivot
@@ -160,8 +158,7 @@ extending OrderedMap[K, V]:
 
 
     static function rotate_right(current: ref[OrderedMap[K, V]], node: ptr[Node[K, V]]) -> ptr[Node[K, V]]:
-        let pivot = unsafe: read(node).left
-        if pivot == null:
+        let pivot = unsafe: read(node).left else:
             fatal(c"ordered_map.OrderedMap.rotate_right missing pivot")
 
         let pivot_ptr = unsafe: ptr[Node[K, V]]<-pivot
@@ -255,8 +252,7 @@ extending OrderedMap[K, V]:
         let left = unsafe: read(node).left
         let right = unsafe: read(node).right
         if left != null and right != null:
-            let successor = OrderedMap[K, V].minimum(right)
-            if successor == null:
+            let successor = OrderedMap[K, V].minimum(right) else:
                 fatal(c"ordered_map.OrderedMap.detach_node missing successor")
 
             let successor_ptr = unsafe: ptr[Node[K, V]]<-successor
@@ -293,8 +289,7 @@ extending OrderedMap[K, V]:
         if not location.found:
             return null
 
-        let node = location.node
-        if node == null:
+        let node = location.node else:
             fatal(c"ordered_map.OrderedMap.get missing node")
 
         unsafe:
@@ -306,8 +301,7 @@ extending OrderedMap[K, V]:
         if not location.found:
             return null
 
-        let node = location.node
-        if node == null:
+        let node = location.node else:
             fatal(c"ordered_map.OrderedMap.get_key missing node")
 
         unsafe:
@@ -349,8 +343,7 @@ extending OrderedMap[K, V]:
     public mutable function set(key: K, value: V) -> Option[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
-            let node = location.node
-            if node == null:
+            let node = location.node else:
                 fatal(c"ordered_map.OrderedMap.set missing node")
 
             unsafe:
@@ -382,8 +375,7 @@ extending OrderedMap[K, V]:
     public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
-            let node = location.node
-            if node == null:
+            let node = location.node else:
                 fatal(c"ordered_map.OrderedMap.get_or_insert missing node")
 
             unsafe:
@@ -416,8 +408,7 @@ extending OrderedMap[K, V]:
         if not location.found:
             return Option[RemovedEntry[K, V]].none
 
-        let node = location.node
-        if node == null:
+        let node = location.node else:
             fatal(c"ordered_map.OrderedMap.remove_entry missing node")
 
         let node_ptr = unsafe: ptr[Node[K, V]]<-node
@@ -443,8 +434,7 @@ extending Keys[K, V]:
 
 
     public mutable function next() -> const_ptr[K]?:
-        let current = this.node
-        if current == null:
+        let current = this.node else:
             return null
 
         this.node = OrderedMap[K, V].successor(current)
@@ -459,8 +449,7 @@ extending Values[K, V]:
 
 
     public mutable function next() -> ptr[V]?:
-        let current = this.node
-        if current == null:
+        let current = this.node else:
             return null
 
         this.node = OrderedMap[K, V].successor(current)
@@ -475,8 +464,7 @@ extending Entries[K, V]:
 
 
     public mutable function next() -> bool:
-        let current = this.node
-        if current == null:
+        let current = this.node else:
             return false
 
         if not this.started:

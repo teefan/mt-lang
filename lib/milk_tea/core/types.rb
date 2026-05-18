@@ -7,9 +7,16 @@ module MilkTea
     BUILTIN_PRIMITIVE_NAMES = %w[
       bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
     ].freeze
+    RESERVED_VALUE_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
+      Option Result
+    ]).freeze
+    RESERVED_IMPORT_ALIAS_NAMES = %w[
+      Option Result
+    ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
       ptr const_ptr ref span array str_builder Task Option Result
     ]).freeze
+    RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 
     def self.substitute_type_variables(type, substitutions)
       case type
@@ -508,6 +515,23 @@ module MilkTea
         name
       end
 
+      def eql?(other)
+        other.class == self.class &&
+          other.name == name &&
+          other.type_params == type_params &&
+          other.module_name == module_name &&
+          other.external == external &&
+          other.packed == packed &&
+          other.alignment == alignment &&
+          other.c_name == c_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, type_params, module_name, external, packed, alignment, c_name].hash
+      end
+
       def instantiate(arguments)
         raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
 
@@ -558,6 +582,22 @@ module MilkTea
         return stripped if stripped != name && Token::KEYWORDS.key?(stripped)
 
         name
+      end
+
+      def eql?(other)
+        other.class == self.class &&
+          other.name == name &&
+          other.module_name == module_name &&
+          other.external == external &&
+          other.packed == packed &&
+          other.alignment == alignment &&
+          other.c_name == c_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, module_name, external, packed, alignment, c_name].hash
       end
 
       def to_s
@@ -631,6 +671,16 @@ module MilkTea
         fields && !fields.empty?
       end
 
+      def eql?(other)
+        other.class == self.class && other.name == name && other.module_name == module_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, module_name].hash
+      end
+
       def to_s
         module_name ? "#{module_name}.#{name}" : name
       end
@@ -660,6 +710,19 @@ module MilkTea
       def define_type_param_constraints(type_param_constraints)
         @type_param_constraints = type_param_constraints.freeze
         self
+      end
+
+      def eql?(other)
+        other.class == self.class &&
+          other.name == name &&
+          other.type_params == type_params &&
+          other.module_name == module_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, type_params, module_name].hash
       end
 
       def instantiate(arguments)
@@ -735,6 +798,20 @@ module MilkTea
         @c_name = c_name
       end
 
+      def eql?(other)
+        other.class == self.class &&
+          other.name == name &&
+          other.module_name == module_name &&
+          other.external == external &&
+          other.c_name == c_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, module_name, external, c_name].hash
+      end
+
       def to_s
         module_name ? "#{module_name}.#{name}" : name
       end
@@ -765,6 +842,19 @@ module MilkTea
 
       def members
         @members.keys
+      end
+
+      def eql?(other)
+        other.class == self.class &&
+          other.name == name &&
+          other.module_name == module_name &&
+          other.external == external
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, module_name, external].hash
       end
 
       def to_s

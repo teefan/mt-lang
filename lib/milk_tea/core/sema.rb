@@ -15,7 +15,7 @@ module MilkTea
         path:,
         line: @line,
         column: @column,
-        code: "sema-error",
+        code: "sema/error",
         message: message,
         severity: :error,
       )
@@ -24,6 +24,16 @@ module MilkTea
 
   class Sema
     Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
+    Facts = Analysis
+    ToolingSnapshot = Data.define(:facts, :diagnostics) do
+      def analysis
+        facts
+      end
+
+      def ok?
+        diagnostics.none?(&:error?)
+      end
+    end
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :mutable_receiver_expression_ids, :binding_types)
@@ -129,6 +139,13 @@ module MilkTea
       Checker.new(ast, imported_modules:, allow_missing_imports:).check_collecting_errors
     rescue SemaError => e
       { analysis: nil, errors: [e] }
+    end
+
+    def self.tooling_snapshot(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
+      result = check_collecting_errors(ast, imported_modules:, allow_missing_imports:)
+      diagnostics = Array(result[:errors]).map { |error| error.to_diagnostic(path:) }.freeze
+
+      ToolingSnapshot.new(facts: result[:analysis], diagnostics:)
     end
 
     class Checker
@@ -319,7 +336,7 @@ module MilkTea
         @ast.imports.each do |import|
           with_error_node(import) do
             alias_name = import.alias_name || import.path.parts.last
-            ensure_non_reserved_primitive_name!(alias_name, kind_label: "import alias", line: import.line, column: import.column)
+            ensure_non_reserved_import_alias_name!(alias_name, kind_label: "import alias", line: import.line, column: import.column)
             raise_sema_error("duplicate import alias #{alias_name}") if @imports.key?(alias_name)
 
             module_binding = @imported_modules[import.path.to_s]
@@ -790,7 +807,7 @@ module MilkTea
 
       def resolve_type_param_constraints(type_params)
         type_params.each_with_object({}) do |type_param, constraints|
-          ensure_non_reserved_primitive_name!(type_param.name, kind_label: "type parameter")
+          ensure_non_reserved_type_binding_name!(type_param.name, kind_label: "type parameter")
           next if type_param.constraints.empty?
 
           resolved_interfaces = []
@@ -4270,14 +4287,30 @@ module MilkTea
       end
 
       def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil)
-        ensure_non_reserved_primitive_name!(name, kind_label:, line:, column:)
+        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:)
         raise_sema_error("duplicate value #{name}") if @top_level_values.key?(name) || @top_level_functions.key?(name)
       end
 
-      def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil)
-        return unless Types::BUILTIN_PRIMITIVE_NAMES.include?(name)
+      def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil)
+        return unless Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
 
-        raise_sema_error("#{kind_label} #{name} uses reserved primitive type name #{name}", line:, column:)
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+      end
+
+      def ensure_non_reserved_import_alias_name!(name, kind_label:, line: nil, column: nil)
+        return unless Types::RESERVED_IMPORT_ALIAS_NAMES.include?(name)
+
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+      end
+
+      def ensure_non_reserved_type_binding_name!(name, kind_label:, line: nil, column: nil)
+        return unless Types::RESERVED_TYPE_BINDING_NAMES.include?(name)
+
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+      end
+
+      def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil)
+        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:)
       end
 
       def current_type_params

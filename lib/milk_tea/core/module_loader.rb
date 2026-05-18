@@ -106,6 +106,7 @@ module MilkTea
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
       @analysis_cache = {}
+      @collecting_analysis_cache = {}
       @checking_paths = []
       @platform = self.class.normalize_platform_name(platform)
       @package_graph = package_graph
@@ -147,10 +148,16 @@ module MilkTea
     end
 
     def imported_modules_for_ast(ast, importer_path: nil)
-      resolution = imported_modules_for_ast_collecting_errors(ast, importer_path:)
-      raise resolution.errors.first.error if resolution.errors.any?
+      modules = {}
 
-      resolution.modules
+      ast.imports.each do |import|
+        import_path = resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
+        import_analysis = check_path(import_path)
+        modules[import.path.to_s] = module_binding(import_analysis)
+      end
+
+      install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
+      modules.freeze
     end
 
     def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
@@ -160,15 +167,15 @@ module MilkTea
       ast.imports.each do |import|
         begin
           import_path = resolve_module_path(import.path.to_s, importer_path:, importer_module_name: ast.module_name.to_s)
-          import_analysis = check_path(import_path)
+          import_analysis = check_path_collecting_errors(import_path)
           modules[import.path.to_s] = module_binding(import_analysis)
-        rescue ModuleLoadError, PackageLockError => e
+        rescue ModuleLoadError, PackageLockError, SemaError => e
           errors << ImportResolutionError.new(import:, error: e)
         end
       end
 
       begin
-        install_async_runtime_dependency!(ast, modules, importer_path:)
+        install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: true)
       rescue ModuleLoadError, PackageLockError => e
         errors << ImportResolutionError.new(import: nil, error: e)
       end
@@ -231,6 +238,40 @@ module MilkTea
         @shared_cache[resolved_path] = { mtime: mtime, analysis: analysis } if mtime
       end
 
+      analysis
+    ensure
+      @checking_paths.pop if @checking_paths.last == resolved_path
+    end
+
+    def check_path_collecting_errors(path)
+      resolved_path = self.class.resolve_source_path(path, platform: @platform, error_class: ModuleLoadError)
+
+      return @analysis_cache[resolved_path] if @analysis_cache.key?(resolved_path)
+      return @collecting_analysis_cache[resolved_path] if @collecting_analysis_cache.key?(resolved_path)
+
+      if use_shared_cache?
+        entry = @shared_cache[resolved_path]
+        if entry
+          mtime = File.mtime(resolved_path).to_f rescue nil
+          if mtime && entry[:mtime] == mtime
+            @analysis_cache[resolved_path] = entry[:analysis]
+            return entry[:analysis]
+          end
+        end
+      end
+
+      if @checking_paths.include?(resolved_path)
+        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
+      end
+
+      @checking_paths << resolved_path
+      ast = load_file(resolved_path)
+      imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
+      result = Sema.check_collecting_errors(ast, imported_modules:)
+      analysis = result[:analysis]
+      raise(result[:errors].first || ModuleLoadError.new("module analysis unavailable", path: resolved_path)) unless analysis
+
+      @collecting_analysis_cache[resolved_path] = analysis
       analysis
     ensure
       @checking_paths.pop if @checking_paths.last == resolved_path
@@ -479,12 +520,12 @@ module MilkTea
       )
     end
 
-    def install_async_runtime_dependency!(ast, modules, importer_path: nil)
+    def install_async_runtime_dependency!(ast, modules, importer_path: nil, collecting_errors:)
       return if modules.key?("std.async")
       return unless async_main_declared?(ast)
 
       import_path = resolve_module_path("std.async", importer_path:)
-      import_analysis = check_path(import_path)
+      import_analysis = collecting_errors ? check_path_collecting_errors(import_path) : check_path(import_path)
       modules["std.async"] = module_binding(import_analysis)
     end
 
