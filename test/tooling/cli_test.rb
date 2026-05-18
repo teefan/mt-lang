@@ -403,7 +403,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 0, status
     assert_equal "", err.string
     assert_match(/#include <stdio\.h>/, out.string)
-    assert_match(/\(void\)\(fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\)\);/, out.string)
+    assert_match(/fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\);/, out.string)
     refute_match(/^#line\s+/m, out.string)
   end
 

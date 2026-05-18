@@ -463,8 +463,19 @@ module MilkTea
 
         FileUtils.mkdir_p(File.dirname(options.fetch(:compiled_c_path)))
         File.write(options.fetch(:compiled_c_path), artifacts.fetch(:compiled_c))
+        saved_c = artifacts.fetch(:saved_c)
+        if saved_c.nil? && options.fetch(:emit_line_directives)
+          saved_c = Codegen.generate_c(
+            ModuleLoader.new(
+              module_roots: module_roots_for(path, locked:),
+              package_graph: package_graph_for(path, locked:),
+              platform: options.fetch(:platform),
+            ).check_program(path),
+            emit_line_directives: false,
+          )
+        end
         FileUtils.mkdir_p(File.dirname(options.fetch(:saved_c_path)))
-        File.write(options.fetch(:saved_c_path), artifacts.fetch(:saved_c))
+        File.write(options.fetch(:saved_c_path), saved_c)
 
         debug_map = artifacts.fetch(:debug_map)
         raise BuildError, "frontend artifacts require --binary-path to generate a debug map" unless debug_map

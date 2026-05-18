@@ -2566,7 +2566,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
     generated = generate_c_from_source(source)
 
-    assert_match(/return demo_variadic_codegen_printf\("value=%d %s\\n", 7, "ok"\);/, generated)
+    assert_match(/return printf\("value=%d %s\\n", 7, "ok"\);/, generated)
   end
 
   def test_generate_c_for_lossless_numeric_coercion_at_external_boundaries

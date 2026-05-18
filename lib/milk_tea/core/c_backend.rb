@@ -1506,7 +1506,7 @@ module MilkTea
             emit_statement_sequence(statement.body, level, function:, used_labels:)
           end
         when IR::ExpressionStmt
-          ["#{indent}(void)(#{emit_expression(statement.expression)});"]
+          ["#{indent}#{emit_expression(statement.expression)};"]
         when IR::ReturnStmt
           if statement.value
             if array_type?(function.return_type)

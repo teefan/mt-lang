@@ -7261,7 +7261,12 @@ module MilkTea
 
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
-            [ :function, function_binding_c_name(binding, module_name: @module_name), nil, binding.type, binding ]
+            callee_name = if binding.external
+                            binding.name
+                          else
+                            function_binding_c_name(binding, module_name: @module_name)
+                          end
+            [ :function, callee_name, nil, binding.type, binding ]
           elsif callee.name == "fatal"
             [:fatal, nil, nil, nil]
           elsif callee.name == "ref_of"
