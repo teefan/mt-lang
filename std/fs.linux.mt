@@ -12,6 +12,7 @@ import std.vec as vec
 const path_kind_none: int = 0
 const path_kind_file: int = 1
 const path_kind_directory: int = 2
+const path_kind_other: int = 3
 const temp_template_capacity: int = 4096
 
 
@@ -22,6 +23,19 @@ public struct Error:
 
 public struct Entries:
     values: vec.Vec[string.String]
+
+
+public enum MetadataKind: int
+    none = 0
+    file = 1
+    directory = 2
+    other = 3
+
+
+public struct Metadata:
+    kind: MetadataKind
+    mode: int
+    size: ptr_uint
 
 
 function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
@@ -83,6 +97,19 @@ function path_kind(path: str) -> int:
     return c.mt_fs_path_kind(storage.to_cstr(path))
 
 
+function metadata_kind(raw_kind: int) -> MetadataKind:
+    if raw_kind == path_kind_file:
+        return MetadataKind.file
+
+    if raw_kind == path_kind_directory:
+        return MetadataKind.directory
+
+    if raw_kind == path_kind_other:
+        return MetadataKind.other
+
+    return MetadataKind.none
+
+
 extending Error:
     public mutable function release() -> void:
         this.message.release()
@@ -120,6 +147,19 @@ extending Entries:
     public mutable function release() -> void:
         release_string_values(ref_of(this.values))
         return
+
+
+extending Metadata:
+    public function is_file() -> bool:
+        return this.kind == MetadataKind.file
+
+
+    public function is_directory() -> bool:
+        return this.kind == MetadataKind.directory
+
+
+    public function is_other() -> bool:
+        return this.kind == MetadataKind.other
 
 
 public function exists(path: str) -> bool:
@@ -160,6 +200,23 @@ public function read_bytes(path: str) -> Result[bytes.Bytes, Error]:
     return Result[bytes.Bytes, Error].success(value= take_owned_bytes(raw_bytes.data, raw_bytes.len))
 
 
+public function metadata(path: str) -> Result[Metadata, Error]:
+    var storage = arena.create(path.len + 1)
+    defer storage.release()
+
+    var raw_metadata = zero[c.mt_fs_metadata]
+    var raw_error = zero[c.mt_fs_error]
+    let status_code = c.mt_fs_get_metadata(storage.to_cstr(path), raw_metadata, raw_error)
+    if status_code != 0:
+        return Result[Metadata, Error].failure(error= take_error(raw_error, "fs metadata failed"))
+
+    return Result[Metadata, Error].success(value= Metadata(
+        kind = metadata_kind(raw_metadata.kind),
+        mode = raw_metadata.mode,
+        size = raw_metadata.size,
+    ))
+
+
 public function write_text(path: str, content: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
@@ -184,6 +241,18 @@ public function write_bytes(path: str, content: span[ubyte]) -> Result[bool, Err
     return Result[bool, Error].success(value= true)
 
 
+public function set_permissions(path: str, mode: int) -> Result[bool, Error]:
+    var storage = arena.create(path.len + 1)
+    defer storage.release()
+
+    var raw_error = zero[c.mt_fs_error]
+    let status_code = c.mt_fs_set_permissions(storage.to_cstr(path), mode, raw_error)
+    if status_code != 0:
+        return Result[bool, Error].failure(error= take_error(raw_error, "fs set permissions failed"))
+
+    return Result[bool, Error].success(value= true)
+
+
 public function create_directories(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
@@ -196,6 +265,63 @@ public function create_directories(path: str) -> Result[bool, Error]:
     return Result[bool, Error].success(value= true)
 
 
+public function copy_entry(source_path: str, target_path: str) -> Result[bool, Error]:
+    if is_file(source_path):
+        match create_directories(path_ops.dirname(target_path)):
+            Result.failure as payload:
+                return Result[bool, Error].failure(error= payload.error)
+            Result.success as ignored_payload:
+                pass
+
+        match read_bytes(source_path):
+            Result.failure as payload:
+                return Result[bool, Error].failure(error= payload.error)
+            Result.success as payload:
+                var data = payload.value
+                defer data.release()
+                return write_bytes(target_path, data.as_span())
+
+    if is_directory(source_path):
+        match create_directories(target_path):
+            Result.failure as payload:
+                return Result[bool, Error].failure(error= payload.error)
+            Result.success as ignored_payload:
+                pass
+
+        match list_entries(source_path):
+            Result.failure as payload:
+                return Result[bool, Error].failure(error= payload.error)
+            Result.success as payload:
+                var entries = payload.value
+                defer entries.release()
+
+                var index: ptr_uint = 0
+                while index < entries.len():
+                    match entries.get(index):
+                        Option.none:
+                            return Result[bool, Error].failure(error= static_error("fs copy entry missing source entry"))
+                        Option.some as entry_payload:
+                            var child_source = path_ops.join(source_path, entry_payload.value)
+                            var child_target = path_ops.join(target_path, entry_payload.value)
+                            match copy_entry(child_source.as_str(), child_target.as_str()):
+                                Result.failure as child_payload:
+                                    child_source.release()
+                                    child_target.release()
+                                    return Result[bool, Error].failure(error= child_payload.error)
+                                Result.success as ignored_child_payload:
+                                    pass
+                            child_source.release()
+                            child_target.release()
+                    index += 1
+
+                return Result[bool, Error].success(value= true)
+
+    if exists(source_path):
+        return Result[bool, Error].failure(error= static_error("fs.copy_entry supports only regular files and directories"))
+
+    return Result[bool, Error].failure(error= static_error("fs.copy_entry source does not exist"))
+
+
 public function remove(path: str) -> Result[bool, Error]:
     var storage = arena.create(path.len + 1)
     defer storage.release()
@@ -204,6 +330,39 @@ public function remove(path: str) -> Result[bool, Error]:
     let status_code = c.mt_fs_remove(storage.to_cstr(path), raw_error)
     if status_code != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "fs remove failed"))
+
+    return Result[bool, Error].success(value= true)
+
+
+public function remove_tree(path: str) -> Result[bool, Error]:
+    if is_directory(path):
+        match list_entries(path):
+            Result.failure as payload:
+                return Result[bool, Error].failure(error= payload.error)
+            Result.success as payload:
+                var entries = payload.value
+                defer entries.release()
+
+                var index: ptr_uint = 0
+                while index < entries.len():
+                    match entries.get(index):
+                        Option.none:
+                            return Result[bool, Error].failure(error= static_error("fs remove tree missing entry"))
+                        Option.some as entry_payload:
+                            var child_path = path_ops.join(path, entry_payload.value)
+                            match remove_tree(child_path.as_str()):
+                                Result.failure as child_payload:
+                                    child_path.release()
+                                    return Result[bool, Error].failure(error= child_payload.error)
+                                Result.success as ignored_child_payload:
+                                    pass
+                            child_path.release()
+                    index += 1
+
+        return remove(path)
+
+    if exists(path):
+        return remove(path)
 
     return Result[bool, Error].success(value= true)
 
@@ -234,6 +393,16 @@ public function current_directory() -> Result[string.String, Error]:
 
 function static_error(message: str) -> Error:
     return Error(code = -1, message = string.String.from_str(message))
+
+
+public function temporary_directory() -> string.String:
+    let configured = libc.get_environment_variable("TMPDIR")
+    if configured != null:
+        let configured_path = text.cstr_as_str(cstr<-configured)
+        if configured_path.len != 0:
+            return string.String.from_str(configured_path)
+
+    return string.String.from_str("/tmp")
 
 
 public function canonicalize(path: str) -> Result[string.String, Error]:
@@ -270,6 +439,34 @@ public function create_temporary_directory(parent_dir: str, prefix: str) -> Resu
         return Result[string.String, Error].failure(error= static_error("fs create temporary directory failed"))
 
     return Result[string.String, Error].success(value= string.String.from_str(text.cstr_as_str(created_path)))
+
+
+public function create_temporary_directory_in_system_temp(prefix: str) -> Result[string.String, Error]:
+    var root = temporary_directory()
+    defer root.release()
+    return create_temporary_directory(root.as_str(), prefix)
+
+
+public function create_temporary_file(parent_dir: str, prefix: str, suffix: str) -> Result[string.String, Error]:
+    if prefix.len == 0:
+        return Result[string.String, Error].failure(error= static_error("fs.create_temporary_file requires a non-empty prefix"))
+
+    var storage = arena.create(parent_dir.len + prefix.len + suffix.len + 3)
+    defer storage.release()
+
+    var raw_text = zero[c.mt_fs_string]
+    var raw_error = zero[c.mt_fs_error]
+    let status_code = c.mt_fs_create_temporary_file(storage.to_cstr(parent_dir), storage.to_cstr(prefix), storage.to_cstr(suffix), raw_text, raw_error)
+    if status_code != 0:
+        return Result[string.String, Error].failure(error= take_error(raw_error, "fs create temporary file failed"))
+
+    return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.create_temporary_file requires UTF-8 text")
+
+
+public function create_temporary_file_in_system_temp(prefix: str, suffix: str) -> Result[string.String, Error]:
+    var root = temporary_directory()
+    defer root.release()
+    return create_temporary_file(root.as_str(), prefix, suffix)
 
 
 public function list_entries(path: str) -> Result[Entries, Error]:
