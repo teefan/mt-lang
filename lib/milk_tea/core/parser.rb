@@ -1472,6 +1472,8 @@ module MilkTea
           end
         elsif match(:lparen)
           expression = AST::Call.new(callee: expression, arguments: parse_call_arguments)
+        elsif match(:question)
+          expression = AST::UnaryOp.new(operator: "?", operand: expression)
         else
           break
         end

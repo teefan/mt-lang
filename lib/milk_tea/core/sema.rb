@@ -195,6 +195,7 @@ module MilkTea
         @callable_value_member_access_sites = {}
         @required_unsafe_lines = []
         @current_specialization_owner = nil
+        @return_context_stack = []
       end
 
       def check
@@ -1279,31 +1280,33 @@ module MilkTea
       end
 
       def check_block(statements, scopes:, return_type:, allow_return: true)
-        with_nested_scope(scopes) do |nested_scopes|
-          statements.each_with_index do |statement, idx|
-            begin
-              record_local_completion_snapshot(
-                statement.respond_to?(:line) ? statement.line : nil,
-                statement.respond_to?(:column) ? statement.column : 0,
-                nested_scopes,
-              )
-              refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
-              apply_continuation_refinements!(nested_scopes, refinements)
-              # Apply CFG-derived nullability refinements before the next statement.
-              if @nullability_flow_result && idx + 1 < statements.length
-                apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
+        with_return_context(return_type, allow_return:) do
+          with_nested_scope(scopes) do |nested_scopes|
+            statements.each_with_index do |statement, idx|
+              begin
+                record_local_completion_snapshot(
+                  statement.respond_to?(:line) ? statement.line : nil,
+                  statement.respond_to?(:column) ? statement.column : 0,
+                  nested_scopes,
+                )
+                refinements = check_statement(statement, scopes: nested_scopes, return_type:, allow_return:)
+                apply_continuation_refinements!(nested_scopes, refinements)
+                # Apply CFG-derived nullability refinements before the next statement.
+                if @nullability_flow_result && idx + 1 < statements.length
+                  apply_nullability_continuation_refinements!(nested_scopes, statements[idx + 1])
+                end
+                record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
+              rescue SemaError => e
+                # Propagate as-is if position is already attached (set by an inner
+                # check_block call on a nested statement) or if this statement type
+                # carries no line information.
+                raise e unless e.line.nil?
+
+                stmt_line = statement.respond_to?(:line) ? statement.line : nil
+                raise e if stmt_line.nil?
+
+                raise SemaError.new(e.message, line: stmt_line)
               end
-              record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
-            rescue SemaError => e
-              # Propagate as-is if position is already attached (set by an inner
-              # check_block call on a nested statement) or if this statement type
-              # carries no line information.
-              raise e unless e.line.nil?
-
-              stmt_line = statement.respond_to?(:line) ? statement.line : nil
-              raise e if stmt_line.nil?
-
-              raise SemaError.new(e.message, line: stmt_line)
             end
           end
         end
@@ -1828,7 +1831,11 @@ module MilkTea
             end
           when AST::ExpressionStmt
             validate_consuming_foreign_expression!(statement.expression, scopes:, root_allowed: true)
-            infer_expression(statement.expression, scopes:)
+            if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
+              infer_propagate_expression(statement.expression.operand, scopes:, allow_void_success: true)
+            else
+              infer_expression(statement.expression, scopes:)
+            end
             return consuming_foreign_call_refinements(statement.expression, scopes:)
           else
             raise_sema_error("unsupported statement #{statement.class.name}")
@@ -2749,6 +2756,8 @@ module MilkTea
       end
 
       def infer_unary(expression, scopes:, expected_type: nil)
+        return infer_propagate_expression(expression.operand, scopes:) if expression.operator == "?"
+
         operand_type = infer_expression(expression.operand, scopes:, expected_type:)
 
         case expression.operator
@@ -2769,6 +2778,33 @@ module MilkTea
           raise_sema_error("unsupported unary operator #{expression.operator}")
         end
       end
+
+      def infer_propagate_expression(operand, scopes:, allow_void_success: false)
+        source_type = infer_expression(operand, scopes:)
+        raise_sema_error("propagation expects Result[T, E], got #{source_type}") unless result_let_else_type?(source_type)
+
+        success_type = let_else_success_type(source_type)
+        error_type = let_else_error_type(source_type)
+        raise_sema_error("propagation requires a non-void Result success type") if success_type == @types.fetch("void") && !allow_void_success
+
+        context = current_return_context
+        raise_sema_error("propagation is only allowed inside function and proc bodies") unless context
+        raise_sema_error("propagation is not allowed inside defer blocks") unless context[:allow_return]
+        raise_sema_error("propagation is not supported inside async functions yet") if inside_async_function?
+
+        return_type = context[:return_type]
+        unless result_let_else_type?(return_type)
+          raise_sema_error("propagation requires enclosing function/proc to return Result[_, #{error_type}], got #{return_type}")
+        end
+
+        return_error_type = let_else_error_type(return_type)
+        unless return_error_type == error_type
+          raise_sema_error("propagation error type #{error_type} must match enclosing Result error type #{return_error_type}")
+        end
+
+        success_type
+      end
+
 
       def infer_binary(expression, scopes:, expected_type: nil)
         propagated_type = propagating_expected_type(expression.operator, expected_type)
@@ -4548,6 +4584,17 @@ module MilkTea
         yield
       ensure
         @error_node_stack.pop
+      end
+
+      def with_return_context(return_type, allow_return:)
+        @return_context_stack << { return_type:, allow_return: }
+        yield
+      ensure
+        @return_context_stack.pop
+      end
+
+      def current_return_context
+        @return_context_stack.last
       end
 
       def current_error_node

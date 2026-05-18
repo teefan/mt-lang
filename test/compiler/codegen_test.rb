@@ -2236,6 +2236,78 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/data\.failure\.error;/, generated)
   end
 
+  def test_generate_c_for_result_propagation_expression
+    source = <<~MT
+      # module demo.main
+
+
+
+      function parse(input: int) -> Result[int, int]:
+          if input < 0:
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
+
+      function render(input: int) -> Result[str, int]:
+          let value = parse(input)?
+          return Result[str, int].success(value= f"ok \#{value}")
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/Result_int_int __mt_propagate_\d+ = demo_main_parse\(input\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/return \(Result_str_int\)\{ \.kind = Result_str_int_kind_failure, \.data\.failure = \(struct Result_str_int_failure\)\{ \.error = __mt_propagate_\d+\.data\.failure\.error \} \};/, generated)
+    assert_match(/int32_t value = __mt_propagate_\d+\.data\.success\.value;/, generated)
+  end
+
+  def test_generate_c_for_result_void_propagation_statement
+    source = <<~MT
+      # module demo.main
+
+
+
+      function done() -> void:
+          return
+
+      function parse(flag: int) -> Result[void, int]:
+          if flag < 0:
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
+
+      function verify(flag: int) -> Result[void, int]:
+          parse(flag)?
+          return Result[void, int].success(value= done())
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/Result_void_int __mt_propagate_\d+ = demo_main_parse\(flag\);/, generated)
+    assert_match(/if \(__mt_propagate_\d+\.kind == Result_void_int_kind_failure\)/, generated)
+    assert_match(/return __mt_propagate_\d+;/, generated)
+    refute_match(/__mt_propagate_\d+\.data\.success\.value/, generated)
+  end
+
+  def test_rejects_result_propagation_outside_result_returning_function
+    source = <<~MT
+      # module demo.main
+
+
+
+      function parse(input: int) -> Result[int, int]:
+          return Result[int, int].success(value= input + 1)
+
+      function main(input: int) -> int:
+          let value = parse(input)?
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      generate_c_from_program_source(source)
+    end
+
+    assert_match(/propagation requires enclosing function\/proc to return Result/, error.message)
+  end
+
   def test_generate_c_for_defer_expression_owned_foreign_release_calls
     source = <<~MT
       # module demo.main

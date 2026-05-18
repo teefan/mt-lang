@@ -671,6 +671,10 @@ module MilkTea
 
           wrap("#{render_postfix(expression.callee)}(#{expression.arguments.map { |argument| render_argument(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
         when AST::UnaryOp
+          if expression.operator == "?"
+            return wrap("#{render_postfix(expression.operand)}?", parent_precedence, POSTFIX_PRECEDENCE)
+          end
+
           operand = render_expression(expression.operand, UNARY_PRECEDENCE)
           text = %w[not out in inout].include?(expression.operator) ? "#{expression.operator} #{operand}" : "#{expression.operator}#{operand}"
           wrap(text, parent_precedence, UNARY_PRECEDENCE)
@@ -755,7 +759,8 @@ module MilkTea
 
       def postfix_expression?(expression)
         expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess) ||
-          expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call)
+          expression.is_a?(AST::Specialization) || expression.is_a?(AST::Call) ||
+          (expression.is_a?(AST::UnaryOp) && expression.operator == "?")
       end
     end
 
