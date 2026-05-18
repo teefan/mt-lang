@@ -3182,6 +3182,12 @@ module MilkTea
         local_env = duplicate_env(env)
         lowered = []
         local_defers = []
+        local_env[:return_context] = {
+          return_type:,
+          active_defers:,
+          local_defers:,
+          allow_return:,
+        }
 
         statements.each do |statement|
           case statement
@@ -3574,14 +3580,20 @@ module MilkTea
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
           when AST::ExpressionStmt
+            expression_expected_type = if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
+                                         nil
+                                       else
+                                         infer_expression_type(statement.expression, env: local_env)
+                                       end
             prepared_setup, prepared_expression, prepared_cleanups = prepare_expression_with_cleanups(
               statement.expression,
               env: local_env,
-              expected_type: infer_expression_type(statement.expression, env: local_env),
+              expected_type: expression_expected_type,
               allow_root_statement_foreign: true,
+              allow_void_propagation: true,
             )
             lowered.concat(prepared_setup)
-            if (foreign_call = foreign_call_info(prepared_expression, local_env))
+            if prepared_expression && (foreign_call = foreign_call_info(prepared_expression, local_env))
               setup, value = lower_foreign_call_statement(
                 foreign_call,
                 env: local_env,
@@ -3592,8 +3604,10 @@ module MilkTea
               lowered.concat(setup)
               lowered.concat(prepared_cleanups.flat_map(&:itself))
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], consuming_foreign_call_refinements(foreign_call, local_env))
-            else
+            elsif prepared_expression
               lowered << IR::ExpressionStmt.new(expression: lower_expression(prepared_expression, env: local_env), line: statement.line, source_path: @current_analysis_path)
+              lowered.concat(prepared_cleanups.flat_map(&:itself))
+            else
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             end
           else
@@ -4536,7 +4550,7 @@ module MilkTea
         end
       end
 
-      def prepare_expression_with_cleanups(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
+      def prepare_expression_with_cleanups(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true, allow_void_propagation: false)
         env[:prepared_expression_cleanups] ||= []
         start_index = env[:prepared_expression_cleanups].length
         setup, prepared_expression = prepare_expression_for_inline_lowering(
@@ -4545,13 +4559,14 @@ module MilkTea
           expected_type:,
           allow_root_statement_foreign:,
           materialize_array_calls:,
+          allow_void_propagation:,
         )
         cleanup_count = env[:prepared_expression_cleanups].length - start_index
         cleanups = cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(start_index, cleanup_count) : []
         [setup, prepared_expression, cleanups || []]
       end
 
-      def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
+      def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true, allow_void_propagation: false)
         return [[], expression] unless expression
 
         if expression.is_a?(AST::Call) && (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
@@ -4572,6 +4587,8 @@ module MilkTea
           index_setup, index = prepare_expression_for_inline_lowering(expression.index, env:)
           [receiver_setup + index_setup, AST::IndexAccess.new(receiver:, index:)]
         when AST::UnaryOp
+          return prepare_result_propagation_for_inline_lowering(expression, env:, allow_void_success: allow_void_propagation) if expression.operator == "?"
+
           operand_setup, operand = prepare_expression_for_inline_lowering(expression.operand, env:, expected_type:)
           [operand_setup, AST::UnaryOp.new(operator: expression.operator, operand:)]
         when AST::BinaryOp
@@ -5041,8 +5058,8 @@ module MilkTea
         ]
       end
 
-      def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil, cstr_backed: false, cstr_list_backed: false)
-        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:, cstr_backed:, cstr_list_backed:)
+      def register_prepared_temp!(env, name, type, pointer: false, storage_type: nil, projection: nil, cstr_backed: false, cstr_list_backed: false)
+        current_actual_scope(env[:scopes])[name] = local_binding(type:, storage_type:, c_name: name, mutable: false, pointer:, projection:, cstr_backed:, cstr_list_backed:)
       end
 
       def foreign_call_requires_statement_lowering?(expression, binding, env:)
@@ -5127,6 +5144,8 @@ module MilkTea
             IR::Index.new(receiver:, index:, type:)
           end
         when AST::UnaryOp
+          raise LoweringError, "propagation expressions must be prepared before direct lowering" if expression.operator == "?"
+
           IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
         when AST::BinaryOp
           right_env = binary_right_env(expression, env)
@@ -7427,6 +7446,8 @@ module MilkTea
           index_type = infer_expression_type(expression.index, env:)
           infer_index_result_type(receiver_type, index_type)
         when AST::UnaryOp
+          return infer_result_propagation_type(expression, env:) if expression.operator == "?"
+
           operand_type = infer_expression_type(expression.operand, env:, expected_type:)
           case expression.operator
           when "not"
@@ -9486,7 +9507,11 @@ module MilkTea
       end
 
       def duplicate_env(env)
-        { scopes: env[:scopes].map(&:dup) + [{}], counter: env[:counter] }
+        duplicated = env.dup
+        duplicated[:scopes] = env[:scopes].map(&:dup) + [{}]
+        duplicated[:counter] = env[:counter]
+        duplicated.delete(:prepared_expression_cleanups)
+        duplicated
       end
 
       def let_else_discard_binding_syntax?(statement)
@@ -9630,6 +9655,103 @@ module MilkTea
         data_expr = IR::Member.new(receiver: storage_expr, member: "data", type: nil)
         arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
         IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
+      end
+
+      def infer_result_propagation_type(expression, env:)
+        _storage_type, success_type, = infer_result_propagation_types(expression, env:)
+
+        success_type
+      end
+
+      def infer_result_propagation_types(expression, env:, allow_void_success: false)
+        storage_type = infer_expression_type(expression.operand, env:)
+        raise LoweringError, "propagation expects Result[T, E], got #{storage_type}" unless result_let_else_type?(storage_type)
+
+        success_type = let_else_success_type(storage_type)
+        error_type = let_else_error_type(storage_type)
+        raise LoweringError, "propagation requires a non-void Result success type" if success_type == @types.fetch("void") && !allow_void_success
+
+        context = env[:return_context]
+        raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
+        raise LoweringError, "propagation is not allowed inside defer blocks" unless context[:allow_return]
+
+        return_type = context[:return_type]
+        unless result_let_else_type?(return_type)
+          raise LoweringError, "propagation requires enclosing function/proc to return Result[_, #{error_type}], got #{return_type}"
+        end
+
+        return_error_type = let_else_error_type(return_type)
+        unless return_error_type == error_type
+          raise LoweringError, "propagation error type #{error_type} must match enclosing Result error type #{return_error_type}"
+        end
+
+        [storage_type, success_type, return_type, error_type]
+      end
+
+      def prepare_result_propagation_for_inline_lowering(expression, env:, allow_void_success: false)
+        storage_type, success_type, return_type, error_type = infer_result_propagation_types(expression, env:, allow_void_success:)
+
+        env[:prepared_expression_cleanups] ||= []
+        cleanup_start = env[:prepared_expression_cleanups].length
+        operand_setup, operand = prepare_expression_for_inline_lowering(expression.operand, env:, expected_type: storage_type)
+        operand_cleanups = env[:prepared_expression_cleanups].drop(cleanup_start)
+
+        result_name = fresh_c_temp_name(env, "propagate")
+        result_ref = IR::Name.new(name: result_name, type: storage_type, pointer: false)
+        return_context = env.fetch(:return_context)
+        failure_return = if storage_type == return_type
+                           result_ref
+                         else
+                           IR::VariantLiteral.new(
+                             type: return_type,
+                             arm_name: "failure",
+                             fields: [
+                               IR::AggregateField.new(
+                                 name: "error",
+                                 value: variant_binding_projection_expression(result_ref, storage_type, "failure", "error", error_type),
+                               ),
+                             ],
+                           )
+                         end
+        failure_cleanup = operand_cleanups.flat_map(&:itself) + cleanup_statements(return_context[:local_defers], return_context[:active_defers])
+
+        if success_type == @types.fetch("void")
+          return [
+            operand_setup + [
+              IR::LocalDecl.new(
+                name: result_name,
+                c_name: result_name,
+                type: storage_type,
+                value: lower_contextual_expression(operand, env:, expected_type: storage_type),
+              ),
+              IR::IfStmt.new(
+                condition: let_else_failure_condition(result_ref, storage_type),
+                then_body: failure_cleanup + [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)],
+                else_body: nil,
+              ),
+            ],
+            nil,
+          ]
+        end
+
+        register_prepared_temp!(env, result_name, success_type, storage_type:, projection: :result_success_value)
+
+        [
+          operand_setup + [
+            IR::LocalDecl.new(
+              name: result_name,
+              c_name: result_name,
+              type: storage_type,
+              value: lower_contextual_expression(operand, env:, expected_type: storage_type),
+            ),
+            IR::IfStmt.new(
+              condition: let_else_failure_condition(result_ref, storage_type),
+              then_body: failure_cleanup + [IR::ReturnStmt.new(value: failure_return, source_path: @current_analysis_path)],
+              else_body: nil,
+            ),
+          ],
+          AST::Identifier.new(name: result_name),
+        ]
       end
 
       def c_type_name(type)

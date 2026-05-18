@@ -210,6 +210,24 @@ Rules for `let ... else:`:
 - `Result[void, E]` uses the same surface via `let _ = expr else:`
 - the `else` block must exit control flow (`return`, `break`, `continue`, or another terminating path)
 
+Postfix Result propagation:
+
+```mt
+let parsed = parse(input)?
+let lowered = lower(parsed)?
+return Result[Output, Error].success(value= lowered)
+```
+
+- `expr?` requires `Result[T, E]` with a non-`void` success type
+- on success, `expr?` evaluates to the unwrapped `T`
+- on failure, `expr?` returns `Result[_, E].failure(error= ...)` from the enclosing function or proc
+- as an expression statement, `expr?` also accepts `Result[void, E]`; success continues and failure returns early
+- `expr?` is only allowed inside function and proc bodies
+- `expr?` is not supported inside `async` functions yet
+- `expr?` is not allowed inside `defer` blocks
+- the enclosing function or proc must return `Result[_, E]` with the same error type `E`
+- `let _ = expr else:` is still useful when you need an explicit `else` block or `else as error:` binding
+
 ### 3.3 Type aliases
 
 ```mt

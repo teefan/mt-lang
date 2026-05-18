@@ -113,6 +113,23 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "error", local_decl.else_binding.name
   end
 
+  def test_parses_result_propagation_expression
+    source = <<~MT
+      function main() -> Result[int, int]:
+          let value = parse()?
+          return Result[int, int].success(value= value)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_instance_of MilkTea::AST::UnaryOp, local_decl.value
+    assert_equal "?", local_decl.value.operator
+    assert_instance_of MilkTea::AST::Call, local_decl.value.operand
+  end
+
   def test_rejects_var_else_local_declaration
     source = <<~MT
       function main(handle: ptr[int]?) -> int:

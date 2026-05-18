@@ -1053,6 +1053,51 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("read_value")
   end
 
+  def test_type_checks_result_void_propagation_statement
+    source = <<~MT
+      # module demo.status_void_flow
+
+
+
+      function done() -> void:
+          return
+
+      function parse(input: int) -> Result[void, int]:
+          if input < 0:
+              return Result[void, int].failure(error= 7)
+          return Result[void, int].success(value= done())
+
+      function verify(input: int) -> Result[void, int]:
+          parse(input)?
+          return Result[void, int].success(value= done())
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("verify")
+  end
+
+  def test_rejects_result_propagation_inside_async_function
+    source = <<~MT
+      # module demo.status_void_flow
+
+
+
+      function parse(input: int) -> Result[int, int]:
+          return Result[int, int].success(value= input + 1)
+
+      async function verify(input: int) -> Result[int, int]:
+          let value = parse(input)?
+          return Result[int, int].success(value= value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation is not supported inside async functions yet/, error.message)
+  end
+
   def test_rejects_let_else_discard_binding_with_type_annotation
     source = <<~MT
       # module demo.status_void_flow
