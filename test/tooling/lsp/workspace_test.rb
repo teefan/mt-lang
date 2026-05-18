@@ -564,6 +564,33 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_refresh_import_dependent_caches_tracks_semantically_invalid_importers
+    Dir.mktmpdir("lsp_workspace_invalid_importer_dependents") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(dependency_path, "")
+      main_source = <<~MT
+        import dep as dep
+
+        public type Reply = dep.Answer
+      MT
+      File.write(main_path, main_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(dependency_uri, "")
+      workspace.open_document(main_uri, main_source)
+
+      assert_nil workspace.get_facts(main_uri)
+      assert_equal [main_uri], workspace.send(:refresh_import_dependent_caches, changed_uri: dependency_uri)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_open_background_document_does_not_wait_for_facts_state_mutex
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background_lock.mt"
