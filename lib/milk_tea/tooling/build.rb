@@ -3,10 +3,11 @@
 require "fileutils"
 require "json"
 require "open3"
+require "rubygems/package"
 require "shellwords"
 require "tempfile"
+require "zlib"
 
-require_relative "archive_tool"
 require_relative "asset_pack"
 require_relative "debug_map"
 
@@ -691,20 +692,41 @@ module MilkTea
       FileUtils.rm_f(archive_path)
       FileUtils.mkdir_p(File.dirname(archive_path))
 
-      ArchiveTool.archive_directory(
-        source_root: @bundle_root,
-        archive_path:,
-        archive_root_name: File.basename(@bundle_root),
-        include_hidden: true,
-      )
+      Tempfile.create(["milk-tea-bundle", ".tar"]) do |tar_file|
+        Gem::Package::TarWriter.new(tar_file) do |tar|
+          add_archive_tree(tar, @bundle_root, File.basename(@bundle_root))
+        end
+
+        tar_file.flush
+        tar_file.rewind
+
+        Zlib::GzipWriter.open(archive_path) do |gzip|
+          IO.copy_stream(tar_file, gzip)
+        end
+      end
 
       archive_path
-    rescue ArchiveToolError => e
-      raise BuildError, e.message
     end
 
     def bundle_archive_path
       "#{@bundle_root}.tar.gz"
+    end
+
+    def add_archive_tree(tar, source_path, archive_path)
+      stat = File.lstat(source_path)
+
+      if stat.directory?
+        tar.mkdir(archive_path, stat.mode & 0o777)
+        Dir.children(source_path).sort.each do |child|
+          add_archive_tree(tar, File.join(source_path, child), File.join(archive_path, child))
+        end
+      elsif stat.file?
+        tar.add_file(archive_path, stat.mode & 0o777) do |io|
+          File.open(source_path, "rb") do |file|
+            IO.copy_stream(file, io)
+          end
+        end
+      end
     end
 
     def runtime_asset_mappings_for(target_path)

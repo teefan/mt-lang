@@ -2,12 +2,12 @@
 
 require "cgi/escape"
 require "fileutils"
+require "net/http"
+require "rubygems/package"
+require "stringio"
 require "tmpdir"
 require "uri"
-
-require_relative "../tooling/archive_tool"
-require_relative "../tooling/http_fetch_tool"
-require_relative "../tooling/read_lines_tool"
+require "zlib"
 
 module MilkTea
   class PackageRegistryStoreError < StandardError; end
@@ -212,30 +212,26 @@ module MilkTea
     end
 
     def package_versions_for_http(package_name)
-      Dir.mktmpdir("milk-tea-registry-versions") do |tmpdir|
-        body_path = File.join(tmpdir, "versions.txt")
-        response = http_fetch_to_file(package_versions_url(package_name), body_path)
-        return [] if response.not_found?
-        raise_http_error!(response, "list registry package versions") unless response.success?
+      response = http_get_response(package_versions_url(package_name))
+      return [] if response.is_a?(Net::HTTPNotFound)
+      raise_http_error!(response, "list registry package versions") unless response.is_a?(Net::HTTPSuccess)
 
-        return ReadLinesTool.read_lines(path: body_path).map(&:strip).reject(&:empty?)
-      end
+      response.body.lines.map(&:strip).reject(&:empty?)
     end
 
     def sync_from_http(package_name, package_version, local_root)
+      response = http_get_response(package_archive_url(package_name, package_version))
+      if response.is_a?(Net::HTTPNotFound)
+        raise PackageRegistryStoreError,
+              "registry package #{package_name} version #{package_version} not found in upstream registry #{@upstream_root}"
+      end
+      raise_http_error!(response, "download registry package archive") unless response.is_a?(Net::HTTPSuccess)
+
       FileUtils.rm_rf(local_root) if File.exist?(local_root)
       FileUtils.mkdir_p(File.dirname(local_root))
 
       Dir.mktmpdir("milk-tea-http-registry", File.dirname(local_root)) do |tmpdir|
-        archive_path = File.join(tmpdir, "package.tar.gz")
-        response = http_fetch_to_file(package_archive_url(package_name, package_version), archive_path)
-        if response.not_found?
-          raise PackageRegistryStoreError,
-                "registry package #{package_name} version #{package_version} not found in upstream registry #{@upstream_root}"
-        end
-        raise_http_error!(response, "download registry package archive") unless response.success?
-
-        extract_archive_path_to_root(archive_path, local_root)
+        extract_archive_to_root(response.body, local_root, tmpdir)
       end
 
       validate_synced_package!(local_root, package_name, package_version)
@@ -264,14 +260,35 @@ module MilkTea
     def write_package_archive!(archive_path, package_root)
       FileUtils.mkdir_p(File.dirname(archive_path))
 
-      ArchiveTool.archive_directory(
-        source_root: package_root,
-        archive_path:,
-        archive_root_name: "",
-        include_hidden: false,
-      )
-    rescue ArchiveToolError => e
-      raise PackageRegistryStoreError, e.message
+      tar_buffer = StringIO.new(+"")
+      Gem::Package::TarWriter.new(tar_buffer) do |tar|
+        add_directory_to_archive(tar, package_root, package_root)
+      end
+      tar_buffer.rewind
+
+      Zlib::GzipWriter.open(archive_path) do |gzip|
+        gzip.write(tar_buffer.string)
+      end
+    end
+
+    def add_directory_to_archive(tar, root_path, path)
+      Dir.children(path).sort.each do |entry|
+        next if entry.start_with?(".")
+
+        child_path = File.join(path, entry)
+        relative_path = child_path.delete_prefix(root_path + File::SEPARATOR)
+        stat = File.lstat(child_path)
+        if stat.directory?
+          tar.mkdir(relative_path, stat.mode)
+          add_directory_to_archive(tar, root_path, child_path)
+        elsif stat.file?
+          tar.add_file(relative_path, stat.mode) do |file|
+            File.open(child_path, "rb") do |source|
+              IO.copy_stream(source, file)
+            end
+          end
+        end
+      end
     end
 
     def write_versions_index!(root, package_name)
@@ -283,19 +300,34 @@ module MilkTea
 
     def extract_archive_to_root(archive_body, destination_root, scratch_dir)
       archive_path = File.join(scratch_dir, "package.tar.gz")
-      File.binwrite(archive_path, archive_body)
-      extract_archive_path_to_root(archive_path, destination_root)
-    rescue ArchiveToolError => e
-      raise PackageRegistryStoreError, e.message
-    end
-
-    def extract_archive_path_to_root(archive_path, destination_root)
       extract_root = File.join(File.dirname(archive_path), "extract")
-      ArchiveTool.extract_archive(archive_path:, destination_root: extract_root)
+      File.binwrite(archive_path, archive_body)
+      FileUtils.mkdir_p(extract_root)
+
+      Zlib::GzipReader.open(archive_path) do |gzip|
+        Gem::Package::TarReader.new(gzip) do |tar|
+          tar.each do |entry|
+            relative_path = entry.full_name
+            next if relative_path.nil? || relative_path.empty?
+
+            destination_path = File.expand_path(relative_path, extract_root)
+            unless destination_path == extract_root || destination_path.start_with?(extract_root + File::SEPARATOR)
+              raise PackageRegistryStoreError, "registry package archive contains an invalid path #{relative_path.inspect}"
+            end
+
+            if entry.directory?
+              FileUtils.mkdir_p(destination_path)
+            elsif entry.file?
+              FileUtils.mkdir_p(File.dirname(destination_path))
+              File.open(destination_path, "wb", entry.header.mode) do |file|
+                IO.copy_stream(entry, file)
+              end
+            end
+          end
+        end
+      end
 
       FileUtils.mv(extract_root, destination_root)
-    rescue ArchiveToolError => e
-      raise PackageRegistryStoreError, e.message
     end
 
     def package_versions_url(package_name)
@@ -314,15 +346,31 @@ module MilkTea
       "#{base}/#{encoded_segments.join("/")}"
     end
 
-    def http_fetch_to_file(url, body_path)
-      HttpFetchTool.fetch_to_file(url:, body_path:)
-    rescue HttpFetchToolError => e
-      raise PackageRegistryStoreError, e.message
+    def http_get_response(url, redirects_remaining = 5)
+      uri = URI.parse(url)
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
+        http.request(Net::HTTP::Get.new(uri.request_uri))
+      end
+
+      if response.is_a?(Net::HTTPRedirection)
+        raise PackageRegistryStoreError, "too many HTTP redirects while fetching #{url}" if redirects_remaining <= 0
+
+        location = response["location"]
+        raise PackageRegistryStoreError, "missing redirect location while fetching #{url}" if location.to_s.strip.empty?
+
+        return http_get_response(URI.join(url, location).to_s, redirects_remaining - 1)
+      end
+
+      response
+    rescue URI::InvalidURIError => e
+      raise PackageRegistryStoreError, "invalid upstream registry URL #{url.inspect}: #{e.message}"
+    rescue SocketError, IOError, SystemCallError => e
+      raise PackageRegistryStoreError, "failed to fetch #{url}: #{e.message}"
     end
 
     def raise_http_error!(response, action)
       raise PackageRegistryStoreError,
-            "failed to #{action} from upstream registry #{@upstream_root}: HTTP #{response.status_code} #{response.reason}"
+            "failed to #{action} from upstream registry #{@upstream_root}: HTTP #{response.code} #{response.message}"
     end
 
     def normalize_optional_root(root)
