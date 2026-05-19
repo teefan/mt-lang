@@ -5670,7 +5670,14 @@ module MilkTea
           owner_analysis:,
           expected_type: expected_type || call_type,
         )
-        lowered_call = append_variadic_foreign_call_arguments(lowered_call, call.arguments, binding.type, env:)
+        lowered_call = append_variadic_foreign_call_arguments(
+          lowered_call,
+          call.arguments,
+          binding.type,
+          env:,
+          lowered:,
+          cleanup: cleanup_statements,
+        )
 
         [lowered, lowered_call, call_type, release_assignments, cleanup_statements]
       ensure
@@ -6083,7 +6090,12 @@ module MilkTea
           owner_analysis:,
           expected_type: type,
         )
-        lowered_expression = append_variadic_foreign_call_arguments(lowered_expression, expression.arguments, binding.type, env:)
+        lowered_expression = append_variadic_foreign_call_arguments(
+          lowered_expression,
+          expression.arguments,
+          binding.type,
+          env:,
+        )
 
         converted = foreign_identity_projection_expression(lowered_expression, type)
         return converted if converted
@@ -6093,7 +6105,7 @@ module MilkTea
         @current_type_substitutions = previous_type_substitutions
       end
 
-      def append_variadic_foreign_call_arguments(lowered_expression, arguments, function_type, env:)
+      def append_variadic_foreign_call_arguments(lowered_expression, arguments, function_type, env:, lowered: nil, cleanup: nil)
         return lowered_expression unless function_type.variadic
 
         extra_arguments = arguments.drop(function_type.params.length)
@@ -6102,9 +6114,39 @@ module MilkTea
 
         IR::Call.new(
           callee: lowered_expression.callee,
-          arguments: lowered_expression.arguments + extra_arguments.map { |argument| lower_contextual_expression(argument.value, env:, expected_type: nil) },
+          arguments: lowered_expression.arguments + extra_arguments.map { |argument| lower_variadic_foreign_argument(argument, env:, lowered:, cleanup:) },
           type: lowered_expression.type,
         )
+      end
+
+      def lower_variadic_foreign_argument(argument, env:, lowered:, cleanup:)
+        actual_type = infer_expression_type(argument.value, env:)
+        return lower_contextual_expression(argument.value, env:, expected_type: nil) unless actual_type == @types.fetch("str")
+
+        lowered_argument = lower_foreign_argument_value(
+          Types::Parameter.new("__mt_variadic", actual_type, passing_mode: :plain, boundary_type: @types.fetch("cstr")),
+          argument,
+          env:,
+        )
+        return lowered_argument unless temporary_foreign_cstr_expression?(lowered_argument)
+
+        raise LoweringError, "foreign variadic call cannot be used inline because an extra argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression" unless lowered && cleanup
+
+        temp_name = fresh_c_temp_name(env, "foreign_arg")
+        lowered << IR::LocalDecl.new(
+          name: temp_name,
+          c_name: temp_name,
+          type: @types.fetch("cstr"),
+          value: lowered_argument,
+        )
+        cleanup << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: "mt_free_foreign_cstr_temp",
+            arguments: [IR::Name.new(name: temp_name, type: @types.fetch("cstr"), pointer: false)],
+            type: @types.fetch("void"),
+          ),
+        )
+        IR::Name.new(name: temp_name, type: @types.fetch("cstr"), pointer: false)
       end
 
       def lower_inline_foreign_mapping_expression(expression, mapping_env:, replacements:, owner_analysis:, expected_type: nil)

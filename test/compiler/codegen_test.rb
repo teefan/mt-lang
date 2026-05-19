@@ -946,6 +946,41 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
   end
 
+  def test_generate_c_for_variadic_foreign_str_arguments
+    source = <<~MT
+      # module demo.main
+
+      import std.sample as sample
+
+      function main(path: str, count: int) -> int:
+          sample.print("path=%s count=%d\\n", path, count)
+          return 0
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        # module std.c.sample
+        external
+        include "stdio.h"
+
+        external function printf(format: cstr, ...) -> int
+      MT
+      "std/sample.mt" => <<~MT,
+        # module std.sample
+
+        import std.c.sample as c
+
+        public foreign function print(format: str as cstr, ...) -> int = c.printf
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/mt_foreign_str_to_cstr_temp/, generated)
+    assert_match(/printf\("path=%s count=%d\\n", __mt_foreign_arg_\d+, count\);/, generated)
+    assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
+  end
+
   def test_generate_c_for_std_fmt_format_literals
     source = <<~MT
       # module demo.format_codegen
