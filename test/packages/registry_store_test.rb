@@ -5,7 +5,7 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaPackageRegistryStoreTest < Minitest::Test
-  def test_publish_writes_archive_and_helper_extract_restores_package_tree
+  def test_publish_writes_archive_and_extract_restores_package_tree
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 

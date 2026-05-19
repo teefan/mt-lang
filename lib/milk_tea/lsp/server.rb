@@ -4291,8 +4291,9 @@ module MilkTea
       end
 
       def definition_file_mtime_key(path)
-        MilkTea::MtimeTool.mtime(path: path).cache_key
-      rescue MilkTea::MtimeToolError, SystemCallError
+        stat = File.stat(path)
+        "#{stat.mtime.to_i}:#{stat.mtime.nsec}"
+      rescue StandardError
         'missing'
       end
 
