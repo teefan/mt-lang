@@ -42,10 +42,14 @@ module MilkTea
       case command
       when "lex"
         lex_command
+      when "inspect-tokens"
+        inspect_tokens_command
       when "semantic-tokens"
         semantic_tokens_command
       when "parse"
         parse_command
+      when "inspect-parse"
+        inspect_parse_command
       when "format"
         format_command
       when "lint"
@@ -120,6 +124,23 @@ module MilkTea
       0
     end
 
+    def inspect_tokens_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      options = extract_reference_artifact_options!("inspect-tokens")
+      return 1 unless options
+      ensure_current_lockfile!(path) if options[:frozen]
+
+      artifacts = reference_artifacts_for(path, locked: options[:locked], platform: options[:platform])
+      @out.puts(JSON.pretty_generate(artifacts.token_plan))
+      0
+    end
+
     def diagnostics_command
       path = @argv.shift
       unless path
@@ -150,6 +171,23 @@ module MilkTea
 
       ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
+      0
+    end
+
+    def inspect_parse_command
+      path = @argv.shift
+      unless path
+        @err.puts("missing source file path")
+        print_usage(@err)
+        return 1
+      end
+
+      options = extract_reference_artifact_options!("inspect-parse")
+      return 1 unless options
+      ensure_current_lockfile!(path) if options[:frozen]
+
+      artifacts = reference_artifacts_for(path, locked: options[:locked], platform: options[:platform])
+      @out.puts(JSON.pretty_generate(artifacts.parsed_plan))
       0
     end
 
@@ -905,6 +943,71 @@ module MilkTea
       { locked:, frozen: }
     end
 
+    def extract_reference_artifact_options!(command)
+      options = { locked: false, frozen: false, platform: nil }
+
+      if @argv.first && !@argv.first.start_with?("-")
+        options[:platform] = normalize_reference_platform(@argv.shift, command)
+        return nil unless options[:platform]
+      end
+
+      until @argv.empty?
+        arg = @argv.shift
+        case arg
+        when "--locked"
+          options[:locked] = true
+        when "--frozen"
+          options[:locked] = true
+          options[:frozen] = true
+        when "--platform"
+          value = @argv.shift
+          unless value
+            @err.puts("--platform requires a value")
+            print_usage(@err)
+            return nil
+          end
+
+          options[:platform] = normalize_reference_platform(value, command)
+          return nil unless options[:platform]
+        else
+          @err.puts("unknown #{command} option #{arg}")
+          print_usage(@err)
+          return nil
+        end
+      end
+
+      options
+    end
+
+    def normalize_reference_platform(value, command)
+      ModuleLoader.normalize_platform_name(value)
+    rescue ArgumentError => e
+      @err.puts("invalid #{command} platform #{value}: #{e.message}")
+      nil
+    end
+
+    def reference_artifacts_for(path, locked:, platform: nil)
+      expanded_path = File.expand_path(path)
+      entry_path = reference_artifact_entry_path(expanded_path)
+      effective_platform = ModuleLoader.effective_platform_for_path(entry_path, platform_override: platform)
+      ReferenceArtifacts.new(
+        root_path: expanded_path,
+        entry_path:,
+        module_roots: module_roots_for(expanded_path, locked:),
+        package_graph: package_graph_for(expanded_path, locked:),
+        platform: effective_platform,
+      )
+    end
+
+    def reference_artifact_entry_path(path)
+      manifest = PackageManifest.load(path)
+      return manifest.source_path if manifest.source_path
+
+      raise BuildError, "package #{manifest.package_name} has no build entry"
+    rescue PackageManifestError
+      path
+    end
+
     def ensure_current_lockfile!(path)
       result = PackageLock.check(path, source_resolver: package_services.source_resolver(:cache))
       return if result.current?
@@ -967,7 +1070,7 @@ module MilkTea
     end
 
     def command_supports_include_paths?(command)
-      %w[semantic-tokens parse lint diagnostics check lower emit-c frontend-artifacts build run].include?(command)
+      %w[inspect-tokens semantic-tokens parse inspect-parse lint diagnostics check lower emit-c frontend-artifacts build run].include?(command)
     end
 
     def semantic_tokens_contract_payload(payload, source_path:)
@@ -1245,8 +1348,10 @@ module MilkTea
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
+      "inspect-tokens"  => "Usage: mtc inspect-tokens PATH [PLATFORM] [--platform PLATFORM] [--locked] [--frozen] [-I PATH]\n\n  Emit the Ruby reference token-set artifact as JSON for comparison with the self-hosted compiler.",
       "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned semantic token contract for a source file as JSON.",
       "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
+      "inspect-parse"   => "Usage: mtc inspect-parse PATH [PLATFORM] [--platform PLATFORM] [--locked] [--frozen] [-I PATH]\n\n  Emit the Ruby reference parsed-module artifact as JSON for comparison with the self-hosted compiler.",
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [OPTIONS]
 
@@ -1411,8 +1516,10 @@ module MilkTea
 
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
+      io.puts("       mtc inspect-tokens PATH [PLATFORM] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc inspect-parse PATH [PLATFORM] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc diagnostics PATH [--locked] [--frozen] [-I PATH]")
