@@ -1,5 +1,0 @@
-[package]
-name = "teefan.ui"
-version = "0.3.0"
-kind = "library"
-source_root = "src"

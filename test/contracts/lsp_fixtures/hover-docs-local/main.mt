@@ -1,7 +1,0 @@
-## Adds two values.
-## Used by main.
-function add(a: int, b: int) -> int:
-    return a + b
-
-function main() -> int:
-    return add(1, 2)

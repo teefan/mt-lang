@@ -6104,7 +6104,7 @@ module MilkTea
       def contains_proc_type?(type, visited = {})
         return false unless type
 
-        visit_key = "#{type.class.name}:#{type}"
+        visit_key = [type.class, type.object_id]
         return false if visited[visit_key]
 
         visited[visit_key] = true
@@ -6136,14 +6136,12 @@ module MilkTea
         else
           false
         end
-      ensure
-        visited.delete(visit_key)
       end
 
       def proc_storage_supported_type?(type, visited = {})
         return true unless contains_proc_type?(type)
 
-        visit_key = "#{type.class.name}:#{type}"
+        visit_key = [type.class, type.object_id]
         return true if visited[visit_key]
 
         visited[visit_key] = true
@@ -6161,8 +6159,6 @@ module MilkTea
         else
           false
         end
-      ensure
-        visited.delete(visit_key)
       end
 
       def validate_stored_proc_type!(type, context)

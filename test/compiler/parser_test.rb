@@ -1143,6 +1143,21 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "int", callback_param.type.return_type.name.to_s
   end
 
+  def test_parses_proc_type_refs_in_function_returns
+    source = <<~MT
+      function factory(offset: int) -> proc(value: int) -> int:
+          return proc(value: int) -> int:
+              return value + offset
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    factory_fn = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::ProcType, factory_fn.return_type
+    assert_equal "value", factory_fn.return_type.params.first.name
+    assert_equal "int", factory_fn.return_type.return_type.name.to_s
+  end
+
   def test_parses_proc_expressions
     source = <<~MT
       function main() -> int:
@@ -2391,6 +2406,6 @@ class MilkTeaParserTest < Minitest::Test
   private
 
   def language_fixture_path
-    File.expand_path("../fixtures/language_fixture.mt", __dir__)
+    materialized_language_fixture_path
   end
 end

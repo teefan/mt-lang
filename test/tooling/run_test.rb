@@ -2092,7 +2092,7 @@ class MilkTeaRunTest < Minitest::Test
   private
 
   def language_fixture_path
-    File.expand_path("../fixtures/language_fixture.mt", __dir__)
+    materialized_language_fixture_path
   end
 
   def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:)

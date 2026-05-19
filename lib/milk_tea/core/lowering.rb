@@ -7165,16 +7165,29 @@ module MilkTea
         statements.each do |statement|
           case statement
           when AST::LocalDecl
-            type = statement.type ? resolve_type_ref(statement.type) : infer_expression_type(statement.value, env: simulated_env)
+            storage_type = if statement.else_body
+                             infer_expression_type(statement.value, env: simulated_env)
+                           elsif statement.type
+                             resolve_type_ref(statement.type)
+                           else
+                             infer_expression_type(statement.value, env: simulated_env)
+                           end
+            type = if statement.else_body
+                     statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
+                   else
+                     storage_type
+                   end
             unless let_else_discard_binding_syntax?(statement)
               current_actual_scope(simulated_env[:scopes])[statement.name] = local_binding(
                 type:,
+                storage_type:,
                 c_name: c_local_name(statement.name),
                 mutable: statement.kind == :var,
                 pointer: false,
-                cstr_backed: cstr_backed_storage_value?(type, statement.value, simulated_env),
-                cstr_list_backed: cstr_list_backed_storage_value?(type, statement.value, simulated_env),
-                const_value: statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env: simulated_env) : nil,
+                projection: statement.else_body ? let_else_binding_projection(storage_type) : nil,
+                cstr_backed: cstr_backed_storage_value?(storage_type, statement.value, simulated_env),
+                cstr_list_backed: cstr_list_backed_storage_value?(storage_type, statement.value, simulated_env),
+                const_value: statement.else_body ? nil : statement.kind == :let && statement.value ? compile_time_const_value(statement.value, env: simulated_env) : nil,
               )
             end
           when AST::Assignment
