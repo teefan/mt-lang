@@ -1,10 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
-require "json"
-require "open3"
 require "rubygems/package"
-require "shellwords"
 require "tempfile"
 require "zlib"
 
@@ -16,96 +13,6 @@ module MilkTea
 
   class Build
     FrontendModule = Data.define(:name, :kind, :link_libraries, :compiler_flags)
-
-    class CommandFrontend
-      def initialize(command:, locked: false, frozen: false)
-        @command = Array(command)
-        @locked = locked
-        @frozen = frozen
-      end
-
-      def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:)
-        Dir.mktmpdir("milk-tea-frontend-artifacts") do |dir|
-          compiled_c_path = File.join(dir, "compiled.c")
-          saved_c_path = File.join(dir, "saved.c")
-          debug_map_path = File.join(dir, "debug-map.json")
-
-          stdout, stderr, status = Open3.capture3(*frontend_command(
-            path:,
-            module_roots:,
-            platform:,
-            emit_line_directives:,
-            binary_path:,
-            compiled_c_path:,
-            saved_c_path:,
-            debug_map_path:,
-          ))
-
-          payload = parse_contract_payload(stdout)
-          if payload && payload.fetch("success", false) == false
-            raise BuildError, payload.fetch("error").fetch("message")
-          end
-
-          unless status.success?
-            details = [stdout, stderr].reject(&:empty?).join
-            raise BuildError, details.empty? ? "frontend command failed" : details
-          end
-
-          raise BuildError, "frontend command did not return a contract payload" unless payload
-          raise BuildError, "unexpected frontend contract #{payload['contract'].inspect}" unless payload["contract"] == "frontendArtifacts"
-
-          {
-            compiled_c: File.read(compiled_c_path),
-            saved_c: File.read(saved_c_path),
-            debug_map: DebugMap.load(debug_map_path),
-            modules: Array(payload["modules"]).map { |entry| self.class.module_from_payload(entry) },
-          }
-        end
-      rescue Errno::ENOENT => e
-        raise BuildError, "frontend command failed: #{e.message}"
-      end
-
-      def self.module_from_payload(entry)
-        FrontendModule.new(
-          name: entry.fetch("name"),
-          kind: entry.fetch("kind").to_sym,
-          link_libraries: Array(entry["linkLibraries"]).freeze,
-          compiler_flags: Array(entry["compilerFlags"]).freeze,
-        )
-      end
-
-      private
-
-      def frontend_command(path:, module_roots:, platform:, emit_line_directives:, binary_path:, compiled_c_path:, saved_c_path:, debug_map_path:)
-        command = @command.dup
-        command << path
-        module_roots.each do |module_root|
-          command << "-I"
-          command << module_root
-        end
-        command << "--locked" if @locked
-        command << "--frozen" if @frozen
-        command.concat([
-          "--platform", platform.to_s,
-          "--binary-path", binary_path,
-          "--compiled-c", compiled_c_path,
-          "--saved-c", saved_c_path,
-          "--debug-map", debug_map_path,
-          emit_line_directives ? "--line-directives" : "--no-line-directives",
-          "--json",
-        ])
-        command
-      end
-
-      def parse_contract_payload(stdout)
-        text = stdout.to_s.strip
-        return nil if text.empty?
-
-        JSON.parse(text)
-      rescue JSON::ParserError => e
-        raise BuildError, "frontend command returned invalid JSON: #{e.message}"
-      end
-    end
 
     class RubyFrontend
       def compile(path:, module_roots:, package_graph:, platform:, emit_line_directives:, binary_path:)
@@ -219,25 +126,6 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def self.frontend_command_from_env
-      value = ENV["MILK_TEA_FRONTEND_CMD"]
-      return nil if value.nil? || value.strip.empty?
-
-      command = Shellwords.shellsplit(value)
-      return nil if command.empty?
-
-      command.freeze
-    rescue ArgumentError => e
-      raise BuildError, "invalid MILK_TEA_FRONTEND_CMD: #{e.message}"
-    end
-
-    def self.default_frontend_from_env(locked: false, frozen: false)
-      command = frontend_command_from_env
-      return nil unless command
-
-      CommandFrontend.new(command:, locked:, frozen:)
-    end
-
     def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       manifest = PackageManifest.load(path)
       @package_build = true
@@ -273,7 +161,7 @@ module MilkTea
       @raw_bindings = raw_bindings
       @package_graph = package_graph
       @module_roots = (module_roots || @package_graph&.source_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)).dup
-      @frontend = frontend || self.class.default_frontend_from_env || RubyFrontend.new
+      @frontend = frontend || RubyFrontend.new
       @debug = debug
     rescue PackageManifestError => e
       raise BuildError, e.message if package_manifest_required_for?(path)
@@ -299,7 +187,7 @@ module MilkTea
       @raw_bindings = raw_bindings
       @package_graph = package_graph
       @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
-      @frontend = frontend || self.class.default_frontend_from_env || RubyFrontend.new
+      @frontend = frontend || RubyFrontend.new
       @debug = debug
     end
 

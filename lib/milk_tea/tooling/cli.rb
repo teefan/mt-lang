@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
-require "cgi/escape"
-require "json"
-require "pathname"
 require "pp"
 
 module MilkTea
   class CLI
-    CONTRACT_VERSION = 1
-    CONTRACT_POSITION_ENCODING = "utf-8"
-
     def self.start(argv = ARGV, out: $stdout, err: $stderr)
       new(argv, out:, err:).start
     end
@@ -42,28 +36,18 @@ module MilkTea
       case command
       when "lex"
         lex_command
-      when "inspect-tokens"
-        inspect_tokens_command
-      when "semantic-tokens"
-        semantic_tokens_command
       when "parse"
         parse_command
-      when "inspect-parse"
-        inspect_parse_command
       when "format"
         format_command
       when "lint"
         lint_command
-      when "diagnostics"
-        diagnostics_command
       when "check"
         check_command
       when "lower"
         lower_command
       when "emit-c"
         emit_c_command
-      when "frontend-artifacts"
-        frontend_artifacts_command
       when "build"
         build_command
       when "run"
@@ -104,60 +88,6 @@ module MilkTea
       0
     end
 
-    def semantic_tokens_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
-      resolution = extract_resolution_flags!
-      ensure_current_lockfile!(path) if resolution[:frozen]
-
-      payload = MilkTea::LSP::Server.semantic_tokens_for_path(
-        path,
-        module_roots: module_roots_for(path, locked: resolution[:locked]),
-        package_graph: package_graph_for(path, locked: resolution[:locked]),
-      )
-      @out.puts(JSON.pretty_generate(semantic_tokens_contract_payload(payload, source_path: path)))
-      0
-    end
-
-    def inspect_tokens_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
-      options = extract_reference_artifact_options!("inspect-tokens")
-      return 1 unless options
-      ensure_current_lockfile!(path) if options[:frozen]
-
-      artifacts = reference_artifacts_for(path, locked: options[:locked], platform: options[:platform])
-      @out.puts(JSON.pretty_generate(artifacts.token_plan))
-      0
-    end
-
-    def diagnostics_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
-      resolution = extract_resolution_flags!
-      ensure_current_lockfile!(path) if resolution[:frozen]
-
-      source = read_source_file(path)
-      payload = diagnostics_contract_payload(path, source, locked: resolution[:locked])
-      @out.puts(JSON.pretty_generate(payload))
-      payload.fetch(:summary).fetch(:errorCount).positive? ? 1 : 0
-    end
-
     def parse_command
       path = @argv.shift
       unless path
@@ -171,23 +101,6 @@ module MilkTea
 
       ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
       @out.write(PrettyPrinter.format_ast(ast))
-      0
-    end
-
-    def inspect_parse_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
-      options = extract_reference_artifact_options!("inspect-parse")
-      return 1 unless options
-      ensure_current_lockfile!(path) if options[:frozen]
-
-      artifacts = reference_artifacts_for(path, locked: options[:locked], platform: options[:platform])
-      @out.puts(JSON.pretty_generate(artifacts.parsed_plan))
       0
     end
 
@@ -449,62 +362,6 @@ module MilkTea
       0
     end
 
-    def frontend_artifacts_command
-      path = @argv.shift
-      unless path
-        @err.puts("missing source file path")
-        print_usage(@err)
-        return 1
-      end
-
-      options = parse_frontend_artifacts_options
-      return 1 unless options
-      json_output = options.delete(:json)
-
-      with_contract_error_handling("frontendArtifacts", enabled: json_output, input_path: path) do
-        ensure_current_lockfile!(path) if options.delete(:frozen)
-        locked = options.delete(:locked)
-
-        artifacts = Build::RubyFrontend.new.compile(
-          path:,
-          module_roots: module_roots_for(path, locked:),
-          package_graph: package_graph_for(path, locked:),
-          platform: options.fetch(:platform),
-          emit_line_directives: options.fetch(:emit_line_directives),
-          binary_path: options.fetch(:binary_path),
-        )
-
-        FileUtils.mkdir_p(File.dirname(options.fetch(:compiled_c_path)))
-        File.write(options.fetch(:compiled_c_path), artifacts.fetch(:compiled_c))
-        saved_c = artifacts.fetch(:saved_c)
-        if saved_c.nil? && options.fetch(:emit_line_directives)
-          saved_c = Codegen.generate_c(
-            ModuleLoader.new(
-              module_roots: module_roots_for(path, locked:),
-              package_graph: package_graph_for(path, locked:),
-              platform: options.fetch(:platform),
-            ).check_program(path),
-            emit_line_directives: false,
-          )
-        end
-        FileUtils.mkdir_p(File.dirname(options.fetch(:saved_c_path)))
-        File.write(options.fetch(:saved_c_path), saved_c)
-
-        debug_map = artifacts.fetch(:debug_map)
-        raise BuildError, "frontend artifacts require --binary-path to generate a debug map" unless debug_map
-
-        FileUtils.mkdir_p(File.dirname(options.fetch(:debug_map_path)))
-        debug_map.write(options.fetch(:debug_map_path))
-
-        if json_output
-          @out.puts(JSON.pretty_generate(frontend_artifacts_contract_payload(path, artifacts, options)))
-        else
-          @out.puts("wrote frontend artifacts for #{path}")
-        end
-        0
-      end
-    end
-
     def build_command
       path = nil
       if @argv.first && !@argv.first.start_with?("-")
@@ -513,7 +370,6 @@ module MilkTea
 
       options = parse_build_options(allow_clean: true)
       return 1 unless options
-      json_output = options.delete(:json)
 
       unless path
         if File.file?(File.join(Dir.pwd, "package.toml"))
@@ -525,36 +381,27 @@ module MilkTea
         end
       end
 
-      with_contract_error_handling("buildResult", enabled: json_output, input_path: path) do
-        if options.delete(:clean)
-          cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
-          if json_output
-            @out.puts(JSON.pretty_generate(build_clean_contract_payload(path, cleaned_path)))
-          else
-            @out.puts("cleaned #{cleaned_path}")
-          end
-          return 0
-        end
-
-        frozen = options.delete(:frozen)
-        ensure_current_lockfile!(path) if frozen
-        locked = options.delete(:locked)
-        frontend = frontend_from_options(options, locked:, frozen:)
-        bundle = options[:bundle]
-        package_graph = package_graph_for(path, locked:)
-        result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend:, **options)
-        if json_output
-          @out.puts(JSON.pretty_generate(build_result_contract_payload(path, result)))
-        elsif bundle
-          @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
-          @out.puts("entry executable #{result.output_path}")
-          @out.puts("archive #{result.archive_path}") if result.archive_path
-        else
-          @out.puts("built #{path} -> #{result.output_path}")
-        end
-        @out.puts("saved C to #{result.c_path}") if result.c_path && !json_output
-        0
+      if options.delete(:clean)
+        cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
+        @out.puts("cleaned #{cleaned_path}")
+        return 0
       end
+
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+      bundle = options[:bundle]
+      package_graph = package_graph_for(path, locked:)
+      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
+      if bundle
+        @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
+        @out.puts("entry executable #{result.output_path}")
+        @out.puts("archive #{result.archive_path}") if result.archive_path
+      else
+        @out.puts("built #{path} -> #{result.output_path}")
+      end
+      @out.puts("saved C to #{result.c_path}") if result.c_path
+      0
     end
 
     def run_command
@@ -565,7 +412,6 @@ module MilkTea
 
       options = parse_build_options
       return 1 unless options
-      json_output = options.delete(:json)
 
       unless path
         if File.file?(File.join(Dir.pwd, "package.toml"))
@@ -577,38 +423,27 @@ module MilkTea
         end
       end
 
-      with_contract_error_handling("runResult", enabled: json_output, input_path: path) do
-        frozen = options.delete(:frozen)
-        ensure_current_lockfile!(path) if frozen
-        locked = options.delete(:locked)
-        frontend = frontend_from_options(options, locked:, frozen:)
-        package_graph = package_graph_for(path, locked:)
-        preview_notice_emitted = false
-        preview_started = nil
-        unless json_output
-          preview_started = lambda do |message|
-            preview_notice_emitted = true
-            @out.write(message)
-            @out.flush if @out.respond_to?(:flush)
-          end
-        end
-
-        result = Run.run(
-          path,
-          module_roots: module_roots_for(path, locked:),
-          package_graph:,
-          frontend:,
-          preview_started:,
-          **options
-        )
-        if json_output
-          @out.puts(JSON.pretty_generate(run_result_contract_payload(path, result)))
-        else
-          @out.write(result.stdout) unless preview_notice_emitted
-          @err.write(result.stderr)
-        end
-        result.exit_status
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+      package_graph = package_graph_for(path, locked:)
+      preview_notice_emitted = false
+      preview_started = lambda do |message|
+        preview_notice_emitted = true
+        @out.write(message)
+        @out.flush if @out.respond_to?(:flush)
       end
+
+      result = Run.run(
+        path,
+        module_roots: module_roots_for(path, locked:),
+        package_graph:,
+        preview_started:,
+        **options
+      )
+      @out.write(result.stdout) unless preview_notice_emitted
+      @err.write(result.stderr)
+      result.exit_status
     end
 
     def new_command
@@ -663,14 +498,12 @@ module MilkTea
         output_path: nil,
         cc: ENV.fetch("CC", "cc"),
         keep_c_path: nil,
-        frontend_command: nil,
         profile: nil,
         platform: nil,
         bundle: false,
         archive: false,
         locked: false,
         frozen: false,
-        json: false,
       }
       options[:clean] = false if allow_clean
 
@@ -692,12 +525,6 @@ module MilkTea
           return missing_option_value(option) unless value
 
           options[:keep_c_path] = value
-        when "--frontend-command"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:frontend_command] ||= []
-          options[:frontend_command] << value
         when "--profile"
           value = @argv.shift
           return missing_option_value(option) unless value
@@ -718,8 +545,6 @@ module MilkTea
         when "--frozen"
           options[:locked] = true
           options[:frozen] = true
-        when "--json"
-          options[:json] = true
         when "--clean"
           if allow_clean
             options[:clean] = true
@@ -736,99 +561,6 @@ module MilkTea
       end
 
       options
-    end
-
-    def frontend_from_options(options, locked:, frozen:)
-      command = options.delete(:frontend_command)
-      if command&.any?
-        return Build::CommandFrontend.new(command:, locked:, frozen:)
-      end
-
-      Build.default_frontend_from_env(locked:, frozen:)
-    end
-
-    def parse_frontend_artifacts_options
-      options = {
-        platform: :linux,
-        json: false,
-        locked: false,
-        frozen: false,
-        emit_line_directives: false,
-      }
-
-      until @argv.empty?
-        option = @argv.shift
-        case option
-        when "--compiled-c"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:compiled_c_path] = value
-        when "--saved-c"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:saved_c_path] = value
-        when "--debug-map"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:debug_map_path] = value
-        when "--binary-path"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:binary_path] = value
-        when "--platform"
-          value = @argv.shift
-          return missing_option_value(option) unless value
-
-          options[:platform] = case value
-                               when "linux" then :linux
-                               when "windows", "win", "win32" then :windows
-                               when "wasm", "web", "html5", "browser" then :wasm
-                               else
-                                 @err.puts("unknown platform #{value}; expected linux|windows|wasm")
-                                 print_usage(@err)
-                                 return nil
-                               end
-        when "--json"
-          options[:json] = true
-        when "--locked"
-          options[:locked] = true
-        when "--frozen"
-          options[:locked] = true
-          options[:frozen] = true
-        when "--line-directives"
-          options[:emit_line_directives] = true
-        when "--no-line-directives"
-          options[:emit_line_directives] = false
-        else
-          @err.puts("unknown frontend-artifacts option #{option}")
-          print_usage(@err)
-          return nil
-        end
-      end
-
-      %i[compiled_c_path saved_c_path debug_map_path binary_path].each do |key|
-        next if options[key]
-
-        @err.puts("missing required option #{frontend_artifact_option_name(key)}")
-        print_usage(@err)
-        return nil
-      end
-
-      options
-    end
-
-    def frontend_artifact_option_name(key)
-      case key
-      when :compiled_c_path then "--compiled-c"
-      when :saved_c_path then "--saved-c"
-      when :debug_map_path then "--debug-map"
-      when :binary_path then "--binary-path"
-      else key.to_s
-      end
     end
 
     def parse_format_options
@@ -943,71 +675,6 @@ module MilkTea
       { locked:, frozen: }
     end
 
-    def extract_reference_artifact_options!(command)
-      options = { locked: false, frozen: false, platform: nil }
-
-      if @argv.first && !@argv.first.start_with?("-")
-        options[:platform] = normalize_reference_platform(@argv.shift, command)
-        return nil unless options[:platform]
-      end
-
-      until @argv.empty?
-        arg = @argv.shift
-        case arg
-        when "--locked"
-          options[:locked] = true
-        when "--frozen"
-          options[:locked] = true
-          options[:frozen] = true
-        when "--platform"
-          value = @argv.shift
-          unless value
-            @err.puts("--platform requires a value")
-            print_usage(@err)
-            return nil
-          end
-
-          options[:platform] = normalize_reference_platform(value, command)
-          return nil unless options[:platform]
-        else
-          @err.puts("unknown #{command} option #{arg}")
-          print_usage(@err)
-          return nil
-        end
-      end
-
-      options
-    end
-
-    def normalize_reference_platform(value, command)
-      ModuleLoader.normalize_platform_name(value)
-    rescue ArgumentError => e
-      @err.puts("invalid #{command} platform #{value}: #{e.message}")
-      nil
-    end
-
-    def reference_artifacts_for(path, locked:, platform: nil)
-      expanded_path = File.expand_path(path)
-      entry_path = reference_artifact_entry_path(expanded_path)
-      effective_platform = ModuleLoader.effective_platform_for_path(entry_path, platform_override: platform)
-      ReferenceArtifacts.new(
-        root_path: expanded_path,
-        entry_path:,
-        module_roots: module_roots_for(expanded_path, locked:),
-        package_graph: package_graph_for(expanded_path, locked:),
-        platform: effective_platform,
-      )
-    end
-
-    def reference_artifact_entry_path(path)
-      manifest = PackageManifest.load(path)
-      return manifest.source_path if manifest.source_path
-
-      raise BuildError, "package #{manifest.package_name} has no build entry"
-    rescue PackageManifestError
-      path
-    end
-
     def ensure_current_lockfile!(path)
       result = PackageLock.check(path, source_resolver: package_services.source_resolver(:cache))
       return if result.current?
@@ -1070,288 +737,12 @@ module MilkTea
     end
 
     def command_supports_include_paths?(command)
-      %w[inspect-tokens semantic-tokens parse inspect-parse lint diagnostics check lower emit-c frontend-artifacts build run].include?(command)
-    end
-
-    def semantic_tokens_contract_payload(payload, source_path:)
-      source = read_source_file(source_path)
-      line_texts = source.lines
-
-      payload.merge(
-        version: CONTRACT_VERSION,
-        contract: "semanticTokens",
-        positionEncoding: CONTRACT_POSITION_ENCODING,
-        path: contract_path(payload.fetch(:path)),
-        entries: payload.fetch(:entries).map do |entry|
-          contract_semantic_token_entry(entry, line_texts)
-        end,
-      )
-    end
-
-    def diagnostics_contract_payload(path, source, locked: false)
-      result = MilkTea::LSP::Diagnostics.collect(
-        path_to_uri(path),
-        source,
-        dependency_resolution_mode: locked ? :locked : :auto,
-      )
-      diagnostics = result.fetch(:diagnostics)
-
-      {
-        version: CONTRACT_VERSION,
-        contract: "diagnostics",
-        positionEncoding: CONTRACT_POSITION_ENCODING,
-        path: contract_path(path),
-        moduleName: result[:facts]&.module_name,
-        summary: diagnostics_summary_payload(diagnostics),
-        diagnostics: diagnostics.map { |diagnostic| diagnostics_entry_payload(diagnostic, source) },
-      }.compact
-    end
-
-    def diagnostics_summary_payload(diagnostics)
-      counts = diagnostics.each_with_object({ errorCount: 0, warningCount: 0, informationCount: 0, hintCount: 0 }) do |diagnostic, memo|
-        case severity_name(fetch_hash_value(diagnostic, :severity))
-        when "error"
-          memo[:errorCount] += 1
-        when "warning"
-          memo[:warningCount] += 1
-        when "information"
-          memo[:informationCount] += 1
-        when "hint"
-          memo[:hintCount] += 1
-        end
-      end
-      counts[:totalCount] = counts.values.sum
-      counts
-    end
-
-    def diagnostics_entry_payload(diagnostic, source)
-      {
-        code: fetch_hash_value(diagnostic, :code) || "tooling/error",
-        stage: fetch_hash_value(fetch_hash_value(diagnostic, :data) || {}, :stage) || "tooling",
-        severity: severity_name(fetch_hash_value(diagnostic, :severity)),
-        message: fetch_hash_value(diagnostic, :message).to_s,
-        source: fetch_hash_value(diagnostic, :source),
-        range: contract_range_payload(fetch_hash_value(diagnostic, :range), source),
-      }.compact
-    end
-
-    def build_clean_contract_payload(input_path, cleaned_path)
-      {
-        version: CONTRACT_VERSION,
-        contract: "buildResult",
-        success: true,
-        action: "clean",
-        inputPath: contract_path(input_path),
-        cleanedPath: contract_path(cleaned_path),
-      }
-    end
-
-    def build_result_contract_payload(input_path, result)
-      {
-        version: CONTRACT_VERSION,
-        contract: "buildResult",
-        success: true,
-        inputPath: contract_path(input_path),
-        outputPath: contract_path(result.output_path),
-        cPath: contract_path(result.c_path),
-        compiler: result.compiler,
-        linkFlags: result.link_flags,
-        profile: result.profile&.to_s,
-        platform: result.platform&.to_s,
-        bundleRoot: contract_path(result.bundle_root),
-        archivePath: contract_path(result.archive_path),
-      }.compact
-    end
-
-    def frontend_artifacts_contract_payload(input_path, artifacts, options)
-      {
-        version: CONTRACT_VERSION,
-        contract: "frontendArtifacts",
-        success: true,
-        inputPath: contract_path(input_path),
-        compiledCPath: contract_path(options.fetch(:compiled_c_path)),
-        savedCPath: contract_path(options.fetch(:saved_c_path)),
-        debugMapPath: contract_path(options.fetch(:debug_map_path)),
-        binaryPath: contract_path(options.fetch(:binary_path)),
-        platform: options.fetch(:platform).to_s,
-        emitLineDirectives: options.fetch(:emit_line_directives),
-        modules: artifacts.fetch(:modules).map do |mod|
-          {
-            name: mod.name,
-            kind: mod.kind.to_s,
-            linkLibraries: mod.link_libraries,
-            compilerFlags: mod.compiler_flags,
-          }
-        end,
-      }
-    end
-
-    def run_result_contract_payload(input_path, result)
-      {
-        version: CONTRACT_VERSION,
-        contract: "runResult",
-        success: true,
-        inputPath: contract_path(input_path),
-        outputPath: contract_path(result.output_path),
-        cPath: contract_path(result.c_path),
-        compiler: result.compiler,
-        linkFlags: result.link_flags,
-        platform: result.platform&.to_s,
-        bundleRoot: contract_path(result.bundle_root),
-        archivePath: contract_path(result.archive_path),
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitStatus: result.exit_status,
-      }.compact
-    end
-
-    def with_contract_error_handling(contract_name, enabled:, input_path: nil)
-      yield
-    rescue StandardError => e
-      raise unless enabled && handled_cli_error?(e)
-
-      @out.puts(JSON.pretty_generate(contract_error_payload(contract_name, e, input_path:)))
-      1
-    end
-
-    def contract_error_payload(contract_name, error, input_path: nil)
-      payload = {
-        version: CONTRACT_VERSION,
-        contract: contract_name,
-        success: false,
-        error: {
-          code: contract_error_code(error),
-          type: error.class.name.split("::").last,
-          message: error.message.to_s,
-        },
-      }
-      payload[:inputPath] = contract_path(input_path) if input_path
-      payload
-    end
-
-    def contract_error_code(error)
-      case error
-      when BuildError
-        "build/error"
-      when RunError
-        "run/error"
-      when PackageLockError
-        "package/lock-error"
-      when PackageManifestError
-        "package/manifest-error"
-      when PackageGraphError
-        "package/graph-error"
-      when PackageSourceResolverError
-        "package/source-resolver-error"
-      when PackageSourceFetcherError
-        "package/source-fetcher-error"
-      when PackageRegistryStoreError
-        "package/registry-store-error"
-      when PackageRegistryMetadataProviderError
-        "package/registry-metadata-error"
-      when PackageDependencySolverError
-        "package/dependency-solver-error"
-      when PackageVersionError
-        "package/version-error"
-      when ModuleLoadError
-        "import/load-error"
-      when LexError
-        "lex/error"
-      when ParseError
-        "parse/error"
-      when SemaError
-        "sema/error"
-      else
-        "tooling/error"
-      end
-    end
-
-    def contract_range_payload(range, source)
-      source_lines = source.lines
-      start = fetch_hash_value(range, :start)
-      end_pos = fetch_hash_value(range, :end)
-      start_line = fetch_hash_value(start, :line)
-      end_line = fetch_hash_value(end_pos, :line)
-      start_char = fetch_hash_value(start, :character)
-      end_char = fetch_hash_value(end_pos, :character)
-
-      {
-        start: {
-          line: start_line,
-          byte: line_char_to_byte(source_lines, start_line, start_char),
-        },
-        end: {
-          line: end_line,
-          byte: line_char_to_byte(source_lines, end_line, end_char),
-        },
-      }
-    end
-
-    def line_char_to_byte(line_texts, line_index, char_index)
-      line_text = line_texts.fetch(line_index, "")
-      line_text[0, char_index].to_s.bytesize
-    end
-
-    def severity_name(value)
-      case value.to_i
-      when 1 then "error"
-      when 2 then "warning"
-      when 3 then "information"
-      when 4 then "hint"
-      else "warning"
-      end
-    end
-
-    def fetch_hash_value(hash, key)
-      return nil unless hash
-      return hash[key] if hash.key?(key)
-
-      hash[key.to_s]
-    end
-
-    def contract_semantic_token_entry(entry, line_texts)
-      line_text = line_texts.fetch(entry.fetch(:line), "")
-      start_char = entry.fetch(:startChar)
-      char_length = entry.fetch(:length)
-      start_byte = line_text[0, start_char].to_s.bytesize
-      token_text = line_text[start_char, char_length].to_s
-      length_bytes = token_text.bytesize
-
-      entry.merge(
-        startByte: start_byte,
-        endByte: start_byte + length_bytes,
-        lengthBytes: length_bytes,
-      )
-    end
-
-    def contract_path(path, base_dir: Dir.pwd)
-      return nil unless path
-
-      expanded_path = File.expand_path(path)
-      return expanded_path.tr("\\", "/") unless base_dir
-
-      expanded_base_dir = File.expand_path(base_dir)
-      within_base_dir = expanded_path == expanded_base_dir || expanded_path.start_with?("#{expanded_base_dir}#{File::SEPARATOR}")
-      return expanded_path.tr("\\", "/") unless within_base_dir
-
-      begin
-        Pathname.new(expanded_path).relative_path_from(Pathname.new(expanded_base_dir)).to_s.tr("\\", "/")
-      rescue ArgumentError
-        expanded_path.tr("\\", "/")
-      end
-    end
-
-    def path_to_uri(path)
-      escaped_path = File.expand_path(path).tr("\\", "/").split("/").map { |segment| CGI.escape(segment).gsub("+", "%20") }.join("/")
-      "file://#{escaped_path}"
+      %w[parse lint check lower emit-c build run].include?(command)
     end
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
-      "inspect-tokens"  => "Usage: mtc inspect-tokens PATH [PLATFORM] [--platform PLATFORM] [--locked] [--frozen] [-I PATH]\n\n  Emit the Ruby reference token-set artifact as JSON for comparison with the self-hosted compiler.",
-      "semantic-tokens" => "Usage: mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned semantic token contract for a source file as JSON.",
       "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
-      "inspect-parse"   => "Usage: mtc inspect-parse PATH [PLATFORM] [--platform PLATFORM] [--locked] [--frozen] [-I PATH]\n\n  Emit the Ruby reference parsed-module artifact as JSON for comparison with the self-hosted compiler.",
       "format"          => <<~HELP,
         Usage: mtc format PATH|DIR [OPTIONS]
 
@@ -1382,29 +773,9 @@ module MilkTea
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
-          "diagnostics"     => "Usage: mtc diagnostics PATH [--locked] [--frozen] [-I PATH]\n\n  Emit a versioned diagnostics contract for a source file as JSON.",
       "check"           => "Usage: mtc check PATH [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on a source file and report errors.",
       "lower"           => "Usage: mtc lower PATH [--locked] [--frozen] [-I PATH]\n\n  Lower a source file to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen] [-I PATH]\n\n  Compile a source file to C and print the output.",
-      "frontend-artifacts" => <<~HELP,
-        Usage: mtc frontend-artifacts PATH [OPTIONS]
-
-          Compile frontend artifacts without invoking a C compiler. This is the
-          external-frontend handoff contract used by Build command frontends.
-
-          Options:
-            --compiled-c PATH          Write the C used for compilation.
-            --saved-c PATH             Write the normalized C used for --keep-c.
-            --debug-map PATH           Write the debug map JSON.
-            --binary-path PATH         Binary path to encode into the debug map.
-            --platform PLATFORM        linux (default) | windows | wasm.
-            --line-directives          Emit #line directives in compiled C.
-            --no-line-directives       Omit #line directives (default).
-            --json                     Emit a versioned frontend artifact contract as JSON.
-            --locked                   Resolve dependencies from package.lock.
-            --frozen                   Require a current package.lock and use locked resolution.
-            -I, --include-path PATH    Add an extra module root.
-        HELP
       "build"           => <<~HELP,
         Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -1414,13 +785,11 @@ module MilkTea
           Options:
             -o, --output OUTPUT          Output path for the compiled artifact.
             --cc COMPILER                C compiler to use (default: $CC or cc).
-            --frontend-command ARG       External frontend command argv element (repeatable).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
             --bundle                     Package a native package build into a distributable directory.
             --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).
-            --json                       Emit a versioned build result contract as JSON.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             --clean                      Remove existing build outputs and exit.
@@ -1445,11 +814,9 @@ module MilkTea
           Options:
             -o, --output OUTPUT          Output path for the compiled binary.
             --cc COMPILER                C compiler to use (default: $CC or cc).
-            --frontend-command ARG       External frontend command argv element (repeatable).
             --keep-c C_PATH              Write the generated C source to this path.
             --profile PROFILE            debug (default) | release.
             --platform PLATFORM          linux (default) | windows | wasm.
-            --json                       Emit a versioned run result contract as JSON.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
             -I, --include-path PATH      Add an extra module root.
@@ -1516,20 +883,15 @@ module MilkTea
 
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
-      io.puts("       mtc inspect-tokens PATH [PLATFORM] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc semantic-tokens PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc inspect-parse PATH [PLATFORM] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc diagnostics PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc frontend-artifacts PATH --compiled-c PATH --saved-c PATH --debug-map PATH --binary-path PATH [--platform linux|windows|wasm] [--line-directives|--no-line-directives] [--json] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--frontend-command ARG]... [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--json] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
-      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--frontend-command ARG]... [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")

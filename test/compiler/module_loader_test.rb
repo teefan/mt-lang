@@ -874,6 +874,6 @@ class MilkTeaModuleLoaderTest < Minitest::Test
   private
 
   def language_fixture_path
-    File.expand_path("../fixtures/language_fixture.mt", __dir__)
+    materialized_language_fixture_path
   end
 end

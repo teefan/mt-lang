@@ -5438,7 +5438,7 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def language_fixture_path
-    File.expand_path("../fixtures/language_fixture.mt", __dir__)
+    materialized_language_fixture_path
   end
 
   def generate_c_from_source(source)

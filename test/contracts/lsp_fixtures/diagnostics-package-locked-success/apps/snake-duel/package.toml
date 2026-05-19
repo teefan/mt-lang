@@ -1,7 +1,0 @@
-[package]
-name = "snake_duel"
-version = "0.1.0"
-source_root = "src"
-
-[dependencies]
-"teefan.ui" = { path = "../../libs/ui" }

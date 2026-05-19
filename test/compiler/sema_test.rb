@@ -7414,7 +7414,7 @@ class MilkTeaSemaTest < Minitest::Test
   private
 
   def language_fixture_path
-    File.expand_path("../fixtures/language_fixture.mt", __dir__)
+    materialized_language_fixture_path
   end
 
   def source_relative_path(source, default: File.join("demo", "main.mt"))

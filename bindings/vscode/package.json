@@ -565,7 +565,6 @@
     "compile": "npm run typecheck && npm run bundle",
     "watch": "node ./scripts/build-extension.js --watch",
     "check:tm-sync": "node ./scripts/check-tm-grammar-sync.js",
-    "snapshot:tm": "node ./scripts/snapshot-textmate.js",
     "package": "npm run compile && vsce package --allow-missing-repository --skip-license",
     "vsix:build": "npm run package",
     "vscode:install": "code --install-extension \"${npm_package_name}-${npm_package_version}.vsix\" --force",
