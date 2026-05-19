@@ -94,6 +94,93 @@ class MilkTeaCliTest < Minitest::Test
     assert_includes out.string, "function main() -> ExitCode:"
   end
 
+  def test_inspect_tokens_command_emits_reference_token_artifact
+    Dir.mktmpdir("milk-tea-cli-inspect-tokens") do |dir|
+      package_root = File.join(dir, "demo")
+      source_root = File.join(package_root, "src")
+      FileUtils.mkdir_p(source_root)
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+      File.write(File.join(source_root, "main.mt"), <<~MT)
+        function main() -> int:
+            return 0
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["inspect-tokens", package_root], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+      assert_equal "token-set.v1", payload.fetch("schema")
+      assert_equal "token-set", payload.fetch("kind")
+      assert_equal 1, payload.fetch("moduleCount")
+
+      mod = payload.fetch("modules").first
+      assert_equal "demo", mod.fetch("packageName")
+      assert_equal "main", mod.fetch("moduleName")
+      assert_equal "linux", mod.fetch("targetPlatform")
+
+      first_token = mod.fetch("tokens").first
+      assert_equal "keyword", first_token.fetch("kind")
+      assert_equal "function", first_token.fetch("lexeme")
+      assert first_token.key?("finishLine")
+      assert first_token.key?("finishColumn")
+    end
+  end
+
+  def test_inspect_parse_command_emits_reference_parsed_artifact_with_body_statements
+    Dir.mktmpdir("milk-tea-cli-inspect-parse") do |dir|
+      package_root = File.join(dir, "demo")
+      source_root = File.join(package_root, "src")
+      FileUtils.mkdir_p(source_root)
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+      File.write(File.join(source_root, "main.mt"), <<~MT)
+        function main() -> int:
+            let value = 1
+            if value == 1:
+                return value
+
+            return 0
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["inspect-parse", package_root], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+
+      payload = JSON.parse(out.string)
+      assert_equal "parsed-module.v1", payload.fetch("schema")
+      assert_equal 1, payload.fetch("moduleCount")
+
+      function = payload.fetch("modules").first.fetch("functions").first
+      assert_equal "main", function.fetch("name")
+      assert_equal "int", function.fetch("returnType")
+      assert_equal ["let", "if", "return"], function.fetch("bodyStatements").map { |entry| entry.fetch("kind") }
+      assert_equal "value = 1", function.fetch("bodyStatements")[0].fetch("text")
+      assert_equal "value == 1", function.fetch("bodyStatements")[1].fetch("text")
+    end
+  end
+
   def test_format_command_prints_formatted_source
     out = StringIO.new
     err = StringIO.new
@@ -3414,7 +3501,9 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", out.string
     assert_match(/missing source file path/, err.string)
     assert_match(/Usage: mtc lex PATH/, err.string)
+    assert_match(/mtc inspect-tokens PATH \[PLATFORM\]/, err.string)
     assert_match(/mtc parse PATH/, err.string)
+    assert_match(/mtc inspect-parse PATH \[PLATFORM\]/, err.string)
     assert_match(/mtc format PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
   end
 
@@ -3427,8 +3516,10 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
+    assert_match(/mtc inspect-tokens PATH \[PLATFORM\] \[--platform linux\|windows\|wasm\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc semantic-tokens PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc parse PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc inspect-parse PATH \[PLATFORM\] \[--platform linux\|windows\|wasm\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc format PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
     assert_match(/mtc lint PATH\|DIR .*\[-I PATH\]/, err.string)
     assert_match(/mtc check PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
