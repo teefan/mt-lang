@@ -2422,6 +2422,83 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/type parameter span uses reserved built-in type name span/, error.message)
   end
 
+  def test_rejects_type_declaration_named_after_reserved_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      struct span:
+          value: int
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/type span uses reserved built-in type name span/, error.message)
+  end
+
+  def test_rejects_enum_member_named_after_reserved_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      enum Scalar: int
+          float = 0
+          ok = 1
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/member Scalar float uses reserved built-in type name float/, error.message)
+  end
+
+  def test_rejects_struct_field_named_after_reserved_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      struct Frame:
+          ptr_uint: int
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/field Frame ptr_uint uses reserved built-in type name ptr_uint/, error.message)
+  end
+
+  def test_rejects_variant_arm_named_after_reserved_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      variant Event:
+          span
+          payload(value: int)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/arm Event span uses reserved built-in type name span/, error.message)
+  end
+
+  def test_rejects_variant_field_named_after_reserved_builtin_type
+    source = <<~MT
+      # module demo.bad
+
+      variant Event:
+          payload(Result: int)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/field Event.payload Result uses reserved built-in type name Result/, error.message)
+  end
+
   def test_type_checks_ffi_declaration_surface
     source = <<~MT
       # module demo.ffi

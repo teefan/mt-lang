@@ -519,6 +519,14 @@ module MilkTea
 
             decl.fields.each do |field|
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
+              unless raw_module?
+                ensure_non_reserved_type_binding_name!(
+                  field.name,
+                  kind_label: "field #{decl.name}",
+                  line: field.respond_to?(:line) ? field.line : decl.line,
+                  column: field.respond_to?(:column) ? field.column : nil,
+                )
+              end
 
               field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
               validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
@@ -547,6 +555,14 @@ module MilkTea
             member_names = []
             decl.members.each do |member|
               raise_sema_error("duplicate member #{decl.name}.#{member.name}") if member_names.include?(member.name)
+              unless raw_module?
+                ensure_non_reserved_type_binding_name!(
+                  member.name,
+                  kind_label: "member #{decl.name}",
+                  line: member.respond_to?(:line) ? member.line : decl.line,
+                  column: member.respond_to?(:column) ? member.column : nil,
+                )
+              end
 
               member_names << member.name
             end
@@ -583,12 +599,28 @@ module MilkTea
             arms_hash = {}
             decl.arms.each do |arm|
               raise_sema_error("duplicate arm #{decl.name}.#{arm.name}") if seen_arms.include?(arm.name)
+              unless raw_module?
+                ensure_non_reserved_type_binding_name!(
+                  arm.name,
+                  kind_label: "arm #{decl.name}",
+                  line: arm.respond_to?(:line) ? arm.line : decl.line,
+                  column: arm.respond_to?(:column) ? arm.column : nil,
+                )
+              end
 
               seen_arms << arm.name
               field_types = {}
               seen_fields = []
               arm.fields.each do |field|
                 raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
+                unless raw_module?
+                  ensure_non_reserved_type_binding_name!(
+                    field.name,
+                    kind_label: "field #{decl.name}.#{arm.name}",
+                    line: field.respond_to?(:line) ? field.line : decl.line,
+                    column: field.respond_to?(:column) ? field.column : nil,
+                  )
+                end
 
                 seen_fields << field.name
                 field_types[field.name] = resolve_type_ref(field.type, type_params:, type_param_constraints:)
@@ -4339,7 +4371,8 @@ module MilkTea
         }.fetch(kind)
       end
 
-      def ensure_available_type_name!(name)
+      def ensure_available_type_name!(name, line: nil, column: nil)
+        ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:) unless raw_module?
         raise_sema_error("duplicate type #{name}") if @types.key?(name) || @interfaces.key?(name)
       end
 
