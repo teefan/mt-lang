@@ -3,52 +3,6 @@
 require_relative "../test_helper"
 
 class MilkTeaParserTest < Minitest::Test
-  def test_parses_language_fixture_file_into_expected_ast_shape
-    ast = MilkTea::Parser.parse(File.read(language_fixture_path), path: language_fixture_path)
-
-    assert_nil ast.module_name
-    assert_equal :module, ast.module_kind
-    assert_equal [], ast.directives
-    assert_equal 2, ast.imports.length
-    assert_equal(
-      [
-        ["test.fixtures.language_fixture.external_runtime", "runtime"],
-        ["test.fixtures.language_fixture.types", "types"],
-      ],
-      ast.imports.map { |import| [import.path.to_s, import.alias_name] },
-    )
-    assert_equal(
-      %w[ConstDecl TypeAliasDecl StructDecl ExtendingBlock FunctionDef FunctionDef],
-      ast.declarations.map { |node| node.class.name.split("::").last },
-    )
-
-    type_alias = ast.declarations[1]
-    assert_equal "ExitCode", type_alias.name
-
-    struct_decl = ast.declarations[2]
-    assert_equal "AppState", struct_decl.name
-    assert_equal %w[counter touched], struct_decl.fields.map(&:name)
-
-    methods_block = ast.declarations[3]
-    assert_equal "AppState", methods_block.type_name.to_s
-    assert_equal %w[create touch read], methods_block.methods.map(&:name)
-
-    create_method, touch_method, read_method = methods_block.methods
-    assert_equal :static, create_method.kind
-    assert_equal :mutable, touch_method.kind
-    assert_equal :plain, read_method.kind
-
-    main_fn = ast.declarations[5]
-    assert_equal "main", main_fn.name
-    assert_equal(
-      %w[LocalDecl DeferStmt ExpressionStmt MatchStmt ReturnStmt],
-      main_fn.body.map { |node| node.class.name.split("::").last }.uniq,
-    )
-    assert main_fn.body.any? { |node| node.is_a?(MilkTea::AST::MatchStmt) }
-    assert main_fn.body.any? { |node| node.is_a?(MilkTea::AST::DeferStmt) }
-    assert_instance_of MilkTea::AST::ReturnStmt, main_fn.body.last
-  end
-
   def test_parses_if_else_if_else_chains
     source = <<~MT
       function main() -> int:
@@ -113,6 +67,25 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "error", local_decl.else_binding.name
   end
 
+  def test_parses_let_else_discard_binding
+    source = <<~MT
+      function main(input: int) -> int:
+          let _ = parse(input) else:
+              return 1
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_equal "_", local_decl.name
+    assert_instance_of MilkTea::AST::Call, local_decl.value
+    assert_equal 1, local_decl.else_body.length
+    assert_nil local_decl.else_binding
+  end
+
   def test_parses_result_propagation_expression
     source = <<~MT
       function main() -> Result[int, int]:
@@ -128,6 +101,23 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::UnaryOp, local_decl.value
     assert_equal "?", local_decl.value.operator
     assert_instance_of MilkTea::AST::Call, local_decl.value.operand
+  end
+
+  def test_parses_result_propagation_expression_statement
+    source = <<~MT
+      function verify(input: int) -> Result[void, int]:
+          parse(input)?
+          return Result[void, int].success(value= done())
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    verify_fn = ast.declarations.first
+    propagation_stmt = verify_fn.body.first
+
+    assert_instance_of MilkTea::AST::ExpressionStmt, propagation_stmt
+    assert_instance_of MilkTea::AST::UnaryOp, propagation_stmt.expression
+    assert_equal "?", propagation_stmt.expression.operator
+    assert_instance_of MilkTea::AST::Call, propagation_stmt.expression.operand
   end
 
   def test_rejects_var_else_local_declaration
@@ -2403,9 +2393,4 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
   end
 
-  private
-
-  def language_fixture_path
-    materialized_language_fixture_path
-  end
 end

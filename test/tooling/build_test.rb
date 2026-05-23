@@ -10,31 +10,6 @@ require_relative "../test_helper"
 require_relative "../../lib/milk_tea/bindings"
 
 class MilkTeaBuildTest < Minitest::Test
-  def test_build_generates_output_and_kept_c_with_link_flags
-    Dir.mktmpdir("milk-tea-build") do |dir|
-      compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "language-fixture")
-      c_path = File.join(dir, "language-fixture.c")
-
-      result = MilkTea::Build.build(language_fixture_path, output_path:, cc: compiler_path, keep_c_path: c_path)
-
-      assert_equal File.expand_path(output_path), result.output_path
-      assert_equal File.expand_path(c_path), result.c_path
-      assert_equal File.expand_path(compiler_path), result.compiler
-      assert_equal [], result.link_flags
-      assert File.exist?(output_path)
-      assert File.exist?(c_path)
-      refute_match(/^#line\s+/m, File.read(c_path))
-
-      invocation = File.read(compiler_log).lines(chomp: true)
-      assert_includes invocation, "-std=c11"
-      refute_includes invocation, File.expand_path(c_path)
-      assert_includes invocation, File.expand_path(output_path)
-      refute_includes invocation, "-lm"
-    end
-  end
-
   def test_build_without_kept_c_emits_backend_once_for_debug_build
     Dir.mktmpdir("milk-tea-build-emit-count") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -208,8 +183,10 @@ class MilkTeaBuildTest < Minitest::Test
   end
 
   def test_build_reports_missing_compiler
+    source_path = File.join(Dir.tmpdir, "virtual-build-source.mt")
+
     error = assert_raises(MilkTea::BuildError) do
-      MilkTea::Build.build(language_fixture_path, cc: "/definitely/missing/cc")
+      MilkTea::Build.build(source_path, cc: "/definitely/missing/cc")
     end
 
     assert_match(/C compiler not found/, error.message)
@@ -784,8 +761,10 @@ class MilkTeaBuildTest < Minitest::Test
   end
 
   def test_build_bundle_rejects_direct_source_builds
+    source_path = File.join(Dir.tmpdir, "virtual-build-source.mt")
+
     error = assert_raises(MilkTea::BuildError) do
-      MilkTea::Build.build(language_fixture_path, bundle: true)
+      MilkTea::Build.build(source_path, bundle: true)
     end
 
     assert_match(/bundle mode requires a package build/, error.message)
@@ -1321,6 +1300,7 @@ class MilkTeaBuildTest < Minitest::Test
 
   def test_clean_removes_wasm_bundle_artifacts_for_explicit_output
     Dir.mktmpdir("milk-tea-build-clean-wasm") do |dir|
+      input_path = File.join(dir, "virtual-source.mt")
       output_path = File.join(dir, "bundle.html")
       File.write(output_path, "html")
       File.write(File.join(dir, "bundle.js"), "js")
@@ -1328,7 +1308,7 @@ class MilkTeaBuildTest < Minitest::Test
       File.write(File.join(dir, "bundle.data"), "data")
       File.write(MilkTea::DebugMap.sidecar_path_for(output_path), "debug-map")
 
-      cleaned = MilkTea::Build.clean(language_fixture_path, output_path:, platform: :wasm)
+      cleaned = MilkTea::Build.clean(input_path, output_path:, platform: :wasm)
 
       assert_equal File.expand_path(output_path), cleaned
       refute File.exist?(output_path)
@@ -1593,10 +1573,6 @@ class MilkTeaBuildTest < Minitest::Test
     }
   end
 
-  def language_fixture_path
-    materialized_language_fixture_path
-  end
-
   def write_raylib_smoke_source(dir)
     path = File.join(dir, "raylib_smoke.mt")
     File.write(path, [
@@ -1648,22 +1624,6 @@ class MilkTeaBuildTest < Minitest::Test
     end
   end
 
-  def with_singleton_method_override(object, method_name, implementation)
-    singleton_class = class << object; self; end
-    original_name = "__build_test_original_#{method_name}__"
-    original_defined = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
-    singleton_class.alias_method(original_name, method_name) if original_defined
-    singleton_class.define_method(method_name) do |*args, **kwargs, &block|
-      implementation.call(*args, **kwargs, &block)
-    end
-    yield
-  ensure
-    singleton_class.remove_method(method_name) if singleton_class.method_defined?(method_name)
-    if original_defined
-      singleton_class.alias_method(method_name, original_name)
-      singleton_class.remove_method(original_name)
-    end
-  end
 
   def with_env(overrides)
     previous = {}

@@ -64,6 +64,46 @@ class LSPProtocolTest < Minitest::Test
     end
   end
 
+  def test_read_message_returns_nil_and_warns_on_invalid_json
+    body = "{broken"
+    wire = "Content-Length: #{body.bytesize}\r\n\r\n#{body}"
+    input = StringIO.new(wire)
+    err = StringIO.new
+
+    begin
+      old_stdin = $stdin
+      old_stderr = $stderr
+      $stdin = input
+      $stderr = err
+
+      assert_nil MilkTea::LSP::Protocol.read_message
+      assert_match(/Protocol error reading message:/, err.string)
+    ensure
+      $stdin = old_stdin
+      $stderr = old_stderr
+    end
+  end
+
+  def test_write_message_warns_when_stdout_write_fails
+    failing_stdout = Object.new
+    failing_stdout.define_singleton_method(:write) { |_value| raise IOError, "stream write failed" }
+    failing_stdout.define_singleton_method(:flush) { true }
+    err = StringIO.new
+
+    begin
+      old_stdout = $stdout
+      old_stderr = $stderr
+      $stdout = failing_stdout
+      $stderr = err
+
+      MilkTea::LSP::Protocol.write_message({ "jsonrpc" => "2.0", "id" => 1 })
+      assert_match(/Protocol error writing message: stream write failed/, err.string)
+    ensure
+      $stdout = old_stdout
+      $stderr = old_stderr
+    end
+  end
+
   private
 
   def parse_wire_messages(wire)

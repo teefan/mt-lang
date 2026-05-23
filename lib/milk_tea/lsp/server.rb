@@ -826,7 +826,9 @@ module MilkTea
         ctx = measure_perf_stage(stages, 'call_context') { @workspace.find_call_context(uri, lsp_line, lsp_char) }
         return nil unless ctx
 
-        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        facts = measure_perf_stage(stages, 'facts') do
+          @workspace.get_facts(uri, allow_last_good_fallback: allow_hover_last_good_fallback?(uri))
+        end
         return nil unless facts
 
         binding = measure_perf_stage(stages, 'binding') { facts.functions[ctx[:name]] }
@@ -868,6 +870,17 @@ module MilkTea
       rescue StandardError => e
         warn "Error in prepareRename handler: #{e.message}"
         nil
+      end
+
+      def allow_hover_last_good_fallback?(uri)
+        return true unless @workspace.dependency_resolution_mode == :frozen
+
+        path = uri_to_path(uri)
+        return true unless path && File.file?(path)
+
+        DependencyResolution.resolve(path, mode: @workspace.dependency_resolution_mode).ok?
+      rescue StandardError
+        true
       end
 
       def handle_rename(params)
@@ -2311,7 +2324,9 @@ module MilkTea
           end
         end
 
-        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        facts = measure_perf_stage(stages, 'facts') do
+          @workspace.get_facts(uri, allow_last_good_fallback: allow_hover_last_good_fallback?(uri))
+        end
         return nil unless facts
 
         if token_index && field_declaration_token?(tokens, token_index)

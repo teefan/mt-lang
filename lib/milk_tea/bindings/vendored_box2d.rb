@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "vendored_c_library"
+
 module MilkTea
   module VendoredBox2D
     Error = VendoredCLibrary::Error

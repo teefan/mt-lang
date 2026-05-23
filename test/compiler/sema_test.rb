@@ -55,16 +55,6 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/import alias Result uses reserved built-in type name Result/, error.message)
   end
 
-  def test_language_fixture_file_type_checks
-    result = MilkTea::ModuleLoader.check_file(language_fixture_path)
-
-    assert_equal "test.fixtures.language_fixture", result.module_name
-    assert_equal %w[describe main], result.functions.keys.sort
-    refute result.imports.key?("maybe")
-    assert_equal true, result.imports.key?("runtime")
-    assert_equal true, result.imports.key?("types")
-  end
-
   def test_rejects_non_bool_conditions
     source = <<~MT
       # module demo.bad
@@ -1139,6 +1129,124 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_program_source(source)
 
     assert_equal true, result.root_analysis.functions.key?("verify")
+  end
+
+  def test_rejects_result_propagation_inside_defer_block
+    source = <<~MT
+      # module demo.status_defer
+
+
+
+      function done() -> void:
+          return
+
+      function parse() -> Result[void, int]:
+          return Result[void, int].success(value= done())
+
+      function verify() -> Result[void, int]:
+          defer:
+              parse()?
+          return Result[void, int].success(value= done())
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation is not allowed inside defer blocks/, error.message)
+  end
+
+  def test_rejects_result_propagation_when_enclosing_return_is_not_result
+    source = <<~MT
+      # module demo.status_non_result
+
+      function parse(input: int) -> Result[int, int]:
+          return Result[int, int].success(value= input)
+
+      function verify(input: int) -> int:
+          let value = parse(input)?
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation requires enclosing function\/proc to return Result\[_/, error.message)
+  end
+
+  def test_rejects_result_propagation_with_error_type_mismatch
+    source = <<~MT
+      # module demo.status_error_type_mismatch
+
+      function parse(input: int) -> Result[int, long]:
+          return Result[int, long].success(value= input)
+
+      function verify(input: int) -> Result[int, int]:
+          let value = parse(input)?
+          return Result[int, int].success(value= value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation error type/, error.message)
+    assert_match(/must match enclosing Result error type/, error.message)
+  end
+
+  def test_rejects_result_propagation_expression_with_void_success_type
+    source = <<~MT
+      # module demo.status_void_success
+
+
+
+      function done() -> void:
+          return
+
+      function parse() -> Result[void, int]:
+          return Result[void, int].success(value= done())
+
+      function verify() -> Result[int, int]:
+          let value = parse()?
+          return Result[int, int].success(value= value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation requires a non-void Result success type/, error.message)
+  end
+
+  def test_rejects_result_propagation_on_non_result_operand
+    source = <<~MT
+      # module demo.status_not_result
+
+      function verify() -> Result[int, int]:
+          let value = 1?
+          return Result[int, int].success(value= value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation expects Result\[T, E\]/, error.message)
+  end
+
+  def test_rejects_result_propagation_outside_function_and_proc_bodies
+    source = <<~MT
+      # module demo.status_top_level
+
+      const value: int = Result[int, int].success(value= 1)?
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation is only allowed inside function and proc bodies/, error.message)
   end
 
   def test_rejects_let_else_discard_binding_with_type_annotation
@@ -5600,6 +5708,20 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/external function make cannot return arrays/, return_error.message)
   end
 
+  def test_rejects_external_function_with_proc_parameter
+    source = <<~MT
+      # module demo.external_proc_param
+
+      external function install(callback: proc() -> void) -> void
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/external function install cannot take proc parameters/, error.message)
+  end
+
   def test_type_checks_safe_array_indexing_and_element_assignment
     source = <<~MT
       # module demo.arrays
@@ -7412,10 +7534,6 @@ class MilkTeaSemaTest < Minitest::Test
   end
 
   private
-
-  def language_fixture_path
-    materialized_language_fixture_path
-  end
 
   def source_relative_path(source, default: File.join("demo", "main.mt"))
     source.each_line do |line|

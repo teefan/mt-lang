@@ -12,4 +12,5 @@ gem "tomlrb", "~> 2.0", ">= 2.0.4"
 
 group :development, :test do
   gem "minitest", "~> 6.0"
+  gem "minitest-coverage", "~> 1.0.0.b3"
 end

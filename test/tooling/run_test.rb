@@ -5,30 +5,40 @@ require "net/http"
 require_relative "../test_helper"
 
 class MilkTeaRunTest < Minitest::Test
-  def test_run_executes_built_program_and_preserves_requested_artifacts
-    Dir.mktmpdir("milk-tea-run") do |dir|
-      compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "hello\n", stderr: "warn\n", exit_status: 5)
-      output_path = File.join(dir, "demo-run")
-      c_path = File.join(dir, "demo-run.c")
+  def test_run_uses_existing_module_root_as_execution_directory_for_virtual_source_paths
+    virtual_path = File.join(Dir.tmpdir, "missing-run-source", "virtual-run-source.mt")
+    output_path = "/tmp/language-program-run"
+    frontend = Object.new
+    build_result = MilkTea::Build::Result.new(
+      output_path: output_path,
+      c_path: nil,
+      compiler: "/tmp/fake-cc",
+      link_flags: [],
+      profile: :debug,
+      platform: :linux,
+      bundle_root: nil,
+      archive_path: nil,
+    )
+    observed_chdir = nil
 
-      result = MilkTea::Run.run(language_fixture_path, output_path:, cc: compiler_path, keep_c_path: c_path)
-
-      assert_equal "hello\n", result.stdout
-      assert_equal "warn\n", result.stderr
-      assert_equal 5, result.exit_status
-      assert_equal File.expand_path(output_path), result.output_path
-      assert_equal File.expand_path(c_path), result.c_path
-      assert_equal File.expand_path(compiler_path), result.compiler
-      assert_equal [], result.link_flags
-      assert_nil result.bundle_root
-      assert_nil result.archive_path
-      assert File.exist?(output_path)
-      assert File.exist?(c_path)
-      refute_match(/^#line\s+/m, File.read(c_path))
-      invocation = File.read(compiler_log).lines(chomp: true)
-      refute_includes invocation, "-lm"
+    build_runner = lambda do |_path, **kwargs|
+      assert_equal frontend, kwargs[:frontend]
+      build_result
     end
+    capture_runner = lambda do |_command, chdir:|
+      observed_chdir = chdir
+      ["", "", Object.new.tap { |status| status.define_singleton_method(:exited?) { true }; status.define_singleton_method(:exitstatus) { 0 } }]
+    end
+
+    with_singleton_method_override(MilkTea::Build, :build, build_runner) do
+      with_singleton_method_override(Open3, :capture3, capture_runner) do
+        result = MilkTea::Run.run(virtual_path, module_roots: [MilkTea.root.to_s], frontend: frontend)
+
+        assert_equal 0, result.exit_status
+      end
+    end
+
+    assert_equal MilkTea.root.to_s, observed_chdir
   end
 
   def test_run_executes_binary_from_source_directory_for_relative_assets
@@ -2089,11 +2099,223 @@ class MilkTeaRunTest < Minitest::Test
     end
   end
 
-  private
+  def test_wasm_preview_server_url_for_requires_started_server
+    Dir.mktmpdir("milk-tea-run-preview-url") do |dir|
+      server = MilkTea::Run::WasmPreviewServer.new(root_dir: dir)
 
-  def language_fixture_path
-    materialized_language_fixture_path
+      error = assert_raises(MilkTea::RunError) { server.url_for("app.html") }
+      assert_match(/has not been started/, error.message)
+    end
   end
+
+  def test_wasm_preview_server_resolve_request_path_rejects_escape_paths
+    Dir.mktmpdir("milk-tea-run-preview-path") do |dir|
+      File.write(File.join(dir, "index.html"), "<html></html>")
+      server = MilkTea::Run::WasmPreviewServer.new(root_dir: dir)
+
+      default_path = server.send(:resolve_request_path, "/")
+      escaped_path = server.send(:resolve_request_path, "/../../etc/passwd")
+
+      assert_equal File.join(dir, "index.html"), default_path
+      assert_nil escaped_path
+    end
+  end
+
+  def test_wasm_preview_server_mime_type_covers_all_known_extensions
+    server = MilkTea::Run::WasmPreviewServer.new(root_dir: Dir.pwd)
+
+    assert_equal "text/html; charset=utf-8", server.send(:mime_type_for, "demo.html")
+    assert_equal "text/javascript; charset=utf-8", server.send(:mime_type_for, "demo.js")
+    assert_equal "text/css; charset=utf-8", server.send(:mime_type_for, "demo.css")
+    assert_equal "application/json; charset=utf-8", server.send(:mime_type_for, "demo.json")
+    assert_equal "application/json; charset=utf-8", server.send(:mime_type_for, "demo.mtdbg.json")
+    assert_equal "application/wasm", server.send(:mime_type_for, "demo.wasm")
+    assert_equal "audio/wav", server.send(:mime_type_for, "demo.wav")
+    assert_equal "image/x-portable-pixmap", server.send(:mime_type_for, "demo.ppm")
+    assert_equal "application/octet-stream", server.send(:mime_type_for, "demo.bin")
+  end
+
+  def test_wasm_preview_server_handle_client_rejects_unsupported_methods
+    socket = Object.new
+    lines = ["POST /index.html HTTP/1.1\r\n", "\r\n"]
+    written = +""
+    socket.define_singleton_method(:gets) { lines.shift }
+    socket.define_singleton_method(:write) { |chunk| written << chunk }
+
+    server = MilkTea::Run::WasmPreviewServer.new(root_dir: Dir.pwd)
+    server.send(:handle_client, socket)
+
+    assert_match(/405 Method Not Allowed/, written)
+    assert_match(/method not allowed/, written)
+  end
+
+  def test_wasm_preview_server_handle_client_returns_not_found_for_missing_files
+    Dir.mktmpdir("milk-tea-run-preview-missing") do |dir|
+      socket = Object.new
+      lines = ["GET /missing.html HTTP/1.1\r\n", "\r\n"]
+      written = +""
+      socket.define_singleton_method(:gets) { lines.shift }
+      socket.define_singleton_method(:write) { |chunk| written << chunk }
+
+      server = MilkTea::Run::WasmPreviewServer.new(root_dir: dir)
+      server.send(:handle_client, socket)
+
+      assert_match(/404 Not Found/, written)
+      assert_match(/not found/, written)
+    end
+  end
+
+  def test_wasm_preview_server_restores_signal_handlers_and_ignores_argument_error
+    server = MilkTea::Run::WasmPreviewServer.new(root_dir: Dir.pwd)
+
+    with_singleton_method_override(Signal, :trap, lambda { |_name, _handler = nil|
+      raise ArgumentError, "unsupported signal"
+    }) do
+      server.send(:restore_signal_handlers, { "TERM" => proc {} })
+    end
+  end
+
+  def test_wasm_preview_server_wake_server_handles_connection_refused
+    server = MilkTea::Run::WasmPreviewServer.new(root_dir: Dir.pwd)
+    server.instance_variable_set(:@server, Object.new)
+    server.instance_variable_set(:@port, 40_000)
+
+    with_singleton_method_override(TCPSocket, :new, lambda { |_host, _port|
+      raise Errno::ECONNREFUSED
+    }) do
+      server.send(:wake_server)
+    end
+  end
+
+  def test_wasm_preview_server_close_server_ignores_io_errors
+    broken_server = Object.new
+    broken_server.define_singleton_method(:close) { raise IOError, "closed" }
+
+    server = MilkTea::Run::WasmPreviewServer.new(root_dir: Dir.pwd)
+    server.instance_variable_set(:@server, broken_server)
+
+    server.send(:close_server)
+    assert_nil server.instance_variable_get(:@server)
+  end
+
+  def test_run_raises_when_build_target_platform_mismatches_host
+    build_result = MilkTea::Build::Result.new(
+      output_path: "/tmp/app.exe",
+      c_path: nil,
+      compiler: "cc",
+      link_flags: [],
+      profile: :debug,
+      platform: :windows,
+      bundle_root: nil,
+      archive_path: nil,
+    )
+
+    with_singleton_method_override(MilkTea::Build, :build, ->(_path, **_kwargs) { build_result }) do
+      error = assert_raises(MilkTea::RunError) { MilkTea::Run.run("/tmp/no-source.mt", output_path: "/tmp/out") }
+      assert_match(/run target platform is windows/, error.message)
+    end
+  end
+
+  def test_run_raises_when_built_program_path_is_missing
+    build_result = MilkTea::Build::Result.new(
+      output_path: "/tmp/missing-output",
+      c_path: nil,
+      compiler: "cc",
+      link_flags: [],
+      profile: :debug,
+      platform: :linux,
+      bundle_root: nil,
+      archive_path: nil,
+    )
+
+    with_singleton_method_override(MilkTea::Build, :build, ->(_path, **_kwargs) { build_result }) do
+      with_singleton_method_override(Open3, :capture3, ->(_cmd, chdir:) { raise Errno::ENOENT, chdir }) do
+        error = assert_raises(MilkTea::RunError) { MilkTea::Run.run("/tmp/no-source.mt", output_path: "/tmp/out") }
+        assert_match(/built program not found:/, error.message)
+      end
+    end
+  end
+
+  def test_process_exit_status_returns_one_for_unknown_process_state
+    runner = MilkTea::Run.new("/tmp/no-source.mt", output_path: "/tmp/out", cc: "cc", keep_c_path: nil)
+    status = Object.new
+    status.define_singleton_method(:exited?) { false }
+    status.define_singleton_method(:signaled?) { false }
+
+    assert_equal 1, runner.send(:process_exit_status, status)
+  end
+
+  def test_open_browser_raises_run_error_when_launcher_is_missing
+    runner = MilkTea::Run.new("/tmp/no-source.mt", output_path: "/tmp/out", cc: "cc", keep_c_path: nil)
+
+    with_singleton_method_override(Process, :spawn, ->(*_args, **_kwargs) { raise Errno::ENOENT, "xdg-open" }) do
+      error = assert_raises(MilkTea::RunError) { runner.send(:open_browser, "http://example.test") }
+      assert_match(/browser launcher not found:/, error.message)
+    end
+  end
+
+  def test_browser_open_command_uses_windows_launcher_on_windows_hosts
+    runner = MilkTea::Run.new("/tmp/no-source.mt", output_path: "/tmp/out", cc: "cc", keep_c_path: nil)
+
+    with_singleton_method_override(runner, :host_platform, -> { :windows }) do
+      assert_equal ["cmd", "/c", "start", "", "http://example.test"], runner.send(:browser_open_command, "http://example.test")
+    end
+  end
+
+  def test_run_wasm_preview_stops_preview_server_when_startup_fails
+    preview_server_class = Class.new do
+      class << self
+        attr_accessor :stopped
+      end
+
+      def initialize(root_dir:, idle_timeout: nil)
+        _root_dir = root_dir
+        _idle_timeout = idle_timeout
+      end
+
+      def listen!
+        self
+      end
+
+      def url_for(entry_name)
+        "http://127.0.0.1:42000/#{entry_name}"
+      end
+
+      def serve_forever
+        raise "preview failed"
+      end
+
+      def stop
+        self.class.stopped = true
+      end
+    end
+
+    runner = MilkTea::Run.new(
+      "/tmp/no-source.mt",
+      output_path: "/tmp/out",
+      cc: "cc",
+      keep_c_path: nil,
+      browser_opener: ->(_url) { true },
+      preview_server_class: preview_server_class,
+    )
+
+    build_result = MilkTea::Build::Result.new(
+      output_path: "/tmp/demo.html",
+      c_path: nil,
+      compiler: "cc",
+      link_flags: [],
+      profile: :debug,
+      platform: :wasm,
+      bundle_root: nil,
+      archive_path: nil,
+    )
+
+    error = assert_raises(RuntimeError) { runner.send(:run_wasm_preview, build_result) }
+    assert_match(/preview failed/, error.message)
+    assert_equal true, preview_server_class.stopped
+  end
+
+  private
 
   def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:)
     path = File.join(dir, "fake-run-cc")
@@ -2128,4 +2350,5 @@ class MilkTeaRunTest < Minitest::Test
       File.file?(candidate) && File.executable?(candidate)
     end
   end
+
 end

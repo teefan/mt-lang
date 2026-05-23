@@ -346,7 +346,7 @@ module MilkTea
       relative_path = File.join(*module_name.split(".")) + ".mt"
       blocked = false
       candidate = @module_roots.lazy.map { |root| self.class.resolve_source_path(File.join(root, relative_path), platform: @platform) }.find do |path|
-        next false unless File.file?(path)
+        next false unless source_path_available?(path)
 
         allowed = import_allowed?(module_name, importer_path, path)
         blocked ||= !allowed
@@ -369,7 +369,7 @@ module MilkTea
       sibling_import = module_name.delete_prefix("#{importer_module_name}.")
       sibling_path = File.join(File.dirname(importer_path), *sibling_import.split(".")) + ".mt"
       resolved_sibling_path = self.class.resolve_source_path(sibling_path, platform: @platform)
-      return nil unless File.file?(resolved_sibling_path)
+      return nil unless source_path_available?(resolved_sibling_path)
 
       namespaced_path = File.join(File.dirname(importer_path), importer_module_name, *sibling_import.split(".")) + ".mt"
       "module not found; entry module '#{importer_module_name}' does not create an import namespace for sibling files. Import '#{sibling_import}' instead, or move the module to #{namespaced_path}"
@@ -414,7 +414,7 @@ module MilkTea
       end
 
       resolved_path = self.class.resolve_source_path(matching_candidates.first.last, platform: @platform)
-      raise ModuleLoadError.new("module not found", path: module_name) unless File.file?(resolved_path)
+      raise ModuleLoadError.new("module not found", path: module_name) unless source_path_available?(resolved_path)
 
       File.expand_path(resolved_path)
     end
@@ -470,6 +470,11 @@ module MilkTea
 
     def package_namespace_match?(module_name, package_name)
       module_name == package_name || module_name.start_with?("#{package_name}.")
+    end
+
+    def source_path_available?(path)
+      resolved_path = File.expand_path(path.to_s)
+      @source_overrides.key?(resolved_path) || File.file?(resolved_path)
     end
 
     def module_binding(analysis)

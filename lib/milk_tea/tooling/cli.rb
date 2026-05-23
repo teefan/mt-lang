@@ -4,17 +4,19 @@ require "pp"
 
 module MilkTea
   class CLI
-    def self.start(argv = ARGV, out: $stdout, err: $stderr)
-      new(argv, out:, err:).start
+    def self.start(argv = ARGV, out: $stdout, err: $stderr, source_overrides: nil, build_frontend: nil)
+      new(argv, out:, err:, source_overrides:, build_frontend:).start
     end
 
-    def initialize(argv, out:, err:)
+    def initialize(argv, out:, err:, source_overrides: nil, build_frontend: nil)
       @argv = argv.dup
       @out = out
       @err = err
       @include_module_roots = []
       @include_path_flags = []
       @ambient_module_roots = MilkTea::ModuleRoots.roots_for_path(Dir.pwd)
+      @source_overrides = normalize_source_overrides(source_overrides)
+      @build_frontend = build_frontend
     end
 
     def start
@@ -97,6 +99,8 @@ module MilkTea
       end
 
       resolution = extract_resolution_flags!
+      return 1 unless ensure_no_extra_arguments!("parse")
+
       ensure_current_lockfile!(path) if resolution[:frozen]
 
       ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
@@ -322,6 +326,8 @@ module MilkTea
       end
 
       resolution = extract_resolution_flags!
+      return 1 unless ensure_no_extra_arguments!("check")
+
       ensure_current_lockfile!(path) if resolution[:frozen]
 
       result = make_module_loader(path, locked: resolution[:locked]).check_file(path)
@@ -339,6 +345,8 @@ module MilkTea
       end
 
       resolution = extract_resolution_flags!
+      return 1 unless ensure_no_extra_arguments!("lower")
+
       ensure_current_lockfile!(path) if resolution[:frozen]
 
       program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
@@ -355,6 +363,8 @@ module MilkTea
       end
 
       resolution = extract_resolution_flags!
+      return 1 unless ensure_no_extra_arguments!("emit-c")
+
       ensure_current_lockfile!(path) if resolution[:frozen]
 
       program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
@@ -392,7 +402,7 @@ module MilkTea
       locked = options.delete(:locked)
       bundle = options[:bundle]
       package_graph = package_graph_for(path, locked:)
-      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, **options)
+      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend: @build_frontend, **options)
       if bundle
         @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
         @out.puts("entry executable #{result.output_path}")
@@ -438,6 +448,7 @@ module MilkTea
         path,
         module_roots: module_roots_for(path, locked:),
         package_graph:,
+        frontend: @build_frontend,
         preview_started:,
         **options
       )
@@ -617,7 +628,8 @@ module MilkTea
     end
 
     def read_source_file(path)
-      File.read(path)
+      resolved_path = File.expand_path(path.to_s)
+      @source_overrides.fetch(resolved_path) { File.read(resolved_path) }
     rescue Errno::ENOENT
       raise ModuleLoadError.new("source file not found", path: path)
     rescue Errno::EISDIR
@@ -625,7 +637,15 @@ module MilkTea
     end
 
     def make_module_loader(path = nil, locked: false)
-      ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:))
+      ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:), source_overrides: @source_overrides)
+    end
+
+    def normalize_source_overrides(source_overrides)
+      return {} unless source_overrides
+
+      source_overrides.each_with_object({}) do |(path, source), overrides|
+        overrides[File.expand_path(path.to_s)] = source.to_s
+      end
     end
 
     def module_roots_for(path = nil, locked: false)
@@ -673,6 +693,14 @@ module MilkTea
 
       @argv = remaining
       { locked:, frozen: }
+    end
+
+    def ensure_no_extra_arguments!(command)
+      return true if @argv.empty?
+
+      @err.puts("unexpected argument(s) for #{command}: #{@argv.join(' ')}")
+      print_command_help(command, @err)
+      false
     end
 
     def ensure_current_lockfile!(path)
