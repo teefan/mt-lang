@@ -1497,6 +1497,38 @@ class LSPServerTest < Minitest::Test
     end
   end
 
+  def test_references_local_variable_are_scoped_under_shadowing
+    source = <<~MT
+      function main() -> int:
+          let value = 1
+          let a = value
+          if true:
+              let value = 2
+              let b = value
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_references_shadowed_local.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/references", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 5, "character" => 17 },
+        "context"      => { "includeDeclaration" => true }
+      })
+
+      refs = response.fetch("result")
+      assert_equal 2, refs.length
+      starts = refs.map { |entry| [entry.dig("range", "start", "line"), entry.dig("range", "start", "character")] }
+      assert_includes starts, [4, 12]
+      assert_includes starts, [5, 16]
+    end
+  end
+
   def test_document_highlight_returns_all_occurrences_in_file
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -1511,6 +1543,37 @@ class LSPServerTest < Minitest::Test
       highlights = response.fetch("result")
       assert highlights.length >= 2, "expected at least 2 highlights for 'add', got #{highlights.length}"
       highlights.each { |h| assert_equal 1, h["kind"] }
+    end
+  end
+
+  def test_document_highlight_local_variable_is_scoped_under_shadowing
+    source = <<~MT
+      function main() -> int:
+          let value = 1
+          let a = value
+          if true:
+              let value = 2
+              let b = value
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_highlight_shadowed_local.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/documentHighlight", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 5, "character" => 17 }
+      })
+
+      highlights = response.fetch("result")
+      assert_equal 2, highlights.length
+      starts = highlights.map { |entry| [entry.dig("range", "start", "line"), entry.dig("range", "start", "character")] }
+      assert_includes starts, [4, 12]
+      assert_includes starts, [5, 16]
     end
   end
 
@@ -1587,6 +1650,78 @@ class LSPServerTest < Minitest::Test
       assert_kind_of Array, changes
       assert changes.length >= 2, "expected at least 2 edits for 'add' rename, got #{changes.length}"
       changes.each { |edit| assert_equal "sum", edit["newText"] }
+    end
+  end
+
+  def test_rename_local_variable_is_scoped_under_shadowing
+    source = <<~MT
+      function main() -> int:
+          let value = 1
+          let a = value
+          if true:
+              let value = 2
+              let b = value
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_rename_shadowed_local.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      # Rename the inner `value` declaration inside the if block.
+      response = client.send_request("textDocument/rename", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 4, "character" => 12 },
+        "newName"      => "inner_value"
+      })
+
+      changes = response.dig("result", "changes", uri)
+      assert_kind_of Array, changes
+      assert_equal 2, changes.length
+
+      starts = changes.map { |edit| [edit.dig("range", "start", "line"), edit.dig("range", "start", "character")] }
+      assert_includes starts, [4, 12]
+      assert_includes starts, [5, 16]
+      changes.each { |edit| assert_equal "inner_value", edit["newText"] }
+    end
+  end
+
+  def test_rename_local_variable_from_usage_is_scoped_under_shadowing
+    source = <<~MT
+      function main() -> int:
+          let value = 1
+          let a = value
+          if true:
+              let value = 2
+              let b = value
+          return value
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_rename_shadowed_local_usage.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      # Rename from the inner usage `value` in `let b = value`.
+      response = client.send_request("textDocument/rename", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 5, "character" => 17 },
+        "newName"      => "inner_value"
+      })
+
+      changes = response.dig("result", "changes", uri)
+      assert_kind_of Array, changes
+      assert_equal 2, changes.length
+
+      starts = changes.map { |edit| [edit.dig("range", "start", "line"), edit.dig("range", "start", "character")] }
+      assert_includes starts, [4, 12]
+      assert_includes starts, [5, 16]
+      changes.each { |edit| assert_equal "inner_value", edit["newText"] }
     end
   end
 

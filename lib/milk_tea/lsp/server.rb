@@ -744,6 +744,17 @@ module MilkTea
           return refs
         end
 
+        if facts
+          scoped_refs = measure_perf_stage(stages, 'scoped_refs') do
+            scoped_local_reference_locations(uri, token, lsp_line, lsp_char, facts, include_declaration: include_declaration)
+          end
+          unless scoped_refs.nil?
+            result_count = scoped_refs.length
+            result_state = scoped_refs.empty? ? 'miss' : 'hit'
+            return scoped_refs
+          end
+        end
+
         refs = measure_perf_stage(stages, 'refs_scan') { @workspace.find_all_references(token.lexeme) }
         if include_declaration
           result_count = refs.length
@@ -804,6 +815,13 @@ module MilkTea
 
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return [] unless token&.type == :identifier
+
+        if (facts = @workspace.get_facts(uri))
+          scoped = scoped_local_reference_locations(uri, token, lsp_line, lsp_char, facts, include_declaration: true)
+          unless scoped.nil?
+            return scoped.map { |entry| { range: entry[:range], kind: 1 } }
+          end
+        end
 
         toks = @workspace.get_tokens(uri) || []
         toks.select { |t| t.type == :identifier && t.lexeme == token.lexeme }
@@ -892,6 +910,11 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
 
+        if (facts = @workspace.get_facts(uri))
+          scoped_changes = scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: scoped_changes } if scoped_changes
+        end
+
         refs = @workspace.find_all_references(token.lexeme)
         changes = {}
         refs.each do |ref|
@@ -904,6 +927,188 @@ module MilkTea
       rescue StandardError => e
         warn "Error in rename handler: #{e.message}"
         nil
+      end
+
+      def scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+        binding_id = rename_target_binding_id(uri, token, lsp_line, lsp_char, facts)
+        return nil unless binding_id
+
+        ranges = scoped_binding_occurrence_ranges(uri, token.lexeme, facts, binding_id, include_declaration: true)
+        return nil if ranges.empty?
+
+        edits = ranges.map do |range|
+          {
+            range: {
+              start: { line: range[:line] - 1, character: range[:column] - 1 },
+              end: { line: range[:line] - 1, character: range[:column] - 1 + range[:length] },
+            },
+            newText: new_name,
+          }
+        end
+
+        { uri => edits }
+      end
+
+      def scoped_local_reference_locations(uri, token, lsp_line, lsp_char, facts, include_declaration:)
+        binding_id = rename_target_binding_id(uri, token, lsp_line, lsp_char, facts)
+        return nil unless binding_id
+        return nil unless local_binding_id?(uri, facts, binding_id)
+
+        ranges = scoped_binding_occurrence_ranges(uri, token.lexeme, facts, binding_id, include_declaration: include_declaration)
+        ranges.map do |range|
+          {
+            uri: uri,
+            range: {
+              start: { line: range[:line] - 1, character: range[:column] - 1 },
+              end: { line: range[:line] - 1, character: range[:column] - 1 + range[:length] },
+            },
+          }
+        end
+      end
+
+      def local_binding_id?(uri, facts, binding_id)
+        ast = @workspace.get_ast(uri)
+        return false unless ast
+
+        resolution = facts.binding_resolution
+        return false unless resolution
+
+        each_ast_node(ast) do |node|
+          next unless local_binding_declaration_node?(node)
+          next unless resolution.declaration_binding_ids[node.object_id] == binding_id
+
+          return true
+        end
+
+        false
+      end
+
+      def local_binding_declaration_node?(node)
+        node.is_a?(AST::LocalDecl) ||
+          node.is_a?(AST::Param) ||
+          node.is_a?(AST::ForBinding) ||
+          node.is_a?(AST::MatchArm) ||
+          node.is_a?(AST::MatchExprArm)
+      end
+
+      def rename_target_binding_id(uri, token, lsp_line, lsp_char, facts)
+        resolution = facts.binding_resolution
+        return nil unless resolution
+
+        line = lsp_line + 1
+        char = lsp_char + 1
+        ast = @workspace.get_ast(uri)
+        return nil unless ast
+
+        identifier_node = find_identifier_ast_node_at(ast, token.lexeme, line, char)
+        if identifier_node && (id = resolution.identifier_binding_ids[identifier_node.object_id])
+          return id
+        end
+
+        declaration_node = find_declaration_ast_node_at(ast, token.lexeme, line, char)
+        if declaration_node && (id = resolution.declaration_binding_ids[declaration_node.object_id])
+          return id
+        end
+
+        resolve_local_hover_binding(facts, token.lexeme, line, char)&.id
+      end
+
+      def scoped_binding_occurrence_ranges(uri, name, facts, binding_id, include_declaration:)
+        ast = @workspace.get_ast(uri)
+        return [] unless ast
+
+        resolution = facts.binding_resolution
+        return [] unless resolution
+
+        ranges = []
+        seen = Set.new
+
+        each_ast_node(ast) do |node|
+          range = nil
+
+          if node.is_a?(AST::Identifier) && node.name == name && resolution.identifier_binding_ids[node.object_id] == binding_id
+            range = ast_name_range(node.name, node.line, node.column)
+          elsif include_declaration && resolution.declaration_binding_ids[node.object_id] == binding_id
+            range = declaration_name_range(node)
+          end
+
+          next unless range
+
+          key = [range[:line], range[:column], range[:length]]
+          next if seen.include?(key)
+
+          seen << key
+          ranges << range
+        end
+
+        ranges
+      end
+
+      def find_identifier_ast_node_at(ast, name, line, char)
+        each_ast_node(ast) do |node|
+          next unless node.is_a?(AST::Identifier)
+          next unless node.name == name
+          next unless node.line == line && node.column == char
+
+          return node
+        end
+
+        nil
+      end
+
+      def find_declaration_ast_node_at(ast, name, line, char)
+        each_ast_node(ast) do |node|
+          range = declaration_name_range(node)
+          next unless range
+          next unless range[:name] == name
+          next unless range[:line] == line && range[:column] == char
+
+          return node
+        end
+
+        nil
+      end
+
+      def declaration_name_range(node)
+        if node.is_a?(AST::MatchArm) || node.is_a?(AST::MatchExprArm)
+          return nil unless node.binding_name && node.binding_line && node.binding_column
+
+          return {
+            name: node.binding_name,
+            line: node.binding_line,
+            column: node.binding_column,
+            length: node.binding_name.length,
+          }
+        end
+
+        return nil unless node.respond_to?(:name) && node.respond_to?(:line) && node.respond_to?(:column)
+        return nil unless node.name && node.line && node.column
+
+        ast_name_range(node.name, node.line, node.column)
+      end
+
+      def ast_name_range(name, line, column)
+        { name: name, line: line, column: column, length: name.length }
+      end
+
+      def each_ast_node(node, &block)
+        return if node.nil?
+
+        if node.is_a?(Array)
+          node.each { |item| each_ast_node(item, &block) }
+          return
+        end
+
+        class_name = node.class.name
+        return unless class_name && class_name.start_with?('MilkTea::AST::')
+
+        yield node
+
+        if node.respond_to?(:members)
+          node.members.each do |member|
+            each_ast_node(node.public_send(member), &block)
+          end
+        end
       end
 
       # ── Document symbols (position-accurate, token-based) ───────────────────
