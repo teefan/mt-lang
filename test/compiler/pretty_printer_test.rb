@@ -349,6 +349,42 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
+  def test_preserves_unsafe_block_shape_when_blank_line_trivia_exists
+    source = <<~MT
+      function main() -> int:
+          unsafe:
+
+              return 1
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    lexed = MilkTea::Lexer.lex_with_trivia(source)
+    formatted = MilkTea::PrettyPrinter.format_ast(ast, trivia: lexed.trivia)
+
+    assert_match(/unsafe:\n\s+return 1/, formatted)
+    refute_match(/unsafe: return 1/, formatted)
+  end
+
+  def test_formats_inline_comments_from_trivia_for_raw_module_headers
+    source = <<~MT
+      external # module marker
+
+      import std.c.dep as dep # import alias
+
+      include "helper.h"
+
+      struct Holder:
+          value: dep.Vec
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    lexed = MilkTea::Lexer.lex_with_trivia(source)
+    formatted = MilkTea::PrettyPrinter.format_ast(ast, trivia: lexed.trivia)
+
+    assert_includes formatted, "external  # module marker"
+    assert_includes formatted, "import std.c.dep as dep  # import alias"
+  end
+
   def test_formats_lowered_ir_as_structured_output
     source = [
       "struct Counter:",

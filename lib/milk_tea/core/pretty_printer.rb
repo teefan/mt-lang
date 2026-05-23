@@ -85,16 +85,14 @@ module MilkTea
 
       def format(node, trivia: [])
         @comment_map = build_comment_map(trivia)
-        @trailing_comment_map = {}
         emit_source_file(node)
         finish
       end
 
       private
 
-      # Maps source_line → [comment_text, ...] for standalone comment lines.
-      # These are emitted before the first statement whose .line >= comment_line.
-      # Also populates @blank_line_set with line numbers that are blank.
+      # Maps source_line -> [comment_text, ...] for standalone comment lines.
+      # Also collects line numbers for detached blank-line trivia.
       def build_comment_map(trivia)
         @blank_line_set = {}
         map = {}
@@ -102,6 +100,8 @@ module MilkTea
           case t.kind
           when :comment
             (map[t.line] ||= []) << t.text.strip
+          when :blank_line
+            @blank_line_set[t.line] = true
           end
         end
         map
@@ -116,16 +116,14 @@ module MilkTea
         end
       end
 
-      def suppress_blank_line_trivia?
-        @suppress_blank_line_trivia == true
-      end
+      def attach_inline_comment(line_no, header_idx)
+        return unless line_no && header_idx < @lines.length
+        return unless @comment_map.key?(line_no)
 
-      def with_blank_line_trivia_suppressed
-        previous = @suppress_blank_line_trivia
-        @suppress_blank_line_trivia = true
-        yield
-      ensure
-        @suppress_blank_line_trivia = previous
+        comments = @comment_map.delete(line_no)
+        return if comments.empty?
+
+        @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}"
       end
 
       def emit_source_file(source_file)
@@ -133,10 +131,7 @@ module MilkTea
         if source_file.module_kind == :raw_module
           flush_leading_comments_before(source_file.line) if source_file.line
           line("external")
-          if source_file.line && @comment_map.key?(source_file.line)
-            comments = @comment_map.delete(source_file.line)
-            @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
-          end
+          attach_inline_comment(source_file.line, @lines.length - 1)
           blank_line unless source_file.imports.empty? && source_file.directives.empty? && source_file.declarations.empty?
         end
 
@@ -150,10 +145,7 @@ module MilkTea
           source_file.imports.each do |import|
             flush_leading_comments_before(import.line)
             line(render_import(import))
-            if import.line && @comment_map.key?(import.line)
-              comments = @comment_map.delete(import.line)
-              @lines[-1] = "#{@lines[-1]}  #{comments.first}" unless comments.empty? || @lines.empty?
-            end
+            attach_inline_comment(import.line, @lines.length - 1)
           end
           wrote_section = true
         end
@@ -315,10 +307,7 @@ module MilkTea
         end
 
         # Attach inline trailing comment to the first (header) line of the declaration
-        if decl_line && @comment_map.key?(decl_line) && header_idx < @lines.length
-          comments = @comment_map.delete(decl_line)
-          @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}" unless comments.empty?
-        end
+        attach_inline_comment(decl_line, header_idx)
       end
 
       def emit_enum_like(kind, name, backing_type, members, visibility)
@@ -531,10 +520,7 @@ module MilkTea
         end
 
         # Attach inline trailing comment to the header line of the statement
-        if stmt_line && @comment_map.key?(stmt_line) && header_idx < @lines.length
-          comments = @comment_map.delete(stmt_line)
-          @lines[header_idx] = "#{@lines[header_idx]}  #{comments.first}" unless comments.empty?
-        end
+        attach_inline_comment(stmt_line, header_idx)
       end
 
       def render_inline_unsafe(statement)

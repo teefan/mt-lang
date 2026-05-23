@@ -216,11 +216,11 @@ module MilkTea
 
     def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
       @input_path = File.expand_path(path)
-      @project_root = File.directory?(@input_path) ? @input_path : File.dirname(@input_path)
       @output_path = output_path ? File.expand_path(output_path) : nil
       @cc = cc
       @keep_c_path = keep_c_path ? File.expand_path(keep_c_path) : nil
       @module_roots = module_roots
+      @project_root = resolve_project_root
       @package_graph = package_graph
       @frontend = frontend
       @profile = profile
@@ -248,6 +248,13 @@ module MilkTea
     end
 
     private
+
+    def resolve_project_root
+      candidate = File.directory?(@input_path) ? @input_path : File.dirname(@input_path)
+      return candidate if File.directory?(candidate)
+
+      Array(@module_roots).map { |root| File.expand_path(root.to_s) }.find { |root| File.directory?(root) } || Dir.pwd
+    end
 
     def run_binary(binary_path)
       build_result = Build.build(

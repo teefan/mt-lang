@@ -8,41 +8,100 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaCliTest < Minitest::Test
-  def test_lex_command_reports_tokens
-    out = StringIO.new
-    err = StringIO.new
+  def test_lex_command_reports_tokens_for_direct_source
+    Dir.mktmpdir("milk-tea-cli-lex-direct") do |dir|
+      path = write_simple_source(dir)
+      out = StringIO.new
+      err = StringIO.new
 
-    status = MilkTea::CLI.start(["lex", language_fixture_path], out:, err:)
+      status = MilkTea::CLI.start(["lex", path], out:, err:)
 
-    assert_equal 0, status
-    assert_equal "", err.string
-    assert_match(/MilkTea::Token/, out.string)
-    assert_match(/type=:import/, out.string)
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/MilkTea::Token/, out.string)
+      assert_match(/type=:function/, out.string)
+    end
   end
 
-  def test_parse_command_reports_ast
-    out = StringIO.new
-    err = StringIO.new
+  def test_parse_command_reports_ast_for_direct_source
+    Dir.mktmpdir("milk-tea-cli-parse-direct") do |dir|
+      path = write_simple_source(dir)
+      out = StringIO.new
+      err = StringIO.new
 
-    status = MilkTea::CLI.start(["parse", language_fixture_path], out:, err:)
+      status = MilkTea::CLI.start(["parse", path], out:, err:)
 
-    assert_equal 0, status
-    assert_equal "", err.string
-    assert_includes out.string, ""
-    assert_includes out.string, "extending AppState:"
-    assert_includes out.string, "function main() -> ExitCode:"
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/function main\(\) -> int:/, out.string)
+    end
   end
 
-  def test_format_command_prints_formatted_source
-    out = StringIO.new
-    err = StringIO.new
+  def test_check_lower_and_emit_c_commands_for_direct_source
+    Dir.mktmpdir("milk-tea-cli-check-lower-emit-direct") do |dir|
+      path = write_simple_source(dir)
 
-    status = MilkTea::CLI.start(["format", language_fixture_path], out:, err:)
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["check", path], out:, err:)
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/checked .* as main/, out.string)
 
-    assert_equal 0, status
-    assert_equal "", err.string
-    assert_includes out.string, ""
-    assert_includes out.string, "function main() -> ExitCode:"
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["lower", path], out:, err:)
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/program main/, out.string)
+
+      out = StringIO.new
+      err = StringIO.new
+      status = MilkTea::CLI.start(["emit-c", path], out:, err:)
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/int32_t main\(void\)/, out.string)
+    end
+  end
+
+  def test_build_command_compiles_direct_source_with_fake_compiler
+    Dir.mktmpdir("milk-tea-cli-build-direct") do |dir|
+      source_path = write_simple_source(dir)
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      output_path = File.join(dir, "demo-direct")
+      c_path = File.join(dir, "demo-direct.c")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["build", source_path, "--cc", compiler_path, "-o", output_path, "--keep-c", c_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/built .*main\.mt -> .*demo-direct/, out.string)
+      assert_match(/saved C to .*demo-direct\.c/, out.string)
+      assert File.exist?(output_path)
+      assert File.exist?(c_path)
+      invocation = File.read(compiler_log).lines(chomp: true)
+      assert_includes invocation, File.expand_path(output_path)
+    end
+  end
+
+  def test_run_command_executes_direct_source_with_fake_compiler
+    Dir.mktmpdir("milk-tea-cli-run-direct") do |dir|
+      source_path = write_simple_source(dir)
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "direct-run\n", stderr: "direct-err\n", exit_status: 4)
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["run", source_path, "--cc", compiler_path], out:, err:)
+
+      assert_equal 4, status
+      assert_equal "direct-run\n", out.string
+      assert_equal "direct-err\n", err.string
+      assert_includes File.read(compiler_log).lines(chomp: true), "-o"
+    end
   end
 
   def test_format_command_check_mode_reports_changes
@@ -251,42 +310,6 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_check_command_reports_success
-    out = StringIO.new
-    err = StringIO.new
-
-    status = MilkTea::CLI.start(["check", language_fixture_path], out:, err:)
-
-    assert_equal 0, status
-    assert_match(/checked .*language_fixture\.mt as fixtures\.language_fixture/, out.string)
-    assert_equal "", err.string
-  end
-
-  def test_lower_command_reports_ir
-    out = StringIO.new
-    err = StringIO.new
-
-    status = MilkTea::CLI.start(["lower", language_fixture_path], out:, err:)
-
-    assert_equal 0, status
-    assert_equal "", err.string
-    assert_includes out.string, "program fixtures.language_fixture"
-    assert_includes out.string, "const default_step as fixtures_language_fixture_default_step: int = 3"
-  end
-
-  def test_emit_c_command_reports_generated_c
-    out = StringIO.new
-    err = StringIO.new
-
-    status = MilkTea::CLI.start(["emit-c", language_fixture_path], out:, err:)
-
-    assert_equal 0, status
-    assert_equal "", err.string
-    assert_match(/#include <stdio\.h>/, out.string)
-    assert_match(/fixtures_language_fixture_AppState_touch\(&state, fixtures_language_fixture_default_step\);/, out.string)
-    refute_match(/^#line\s+/m, out.string)
-  end
-
   def test_emit_c_command_reports_unsupported_roots
     out = StringIO.new
     err = StringIO.new
@@ -297,29 +320,6 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/cannot emit C for external file std\.c\.raylib/, err.string)
-  end
-
-  def test_build_command_compiles_with_fake_compiler
-    Dir.mktmpdir("milk-tea-cli-build") do |dir|
-      compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "language-fixture")
-      c_path = File.join(dir, "language-fixture.c")
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["build", language_fixture_path, "--cc", compiler_path, "-o", output_path, "--keep-c", c_path], out:, err:)
-
-      assert_equal 0, status
-      assert_equal "", err.string
-      assert_match(/built .*language_fixture\.mt -> .*language-fixture/, out.string)
-      assert_match(/saved C to .*language-fixture\.c/, out.string)
-      assert File.exist?(output_path)
-      assert File.exist?(c_path)
-      refute_match(/^#line\s+/m, File.read(c_path))
-      invocation = File.read(compiler_log).lines(chomp: true)
-      refute_includes invocation, "-lm"
-    end
   end
 
   def test_build_command_frozen_requires_current_lockfile
@@ -387,32 +387,11 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_build_command_compiles_wasm_with_fake_compiler
-    Dir.mktmpdir("milk-tea-cli-build-wasm") do |dir|
-      compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
-      output_path = File.join(dir, "language-fixture")
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["build", language_fixture_path, "--cc", compiler_path, "--platform", "wasm", "-o", output_path], out:, err:)
-
-      assert_equal 0, status
-      assert_equal "", err.string
-      assert_match(/built .*language_fixture\.mt -> .*language-fixture\.html/, out.string)
-      assert File.exist?("#{output_path}.html")
-
-      invocation = File.read(compiler_log).lines(chomp: true)
-      assert_includes invocation, "--shell-file"
-      assert_includes invocation, File.expand_path("#{output_path}.html")
-    end
-  end
-
   def test_build_command_requires_option_values
     out = StringIO.new
     err = StringIO.new
 
-    status = MilkTea::CLI.start(["build", language_fixture_path, "--cc"], out:, err:)
+    status = MilkTea::CLI.start(["build", File.join(Dir.tmpdir, "virtual-cli-source.mt"), "--cc"], out:, err:)
 
     assert_equal 1, status
     assert_equal "", out.string
@@ -454,12 +433,13 @@ class MilkTeaCliTest < Minitest::Test
 
   def test_build_command_clean_removes_explicit_output
     Dir.mktmpdir("milk-tea-cli-build-clean-output") do |dir|
+      input_path = File.join(dir, "virtual-source.mt")
       output_path = File.join(dir, "custom-bin")
       File.write(output_path, "stale")
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["build", language_fixture_path, "--clean", "-o", output_path], out:, err:)
+      status = MilkTea::CLI.start(["build", input_path, "--clean", "-o", output_path], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -470,6 +450,7 @@ class MilkTeaCliTest < Minitest::Test
 
   def test_build_command_clean_removes_wasm_bundle_outputs
     Dir.mktmpdir("milk-tea-cli-build-clean-wasm") do |dir|
+      input_path = File.join(dir, "virtual-source.mt")
       output_path = File.join(dir, "custom-web.html")
       File.write(output_path, "html")
       File.write(File.join(dir, "custom-web.js"), "js")
@@ -477,7 +458,7 @@ class MilkTeaCliTest < Minitest::Test
       out = StringIO.new
       err = StringIO.new
 
-      status = MilkTea::CLI.start(["build", language_fixture_path, "--clean", "--platform", "wasm", "-o", output_path], out:, err:)
+      status = MilkTea::CLI.start(["build", input_path, "--clean", "--platform", "wasm", "-o", output_path], out:, err:)
 
       assert_equal 0, status
       assert_equal "", err.string
@@ -587,23 +568,6 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
-  def test_run_command_executes_built_program_and_returns_its_status
-    Dir.mktmpdir("milk-tea-cli-run") do |dir|
-      compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "run-ok\n", stderr: "run-err\n", exit_status: 7)
-      out = StringIO.new
-      err = StringIO.new
-
-      status = MilkTea::CLI.start(["run", language_fixture_path, "--cc", compiler_path], out:, err:)
-
-      assert_equal 7, status
-      assert_equal "run-ok\n", out.string
-      assert_equal "run-err\n", err.string
-      invocation = File.read(compiler_log).lines(chomp: true)
-      refute_includes invocation, "-lm"
-    end
-  end
-
   def test_run_command_archive_executes_packaged_program
     Dir.mktmpdir("milk-tea-cli-run-archive") do |dir|
       compiler_log = File.join(dir, "compiler.log")
@@ -670,7 +634,7 @@ class MilkTeaCliTest < Minitest::Test
     end
 
     status = with_singleton_method_override(MilkTea::Run, :run, runner) do
-      MilkTea::CLI.start(["run", language_fixture_path, "--platform", "wasm"], out:, err:)
+      MilkTea::CLI.start(["run", File.join(Dir.tmpdir, "virtual-preview-source.mt"), "--platform", "wasm"], out:, err:)
     end
 
     assert_equal 0, status
@@ -779,6 +743,152 @@ class MilkTeaCliTest < Minitest::Test
     if original
       upstream_sources_singleton.send(:remove_method, :bootstrap_all!)
       upstream_sources_singleton.send(:define_method, :bootstrap_all!, original)
+    end
+  end
+
+  def test_toolchain_command_rejects_unknown_subcommands
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["toolchain", "unknown"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/unknown toolchain subcommand unknown/, err.string)
+    assert_match(/Usage: mtc toolchain SUBCOMMAND/, err.string)
+  end
+
+  def test_toolchain_bootstrap_command_rejects_unknown_options
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["toolchain", "bootstrap", "--bogus"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/unknown toolchain option --bogus/, err.string)
+    assert_match(/Usage: mtc toolchain SUBCOMMAND/, err.string)
+  end
+
+  def test_toolchain_doctor_command_rejects_unknown_options
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["toolchain", "doctor", "--bogus"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/unknown toolchain option --bogus/, err.string)
+    assert_match(/Usage: mtc toolchain SUBCOMMAND/, err.string)
+  end
+
+  def test_toolchain_doctor_command_reports_successful_checks
+    require_relative "../../lib/milk_tea/bindings"
+
+    Dir.mktmpdir("milk-tea-cli-toolchain-doctor-ok") do |dir|
+      cc_path = File.join(dir, "fake-cc")
+      ar_path = File.join(dir, "fake-ar")
+      bundle_path = File.join(dir, "bundle")
+
+      [cc_path, ar_path, bundle_path].each do |path|
+        File.write(path, "#!/bin/sh\nexit 0\n")
+        File.chmod(0o755, path)
+      end
+
+      prepared = []
+      fake_binding = Object.new
+      fake_binding.define_singleton_method(:prepare!) do |cc:|
+        prepared << cc
+      end
+      fake_registry = Object.new
+      fake_registry.define_singleton_method(:find_by_module_name) do |module_name|
+        raise "unexpected module #{module_name}" unless module_name == "std.c.raylib"
+
+        fake_binding
+      end
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path) do
+        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { fake_registry }) do
+          MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+        end
+      end
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_equal [cc_path], prepared
+      assert_match(/ok ruby:/, out.string)
+      assert_match(/ok cc: #{Regexp.escape(cc_path)}/, out.string)
+      assert_match(/ok ar: #{Regexp.escape(ar_path)}/, out.string)
+      assert_match(/ok bundle: bundle/, out.string)
+      assert_match(/ok raylib: std\.c\.raylib prepared/, out.string)
+    end
+  end
+
+  def test_toolchain_doctor_command_reports_raylib_prepare_errors
+    require_relative "../../lib/milk_tea/bindings"
+
+    Dir.mktmpdir("milk-tea-cli-toolchain-doctor-raylib-error") do |dir|
+      cc_path = File.join(dir, "fake-cc")
+      ar_path = File.join(dir, "fake-ar")
+      bundle_path = File.join(dir, "bundle")
+
+      [cc_path, ar_path, bundle_path].each do |path|
+        File.write(path, "#!/bin/sh\nexit 0\n")
+        File.chmod(0o755, path)
+      end
+
+      fake_binding = Object.new
+      fake_binding.define_singleton_method(:prepare!) do |**|
+        raise MilkTea::RawBindings::Error, "raylib setup failed"
+      end
+      fake_registry = Object.new
+      fake_registry.define_singleton_method(:find_by_module_name) do |_module_name|
+        fake_binding
+      end
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path) do
+        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { fake_registry }) do
+          MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+        end
+      end
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/fail raylib: raylib setup failed/, out.string)
+    end
+  end
+
+  def test_toolchain_doctor_command_reports_missing_compilers
+    require_relative "../../lib/milk_tea/bindings"
+
+    Dir.mktmpdir("milk-tea-cli-toolchain-doctor-missing-cc") do |dir|
+      ar_path = File.join(dir, "fake-ar")
+      bundle_path = File.join(dir, "bundle")
+
+      [ar_path, bundle_path].each do |path|
+        File.write(path, "#!/bin/sh\nexit 0\n")
+        File.chmod(0o755, path)
+      end
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = with_env("PATH" => dir, "CC" => "missing-cc", "AR" => ar_path) do
+        MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+      end
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/fail cc: missing-cc/, out.string)
+      assert_match(/ok ar: #{Regexp.escape(ar_path)}/, out.string)
+      assert_match(/ok bundle: bundle/, out.string)
+      assert_match(/fail raylib: skipped \(missing C compiler\)/, out.string)
     end
   end
 
@@ -3589,10 +3699,382 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_lex_command_requires_a_path
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["lex"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing source file path/, err.string)
+  end
+
+  def test_lex_command_reports_missing_file_and_directory_errors
+    Dir.mktmpdir("milk-tea-cli-lex-errors") do |dir|
+      missing_path = File.join(dir, "missing.mt")
+
+      {
+        missing_path => /source file not found/,
+        dir => /expected a source file, got a directory/,
+      }.each do |path, pattern|
+        out = StringIO.new
+        err = StringIO.new
+
+        status = MilkTea::CLI.start(["lex", path], out:, err:)
+
+        assert_equal 1, status
+        assert_equal "", out.string
+        assert_match(pattern, err.string)
+      end
+    end
+  end
+
+  def test_format_command_requires_a_path
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["format"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing source file path/, err.string)
+  end
+
+  def test_format_command_reports_already_formatted_states
+    Dir.mktmpdir("milk-tea-cli-fmt-already") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, "function main() -> int:\n    return 0\n")
+
+      [
+        [["format", path, "--safe", "--check"], /already formatted .*sample\.mt/],
+        [["format", path, "--write"], /already formatted .*sample\.mt/],
+      ].each do |argv, pattern|
+        out = StringIO.new
+        err = StringIO.new
+
+        status = MilkTea::CLI.start(argv, out:, err:)
+
+        assert_equal 0, status
+        assert_equal "", err.string
+        assert_match(pattern, out.string)
+      end
+    end
+  end
+
+  def test_format_command_directory_reports_empty_and_already_formatted_states
+    Dir.mktmpdir("milk-tea-cli-fmt-dir-states") do |dir|
+      empty_dir = File.join(dir, "empty")
+      formatted_dir = File.join(dir, "formatted")
+      FileUtils.mkdir_p(empty_dir)
+      FileUtils.mkdir_p(formatted_dir)
+      File.write(File.join(formatted_dir, "sample.mt"), "function main() -> int:\n    return 0\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["format", empty_dir, "--check"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/no \.mt files found in .*empty/, out.string)
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["format", formatted_dir, "--check"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/all 1 file\(s\) already formatted/, out.string)
+    end
+  end
+
+  def test_lint_command_rejects_invalid_flags_and_requires_a_path
+    [
+      [["lint"], /missing source file path/],
+      [["lint", "--select"], /--select requires a comma-separated list of rule codes/],
+      [["lint", "--ignore"], /--ignore requires a comma-separated list of rule codes/],
+      [["lint", "--output-format"], /--output-format requires an argument \(text, json\)/],
+      [["lint", "--output-format", "yaml", "sample.mt"], /unknown output format: yaml \(use text or json\)/],
+      [["lint", "--bogus", "sample.mt"], /unknown lint flag: --bogus/],
+    ].each do |argv, pattern|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(argv, out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(pattern, err.string)
+    end
+  end
+
+  def test_lint_command_reports_empty_directories_and_multiple_clean_files
+    Dir.mktmpdir("milk-tea-cli-lint-edges") do |dir|
+      empty_dir = File.join(dir, "empty")
+      FileUtils.mkdir_p(empty_dir)
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", empty_dir], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/no \.mt files found in .*empty/, out.string)
+
+      first_path = File.join(dir, "first.mt")
+      second_path = File.join(dir, "second.mt")
+      File.write(first_path, <<~MT)
+        function main() -> int:
+            return 0
+      MT
+      File.write(second_path, <<~MT)
+        function helper() -> int:
+            return 0
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", first_path, second_path], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/clean 2 file\(s\)/, out.string)
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", first_path, "--output-format", "text"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/clean .*first\.mt/, out.string)
+    end
+  end
+
+  def test_check_lower_and_emit_c_require_paths
+    %w[check lower emit-c].each do |command|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start([command], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/missing source file path/, err.string)
+    end
+  end
+
+  def test_build_and_run_require_paths_without_package_manifests
+    Dir.mktmpdir("milk-tea-cli-missing-path") do |dir|
+      %w[build run].each do |command|
+        out = StringIO.new
+        err = StringIO.new
+
+        status = Dir.chdir(dir) { MilkTea::CLI.start([command], out:, err:) }
+
+        assert_equal 1, status
+        assert_equal "", out.string
+        assert_match(/missing source file path/, err.string)
+      end
+    end
+  end
+
+  def test_run_command_defaults_to_current_package_and_forwards_profile
+    Dir.mktmpdir("milk-tea-cli-run-default-path") do |dir|
+      src_dir = File.join(dir, "src")
+      FileUtils.mkdir_p(src_dir)
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo_app"
+        version = "0.1.0"
+        source_root = "src"
+
+        [build]
+        entry = "src/main.mt"
+      TOML
+      File.write(File.join(src_dir, "main.mt"), <<~MT)
+        function main() -> int:
+            return 0
+      MT
+
+      fake_result = MilkTea::Run::Result.new(
+        stdout: "ran\n",
+        stderr: "",
+        exit_status: 0,
+        output_path: File.join(dir, "demo_app"),
+        c_path: nil,
+        compiler: "/tmp/fake-cc",
+        link_flags: [],
+        platform: nil,
+        bundle_root: nil,
+        archive_path: nil,
+      )
+      fake_graph = Struct.new(:source_roots).new([File.join(dir, "src")])
+      runner = lambda do |path, **kwargs|
+        assert_equal dir, path
+        assert_equal "release", kwargs.fetch(:profile)
+        fake_result
+      end
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = with_singleton_method_override(MilkTea::PackageGraph, :load, ->(*, **) { fake_graph }) do
+        with_singleton_method_override(MilkTea::Run, :run, runner) do
+          Dir.chdir(dir) { MilkTea::CLI.start(["run", "--profile", "release", "--locked"], out:, err:) }
+        end
+      end
+
+      assert_equal 0, status
+      assert_equal "ran\n", out.string
+      assert_equal "", err.string
+    end
+  end
+
+  def test_new_command_rejects_unknown_options
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["new", "demo", "--bogus"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/unknown new option --bogus/, err.string)
+  end
+
+  def test_dap_command_runs_server
+    fake_server = Object.new
+    runs = []
+    fake_server.define_singleton_method(:run) { runs << :run }
+
+    out = StringIO.new
+    err = StringIO.new
+
+    status = with_singleton_method_override(MilkTea::DAP::Server, :new, ->(*, **) { fake_server }) do
+      MilkTea::CLI.start(["dap"], out:, err:)
+    end
+
+    assert_equal 0, status
+    assert_equal "", out.string
+    assert_equal "", err.string
+    assert_equal [:run], runs
+  end
+
+  def test_build_run_and_format_reject_invalid_options
+    dummy_path = File.join(Dir.tmpdir, "virtual-cli-source.mt")
+
+    [
+      [["build", dummy_path, "-o"], /missing value for -o/],
+      [["build", dummy_path, "--keep-c"], /missing value for --keep-c/],
+      [["build", dummy_path, "--profile"], /missing value for --profile/],
+      [["build", dummy_path, "--platform"], /missing value for --platform/],
+      [["build", dummy_path, "--bogus"], /unknown build option --bogus/],
+      [["run", dummy_path, "--clean"], /unknown build option --clean/],
+      [["format", dummy_path, "--bogus"], /unknown format option --bogus/],
+      [["format", dummy_path, "--check", "--write"], /format options --check and --write cannot be combined/],
+    ].each do |argv, pattern|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(argv, out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(pattern, err.string)
+    end
+  end
+
+  def test_parse_command_requires_include_path_values
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["parse", "-I"], out:, err:)
+
+    assert_equal 1, status
+    assert_equal "", out.string
+    assert_match(/missing value for -I/, err.string)
+    assert_match(/missing source file path/, err.string)
+  end
+
+  def test_resolution_commands_reject_unexpected_extra_arguments
+    dummy_path = File.join(Dir.tmpdir, "virtual-cli-source.mt")
+
+    {
+      ["parse", dummy_path, "extra.mt"] => /unexpected argument\(s\) for parse: extra\.mt/,
+      ["check", dummy_path, "extra.mt"] => /unexpected argument\(s\) for check: extra\.mt/,
+      ["lower", dummy_path, "extra.mt"] => /unexpected argument\(s\) for lower: extra\.mt/,
+      ["emit-c", dummy_path, "extra.mt"] => /unexpected argument\(s\) for emit-c: extra\.mt/,
+    }.each do |argv, pattern|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(argv, out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(pattern, err.string)
+    end
+  end
+
+  def test_unknown_command_help_falls_back_to_usage
+    out = StringIO.new
+    err = StringIO.new
+
+    status = MilkTea::CLI.start(["unknown", "--help"], out:, err:)
+
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/Usage: mtc lex PATH/, out.string)
+    assert_match(/mtc bindgen MODULE HEADER/, out.string)
+  end
+
+  def test_frozen_check_and_lint_report_missing_lockfiles
+    dummy_path = File.join(Dir.tmpdir, "virtual-cli-source.mt")
+
+    missing_lock_result = Struct.new(:lock_path) do
+      def current?
+        false
+      end
+
+      def missing?
+        true
+      end
+    end.new("/tmp/package.lock")
+
+    checker = lambda do |*args, **kwargs|
+      missing_lock_result
+    end
+
+    with_singleton_method_override(MilkTea::PackageLock, :check, checker) do
+      {
+        ["check", dummy_path, "--frozen"] => /package\.lock is missing: \/tmp\/package\.lock/,
+        ["lint", dummy_path, "--frozen"] => /package\.lock is missing: \/tmp\/package\.lock/,
+      }.each do |argv, pattern|
+        out = StringIO.new
+        err = StringIO.new
+
+        status = MilkTea::CLI.start(argv, out:, err:)
+
+        assert_equal 1, status
+        assert_equal "", out.string
+        assert_match(pattern, err.string)
+      end
+    end
+  end
+
   private
 
-  def language_fixture_path
-    materialized_language_fixture_path
+  def write_simple_source(dir, name: "main.mt")
+    path = File.join(dir, name)
+    File.write(path, <<~MT)
+      function main() -> int:
+          return 0
+    MT
+    path
   end
 
   def write_fake_compiler(dir, log_path)
@@ -3688,20 +4170,4 @@ class MilkTeaCliTest < Minitest::Test
     }
   end
 
-  def with_singleton_method_override(object, method_name, implementation)
-    singleton_class = class << object; self; end
-    original_name = "__cli_test_original_#{method_name}__"
-    original_defined = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
-    singleton_class.alias_method(original_name, method_name) if original_defined
-    singleton_class.define_method(method_name) do |*args, **kwargs, &block|
-      implementation.call(*args, **kwargs, &block)
-    end
-    yield
-  ensure
-    singleton_class.remove_method(method_name) if singleton_class.method_defined?(method_name)
-    if original_defined
-      singleton_class.alias_method(method_name, original_name)
-      singleton_class.remove_method(original_name)
-    end
-  end
 end

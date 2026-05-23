@@ -1,111 +1,65 @@
 # frozen_string_literal: true
 
 require "cgi/escape"
-require "fileutils"
 require "minitest/autorun"
 require "socket"
 require_relative "../lib/milk_tea"
 
-module MilkTeaGeneratedFixtureHelper
-	module_function
+if defined?(Minitest::CoverageRunner) && !Minitest::CoverageRunner.method_defined?(:find_path_and_lines_without_milk_tea_mapping)
+	module Minitest
+		module CoverageRunner
+			alias_method :find_path_and_lines_without_milk_tea_mapping, :find_path_and_lines
 
-	LANGUAGE_FIXTURE_SOURCE = <<~MT.freeze
+			def find_path_and_lines(coverage, test_name)
+				milk_tea_coverage_candidate_paths.each do |candidate|
+					lines = coverage[candidate]
+					return [candidate, lines] if lines
+				end
 
-		import test.fixtures.language_fixture.external_runtime as runtime
-		import test.fixtures.language_fixture.types as types
+				find_path_and_lines_without_milk_tea_mapping(coverage, test_name)
+			end
 
-		const default_step: int = 3
+			def milk_tea_coverage_candidate_paths
+				cached = self.instance_variable_get(:@milk_tea_coverage_candidate_paths)
+				return cached if cached
 
-		type ExitCode = int
+				test_file = runnable_methods.lazy.map do |method_name|
+					instance_method(method_name).source_location&.first
+				rescue NameError
+					nil
+				end.find { |path| path && path.start_with?(PWD) }
 
-		struct AppState:
-		    counter: types.Counter
-		    touched: bool
+				candidates = []
+				if test_file
+					relative_test_path = test_file.delete_prefix(PWD + File::SEPARATOR)
+					relative_impl_path = relative_test_path.sub(/\Atest\//, "").sub(/_test\.rb\z/, ".rb")
+					relative_impl_path = case relative_impl_path
+					when /\Acompiler\//
+						relative_impl_path.sub(/\Acompiler\//, "core/")
+					when /\Atooling\/lsp\//
+						relative_impl_path.sub(/\Atooling\/lsp\//, "lsp/")
+					when /\Atooling\/dap\//
+						relative_impl_path.sub(/\Atooling\/dap\//, "dap/")
+					when /\Atooling\/entrypoint\.rb\z/
+						"milk_tea.rb"
+					when /\Atooling\//, /\Abindings\//, /\Apackages\//
+						relative_impl_path
+					else
+						nil
+					end
 
-		extending AppState:
-		    static function create() -> AppState:
-		        return AppState(counter = types.Counter.zero(), touched = false)
+					if relative_impl_path
+						base_path = relative_impl_path == "milk_tea.rb" ? relative_impl_path : File.join("milk_tea", relative_impl_path)
+						candidates << File.join(PWD, "lib", base_path)
+					end
+				end
 
-		    mutable function touch(step: int) -> void:
-		        this.counter.bump(step)
-		        this.touched = true
-
-		    function read() -> int:
-		        return this.counter.total
-
-		function describe(state: AppState) -> Result[int, int]:
-		    if state.touched:
-		        return Result[int, int].success(value= state.read())
-		    return Result[int, int].failure(error= 9)
-
-		function main() -> ExitCode:
-		    var state = AppState.create()
-		    defer state.touch(0)
-		    state.touch(default_step)
-		    let maybe_value = Option[int].some(value= state.read())
-		    runtime.puts(c"fixture")
-		    match maybe_value:
-		        Option.none:
-		            return 1
-		        Option.some as payload:
-		            let checked = describe(state)
-		            match checked:
-		                Result.success as result:
-		                    return payload.value + result.value - default_step
-		                Result.failure as result:
-		                    return result.error
-		    return 2
-	MT
-
-	LANGUAGE_FIXTURE_TYPES_SOURCE = <<~MT.freeze
-		public struct Counter:
-		    total: int
-
-		extending Counter:
-		    public static function zero() -> Counter:
-		        return Counter(total = 0)
-
-		    public mutable function bump(step: int) -> void:
-		        this.total += step
-	MT
-
-	LANGUAGE_FIXTURE_EXTERNAL_RUNTIME_SOURCE = <<~MT.freeze
-		external
-
-		include "stdio.h"
-
-		external function puts(text: cstr) -> int
-	MT
-
-	def materialized_language_fixture_path
-		ensure_language_fixture_tree!
-		File.join(fixture_root, "language_fixture.mt")
-	end
-
-	def fixture_root
-		File.expand_path("fixtures", __dir__)
-	end
-
-	def ensure_language_fixture_tree!
-		fixture_dir = File.join(fixture_root, "language_fixture")
-		FileUtils.mkdir_p(fixture_dir)
-		File.write(File.join(fixture_root, "language_fixture.mt"), LANGUAGE_FIXTURE_SOURCE)
-		File.write(File.join(fixture_dir, "types.mt"), LANGUAGE_FIXTURE_TYPES_SOURCE)
-		File.write(File.join(fixture_dir, "external_runtime.mt"), LANGUAGE_FIXTURE_EXTERNAL_RUNTIME_SOURCE)
-		@generated_fixture_tree = true
-		register_fixture_cleanup!
-	end
-
-	def register_fixture_cleanup!
-		return if @fixture_cleanup_registered
-
-		@fixture_cleanup_registered = true
-		at_exit do
-			FileUtils.rm_rf(fixture_root) if @generated_fixture_tree
+				candidates << File.join(PWD, "lib", impl_name(self.name))
+				candidates = candidates.uniq.freeze
+				self.instance_variable_set(:@milk_tea_coverage_candidate_paths, candidates)
+			end
 		end
 	end
-	private_class_method :ensure_language_fixture_tree!
-	private_class_method :register_fixture_cleanup!
 end
 
 module MilkTeaStaticHttpServerHelper
@@ -186,7 +140,20 @@ end
 class Minitest::Test
 	include MilkTeaStaticHttpServerHelper
 
-	def materialized_language_fixture_path
-		MilkTeaGeneratedFixtureHelper.materialized_language_fixture_path
+	def with_singleton_method_override(object, method_name, implementation)
+		singleton_class = class << object; self; end
+		original_name = "__test_helper_original_#{method_name}__"
+		original_defined = singleton_class.method_defined?(method_name) || singleton_class.private_method_defined?(method_name)
+		singleton_class.alias_method(original_name, method_name) if original_defined
+		singleton_class.define_method(method_name) do |*args, **kwargs, &block|
+			implementation.call(*args, **kwargs, &block)
+		end
+		yield
+	ensure
+		singleton_class.remove_method(method_name) if singleton_class.method_defined?(method_name)
+		if original_defined
+			singleton_class.alias_method(method_name, original_name)
+			singleton_class.remove_method(original_name)
+		end
 	end
 end

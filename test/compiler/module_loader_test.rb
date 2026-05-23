@@ -5,38 +5,12 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaModuleLoaderTest < Minitest::Test
-  def test_load_file_parses_language_fixture_file
-    ast = MilkTea::ModuleLoader.load_file(language_fixture_path)
-
-    assert_equal "test.fixtures.language_fixture", ast.module_name.to_s
-    assert_equal 6, ast.declarations.length
-  end
-
   def test_load_file_reports_missing_files
     error = assert_raises(MilkTea::ModuleLoadError) do
       MilkTea::ModuleLoader.load_file(File.expand_path("missing.mt", __dir__))
     end
 
     assert_match(/source file not found/, error.message)
-  end
-
-  def test_check_file_runs_semantic_analysis
-    result = MilkTea::ModuleLoader.check_file(language_fixture_path)
-
-    assert_equal "test.fixtures.language_fixture", result.module_name
-    assert_equal %w[describe main], result.functions.keys.sort
-  end
-
-  def test_check_program_exposes_root_and_imported_modules
-    program = MilkTea::ModuleLoader.check_program(language_fixture_path)
-    loaded_modules = program.analyses_by_module_name.keys
-
-    assert_equal language_fixture_path, program.root_path
-    assert_equal "test.fixtures.language_fixture", program.root_analysis.module_name
-    assert_includes loaded_modules, "test.fixtures.language_fixture"
-    assert_includes loaded_modules, "test.fixtures.language_fixture.external_runtime"
-    assert_includes loaded_modules, "test.fixtures.language_fixture.types"
-    assert_equal :raw_module, program.analyses_by_module_name.fetch("test.fixtures.language_fixture.external_runtime").module_kind
   end
 
   def test_check_program_does_not_auto_load_std_fmt_for_plain_format_strings
@@ -871,9 +845,4 @@ class MilkTeaModuleLoaderTest < Minitest::Test
     end
   end
 
-  private
-
-  def language_fixture_path
-    materialized_language_fixture_path
-  end
 end

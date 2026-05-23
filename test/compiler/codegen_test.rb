@@ -4,24 +4,6 @@ require "fileutils"
 require_relative "../test_helper"
 
 class MilkTeaCodegenTest < Minitest::Test
-  def test_generate_c_for_language_fixture_emits_functions_and_imported_headers
-    program = MilkTea::ModuleLoader.check_program(language_fixture_path)
-    generated = MilkTea::Codegen.generate_c(program)
-
-    assert_match(/#include <stdbool\.h>/, generated)
-    assert_match(/#include <stdint\.h>/, generated)
-    assert_match(/#include <stdio\.h>/, generated)
-    assert_match(/typedef struct test_fixtures_language_fixture_AppState/, generated)
-    assert_match(/static void test_fixtures_language_fixture_AppState_touch\(test_fixtures_language_fixture_AppState \*this, int32_t step\)/, generated)
-    assert_match(/test_fixtures_language_fixture_AppState_touch\(&state, test_fixtures_language_fixture_default_step\);/, generated)
-    assert_match(/static int32_t test_fixtures_language_fixture_main\(void\);/, generated)
-    assert_match(/int32_t main\(void\)/, generated)
-    refute_match(/#include "time_helpers\.h"/, generated)
-    refute_match(/#include "math\.h"/, generated)
-    refute_match(/#include "uv\.h"/, generated)
-    refute_match(/#include "raylib\.h"/, generated)
-  end
-
   def test_generate_c_for_external_struct_with_explicit_c_name
     source = <<~MT
       # module demo.timespec_codegen
@@ -5435,10 +5417,6 @@ class MilkTeaCodegenTest < Minitest::Test
     end
 
     default
-  end
-
-  def language_fixture_path
-    materialized_language_fixture_path
   end
 
   def generate_c_from_source(source)

@@ -81,6 +81,7 @@ build-iPhoneSimulator/
 .env
 *.code-workspace
 .github/copilot-instructions.md
+coverage.json
 AGENTS.md
 examples/**/*.bmp
 third_party/**/*
