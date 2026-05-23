@@ -4809,26 +4809,85 @@ module MilkTea
           setup.concat(expression_setup)
           value_type = infer_expression_type(prepared_expression, env:)
 
-          if part.format_spec && part.format_spec[:kind] == :precision
-            precision = part.format_spec[:value]
-            append_argument_type = @types.fetch("double")
-            parameter_c_name = fresh_c_temp_name(env, "fmt_part")
-            setup << IR::LocalDecl.new(
-              name: parameter_c_name,
-              c_name: parameter_c_name,
-              type: append_argument_type,
-              value: cast_expression(
-                lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
-                append_argument_type,
-              ),
-            )
-            format_parts << {
-              kind: :precision_expression,
-              append_function_name: "append_double_precision",
-              parameter_c_name: parameter_c_name,
-              parameter_type: append_argument_type,
-              precision: precision,
-            }
+          if part.format_spec
+            case part.format_spec[:kind]
+            when :precision
+              precision = part.format_spec[:value]
+              append_argument_type = @types.fetch("double")
+              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              setup << IR::LocalDecl.new(
+                name: parameter_c_name,
+                c_name: parameter_c_name,
+                type: append_argument_type,
+                value: cast_expression(
+                  lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                  append_argument_type,
+                ),
+              )
+              format_parts << {
+                kind: :precision_expression,
+                append_function_name: "append_double_precision",
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_argument_type,
+                precision: precision,
+              }
+            when :hex
+              append_function_name, append_argument_type = format_string_hex_append_plan(value_type, uppercase: part.format_spec[:uppercase])
+              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              setup << IR::LocalDecl.new(
+                name: parameter_c_name,
+                c_name: parameter_c_name,
+                type: append_argument_type,
+                value: cast_expression(
+                  lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                  append_argument_type,
+                ),
+              )
+              format_parts << {
+                kind: :expression,
+                append_function_name: append_function_name,
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_argument_type,
+              }
+            when :oct
+              append_function_name, append_argument_type = format_string_oct_append_plan(value_type, uppercase: part.format_spec[:uppercase])
+              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              setup << IR::LocalDecl.new(
+                name: parameter_c_name,
+                c_name: parameter_c_name,
+                type: append_argument_type,
+                value: cast_expression(
+                  lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                  append_argument_type,
+                ),
+              )
+              format_parts << {
+                kind: :expression,
+                append_function_name: append_function_name,
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_argument_type,
+              }
+            when :bin
+              append_function_name, append_argument_type = format_string_bin_append_plan(value_type, uppercase: part.format_spec[:uppercase])
+              parameter_c_name = fresh_c_temp_name(env, "fmt_part")
+              setup << IR::LocalDecl.new(
+                name: parameter_c_name,
+                c_name: parameter_c_name,
+                type: append_argument_type,
+                value: cast_expression(
+                  lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
+                  append_argument_type,
+                ),
+              )
+              format_parts << {
+                kind: :expression,
+                append_function_name: append_function_name,
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_argument_type,
+              }
+            else
+              raise LoweringError, "unsupported format spec #{part.format_spec.inspect}"
+            end
           else
             append_function_name, append_argument_type = format_string_append_plan(value_type)
             parameter_c_name = fresh_c_temp_name(env, "fmt_part")
@@ -4930,11 +4989,81 @@ module MilkTea
         raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{type}"
       end
 
+      def format_string_hex_append_plan(type, uppercase:)
+        if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+          return format_string_hex_append_plan(type.backing_type, uppercase:)
+        end
+
+        unless type.is_a?(Types::Primitive) && type.integer?
+          raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
+        end
+
+        if %w[byte short int long ptr_int].include?(type.name)
+          return [uppercase ? "append_long_hex_upper" : "append_long_hex", @types.fetch("long")]
+        end
+
+        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+          return [uppercase ? "append_ulong_hex_upper" : "append_ulong_hex", @types.fetch("ulong")]
+        end
+
+        raise LoweringError, "format spec ':x' and ':X' require integer interpolation, got #{type}"
+      end
+
+      def format_string_oct_append_plan(type, uppercase:)
+        _ = uppercase
+        if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+          return format_string_oct_append_plan(type.backing_type, uppercase:)
+        end
+
+        unless type.is_a?(Types::Primitive) && type.integer?
+          raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
+        end
+
+        if %w[byte short int long ptr_int].include?(type.name)
+          return ["append_long_oct", @types.fetch("long")]
+        end
+
+        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+          return ["append_ulong_oct", @types.fetch("ulong")]
+        end
+
+        raise LoweringError, "format spec ':o' and ':O' require integer interpolation, got #{type}"
+      end
+
+      def format_string_bin_append_plan(type, uppercase:)
+        _ = uppercase
+        if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+          return format_string_bin_append_plan(type.backing_type, uppercase:)
+        end
+
+        unless type.is_a?(Types::Primitive) && type.integer?
+          raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
+        end
+
+        if %w[byte short int long ptr_int].include?(type.name)
+          return ["append_long_bin", @types.fetch("long")]
+        end
+
+        if %w[ubyte ushort uint ulong ptr_uint].include?(type.name)
+          return ["append_ulong_bin", @types.fetch("ulong")]
+        end
+
+        raise LoweringError, "format spec ':b' and ':B' require integer interpolation, got #{type}"
+      end
+
       def mt_format_length_c_name(name)
         {
           "append_bool" => "mt_format_bool_len",
           "append_float" => "mt_format_float_len",
           "append_double" => "mt_format_double_len",
+          "append_ulong_hex" => "mt_format_ulong_hex_len",
+          "append_ulong_hex_upper" => "mt_format_ulong_hex_len",
+          "append_long_hex" => "mt_format_long_hex_len",
+          "append_long_hex_upper" => "mt_format_long_hex_len",
+          "append_ulong_oct" => "mt_format_ulong_oct_len",
+          "append_long_oct" => "mt_format_long_oct_len",
+          "append_ulong_bin" => "mt_format_ulong_bin_len",
+          "append_long_bin" => "mt_format_long_bin_len",
           "append_int" => "mt_format_int_len",
           "append_uint" => "mt_format_uint_len",
           "append_ptr_uint" => "mt_format_ptr_uint_len",
@@ -4950,6 +5079,14 @@ module MilkTea
           "append_bool" => "mt_format_append_bool",
           "append_float" => "mt_format_append_float",
           "append_double" => "mt_format_append_double",
+          "append_ulong_hex" => "mt_format_append_ulong_hex",
+          "append_ulong_hex_upper" => "mt_format_append_ulong_hex_upper",
+          "append_long_hex" => "mt_format_append_long_hex",
+          "append_long_hex_upper" => "mt_format_append_long_hex_upper",
+          "append_ulong_oct" => "mt_format_append_ulong_oct",
+          "append_long_oct" => "mt_format_append_long_oct",
+          "append_ulong_bin" => "mt_format_append_ulong_bin",
+          "append_long_bin" => "mt_format_append_long_bin",
           "append_int" => "mt_format_append_int",
           "append_uint" => "mt_format_append_uint",
           "append_ptr_uint" => "mt_format_append_ptr_uint",

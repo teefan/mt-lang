@@ -545,12 +545,15 @@ Format strings:
 - `f"count=#{count}"` has type `str`.
 - Allowed interpolations: `str`, `cstr`, `bool`, numeric primitives, integer-backed enums and flags.
 - Float and double interpolations support `:.N` precision.
+- Integer primitive and integer-backed enum/flags interpolations support `:x` (lowercase hex) and `:X` (uppercase hex).
+- Integer primitive and integer-backed enum/flags interpolations support `:o` / `:O` (octal) and `:b` / `:B` (binary).
 - `std.fmt.format(...)` receives special lowering and returns `string.String`.
 
 Heredoc notes:
 
 - `<<-TAG ... TAG` -> `str`
 - `c<<-TAG ... TAG` -> `cstr`
+- `f<<-TAG ... TAG` -> `str`
 - Content is dedented by shared leading spaces of nonblank lines.
 - The trailing newline before the terminator is preserved.
 

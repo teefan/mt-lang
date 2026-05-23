@@ -449,9 +449,15 @@ module MilkTea
         mt_format_uint_len
         mt_format_long_len
         mt_format_int_len
+        mt_format_ulong_hex_len
+        mt_format_long_hex_len
         mt_format_float_len
         mt_format_double_len
         mt_format_double_precision_len
+        mt_format_ulong_oct_len
+        mt_format_long_oct_len
+        mt_format_ulong_bin_len
+        mt_format_long_bin_len
         mt_format_append_str
         mt_format_append_cstr
         mt_format_append_bool
@@ -460,9 +466,17 @@ module MilkTea
         mt_format_append_uint
         mt_format_append_long
         mt_format_append_int
+        mt_format_append_ulong_hex
+        mt_format_append_ulong_hex_upper
+        mt_format_append_long_hex
+        mt_format_append_long_hex_upper
         mt_format_append_float
         mt_format_append_double
         mt_format_append_double_precision
+        mt_format_append_ulong_oct
+        mt_format_append_long_oct
+        mt_format_append_ulong_bin
+        mt_format_append_long_bin
       ]
     end
 
@@ -513,6 +527,22 @@ module MilkTea
         %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong mt_format_ulong_len]
       when 'mt_format_append_int'
         %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ptr_uint mt_format_ptr_uint_len]
+      when 'mt_format_append_ulong_hex'
+        %w[mt_format_check_capacity mt_format_ulong_hex_len]
+      when 'mt_format_append_ulong_hex_upper'
+        %w[mt_format_check_capacity mt_format_ulong_hex_len]
+      when 'mt_format_append_long_hex'
+        %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex mt_format_ulong_hex_len]
+      when 'mt_format_append_long_hex_upper'
+        %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_hex_upper mt_format_ulong_hex_len]
+      when 'mt_format_append_ulong_oct'
+        %w[mt_format_check_capacity mt_format_ulong_oct_len]
+      when 'mt_format_append_long_oct'
+        %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_oct mt_format_ulong_oct_len]
+      when 'mt_format_append_ulong_bin'
+        %w[mt_format_check_capacity mt_format_ulong_bin_len]
+      when 'mt_format_append_long_bin'
+        %w[mt_format_append_bytes mt_format_check_capacity mt_format_append_ulong_bin mt_format_ulong_bin_len]
       when 'mt_format_append_float'
         %w[mt_format_check_capacity mt_format_float_len]
       when 'mt_format_append_double'
@@ -523,6 +553,12 @@ module MilkTea
         %w[mt_format_ptr_uint_len]
       when 'mt_format_long_len'
         %w[mt_format_ulong_len]
+      when 'mt_format_long_hex_len'
+        %w[mt_format_ulong_hex_len]
+      when 'mt_format_long_oct_len'
+        %w[mt_format_ulong_oct_len]
+      when 'mt_format_long_bin_len'
+        %w[mt_format_ulong_bin_len]
       else
         []
       end
@@ -805,6 +841,17 @@ module MilkTea
         ])
       end
 
+      if helpers['mt_format_ulong_hex_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_ulong_hex_len(uint64_t value) {",
+          "#{INDENT}int written = snprintf(NULL, 0, \"%llx\", (unsigned long long)value);",
+          "#{INDENT}if (written < 0) mt_fatal(\"format string could not measure unsigned hex\");",
+          "#{INDENT}return (uintptr_t)written;",
+          "}",
+        ])
+      end
+
       if helpers['mt_format_uint_len']
         lines << "" unless lines.empty?
         lines.concat([
@@ -820,6 +867,61 @@ module MilkTea
           "static uintptr_t mt_format_long_len(int64_t value) {",
           "#{INDENT}if (value < 0) return 1 + mt_format_ulong_len(((uint64_t)(-(value + 1))) + 1);",
           "#{INDENT}return mt_format_ulong_len((uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_long_hex_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_long_hex_len(int64_t value) {",
+          "#{INDENT}if (value < 0) return 1 + mt_format_ulong_hex_len(((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}return mt_format_ulong_hex_len((uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_ulong_oct_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_ulong_oct_len(uint64_t value) {",
+          "#{INDENT}int written = snprintf(NULL, 0, \"%llo\", (unsigned long long)value);",
+          "#{INDENT}if (written < 0) mt_fatal(\"format string could not measure unsigned octal\");",
+          "#{INDENT}return (uintptr_t)written;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_long_oct_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_long_oct_len(int64_t value) {",
+          "#{INDENT}if (value < 0) return 1 + mt_format_ulong_oct_len(((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}return mt_format_ulong_oct_len((uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_ulong_bin_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_ulong_bin_len(uint64_t value) {",
+          "#{INDENT}uintptr_t len = 1;",
+          "#{INDENT}while (value >= 2) {",
+          "#{INDENT * 2}value >>= 1;",
+          "#{INDENT * 2}len += 1;",
+          "#{INDENT}}",
+          "#{INDENT}return len;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_long_bin_len']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_long_bin_len(int64_t value) {",
+          "#{INDENT}if (value < 0) return 1 + mt_format_ulong_bin_len(((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}return mt_format_ulong_bin_len((uint64_t)value);",
           "}",
         ])
       end
@@ -949,6 +1051,115 @@ module MilkTea
           "#{INDENT * 2}return mt_format_append_ulong(target, offset, ((uint64_t)(-(value + 1))) + 1);",
           "#{INDENT}}",
           "#{INDENT}return mt_format_append_ulong(target, offset, (uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_ulong_hex']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_ulong_hex(mt_str target, uintptr_t offset, uint64_t value) {",
+          "#{INDENT}uintptr_t len = mt_format_ulong_hex_len(value);",
+          "#{INDENT}mt_format_check_capacity(target, offset, len);",
+          "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llx\", (unsigned long long)value);",
+          "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");",
+          "#{INDENT}return offset + len;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_ulong_hex_upper']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_ulong_hex_upper(mt_str target, uintptr_t offset, uint64_t value) {",
+          "#{INDENT}uintptr_t len = mt_format_ulong_hex_len(value);",
+          "#{INDENT}mt_format_check_capacity(target, offset, len);",
+          "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llX\", (unsigned long long)value);",
+          "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");",
+          "#{INDENT}return offset + len;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_long_hex']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_long_hex(mt_str target, uintptr_t offset, int64_t value) {",
+          "#{INDENT}if (value < 0) {",
+          "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+          "#{INDENT * 2}return mt_format_append_ulong_hex(target, offset, ((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}}",
+          "#{INDENT}return mt_format_append_ulong_hex(target, offset, (uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_long_hex_upper']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_long_hex_upper(mt_str target, uintptr_t offset, int64_t value) {",
+          "#{INDENT}if (value < 0) {",
+          "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+          "#{INDENT * 2}return mt_format_append_ulong_hex_upper(target, offset, ((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}}",
+          "#{INDENT}return mt_format_append_ulong_hex_upper(target, offset, (uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_ulong_oct']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_ulong_oct(mt_str target, uintptr_t offset, uint64_t value) {",
+          "#{INDENT}uintptr_t len = mt_format_ulong_oct_len(value);",
+          "#{INDENT}mt_format_check_capacity(target, offset, len);",
+          "#{INDENT}int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llo\", (unsigned long long)value);",
+          "#{INDENT}if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned octal\");",
+          "#{INDENT}return offset + len;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_long_oct']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_long_oct(mt_str target, uintptr_t offset, int64_t value) {",
+          "#{INDENT}if (value < 0) {",
+          "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+          "#{INDENT * 2}return mt_format_append_ulong_oct(target, offset, ((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}}",
+          "#{INDENT}return mt_format_append_ulong_oct(target, offset, (uint64_t)value);",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_ulong_bin']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_ulong_bin(mt_str target, uintptr_t offset, uint64_t value) {",
+          "#{INDENT}uintptr_t len = mt_format_ulong_bin_len(value);",
+          "#{INDENT}uintptr_t index = offset + len;",
+          "#{INDENT}mt_format_check_capacity(target, offset, len);",
+          "#{INDENT}target.data[index] = '\\0';",
+          "#{INDENT}do {",
+          "#{INDENT * 2}index -= 1;",
+          "#{INDENT * 2}target.data[index] = (char)('0' + (value & 1));",
+          "#{INDENT * 2}value >>= 1;",
+          "#{INDENT}} while (index > offset);",
+          "#{INDENT}return offset + len;",
+          "}",
+        ])
+      end
+
+      if helpers['mt_format_append_long_bin']
+        lines << "" unless lines.empty?
+        lines.concat([
+          "static uintptr_t mt_format_append_long_bin(mt_str target, uintptr_t offset, int64_t value) {",
+          "#{INDENT}if (value < 0) {",
+          "#{INDENT * 2}offset = mt_format_append_bytes(target, offset, \"-\", 1);",
+          "#{INDENT * 2}return mt_format_append_ulong_bin(target, offset, ((uint64_t)(-(value + 1))) + 1);",
+          "#{INDENT}}",
+          "#{INDENT}return mt_format_append_ulong_bin(target, offset, (uint64_t)value);",
           "}",
         ])
       end

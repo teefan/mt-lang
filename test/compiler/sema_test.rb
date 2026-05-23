@@ -2022,6 +2022,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_format_heredoc_literal_as_general_str_expression
+    source = <<~MT
+      # module demo.format_heredoc
+
+      function length(text: str) -> ptr_uint:
+          return text.len
+
+      function main(count: int, flag: bool) -> int:
+          let text = f<<-FMT
+            count=\#{count}
+            precise=\#{if flag: 1.0 else: 2.0:.2}
+          FMT
+          if length(text) == 0:
+              return 1
+          return int<-text.len
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_rejects_general_format_literal_with_unsupported_interpolation_type
     source = <<~MT
       # module demo.format_bad
@@ -2106,6 +2128,85 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/precision.*float.*double|float.*double.*precision|format spec.*float.*double/i, error.message)
+  end
+
+  def test_type_checks_format_hex_spec_on_integer_and_integer_backed_enum
+    source = <<~MT
+      # module demo.fmt_hex
+
+      enum State: uint
+          idle = 0
+          running = 1
+
+      function main(count: int) -> int:
+          let lower = f"lower=\#{count:x}"
+          let upper = f"upper=\#{State.running:X}"
+          if lower.len == 0 or upper.len == 0:
+              return 1
+          return 0
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_hex_spec_on_non_integer
+    source = <<~MT
+      # module demo.fmt_hex_bad
+
+      function main(pi: double) -> int:
+          let text = f"pi=\#{pi:x}"
+          if text.len == 0:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/format spec ':x' and ':X'.*integer/i, error.message)
+  end
+
+  def test_type_checks_format_octal_and_binary_specs_on_integer_and_enum
+    source = <<~MT
+      # module demo.fmt_oct_bin
+
+      flags Permission: uint
+          read = 1 << 0
+          write = 1 << 1
+
+      function main(count: int) -> int:
+          let octal = f"oct=\#{count:o}"
+          let binary = f"bin=\#{Permission.read:B}"
+          if octal.len == 0 or binary.len == 0:
+              return 1
+          return 0
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_octal_and_binary_specs_on_non_integer
+    source = <<~MT
+      # module demo.fmt_oct_bin_bad
+
+      function main(pi: double) -> int:
+          let octal = f"oct=\#{pi:o}"
+          let binary = f"bin=\#{pi:b}"
+          if octal.len == 0 or binary.len == 0:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/format spec ':o' and ':O'|format spec ':b' and ':B'/i, error.message)
   end
 
   def test_rejects_explicit_c_name_on_non_external_struct

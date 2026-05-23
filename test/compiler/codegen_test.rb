@@ -5368,6 +5368,41 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/,\s*5\s*\)/, generated)
   end
 
+  def test_generate_c_format_hex_spec_calls_hex_helpers
+    source = <<~MT
+      # module demo.fmt_hex_codegen
+
+      function main(value: int) -> int:
+          let lower = f"hex=\#{value:x}"
+          let upper = f"HEX=\#{value:X}"
+          return int<-lower.len + int<-upper.len
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/mt_format_append_long_hex\(/, generated)
+    assert_match(/mt_format_append_long_hex_upper\(/, generated)
+    assert_match(/mt_format_ulong_hex_len\(/, generated)
+  end
+
+  def test_generate_c_format_octal_and_binary_specs_call_helpers
+    source = <<~MT
+      # module demo.fmt_oct_bin_codegen
+
+      function main(value: int) -> int:
+          let octal = f"oct=\#{value:o}"
+          let binary = f"bin=\#{value:b}"
+          return int<-octal.len + int<-binary.len
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/mt_format_append_long_oct\(/, generated)
+    assert_match(/mt_format_append_long_bin\(/, generated)
+    assert_match(/mt_format_ulong_oct_len\(/, generated)
+    assert_match(/mt_format_ulong_bin_len\(/, generated)
+  end
+
   def test_generate_c_for_async_main_uses_std_async_wait
     source = <<~MT
       # module demo.async_main_codegen

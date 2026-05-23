@@ -794,13 +794,13 @@ const shader: cstr = c<<-GLSL
 GLSL
 ```
 
-`<<-TAG` and `c<<-TAG` read all following lines until a line containing only the terminator tag, optionally surrounded by spaces. Nonblank content lines are dedented by their shared leading spaces. The trailing newline before the terminator is preserved. Multiline format heredocs are not supported.
+`<<-TAG`, `c<<-TAG`, and `f<<-TAG` read all following lines until a line containing only the terminator tag, optionally surrounded by spaces. Nonblank content lines are dedented by their shared leading spaces. The trailing newline before the terminator is preserved.
 
 Ordinary `"..."` and `c"..."` literals may continue across following indented lines when each continued line starts with the same literal kind and contains nothing else. The segments concatenate exactly with no inserted separator, so any spaces or punctuation between pieces must be written explicitly.
 
 In the VS Code extension, specific heredoc tags opt into embedded highlighting without changing the Milk Tea type: `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`. These still produce ordinary `str` or `cstr` values, and SQL heredocs should still use bound parameters rather than string interpolation.
 
-Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations.
+Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations. Integer-base specifiers `:x` / `:X` (hex), `:o` / `:O` (octal), and `:b` / `:B` (binary) are allowed on integer primitives and integer-backed enum/flags interpolations.
 
 The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
 

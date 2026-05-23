@@ -3691,14 +3691,36 @@ module MilkTea
           value_type = infer_expression(part.expression, scopes:)
 
           if part.format_spec
-            unless value_type.is_a?(Types::Primitive) && value_type.float?
-              raise_sema_error("format spec ':.N' is only valid for float and double, got #{value_type}")
+            case part.format_spec[:kind]
+            when :precision
+              unless value_type.is_a?(Types::Primitive) && value_type.float?
+                raise_sema_error("format spec ':.N' is only valid for float and double, got #{value_type}")
+              end
+            when :hex
+              unless format_string_integer_base_spec_supported?(value_type)
+                raise_sema_error("format spec ':x' and ':X' are only valid for integer primitives and integer-backed enums/flags, got #{value_type}")
+              end
+            when :oct
+              unless format_string_integer_base_spec_supported?(value_type)
+                raise_sema_error("format spec ':o' and ':O' are only valid for integer primitives and integer-backed enums/flags, got #{value_type}")
+              end
+            when :bin
+              unless format_string_integer_base_spec_supported?(value_type)
+                raise_sema_error("format spec ':b' and ':B' are only valid for integer primitives and integer-backed enums/flags, got #{value_type}")
+              end
+            else
+              raise_sema_error("unsupported format spec #{part.format_spec.inspect}")
             end
           else
             next if format_string_interpolation_supported?(value_type)
             raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}")
           end
         end
+      end
+
+      def format_string_integer_base_spec_supported?(type)
+        resolved = type.is_a?(Types::EnumBase) ? type.backing_type : type
+        resolved.is_a?(Types::Primitive) && resolved.integer?
       end
 
       def format_string_interpolation_supported?(type)

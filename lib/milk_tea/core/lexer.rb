@@ -227,7 +227,7 @@ module MilkTea
         end
 
         if char == "f" && heredoc_start?(line, index, format: true)
-          raise LexError.new("format heredoc literals are not supported", line: line_number, column: index + 1, path: @path)
+          return lex_heredoc(lines, line_index, index, line_number, line_offset, cstring: false, format: true)
         end
 
         if char == "f" && line[index + 1] == '"'
@@ -508,9 +508,9 @@ module MilkTea
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
     end
 
-    def lex_heredoc(lines, line_index, index, line_number, line_offset, cstring:)
+    def lex_heredoc(lines, line_index, index, line_number, line_offset, cstring:, format: false)
       line = lines.fetch(line_index).delete_suffix("\n").b
-      prefix_length = heredoc_prefix(cstring:).length
+      prefix_length = heredoc_prefix(cstring:, format:).length
       tag_start = index + prefix_length
       tag_end = tag_start
       tag_end += 1 while tag_end < line.length && identifier_part?(line[tag_end])
@@ -558,10 +558,72 @@ module MilkTea
       lexeme = @source.byteslice(start_offset, end_offset - start_offset)
       value = dedent_heredoc_content(content_lines)
 
-      @tokens << token(cstring ? :cstring : :string, lexeme, value, line_number, index + 1, start_offset:, end_offset:)
+      literal = if format
+                  parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: 1)
+                else
+                  value
+                end
+      token_type = if format
+                     :fstring
+                   elsif cstring
+                     :cstring
+                   else
+                     :string
+                   end
+
+      @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
       emit_line_newline(terminator_line, terminator_line_number, terminator_line_offset, terminator_has_newline)
 
       (scan_line_index - line_index) + 1
+    end
+
+    def parse_format_heredoc_parts(content, start_line:, start_column:)
+      parts = []
+      text = +""
+      index = 0
+      line = start_line
+      column = start_column
+
+      while index < content.length
+        char = content[index]
+        if char == "#" && content[index + 1] == "{"
+          parts << { kind: :text, value: text } unless text.empty?
+          text = +""
+
+          expr_start = index + 2
+          expr_line = line
+          expr_column = column + 2
+          expr_end = scan_format_interpolation_end(content, expr_start, expr_line, expr_column)
+          raw_source = content[expr_start...expr_end]
+          if raw_source.strip.empty?
+            raise LexError.new("empty format interpolation", line: line, column:, path: @path)
+          end
+
+          source, format_spec = split_format_interpolation_source(raw_source)
+          parts << { kind: :expr, source:, format_spec:, line: expr_line, column: expr_column }
+
+          while index <= expr_end
+            line, column = advance_text_position(char: content[index], line:, column:)
+            index += 1
+          end
+          next
+        end
+
+        text << char
+        line, column = advance_text_position(char:, line:, column:)
+        index += 1
+      end
+
+      parts << { kind: :text, value: text } unless text.empty?
+      parts
+    end
+
+    def advance_text_position(char:, line:, column:)
+      if char == "\n"
+        [line + 1, 1]
+      else
+        [line, column + 1]
+      end
     end
 
     def lex_format_string(line, index, line_number, line_offset:)
@@ -738,7 +800,7 @@ module MilkTea
     end
 
     # Splits a format interpolation source string into [expression_source, format_spec_string].
-    # Only a trailing top-level `:.N` suffix is treated as a format spec so
+    # Only a trailing top-level `:.N` or `:[xXoObB]` suffix is treated as a format spec so
     # expression forms like `unsafe: read(ptr)` and `if cond: a else: b` keep
     # their internal colons inside the embedded expression.
     def split_format_interpolation_source(source)
@@ -791,7 +853,7 @@ module MilkTea
     end
 
     def format_spec_suffix?(source)
-      source && source.strip.match?(/\A\.\d+\z/)
+      source && source.strip.match?(/\A(?:\.\d+|[xXoObB])\z/)
     end
 
     def lex_symbol(line, index, line_number, line_offset:)
