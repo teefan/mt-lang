@@ -15,9 +15,9 @@ public enum ValueKind: int
     null_ = 0
     boolean = 1
     number = 2
-    string = 3
-    array = 4
-    object = 5
+    string_ = 3
+    array_ = 4
+    object_ = 5
 
 
 public struct Value:
@@ -59,7 +59,7 @@ public function number_value(value: double) -> Value:
 
 
 public function string_value(value: string.String) -> Value:
-    return Value(kind = ValueKind.string, boolean_value = false, number_value = 0.0, string_value = value, array_value = null, object_value = null)
+    return Value(kind = ValueKind.string_, boolean_value = false, number_value = 0.0, string_value = value, array_value = null, object_value = null)
 
 
 public function string_from_str(value: str) -> Value:
@@ -67,11 +67,11 @@ public function string_from_str(value: str) -> Value:
 
 
 public function array_value(value: ptr[Array]?) -> Value:
-    return Value(kind = ValueKind.array, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = value, object_value = null)
+    return Value(kind = ValueKind.array_, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = value, object_value = null)
 
 
 public function object_value(value: ptr[Object]?) -> Value:
-    return Value(kind = ValueKind.object, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = null, object_value = value)
+    return Value(kind = ValueKind.object_, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = null, object_value = value)
 
 
 public function create_array_value() -> Value:
@@ -120,21 +120,21 @@ function value_as_number(value: Value) -> Option[double]:
 
 
 function value_as_string(value: Value) -> Option[str]:
-    if value.kind == ValueKind.string:
+    if value.kind == ValueKind.string_:
         return Option[str].some(value = value.string_value.as_str())
 
     return Option[str].none
 
 
 function value_as_array(value: Value) -> ptr[Array]?:
-    if value.kind == ValueKind.array:
+    if value.kind == ValueKind.array_:
         return value.array_value
 
     return null
 
 
 function value_as_object(value: Value) -> ptr[Object]?:
-    if value.kind == ValueKind.object:
+    if value.kind == ValueKind.object_:
         return value.object_value
 
     return null
@@ -314,15 +314,15 @@ function build_raw_value(value: Value) -> Result[ptr[cjson.JSON], Error]:
             return Result[ptr[cjson.JSON], Error].failure(error = error_message("json create number failed"))
         return Result[ptr[cjson.JSON], Error].success(value = item)
 
-    if value.kind == ValueKind.string:
+    if value.kind == ValueKind.string_:
         let item = cjson.create_string(value.string_value.as_str()) else:
             return Result[ptr[cjson.JSON], Error].failure(error = error_message("json create string failed"))
         return Result[ptr[cjson.JSON], Error].success(value = item)
 
-    if value.kind == ValueKind.array:
+    if value.kind == ValueKind.array_:
         return build_raw_array(value.array_value)
 
-    if value.kind == ValueKind.object:
+    if value.kind == ValueKind.object_:
         return build_raw_object(value.object_value)
 
     return Result[ptr[cjson.JSON], Error].failure(error = error_message("unsupported json value"))

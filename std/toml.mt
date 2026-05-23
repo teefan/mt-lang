@@ -27,11 +27,11 @@ public struct ParseError:
     message: string.String
 
 public enum ValueKind: int
-    string = 0
+    string_ = 0
     integer = 1
     boolean = 2
-    array = 3
-    object = 4
+    array_ = 3
+    object_ = 4
 
 public struct Value:
     kind: ValueKind
@@ -83,7 +83,7 @@ struct Cursor:
 
 
 function string_value(value: string.String) -> Value:
-    return Value(kind = ValueKind.string, string_value = value, integer_value = 0, boolean_value = false, array_value = null, object_value = null)
+    return Value(kind = ValueKind.string_, string_value = value, integer_value = 0, boolean_value = false, array_value = null, object_value = null)
 
 
 function integer_value(value: long) -> Value:
@@ -95,11 +95,11 @@ function boolean_value(value: bool) -> Value:
 
 
 function array_value(value: ptr[Array]?) -> Value:
-    return Value(kind = ValueKind.array, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = value, object_value = null)
+    return Value(kind = ValueKind.array_, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = value, object_value = null)
 
 
 function object_value(value: ptr[Object]?) -> Value:
-    return Value(kind = ValueKind.object, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = null, object_value = value)
+    return Value(kind = ValueKind.object_, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = null, object_value = value)
 
 
 public function release_value(value: Value) -> void:
@@ -121,7 +121,7 @@ public function release_value(value: Value) -> void:
 
 
 function value_as_string(value: Value) -> Option[str]:
-    if value.kind == ValueKind.string:
+    if value.kind == ValueKind.string_:
         return Option[str].some(value= value.string_value.as_str())
 
     return Option[str].none
@@ -142,14 +142,14 @@ function value_as_boolean(value: Value) -> Option[bool]:
 
 
 function value_as_array(value: Value) -> ptr[Array]?:
-    if value.kind == ValueKind.array:
+    if value.kind == ValueKind.array_:
         return value.array_value
 
     return null
 
 
 function value_as_object(value: Value) -> ptr[Object]?:
-    if value.kind == ValueKind.object:
+    if value.kind == ValueKind.object_:
         return value.object_value
 
     return null
@@ -1140,7 +1140,7 @@ function append_entry_key(output: ref[string.String], key: str) -> void:
 
 
 function append_value(output: ref[string.String], value: Value) -> void:
-    if value.kind == ValueKind.string:
+    if value.kind == ValueKind.string_:
         append_quoted_string(output, value.string_value.as_str())
         return
 
@@ -1152,7 +1152,7 @@ function append_value(output: ref[string.String], value: Value) -> void:
         fmt.append_bool(output, value.boolean_value)
         return
 
-    if value.kind == ValueKind.array:
+    if value.kind == ValueKind.array_:
         output.push_byte(byte_left_bracket)
         let nested_array = value.array_value
         if nested_array != null:
