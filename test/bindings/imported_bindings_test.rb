@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "pcre2", "steamworks"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "curl", "pcre2", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -49,6 +49,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
     assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
     assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+
+    assert_equal "std.curl", registry.fetch("curl").module_name
+    assert_equal "std.c.curl", registry.fetch("curl").raw_module_name
+    assert_includes registry.fetch("curl").binding_path, "/std/curl.mt"
+    assert_includes registry.fetch("curl").policy_path, "/bindings/imported/curl.binding.json"
 
     assert_equal "std.pcre2", registry.fetch("pcre2").module_name
     assert_equal "std.c.pcre2", registry.fetch("pcre2").raw_module_name
@@ -225,6 +230,32 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public foreign function cjson_parse\(/, source)
     refute_match(/^public foreign function malloc\(/, source)
     refute_match(/^public foreign function free\(/, source)
+  end
+
+  def test_checked_in_curl_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("curl")
+
+    assert_includes binding.check!, "/std/c/curl.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.curl as c$/, source)
+    assert_match(/^public type EasyHandle = c\.CURL$/, source)
+    assert_match(/^public type Code = c\.CURLcode$/, source)
+    assert_match(/^public type CurlOption = c\.CURLoption$/, source)
+    assert_match(/^public type Info = c\.CURLINFO$/, source)
+    assert_match(/^public const CURLE_ALREADY_COMPLETE: int = c\.CURLE_ALREADY_COMPLETE$/, source)
+    assert_match(/^public const CURL_GLOBAL_NOTHING: int = c\.CURL_GLOBAL_NOTHING$/, source)
+    assert_match(/^public foreign function global_init\(flag_bits: ptr_int\) -> Code = c\.curl_global_init$/, source)
+    assert_match(/^public foreign function global_cleanup\(\) -> void = c\.curl_global_cleanup$/, source)
+    assert_match(/^public foreign function easy_init\(\) -> ptr\[EasyHandle\]\? = c\.curl_easy_init$/, source)
+    assert_match(/^public foreign function easy_perform\(curl: ptr\[EasyHandle\]\) -> Code = c\.curl_easy_perform$/, source)
+    assert_match(/^public foreign function easy_cleanup\(curl: ptr\[EasyHandle\]\) -> void = c\.curl_easy_cleanup$/, source)
+    assert_match(/^public foreign function easy_strerror\(error: Code\) -> cstr = c\.curl_easy_strerror$/, source)
+    assert_match(/^public foreign function slist_append\(list: ptr\[SList\], data: str as cstr\) -> ptr\[SList\] = c\.curl_slist_append$/, source)
+    assert_match(/^public foreign function slist_free_all\(list: ptr\[SList\]\) -> void = c\.curl_slist_free_all$/, source)
+    refute_match(/^public foreign function easy_setopt\(/, source)
+    refute_match(/^public foreign function easy_getinfo\(/, source)
   end
 
   def test_checked_in_pcre2_binding_matches_policy_and_loads

@@ -1439,6 +1439,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/libuv.binding.json"),
         ),
         Binding.new(
+          name: "curl",
+          module_name: "std.curl",
+          binding_path: root.join("std/curl.mt"),
+          raw_module_name: "std.c.curl",
+          policy_path: root.join("bindings/imported/curl.binding.json"),
+        ),
+        Binding.new(
           name: "pcre2",
           module_name: "std.pcre2",
           binding_path: root.join("std/pcre2.mt"),
