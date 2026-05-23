@@ -340,7 +340,7 @@ module MilkTea
         resolve_selected_names(spec, declarations[:types], declarations[:type_order], context: "type").map do |raw_name|
           raw_declaration = declarations[:types].fetch(raw_name)
           override = overrides[raw_name]
-          public_name = alias_public_name(raw_name, spec:, override:)
+          public_name = alias_public_name(raw_name, spec:, override:, binding_kind: :type)
           raise Error, "duplicate generated type #{public_name} in #{@policy_path}" if seen_public_names.key?(public_name)
 
           seen_public_names[public_name] = true
@@ -364,7 +364,7 @@ module MilkTea
         resolve_selected_names(spec, declarations[:values], declarations[:value_order], context: "constant").map do |raw_name|
           raw_declaration = declarations[:values].fetch(raw_name)
           override = overrides[raw_name]
-          public_name = alias_public_name(raw_name, spec:, override:)
+          public_name = alias_public_name(raw_name, spec:, override:, binding_kind: :value)
           raise Error, "duplicate generated constant #{public_name} in #{@policy_path}" if seen_public_names.key?(public_name)
 
           seen_public_names[public_name] = true
@@ -837,7 +837,7 @@ module MilkTea
         resolve_selected_names(spec, declarations[:types], declarations[:type_order], context: "type").each do |raw_name|
           raw_declaration = declarations[:types].fetch(raw_name)
           override = overrides[raw_name]
-          public_name = alias_public_name(raw_name, spec:, override:)
+          public_name = alias_public_name(raw_name, spec:, override:, binding_kind: :type)
           raise Error, "duplicate generated type #{public_name} in #{@policy_path}" if seen_public_names.key?(public_name)
 
           seen_public_names[public_name] = true
@@ -866,10 +866,10 @@ module MilkTea
         overrides
       end
 
-      def alias_public_name(raw_name, spec:, override:)
+      def alias_public_name(raw_name, spec:, override:, binding_kind:)
         return override["name"] if override && override.key?("name")
 
-        default_public_name(raw_name, spec:, context: "generated name")
+        default_public_name(raw_name, spec:, context: "generated name", binding_kind:)
       end
 
       def public_type_kind(raw_name, override:, raw_declaration:)
@@ -890,12 +890,18 @@ module MilkTea
         :opaque
       end
 
-      def default_public_name(raw_name, spec:, context:)
+      def default_public_name(raw_name, spec:, context:, binding_kind:)
         transformed = apply_rename_rules(raw_name, spec[:rename_rules], context:)
         transformed = strip_prefix(transformed, spec[:strip_prefix], context:) if spec[:strip_prefix]
         raise Error, "#{context} in #{@policy_path} cannot be empty" if transformed.empty?
 
-        transformed
+        sanitize_generated_binding_name(transformed, binding_kind:)
+      end
+
+      def sanitize_generated_binding_name(name, binding_kind:)
+        return name unless generated_binding_name_conflict?(name, binding_kind:)
+
+        "#{name}_"
       end
 
       def apply_rename_rules(name, rules, context:)
@@ -1011,12 +1017,12 @@ module MilkTea
       end
 
       def foreign_function_name(raw_name, spec:)
-        snake_case(default_public_name(raw_name, spec:, context: "generated function name"))
+        snake_case(default_public_name(raw_name, spec:, context: "generated function name", binding_kind: :value))
       end
 
       def render_method_wrapper(function_entry, spec:)
         raw_name = function_entry.fetch(:raw_name)
-        method_name = snake_case(default_public_name(raw_name, spec:, context: "generated method name"))
+        method_name = snake_case(default_public_name(raw_name, spec:, context: "generated method name", binding_kind: :value))
         method_kind = method_kind(function_entry, spec:, raw_name:)
         method_params = method_kind == :static ? function_entry.fetch(:params) : function_entry.fetch(:params).drop(1)
         if method_params.any? { |param| param["mode"] }
@@ -1231,13 +1237,22 @@ module MilkTea
 
       def generated_foreign_param_name(name)
         normalized = snake_case(name)
-        return normalized unless generated_binding_name_conflict?(normalized)
+        return normalized unless generated_binding_name_conflict?(normalized, binding_kind: :value)
 
         "#{normalized}_"
       end
 
-      def generated_binding_name_conflict?(name)
-        Token::KEYWORDS.key?(name) || Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
+      def generated_binding_name_conflict?(name, binding_kind:)
+        return true if Token::KEYWORDS.key?(name)
+
+        case binding_kind
+        when :type
+          Types::RESERVED_TYPE_BINDING_NAMES.include?(name)
+        when :value
+          Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
+        else
+          raise Error, "unsupported generated binding kind #{binding_kind.inspect} in #{@policy_path}"
+        end
       end
 
       def render_public_foreign_type(type)
