@@ -41,6 +41,17 @@ class MilkTeaUpstreamSourcesTest < Minitest::Test
     assert_equal %w[CMakeLists.txt include/uv.h include/uv/version.h], libuv.sentinel_paths
   end
 
+  def test_default_sources_include_complete_pinned_pcre2_checkout
+    sources = MilkTea::UpstreamSources.default_sources
+    pcre2 = sources.find { |source| source.name == "pcre2" }
+
+    refute_nil pcre2
+    assert_includes pcre2.checkout_root.to_s, "/third_party/pcre2-upstream"
+    assert_equal "https://github.com/PCRE2Project/pcre2.git", pcre2.repository_url
+    assert_equal "b2bd4254b379b9d7dc9a3dda060a7e27009ccdff", pcre2.revision
+    assert_equal %w[CMakeLists.txt src/pcre2.h.generic src/pcre2_compile.c], pcre2.sentinel_paths
+  end
+
   def test_source_bootstrap_clones_missing_checkout_at_pinned_revision
     skip "git not available" unless executable_available?("git")
 
