@@ -5404,6 +5404,137 @@ class MilkTeaCodegenTest < Minitest::Test
     refute_match(/async main runtime loop failed/, generated)
   end
 
+  def test_run_program_for_while_loop
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.while_runtime
+
+      function main() -> int:
+          var total = 0
+          var i = 1
+          while i <= 10:
+              total += i
+              i += 1
+          return total
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 55, result.exit_status
+  end
+
+  def test_run_program_for_boolean_operators
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.bool_runtime
+
+      function main() -> int:
+          var result = 0
+          if true and true:
+              result += 1
+          if true and false:
+              result += 10
+          if false or true:
+              result += 1
+          if false or false:
+              result += 10
+          if not false:
+              result += 1
+          if not true:
+              result += 10
+          if not (true and false):
+              result += 1
+          return result
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 4, result.exit_status
+  end
+
+  def test_run_program_for_bitwise_operators
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.bitwise_runtime
+
+      function main() -> int:
+          var result = 0
+          result += 3 | 5
+          result += 3 & 5
+          result += 3 ^ 5
+          result += 1 << 3
+          result += 16 >> 2
+          result += ~0
+          return result
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 7 + 1 + 6 + 8 + 4 + (-1), result.exit_status
+  end
+
+  def test_run_program_for_modulo_operator
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.modulo_runtime
+
+      function main() -> int:
+          return 17 % 5
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 2, result.exit_status
+  end
+
+  def test_run_program_for_flags_enum_and_match
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.flags_runtime
+
+      flags Permission: uint
+          read = 1 << 0
+          write = 1 << 1
+          execute = 1 << 2
+
+      enum Status: int
+          ok = 0
+          error = 1
+
+      function main() -> int:
+          let perm = Permission.read | Permission.write
+          if (perm & Permission.read) == Permission.read:
+              if (perm & Permission.write) == Permission.write:
+                  if (perm & Permission.execute) != Permission.execute:
+                      let state = Status.ok
+                      match state:
+                          Status.ok:
+                              return 0
+                          Status.error:
+                              return 1
+          return 2
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def source_relative_path(source, default: "program.mt")
