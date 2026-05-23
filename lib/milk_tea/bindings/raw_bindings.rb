@@ -1162,6 +1162,27 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "curl",
+          module_name: "std.c.curl",
+          binding_path: root.join("std/c/curl.mt"),
+          include_directives: ["curl/curl.h"],
+          link_libraries: ["curl"],
+          declaration_name_prefixes: ["curl_", "curlfiletype", "CURL", "CURLOPT_", "CURLINFO_", "CURLM", "CURLSH"],
+          type_overrides: {
+            "curlfiletype" => "int",
+            "curl_easytype" => "int",
+            "CURLUcode" => "int",
+          },
+          field_type_overrides: {
+            "curl_fileinfo" => { "filetype" => "int" },
+            "curl_easyoption" => { "type" => "int" },
+          },
+          header_candidates: [
+            "/usr/include/curl/curl.h",
+            "/usr/local/include/curl/curl.h",
+          ],
+        ),
+        Binding.new(
           name: "pcre2",
           module_name: "std.c.pcre2",
           binding_path: root.join("std/c/pcre2.mt"),

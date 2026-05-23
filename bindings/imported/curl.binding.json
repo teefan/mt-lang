@@ -1,0 +1,141 @@
+{
+  "module_name": "std.curl",
+  "raw_module_name": "std.c.curl",
+  "raw_import_alias": "c",
+  "types": {
+    "include": [
+      "CURL",
+      "CURLSH",
+      "CURLcode",
+      "CURLoption",
+      "CURLINFO",
+      "curl_slist"
+    ],
+    "overrides": [
+      { "raw": "CURL", "name": "EasyHandle" },
+      { "raw": "CURLSH", "name": "ShareHandle" },
+      { "raw": "CURLcode", "name": "Code" },
+      { "raw": "CURLoption", "name": "CurlOption" },
+      { "raw": "CURLINFO", "name": "Info" },
+      { "raw": "curl_slist", "name": "SList" }
+    ]
+  },
+  "constants": {
+    "include_prefixes": [
+      "CURLE_",
+      "CURL_GLOBAL_",
+      "CURLOPT_",
+      "CURLINFO_"
+    ]
+  },
+  "functions": {
+    "include": [
+      "curl_global_init",
+      "curl_global_cleanup",
+      "curl_easy_init",
+      "curl_easy_cleanup",
+      "curl_easy_reset",
+      "curl_easy_perform",
+      "curl_easy_pause",
+      "curl_easy_duphandle",
+      "curl_easy_strerror",
+      "curl_easy_escape",
+      "curl_free",
+      "curl_slist_append",
+      "curl_slist_free_all"
+    ],
+    "strip_prefix": "curl_",
+    "overrides": [
+      {
+        "raw": "curl_easy_init",
+        "name": "easy_init",
+        "params": [],
+        "return_type": "ptr[EasyHandle]?"
+      },
+      {
+        "raw": "curl_easy_duphandle",
+        "name": "easy_duphandle",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" }
+        ],
+        "return_type": "ptr[EasyHandle]?"
+      },
+      {
+        "raw": "curl_slist_append",
+        "name": "slist_append",
+        "params": [
+          { "name": "list", "type": "ptr[SList]" },
+          { "name": "data", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "ptr[SList]"
+      },
+      {
+        "raw": "curl_easy_escape",
+        "name": "easy_escape",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" },
+          { "name": "string", "type": "str", "boundary_type": "cstr" },
+          { "name": "length", "type": "int" }
+        ],
+        "return_type": "ptr[char]?"
+      },
+      {
+        "raw": "curl_easy_cleanup",
+        "name": "easy_cleanup",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "curl_easy_perform",
+        "name": "easy_perform",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" }
+        ],
+        "return_type": "Code"
+      },
+      {
+        "raw": "curl_easy_reset",
+        "name": "easy_reset",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "curl_easy_pause",
+        "name": "easy_pause",
+        "params": [
+          { "name": "curl", "type": "ptr[EasyHandle]" },
+          { "name": "action", "type": "int" }
+        ],
+        "return_type": "Code"
+      },
+      {
+        "raw": "curl_easy_strerror",
+        "name": "easy_strerror",
+        "params": [
+          { "name": "error", "type": "Code" }
+        ],
+        "return_type": "cstr"
+      },
+      {
+        "raw": "curl_free",
+        "name": "free",
+        "params": [
+          { "name": "p", "type": "ptr[void]" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "curl_global_init",
+        "name": "global_init",
+        "params": [
+          { "name": "flag_bits", "type": "ptr_int" }
+        ],
+        "return_type": "Code"
+      }
+    ]
+  }
+}
