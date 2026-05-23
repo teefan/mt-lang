@@ -1439,6 +1439,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/libuv.binding.json"),
         ),
         Binding.new(
+          name: "pcre2",
+          module_name: "std.pcre2",
+          binding_path: root.join("std/pcre2.mt"),
+          raw_module_name: "std.c.pcre2",
+          policy_path: root.join("bindings/imported/pcre2.binding.json"),
+        ),
+        Binding.new(
           name: "steamworks",
           module_name: "std.steamworks",
           binding_path: root.join("std/steamworks.mt"),

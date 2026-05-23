@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -190,6 +190,17 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_key_get")
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_get_data")
     assert_equal "cstr?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_dlerror")
+    assert_equal "std.c.pcre2", registry.fetch("pcre2").module_name
+    assert_equal ["pcre2-8"], registry.fetch("pcre2").link_libraries
+    assert_equal ["PCRE2_CODE_UNIT_WIDTH=8"], registry.fetch("pcre2").bindgen_defines
+    assert_includes registry.fetch("pcre2").compiler_flags, "-DPCRE2_CODE_UNIT_WIDTH=8"
+    assert_includes registry.fetch("pcre2").compiler_flags, "-I#{MilkTea::VendoredPCRE2.include_root}"
+    assert_equal ["pcre2_", "PCRE2_"], registry.fetch("pcre2").declaration_name_prefixes
+    assert_includes registry.fetch("pcre2").header_candidates.first, "tmp/vendored-pcre2-prefix/include/pcre2.h"
+    assert_includes registry.fetch("pcre2").tracked_header_paths.first, "tmp/vendored-pcre2-prefix/include/pcre2.h"
+    assert_includes registry.fetch("pcre2").tracked_header_prefixes.first, "tmp/vendored-pcre2-prefix/include"
+    assert_includes registry.fetch("pcre2").link_flags, "-L#{MilkTea::VendoredPCRE2.archive_path.dirname}"
+    assert_includes registry.fetch("pcre2").link_flags, "-lm"
     assert_equal "std.c.steamworks", registry.fetch("steamworks").module_name
     assert_equal MilkTea::Steamworks.default_link_libraries, registry.fetch("steamworks").link_libraries
     assert_includes registry.fetch("steamworks").header_candidates.first, "/std/c/steamworks.h"

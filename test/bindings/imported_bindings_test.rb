@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "steamworks"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "pcre2", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -49,6 +49,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
     assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
     assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+
+    assert_equal "std.pcre2", registry.fetch("pcre2").module_name
+    assert_equal "std.c.pcre2", registry.fetch("pcre2").raw_module_name
+    assert_includes registry.fetch("pcre2").binding_path, "/std/pcre2.mt"
+    assert_includes registry.fetch("pcre2").policy_path, "/bindings/imported/pcre2.binding.json"
 
     assert_equal "std.steamworks", registry.fetch("steamworks").module_name
     assert_equal "std.c.steamworks", registry.fetch("steamworks").raw_module_name
@@ -220,6 +225,24 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public foreign function cjson_parse\(/, source)
     refute_match(/^public foreign function malloc\(/, source)
     refute_match(/^public foreign function free\(/, source)
+  end
+
+  def test_checked_in_pcre2_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("pcre2")
+
+    assert_includes binding.check!, "/std/c/pcre2.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.pcre2 as c$/, source)
+    assert_match(/^public type Code = c\.pcre2_code_8$/, source)
+    assert_match(/^public type MatchData = c\.pcre2_match_data_8$/, source)
+    assert_match(/^public const CASELESS: uint = c\.PCRE2_CASELESS$/, source)
+    assert_match(/^public foreign function compile_bytes\(pattern: span\[ubyte\], options: uint, out error_code: int, out error_offset: ptr_uint, compile_context: ptr\[CompileContext\]\) -> ptr\[Code\]\? = c\.pcre2_compile_8\(pattern\.data, ptr_uint<-pattern\.len, options, error_code, error_offset, compile_context\)$/, source)
+    assert_match(/^public foreign function match_bytes\(code: const_ptr\[Code\], subject: span\[ubyte\], start_offset: ptr_uint, options: uint, match_data: ptr\[MatchData\], match_context: ptr\[MatchContext\]\) -> int = c\.pcre2_match_8\(code, subject\.data, ptr_uint<-subject\.len, start_offset, options, match_data, match_context\)$/, source)
+    assert_match(/^public foreign function get_error_message\(error_code: int, buffer: span\[ubyte\]\) -> int = c\.pcre2_get_error_message_8\(error_code, buffer\.data, ptr_uint<-buffer\.len\)$/, source)
+    refute_match(/^public type general_context_16 = /, source)
+    refute_match(/^public foreign function compile_16\(/, source)
   end
 
   def test_generate_rejects_extra_source_policy_escape_hatch

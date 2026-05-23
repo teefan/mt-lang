@@ -263,6 +263,8 @@ module MilkTea
       vendored_cjson_library = vendored_cjson.library(root:)
       vendored_libuv = MilkTea::VendoredLibUV
       vendored_libuv_library = vendored_libuv.library(root:)
+      vendored_pcre2 = MilkTea::VendoredPCRE2
+      vendored_pcre2_library = vendored_pcre2.library(root:)
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[ushort]?" },
@@ -1157,6 +1159,30 @@ module MilkTea
           field_type_overrides: libuv_field_type_overrides,
           header_candidates: [
             vendored_libuv.header_path(root:).to_s,
+          ],
+        ),
+        Binding.new(
+          name: "pcre2",
+          module_name: "std.c.pcre2",
+          binding_path: root.join("std/c/pcre2.mt"),
+          include_directives: ["pcre2.h"],
+          bindgen_defines: ["PCRE2_CODE_UNIT_WIDTH=8"],
+          link_libraries: ["pcre2-8"],
+          prepare: lambda do |_binding, **|
+            vendored_pcre2.source(root:).bootstrap!
+          end,
+          vendored_library: vendored_pcre2_library,
+          clang_args: vendored_pcre2.include_flags(root:),
+          compiler_flags: ["-DPCRE2_CODE_UNIT_WIDTH=8", *vendored_pcre2.include_flags(root:)],
+          tracked_header_paths: [
+            vendored_pcre2.header_path(root:).to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_pcre2.include_root(root:).to_s,
+          ],
+          declaration_name_prefixes: ["pcre2_", "PCRE2_"],
+          header_candidates: [
+            vendored_pcre2.header_path(root:).to_s,
           ],
         ),
         Binding.new(

@@ -104,6 +104,17 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "pcre2",
+          checkout_root: root.join("third_party/pcre2-upstream"),
+          repository_url: "https://github.com/PCRE2Project/pcre2.git",
+          revision: "b2bd4254b379b9d7dc9a3dda060a7e27009ccdff",
+          sentinel_paths: %w[
+            CMakeLists.txt
+            src/pcre2.h.generic
+            src/pcre2_compile.c
+          ],
+        ),
+        Source.new(
           name: "steamworks_sdk",
           checkout_root: root.join("third_party/steamworks-sdk-upstream"),
           repository_url: "https://github.com/rlabrecque/steamworkssdk.git",
