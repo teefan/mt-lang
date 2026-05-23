@@ -7490,6 +7490,130 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.types.key?("CallbackOrValue")
   end
 
+  def test_type_checks_while_loop_with_bool_condition
+    source = <<~MT
+      # module demo.while_loop
+
+      function countdown(start: int) -> int:
+          var i = start
+          var total = 0
+          while i > 0:
+              total += i
+              i -= 1
+          return total
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("countdown")
+  end
+
+  def test_rejects_while_loop_with_non_bool_condition
+    source = <<~MT
+      # module demo.bad_while
+
+      function main() -> int:
+          while 1:
+              return 0
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/while condition must be bool/, error.message)
+  end
+
+  def test_type_checks_boolean_and_or_not_operators
+    source = <<~MT
+      # module demo.bool_ops
+
+      function test_and(a: bool, b: bool) -> bool:
+          return a and b
+
+      function test_or(a: bool, b: bool) -> bool:
+          return a or b
+
+      function test_not(a: bool) -> bool:
+          return not a
+
+      function test_combined(a: bool, b: bool, c: bool) -> bool:
+          return a and b or not c
+
+      function main() -> int:
+          if test_and(true, false):
+              return 1
+          if test_or(false, true):
+              return 2
+          if not test_not(true):
+              return 3
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal "bool", result.functions.fetch("test_and").type.return_type.to_s
+    assert_equal "bool", result.functions.fetch("test_or").type.return_type.to_s
+    assert_equal "bool", result.functions.fetch("test_not").type.return_type.to_s
+    assert_equal "bool", result.functions.fetch("test_combined").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_bitwise_operators_on_integers
+    source = <<~MT
+      # module demo.bitwise_ops
+
+      function test_or(a: int, b: int) -> int:
+          return a | b
+
+      function test_and(a: int, b: int) -> int:
+          return a & b
+
+      function test_xor(a: int, b: int) -> int:
+          return a ^ b
+
+      function test_lshift(a: int, b: int) -> int:
+          return a << b
+
+      function test_rshift(a: int, b: int) -> int:
+          return a >> b
+
+      function test_complement(a: int) -> int:
+          return ~a
+
+      function main() -> int:
+          return test_or(1, 2) + test_and(3, 1) + test_xor(3, 1)
+    MT
+
+    result = check_source(source)
+
+    assert_equal "int", result.functions.fetch("test_or").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("test_and").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("test_xor").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("test_lshift").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("test_rshift").type.return_type.to_s
+    assert_equal "int", result.functions.fetch("test_complement").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_modulo_operator
+    source = <<~MT
+      # module demo.modulo_op
+
+      function remainder(a: int, b: int) -> int:
+          return a % b
+
+      function main() -> int:
+          return remainder(10, 3)
+    MT
+
+    result = check_source(source)
+
+    assert_equal "int", result.functions.fetch("remainder").type.return_type.to_s
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_recursive_generic_method_helper_with_multiple_recursive_calls
   source = <<~MT
     # module demo.recursive_method_helper
