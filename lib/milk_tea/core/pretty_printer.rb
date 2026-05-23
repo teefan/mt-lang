@@ -743,6 +743,9 @@ module MilkTea
         when AST::FormatExprPart
           spec = case part.format_spec&.fetch(:kind)
                  when :precision then ":.#{part.format_spec[:value]}"
+                 when :hex then part.format_spec[:uppercase] ? ":X" : ":x"
+                 when :oct then part.format_spec[:uppercase] ? ":O" : ":o"
+                 when :bin then part.format_spec[:uppercase] ? ":B" : ":b"
                  end
           "\#{#{render_expression(part.expression)}#{spec}}"
         else

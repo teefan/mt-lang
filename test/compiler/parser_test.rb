@@ -1928,6 +1928,67 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal({ kind: :precision, value: 0 }, expr_part2.format_spec)
   end
 
+  def test_parses_format_heredoc_literal
+    source = <<~MT
+      function main(flag: bool, count: int) -> ptr_uint:
+          let text = f<<-FMT
+          count=\#{count}
+          precise=\#{if flag: 1.0 else: 2.0:.2}
+          FMT
+          return text.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+    assert_equal 5, format_string.parts.length
+    assert_instance_of MilkTea::AST::FormatTextPart, format_string.parts[0]
+    assert_instance_of MilkTea::AST::FormatExprPart, format_string.parts[1]
+    assert_equal "count=", format_string.parts[0].value
+    assert_instance_of MilkTea::AST::Identifier, format_string.parts[1].expression
+    assert_equal "count", format_string.parts[1].expression.name
+    assert_equal :precision, format_string.parts[3].format_spec[:kind]
+    assert_equal 2, format_string.parts[3].format_spec[:value]
+  end
+
+  def test_parses_format_string_hex_specs
+    source = <<~MT
+      function main(value: int) -> ptr_uint:
+          let text = f"lower=\#{value:x} upper=\#{value:X}"
+          return text.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+    lower_expr = format_string.parts[1]
+    upper_expr = format_string.parts[3]
+    assert_equal({ kind: :hex, uppercase: false }, lower_expr.format_spec)
+    assert_equal({ kind: :hex, uppercase: true }, upper_expr.format_spec)
+  end
+
+  def test_parses_format_string_octal_and_binary_specs
+    source = <<~MT
+      function main(value: int) -> ptr_uint:
+          let text = f"oct=\#{value:o} OCT=\#{value:O} bin=\#{value:b} BIN=\#{value:B}"
+          return text.len
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    local_decl = ast.declarations.first.body.first
+    format_string = local_decl.value
+
+    assert_instance_of MilkTea::AST::FormatString, format_string
+    assert_equal({ kind: :oct, uppercase: false }, format_string.parts[1].format_spec)
+    assert_equal({ kind: :oct, uppercase: true }, format_string.parts[3].format_spec)
+    assert_equal({ kind: :bin, uppercase: false }, format_string.parts[5].format_spec)
+    assert_equal({ kind: :bin, uppercase: true }, format_string.parts[7].format_spec)
+  end
+
   def test_parse_collecting_errors_recovers_after_invalid_top_level_declaration
     source = <<~MT
       const board_width: int = 10

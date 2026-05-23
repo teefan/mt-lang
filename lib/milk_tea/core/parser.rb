@@ -1690,10 +1690,23 @@ module MilkTea
     def parse_format_spec(spec_str)
       return nil if spec_str.nil? || spec_str.empty?
 
-      if (m = spec_str.strip.match(/\A\.(\d+)\z/))
+      trimmed = spec_str.strip
+      if (m = trimmed.match(/\A\.(\d+)\z/))
         { kind: :precision, value: m[1].to_i }
+      elsif trimmed == "x"
+        { kind: :hex, uppercase: false }
+      elsif trimmed == "X"
+        { kind: :hex, uppercase: true }
+      elsif trimmed == "o"
+        { kind: :oct, uppercase: false }
+      elsif trimmed == "O"
+        { kind: :oct, uppercase: true }
+      elsif trimmed == "b"
+        { kind: :bin, uppercase: false }
+      elsif trimmed == "B"
+        { kind: :bin, uppercase: true }
       else
-        raise error(peek, "unsupported format spec '#{spec_str.strip}': expected .N for float precision (e.g. :.2)")
+        raise error(peek, "unsupported format spec '#{trimmed}': expected .N for float precision (e.g. :.2), :x/:X, :o/:O, or :b/:B")
       end
     end
 

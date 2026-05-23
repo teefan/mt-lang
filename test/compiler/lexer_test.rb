@@ -145,6 +145,26 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal ".2", format_token.literal[3].fetch(:format_spec)
   end
 
+  def test_lexes_format_string_hex_specs
+    tokens = MilkTea::Lexer.lex('const message = f"hex=#{count:x} HEX=#{count:X}"' + "\n")
+    format_token = tokens.find { |token| token.type == :fstring }
+
+    refute_nil format_token
+    assert_equal "x", format_token.literal[1].fetch(:format_spec)
+    assert_equal "X", format_token.literal[3].fetch(:format_spec)
+  end
+
+  def test_lexes_format_string_octal_and_binary_specs
+    tokens = MilkTea::Lexer.lex('const message = f"oct=#{count:o} OCT=#{count:O} bin=#{count:b} BIN=#{count:B}"' + "\n")
+    format_token = tokens.find { |token| token.type == :fstring }
+
+    refute_nil format_token
+    assert_equal "o", format_token.literal[1].fetch(:format_spec)
+    assert_equal "O", format_token.literal[3].fetch(:format_spec)
+    assert_equal "b", format_token.literal[5].fetch(:format_spec)
+    assert_equal "B", format_token.literal[7].fetch(:format_spec)
+  end
+
   def test_lexes_heredoc_strings_and_cstrings
     source = <<~MT
       const shader: cstr = c<<-GLSL
@@ -169,6 +189,29 @@ class MilkTeaLexerTest < Minitest::Test
     refute_nil text
     assert_equal "#version 330\nvoid main()\n{\n}\n", shader.literal
     assert_equal "alpha\n  beta\n\n", text.literal
+  end
+
+  def test_lexes_format_heredoc_literal_parts
+    source = <<~MT
+      const message = f<<-FMT
+          value=\#{count}
+          precise=\#{if flag: 1.0 else: 2.0:.2}
+      FMT
+    MT
+
+    tokens = MilkTea::Lexer.lex(source)
+    format_token = tokens.find { |token| token.type == :fstring }
+
+    refute_nil format_token
+    assert_equal [:text, :expr, :text, :expr, :text], format_token.literal.map { |part| part.fetch(:kind) }
+    assert_equal "value=", format_token.literal[0].fetch(:value)
+    assert_equal "count", format_token.literal[1].fetch(:source)
+    assert_equal "\nprecise=", format_token.literal[2].fetch(:value)
+    assert_equal "if flag: 1.0 else: 2.0", format_token.literal[3].fetch(:source)
+    assert_equal ".2", format_token.literal[3].fetch(:format_spec)
+    assert_equal "\n", format_token.literal[4].fetch(:value)
+    assert_equal 2, format_token.literal[1].fetch(:line)
+    assert_equal 9, format_token.literal[1].fetch(:column)
   end
 
   def test_lexes_multiline_adjacent_strings_and_cstrings
