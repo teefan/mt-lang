@@ -1446,6 +1446,13 @@ module MilkTea
           policy_path: root.join("bindings/imported/zstd.binding.json"),
         ),
         Binding.new(
+          name: "sqlite3",
+          module_name: "std.sqlite3",
+          binding_path: root.join("std/sqlite3.mt"),
+          raw_module_name: "std.c.sqlite3",
+          policy_path: root.join("bindings/imported/sqlite3.binding.json"),
+        ),
+        Binding.new(
           name: "curl",
           module_name: "std.curl",
           binding_path: root.join("std/curl.mt"),

@@ -422,6 +422,52 @@ class MilkTeaBindgenTest < Minitest::Test
     end
   end
 
+  def test_generate_handles_nested_function_pointer_callback_signatures
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-nested-callbacks") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = bindgen_output_path(dir)
+      File.write(header_path, <<~C)
+        typedef struct Ctx Ctx;
+        typedef struct Val Val;
+
+        typedef struct Vfs Vfs;
+        struct Vfs {
+          void (*(*xDlSym)(Vfs *, void *, const char *))(void);
+        };
+
+        typedef struct Module Module;
+        struct Module {
+          int (*xFindFunction)(Module *, int, const char *, void (**)(Ctx *, int, Val **), void **);
+        };
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/opaque Ctx = c"Ctx"/, generated)
+      assert_match(/opaque Val = c"Val"/, generated)
+      assert_match(/struct Vfs:\n\s+xDlSym: fn\(arg0: ptr\[Vfs\], arg1: ptr\[void\], arg2: cstr\) -> fn\(\) -> void/, generated)
+      assert_match(/struct Module:\n\s+xFindFunction: fn\(arg0: ptr\[Module\], arg1: int, arg2: cstr, arg3: ptr\[fn\(arg0: ptr\[Ctx\], arg1: int, arg2: ptr\[ptr\[Val\]\]\) -> void\], arg4: ptr\[ptr\[void\]\]\) -> int/, generated)
+
+      File.write(output_path, generated)
+      analysis = check_generated_output(dir, output_path)
+
+      assert_equal :raw_module, analysis.module_kind
+      assert_equal "std.c.sample", analysis.module_name
+      assert_includes analysis.types.keys, "Vfs"
+      assert_includes analysis.types.keys, "Module"
+      assert_includes analysis.types.keys, "Ctx"
+      assert_includes analysis.types.keys, "Val"
+    end
+  end
+
   def test_generate_emits_typedef_defined_structs_as_structs
     clang = ENV.fetch("CLANG", "clang")
     skip "clang not available: #{clang}" unless executable_available?(clang)

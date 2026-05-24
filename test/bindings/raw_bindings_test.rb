@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv zstd curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -194,6 +194,11 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal ["zstd"], registry.fetch("zstd").link_libraries
     assert_includes registry.fetch("zstd").header_candidates, "/usr/include/zstd.h"
     assert_includes registry.fetch("zstd").declaration_name_prefixes, "ZSTD_"
+    assert_equal "std.c.sqlite3", registry.fetch("sqlite3").module_name
+    assert_equal ["sqlite3"], registry.fetch("sqlite3").link_libraries
+    assert_equal ["SQLITE_OMIT_LOAD_EXTENSION"], registry.fetch("sqlite3").bindgen_defines
+    assert_includes registry.fetch("sqlite3").header_candidates, "/usr/include/sqlite3.h"
+    assert_includes registry.fetch("sqlite3").declaration_name_prefixes, "sqlite3"
     assert_equal "std.c.curl", registry.fetch("curl").module_name
     assert_equal ["curl"], registry.fetch("curl").link_libraries
     assert_includes registry.fetch("curl").header_candidates, "/usr/include/curl/curl.h"

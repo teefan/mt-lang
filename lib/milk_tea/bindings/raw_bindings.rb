@@ -1174,6 +1174,19 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "sqlite3",
+          module_name: "std.c.sqlite3",
+          binding_path: root.join("std/c/sqlite3.mt"),
+          include_directives: ["sqlite3.h"],
+          bindgen_defines: ["SQLITE_OMIT_LOAD_EXTENSION"],
+          link_libraries: ["sqlite3"],
+          declaration_name_prefixes: ["sqlite3", "SQLITE_"],
+          header_candidates: [
+            "/usr/include/sqlite3.h",
+            "/usr/local/include/sqlite3.h",
+          ],
+        ),
+        Binding.new(
           name: "curl",
           module_name: "std.c.curl",
           binding_path: root.join("std/c/curl.mt"),
