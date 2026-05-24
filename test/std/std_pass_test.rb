@@ -8,30 +8,31 @@ class MilkTeaStdPassTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "function main() -> int:",
-      "    defer:",
-      "        pass",
-      "",
-      "    if true:",
-      "        pass",
-      "    else:",
-      "        return 1",
-      "",
-      "    while false:",
-      "        pass",
-      "",
-      "    match 2:",
-      "        1:",
-      "            return 2",
-      "        2:",
-      "            pass",
-      "        _:",
-      "            return 3",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+function main() -> int:
+    defer:
+        pass
+
+    if true:
+        pass
+    else:
+        return 1
+
+    while false:
+        pass
+
+    match 2:
+        1:
+            return 2
+        2:
+            pass
+        _:
+            return 3
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

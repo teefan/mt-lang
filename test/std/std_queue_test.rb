@@ -8,71 +8,72 @@ class MilkTeaStdQueueTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "",
-      "import std.queue as queue",
-      "",
-      "function dequeue_value(values: ref[queue.Queue[int]]) -> int:",
-      "    let removed = values.dequeue()",
-      "    match removed:",
-      "        Option.none:",
-      "            return -1",
-      "        Option.some as payload:",
-      "            return payload.value",
-      "",
-      "function main() -> int:",
-      "    var values = queue.Queue[int].with_capacity(2)",
-      "    defer values.release()",
-      "",
-      "    if values.capacity() < 2:",
-      "        return 1",
-      "    if not values.is_empty():",
-      "        return 2",
-      "    if values.peek() != null:",
-      "        return 3",
-      "",
-      "    values.enqueue(10)",
-      "    values.enqueue(20)",
-      "    values.enqueue(30)",
-      "",
-      "    if values.len() != 3:",
-      "        return 4",
-      "",
-      "    let front = values.peek()",
-      "    if front == null:",
-      "        return 5",
-      "    unsafe:",
-      "        read(ptr[int]<-front) = 12",
-      "",
-      "    var total = 0",
-      "    var count = 0",
-      "    for value in values:",
-      "        unsafe:",
-      "            total += read(value)",
-      "        count += 1",
-      "    if count != 3:",
-      "        return 6",
-      "    if total != 62:",
-      "        return 7",
-      "",
-      "    if dequeue_value(values) != 12:",
-      "        return 8",
-      "    if dequeue_value(values) != 20:",
-      "        return 9",
-      "    if dequeue_value(values) != 30:",
-      "        return 10",
-      "    if not values.is_empty():",
-      "        return 11",
-      "",
-      "    values.enqueue(4)",
-      "    values.clear()",
-      "    if not values.is_empty():",
-      "        return 12",
-      "    if values.peek() != null:",
-      "        return 13",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+
+import std.queue as queue
+
+function dequeue_value(values: ref[queue.Queue[int]]) -> int:
+    let removed = values.dequeue()
+    match removed:
+        Option.none:
+            return -1
+        Option.some as payload:
+            return payload.value
+
+function main() -> int:
+    var values = queue.Queue[int].with_capacity(2)
+    defer values.release()
+
+    if values.capacity() < 2:
+        return 1
+    if not values.is_empty():
+        return 2
+    if values.peek() != null:
+        return 3
+
+    values.enqueue(10)
+    values.enqueue(20)
+    values.enqueue(30)
+
+    if values.len() != 3:
+        return 4
+
+    let front = values.peek()
+    if front == null:
+        return 5
+    unsafe:
+        read(ptr[int]<-front) = 12
+
+    var total = 0
+    var count = 0
+    for value in values:
+        unsafe:
+            total += read(value)
+        count += 1
+    if count != 3:
+        return 6
+    if total != 62:
+        return 7
+
+    if dequeue_value(values) != 12:
+        return 8
+    if dequeue_value(values) != 20:
+        return 9
+    if dequeue_value(values) != 30:
+        return 10
+    if not values.is_empty():
+        return 11
+
+    values.enqueue(4)
+    values.clear()
+    if not values.is_empty():
+        return 12
+    if values.peek() != null:
+        return 13
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

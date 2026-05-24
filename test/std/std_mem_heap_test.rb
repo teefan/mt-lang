@@ -8,21 +8,22 @@ class MilkTeaStdMemHeapTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.heap as heap",
-      "",
-      "function main() -> int:",
-      "    let bytes = heap.alloc[ubyte](16)",
-      "    let grown = heap.resize(bytes, 32)",
-      "    let zeroed = heap.alloc_zeroed[bool](4)",
-      "    let raw = heap.alloc_bytes(8)",
-      "    let raw_grown = heap.resize_bytes(raw, 16)",
-      "    heap.release(grown)",
-      "    heap.release(zeroed)",
-      "    heap.release_bytes(raw_grown)",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.heap as heap
+
+function main() -> int:
+    let bytes = heap.alloc[ubyte](16)
+    let grown = heap.resize(bytes, 32)
+    let zeroed = heap.alloc_zeroed[bool](4)
+    let raw = heap.alloc_bytes(8)
+    let raw_grown = heap.resize_bytes(raw, 16)
+    heap.release(grown)
+    heap.release(zeroed)
+    heap.release_bytes(raw_grown)
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -36,49 +37,50 @@ class MilkTeaStdMemHeapTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.heap as heap",
-      "",
-      "align(16) struct Mat4:",
-      "    data: array[float, 16]",
-      "",
-      "function main() -> int:",
-      "    if heap.alloc_bytes(0) != null:",
-      "        return 1",
-      "    if heap.alloc_zeroed_bytes(0, 4) != null:",
-      "        return 2",
-      "",
-      "    let raw = heap.alloc_bytes(8)",
-      "    if raw == null:",
-      "        return 3",
-      "    let released = heap.resize_bytes(raw, 0)",
-      "    if released != null:",
-      "        return 4",
-      "",
-      "    let aligned = heap.alloc_bytes_aligned(1, 16)",
-      "    if aligned == null:",
-      "        return 5",
-      "    heap.release_bytes(aligned)",
-      "",
-      "    let matrix = heap.alloc_aligned[Mat4](1)",
-      "    if matrix == null:",
-      "        return 6",
-      "    heap.release(matrix)",
-      "",
-      "    if heap.alloc[Mat4](1) != null:",
-      "        return 7",
-      "",
-      "    var source = array[ubyte, 3](ubyte<-10, ubyte<-20, ubyte<-30)",
-      "    let copied = heap.must_alloc[ubyte](3)",
-      "    heap.copy_bytes(copied, ptr_of(source[0]), 3)",
-      "    unsafe:",
-      "        if read(copied + 0) != ubyte<-10 or read(copied + 1) != ubyte<-20 or read(copied + 2) != ubyte<-30:",
-      "            return 8",
-      "    heap.release(copied)",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.heap as heap
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+function main() -> int:
+    if heap.alloc_bytes(0) != null:
+        return 1
+    if heap.alloc_zeroed_bytes(0, 4) != null:
+        return 2
+
+    let raw = heap.alloc_bytes(8)
+    if raw == null:
+        return 3
+    let released = heap.resize_bytes(raw, 0)
+    if released != null:
+        return 4
+
+    let aligned = heap.alloc_bytes_aligned(1, 16)
+    if aligned == null:
+        return 5
+    heap.release_bytes(aligned)
+
+    let matrix = heap.alloc_aligned[Mat4](1)
+    if matrix == null:
+        return 6
+    heap.release(matrix)
+
+    if heap.alloc[Mat4](1) != null:
+        return 7
+
+    var source = array[ubyte, 3](ubyte<-10, ubyte<-20, ubyte<-30)
+    let copied = heap.must_alloc[ubyte](3)
+    heap.copy_bytes(copied, ptr_of(source[0]), 3)
+    unsafe:
+        if read(copied + 0) != ubyte<-10 or read(copied + 1) != ubyte<-20 or read(copied + 2) != ubyte<-30:
+            return 8
+    heap.release(copied)
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

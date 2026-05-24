@@ -376,28 +376,29 @@ class LSPServerTest < Minitest::Test
         return first + view[1]
   MT
 
-    SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS = [
-    "struct Key:",
-    "    value: int",
-    "",
-    "extending Key:",
-    "    public static function hash(value: const_ptr[Key]) -> uint:",
-    "        unsafe:",
-    "            return uint<-read(value).value",
-    "",
-    "    public static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
-    "        unsafe:",
-    "            return read(left).value == read(right).value",
-    "",
-    "    public static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
-    "        unsafe:",
-    "            return read(left).value - read(right).value",
-    "",
-    "function probe(key: Key, other: Key) -> int:",
-    "    let hashed = hash[Key](key)",
-    "    let same = equal[Key](key, other)",
-    "    return int<-hashed + order[Key](key, other) + (if same: 1 else: 0)",
-    ].join("\n") + "\n"
+    SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS = (<<~MT) + "\n"
+
+struct Key:
+    value: int
+
+extending Key:
+    public static function hash(value: const_ptr[Key]) -> uint:
+        unsafe:
+            return uint<-read(value).value
+
+    public static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+        unsafe:
+            return read(left).value == read(right).value
+
+    public static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+        unsafe:
+            return read(left).value - read(right).value
+
+function probe(key: Key, other: Key) -> int:
+    let hashed = hash[Key](key)
+    let same = equal[Key](key, other)
+    return int<-hashed + order[Key](key, other) + (if same: 1 else: 0)
+    MT
 
   SOURCE_WITH_USER_DEFINED_CAST_AND_RANGE_SEMANTICS = <<~MT
     function cast(value: int) -> int:
@@ -412,21 +413,22 @@ class LSPServerTest < Minitest::Test
         return from_cast + from_range
   MT
 
-  SOURCE_WITH_USER_DEFINED_ASSOCIATED_HOOK_NAMES = [
-    "function hash[T](value: T) -> uint:",
-    "    return 0",
-    "",
-    "function equal[T](left: T, right: T) -> bool:",
-    "    return true",
-    "",
-    "function order[T](left: T, right: T) -> int:",
-    "    return 0",
-    "",
-    "function main(value: int) -> int:",
-    "    let hashed = hash[int](value)",
-    "    let same = equal[int](value, value)",
-    "    return order[int](value, value) + int<-hashed + (if same: 1 else: 0)",
-  ].join("\n") + "\n"
+  SOURCE_WITH_USER_DEFINED_ASSOCIATED_HOOK_NAMES = (<<~MT) + "\n"
+
+function hash[T](value: T) -> uint:
+    return 0
+
+function equal[T](left: T, right: T) -> bool:
+    return true
+
+function order[T](left: T, right: T) -> int:
+    return 0
+
+function main(value: int) -> int:
+    let hashed = hash[int](value)
+    let same = equal[int](value, value)
+    return order[int](value, value) + int<-hashed + (if same: 1 else: 0)
+  MT
 
   SOURCE_WITH_INVALID_BARE_FUNCTION_REFERENCE_SEMANTICS = <<~MT
     function add_one(value: int) -> int:
@@ -3409,6 +3411,60 @@ class LSPServerTest < Minitest::Test
 
         refute updated_messages.any? { |message| message.match?(/function not found|value/) },
                "expected live platform override to invalidate diagnostics caches, got: #{updated_messages.inspect}"
+      end
+    end
+  end
+
+  def test_diagnostic_with_std_fs_import_honors_configured_platform
+    Dir.mktmpdir("milk-tea-lsp-platform-std-fs") do |dir|
+      main_path = File.join(dir, "main.mt")
+
+      File.write(File.join(dir, "package.toml"), <<~TOML)
+        [package]
+        name = "demo"
+      TOML
+
+      main_source = <<~MT
+        import std.fs as fs
+
+        function main() -> int:
+            var temp = fs.temporary_directory()
+            defer temp.release()
+            return 0
+      MT
+
+      File.write(main_path, main_source)
+      main_uri = path_to_uri(main_path)
+      with_server do |client|
+        client.send_request("initialize", {
+          "rootUri" => path_to_uri(dir),
+          "capabilities" => {},
+          "initializationOptions" => {
+            "milkTea" => {
+              "lsp" => {
+                "platform" => "windows"
+              }
+            }
+          }
+        })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        diagnostic = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        items = diagnostic.fetch("result").fetch("items")
+        messages = items.map { |item| item["message"] }
+
+        refute messages.any? { |message| message.match?(/function not found|temporary_directory/) },
+               "expected configured platform diagnostics to resolve std.fs members, got: #{messages.inspect}"
       end
     end
   end
@@ -6823,7 +6879,11 @@ class LSPServerTest < Minitest::Test
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
         uri = "file:///tmp/lsp_semantic_latency_test.mt"
-        source = [SOURCE_WITH_STR_BUFFER_METHODS, SOURCE_WITH_GENERIC_TYPE_SURFACES, SOURCE_WITH_FSTRING_INTERPOLATION].join("\n")
+        source = <<~MT
+          #{SOURCE_WITH_STR_BUFFER_METHODS}
+          #{SOURCE_WITH_GENERIC_TYPE_SURFACES}
+          #{SOURCE_WITH_FSTRING_INTERPOLATION}
+        MT
         client.send_notification("textDocument/didOpen", {
           "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
         })

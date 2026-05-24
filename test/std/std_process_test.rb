@@ -11,48 +11,49 @@ class MilkTeaStdProcessTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     Dir.mktmpdir("milk-tea-std-process-capture") do |dir|
-      source = [
-        "",
-        "import std.process as process",
-        "",
-        "import std.str as text",
-        "import std.vec as vec",
-        "",
-        "function main() -> int:",
-        "    var command = vec.Vec[str].create()",
-        "    defer command.release()",
-        "    command.push(\"/bin/sh\")",
-        "    command.push(\"-c\")",
-        "    command.push(\"printf '%s\\n' \\\"$PWD\\\"; printf '%s' \\\"$MILK_TEA_PROCESS_TEST\\\" >&2; exit 7\")",
-        "",
-        "    var environment = vec.Vec[process.EnvironmentEntry].create()",
-        "    defer environment.release()",
-        "    environment.push(process.EnvironmentEntry(name = \"MILK_TEA_PROCESS_TEST\", value = \"from-env\"))",
-        "",
-        "    match process.capture_with_env(command.as_span(), Option[str].some(value= \"#{dir}\"), environment.as_span()):",
-        "        Result.failure as payload:",
-        "            var error = payload.error",
-        "            defer error.release()",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var result = payload.value",
-        "            defer result.release()",
-        "            if result.status.normalized_code() != 7:",
-        "                return 2",
-        "            match result.stdout_text():",
-        "                Option.some as stdout_payload:",
-        "                    if not stdout_payload.value.equal(\"#{dir}\\n\"):",
-        "                        return 3",
-        "                Option.none:",
-        "                    return 4",
-        "            match result.stderr_text():",
-        "                Option.some as stderr_payload:",
-        "                    if not stderr_payload.value.equal(\"from-env\"):",
-        "                        return 5",
-        "                Option.none:",
-        "                    return 6",
-        "            return 0",
-      ].join("\n")
+      source = <<~MT
+
+
+import std.process as process
+
+import std.str as text
+import std.vec as vec
+
+function main() -> int:
+    var command = vec.Vec[str].create()
+    defer command.release()
+    command.push(\"/bin/sh\")
+    command.push(\"-c\")
+    command.push(\"printf '%s\\n' \\\"$PWD\\\"; printf '%s' \\\"$MILK_TEA_PROCESS_TEST\\\" >&2; exit 7\")
+
+    var environment = vec.Vec[process.EnvironmentEntry].create()
+    defer environment.release()
+    environment.push(process.EnvironmentEntry(name = \"MILK_TEA_PROCESS_TEST\", value = \"from-env\"))
+
+    match process.capture_with_env(command.as_span(), Option[str].some(value= \"#{dir}\"), environment.as_span()):
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var result = payload.value
+            defer result.release()
+            if result.status.normalized_code() != 7:
+                return 2
+            match result.stdout_text():
+                Option.some as stdout_payload:
+                    if not stdout_payload.value.equal(\"#{dir}\\n\"):
+                        return 3
+                Option.none:
+                    return 4
+            match result.stderr_text():
+                Option.some as stderr_payload:
+                    if not stderr_payload.value.equal(\"from-env\"):
+                        return 5
+                Option.none:
+                    return 6
+            return 0
+      MT
 
       result = run_program(source, compiler:)
 
@@ -70,29 +71,30 @@ class MilkTeaStdProcessTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-std-process-detached") do |dir|
       output_path = File.join(dir, "detached.out")
-      source = [
-        "",
-        "import std.process as process",
-        "",
-        "import std.vec as vec",
-        "",
-        "function main() -> int:",
-        "    var command = vec.Vec[str].create()",
-        "    defer command.release()",
-        "    command.push(\"/bin/sh\")",
-        "    command.push(\"-c\")",
-        "    command.push(\"printf detached > detached.out\")",
-        "",
-        "    match process.spawn_detached_in(command.as_span(), \"#{dir}\"):",
-        "        Result.failure as payload:",
-        "            var error = payload.error",
-        "            defer error.release()",
-        "            return 1",
-        "        Result.success as payload:",
-        "            if payload.value <= 0:",
-        "                return 2",
-        "            return 0",
-      ].join("\n")
+      source = <<~MT
+
+
+import std.process as process
+
+import std.vec as vec
+
+function main() -> int:
+    var command = vec.Vec[str].create()
+    defer command.release()
+    command.push(\"/bin/sh\")
+    command.push(\"-c\")
+    command.push(\"printf detached > detached.out\")
+
+    match process.spawn_detached_in(command.as_span(), \"#{dir}\"):
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            if payload.value <= 0:
+                return 2
+            return 0
+      MT
 
       result = run_program(source, compiler:)
 

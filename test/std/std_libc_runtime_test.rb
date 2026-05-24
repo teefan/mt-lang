@@ -11,61 +11,63 @@ class MilkTeaStdLibcRuntimeTest < Minitest::Test
     Dir.mktmpdir("milk-tea-std-libc") do |dir|
       source_path = File.join(dir, "std_libc.mt")
 
-      File.write(source_path, [
-        "import std.libc as libc",
-        "import std.str as text",
-        "",
-        "function main() -> int:",
-        "    if libc.parse_int(\"42\") != 42:",
-        "        return 12",
-        "    if libc.get_environment_variable(\"PATH\") == null:",
-        "        return 13",
-        "",
-        "    var file_template: str_buffer[64]",
-        "    file_template.assign(\"mt-libc-file-XXXXXX\")",
-        "    let file = libc.create_temp_file(file_template)",
-        "    if file < 0:",
-        "        return 1",
-        "    let file_view = file_template.as_str()",
-        "    if file_view.equal(\"mt-libc-file-XXXXXX\"):",
-        "        return 2",
-        "",
-        "    var suffix_template: str_buffer[64]",
-        "    suffix_template.assign(\"mt-libc-suffix-XXXXXX.log\")",
-        "    let suffix_file = libc.create_temp_file_with_suffix(suffix_template, 4)",
-        "    if suffix_file < 0:",
-        "        return 3",
-        "    let suffix_view = suffix_template.as_str()",
-        "    if suffix_view.equal(\"mt-libc-suffix-XXXXXX.log\"):",
-        "        return 4",
-        "    if not suffix_view.ends_with(\".log\"):",
-        "        return 5",
-        "",
-        "    var dir_template: str_buffer[64]",
-        "    dir_template.assign(\"mt-libc-dir-XXXXXX\")",
-        "    let dir_result = libc.create_temp_directory(dir_template)",
-        "    if dir_result == null:",
-        "        return 6",
-        "    let dir_view = dir_template.as_str()",
-        "    if dir_view.equal(\"mt-libc-dir-XXXXXX\"):",
-        "        return 7",
-        "",
-        "    var resolved: str_buffer[512]",
-        "    let resolved_result = libc.resolve_path(dir_view, resolved)",
-        "    if resolved_result == null:",
-        "        return 8",
-        "    let resolved_view = resolved.as_str()",
-        "    if resolved_view.len <= dir_view.len:",
-        "        return 9",
-        "    if not resolved_view.starts_with(\"/\"):",
-        "        return 10",
-        "    if not resolved_view.ends_with(dir_view):",
-        "        return 11",
-        "",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.libc as libc
+import std.str as text
+
+function main() -> int:
+    if libc.parse_int(\"42\") != 42:
+        return 12
+    if libc.get_environment_variable(\"PATH\") == null:
+        return 13
+
+    var file_template: str_buffer[64]
+    file_template.assign(\"mt-libc-file-XXXXXX\")
+    let file = libc.create_temp_file(file_template)
+    if file < 0:
+        return 1
+    let file_view = file_template.as_str()
+    if file_view.equal(\"mt-libc-file-XXXXXX\"):
+        return 2
+
+    var suffix_template: str_buffer[64]
+    suffix_template.assign(\"mt-libc-suffix-XXXXXX.log\")
+    let suffix_file = libc.create_temp_file_with_suffix(suffix_template, 4)
+    if suffix_file < 0:
+        return 3
+    let suffix_view = suffix_template.as_str()
+    if suffix_view.equal(\"mt-libc-suffix-XXXXXX.log\"):
+        return 4
+    if not suffix_view.ends_with(\".log\"):
+        return 5
+
+    var dir_template: str_buffer[64]
+    dir_template.assign(\"mt-libc-dir-XXXXXX\")
+    let dir_result = libc.create_temp_directory(dir_template)
+    if dir_result == null:
+        return 6
+    let dir_view = dir_template.as_str()
+    if dir_view.equal(\"mt-libc-dir-XXXXXX\"):
+        return 7
+
+    var resolved: str_buffer[512]
+    let resolved_result = libc.resolve_path(dir_view, resolved)
+    if resolved_result == null:
+        return 8
+    let resolved_view = resolved.as_str()
+    if resolved_view.len <= dir_view.len:
+        return 9
+    if not resolved_view.starts_with(\"/\"):
+        return 10
+    if not resolved_view.ends_with(dir_view):
+        return 11
+
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout

@@ -8,26 +8,27 @@ class MilkTeaStdBytesTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.bytes as bytes",
-      "",
-      "import std.str as text",
-      "",
-      "function main() -> int:",
-      "    var source = array[ubyte, 3](65, 66, 67)",
-      "    var owned = bytes.Bytes.copy(unsafe: span[ubyte](data = ptr_of(source[0]), len = 3))",
-      "    defer owned.release()",
-      "    source[0] = 90",
-      "    let text_result = owned.as_str()",
-      "    match text_result:",
-      "        Option.none:",
-      "            return 1",
-      "        Option.some as payload:",
-      "            if not payload.value.equal(\"ABC\"):",
-      "                return 2",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.bytes as bytes
+
+import std.str as text
+
+function main() -> int:
+    var source = array[ubyte, 3](65, 66, 67)
+    var owned = bytes.Bytes.copy(unsafe: span[ubyte](data = ptr_of(source[0]), len = 3))
+    defer owned.release()
+    source[0] = 90
+    let text_result = owned.as_str()
+    match text_result:
+        Option.none:
+            return 1
+        Option.some as payload:
+            if not payload.value.equal(\"ABC\"):
+                return 2
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -41,26 +42,27 @@ class MilkTeaStdBytesTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.bytes as bytes",
-      "",
-      "",
-      "function main() -> int:",
-      "    let empty = bytes.Bytes.empty()",
-      "    if empty.as_span().len != 0:",
-      "        return 1",
-      "    var source = array[ubyte, 1](ubyte<-0xFF)",
-      "    var owned = bytes.Bytes.copy(unsafe: span[ubyte](data = ptr_of(source[0]), len = 1))",
-      "    defer owned.release()",
-      "    let text_result = owned.as_str()",
-      "    match text_result:",
-      "        Option.none:",
-      "            return 0",
-      "        Option.some as ignored_payload:",
-      "            return 2",
-      "    return 3",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.bytes as bytes
+
+
+function main() -> int:
+    let empty = bytes.Bytes.empty()
+    if empty.as_span().len != 0:
+        return 1
+    var source = array[ubyte, 1](ubyte<-0xFF)
+    var owned = bytes.Bytes.copy(unsafe: span[ubyte](data = ptr_of(source[0]), len = 1))
+    defer owned.release()
+    let text_result = owned.as_str()
+    match text_result:
+        Option.none:
+            return 0
+        Option.some as ignored_payload:
+            return 2
+    return 3
+
+    MT
 
     result = run_program(source, compiler:)
 

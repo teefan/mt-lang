@@ -468,13 +468,25 @@ public function temporary_directory() -> string.String:
         var ignored_error = take_error(raw_error, "fs temporary directory failed")
         ignored_error.release()
 
-    let configured = libc.get_environment_variable("TMPDIR")
-    if configured != null:
-        let configured_path = text.cstr_as_str(cstr<-configured)
+    let configured_temp = libc.get_environment_variable("TEMP")
+    if configured_temp != null:
+        let configured_path = text.cstr_as_str(cstr<-configured_temp)
         if configured_path.len != 0:
             return string.String.from_str(configured_path)
 
-    return string.String.from_str("/tmp")
+    let configured_tmp = libc.get_environment_variable("TMP")
+    if configured_tmp != null:
+        let configured_path = text.cstr_as_str(cstr<-configured_tmp)
+        if configured_path.len != 0:
+            return string.String.from_str(configured_path)
+
+    let configured_local_app_data = libc.get_environment_variable("LOCALAPPDATA")
+    if configured_local_app_data != null:
+        let configured_path = text.cstr_as_str(cstr<-configured_local_app_data)
+        if configured_path.len != 0:
+            return string.String.from_str(configured_path)
+
+    return string.String.from_str("C:/Windows/Temp")
 
 
 public function canonicalize(path: str) -> Result[string.String, Error]:

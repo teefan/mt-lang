@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv zstd curl pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -190,6 +190,10 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_key_get")
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_get_data")
     assert_equal "cstr?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_dlerror")
+    assert_equal "std.c.zstd", registry.fetch("zstd").module_name
+    assert_equal ["zstd"], registry.fetch("zstd").link_libraries
+    assert_includes registry.fetch("zstd").header_candidates, "/usr/include/zstd.h"
+    assert_includes registry.fetch("zstd").declaration_name_prefixes, "ZSTD_"
     assert_equal "std.c.curl", registry.fetch("curl").module_name
     assert_equal ["curl"], registry.fetch("curl").link_libraries
     assert_includes registry.fetch("curl").header_candidates, "/usr/include/curl/curl.h"

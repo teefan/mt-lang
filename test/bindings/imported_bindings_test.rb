@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "curl", "pcre2", "steamworks"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "libuv", "zstd", "curl", "pcre2", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -49,6 +49,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
     assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
     assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+
+    assert_equal "std.zstd", registry.fetch("zstd").module_name
+    assert_equal "std.c.zstd", registry.fetch("zstd").raw_module_name
+    assert_includes registry.fetch("zstd").binding_path, "/std/zstd.mt"
+    assert_includes registry.fetch("zstd").policy_path, "/bindings/imported/zstd.binding.json"
 
     assert_equal "std.curl", registry.fetch("curl").module_name
     assert_equal "std.c.curl", registry.fetch("curl").raw_module_name

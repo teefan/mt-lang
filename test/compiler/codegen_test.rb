@@ -39,36 +39,37 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
     def test_generate_c_for_local_enums_flags_and_unions
-      source = [
-        "# module demo.codegen_surface",
-        "",
-        "enum State: int",
-        "    idle = 0",
-        "    running = 1",
-        "",
-        "flags WindowFlags: uint",
-        "    visible = 1 << 0",
-        "    resizable = 1 << 1",
-        "",
-        "union Payload:",
-        "    count: int",
-        "    enabled: bool",
-        "",
-        "const DEFAULT_STATE: State = State.idle",
-        "const DEFAULT_FLAGS: WindowFlags = WindowFlags.visible | WindowFlags.resizable",
-        "",
-        "function pick_state(active: bool) -> State:",
-        "    if active:",
-        "        return State.running",
-        "    return DEFAULT_STATE",
-        "",
-        "function main() -> int:",
-        "    let current = pick_state(true)",
-        "    if current == State.running:",
-        "        return 1",
-        "    return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+# module demo.codegen_surface
+
+enum State: int
+    idle = 0
+    running = 1
+
+flags WindowFlags: uint
+    visible = 1 << 0
+    resizable = 1 << 1
+
+union Payload:
+    count: int
+    enabled: bool
+
+const DEFAULT_STATE: State = State.idle
+const DEFAULT_FLAGS: WindowFlags = WindowFlags.visible | WindowFlags.resizable
+
+function pick_state(active: bool) -> State:
+    if active:
+        return State.running
+    return DEFAULT_STATE
+
+function main() -> int:
+    let current = pick_state(true)
+    if current == State.running:
+        return 1
+    return 0
+
+      MT
 
     generated = generate_c_from_program_source(source)
 
@@ -90,32 +91,36 @@ class MilkTeaCodegenTest < Minitest::Test
       FileUtils.mkdir_p(File.join(dir, "std"))
       FileUtils.mkdir_p(File.join(dir, "demo"))
 
-      File.write(File.join(dir, "std", "math.mt"), [
-        "# module std.math",
-        "",
-        "public const TEN: int = 10",
-        "public const UNUSED: int = 99",
-        "",
-        "public function clamp[T](value: T, min_value: T, max_value: T) -> T:",
-        "    if value < min_value:",
-        "        return min_value",
-        "    else if value > max_value:",
-        "        return max_value",
-        "    return value",
-        "",
-      ].join("\n"))
+      File.write(File.join(dir, "std", "math.mt"), <<~MT
 
+# module std.math
+
+public const TEN: int = 10
+public const UNUSED: int = 99
+
+public function clamp[T](value: T, min_value: T, max_value: T) -> T:
+    if value < min_value:
+        return min_value
+    else if value > max_value:
+        return max_value
+    return value
+
+      MT
+
+      )
       root_path = File.join(dir, "demo", "main.mt")
-      File.write(root_path, [
-        "# module demo.main",
-        "",
-        "import std.math as math",
-        "",
-        "function main() -> int:",
-        "    return math.clamp(42, 0, math.TEN)",
-        "",
-      ].join("\n"))
+      File.write(root_path, <<~MT
 
+# module demo.main
+
+import std.math as math
+
+function main() -> int:
+    return math.clamp(42, 0, math.TEN)
+
+      MT
+
+      )
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(root_path)
       generated = MilkTea::Codegen.generate_c(program)
 
@@ -154,20 +159,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_pointer_cast_and_arithmetic
-    source = [
-      "# module demo.pointer_surface",
-      "",
-      "external function allocate(size: ptr_uint) -> ptr[void]",
-      "external function release(memory: ptr[void]) -> void",
-      "",
-      "function main() -> int:",
-      "    let memory = allocate(16)",
-      "    unsafe:",
-      "        let advanced = ptr[ubyte]<-memory + 4",
-      "    release(memory)",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.pointer_surface
+
+external function allocate(size: ptr_uint) -> ptr[void]
+external function release(memory: ptr[void]) -> void
+
+function main() -> int:
+    let memory = allocate(16)
+    unsafe:
+        let advanced = ptr[ubyte]<-memory + 4
+    release(memory)
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -176,21 +182,22 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_span_construction_and_field_access
-    source = [
-      "# module demo.span_surface",
-      "",
-      "function first(items: span[int]) -> int:",
-      "    if items.len == 0:",
-      "        return 0",
-      "    unsafe:",
-      "        return read(items.data)",
-      "",
-      "function main() -> int:",
-      "    var value = 7",
-      "    let items = span[int](data = ptr_of(value), len = 1)",
-      "    return first(items)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.span_surface
+
+function first(items: span[int]) -> int:
+    if items.len == 0:
+        return 0
+    unsafe:
+        return read(items.data)
+
+function main() -> int:
+    var value = 7
+    let items = span[int](data = ptr_of(value), len = 1)
+    return first(items)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2495,20 +2502,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_safe_span_indexing_and_element_assignment
-    source = [
-      "# module demo.span_index_surface",
-      "",
-      "function bump(items: span[int]) -> int:",
-      "    let first = items[0]",
-      "    items[0] = first + 2",
-      "    return items[0]",
-      "",
-      "function main() -> int:",
-      "    var value = 7",
-      "    let items = span[int](data = ptr_of(value), len = 1)",
-      "    return bump(items)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.span_index_surface
+
+function bump(items: span[int]) -> int:
+    let first = items[0]
+    items[0] = first + 2
+    return items[0]
+
+function main() -> int:
+    var value = 7
+    let items = span[int](data = ptr_of(value), len = 1)
+    return bump(items)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2520,16 +2528,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_mixed_numeric_binary_operations_inserts_explicit_casts
-    source = [
-      "# module demo.numeric_codegen",
-      "",
-      "function main() -> int:",
-      "    let sum = 1 + 2.5",
-      "    if 3 < 3.5 and sum > 3.0:",
-      "        return 1",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.numeric_codegen
+
+function main() -> int:
+    let sum = 1 + 2.5
+    if 3 < 3.5 and sum > 3.0:
+        return 1
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2538,15 +2547,16 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_prefix_cast_syntax
-    source = [
-      "# module demo.prefix_cast_codegen",
-      "",
-      "function main(value: float, a: int, b: int) -> int:",
-      "    let left = int<-value",
-      "    let right = ubyte<-(a - b)",
-      "    return left + int<-right",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.prefix_cast_codegen
+
+function main(value: float, a: int, b: int) -> int:
+    let left = int<-value
+    let right = ubyte<-(a - b)
+    return left + int<-right
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2555,14 +2565,15 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_if_expressions
-    source = [
-      "# module demo.if_expr_codegen",
-      "",
-      "function main(ready: bool) -> int:",
-      "    let score = if ready: 1 else: 0",
-      "    return if ready: score else: score + 1",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.if_expr_codegen
+
+function main(ready: bool) -> int:
+    let score = if ready: 1 else: 0
+    return if ready: score else: score + 1
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2571,15 +2582,16 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_variadic_extern_calls
-    source = [
-      "# module demo.variadic_codegen",
-      "",
-      "external function printf(format: cstr, ...) -> int",
-      "",
-      "function main() -> int:",
-      "    return printf(c\"value=%d %s\\n\", 7, c\"ok\")",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.variadic_codegen
+
+external function printf(format: cstr, ...) -> int
+
+function main() -> int:
+    return printf(c\"value=%d %s\\n\", 7, c\"ok\")
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2657,22 +2669,23 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_local_assignment_and_return_boundaries
-    source = [
-      "# module demo.contextual_int_to_float_codegen",
-      "",
-      "struct Point:",
-      "    x: float",
-      "",
-      "function project(value: int) -> float:",
-      "    var total: float = value",
-      "    total = value + 1",
-      "    total += value + 2",
-      "    total -= value + 3",
-      "    var point = Point(x = 0.0)",
-      "    point.x = value + 4",
-      "    return value + 5",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.contextual_int_to_float_codegen
+
+struct Point:
+    x: float
+
+function project(value: int) -> float:
+    var total: float = value
+    total = value + 1
+    total += value + 2
+    total -= value + 3
+    var point = Point(x = 0.0)
+    point.x = value + 4
+    return value + 5
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2685,24 +2698,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_call_and_field_boundaries
-    source = [
-      "# module demo.contextual_float_calls",
-      "",
-      "struct Point:",
-      "    x: float",
-      "    y: float",
-      "",
-      "function takes_float(value: float) -> float:",
-      "    return value",
-      "",
-      "function main() -> int:",
-      "    let value = 7",
-      "    let point = Point(x = value, y = value * 0.5)",
-      "    let direct = takes_float(value)",
-      "    let mixed = takes_float(value * 0.5)",
-      "    return int<-(point.x + point.y + direct + mixed)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.contextual_float_calls
+
+struct Point:
+    x: float
+    y: float
+
+function takes_float(value: float) -> float:
+    return value
+
+function main() -> int:
+    let value = 7
+    let point = Point(x = value, y = value * 0.5)
+    let direct = takes_float(value)
+    let mixed = takes_float(value * 0.5)
+    return int<-(point.x + point.y + direct + mixed)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2713,28 +2727,29 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_struct_instantiation_and_embedding
-    source = [
-      "# module demo.generic_surface",
-      "",
-      "struct Slice[T]:",
-      "    data: ptr[T]",
-      "    len: ptr_uint",
-      "",
-      "struct Holder:",
-      "    items: Slice[int]",
-      "",
-      "function first(items: Slice[int]) -> int:",
-      "    if items.len == 0:",
-      "        return 0",
-      "    unsafe:",
-      "        return read(items.data)",
-      "",
-      "function main() -> int:",
-      "    var value = 7",
-      "    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))",
-      "    return first(holder.items)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_surface
+
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+struct Holder:
+    items: Slice[int]
+
+function first(items: Slice[int]) -> int:
+    if items.len == 0:
+        return 0
+    unsafe:
+        return read(items.data)
+
+function main() -> int:
+    var value = 7
+    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))
+    return first(holder.items)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2750,19 +2765,20 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_struct_used_only_in_expression
-    source = [
-      "# module demo.generic_expression_only",
-      "",
-      "struct Box[T]:",
-      "    value: T",
-      "",
-      "function main() -> int:",
-      "    let ok: bool = Box[int](value = 7).value == 7",
-      "    if ok:",
-      "        return 1",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_expression_only
+
+struct Box[T]:
+    value: T
+
+function main() -> int:
+    let ok: bool = Box[int](value = 7).value == 7
+    if ok:
+        return 1
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2771,29 +2787,30 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_inferred_type_arguments
-    source = [
-      "# module demo.generic_functions",
-      "",
-      "struct Slice[T]:",
-      "    data: ptr[T]",
-      "    len: ptr_uint",
-      "",
-      "function head[T](items: Slice[T]) -> ptr[T]:",
-      "    return items.data",
-      "",
-      "function min[T](a: T, b: T) -> T:",
-      "    if a < b:",
-      "        return a",
-      "    return b",
-      "",
-      "function main() -> int:",
-      "    var value = 7",
-      "    let items = Slice[int](data = ptr_of(value), len = 1)",
-      "    let smallest = min(9, 4)",
-      "    unsafe:",
-      "        return read(head(items)) + smallest",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_functions
+
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+function head[T](items: Slice[T]) -> ptr[T]:
+    return items.data
+
+function min[T](a: T, b: T) -> T:
+    if a < b:
+        return a
+    return b
+
+function main() -> int:
+    var value = 7
+    let items = Slice[int](data = ptr_of(value), len = 1)
+    let smallest = min(9, 4)
+    unsafe:
+        return read(head(items)) + smallest
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2804,33 +2821,34 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_interface_constraints
-    source = [
-      "# module demo.interface_codegen",
-      "",
-      "interface Damageable:",
-      "    mutable function take_damage(amount: int) -> void",
-      "    function is_alive() -> bool",
-      "",
-      "struct NPC implements Damageable:",
-      "    hp: int",
-      "",
-      "extending NPC:",
-      "    mutable function take_damage(amount: int):",
-      "        this.hp -= amount",
-      "",
-      "    function is_alive() -> bool:",
-      "        return this.hp > 0",
-      "",
-      "function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:",
-      "    if target.is_alive():",
-      "        target.take_damage(amount)",
-      "",
-      "function main() -> int:",
-      "    var npc = NPC(hp = 5)",
-      "    damage_one(npc, 2)",
-      "    return npc.hp",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.interface_codegen
+
+interface Damageable:
+    mutable function take_damage(amount: int) -> void
+    function is_alive() -> bool
+
+struct NPC implements Damageable:
+    hp: int
+
+extending NPC:
+    mutable function take_damage(amount: int):
+        this.hp -= amount
+
+    function is_alive() -> bool:
+        return this.hp > 0
+
+function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+    if target.is_alive():
+        target.take_damage(amount)
+
+function main() -> int:
+    var npc = NPC(hp = 5)
+    damage_one(npc, 2)
+    return npc.hp
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2840,27 +2858,28 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_struct_with_interface_constraints
-    source = [
-      "# module demo.generic_struct_constraints",
-      "",
-      "interface Damageable:",
-      "    function hp() -> int",
-      "",
-      "struct NPC implements Damageable:",
-      "    value: int",
-      "",
-      "extending NPC:",
-      "    function hp() -> int:",
-      "        return this.value",
-      "",
-      "struct Holder[T implements Damageable]:",
-      "    value: T",
-      "",
-      "function main() -> int:",
-      "    let holder = Holder[NPC](value = NPC(value = 9))",
-      "    return holder.value.hp()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_struct_constraints
+
+interface Damageable:
+    function hp() -> int
+
+struct NPC implements Damageable:
+    value: int
+
+extending NPC:
+    function hp() -> int:
+        return this.value
+
+struct Holder[T implements Damageable]:
+    value: T
+
+function main() -> int:
+    let holder = Holder[NPC](value = NPC(value = 9))
+    return holder.value.hp()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2870,26 +2889,27 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_static_interface_requirements_and_specialized_associated_calls
-    source = [
-      "# module demo.static_interface_codegen",
-      "",
-      "interface Tagged:",
-      "    static function tag() -> int",
-      "",
-      "struct Counter implements Tagged:",
-      "    value: int",
-      "",
-      "extending Counter:",
-      "    static function tag() -> int:",
-      "        return 33",
-      "",
-      "function tag_of[T implements Tagged]() -> int:",
-      "    return T.tag()",
-      "",
-      "function main() -> int:",
-      "    return tag_of[Counter]()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.static_interface_codegen
+
+interface Tagged:
+    static function tag() -> int
+
+struct Counter implements Tagged:
+    value: int
+
+extending Counter:
+    static function tag() -> int:
+        return 33
+
+function tag_of[T implements Tagged]() -> int:
+    return T.tag()
+
+function main() -> int:
+    return tag_of[Counter]()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2899,28 +2919,29 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_hash_and_equal_builtins_with_canonical_hooks
-    source = [
-      "# module demo.hash_equal_codegen",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function hash(value: const_ptr[Key]) -> uint:",
-      "        return uint<-0",
-      "",
-      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
-      "        return true",
-      "",
-      "function same_key[T](left: T, right: T) -> bool:",
-      "    return hash[T](left) == hash[T](right) and equal[T](left, right)",
-      "",
-      "function main() -> bool:",
-      "    let left = Key(value = 1)",
-      "    let right = Key(value = 1)",
-      "    return same_key[Key](left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.hash_equal_codegen
+
+struct Key:
+    value: int
+
+extending Key:
+    static function hash(value: const_ptr[Key]) -> uint:
+        return uint<-0
+
+    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+        return true
+
+function same_key[T](left: T, right: T) -> bool:
+    return hash[T](left) == hash[T](right) and equal[T](left, right)
+
+function main() -> bool:
+    let left = Key(value = 1)
+    let right = Key(value = 1)
+    return same_key[Key](left, right)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2931,31 +2952,32 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_transitive_hash_and_equal_builtins
-    source = [
-      "# module demo.hash_transitive_codegen",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function hash(value: const_ptr[Key]) -> uint:",
-      "        return uint<-0",
-      "",
-      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
-      "        return true",
-      "",
-      "function inner[U](left: U, right: U) -> bool:",
-      "    return hash[U](left) == hash[U](right) and equal[U](left, right)",
-      "",
-      "function outer[T](left: T, right: T) -> bool:",
-      "    return inner[T](left, right)",
-      "",
-      "function main() -> bool:",
-      "    let left = Key(value = 1)",
-      "    let right = Key(value = 1)",
-      "    return outer[Key](left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.hash_transitive_codegen
+
+struct Key:
+    value: int
+
+extending Key:
+    static function hash(value: const_ptr[Key]) -> uint:
+        return uint<-0
+
+    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+        return true
+
+function inner[U](left: U, right: U) -> bool:
+    return hash[U](left) == hash[U](right) and equal[U](left, right)
+
+function outer[T](left: T, right: T) -> bool:
+    return inner[T](left, right)
+
+function main() -> bool:
+    let left = Key(value = 1)
+    let right = Key(value = 1)
+    return outer[Key](left, right)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -2967,27 +2989,28 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_hash_and_equal_builtins_in_imported_generic_functions
-    source = [
-      "# module demo.hash_equal_imported_codegen_main",
-      "",
-      "import demo.hash_tools as tools",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function hash(value: const_ptr[Key]) -> uint:",
-      "        return uint<-0",
-      "",
-      "    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:",
-      "        return true",
-      "",
-      "function main() -> bool:",
-      "    let left = Key(value = 1)",
-      "    let right = Key(value = 1)",
-      "    return tools.same_key(left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.hash_equal_imported_codegen_main
+
+import demo.hash_tools as tools
+
+struct Key:
+    value: int
+
+extending Key:
+    static function hash(value: const_ptr[Key]) -> uint:
+        return uint<-0
+
+    static function equal(left: const_ptr[Key], right: const_ptr[Key]) -> bool:
+        return true
+
+function main() -> bool:
+    let left = Key(value = 1)
+    let right = Key(value = 1)
+    return tools.same_key(left, right)
+
+    MT
 
     imported_sources = {
       "demo/hash_tools.mt" => <<~MT,
@@ -3006,32 +3029,33 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_order_builtin_with_canonical_hook
-    source = [
-      "# module demo.order_codegen",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
-      "        unsafe:",
-      "            let left_value = read(ptr[Key]<-left).value",
-      "            let right_value = read(ptr[Key]<-right).value",
-      "            if left_value < right_value:",
-      "                return -1",
-      "            if left_value > right_value:",
-      "                return 1",
-      "            return 0",
-      "",
-      "function compare[T](left: T, right: T) -> int:",
-      "    return order[T](left, right)",
-      "",
-      "function main() -> int:",
-      "    let left = Key(value = 1)",
-      "    let right = Key(value = 5)",
-      "    return compare[Key](left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.order_codegen
+
+struct Key:
+    value: int
+
+extending Key:
+    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+        unsafe:
+            let left_value = read(ptr[Key]<-left).value
+            let right_value = read(ptr[Key]<-right).value
+            if left_value < right_value:
+                return -1
+            if left_value > right_value:
+                return 1
+            return 0
+
+function compare[T](left: T, right: T) -> int:
+    return order[T](left, right)
+
+function main() -> int:
+    let left = Key(value = 1)
+    let right = Key(value = 5)
+    return compare[Key](left, right)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3040,31 +3064,32 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_order_builtin_in_imported_generic_functions
-    source = [
-      "# module demo.order_imported_codegen_main",
-      "",
-      "import demo.order_tools as tools",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
-      "        unsafe:",
-      "            let left_value = read(ptr[Key]<-left).value",
-      "            let right_value = read(ptr[Key]<-right).value",
-      "            if left_value < right_value:",
-      "                return -1",
-      "            if left_value > right_value:",
-      "                return 1",
-      "            return 0",
-      "",
-      "function main() -> int:",
-      "    let left = Key(value = 2)",
-      "    let right = Key(value = 7)",
-      "    return tools.compare(left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.order_imported_codegen_main
+
+import demo.order_tools as tools
+
+struct Key:
+    value: int
+
+extending Key:
+    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+        unsafe:
+            let left_value = read(ptr[Key]<-left).value
+            let right_value = read(ptr[Key]<-right).value
+            if left_value < right_value:
+                return -1
+            if left_value > right_value:
+                return 1
+            return 0
+
+function main() -> int:
+    let left = Key(value = 2)
+    let right = Key(value = 7)
+    return tools.compare(left, right)
+
+    MT
 
     imported_sources = {
       "demo/order_tools.mt" => <<~MT,
@@ -3082,26 +3107,27 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_order_builtin_used_in_binary_comparison
-    source = [
-      "# module demo.order_compare_codegen",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
-      "        unsafe:",
-      "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",
-      "",
-      "function ordered_before_or_equal[T](left: T, right: T) -> bool:",
-      "    return order[T](left, right) <= 0",
-      "",
-      "function main() -> bool:",
-      "    let left = Key(value = 1)",
-      "    let right = Key(value = 2)",
-      "    return ordered_before_or_equal[Key](left, right)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.order_compare_codegen
+
+struct Key:
+    value: int
+
+extending Key:
+    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+        unsafe:
+            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value
+
+function ordered_before_or_equal[T](left: T, right: T) -> bool:
+    return order[T](left, right) <= 0
+
+function main() -> bool:
+    let left = Key(value = 1)
+    let right = Key(value = 2)
+    return ordered_before_or_equal[Key](left, right)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3110,17 +3136,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
-    source = [
-      "# module demo.generic_layout",
-      "",
-      "function bytes_for[T](count: ptr_uint) -> ptr_uint:",
-      "    return count * size_of(T)",
-      "",
-      "function main() -> int:",
-      "    let total = bytes_for[int](4)",
-      "    return int<-total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_layout
+
+function bytes_for[T](count: ptr_uint) -> ptr_uint:
+    return count * size_of(T)
+
+function main() -> int:
+    let total = bytes_for[int](4)
+    return int<-total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3130,16 +3157,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_async_await_of_task_locals_without_redundant_await_slots
-    source = [
-      "# module demo.async_clean",
-      "",
-      "import std.async as aio",
-      "",
-      "async function child() -> int:",
-      "    let task = aio.sleep(1)",
-      "    return await task + 1",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.async_clean
+
+import std.async as aio
+
+async function child() -> int:
+    let task = aio.sleep(1)
+    return await task + 1
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3153,17 +3181,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_literal_type_arguments
-    source = [
-      "# module demo.generic_builder",
-      "",
-      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
-      "    return buffer.capacity()",
-      "",
-      "function main() -> int:",
-      "    var buffer: str_buffer[32]",
-      "    return int<-(capacity_of(buffer) + capacity_of(buffer))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_builder
+
+function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
+    return buffer.capacity()
+
+function main() -> int:
+    var buffer: str_buffer[32]
+    return int<-(capacity_of(buffer) + capacity_of(buffer))
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3173,17 +3202,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_explicit_literal_type_arguments
-    source = [
-      "# module demo.generic_builder_explicit",
-      "",
-      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
-      "    return buffer.capacity()",
-      "",
-      "function main() -> int:",
-      "    var buffer: str_buffer[32]",
-      "    return int<-capacity_of[32](buffer)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_builder_explicit
+
+function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
+    return buffer.capacity()
+
+function main() -> int:
+    var buffer: str_buffer[32]
+    return int<-capacity_of[32](buffer)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3193,20 +3223,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_explicit_named_const_type_arguments
-    source = [
-      "# module demo.generic_builder_named_const",
-      "",
-      "const BASE: int = 28",
-      "const CAPACITY: int = BASE + 4",
-      "",
-      "function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:",
-      "    return buffer.capacity()",
-      "",
-      "function main() -> int:",
-      "    var buffer: str_buffer[CAPACITY]",
-      "    return int<-capacity_of[CAPACITY](buffer)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generic_builder_named_const
+
+const BASE: int = 28
+const CAPACITY: int = BASE + 4
+
+function capacity_of[N](buffer: str_buffer[N]) -> ptr_uint:
+    return buffer.capacity()
+
+function main() -> int:
+    var buffer: str_buffer[CAPACITY]
+    return int<-capacity_of[CAPACITY](buffer)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3216,14 +3247,15 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_builtin_fatal_helper
-    source = [
-      "# module demo.fatal_surface",
-      "",
-      "function main() -> int:",
-      "    fatal(\"bad state\")",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.fatal_surface
+
+function main() -> int:
+    fatal(\"bad state\")
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3237,24 +3269,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_enum_match_statement_as_switch
-    source = [
-      "# module demo.match_surface",
-      "",
-      "enum EventKind: ubyte",
-      "    quit = 1",
-      "    resize = 2",
-      "",
-      "function dispatch(kind: EventKind) -> int:",
-      "    match kind:",
-      "        EventKind.quit:",
-      "            return 0",
-      "        EventKind.resize:",
-      "            return 1",
-      "",
-      "function main() -> int:",
-      "    return dispatch(EventKind.resize)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.match_surface
+
+enum EventKind: ubyte
+    quit = 1
+    resize = 2
+
+function dispatch(kind: EventKind) -> int:
+    match kind:
+        EventKind.quit:
+            return 0
+        EventKind.resize:
+            return 1
+
+function main() -> int:
+    return dispatch(EventKind.resize)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3266,21 +3299,22 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_range_and_array_for_loops
-    source = [
-      "# module demo.for_surface",
-      "",
-      "function sum(items: array[int, 4]) -> int:",
-      "    var total = 0",
-      "    for item in items:",
-      "        total += item",
-      "    for i in 0..4:",
-      "        total += i",
-      "    return total",
-      "",
-      "function main() -> int:",
-      "    return sum(array[int, 4](1, 2, 3, 4))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.for_surface
+
+function sum(items: array[int, 4]) -> int:
+    var total = 0
+    for item in items:
+        total += item
+    for i in 0..4:
+        total += i
+    return total
+
+function main() -> int:
+    return sum(array[int, 4](1, 2, 3, 4))
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3292,19 +3326,20 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_dot_dot_range_syntax
-    source = [
-      "# module demo.dot_dot_range",
-      "",
-      "function sum(n: int) -> int:",
-      "    var total = 0",
-      "    for i in 0..n:",
-      "        total += i",
-      "    return total",
-      "",
-      "function main() -> int:",
-      "    return sum(4)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.dot_dot_range
+
+function sum(n: int) -> int:
+    var total = 0
+    for i in 0..n:
+        total += i
+    return total
+
+function main() -> int:
+    return sum(4)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3314,16 +3349,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_dot_dot_range_with_constant_end
-    source = [
-      "# module demo.dot_dot_range_const",
-      "",
-      "function sum_to_ten() -> int:",
-      "    var total = 0",
-      "    for i in 0..10:",
-      "        total += i",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.dot_dot_range_const
+
+function sum_to_ten() -> int:
+    var total = 0
+    for i in 0..10:
+        total += i
+    return total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3333,14 +3369,15 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_range_index_assignment
-    source = [
-      "# module demo.range_index_assign",
-      "",
-      "function fill3(buf: ptr[float]) -> void:",
-      "    unsafe:",
-      "        buf[0..3] = (1.0, 2.0, 3.0)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.range_index_assign
+
+function fill3(buf: ptr[float]) -> void:
+    unsafe:
+        buf[0..3] = (1.0, 2.0, 3.0)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3350,18 +3387,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_preserves_hoisted_stop_for_non_constant_range_bound
-    source = [
-      "# module demo.for_stop_surface",
-      "",
-      "function main() -> int:",
-      "    var stop = 4",
-      "    var total = 0",
-      "    for i in 0..stop:",
-      "        stop += 1",
-      "        total += i",
-      "    return total + stop",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.for_stop_surface
+
+function main() -> int:
+    var stop = 4
+    var total = 0
+    for i in 0..stop:
+        stop += 1
+        total += i
+    return total + stop
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3370,32 +3408,33 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_break_and_continue_inside_match_with_for_loop
-    source = [
-      "# module demo.loop_control_surface",
-      "",
-      "enum Step: ubyte",
-      "    skip = 1",
-      "    keep = 2",
-      "    stop = 3",
-      "",
-      "function add(target: ptr[int], amount: int) -> void:",
-      "    unsafe:",
-      "        read(target) += amount",
-      "",
-      "function main() -> int:",
-      "    var total = 0",
-      "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-      "        defer add(ptr_of(total), 1)",
-      "        match step:",
-      "            Step.skip:",
-      "                continue",
-      "            Step.keep:",
-      "                total += 10",
-      "            Step.stop:",
-      "                break",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.loop_control_surface
+
+enum Step: ubyte
+    skip = 1
+    keep = 2
+    stop = 3
+
+function add(target: ptr[int], amount: int) -> void:
+    unsafe:
+        read(target) += amount
+
+function main() -> int:
+    var total = 0
+    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
+        defer add(ptr_of(total), 1)
+        match step:
+            Step.skip:
+                continue
+            Step.keep:
+                total += 10
+            Step.stop:
+                break
+    return total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3407,16 +3446,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_omits_unused_loop_labels
-    source = [
-      "# module demo.simple_loop_surface",
-      "",
-      "function main() -> int:",
-      "    var i = 0",
-      "    while i < 3:",
-      "        i += 1",
-      "    return i",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.simple_loop_surface
+
+function main() -> int:
+    var i = 0
+    while i < 3:
+        i += 1
+    return i
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3488,18 +3528,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_uses_structured_break_for_simple_loop_exit
-    source = [
-      "# module demo.structured_break_surface",
-      "",
-      "function main() -> int:",
-      "    var total = 0",
-      "    while total < 10:",
-      "        total += 1",
-      "        if total == 3:",
-      "            break",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.structured_break_surface
+
+function main() -> int:
+    var total = 0
+    while total < 10:
+        total += 1
+        if total == 3:
+            break
+    return total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3510,20 +3551,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_uses_structured_continue_for_simple_while_loop
-    source = [
-      "# module demo.structured_continue_surface",
-      "",
-      "function main() -> int:",
-      "    var total = 0",
-      "    var i = 0",
-      "    while i < 5:",
-      "        i += 1",
-      "        if i == 2:",
-      "            continue",
-      "        total += i",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.structured_continue_surface
+
+function main() -> int:
+    var total = 0
+    var i = 0
+    while i < 5:
+        i += 1
+        if i == 2:
+            continue
+        total += i
+    return total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3533,18 +3575,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_uses_structured_continue_for_simple_for_loop
-    source = [
-      "# module demo.structured_for_continue_surface",
-      "",
-      "function main() -> int:",
-      "    var total = 0",
-      "    for i in 0..5:",
-      "        if i == 2:",
-      "            continue",
-      "        total += i",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.structured_for_continue_surface
+
+function main() -> int:
+    var total = 0
+    for i in 0..5:
+        if i == 2:
+            continue
+        total += i
+    return total
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3555,19 +3598,20 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_layout_queries_and_static_assert
-    source = [
-      "# module demo.layout_surface",
-      "",
-      "struct Header:",
-      "    magic: array[ubyte, 4]",
-      "    version: ushort",
-      "",
-      "static_assert(size_of(Header) == 6, \"Header size should stay stable\")",
-      "",
-      "function main() -> ptr_uint:",
-      "    return offset_of(Header, version) + align_of(Header)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.layout_surface
+
+struct Header:
+    magic: array[ubyte, 4]
+    version: ushort
+
+static_assert(size_of(Header) == 6, \"Header size should stay stable\")
+
+function main() -> ptr_uint:
+    return offset_of(Header, version) + align_of(Header)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3577,16 +3621,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_real_str_literals_and_fatal
-    source = [
-      "# module demo.str_surface",
-      "",
-      "const greeting: str = \"hello\"",
-      "",
-      "function main() -> int:",
-      "    fatal(greeting)",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.str_surface
+
+const greeting: str = \"hello\"
+
+function main() -> int:
+    fatal(greeting)
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3600,24 +3645,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_str_slice_and_arena_cstr_conversion
-    source = [
-      "# module demo.str_methods_surface",
-      "",
-      "import std.str as text_ops",
-      "import std.mem.arena as arena",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(64)",
-      "    defer scratch.release()",
-      "    let text = \"hello world\"",
-      "    let part = text.slice(6, 5)",
-      "    let copied = part.to_cstr(ref_of(scratch))",
-      "    fatal(copied)",
-      "    if part.len == ptr_uint<-5:",
-      "        return int<-part.len",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.str_methods_surface
+
+import std.str as text_ops
+import std.mem.arena as arena
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+    let text = \"hello world\"
+    let part = text.slice(6, 5)
+    let copied = part.to_cstr(ref_of(scratch))
+    fatal(copied)
+    if part.len == ptr_uint<-5:
+        return int<-part.len
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3691,23 +3737,24 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_packed_and_aligned_structs
-    source = [
-      "# module demo.layout_modifiers_surface",
-      "",
-      "packed struct Header:",
-      "    tag: ubyte",
-      "    value: uint",
-      "",
-      "align(16) struct Mat4:",
-      "    data: array[float, 16]",
-      "",
-      "static_assert(size_of(Header) == 5, \"Header should stay packed\")",
-      "static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")",
-      "",
-      "function main() -> int:",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.layout_modifiers_surface
+
+packed struct Header:
+    tag: ubyte
+    value: uint
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+static_assert(size_of(Header) == 5, \"Header should stay packed\")
+static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")
+
+function main() -> int:
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3720,20 +3767,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_address_of_and_dereference_assignment
-    source = [
-      "# module demo.pointer_surface",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe:",
-      "        read(counter_ptr).value = 7",
-      "    return counter.value",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.pointer_surface
+
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        read(counter_ptr).value = 7
+    return counter.value
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3743,20 +3791,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_raw_pointer_member_access
-    source = [
-      "# module demo.pointer_surface_auto_member",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe:",
-      "        counter_ptr.value = 7",
-      "        return counter_ptr.value",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.pointer_surface_auto_member
+
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        counter_ptr.value = 7
+        return counter_ptr.value
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3766,27 +3815,28 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_raw_pointer_method_calls
-    source = [
-      "# module demo.pointer_method_surface",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "extending Counter:",
-      "    mutable function add(delta: int):",
-      "        this.value += delta",
-      "",
-      "    function read() -> int:",
-      "        return this.value",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe:",
-      "        counter_ptr.add(4)",
-      "        return counter_ptr.read()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.pointer_method_surface
+
+struct Counter:
+    value: int
+
+extending Counter:
+    mutable function add(delta: int):
+        this.value += delta
+
+    function read() -> int:
+        return this.value
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        counter_ptr.add(4)
+        return counter_ptr.read()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3798,25 +3848,26 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_extended_compound_assignment_operators
-    source = [
-      "# module demo.compound_assignments_surface",
-      "",
-      "flags Bits: uint",
-      "    a = 1 << 0",
-      "    b = 1 << 1",
-      "",
-      "function main() -> int:",
-      "    var value = 12",
-      "    value %= 5",
-      "    value <<= 1",
-      "    value >>= 1",
-      "    var bits = Bits.a",
-      "    bits |= Bits.b",
-      "    bits &= Bits.b",
-      "    bits ^= Bits.a",
-      "    return value",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.compound_assignments_surface
+
+flags Bits: uint
+    a = 1 << 0
+    b = 1 << 1
+
+function main() -> int:
+    var value = 12
+    value %= 5
+    value <<= 1
+    value >>= 1
+    var bits = Bits.a
+    bits |= Bits.b
+    bits &= Bits.b
+    bits ^= Bits.a
+    return value
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3829,35 +3880,36 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_safe_ref_locals_params_and_methods
-    source = [
-      "# module demo.ref_surface",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "extending Counter:",
-      "    mutable function add(delta: int):",
-      "        this.value += delta",
-      "",
-      "    function read() -> int:",
-      "        return this.value",
-      "",
-      "function increment(counter: ref[Counter], amount: int) -> void:",
-      "    counter.add(amount)",
-      "    counter.value += 1",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    increment(counter, 4)",
-      "    let handle = ref_of(counter)",
-      "    let value_ref = ref_of(handle.value)",
-      "    read(value_ref) += 2",
-      "    unsafe:",
-      "        let raw_counter = ptr_of(handle)",
-      "        read(raw_counter).value += 1",
-      "    return handle.read()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.ref_surface
+
+struct Counter:
+    value: int
+
+extending Counter:
+    mutable function add(delta: int):
+        this.value += delta
+
+    function read() -> int:
+        return this.value
+
+function increment(counter: ref[Counter], amount: int) -> void:
+    counter.add(amount)
+    counter.value += 1
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    increment(counter, 4)
+    let handle = ref_of(counter)
+    let value_ref = ref_of(handle.value)
+    read(value_ref) += 2
+    unsafe:
+        let raw_counter = ptr_of(handle)
+        read(raw_counter).value += 1
+    return handle.read()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3876,24 +3928,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_immutable_array_bearing_method_receivers_uses_pointer_params
-    source = [
-      "# module demo.large_receiver_surface",
-      "",
-      "struct Big:",
-      "    data: array[int, 8]",
-      "",
-      "function first_value(big: Big) -> int:",
-      "    return big.data[0]",
-      "",
-      "extending Big:",
-      "    function first() -> int:",
-      "        return first_value(this)",
-      "",
-      "function main() -> int:",
-      "    let big = Big(data = array[int, 8](1, 2, 3, 4, 5, 6, 7, 8))",
-      "    return big.first()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.large_receiver_surface
+
+struct Big:
+    data: array[int, 8]
+
+function first_value(big: Big) -> int:
+    return big.data[0]
+
+extending Big:
+    function first() -> int:
+        return first_value(this)
+
+function main() -> int:
+    let big = Big(data = array[int, 8](1, 2, 3, 4, 5, 6, 7, 8))
+    return big.first()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3903,26 +3956,27 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unused_method_receivers_omits_param_but_keeps_receiver_evaluation
-    source = [
-      "# module demo.receiver_elision_surface",
-      "",
-      "var calls: int = 0",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function make_counter() -> Counter:",
-      "    calls += 1",
-      "    return Counter(value = calls)",
-      "",
-      "extending Counter:",
-      "    function answer() -> int:",
-      "        return 7",
-      "",
-      "function main() -> int:",
-      "    return make_counter().answer()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.receiver_elision_surface
+
+var calls: int = 0
+
+struct Counter:
+    value: int
+
+function make_counter() -> Counter:
+    calls += 1
+    return Counter(value = calls)
+
+extending Counter:
+    function answer() -> int:
+        return 7
+
+function main() -> int:
+    return make_counter().answer()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3932,21 +3986,22 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_function_values_returning_arrays
-    source = [
-      "# module demo.fn_array_return_surface",
-      "",
-      "function make() -> array[int, 2]:",
-      "    return array[int, 2](4, 9)",
-      "",
-      "function read_first(callback: fn() -> array[int, 2]) -> int:",
-      "    let values = callback()",
-      "    unsafe:",
-      "        return values[0]",
-      "",
-      "function main() -> int:",
-      "    return read_first(make)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.fn_array_return_surface
+
+function make() -> array[int, 2]:
+    return array[int, 2](4, 9)
+
+function read_first(callback: fn() -> array[int, 2]) -> int:
+    let values = callback()
+    unsafe:
+        return values[0]
+
+function main() -> int:
+    return read_first(make)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -3960,32 +4015,36 @@ class MilkTeaCodegenTest < Minitest::Test
     Dir.mktmpdir("milk-tea-codegen-associated") do |dir|
       FileUtils.mkdir_p(File.join(dir, "demo"))
 
-      File.write(File.join(dir, "demo", "math.mt"), [
-        "# module demo.math",
-        "",
-        "public struct RawVec:",
-        "    x: int",
-        "",
-        "public type Vec = RawVec",
-        "",
-        "extending RawVec:",
-        "    public static function zero() -> Vec:",
-        "        return Vec(x = 0)",
-        "",
-      ].join("\n"))
+      File.write(File.join(dir, "demo", "math.mt"), <<~MT
 
+# module demo.math
+
+public struct RawVec:
+    x: int
+
+public type Vec = RawVec
+
+extending RawVec:
+    public static function zero() -> Vec:
+        return Vec(x = 0)
+
+      MT
+
+      )
       source_path = File.join(dir, "main.mt")
-      File.write(source_path, [
-        "# module demo.main",
-        "",
-        "import demo.math as math",
-        "",
-        "function main() -> int:",
-        "    let value = math.Vec.zero()",
-        "    return value.x",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+# module demo.main
+
+import demo.math as math
+
+function main() -> int:
+    let value = math.Vec.zero()
+    return value.x
+
+      MT
+
+      )
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(source_path)
       generated = MilkTea::Codegen.generate_c(program)
 
@@ -3996,25 +4055,26 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_fixed_array_construction_and_layout
-    source = [
-      "# module demo.array_surface",
-      "",
-      "struct Palette:",
-      "    colors: array[uint, 4]",
-      "",
-      "const DEFAULT: array[uint, 4] = array[uint, 4](11, 22, 33, 44)",
-      "",
-      "function main() -> int:",
-      "    var palette = array[uint, 4](1, 2, 3, 4)",
-      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-      "    unsafe:",
-      "        if read(ptr_of(palette[0])) != 1:",
-      "            return 1",
-      "        if read(ptr_of(holder.colors[0])) != 5:",
-      "            return 2",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.array_surface
+
+struct Palette:
+    colors: array[uint, 4]
+
+const DEFAULT: array[uint, 4] = array[uint, 4](11, 22, 33, 44)
+
+function main() -> int:
+    var palette = array[uint, 4](1, 2, 3, 4)
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    unsafe:
+        if read(ptr_of(palette[0])) != 1:
+            return 1
+        if read(ptr_of(holder.colors[0])) != 5:
+            return 2
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4026,21 +4086,22 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_addr_of_fixed_array_element_through_pointer_deref
-    source = [
-      "# module demo.ptr_array_addr",
-      "",
-      "struct Palette:",
-      "    colors: array[uint, 4]",
-      "",
-      "function main() -> uint:",
-      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-      "    unsafe:",
-      "        let base = ptr_of(holder)",
-      "        let first = ptr_of(read(base).colors[0])",
-      "        read(first) = 9",
-      "    return holder.colors[0]",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.ptr_array_addr
+
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> uint:
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    unsafe:
+        let base = ptr_of(holder)
+        let first = ptr_of(read(base).colors[0])
+        read(first) = 9
+    return holder.colors[0]
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4051,31 +4112,32 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
-    source = [
-      "# module demo.checked_index_alias_surface",
-      "",
-      "struct Point:",
-      "    x: int",
-      "    y: int",
-      "",
-      "function use(a: int, b: int, c: int, d: int) -> void:",
-      "    return",
-      "",
-      "function next(cursor: ptr[int]) -> int:",
-      "    unsafe:",
-      "        let value = read(cursor)",
-      "        read(cursor) += 1",
-      "        return value",
-      "",
-      "function main() -> int:",
-      "    var points = array[Point, 2](Point(x = 1, y = 2), Point(x = 3, y = 4))",
-      "    var index = 1",
-      "    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)",
-      "    var cursor = 0",
-      "    use(points[next(ptr_of(cursor))].x, points[next(ptr_of(cursor))].y, 0, 0)",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.checked_index_alias_surface
+
+struct Point:
+    x: int
+    y: int
+
+function use(a: int, b: int, c: int, d: int) -> void:
+    return
+
+function next(cursor: ptr[int]) -> int:
+    unsafe:
+        let value = read(cursor)
+        read(cursor) += 1
+        return value
+
+function main() -> int:
+    var points = array[Point, 2](Point(x = 1, y = 2), Point(x = 3, y = 4))
+    var index = 1
+    use(points[index].x, points[index].y, points[index].x + points[index].y, points[index].x)
+    var cursor = 0
+    use(points[next(ptr_of(cursor))].x, points[next(ptr_of(cursor))].y, 0, 0)
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4085,24 +4147,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_safe_array_indexing_and_assignment
-    source = [
-      "# module demo.array_index_surface",
-      "",
-      "struct Palette:",
-      "    colors: array[uint, 4]",
-      "",
-      "function main() -> int:",
-      "    var palette = array[uint, 4](1, 2, 3, 4)",
-      "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-      "    palette[1] = 9",
-      "    holder.colors[2] = 10",
-      "    if palette[0] != 1:",
-      "        return 1",
-      "    if holder.colors[2] != 10:",
-      "        return 2",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.array_index_surface
+
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    var palette = array[uint, 4](1, 2, 3, 4)
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    palette[1] = 9
+    holder.colors[2] = 10
+    if palette[0] != 1:
+        return 1
+    if holder.colors[2] != 10:
+        return 2
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4114,18 +4177,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_zero_initialization
-    source = [
-      "# module demo.zero_surface",
-      "",
-      "struct Palette:",
-      "    colors: array[uint, 4]",
-      "",
-      "function main() -> int:",
-      "    var palette = zero[array[uint, 4]]",
-      "    var holder = zero[Palette]",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.zero_surface
+
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    var palette = zero[array[uint, 4]]
+    var holder = zero[Palette]
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4134,20 +4198,21 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_partial_aggregate_and_array_initialization
-    source = [
-      "# module demo.partial_surface",
-      "",
-      "struct Point:",
-      "    x: int",
-      "    y: int",
-      "",
-      "function main() -> int:",
-      "    var origin = Point()",
-      "    var point = Point(x = 5)",
-      "    var palette = array[uint, 4](1, 2)",
-      "    return origin.x + point.x + int<-palette[1]",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.partial_surface
+
+struct Point:
+    x: int
+    y: int
+
+function main() -> int:
+    var origin = Point()
+    var point = Point(x = 5)
+    var palette = array[uint, 4](1, 2)
+    return origin.x + point.x + int<-palette[1]
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4157,26 +4222,27 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_array_assignment_and_parameter_copy
-    source = [
-      "# module demo.array_copy_surface",
-      "",
-      "function mutate(values: array[int, 4]) -> int:",
-      "    var local = values",
-      "    unsafe:",
-      "        local[1] = 9",
-      "        return local[1]",
-      "",
-      "function main() -> int:",
-      "    var lhs = array[int, 4](1, 2, 3, 4)",
-      "    let rhs = array[int, 4](5, 6, 7, 8)",
-      "    lhs = rhs",
-      "    let changed = mutate(lhs)",
-      "    unsafe:",
-      "        if lhs[1] != 6:",
-      "            return 1",
-      "    return changed",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.array_copy_surface
+
+function mutate(values: array[int, 4]) -> int:
+    var local = values
+    unsafe:
+        local[1] = 9
+        return local[1]
+
+function main() -> int:
+    var lhs = array[int, 4](1, 2, 3, 4)
+    let rhs = array[int, 4](5, 6, 7, 8)
+    lhs = rhs
+    let changed = mutate(lhs)
+    unsafe:
+        if lhs[1] != 6:
+            return 1
+    return changed
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4190,23 +4256,24 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_local_array_returns
-    source = [
-      "# module demo.array_return_surface",
-      "",
-      "function make() -> array[int, 4]:",
-      "    return array[int, 4](1, 2, 3, 4)",
-      "",
-      "function clone(values: array[int, 4]) -> array[int, 4]:",
-      "    return values",
-      "",
-      "function read(values: array[int, 4]) -> int:",
-      "    unsafe:",
-      "        return values[1]",
-      "",
-      "function main() -> int:",
-      "    return read(clone(make()))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.array_return_surface
+
+function make() -> array[int, 4]:
+    return array[int, 4](1, 2, 3, 4)
+
+function clone(values: array[int, 4]) -> array[int, 4]:
+    return values
+
+function read(values: array[int, 4]) -> int:
+    unsafe:
+        return values[1]
+
+function main() -> int:
+    return read(clone(make()))
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4221,16 +4288,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_reinterpret_calls
-    source = [
-      "# module demo.reinterpret_surface",
-      "",
-      "function main() -> uint:",
-      "    let value: float = 1.0",
-      "    unsafe:",
-      "        let bits = reinterpret[uint](value)",
-      "        return bits",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.reinterpret_surface
+
+function main() -> uint:
+    let value: float = 1.0
+    unsafe:
+        let bits = reinterpret[uint](value)
+        return bits
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4241,21 +4309,22 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_pointer_to_cstr_abi_casts
-    source = [
-      "# module demo.cstr_casts_surface",
-      "",
-      "external function set_text(value: cstr) -> void",
-      "external function get_text() -> cstr",
-      "",
-      "function main() -> void:",
-      "    var buffer = zero[array[char, 32]]",
-      "    unsafe:",
-      "        let raw_buffer = ptr_of(buffer[0])",
-      "        set_text(cstr<-raw_buffer)",
-      "        let clipboard = get_text()",
-      "        let writable = ptr[char]<-clipboard",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.cstr_casts_surface
+
+external function set_text(value: cstr) -> void
+external function get_text() -> cstr
+
+function main() -> void:
+    var buffer = zero[array[char, 32]]
+    unsafe:
+        let raw_buffer = ptr_of(buffer[0])
+        set_text(cstr<-raw_buffer)
+        let clipboard = get_text()
+        let writable = ptr[char]<-clipboard
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4264,17 +4333,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_const_pointer_ro_addr_calls
-    source = [
-      "# module demo.const_pointer_call_surface",
-      "",
-      "function inspect(values: const_ptr[int]) -> void:",
-      "    return",
-      "",
-      "function main() -> void:",
-      "    let value = 7",
-      "    inspect(const_ptr_of(value))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.const_pointer_call_surface
+
+function inspect(values: const_ptr[int]) -> void:
+    return
+
+function main() -> void:
+    let value = 7
+    inspect(const_ptr_of(value))
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4283,18 +4353,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_array_char_values_and_span_char_calls
-    source = [
-      "# module demo.char_array_surface",
-      "",
-      "function view(items: span[char]) -> ptr_uint:",
-      "    return items.len",
-      "",
-      "function main() -> int:",
-      "    var buffer = zero[array[char, 32]]",
-      "    buffer[0] = 65",
-      "    return int<-view(buffer)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.char_array_surface
+
+function view(items: span[char]) -> ptr_uint:
+    return items.len
+
+function main() -> int:
+    var buffer = zero[array[char, 32]]
+    buffer[0] = 65
+    return int<-view(buffer)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4304,14 +4375,15 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_typed_array_char_local_without_initializer
-    source = [
-      "# module demo.char_array_zero_local",
-      "",
-      "function main() -> int:",
-      "    var buffer: array[char, 16]",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.char_array_zero_local
+
+function main() -> int:
+    var buffer: array[char, 16]
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4319,16 +4391,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_rejects_generate_c_for_array_char_text_methods
-    source = [
-      "# module demo.char_array_methods",
-      "",
-      "function main() -> int:",
-      "    var buffer = zero[array[char, 16]]",
-      "    let view = buffer.as_str()",
-      "    let label = buffer.as_cstr()",
-      "    return int<-view.len",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.char_array_methods
+
+function main() -> int:
+    var buffer = zero[array[char, 16]]
+    let view = buffer.as_str()
+    let label = buffer.as_cstr()
+    return int<-view.len
+
+    MT
 
     error = assert_raises(MilkTea::SemaError) do
       generate_c_from_source(source)
@@ -4338,23 +4411,24 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_str_buffer_methods_and_span_char_calls
-    source = [
-      "# module demo.str_buffer_surface",
-      "",
-      "function view(items: span[char]) -> ptr_uint:",
-      "    return items.len",
-      "",
-      "function main() -> int:",
-      "    var buffer: str_buffer[32]",
-      "    buffer.assign(\"hi\")",
-      "    buffer.append(\"!\")",
-      "    let text = buffer.as_str()",
-      "    let label = buffer.as_cstr()",
-      "    let raw = view(buffer)",
-      "    buffer.clear()",
-      "    return int<-(buffer.capacity() + text.len + raw)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.str_buffer_surface
+
+function view(items: span[char]) -> ptr_uint:
+    return items.len
+
+function main() -> int:
+    var buffer: str_buffer[32]
+    buffer.assign(\"hi\")
+    buffer.append(\"!\")
+    let text = buffer.as_str()
+    let label = buffer.as_cstr()
+    let raw = view(buffer)
+    buffer.clear()
+    return int<-(buffer.capacity() + text.len + raw)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4413,30 +4487,31 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_generic_functions_with_default_calls_and_interface_constraints
-    source = [
-      "# module demo.default_call_interface_codegen",
-      "",
-      "interface Named:",
-      "    function value() -> int",
-      "",
-      "struct Counter implements Named:",
-      "    count: int",
-      "",
-      "extending Counter:",
-      "    static function default() -> Counter:",
-      "        return Counter(count = 7)",
-      "",
-      "    function value() -> int:",
-      "        return this.count",
-      "",
-      "function make_and_read[T implements Named]() -> int:",
-      "    let item = default[T]",
-      "    return item.value()",
-      "",
-      "function main() -> int:",
-      "    return make_and_read[Counter]()",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.default_call_interface_codegen
+
+interface Named:
+    function value() -> int
+
+struct Counter implements Named:
+    count: int
+
+extending Counter:
+    static function default() -> Counter:
+        return Counter(count = 7)
+
+    function value() -> int:
+        return this.count
+
+function make_and_read[T implements Named]() -> int:
+    let item = default[T]
+    return item.value()
+
+function main() -> int:
+    return make_and_read[Counter]()
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4662,16 +4737,17 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_typed_null_pointer_to_cstr_casts
-    source = [
-      "# module demo.typed_null_cstr_surface",
-      "",
-      "external function set_text(value: cstr) -> void",
-      "",
-      "function main() -> void:",
-      "    unsafe:",
-      "        set_text(cstr<-null[ptr[char]])",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.typed_null_cstr_surface
+
+external function set_text(value: cstr) -> void
+
+function main() -> void:
+    unsafe:
+        set_text(cstr<-null[ptr[char]])
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4679,17 +4755,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_integer_to_char_buffer_writes
-    source = [
-      "# module demo.char_buffer_surface",
-      "",
-      "function main() -> int:",
-      "    var ptr: ptr[char] = zero[ptr[char]]",
-      "    unsafe:",
-      "        ptr[0] = 65",
-      "        ptr[1] = char<-66",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.char_buffer_surface
+
+function main() -> int:
+    var ptr: ptr[char] = zero[ptr[char]]
+    unsafe:
+        ptr[0] = 65
+        ptr[1] = char<-66
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4698,18 +4775,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_unsafe_pointer_offsets_without_ptr_uint_casts
-    source = [
-      "# module demo.pointer_offset_surface",
-      "",
-      "function main() -> int:",
-      "    var ptr: ptr[char] = zero[ptr[char]]",
-      "    let offset = 1",
-      "    unsafe:",
-      "        var next = ptr + offset",
-      "        next[offset - 1] = 65",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.pointer_offset_surface
+
+function main() -> int:
+    var ptr: ptr[char] = zero[ptr[char]]
+    let offset = 1
+    unsafe:
+        var next = ptr + offset
+        next[offset - 1] = 65
+    return 0
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4718,24 +4796,25 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_ref_arguments_passed_to_by_value_parameters
-    source = [
-      "# module demo.ref_value_args",
-      "",
-      "struct Counter:",
-      "    value: int",
-      "",
-      "external function consume(counter: Counter) -> void",
-      "",
-      "function project(counter: Counter) -> int:",
-      "    return counter.value",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 7)",
-      "    let handle = ref_of(counter)",
-      "    consume(read(handle))",
-      "    return project(read(handle))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.ref_value_args
+
+struct Counter:
+    value: int
+
+external function consume(counter: Counter) -> void
+
+function project(counter: Counter) -> int:
+    return counter.value
+
+function main() -> int:
+    var counter = Counter(value = 7)
+    let handle = ref_of(counter)
+    consume(read(handle))
+    return project(read(handle))
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4744,18 +4823,19 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_left_biased_float_literal_inference
-    source = [
-      "# module demo.float_literal_inference",
-      "",
-      "function main() -> int:",
-      "    let value: float = 4.0",
-      "    let inverse = 1.0 / value",
-      "    let scaled = -2.0 / value",
-      "    if inverse > scaled:",
-      "        return 0",
-      "    return 1",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.float_literal_inference
+
+function main() -> int:
+    let value: float = 4.0
+    let inverse = 1.0 / value
+    let scaled = -2.0 / value
+    if inverse > scaled:
+        return 0
+    return 1
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4764,27 +4844,28 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_callable_value_storage_and_indirect_calls
-    source = [
-      "# module demo.callable_values",
-      "",
-      "struct Entry:",
-      "    callback: fn(value: float) -> float",
-      "",
-      "function identity(value: int) -> int:",
-      "    return value",
-      "",
-      "function ease(value: float) -> float:",
-      "    return value + 2.0",
-      "",
-      "function main() -> int:",
-      "    let callbacks = array[fn(value: int) -> int, 1](identity)",
-      "    let entry = Entry(callback = ease)",
-      "    let callback: fn(value: float) -> float = entry.callback",
-      "    let left = callbacks[0](1)",
-      "    let right = callback(1.0)",
-      "    return left + int<-right",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.callable_values
+
+struct Entry:
+    callback: fn(value: float) -> float
+
+function identity(value: int) -> int:
+    return value
+
+function ease(value: float) -> float:
+    return value + 2.0
+
+function main() -> int:
+    let callbacks = array[fn(value: int) -> int, 1](identity)
+    let entry = Entry(callback = ease)
+    let callback: fn(value: float) -> float = entry.callback
+    let left = callbacks[0](1)
+    let right = callback(1.0)
+    return left + int<-right
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4795,29 +4876,31 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_imported_function_callable_values
-    source = [
-      "# module demo.main",
-      "",
-      "import std.ease as ease",
-      "",
-      "struct Entry:",
-      "    callback: fn(value: int) -> int",
-      "",
-      "function main() -> int:",
-      "    let callbacks = array[fn(value: int) -> int, 1](ease.times_two)",
-      "    let entry = Entry(callback = ease.times_two)",
-      "    return callbacks[0](3) + entry.callback(4)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.main
+
+import std.ease as ease
+
+struct Entry:
+    callback: fn(value: int) -> int
+
+function main() -> int:
+    let callbacks = array[fn(value: int) -> int, 1](ease.times_two)
+    let entry = Entry(callback = ease.times_two)
+    return callbacks[0](3) + entry.callback(4)
+
+    MT
 
     imported_sources = {
-      "std/ease.mt" => [
-        "# module std.ease",
-        "",
-        "public function times_two(value: int) -> int:",
-        "    return value * 2",
-        "",
-      ].join("\n"),
+      "std/ease.mt" => <<~MT,
+
+# module std.ease
+
+public function times_two(value: int) -> int:
+    return value * 2
+
+      MT
     }
 
     generated = generate_c_from_program_source(source, imported_sources)
@@ -4828,19 +4911,20 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_proc_closure_capture_and_param_calls
-    source = [
-      "# module demo.proc_codegen",
-      "",
-      "function apply(callback: proc(value: int) -> int, value: int) -> int:",
-      "    return callback(value)",
-      "",
-      "function main() -> int:",
-      "    let offset = 4",
-      "    let callback = proc(value: int) -> int:",
-      "        return value * 2 + offset",
-      "    return apply(callback, 3)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.proc_codegen
+
+function apply(callback: proc(value: int) -> int, value: int) -> int:
+    return callback(value)
+
+function main() -> int:
+    let offset = 4
+    let callback = proc(value: int) -> int:
+        return value * 2 + offset
+    return apply(callback, 3)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4854,25 +4938,26 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_proc_return_and_struct_field
-    source = [
-      "# module demo.proc_surface",
-      "",
-      "struct Holder:",
-      "    callback: proc(value: int) -> int",
-      "",
-      "function factory(offset: int) -> proc(value: int) -> int:",
-      "    return proc(value: int) -> int:",
-      "        return value + offset",
-      "",
-      "function call(holder: Holder, value: int) -> int:",
-      "    return holder.callback(value)",
-      "",
-      "function main() -> int:",
-      "    let cb = factory(2)",
-      "    let holder = Holder(callback = cb)",
-      "    return call(holder, 40)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.proc_surface
+
+struct Holder:
+    callback: proc(value: int) -> int
+
+function factory(offset: int) -> proc(value: int) -> int:
+    return proc(value: int) -> int:
+        return value + offset
+
+function call(holder: Holder, value: int) -> int:
+    return holder.callback(value)
+
+function main() -> int:
+    let cb = factory(2)
+    let holder = Holder(callback = cb)
+    return call(holder, 40)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4883,13 +4968,14 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_async_proc_param_lifecycle
-    source = [
-      "# module demo.async_proc_lifecycle",
-      "",
-      "async function run(callback: proc(value: int) -> int) -> int:",
-      "    return callback(1)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.async_proc_lifecycle
+
+async function run(callback: proc(value: int) -> int) -> int:
+    return callback(1)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4901,15 +4987,16 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_async_proc_local_lifecycle
-    source = [
-      "# module demo.async_proc_local",
-      "",
-      "async function run(offset: int) -> int:",
-      "    let callback = proc(value: int) -> int:",
-      "        return value + offset",
-      "    return callback(1)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.async_proc_local
+
+async function run(offset: int) -> int:
+    let callback = proc(value: int) -> int:
+        return value + offset
+    return callback(1)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4920,23 +5007,24 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_proc_assignment_lifecycle
-    source = [
-      "# module demo.proc_assign_lifecycle",
-      "",
-      "struct Holder:",
-      "    callback: proc(value: int) -> int",
-      "",
-      "function main() -> int:",
-      "    let ca = proc(value: int) -> int:",
-      "        return value + 1",
-      "    let cb = proc(value: int) -> int:",
-      "        return value + 2",
-      "    let a = Holder(callback = ca)",
-      "    var b = Holder(callback = cb)",
-      "    b = a",
-      "    return b.callback(1)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.proc_assign_lifecycle
+
+struct Holder:
+    callback: proc(value: int) -> int
+
+function main() -> int:
+    let ca = proc(value: int) -> int:
+        return value + 1
+    let cb = proc(value: int) -> int:
+        return value + 2
+    let a = Holder(callback = ca)
+    var b = Holder(callback = cb)
+    b = a
+    return b.callback(1)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4952,22 +5040,23 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_proc_field_assignment_lifecycle
-    source = [
-      "# module demo.proc_field_assign",
-      "",
-      "struct Holder:",
-      "    callback: proc(value: int) -> int",
-      "",
-      "function main() -> int:",
-      "    let ca = proc(value: int) -> int:",
-      "        return value + 1",
-      "    var h = Holder(callback = ca)",
-      "    let cb = proc(value: int) -> int:",
-      "        return value + 2",
-      "    h.callback = cb",
-      "    return h.callback(1)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.proc_field_assign
+
+struct Holder:
+    callback: proc(value: int) -> int
+
+function main() -> int:
+    let ca = proc(value: int) -> int:
+        return value + 1
+    var h = Holder(callback = ca)
+    let cb = proc(value: int) -> int:
+        return value + 2
+    h.callback = cb
+    return h.callback(1)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4979,17 +5068,18 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_proc_var_reassign_lifecycle
-    source = [
-      "# module demo.proc_var_reassign",
-      "",
-      "function main() -> int:",
-      "    var callback = proc(value: int) -> int:",
-      "        return value + 1",
-      "    callback = proc(value: int) -> int:",
-      "        return value + 2",
-      "    return callback(0)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.proc_var_reassign
+
+function main() -> int:
+    var callback = proc(value: int) -> int:
+        return value + 1
+    callback = proc(value: int) -> int:
+        return value + 2
+    return callback(0)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -4999,23 +5089,24 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_module_scope_mutable_vars
-    source = [
-      "# module demo.global_state",
-      "",
-      "const BASE: int = 1",
-      "",
-      "function identity(value: int) -> int:",
-      "    return value",
-      "",
-      "var counter: int = BASE",
-      "var scratch: array[ubyte, 4]",
-      "var callbacks: array[fn(value: int) -> int, 1] = array[fn(value: int) -> int, 1](identity)",
-      "",
-      "function main() -> int:",
-      "    counter = callbacks[0](counter)",
-      "    return counter + int<-scratch[0]",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.global_state
+
+const BASE: int = 1
+
+function identity(value: int) -> int:
+    return value
+
+var counter: int = BASE
+var scratch: array[ubyte, 4]
+var callbacks: array[fn(value: int) -> int, 1] = array[fn(value: int) -> int, 1](identity)
+
+function main() -> int:
+    counter = callbacks[0](counter)
+    return counter + int<-scratch[0]
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -5026,22 +5117,23 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_integer_match_with_default_case
-    source = [
-      "# module demo.int_match",
-      "",
-      "function dispatch(key: int) -> int:",
-      "    match key:",
-      "        65:",
-      "            return 1",
-      "        27:",
-      "            return 2",
-      "        _:",
-      "            return 0",
-      "",
-      "function main() -> int:",
-      "    return dispatch(65)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.int_match
+
+function dispatch(key: int) -> int:
+    match key:
+        65:
+            return 1
+        27:
+            return 2
+        _:
+            return 0
+
+function main() -> int:
+    return dispatch(65)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -5056,25 +5148,26 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_enum_match_with_wildcard
-    source = [
-      "# module demo.enum_wild",
-      "",
-      "enum EventKind: ubyte",
-      "    quit = 1",
-      "    resize = 2",
-      "    key = 3",
-      "",
-      "function dispatch(kind: EventKind) -> int:",
-      "    match kind:",
-      "        EventKind.quit:",
-      "            return 0",
-      "        _:",
-      "            return 1",
-      "",
-      "function main() -> int:",
-      "    return dispatch(EventKind.quit)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.enum_wild
+
+enum EventKind: ubyte
+    quit = 1
+    resize = 2
+    key = 3
+
+function dispatch(kind: EventKind) -> int:
+    match kind:
+        EventKind.quit:
+            return 0
+        _:
+            return 1
+
+function main() -> int:
+    return dispatch(EventKind.quit)
+
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -5245,25 +5338,26 @@ class MilkTeaCodegenTest < Minitest::Test
   end
 
   def test_generate_c_for_async_variant_payload_match
-    source = [
-      "# module demo.async_variant_payload_codegen",
-      "",
-      "",
-      "",
-      "async function helper() -> Result[int, int]:",
-      "    return Result[int, int].success(value= 7)",
-      "",
-      "async function main() -> int:",
-      "    let result = await helper()",
-      "    match result:",
-      "        Result.success as payload:",
-      "            let value = payload.value",
-      "            return value",
-      "        Result.failure as payload:",
-      "            let error = payload.error",
-      "            return error",
-      "    return 9",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.async_variant_payload_codegen
+
+
+
+async function helper() -> Result[int, int]:
+    return Result[int, int].success(value= 7)
+
+async function main() -> int:
+    let result = await helper()
+    match result:
+        Result.success as payload:
+            let value = payload.value
+            return value
+        Result.failure as payload:
+            let error = payload.error
+            return error
+    return 9
+    MT
 
     generated = generate_c_from_source(source)
 
@@ -5304,25 +5398,26 @@ class MilkTeaCodegenTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "# module demo.async_status_codegen",
-      "",
-      "",
-      "",
-      "async function helper() -> Result[int, int]:",
-      "    return Result[int, int].success(value= 7)",
-      "",
-      "async function main() -> int:",
-      "    let result = await helper()",
-      "    match result:",
-      "        Result.success as payload:",
-      "            let value = payload.value",
-      "            return value",
-      "        Result.failure as payload:",
-      "            let error = payload.error",
-      "            return error",
-      "    return 9",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.async_status_codegen
+
+
+
+async function helper() -> Result[int, int]:
+    return Result[int, int].success(value= 7)
+
+async function main() -> int:
+    let result = await helper()
+    match result:
+        Result.success as payload:
+            let value = payload.value
+            return value
+        Result.failure as payload:
+            let error = payload.error
+            return error
+    return 9
+    MT
 
     result = run_program_from_source(source, compiler:)
 

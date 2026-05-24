@@ -8,35 +8,36 @@ class MilkTeaStdMemStackTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.stack as stack",
-      "",
-      "function main() -> int:",
-      "    var temp = stack.create(24)",
-      "    defer temp.release()",
-      "",
-      "    let start = temp.mark()",
-      "    let first = temp.alloc_bytes(8)",
-      "    let nested = temp.mark()",
-      "    let second = temp.alloc_bytes(8)",
-      "    if first == null or second == null:",
-      "        return 1",
-      "",
-      "    temp.reset(nested)",
-      "    if temp.remaining_bytes() != 16:",
-      "        return 2",
-      "",
-      "    temp.reset(start)",
-      "    if temp.remaining_bytes() != 24:",
-      "        return 3",
-      "",
-      "    let too_big = temp.alloc_bytes(32)",
-      "    if too_big != null:",
-      "        return 4",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.stack as stack
+
+function main() -> int:
+    var temp = stack.create(24)
+    defer temp.release()
+
+    let start = temp.mark()
+    let first = temp.alloc_bytes(8)
+    let nested = temp.mark()
+    let second = temp.alloc_bytes(8)
+    if first == null or second == null:
+        return 1
+
+    temp.reset(nested)
+    if temp.remaining_bytes() != 16:
+        return 2
+
+    temp.reset(start)
+    if temp.remaining_bytes() != 24:
+        return 3
+
+    let too_big = temp.alloc_bytes(32)
+    if too_big != null:
+        return 4
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -50,35 +51,36 @@ class MilkTeaStdMemStackTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.stack as stack",
-      "",
-      "struct Pair:",
-      "    left: int",
-      "    right: int",
-      "",
-      "function main() -> int:",
-      "    var temp = stack.create_for[Pair](1)",
-      "    defer temp.release()",
-      "",
-      "    let pair = temp.alloc[Pair](1)",
-      "    if pair == null:",
-      "        return 1",
-      "",
-      "    unsafe:",
-      "        let base = ptr[Pair]<-pair",
-      "        base.left = 2",
-      "        base.right = 4",
-      "        if base.left + base.right != 6:",
-      "            return 2",
-      "",
-      "    let exhausted = temp.alloc[Pair](1)",
-      "    if exhausted != null:",
-      "        return 3",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.stack as stack
+
+struct Pair:
+    left: int
+    right: int
+
+function main() -> int:
+    var temp = stack.create_for[Pair](1)
+    defer temp.release()
+
+    let pair = temp.alloc[Pair](1)
+    if pair == null:
+        return 1
+
+    unsafe:
+        let base = ptr[Pair]<-pair
+        base.left = 2
+        base.right = 4
+        if base.left + base.right != 6:
+            return 2
+
+    let exhausted = temp.alloc[Pair](1)
+    if exhausted != null:
+        return 3
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -92,27 +94,28 @@ class MilkTeaStdMemStackTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.stack as stack",
-      "",
-      "align(16) struct Mat4:",
-      "    data: array[float, 16]",
-      "",
-      "function main() -> int:",
-      "    var temp = stack.create_for[Mat4](1)",
-      "    defer temp.release()",
-      "",
-      "    let matrix = temp.alloc[Mat4](1)",
-      "    if matrix == null:",
-      "        return 1",
-      "",
-      "    let exhausted = temp.alloc[Mat4](1)",
-      "    if exhausted != null:",
-      "        return 2",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.stack as stack
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+function main() -> int:
+    var temp = stack.create_for[Mat4](1)
+    defer temp.release()
+
+    let matrix = temp.alloc[Mat4](1)
+    if matrix == null:
+        return 1
+
+    let exhausted = temp.alloc[Mat4](1)
+    if exhausted != null:
+        return 2
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

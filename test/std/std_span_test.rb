@@ -8,29 +8,30 @@ class MilkTeaStdSpanTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "function sum(values: span[int]) -> int:",
-      "    var total = 0",
-      "    var index: ptr_uint = 0",
-      "    while index < values.len:",
-      "        unsafe:",
-      "            total += read(values.data + index)",
-      "        index += 1",
-      "    return total",
-      "",
-      "function main() -> int:",
-      "    var values = array[int, 3](7, 8, 9)",
-      "    let view = span[int](data = ptr_of(values[0]), len = 3)",
-      "    let empty = zero[span[int]]",
-      "    var missing: ptr[int]? = null",
-      "    let null_view = unsafe: span[int](data = ptr[int]<-missing, len = 0)",
-      "    if empty.len != 0:",
-      "        return 1",
-      "    if null_view.len != 0:",
-      "        return 2",
-      "    return sum(view)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+function sum(values: span[int]) -> int:
+    var total = 0
+    var index: ptr_uint = 0
+    while index < values.len:
+        unsafe:
+            total += read(values.data + index)
+        index += 1
+    return total
+
+function main() -> int:
+    var values = array[int, 3](7, 8, 9)
+    let view = span[int](data = ptr_of(values[0]), len = 3)
+    let empty = zero[span[int]]
+    var missing: ptr[int]? = null
+    let null_view = unsafe: span[int](data = ptr[int]<-missing, len = 0)
+    if empty.len != 0:
+        return 1
+    if null_view.len != 0:
+        return 2
+    return sum(view)
+
+    MT
 
     result = run_program(source, compiler:)
 
