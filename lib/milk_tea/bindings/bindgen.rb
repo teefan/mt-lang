@@ -1390,7 +1390,7 @@ module MilkTea
       end
 
       def function_pointer_type?(qual_type)
-        qual_type.match?(/\A.+\(\s*\*\s*(?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?\s*\)\s*\(.*\)\z/)
+        qual_type.match?(/\A.+\(\s*\*.*\)\s*\(.*\)\z/)
       end
 
       def map_function_pointer_typedef(node, context:)
@@ -1417,19 +1417,101 @@ module MilkTea
       end
 
       def map_function_pointer_type(qual_type, context:)
-        match = qual_type.match(/\A(.+?)\s*\(\s*\*\s*((?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?)\s*\)\s*\((.*)\)\z/)
-        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless match
+        return_type_source, declarator_source, params_source = parse_function_pointer_signature(qual_type, context:)
 
-        return_type = map_c_type(match[1], context: "return type of #{context}")
-        param_list = split_top_level_csv(match[3])
-        params = if param_list.empty? || (param_list.length == 1 && strip_qualifiers(param_list.first) == "void")
-                   []
-                 else
-                   param_list.each_with_index.map do |param_type, index|
-                     "arg#{index}: #{map_c_type(param_type, context: "parameter #{index} of #{context}")}"
-                   end
-                 end
-        apply_nullability("fn(#{params.join(', ')}) -> #{return_type}", nullability_for_token(match[2]))
+        # Handles C forms like `void (*)(...)` and pointer-wrapped variants like `void (**)(...)`.
+        pointer_depth_match = declarator_source.match(/\A((?:\*\s*)+)((?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?)\s*\z/)
+        if pointer_depth_match
+          pointer_depth = pointer_depth_match[1].count("*")
+          base_nullability = nullability_for_token(pointer_depth_match[2])
+          function_type = build_function_type(
+            return_type_source:,
+            params_source:,
+            nullability: base_nullability,
+            context:,
+          )
+
+          wrapped_type = function_type
+          (pointer_depth - 1).times do
+            wrapped_type = "ptr[#{wrapped_type}]"
+          end
+          return wrapped_type
+        end
+
+        # Handles C forms like `void (*(*)(...))(...)` (function pointer returning function pointer).
+        nested_match = declarator_source.match(/\A\*\s*((?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?)\s*\(\s*\*\s*((?:_Nullable|_Nonnull|_Null_unspecified|_Nullable_result)?)\s*\)\s*\((.*)\)\s*\z/)
+        if nested_match
+          outer_nullability = nullability_for_token(nested_match[1])
+          returned_fn_nullability = nullability_for_token(nested_match[2])
+          outer_params_source = nested_match[3]
+
+          returned_fn_type = build_function_type(
+            return_type_source:,
+            params_source:,
+            nullability: returned_fn_nullability,
+            context: "return type of #{context}",
+          )
+
+          outer_params = function_params_from_source(outer_params_source, context:)
+          return apply_nullability("fn(#{outer_params.join(', ')}) -> #{returned_fn_type}", outer_nullability)
+        end
+
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}"
+      end
+
+      def parse_function_pointer_signature(qual_type, context:)
+        source = qual_type.strip
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless source.end_with?(")")
+
+        params_start = matching_open_paren_index(source, source.length - 1)
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless params_start
+
+        params_source = source[(params_start + 1)...-1]
+        prefix = source[0...params_start].rstrip
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless prefix.end_with?(")")
+
+        declarator_end = prefix.length - 1
+        declarator_start = matching_open_paren_index(prefix, declarator_end)
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" unless declarator_start
+
+        declarator_source = prefix[(declarator_start + 1)...declarator_end].strip
+        return_type_source = prefix[0...declarator_start].rstrip
+        raise BindgenError, "unsupported function pointer type #{qual_type.inspect} for #{context}" if return_type_source.empty?
+
+        [return_type_source, declarator_source, params_source]
+      end
+
+      def matching_open_paren_index(source, close_index)
+        depth = 0
+        index = close_index
+
+        while index >= 0
+          char = source[index]
+          if char == ")"
+            depth += 1
+          elsif char == "("
+            depth -= 1
+            return index if depth.zero?
+          end
+          index -= 1
+        end
+
+        nil
+      end
+
+      def function_params_from_source(params_source, context:)
+        param_list = split_top_level_csv(params_source)
+        return [] if param_list.empty? || (param_list.length == 1 && strip_qualifiers(param_list.first) == "void")
+
+        param_list.each_with_index.map do |param_type, index|
+          "arg#{index}: #{map_c_type(param_type, context: "parameter #{index} of #{context}")}"
+        end
+      end
+
+      def build_function_type(return_type_source:, params_source:, nullability:, context:)
+        return_type = map_c_type(return_type_source, context: "return type of #{context}")
+        params = function_params_from_source(params_source, context:)
+        apply_nullability("fn(#{params.join(', ')}) -> #{return_type}", nullability)
       end
 
       def split_top_level_csv(source)
