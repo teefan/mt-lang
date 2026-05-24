@@ -19,50 +19,51 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       File.binwrite(File.join(sfx_dir, "line_clear.wav"), File.binread(tetris_sound_path))
       MilkTea::AssetPack.write(pack_path, [art_dir, sfx_dir])
 
-      source = [
-        "import std.asset_pack as pack",
-        "import std.raylib as rl",
-        "import std.raylib.packed_assets as rl_assets",
-        "",
-        "",
-        "function main() -> int:",
-        "    let open_result = pack.open(#{pack_path.dump})",
-        "    match open_result:",
-        "        Result.failure as ignored_error:",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var reader = payload.value",
-        "            defer reader.close()",
-        "",
-        "            let image_result = rl_assets.load_image(reader, \"art/tile.png\")",
-        "            match image_result:",
-        "                Result.failure as image_error:",
-        "                    return 10 + int<-image_error.error",
-        "                Result.success as image_payload:",
-        "                    let image = image_payload.value",
-        "                    defer rl.unload_image(image)",
-        "                    if image.width <= 0 or image.height <= 0:",
-        "                        return 2",
-        "",
-        "            let wave_result = rl_assets.load_wave(reader, \"sfx/line_clear.wav\")",
-        "            match wave_result:",
-        "                Result.failure as wave_error:",
-        "                    return 20 + int<-wave_error.error",
-        "                Result.success as wave_payload:",
-        "                    let wave = wave_payload.value",
-        "                    defer rl.unload_wave(wave)",
-        "                    if wave.sampleRate <= 0:",
-        "                        return 3",
-        "                    if wave.sampleSize <= 0:",
-        "                        return 4",
-        "                    if wave.channels <= 0:",
-        "                        return 5",
-        "                    if int<-wave.frameCount <= 0:",
-        "                        return 6",
-        "",
-        "    return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.asset_pack as pack
+import std.raylib as rl
+import std.raylib.packed_assets as rl_assets
+
+
+function main() -> int:
+    let open_result = pack.open(#{pack_path.dump})
+    match open_result:
+        Result.failure as ignored_error:
+            return 1
+        Result.success as payload:
+            var reader = payload.value
+            defer reader.close()
+
+            let image_result = rl_assets.load_image(reader, \"art/tile.png\")
+            match image_result:
+                Result.failure as image_error:
+                    return 10 + int<-image_error.error
+                Result.success as image_payload:
+                    let image = image_payload.value
+                    defer rl.unload_image(image)
+                    if image.width <= 0 or image.height <= 0:
+                        return 2
+
+            let wave_result = rl_assets.load_wave(reader, \"sfx/line_clear.wav\")
+            match wave_result:
+                Result.failure as wave_error:
+                    return 20 + int<-wave_error.error
+                Result.success as wave_payload:
+                    let wave = wave_payload.value
+                    defer rl.unload_wave(wave)
+                    if wave.sampleRate <= 0:
+                        return 3
+                    if wave.sampleSize <= 0:
+                        return 4
+                    if wave.channels <= 0:
+                        return 5
+                    if int<-wave.frameCount <= 0:
+                        return 6
+
+    return 0
+
+      MT
 
       result = run_program(dir, source, compiler:)
 
@@ -83,53 +84,54 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       File.binwrite(File.join(music_dir, "theme.wav"), File.binread(tetris_sound_path))
       MilkTea::AssetPack.write(pack_path, [music_dir])
 
-      source = [
-        "import std.asset_pack as pack",
-        "import std.raylib as rl",
-        "import std.raylib.packed_assets as rl_assets",
-        "",
-        "",
-        "function main() -> int:",
-        "    rl.init_audio_device()",
-        "    defer rl.close_audio_device()",
-        "    if not rl.is_audio_device_ready():",
-        "        return 1",
-        "",
-        "    let open_result = pack.open(#{pack_path.dump})",
-        "    match open_result:",
-        "        Result.failure as ignored_error:",
-        "            return 2",
-        "        Result.success as payload:",
-        "            var reader = payload.value",
-        "            defer reader.close()",
-        "",
-        "            let music_result = rl_assets.load_music(reader, \"music/theme.wav\")",
-        "            match music_result:",
-        "                Result.failure as music_error:",
-        "                    return 10 + int<-music_error.error",
-        "                Result.success as music_payload:",
-        "                    var music = music_payload.value",
-        "                    defer music.release()",
-        "                    if not music.is_valid():",
-        "                        return 3",
-        "                    if music.time_length() <= 0.0:",
-        "                        return 4",
-        "                    music.set_volume(0.0)",
-        "                    music.play()",
-        "                    var updates = 0",
-        "                    while updates < 4:",
-        "                        music.update()",
-        "                        updates += 1",
-        "                    music.pause()",
-        "                    music.resume()",
-        "                    music.seek(0.0)",
-        "                    if music.time_played() < 0.0:",
-        "                        return 5",
-        "                    music.stop()",
-        "",
-        "    return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.asset_pack as pack
+import std.raylib as rl
+import std.raylib.packed_assets as rl_assets
+
+
+function main() -> int:
+    rl.init_audio_device()
+    defer rl.close_audio_device()
+    if not rl.is_audio_device_ready():
+        return 1
+
+    let open_result = pack.open(#{pack_path.dump})
+    match open_result:
+        Result.failure as ignored_error:
+            return 2
+        Result.success as payload:
+            var reader = payload.value
+            defer reader.close()
+
+            let music_result = rl_assets.load_music(reader, \"music/theme.wav\")
+            match music_result:
+                Result.failure as music_error:
+                    return 10 + int<-music_error.error
+                Result.success as music_payload:
+                    var music = music_payload.value
+                    defer music.release()
+                    if not music.is_valid():
+                        return 3
+                    if music.time_length() <= 0.0:
+                        return 4
+                    music.set_volume(0.0)
+                    music.play()
+                    var updates = 0
+                    while updates < 4:
+                        music.update()
+                        updates += 1
+                    music.pause()
+                    music.resume()
+                    music.seek(0.0)
+                    if music.time_played() < 0.0:
+                        return 5
+                    music.stop()
+
+    return 0
+
+      MT
 
       result = run_program(dir, source, compiler:)
 
@@ -149,30 +151,31 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       File.binwrite(File.join(art_dir, "tile"), File.binread(tetris_tile_path))
       MilkTea::AssetPack.write(pack_path, [art_dir])
 
-      source = [
-        "import std.asset_pack as pack",
-        "import std.raylib.packed_assets as rl_assets",
-        "",
-        "",
-        "function main() -> int:",
-        "    let open_result = pack.open(#{pack_path.dump})",
-        "    match open_result:",
-        "        Result.failure as ignored_error:",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var reader = payload.value",
-        "            defer reader.close()",
-        "            let image_result = rl_assets.load_image(reader, \"art/tile\")",
-        "            match image_result:",
-        "                Result.success as ignored_payload:",
-        "                    return 2",
-        "                Result.failure as error_payload:",
-        "                    if error_payload.error == rl_assets.Error.missing_file_type:",
-        "                        return 0",
-        "                    return int<-error_payload.error",
-        "    return 3",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.asset_pack as pack
+import std.raylib.packed_assets as rl_assets
+
+
+function main() -> int:
+    let open_result = pack.open(#{pack_path.dump})
+    match open_result:
+        Result.failure as ignored_error:
+            return 1
+        Result.success as payload:
+            var reader = payload.value
+            defer reader.close()
+            let image_result = rl_assets.load_image(reader, \"art/tile\")
+            match image_result:
+                Result.success as ignored_payload:
+                    return 2
+                Result.failure as error_payload:
+                    if error_payload.error == rl_assets.Error.missing_file_type:
+                        return 0
+                    return int<-error_payload.error
+    return 3
+
+      MT
 
       result = run_program(dir, source, compiler:)
 
@@ -199,36 +202,38 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
       MilkTea::AssetPack.write(pack_path, [assets_dir])
 
       source_path = File.join(dir, "program.mt")
-      File.write(source_path, [
-        "import std.asset_pack as pack",
-        "import std.bytes as bytes",
-        "",
-        "import std.raylib.packed_assets as rl_assets",
-        "",
-        "",
-        "function main() -> int:",
-        "    let open_result = rl_assets.open_assets_pack_if_present()",
-        "    match open_result:",
-        "        Result.failure as payload:",
-        "            return int<-payload.error",
-        "        Result.success as payload:",
-        "            match payload.value:",
-        "                Option.none:",
-        "                    return 2",
-        "                Option.some as reader_payload:",
-        "                    var reader = reader_payload.value",
-        "                    defer reader.close()",
-        "                    let data_result = reader.read_bytes(\"assets/note.txt\")",
-        "                    match data_result:",
-        "                        Result.failure as data_payload:",
-        "                            return int<-data_payload.error",
-        "                        Result.success as bytes_payload:",
-        "                            var data = bytes_payload.value",
-        "                            defer data.release()",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.asset_pack as pack
+import std.bytes as bytes
+
+import std.raylib.packed_assets as rl_assets
+
+
+function main() -> int:
+    let open_result = rl_assets.open_assets_pack_if_present()
+    match open_result:
+        Result.failure as payload:
+            return int<-payload.error
+        Result.success as payload:
+            match payload.value:
+                Option.none:
+                    return 2
+                Option.some as reader_payload:
+                    var reader = reader_payload.value
+                    defer reader.close()
+                    let data_result = reader.read_bytes(\"assets/note.txt\")
+                    match data_result:
+                        Result.failure as data_payload:
+                            return int<-data_payload.error
+                        Result.success as bytes_payload:
+                            var data = bytes_payload.value
+                            defer data.release()
+    return 0
+
+      MT
+
+      )
       build_result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
       stdout, stderr, status = Open3.capture3(build_result.output_path, chdir: other_dir)
 
@@ -243,24 +248,25 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
     Dir.mktmpdir("milk-tea-std-raylib-packed-assets-missing-pack") do |dir|
-      source = [
-        "",
-        "import std.raylib.packed_assets as rl_assets",
-        "",
-        "",
-        "function main() -> int:",
-        "    let open_result = rl_assets.open_assets_pack_if_present()",
-        "    match open_result:",
-        "        Result.failure as payload:",
-        "            return int<-payload.error",
-        "        Result.success as payload:",
-        "            match payload.value:",
-        "                Option.none:",
-        "                    return 0",
-        "                Option.some as ignored_payload:",
-        "                    return 1",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+
+import std.raylib.packed_assets as rl_assets
+
+
+function main() -> int:
+    let open_result = rl_assets.open_assets_pack_if_present()
+    match open_result:
+        Result.failure as payload:
+            return int<-payload.error
+        Result.success as payload:
+            match payload.value:
+                Option.none:
+                    return 0
+                Option.some as ignored_payload:
+                    return 1
+
+      MT
 
       result = run_program(dir, source, compiler:)
 
@@ -297,18 +303,19 @@ class MilkTeaStdRaylibPackedAssetsTest < Minitest::Test
 
   def audio_device_available?(compiler)
     Dir.mktmpdir("milk-tea-std-raylib-audio-device") do |dir|
-      source = [
-        "import std.raylib as rl",
-        "",
-        "function main() -> int:",
-        "    rl.init_audio_device()",
-        "    let ready = rl.is_audio_device_ready()",
-        "    rl.close_audio_device()",
-        "    if ready:",
-        "        return 0",
-        "    return 1",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.raylib as rl
+
+function main() -> int:
+    rl.init_audio_device()
+    let ready = rl.is_audio_device_ready()
+    rl.close_audio_device()
+    if ready:
+        return 0
+    return 1
+
+      MT
 
       result = run_program(dir, source, compiler:)
       result.exit_status == 0

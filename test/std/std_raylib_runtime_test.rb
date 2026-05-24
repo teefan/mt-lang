@@ -8,17 +8,18 @@ class MilkTeaStdRaylibRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.raylib.runtime as runtime",
-      "",
-      "function main() -> int:",
-      "    if not runtime.env_flag(\"PATH\"):",
-      "        return 1",
-      "    if runtime.env_flag(\"MILK_TEA_ENV_FLAG_SHOULD_NOT_EXIST_9A77E9\"):",
-      "        return 2",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.raylib.runtime as runtime
+
+function main() -> int:
+    if not runtime.env_flag(\"PATH\"):
+        return 1
+    if runtime.env_flag(\"MILK_TEA_ENV_FLAG_SHOULD_NOT_EXIST_9A77E9\"):
+        return 2
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

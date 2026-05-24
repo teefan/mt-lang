@@ -9,16 +9,15 @@
 #ifndef MT_FS_SUPPORT_H
 #define MT_FS_SUPPORT_H
 
-#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
+#include <uv.h>
 
 typedef struct mt_fs_string {
   char* data;
@@ -132,6 +131,43 @@ static inline int mt_fs_set_errno_error(mt_fs_error* error, int code, const char
   return mt_fs_set_message(error, code, prefix, strerror(code));
 }
 
+static inline int mt_fs_set_uv_error(mt_fs_error* error, uv_fs_t* req, int uv_code, const char* prefix) {
+  int code = req == NULL ? 0 : uv_fs_get_system_error(req);
+  if (code < 0) {
+    code = -code;
+  }
+  if (code == 0) {
+    code = uv_code < 0 ? -uv_code : uv_code;
+  }
+  return mt_fs_set_message(error, code, prefix, uv_strerror(uv_code));
+}
+
+static inline bool mt_fs_is_separator(char value) {
+  return value == '/' || value == '\\';
+}
+
+static inline int mt_fs_root_length(const char* path) {
+  if (path == NULL || path[0] == '\0') {
+    return 0;
+  }
+
+  if (mt_fs_is_separator(path[0])) {
+    if (mt_fs_is_separator(path[1])) {
+      return 2;
+    }
+    return 1;
+  }
+
+  if (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') {
+    if (mt_fs_is_separator(path[2])) {
+      return 3;
+    }
+    return 2;
+  }
+
+  return 0;
+}
+
 static inline void mt_fs_release_entry_buffers(char** data, uintptr_t* lengths, uintptr_t count) {
   if (data != NULL) {
     for (uintptr_t index = 0; index < count; index += 1) {
@@ -143,23 +179,42 @@ static inline void mt_fs_release_entry_buffers(char** data, uintptr_t* lengths, 
   free(lengths);
 }
 
+static inline int mt_fs_close_file(uv_file descriptor, mt_fs_error* out_error, const char* prefix) {
+  uv_fs_t close_req;
+  int close_status = uv_fs_close(NULL, &close_req, descriptor, NULL);
+  if (close_status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &close_req, close_status, prefix);
+    uv_fs_req_cleanup(&close_req);
+    return result;
+  }
+  uv_fs_req_cleanup(&close_req);
+  return 0;
+}
+
 static inline int mt_fs_path_kind(const char* path) {
   if (path == NULL || path[0] == '\0') {
     return MT_FS_KIND_NONE;
   }
 
-  struct stat info;
-  if (stat(path, &info) != 0) {
+  uv_fs_t req;
+  int status = uv_fs_stat(NULL, &req, path, NULL);
+  if (status < 0) {
+    uv_fs_req_cleanup(&req);
     return MT_FS_KIND_NONE;
   }
 
-  if (S_ISREG(info.st_mode)) {
-    return MT_FS_KIND_FILE;
+  const uv_stat_t* info = uv_fs_get_statbuf(&req);
+  int kind = MT_FS_KIND_OTHER;
+  if (info != NULL) {
+    if (S_ISREG(info->st_mode)) {
+      kind = MT_FS_KIND_FILE;
+    } else if (S_ISDIR(info->st_mode)) {
+      kind = MT_FS_KIND_DIRECTORY;
+    }
   }
-  if (S_ISDIR(info.st_mode)) {
-    return MT_FS_KIND_DIRECTORY;
-  }
-  return MT_FS_KIND_OTHER;
+
+  uv_fs_req_cleanup(&req);
+  return kind;
 }
 
 static inline int mt_fs_get_metadata(const char* path, mt_fs_metadata* out_metadata, mt_fs_error* out_error) {
@@ -170,23 +225,33 @@ static inline int mt_fs_get_metadata(const char* path, mt_fs_metadata* out_metad
     return mt_fs_set_message(out_error, -1, "fs metadata failed", "path cannot be empty");
   }
 
-  struct stat info;
-  if (lstat(path, &info) != 0) {
-    return mt_fs_set_errno_error(out_error, errno, "fs metadata failed");
+  uv_fs_t req;
+  int status = uv_fs_lstat(NULL, &req, path, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &req, status, "fs metadata failed");
+    uv_fs_req_cleanup(&req);
+    return result;
   }
 
-  out_metadata->mode = (int) (info.st_mode & 07777);
-  out_metadata->size = (uintptr_t) info.st_size;
-  out_metadata->modified_seconds = (intptr_t) info.st_mtim.tv_sec;
-  out_metadata->modified_nanoseconds = (intptr_t) info.st_mtim.tv_nsec;
-  if (S_ISREG(info.st_mode)) {
+  const uv_stat_t* info = uv_fs_get_statbuf(&req);
+  if (info == NULL) {
+    uv_fs_req_cleanup(&req);
+    return mt_fs_set_message(out_error, EIO, "fs metadata failed", "missing stat data");
+  }
+
+  out_metadata->mode = (int) (info->st_mode & 07777);
+  out_metadata->size = (uintptr_t) info->st_size;
+  out_metadata->modified_seconds = (intptr_t) info->st_mtim.tv_sec;
+  out_metadata->modified_nanoseconds = (intptr_t) info->st_mtim.tv_nsec;
+  if (S_ISREG(info->st_mode)) {
     out_metadata->kind = MT_FS_KIND_FILE;
-  } else if (S_ISDIR(info.st_mode)) {
+  } else if (S_ISDIR(info->st_mode)) {
     out_metadata->kind = MT_FS_KIND_DIRECTORY;
   } else {
     out_metadata->kind = MT_FS_KIND_OTHER;
   }
 
+  uv_fs_req_cleanup(&req);
   return 0;
 }
 
@@ -198,55 +263,94 @@ static inline int mt_fs_read_text(const char* path, mt_fs_string* out_text, mt_f
     return mt_fs_set_message(out_error, -1, "fs read failed", "path cannot be empty");
   }
 
-  FILE* file = fopen(path, "rb");
-  if (file == NULL) {
-    return mt_fs_set_errno_error(out_error, errno, "fs read failed");
+  uv_fs_t open_req;
+  int open_status = uv_fs_open(NULL, &open_req, path, O_RDONLY, 0, NULL);
+  if (open_status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &open_req, open_status, "fs read failed");
+    uv_fs_req_cleanup(&open_req);
+    return result;
   }
 
-  if (fseek(file, 0, SEEK_END) != 0) {
-    int code = errno;
-    fclose(file);
-    return mt_fs_set_errno_error(out_error, code, "fs read failed");
-  }
+  uv_file descriptor = (uv_file) open_status;
+  uv_fs_req_cleanup(&open_req);
 
-  long size = ftell(file);
-  if (size < 0) {
-    int code = errno;
-    fclose(file);
-    return mt_fs_set_errno_error(out_error, code, "fs read failed");
-  }
+  uintptr_t capacity = 0;
+  char* buffer_data = NULL;
+  const uintptr_t chunk_size = 65536;
+  intptr_t offset = 0;
 
-  if (fseek(file, 0, SEEK_SET) != 0) {
-    int code = errno;
-    fclose(file);
-    return mt_fs_set_errno_error(out_error, code, "fs read failed");
-  }
+  while (true) {
+    uintptr_t needed = (uintptr_t) offset + chunk_size;
+    if (needed > capacity) {
+      uintptr_t new_capacity = capacity == 0 ? chunk_size : capacity;
+      while (new_capacity < needed) {
+        if (new_capacity > (UINTPTR_MAX / 2)) {
+          int close_status = mt_fs_close_file(descriptor, out_error, "fs read failed");
+          free(buffer_data);
+          return close_status != 0
+            ? close_status
+            : mt_fs_set_message(out_error, EOVERFLOW, "fs read failed", "file is too large");
+        }
+        new_capacity *= 2;
+      }
 
-  char* data = NULL;
-  if (size != 0) {
-    data = (char*) malloc((size_t) size);
-    if (data == NULL) {
-      fclose(file);
-      return mt_fs_set_errno_error(out_error, ENOMEM, "fs read failed");
+      char* resized = (char*) realloc(buffer_data, (size_t) new_capacity);
+      if (resized == NULL) {
+        int close_status = mt_fs_close_file(descriptor, out_error, "fs read failed");
+        free(buffer_data);
+        return close_status != 0
+          ? close_status
+          : mt_fs_set_errno_error(out_error, ENOMEM, "fs read failed");
+      }
+
+      buffer_data = resized;
+      capacity = new_capacity;
     }
 
-    size_t read_count = fread(data, 1, (size_t) size, file);
-    if (read_count != (size_t) size) {
-      int code = ferror(file) ? errno : EIO;
-      free(data);
-      fclose(file);
-      return mt_fs_set_errno_error(out_error, code == 0 ? EIO : code, "fs read failed");
+    uv_buf_t buffer = uv_buf_init(buffer_data + offset, (unsigned int) chunk_size);
+    uv_fs_t read_req;
+    int read_status = uv_fs_read(NULL, &read_req, descriptor, &buffer, 1, offset, NULL);
+    if (read_status < 0) {
+      int result = mt_fs_set_uv_error(out_error, &read_req, read_status, "fs read failed");
+      uv_fs_req_cleanup(&read_req);
+      mt_fs_close_file(descriptor, out_error, "fs read failed");
+      free(buffer_data);
+      return result;
+    }
+
+    uv_fs_req_cleanup(&read_req);
+    if (read_status == 0) {
+      break;
+    }
+
+    offset += (intptr_t) read_status;
+    if ((uintptr_t) offset > (UINTPTR_MAX - chunk_size)) {
+      int close_status = mt_fs_close_file(descriptor, out_error, "fs read failed");
+      free(buffer_data);
+      return close_status != 0
+        ? close_status
+        : mt_fs_set_message(out_error, EOVERFLOW, "fs read failed", "file is too large");
     }
   }
 
-  if (fclose(file) != 0) {
-    int code = errno;
-    free(data);
-    return mt_fs_set_errno_error(out_error, code, "fs read failed");
+  if (offset == 0) {
+    free(buffer_data);
+    buffer_data = NULL;
+  } else if ((uintptr_t) offset != capacity) {
+    char* sized = (char*) realloc(buffer_data, (size_t) offset);
+    if (sized != NULL) {
+      buffer_data = sized;
+    }
   }
 
-  out_text->data = data;
-  out_text->len = (uintptr_t) size;
+  int close_status = mt_fs_close_file(descriptor, out_error, "fs read failed");
+  if (close_status != 0) {
+    free(buffer_data);
+    return close_status;
+  }
+
+  out_text->data = buffer_data;
+  out_text->len = (uintptr_t) offset;
   return 0;
 }
 
@@ -264,25 +368,43 @@ static inline int mt_fs_write_text(const char* path, const char* data, uintptr_t
     return mt_fs_set_message(out_error, -1, "fs write failed", "missing input data");
   }
 
-  FILE* file = fopen(path, "wb");
-  if (file == NULL) {
-    return mt_fs_set_errno_error(out_error, errno, "fs write failed");
+  uv_fs_t open_req;
+  int open_status = uv_fs_open(NULL, &open_req, path, O_WRONLY | O_CREAT | O_TRUNC, 0666, NULL);
+  if (open_status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &open_req, open_status, "fs write failed");
+    uv_fs_req_cleanup(&open_req);
+    return result;
   }
 
-  if (len != 0) {
-    size_t written = fwrite(data, 1, (size_t) len, file);
-    if (written != (size_t) len) {
-      int code = ferror(file) ? errno : EIO;
-      fclose(file);
-      return mt_fs_set_errno_error(out_error, code == 0 ? EIO : code, "fs write failed");
+  uv_file descriptor = (uv_file) open_status;
+  uv_fs_req_cleanup(&open_req);
+
+  uintptr_t written_total = 0;
+  intptr_t offset = 0;
+  while (written_total < len) {
+    uintptr_t remaining = len - written_total;
+    unsigned int chunk = remaining > 65536 ? 65536U : (unsigned int) remaining;
+    uv_buf_t buffer = uv_buf_init((char*) (data + written_total), chunk);
+    uv_fs_t write_req;
+    int write_status = uv_fs_write(NULL, &write_req, descriptor, &buffer, 1, offset, NULL);
+    if (write_status < 0) {
+      int result = mt_fs_set_uv_error(out_error, &write_req, write_status, "fs write failed");
+      uv_fs_req_cleanup(&write_req);
+      mt_fs_close_file(descriptor, out_error, "fs write failed");
+      return result;
     }
+    if (write_status == 0) {
+      uv_fs_req_cleanup(&write_req);
+      mt_fs_close_file(descriptor, out_error, "fs write failed");
+      return mt_fs_set_message(out_error, EIO, "fs write failed", "short write");
+    }
+
+    uv_fs_req_cleanup(&write_req);
+    written_total += (uintptr_t) write_status;
+    offset += (intptr_t) write_status;
   }
 
-  if (fclose(file) != 0) {
-    return mt_fs_set_errno_error(out_error, errno, "fs write failed");
-  }
-
-  return 0;
+  return mt_fs_close_file(descriptor, out_error, "fs write failed");
 }
 
 static inline int mt_fs_write_bytes(const char* path, const uint8_t* data, uintptr_t len, mt_fs_error* out_error) {
@@ -296,10 +418,26 @@ static inline int mt_fs_remove(const char* path, mt_fs_error* out_error) {
     return mt_fs_set_message(out_error, -1, "fs remove failed", "path cannot be empty");
   }
 
-  if (remove(path) != 0) {
-    return mt_fs_set_errno_error(out_error, errno, "fs remove failed");
+  uv_fs_t req;
+  int status = uv_fs_unlink(NULL, &req, path, NULL);
+  if (status < 0) {
+    int unlink_code = status;
+    uv_fs_req_cleanup(&req);
+    if (unlink_code == UV_EISDIR || unlink_code == UV_EPERM) {
+      status = uv_fs_rmdir(NULL, &req, path, NULL);
+      if (status < 0) {
+        int result = mt_fs_set_uv_error(out_error, &req, status, "fs remove failed");
+        uv_fs_req_cleanup(&req);
+        return result;
+      }
+      uv_fs_req_cleanup(&req);
+      return 0;
+    }
+
+    return mt_fs_set_message(out_error, -unlink_code, "fs remove failed", uv_strerror(unlink_code));
   }
 
+  uv_fs_req_cleanup(&req);
   return 0;
 }
 
@@ -313,10 +451,15 @@ static inline int mt_fs_rename(const char* source_path, const char* target_path,
     return mt_fs_set_message(out_error, -1, "fs rename failed", "target path cannot be empty");
   }
 
-  if (rename(source_path, target_path) != 0) {
-    return mt_fs_set_errno_error(out_error, errno, "fs rename failed");
+  uv_fs_t req;
+  int status = uv_fs_rename(NULL, &req, source_path, target_path, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &req, status, "fs rename failed");
+    uv_fs_req_cleanup(&req);
+    return result;
   }
 
+  uv_fs_req_cleanup(&req);
   return 0;
 }
 
@@ -327,26 +470,47 @@ static inline int mt_fs_set_permissions(const char* path, int mode, mt_fs_error*
     return mt_fs_set_message(out_error, -1, "fs set permissions failed", "path cannot be empty");
   }
 
-  if (chmod(path, (mode_t) mode) != 0) {
-    return mt_fs_set_errno_error(out_error, errno, "fs set permissions failed");
+  uv_fs_t req;
+  int status = uv_fs_chmod(NULL, &req, path, mode, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &req, status, "fs set permissions failed");
+    uv_fs_req_cleanup(&req);
+    return result;
   }
 
+  uv_fs_req_cleanup(&req);
   return 0;
 }
 
 static inline int mt_fs_ensure_directory(const char* path, mt_fs_error* out_error) {
-  if (mkdir(path, 0777) == 0) {
+  uv_fs_t mkdir_req;
+  int status = uv_fs_mkdir(NULL, &mkdir_req, path, 0777, NULL);
+  if (status == 0) {
+    uv_fs_req_cleanup(&mkdir_req);
     return 0;
   }
 
-  if (errno == EEXIST) {
-    struct stat info;
-    if (stat(path, &info) == 0 && S_ISDIR(info.st_mode)) {
-      return 0;
+  if (status == UV_EEXIST) {
+    uv_fs_req_cleanup(&mkdir_req);
+    uv_fs_t stat_req;
+    int stat_status = uv_fs_stat(NULL, &stat_req, path, NULL);
+    if (stat_status == 0) {
+      const uv_stat_t* info = uv_fs_get_statbuf(&stat_req);
+      bool is_directory = info != NULL && S_ISDIR(info->st_mode);
+      uv_fs_req_cleanup(&stat_req);
+      if (is_directory) {
+        return 0;
+      }
+    } else {
+      uv_fs_req_cleanup(&stat_req);
     }
+  } else {
+    int result = mt_fs_set_uv_error(out_error, &mkdir_req, status, "fs create directories failed");
+    uv_fs_req_cleanup(&mkdir_req);
+    return result;
   }
 
-  return mt_fs_set_errno_error(out_error, errno, "fs create directories failed");
+  return mt_fs_set_message(out_error, EEXIST, "fs create directories failed", "path exists and is not a directory");
 }
 
 static inline int mt_fs_create_directories(const char* path, mt_fs_error* out_error) {
@@ -364,23 +528,25 @@ static inline int mt_fs_create_directories(const char* path, mt_fs_error* out_er
 
   memcpy(copy, path, len + 1);
 
-  size_t index = copy[0] == '/' ? 1 : 0;
-  while (copy[index] == '/') {
+  int root = mt_fs_root_length(copy);
+  size_t index = (size_t) root;
+  while (copy[index] != '\0' && mt_fs_is_separator(copy[index])) {
     index += 1;
   }
 
   while (true) {
-    while (copy[index] != '/' && copy[index] != '\0') {
+    while (copy[index] != '\0' && !mt_fs_is_separator(copy[index])) {
       index += 1;
     }
 
     char saved = copy[index];
     copy[index] = '\0';
-    if (!(copy[0] == '/' && copy[1] == '\0') && copy[0] != '\0') {
-      int status = mt_fs_ensure_directory(copy, out_error);
-      if (status != 0) {
+
+    if (copy[0] != '\0' && !(index == (size_t) root && root > 0)) {
+      int ensure_status = mt_fs_ensure_directory(copy, out_error);
+      if (ensure_status != 0) {
         free(copy);
-        return status;
+        return ensure_status;
       }
     }
 
@@ -390,7 +556,7 @@ static inline int mt_fs_create_directories(const char* path, mt_fs_error* out_er
 
     copy[index] = saved;
     index += 1;
-    while (copy[index] == '/') {
+    while (copy[index] != '\0' && mt_fs_is_separator(copy[index])) {
       index += 1;
     }
   }
@@ -410,20 +576,53 @@ static inline int mt_fs_current_directory(mt_fs_string* out_text, mt_fs_error* o
       return mt_fs_set_errno_error(out_error, ENOMEM, "fs current directory failed");
     }
 
-    if (getcwd(buffer, capacity) != NULL) {
+    size_t size = capacity;
+    int status = uv_cwd(buffer, &size);
+    if (status == 0) {
       out_text->data = buffer;
-      out_text->len = (uintptr_t) strlen(buffer);
+      out_text->len = (uintptr_t) size;
       return 0;
     }
 
-    int code = errno;
     free(buffer);
-    if (code != ERANGE) {
-      return mt_fs_set_errno_error(out_error, code, "fs current directory failed");
+    if (status != UV_ENOBUFS) {
+      return mt_fs_set_message(out_error, -status, "fs current directory failed", uv_strerror(status));
     }
 
     if (capacity > ((size_t) UINTPTR_MAX) / 2) {
       return mt_fs_set_message(out_error, ENOMEM, "fs current directory failed", "path too long");
+    }
+
+    capacity *= 2;
+  }
+}
+
+static inline int mt_fs_temporary_directory(mt_fs_string* out_text, mt_fs_error* out_error) {
+  mt_fs_reset_string(out_text);
+  mt_fs_reset_error(out_error);
+
+  size_t capacity = 256;
+  while (true) {
+    char* buffer = (char*) malloc(capacity);
+    if (buffer == NULL) {
+      return mt_fs_set_errno_error(out_error, ENOMEM, "fs temporary directory failed");
+    }
+
+    size_t size = capacity;
+    int status = uv_os_tmpdir(buffer, &size);
+    if (status == 0) {
+      out_text->data = buffer;
+      out_text->len = (uintptr_t) size;
+      return 0;
+    }
+
+    free(buffer);
+    if (status != UV_ENOBUFS) {
+      return mt_fs_set_message(out_error, -status, "fs temporary directory failed", uv_strerror(status));
+    }
+
+    if (capacity > ((size_t) UINTPTR_MAX) / 2) {
+      return mt_fs_set_message(out_error, ENOMEM, "fs temporary directory failed", "path too long");
     }
 
     capacity *= 2;
@@ -438,13 +637,105 @@ static inline int mt_fs_canonicalize(const char* path, mt_fs_string* out_text, m
     return mt_fs_set_message(out_error, -1, "fs canonicalize failed", "path cannot be empty");
   }
 
-  char* resolved = realpath(path, NULL);
-  if (resolved == NULL) {
-    return mt_fs_set_errno_error(out_error, errno, "fs canonicalize failed");
+  uv_fs_t req;
+  int status = uv_fs_realpath(NULL, &req, path, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &req, status, "fs canonicalize failed");
+    uv_fs_req_cleanup(&req);
+    return result;
   }
 
-  out_text->data = resolved;
-  out_text->len = (uintptr_t) strlen(resolved);
+  const char* resolved = (const char*) req.ptr;
+  if (resolved == NULL) {
+    uv_fs_req_cleanup(&req);
+    return mt_fs_set_message(out_error, EIO, "fs canonicalize failed", "missing realpath result");
+  }
+
+  size_t resolved_len = strlen(resolved);
+  char* copied = NULL;
+  if (resolved_len != 0) {
+    copied = (char*) malloc(resolved_len);
+    if (copied == NULL) {
+      uv_fs_req_cleanup(&req);
+      return mt_fs_set_errno_error(out_error, ENOMEM, "fs canonicalize failed");
+    }
+    memcpy(copied, resolved, resolved_len);
+  }
+
+  uv_fs_req_cleanup(&req);
+  out_text->data = copied;
+  out_text->len = (uintptr_t) resolved_len;
+  return 0;
+}
+
+static inline int mt_fs_create_temporary_directory(const char* parent_dir,
+                                                   const char* prefix,
+                                                   mt_fs_string* out_path,
+                                                   mt_fs_error* out_error) {
+  mt_fs_reset_string(out_path);
+  mt_fs_reset_error(out_error);
+
+  if (parent_dir == NULL || parent_dir[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs create temporary directory failed", "parent directory cannot be empty");
+  }
+  if (prefix == NULL || prefix[0] == '\0') {
+    return mt_fs_set_message(out_error, -1, "fs create temporary directory failed", "prefix cannot be empty");
+  }
+
+  if (mt_fs_path_kind(parent_dir) != MT_FS_KIND_DIRECTORY) {
+    return mt_fs_set_message(out_error, ENOENT, "fs create temporary directory failed", "parent directory does not exist");
+  }
+
+  size_t parent_len = strlen(parent_dir);
+  size_t prefix_len = strlen(prefix);
+  bool needs_separator = parent_len != 0 && !mt_fs_is_separator(parent_dir[parent_len - 1]);
+  size_t template_len = parent_len + (needs_separator ? 1 : 0) + prefix_len + 7;
+
+  char* template_path = (char*) malloc(template_len + 1);
+  if (template_path == NULL) {
+    return mt_fs_set_errno_error(out_error, ENOMEM, "fs create temporary directory failed");
+  }
+
+  size_t offset = 0;
+  memcpy(template_path + offset, parent_dir, parent_len);
+  offset += parent_len;
+  if (needs_separator) {
+    template_path[offset] = '/';
+    offset += 1;
+  }
+  memcpy(template_path + offset, prefix, prefix_len);
+  offset += prefix_len;
+  memcpy(template_path + offset, "-XXXXXX", 7);
+  offset += 7;
+  template_path[offset] = '\0';
+
+  uv_fs_t mkdtemp_req;
+  int status = uv_fs_mkdtemp(NULL, &mkdtemp_req, template_path, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &mkdtemp_req, status, "fs create temporary directory failed");
+    uv_fs_req_cleanup(&mkdtemp_req);
+    free(template_path);
+    return result;
+  }
+
+  const char* created_source = mkdtemp_req.path != NULL ? mkdtemp_req.path : template_path;
+  size_t created_len = strlen(created_source);
+  char* created_path = NULL;
+  if (created_len != 0) {
+    created_path = (char*) malloc(created_len);
+    if (created_path == NULL) {
+      uv_fs_req_cleanup(&mkdtemp_req);
+      free(template_path);
+      return mt_fs_set_errno_error(out_error, ENOMEM, "fs create temporary directory failed");
+    }
+    memcpy(created_path, created_source, created_len);
+  }
+
+  uv_fs_req_cleanup(&mkdtemp_req);
+  free(template_path);
+
+  out_path->data = created_path;
+  out_path->len = (uintptr_t) created_len;
   return 0;
 }
 
@@ -470,8 +761,8 @@ static inline int mt_fs_create_temporary_file(const char* parent_dir,
   size_t parent_len = strlen(parent_dir);
   size_t prefix_len = strlen(prefix);
   size_t suffix_len = suffix == NULL ? 0 : strlen(suffix);
-  bool needs_separator = parent_len != 0 && parent_dir[parent_len - 1] != '/';
-  size_t template_len = parent_len + (needs_separator ? 1 : 0) + prefix_len + 7 + suffix_len;
+  bool needs_separator = parent_len != 0 && !mt_fs_is_separator(parent_dir[parent_len - 1]);
+  size_t template_len = parent_len + (needs_separator ? 1 : 0) + prefix_len + 7;
 
   char* template_path = (char*) malloc(template_len + 1);
   if (template_path == NULL) {
@@ -489,28 +780,80 @@ static inline int mt_fs_create_temporary_file(const char* parent_dir,
   offset += prefix_len;
   memcpy(template_path + offset, "-XXXXXX", 7);
   offset += 7;
-  if (suffix_len != 0) {
-    memcpy(template_path + offset, suffix, suffix_len);
-    offset += suffix_len;
-  }
   template_path[offset] = '\0';
 
-  int descriptor = suffix_len == 0 ? mkstemp(template_path) : mkstemps(template_path, (int) suffix_len);
+  uv_fs_t mkstemp_req;
+  int descriptor = uv_fs_mkstemp(NULL, &mkstemp_req, template_path, NULL);
   if (descriptor < 0) {
-    int code = errno;
+    int result = mt_fs_set_uv_error(out_error, &mkstemp_req, descriptor, "fs create temporary file failed");
+    uv_fs_req_cleanup(&mkstemp_req);
     free(template_path);
-    return mt_fs_set_errno_error(out_error, code, "fs create temporary file failed");
+    return result;
   }
 
-  if (close(descriptor) != 0) {
-    int code = errno;
-    remove(template_path);
+  const char* created_source = mkstemp_req.path != NULL ? mkstemp_req.path : template_path;
+  size_t created_len = strlen(created_source);
+  char* created_path = (char*) malloc(created_len + 1);
+  if (created_path == NULL) {
+    uv_fs_req_cleanup(&mkstemp_req);
+    mt_fs_close_file((uv_file) descriptor, out_error, "fs create temporary file failed");
+    uv_fs_t cleanup_req;
+    uv_fs_unlink(NULL, &cleanup_req, created_source, NULL);
+    uv_fs_req_cleanup(&cleanup_req);
     free(template_path);
-    return mt_fs_set_errno_error(out_error, code, "fs create temporary file failed");
+    return mt_fs_set_errno_error(out_error, ENOMEM, "fs create temporary file failed");
+  }
+  memcpy(created_path, created_source, created_len + 1);
+
+  uv_fs_req_cleanup(&mkstemp_req);
+  free(template_path);
+
+  if (mt_fs_close_file((uv_file) descriptor, out_error, "fs create temporary file failed") != 0) {
+    uv_fs_t cleanup_req;
+    uv_fs_unlink(NULL, &cleanup_req, created_path, NULL);
+    uv_fs_req_cleanup(&cleanup_req);
+    free(created_path);
+    return out_error->code == 0 ? -1 : out_error->code;
   }
 
-  out_path->data = template_path;
-  out_path->len = (uintptr_t) strlen(template_path);
+  if (suffix_len == 0) {
+    out_path->data = created_path;
+    out_path->len = (uintptr_t) created_len;
+    return 0;
+  }
+
+  size_t base_len = created_len;
+  size_t final_len = base_len + suffix_len;
+  char* final_path = (char*) malloc(final_len + 1);
+  if (final_path == NULL) {
+    uv_fs_t cleanup_req;
+    uv_fs_unlink(NULL, &cleanup_req, created_path, NULL);
+    uv_fs_req_cleanup(&cleanup_req);
+    free(created_path);
+    return mt_fs_set_errno_error(out_error, ENOMEM, "fs create temporary file failed");
+  }
+
+  memcpy(final_path, created_path, base_len);
+  memcpy(final_path + base_len, suffix, suffix_len);
+  final_path[final_len] = '\0';
+
+  uv_fs_t rename_req;
+  int rename_status = uv_fs_rename(NULL, &rename_req, created_path, final_path, NULL);
+  if (rename_status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &rename_req, rename_status, "fs create temporary file failed");
+    uv_fs_req_cleanup(&rename_req);
+    uv_fs_t cleanup_req;
+    uv_fs_unlink(NULL, &cleanup_req, created_path, NULL);
+    uv_fs_req_cleanup(&cleanup_req);
+    free(created_path);
+    free(final_path);
+    return result;
+  }
+  uv_fs_req_cleanup(&rename_req);
+
+  free(created_path);
+  out_path->data = final_path;
+  out_path->len = (uintptr_t) final_len;
   return 0;
 }
 
@@ -522,83 +865,86 @@ static inline int mt_fs_list_entries(const char* path, mt_fs_entries* out_entrie
     return mt_fs_set_message(out_error, -1, "fs list entries failed", "path cannot be empty");
   }
 
-  DIR* directory = opendir(path);
-  if (directory == NULL) {
-    return mt_fs_set_errno_error(out_error, errno, "fs list entries failed");
+  uv_fs_t scandir_req;
+  int status = uv_fs_scandir(NULL, &scandir_req, path, 0, NULL);
+  if (status < 0) {
+    int result = mt_fs_set_uv_error(out_error, &scandir_req, status, "fs list entries failed");
+    uv_fs_req_cleanup(&scandir_req);
+    return result;
   }
 
+  uintptr_t capacity = status > 0 ? (uintptr_t) status : 8;
+  uintptr_t count = 0;
   char** data = NULL;
   uintptr_t* lengths = NULL;
-  uintptr_t count = 0;
-  uintptr_t capacity = 0;
 
-  errno = 0;
+  data = (char**) malloc((size_t) (capacity * sizeof(char*)));
+  lengths = (uintptr_t*) malloc((size_t) (capacity * sizeof(uintptr_t)));
+  if (data == NULL || lengths == NULL) {
+    free(data);
+    free(lengths);
+    uv_fs_req_cleanup(&scandir_req);
+    return mt_fs_set_errno_error(out_error, ENOMEM, "fs list entries failed");
+  }
+
   while (true) {
-    struct dirent* entry = readdir(directory);
-    if (entry == NULL) {
+    uv_dirent_t entry;
+    int next_status = uv_fs_scandir_next(&scandir_req, &entry);
+    if (next_status == UV_EOF) {
       break;
     }
+    if (next_status < 0) {
+      mt_fs_release_entry_buffers(data, lengths, count);
+      uv_fs_req_cleanup(&scandir_req);
+      return mt_fs_set_message(out_error, -next_status, "fs list entries failed", uv_strerror(next_status));
+    }
 
-    if ((strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0)) {
-      errno = 0;
+    if (entry.name == NULL) {
+      continue;
+    }
+    if ((strcmp(entry.name, ".") == 0) || (strcmp(entry.name, "..") == 0)) {
       continue;
     }
 
     if (count == capacity) {
-      uintptr_t new_capacity = capacity == 0 ? 8 : capacity * 2;
+      uintptr_t new_capacity = capacity * 2;
       char** new_data = (char**) malloc((size_t) (new_capacity * sizeof(char*)));
       uintptr_t* new_lengths = (uintptr_t*) malloc((size_t) (new_capacity * sizeof(uintptr_t)));
       if (new_data == NULL || new_lengths == NULL) {
         free(new_data);
         free(new_lengths);
         mt_fs_release_entry_buffers(data, lengths, count);
-        closedir(directory);
+        uv_fs_req_cleanup(&scandir_req);
         return mt_fs_set_errno_error(out_error, ENOMEM, "fs list entries failed");
       }
 
-      if (count != 0) {
-        memcpy(new_data, data, (size_t) (count * sizeof(char*)));
-        memcpy(new_lengths, lengths, (size_t) (count * sizeof(uintptr_t)));
-      }
-
+      memcpy(new_data, data, (size_t) (count * sizeof(char*)));
+      memcpy(new_lengths, lengths, (size_t) (count * sizeof(uintptr_t)));
       free(data);
       free(lengths);
-
       data = new_data;
       lengths = new_lengths;
       capacity = new_capacity;
     }
 
-    size_t len = strlen(entry->d_name);
+    size_t entry_len = strlen(entry.name);
     char* copied = NULL;
-    if (len != 0) {
-      copied = (char*) malloc(len);
+    if (entry_len != 0) {
+      copied = (char*) malloc(entry_len);
       if (copied == NULL) {
         mt_fs_release_entry_buffers(data, lengths, count);
-        closedir(directory);
+        uv_fs_req_cleanup(&scandir_req);
         return mt_fs_set_errno_error(out_error, ENOMEM, "fs list entries failed");
       }
-      memcpy(copied, entry->d_name, len);
+      memcpy(copied, entry.name, entry_len);
     }
 
     data[count] = copied;
-    lengths[count] = (uintptr_t) len;
+    lengths[count] = (uintptr_t) entry_len;
     count += 1;
-    errno = 0;
   }
 
-  int read_error = errno;
-  if (closedir(directory) != 0) {
-    int code = errno;
-    mt_fs_release_entry_buffers(data, lengths, count);
-    return mt_fs_set_errno_error(out_error, code, "fs list entries failed");
-  }
-
-  if (read_error != 0) {
-    mt_fs_release_entry_buffers(data, lengths, count);
-    return mt_fs_set_errno_error(out_error, read_error, "fs list entries failed");
-  }
-
+  uv_fs_req_cleanup(&scandir_req);
   out_entries->data = data;
   out_entries->lengths = lengths;
   out_entries->count = count;

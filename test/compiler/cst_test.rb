@@ -16,20 +16,24 @@ class MilkTeaCSTTest < Minitest::Test
   end
 
   def test_reconstruct_normalized_collapses_inter_token_spaces
-    source = [
-      "function  main() -> int:",
-      "    let   value: int =  42",
-      "    return  value",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+function  main() -> int:
+    let   value: int =  42
+    return  value
+
+    MT
 
     cst = MilkTea::CSTBuilder.build(source)
 
-    assert_equal [
-      "function main() -> int:",
-      "    let value: int = 42",
-      "    return value",
-      "",
-    ].join("\n"), cst.reconstruct_normalized
+    expected = <<~MT
+
+function main() -> int:
+    let value: int = 42
+    return value
+
+    MT
+
+    assert_equal expected, cst.reconstruct_normalized
   end
 end

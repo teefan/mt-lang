@@ -8,39 +8,40 @@ class MilkTeaStdTimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.str as text",
-      "import std.time as time",
-      "",
-      "function main() -> int:",
-      "    var stored: time.Timestamp = ptr_int<-0",
-      "    let now = time.current_timestamp(stored)",
-      "    if stored != now:",
-      "        return 1",
-      "    if now <= ptr_int<-0:",
-      "        return 2",
-      "",
-      "    var local_buffer = zero[array[char, 32]]",
-      "    if time.format_local_time_into(ptr_of(local_buffer[0]), 32, \"%Y\", now) != ptr_uint<-4:",
-      "        return 3",
-      "    let local_view = text.chars_as_str(ptr_of(local_buffer[0]))",
-      "    if local_view.len != ptr_uint<-4:",
-      "        return 4",
-      "",
-      "    var utc_buffer = zero[array[char, 32]]",
-      "    if time.format_utc_time_into(ptr_of(utc_buffer[0]), 32, \"%m\", now) != ptr_uint<-2:",
-      "        return 5",
-      "    let utc_view = text.chars_as_str(ptr_of(utc_buffer[0]))",
-      "    if utc_view.len != ptr_uint<-2:",
-      "        return 6",
-      "",
-      "    if time.format_into(ptr_of(utc_buffer[0]), 32, \"%m\", null) != ptr_uint<-0:",
-      "        return 7",
-      "    if time.seconds_between(now, stored) != 0.0:",
-      "        return 8",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.str as text
+import std.time as time
+
+function main() -> int:
+    var stored: time.Timestamp = ptr_int<-0
+    let now = time.current_timestamp(stored)
+    if stored != now:
+        return 1
+    if now <= ptr_int<-0:
+        return 2
+
+    var local_buffer = zero[array[char, 32]]
+    if time.format_local_time_into(ptr_of(local_buffer[0]), 32, \"%Y\", now) != ptr_uint<-4:
+        return 3
+    let local_view = text.chars_as_str(ptr_of(local_buffer[0]))
+    if local_view.len != ptr_uint<-4:
+        return 4
+
+    var utc_buffer = zero[array[char, 32]]
+    if time.format_utc_time_into(ptr_of(utc_buffer[0]), 32, \"%m\", now) != ptr_uint<-2:
+        return 5
+    let utc_view = text.chars_as_str(ptr_of(utc_buffer[0]))
+    if utc_view.len != ptr_uint<-2:
+        return 6
+
+    if time.format_into(ptr_of(utc_buffer[0]), 32, \"%m\", null) != ptr_uint<-0:
+        return 7
+    if time.seconds_between(now, stored) != 0.0:
+        return 8
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -54,53 +55,54 @@ class MilkTeaStdTimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.time as time",
-      "",
-      "function main() -> int:",
-      "    var resolution = zero[time.TimeSpec]",
-      "    if time.clock_resolution_into(time.MONOTONIC_CLOCK, resolution) != 0:",
-      "        return 1",
-      "    if resolution.tv_nsec < ptr_int<-0:",
-      "        return 2",
-      "",
-      "    var helper_resolution = zero[time.TimeSpec]",
-      "    if time.clock_resolution(time.MONOTONIC_CLOCK, helper_resolution) != 0:",
-      "        return 3",
-      "    var helper_now = zero[time.TimeSpec]",
-      "    if time.monotonic(helper_now) != 0:",
-      "        return 4",
-      "    var wall = zero[time.TimeSpec]",
-      "    if time.realtime(wall) != 0:",
-      "        return 5",
-      "",
-      "    let one_second = time.seconds(ptr_int<-1)",
-      "    if one_second.tv_sec != ptr_int<-1 or one_second.tv_nsec != ptr_int<-0:",
-      "        return 6",
-      "    let five_ms = time.milliseconds(ptr_uint<-5)",
-      "    if five_ms.tv_sec != ptr_int<-0 or five_ms.tv_nsec != ptr_int<-5000000:",
-      "        return 7",
-      "    let precise = time.nanoseconds(ptr_uint<-1000000001)",
-      "    if precise.tv_sec != ptr_int<-1 or precise.tv_nsec != ptr_int<-1:",
-      "        return 8",
-      "",
-      "    var start = zero[time.TimeSpec]",
-      "    if time.clock_time_into(time.MONOTONIC_CLOCK, start) != 0:",
-      "        return 9",
-      "    if time.sleep_milliseconds(ptr_uint<-5) != 0:",
-      "        return 10",
-      "    if time.sleep_nanoseconds(ptr_uint<-1) != 0:",
-      "        return 11",
-      "    var finish = zero[time.TimeSpec]",
-      "    if time.clock_time_into(time.MONOTONIC_CLOCK, finish) != 0:",
-      "        return 12",
-      "    if finish.tv_sec < start.tv_sec:",
-      "        return 13",
-      "    if finish.tv_sec == start.tv_sec and finish.tv_nsec < start.tv_nsec:",
-      "        return 14",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.time as time
+
+function main() -> int:
+    var resolution = zero[time.TimeSpec]
+    if time.clock_resolution_into(time.MONOTONIC_CLOCK, resolution) != 0:
+        return 1
+    if resolution.tv_nsec < ptr_int<-0:
+        return 2
+
+    var helper_resolution = zero[time.TimeSpec]
+    if time.clock_resolution(time.MONOTONIC_CLOCK, helper_resolution) != 0:
+        return 3
+    var helper_now = zero[time.TimeSpec]
+    if time.monotonic(helper_now) != 0:
+        return 4
+    var wall = zero[time.TimeSpec]
+    if time.realtime(wall) != 0:
+        return 5
+
+    let one_second = time.seconds(ptr_int<-1)
+    if one_second.tv_sec != ptr_int<-1 or one_second.tv_nsec != ptr_int<-0:
+        return 6
+    let five_ms = time.milliseconds(ptr_uint<-5)
+    if five_ms.tv_sec != ptr_int<-0 or five_ms.tv_nsec != ptr_int<-5000000:
+        return 7
+    let precise = time.nanoseconds(ptr_uint<-1000000001)
+    if precise.tv_sec != ptr_int<-1 or precise.tv_nsec != ptr_int<-1:
+        return 8
+
+    var start = zero[time.TimeSpec]
+    if time.clock_time_into(time.MONOTONIC_CLOCK, start) != 0:
+        return 9
+    if time.sleep_milliseconds(ptr_uint<-5) != 0:
+        return 10
+    if time.sleep_nanoseconds(ptr_uint<-1) != 0:
+        return 11
+    var finish = zero[time.TimeSpec]
+    if time.clock_time_into(time.MONOTONIC_CLOCK, finish) != 0:
+        return 12
+    if finish.tv_sec < start.tv_sec:
+        return 13
+    if finish.tv_sec == start.tv_sec and finish.tv_nsec < start.tv_nsec:
+        return 14
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

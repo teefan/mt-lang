@@ -8,13 +8,14 @@ class MilkTeaStdCurlRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.curl.runtime as curl_runtime",
-      "",
-      "function main() -> int:",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.curl.runtime as curl_runtime
+
+function main() -> int:
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -32,26 +33,27 @@ class MilkTeaStdCurlRuntimeTest < Minitest::Test
       File.write(File.join(root, "hello.txt"), "hello from curl runtime\n")
 
       with_static_http_server(root) do |base_url|
-        source = [
-          "import std.curl.runtime as runtime",
-          "",
-          "function main() -> int:",
-          "    let response = runtime.get_bytes(\"#{base_url}/hello.txt\")",
-          "    match response:",
-          "        Result.failure as failure:",
-          "            let _ = runtime.code_message(failure.error)",
-          "            return 1",
-          "        Result.success as payload:",
-          "            var response_body = payload.value",
-          "            let body_text = response_body.as_str() else:",
-          "                return 2",
-          "            if body_text != \"hello from curl runtime\\n\":",
-          "                return 3",
-          "            response_body.release()",
-          "",
-          "    return 0",
-          "",
-        ].join("\n")
+        source = <<~MT
+
+import std.curl.runtime as runtime
+
+function main() -> int:
+    let response = runtime.get_bytes(\"#{base_url}/hello.txt\")
+    match response:
+        Result.failure as failure:
+            let _ = runtime.code_message(failure.error)
+            return 1
+        Result.success as payload:
+            var response_body = payload.value
+            let body_text = response_body.as_str() else:
+                return 2
+            if body_text != \"hello from curl runtime\\n\":
+                return 3
+            response_body.release()
+
+    return 0
+
+        MT
 
         result = run_program(source, compiler:)
 

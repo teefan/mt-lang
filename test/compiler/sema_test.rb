@@ -3876,28 +3876,29 @@ class MilkTeaSemaTest < Minitest::Test
   end
 
   def test_type_checks_generic_struct_instantiation_and_embedding
-    source = [
-      "# module demo.generics",
-      "",
-      "struct Slice[T]:",
-      "    data: ptr[T]",
-      "    len: ptr_uint",
-      "",
-      "struct Holder:",
-      "    items: Slice[int]",
-      "",
-      "function first(items: Slice[int]) -> int:",
-      "    if items.len == 0:",
-      "        return 0",
-      "    unsafe:",
-      "        return read(items.data)",
-      "",
-      "function main() -> int:",
-      "    var value = 7",
-      "    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))",
-      "    return first(holder.items)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+# module demo.generics
+
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+struct Holder:
+    items: Slice[int]
+
+function first(items: Slice[int]) -> int:
+    if items.len == 0:
+        return 0
+    unsafe:
+        return read(items.data)
+
+function main() -> int:
+    var value = 7
+    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))
+    return first(holder.items)
+
+    MT
 
     result = check_source(source)
 
@@ -4816,21 +4817,22 @@ class MilkTeaSemaTest < Minitest::Test
     MT
 
     imported = {
-      "demo/lib.mt" => [
-        "# module demo.lib",
-        "",
-        "public const answer: int = 7",
-        "",
-        "public struct Counter:",
-        "    value: int",
-        "",
-        "extending Counter:",
-        "    public function read() -> int:",
-        "        return this.value",
-        "",
-        "    function times_two() -> int:",
-        "        return this.value * 2",
-      ].join("\n"),
+      "demo/lib.mt" => <<~MT,
+
+# module demo.lib
+
+public const answer: int = 7
+
+public struct Counter:
+    value: int
+
+extending Counter:
+    public function read() -> int:
+        return this.value
+
+    function times_two() -> int:
+        return this.value * 2
+      MT
     }
 
     result = check_program_source(source, imported).root_analysis

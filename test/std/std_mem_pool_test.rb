@@ -8,50 +8,51 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.pool as pool",
-      "",
-      "function main() -> int:",
-      "    var objects = pool.create(8, 2)",
-      "    defer objects.release()",
-      "",
-      "    if objects.remaining_slots() != 2:",
-      "        return 1",
-      "",
-      "    let first = objects.alloc_bytes()",
-      "    let second = objects.alloc_bytes()",
-      "    let third = objects.alloc_bytes()",
-      "    if first == null or second == null:",
-      "        return 2",
-      "    if third != null:",
-      "        return 3",
-      "",
-      "    if objects.remaining_slots() != 0:",
-      "        return 4",
-      "",
-      "    if not objects.release_bytes(first):",
-      "        return 5",
-      "    if objects.remaining_slots() != 1:",
-      "        return 6",
-      "",
-      "    let reused = objects.alloc_bytes()",
-      "    if reused == null:",
-      "        return 7",
-      "    if reused != first:",
-      "        return 8",
-      "",
-      "    if not objects.release_bytes(reused):",
-      "        return 9",
-      "    if objects.release_bytes(reused):",
-      "        return 10",
-      "    if not objects.release_bytes(second):",
-      "        return 11",
-      "    if objects.remaining_slots() != 2:",
-      "        return 12",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.pool as pool
+
+function main() -> int:
+    var objects = pool.create(8, 2)
+    defer objects.release()
+
+    if objects.remaining_slots() != 2:
+        return 1
+
+    let first = objects.alloc_bytes()
+    let second = objects.alloc_bytes()
+    let third = objects.alloc_bytes()
+    if first == null or second == null:
+        return 2
+    if third != null:
+        return 3
+
+    if objects.remaining_slots() != 0:
+        return 4
+
+    if not objects.release_bytes(first):
+        return 5
+    if objects.remaining_slots() != 1:
+        return 6
+
+    let reused = objects.alloc_bytes()
+    if reused == null:
+        return 7
+    if reused != first:
+        return 8
+
+    if not objects.release_bytes(reused):
+        return 9
+    if objects.release_bytes(reused):
+        return 10
+    if not objects.release_bytes(second):
+        return 11
+    if objects.remaining_slots() != 2:
+        return 12
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -65,41 +66,42 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.pool as pool",
-      "",
-      "struct Pair:",
-      "    left: int",
-      "    right: int",
-      "",
-      "function main() -> int:",
-      "    var objects = pool.create_for[Pair](2)",
-      "    defer objects.release()",
-      "",
-      "    let first = objects.alloc[Pair]()",
-      "    let second = objects.alloc[Pair]()",
-      "    let third = objects.alloc[Pair]()",
-      "    if first == null or second == null:",
-      "        return 1",
-      "    if third != null:",
-      "        return 2",
-      "",
-      "    unsafe:",
-      "        first.left = 8",
-      "        first.right = 13",
-      "        if first.left + first.right != 21:",
-      "            return 3",
-      "",
-      "    if not objects.release_slot(first):",
-      "        return 4",
-      "    if objects.release_slot(first):",
-      "        return 5",
-      "    if not objects.release_slot(second):",
-      "        return 6",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.pool as pool
+
+struct Pair:
+    left: int
+    right: int
+
+function main() -> int:
+    var objects = pool.create_for[Pair](2)
+    defer objects.release()
+
+    let first = objects.alloc[Pair]()
+    let second = objects.alloc[Pair]()
+    let third = objects.alloc[Pair]()
+    if first == null or second == null:
+        return 1
+    if third != null:
+        return 2
+
+    unsafe:
+        first.left = 8
+        first.right = 13
+        if first.left + first.right != 21:
+            return 3
+
+    if not objects.release_slot(first):
+        return 4
+    if objects.release_slot(first):
+        return 5
+    if not objects.release_slot(second):
+        return 6
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -113,33 +115,34 @@ class MilkTeaStdMemPoolTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.pool as pool",
-      "",
-      "align(16) struct Mat4:",
-      "    data: array[float, 16]",
-      "",
-      "function main() -> int:",
-      "    var raw = pool.create(6, 2)",
-      "    defer raw.release()",
-      "",
-      "    if raw.alloc[int]() != null:",
-      "        return 1",
-      "",
-      "    let small = raw.alloc[short]()",
-      "    if small == null:",
-      "        return 2",
-      "",
-      "    var aligned = pool.create_for[Mat4](1)",
-      "    defer aligned.release()",
-      "",
-      "    let matrix = aligned.alloc[Mat4]()",
-      "    if matrix == null:",
-      "        return 3",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.pool as pool
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+function main() -> int:
+    var raw = pool.create(6, 2)
+    defer raw.release()
+
+    if raw.alloc[int]() != null:
+        return 1
+
+    let small = raw.alloc[short]()
+    if small == null:
+        return 2
+
+    var aligned = pool.create_for[Mat4](1)
+    defer aligned.release()
+
+    let matrix = aligned.alloc[Mat4]()
+    if matrix == null:
+        return 3
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

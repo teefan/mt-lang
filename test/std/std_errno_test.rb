@@ -11,36 +11,38 @@ class MilkTeaStdErrnoRuntimeTest < Minitest::Test
     Dir.mktmpdir("milk-tea-std-errno") do |dir|
       source_path = File.join(dir, "std_errno.mt")
 
-      File.write(source_path, [
-        "import std.errno as errno",
-        "",
-        "function main() -> int:",
-        "    errno.clear()",
-        "    if errno.current() != errno.NONE:",
-        "        return 1",
-        "",
-        "    errno.set_current(errno.ENOENT)",
-        "    if errno.current() != errno.ENOENT:",
-        "        return 2",
-        "    if errno.message(errno.ENOENT) == null:",
-        "        return 3",
-        "    if errno.current_message() == null:",
-        "        return 4",
-        "",
-        "    errno.set_current(errno.EINVAL)",
-        "    if errno.current() != errno.EINVAL:",
-        "        return 5",
-        "    if errno.message(errno.EPERM) == null:",
-        "        return 6",
-        "",
-        "    errno.clear()",
-        "    if errno.current() != errno.NONE:",
-        "        return 7",
-        "",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.errno as errno
+
+function main() -> int:
+    errno.clear()
+    if errno.current() != errno.NONE:
+        return 1
+
+    errno.set_current(errno.ENOENT)
+    if errno.current() != errno.ENOENT:
+        return 2
+    if errno.message(errno.ENOENT) == null:
+        return 3
+    if errno.current_message() == null:
+        return 4
+
+    errno.set_current(errno.EINVAL)
+    if errno.current() != errno.EINVAL:
+        return 5
+    if errno.message(errno.EPERM) == null:
+        return 6
+
+    errno.clear()
+    if errno.current() != errno.NONE:
+        return 7
+
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout

@@ -8,84 +8,85 @@ class MilkTeaStdPriorityQueueTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "",
-      "import std.priority_queue as priority_queue",
-      "",
-      "struct Key:",
-      "    value: int",
-      "",
-      "extending Key:",
-      "    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:",
-      "        unsafe:",
-      "            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value",
-      "",
-      "function dequeue_value(values: ref[priority_queue.PriorityQueue[Key]]) -> int:",
-      "    let removed = values.dequeue()",
-      "    match removed:",
-      "        Option.none:",
-      "            return -1",
-      "        Option.some as payload:",
-      "            return payload.value.value",
-      "",
-      "function main() -> int:",
-      "    var values = priority_queue.PriorityQueue[Key].with_capacity(2)",
-      "    defer values.release()",
-      "",
-      "    if values.capacity() < 2:",
-      "        return 1",
-      "    if not values.is_empty():",
-      "        return 2",
-      "    if values.peek() != null:",
-      "        return 3",
-      "",
-      "    values.enqueue(Key(value = 4))",
-      "    values.enqueue(Key(value = 1))",
-      "    values.enqueue(Key(value = 6))",
-      "    values.enqueue(Key(value = 2))",
-      "",
-      "    if values.len() != 4:",
-      "        return 4",
-      "    if values.capacity() < 4:",
-      "        return 5",
-      "",
-      "    let top = values.peek()",
-      "    if top == null:",
-      "        return 6",
-      "    unsafe:",
-      "        if read(ptr[Key]<-top).value != 6:",
-      "            return 7",
-      "",
-      "    var count = 0",
-      "    var total = 0",
-      "    for value in values:",
-      "        unsafe:",
-      "            total += read(ptr[Key]<-value).value",
-      "        count += 1",
-      "",
-      "    if count != 4:",
-      "        return 8",
-      "    if total != 13:",
-      "        return 9",
-      "",
-      "    if dequeue_value(values) != 6:",
-      "        return 10",
-      "    if dequeue_value(values) != 4:",
-      "        return 11",
-      "    if dequeue_value(values) != 2:",
-      "        return 12",
-      "    if dequeue_value(values) != 1:",
-      "        return 13",
-      "    if not values.is_empty():",
-      "        return 14",
-      "",
-      "    values.enqueue(Key(value = 3))",
-      "    values.clear()",
-      "    if not values.is_empty():",
-      "        return 15",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+
+import std.priority_queue as priority_queue
+
+struct Key:
+    value: int
+
+extending Key:
+    static function order(left: const_ptr[Key], right: const_ptr[Key]) -> int:
+        unsafe:
+            return read(ptr[Key]<-left).value - read(ptr[Key]<-right).value
+
+function dequeue_value(values: ref[priority_queue.PriorityQueue[Key]]) -> int:
+    let removed = values.dequeue()
+    match removed:
+        Option.none:
+            return -1
+        Option.some as payload:
+            return payload.value.value
+
+function main() -> int:
+    var values = priority_queue.PriorityQueue[Key].with_capacity(2)
+    defer values.release()
+
+    if values.capacity() < 2:
+        return 1
+    if not values.is_empty():
+        return 2
+    if values.peek() != null:
+        return 3
+
+    values.enqueue(Key(value = 4))
+    values.enqueue(Key(value = 1))
+    values.enqueue(Key(value = 6))
+    values.enqueue(Key(value = 2))
+
+    if values.len() != 4:
+        return 4
+    if values.capacity() < 4:
+        return 5
+
+    let top = values.peek()
+    if top == null:
+        return 6
+    unsafe:
+        if read(ptr[Key]<-top).value != 6:
+            return 7
+
+    var count = 0
+    var total = 0
+    for value in values:
+        unsafe:
+            total += read(ptr[Key]<-value).value
+        count += 1
+
+    if count != 4:
+        return 8
+    if total != 13:
+        return 9
+
+    if dequeue_value(values) != 6:
+        return 10
+    if dequeue_value(values) != 4:
+        return 11
+    if dequeue_value(values) != 2:
+        return 12
+    if dequeue_value(values) != 1:
+        return 13
+    if not values.is_empty():
+        return 14
+
+    values.enqueue(Key(value = 3))
+    values.clear()
+    if not values.is_empty():
+        return 15
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

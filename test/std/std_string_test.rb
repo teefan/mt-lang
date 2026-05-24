@@ -8,43 +8,44 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.string as string",
-      "",
-      "function byte_at(text: str, index: ptr_uint) -> int:",
-      "    unsafe:",
-      "        return int<-ubyte<-read(text.data + index)",
-      "",
-      "function main() -> int:",
-      "    var text = string.String.with_capacity(2)",
-      "    defer text.release()",
-      "    if text.capacity() < 2:",
-      "        return 1",
-      "    if not text.is_empty():",
-      "        return 2",
-      "",
-      "    text.push_byte(65)",
-      "    text.push_byte(66)",
-      "    text.push_byte(67)",
-      "    if text.len() != 3:",
-      "        return 3",
-      "    if text.capacity() < 3:",
-      "        return 4",
-      "",
-      "    let view = text.as_str()",
-      "    if byte_at(view, 0) != 65 or byte_at(view, 2) != 67:",
-      "        return 5",
-      "",
-      "    text.clear()",
-      "    if not text.is_empty():",
-      "        return 6",
-      "",
-      "    text.reserve(32)",
-      "    if text.capacity() < 32:",
-      "        return 7",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.string as string
+
+function byte_at(text: str, index: ptr_uint) -> int:
+    unsafe:
+        return int<-ubyte<-read(text.data + index)
+
+function main() -> int:
+    var text = string.String.with_capacity(2)
+    defer text.release()
+    if text.capacity() < 2:
+        return 1
+    if not text.is_empty():
+        return 2
+
+    text.push_byte(65)
+    text.push_byte(66)
+    text.push_byte(67)
+    if text.len() != 3:
+        return 3
+    if text.capacity() < 3:
+        return 4
+
+    let view = text.as_str()
+    if byte_at(view, 0) != 65 or byte_at(view, 2) != 67:
+        return 5
+
+    text.clear()
+    if not text.is_empty():
+        return 6
+
+    text.reserve(32)
+    if text.capacity() < 32:
+        return 7
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -58,30 +59,31 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.string as string",
-      "",
-      "function byte_at(text: str, index: ptr_uint) -> int:",
-      "    unsafe:",
-      "        return int<-ubyte<-read(text.data + index)",
-      "",
-      "function main() -> int:",
-      "    var name = string.String.from_str(\"Milk\")",
-      "    defer name.release()",
-      "",
-      "    name.append(\" Tea\")",
-      "    let view = name.as_str()",
-      "    if view.len != 8:",
-      "        return 1",
-      "    if byte_at(view, 4) != 32:",
-      "        return 2",
-      "",
-      "    name.assign(\"MT\")",
-      "    let compact = name.as_str()",
-      "    let total = int<-compact.len + byte_at(compact, 0) + byte_at(compact, 1)",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.string as string
+
+function byte_at(text: str, index: ptr_uint) -> int:
+    unsafe:
+        return int<-ubyte<-read(text.data + index)
+
+function main() -> int:
+    var name = string.String.from_str(\"Milk\")
+    defer name.release()
+
+    name.append(\" Tea\")
+    let view = name.as_str()
+    if view.len != 8:
+        return 1
+    if byte_at(view, 4) != 32:
+        return 2
+
+    name.assign(\"MT\")
+    let compact = name.as_str()
+    let total = int<-compact.len + byte_at(compact, 0) + byte_at(compact, 1)
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -95,27 +97,28 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.str as text",
-      "import std.string as string",
-      "",
-      "function main() -> int:",
-      "    var value = string.String.from_str(\"abc\")",
-      "    defer value.release()",
-      "",
-      "    let full = value.as_str()",
-      "    value.append(full)",
-      "    if not value.as_str().equal(\"abcabc\"):",
-      "        return 1",
-      "",
-      "    let middle = value.as_str().slice(1, 4)",
-      "    value.append(middle)",
-      "    if not value.as_str().equal(\"abcabcbcab\"):",
-      "        return 2",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.str as text
+import std.string as string
+
+function main() -> int:
+    var value = string.String.from_str(\"abc\")
+    defer value.release()
+
+    let full = value.as_str()
+    value.append(full)
+    if not value.as_str().equal(\"abcabc\"):
+        return 1
+
+    let middle = value.as_str().slice(1, 4)
+    value.append(middle)
+    if not value.as_str().equal(\"abcabcbcab\"):
+        return 2
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -129,30 +132,31 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "import std.string as string",
-      "",
-      "function cstr_len(text: cstr) -> int:",
-      "    var count = 0",
-      "    unsafe:",
-      "        let data = ptr[char]<-text",
-      "        while read(data + count) != zero[char]:",
-      "            count += 1",
-      "    return count",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(64)",
-      "    defer scratch.release()",
-      "    var owned = string.String.from_str(\"abc\")",
-      "    defer owned.release()",
-      "",
-      "    owned.append(\"def\")",
-      "    let raw = owned.to_cstr(ref_of(scratch))",
-      "    let length = cstr_len(raw)",
-      "    return length",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+import std.string as string
+
+function cstr_len(text: cstr) -> int:
+    var count = 0
+    unsafe:
+        let data = ptr[char]<-text
+        while read(data + count) != zero[char]:
+            count += 1
+    return count
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+    var owned = string.String.from_str(\"abc\")
+    defer owned.release()
+
+    owned.append(\"def\")
+    let raw = owned.to_cstr(ref_of(scratch))
+    let length = cstr_len(raw)
+    return length
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -166,17 +170,18 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.string as string",
-      "",
-      "function main() -> int:",
-      "    var value = string.String.create()",
-      "    defer value.release()",
-      "    value.push_byte(ubyte<-0xFF)",
-      "    let borrowed = value.as_str()",
-      "    return int<-borrowed.len",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.string as string
+
+function main() -> int:
+    var value = string.String.create()
+    defer value.release()
+    value.push_byte(ubyte<-0xFF)
+    let borrowed = value.as_str()
+    return int<-borrowed.len
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -190,29 +195,30 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "",
-      "import std.str as text",
-      "",
-      "function main() -> int:",
-      "    let trimmed = \"  Milk Tea  \".trim_ascii_whitespace()",
-      "    if not trimmed.equal(\"Milk Tea\"):",
-      "        return 1",
-      "    if not trimmed.starts_with(\"Milk\"):",
-      "        return 2",
-      "    if not trimmed.ends_with(\"Tea\"):",
-      "        return 3",
-      "    if not trimmed.is_valid_utf8():",
-      "        return 4",
-      "    let found = trimmed.find_byte(ubyte<-32)",
-      "    match found:",
-      "        Option.none:",
-      "            return 5",
-      "        Option.some as payload:",
-      "            return int<-trimmed.len + int<-payload.value",
-      "    return 5",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+
+import std.str as text
+
+function main() -> int:
+    let trimmed = \"  Milk Tea  \".trim_ascii_whitespace()
+    if not trimmed.equal(\"Milk Tea\"):
+        return 1
+    if not trimmed.starts_with(\"Milk\"):
+        return 2
+    if not trimmed.ends_with(\"Tea\"):
+        return 3
+    if not trimmed.is_valid_utf8():
+        return 4
+    let found = trimmed.find_byte(ubyte<-32)
+    match found:
+        Option.none:
+            return 5
+        Option.some as payload:
+            return int<-trimmed.len + int<-payload.value
+    return 5
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -226,30 +232,31 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "import std.str as text",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(64)",
-      "    defer scratch.release()",
-      "",
-      "    let left = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))",
-      "    let right = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))",
-      "    let other = text.cstr_as_str(scratch.to_cstr(\"Tea\"))",
-      "",
-      "    if left != right:",
-      "        return 1",
-      "    if not (left == right):",
-      "        return 2",
-      "    if left == other:",
-      "        return 3",
-      "    if not (left != other):",
-      "        return 4",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+import std.str as text
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+
+    let left = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))
+    let right = text.cstr_as_str(scratch.to_cstr(\"Milk Tea\"))
+    let other = text.cstr_as_str(scratch.to_cstr(\"Tea\"))
+
+    if left != right:
+        return 1
+    if not (left == right):
+        return 2
+    if left == other:
+        return 3
+    if not (left != other):
+        return 4
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -263,25 +270,26 @@ class MilkTeaStdStringTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "import std.str as text",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(64)",
-      "    defer scratch.release()",
-      "    let raw = scratch.to_cstr(\"Milk Tea\")",
-      "    let borrowed = text.cstr_as_str(raw)",
-      "    var borrowed_chars: str = \"\"",
-      "    unsafe:",
-      "        borrowed_chars = text.chars_as_str(ptr[char]<-raw)",
-      "    if not borrowed.equal(\"Milk Tea\"):",
-      "        return 1",
-      "    if not borrowed_chars.equal(borrowed):",
-      "        return 2",
-      "    return int<-borrowed.len + int<-borrowed_chars.len",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+import std.str as text
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+    let raw = scratch.to_cstr(\"Milk Tea\")
+    let borrowed = text.cstr_as_str(raw)
+    var borrowed_chars: str = \"\"
+    unsafe:
+        borrowed_chars = text.chars_as_str(ptr[char]<-raw)
+    if not borrowed.equal(\"Milk Tea\"):
+        return 1
+    if not borrowed_chars.equal(borrowed):
+        return 2
+    return int<-borrowed.len + int<-borrowed_chars.len
+
+    MT
 
     result = run_program(source, compiler:)
 

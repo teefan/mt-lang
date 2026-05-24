@@ -2228,16 +2228,18 @@ class DAPServerTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-real-lldb-dap") do |dir|
       source_path = File.join(dir, "real_debug.mt")
-      File.write(source_path, [
-        "function add(left: int) -> int:",
-        "    let next_value = left + 1",
-        "    return next_value",
-        "",
-        "function main() -> int:",
-        "    return add(41)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function add(left: int) -> int:
+    let next_value = left + 1
+    return next_value
+
+function main() -> int:
+    return add(41)
+
+      MT
+
+      )
       with_server(preferred_backend_kind: "lldb-dap", adapter_command: [lldb_dap_path]) do |client|
         init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
         assert_equal true, init_response["success"]
@@ -2322,18 +2324,20 @@ class DAPServerTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-real-lldb-dap-watch") do |dir|
       source_path = File.join(dir, "watch.mt")
-      File.write(source_path, [
-        "function add(left: int) -> int:",
-        "    var watched = left",
-        "    watched += 1",
-        "    watched += 1",
-        "    return watched",
-        "",
-        "function main() -> int:",
-        "    return add(40)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function add(left: int) -> int:
+    var watched = left
+    watched += 1
+    watched += 1
+    return watched
+
+function main() -> int:
+    return add(40)
+
+      MT
+
+      )
       with_server(preferred_backend_kind: "lldb-dap", adapter_command: [lldb_dap_path]) do |client|
         init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
         assert_equal true, init_response["success"]
@@ -2436,22 +2440,23 @@ class DAPServerTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-real-lldb-dap-steps") do |dir|
       source_path = File.join(dir, "steps.mt")
-      File.write(source_path, [
-        "function inner(value: int) -> int:",
-        "    let lifted = value + 1",
-        "    return lifted",
-        "",
-        "function outer(value: int) -> int:",
-        "    let seed = value",
-        "    let inside = inner(seed)",
-        "    let marker = inside + 1",
-        "    return marker",
-        "",
-        "function main() -> int:",
-        "    return outer(40)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
+function inner(value: int) -> int:
+    let lifted = value + 1
+    return lifted
 
+function outer(value: int) -> int:
+    let seed = value
+    let inside = inner(seed)
+    let marker = inside + 1
+    return marker
+
+function main() -> int:
+    return outer(40)
+
+      MT
+
+      )
       with_server(preferred_backend_kind: "lldb-dap", adapter_command: [lldb_dap_path]) do |client|
         init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
         assert_equal true, init_response["success"]
@@ -2568,15 +2573,17 @@ class DAPServerTest < Minitest::Test
 
     Dir.mktmpdir("milk-tea-real-lldb-dap-controls") do |dir|
       source_path = File.join(dir, "controls.mt")
-      File.write(source_path, [
-        "function main() -> int:",
-        "    var total = 0",
-        "    while total < 2000000000:",
-        "        total += 1",
-        "    return total",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    var total = 0
+    while total < 2000000000:
+        total += 1
+    return total
+
+      MT
+
+      )
       with_server(preferred_backend_kind: "lldb-dap", adapter_command: [lldb_dap_path]) do |client|
         init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
         assert_equal true, init_response["success"]

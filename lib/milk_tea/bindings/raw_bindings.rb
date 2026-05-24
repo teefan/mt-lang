@@ -1162,6 +1162,18 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "zstd",
+          module_name: "std.c.zstd",
+          binding_path: root.join("std/c/zstd.mt"),
+          include_directives: ["zstd.h"],
+          link_libraries: ["zstd"],
+          declaration_name_prefixes: ["ZSTD_", "ZSTD", "ZDICTLIB_", "ZDICT_", "HUF_", "FSE_"],
+          header_candidates: [
+            "/usr/include/zstd.h",
+            "/usr/local/include/zstd.h",
+          ],
+        ),
+        Binding.new(
           name: "curl",
           module_name: "std.c.curl",
           binding_path: root.join("std/c/curl.mt"),

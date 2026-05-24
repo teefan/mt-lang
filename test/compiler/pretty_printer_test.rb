@@ -5,17 +5,16 @@ require_relative "../test_helper"
 
 class MilkTeaPrettyPrinterTest < Minitest::Test
   def test_formats_ast_like_source
-    source = [
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe: counter_ptr.value = 7",
-      "    return counter.value",
-      "",
-    ].join("\n")
+    source = <<~MT
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe: counter_ptr.value = 7
+    return counter.value
+    MT
 
     ast = MilkTea::Parser.parse(source)
 
@@ -23,30 +22,28 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_single_statement_unsafe_block_canonically
-    source = [
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe:",
-      "        counter_ptr.value = 7",
-      "    return counter.value",
-      "",
-    ].join("\n")
+    source = <<~MT
+struct Counter:
+    value: int
 
-    expected = [
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe: counter_ptr.value = 7",
-      "    return counter.value",
-      "",
-    ].join("\n")
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        counter_ptr.value = 7
+    return counter.value
+    MT
+
+    expected = <<~MT
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe: counter_ptr.value = 7
+    return counter.value
+    MT
 
     ast = MilkTea::Parser.parse(source)
 
@@ -54,13 +51,12 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_multi_statement_unsafe_block_like_source
-    source = [
-      "function main(ptr: ptr[int]) -> int:",
-      "    unsafe:",
-      "        let value = read(ptr)",
-      "        return value",
-      "",
-    ].join("\n")
+    source = <<~MT
+function main(ptr: ptr[int]) -> int:
+    unsafe:
+        let value = read(ptr)
+        return value
+    MT
 
     ast = MilkTea::Parser.parse(source)
 
@@ -386,18 +382,19 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_lowered_ir_as_structured_output
-    source = [
-      "struct Counter:",
-      "    value: int",
-      "",
-      "function main() -> int:",
-      "    var counter = Counter(value = 3)",
-      "    let counter_ptr = ptr_of(counter)",
-      "    unsafe:",
-      "        counter_ptr.value = 7",
-      "    return counter.value",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        counter_ptr.value = 7
+    return counter.value
+
+    MT
 
     output = with_program(source, relative_path: File.join("demo", "pretty.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
@@ -412,15 +409,16 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_lowered_ir_for_clauses
-    source = [
-      "function keep(value: int) -> void:",
-      "    return",
-      "",
-      "function main() -> void:",
-      "    for i in 0..3:",
-      "        keep(i)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+function keep(value: int) -> void:
+    return
+
+function main() -> void:
+    for i in 0..3:
+        keep(i)
+
+    MT
 
     output = with_program(source, relative_path: File.join("demo", "pretty_for.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))
@@ -433,21 +431,22 @@ class MilkTeaPrettyPrinterTest < Minitest::Test
   end
 
   def test_formats_lowered_ir_with_nil_else_and_switch_default_case
-    source = [
-      "function describe(code: int) -> int:",
-      "    if code < 0:",
-      "        return 0",
-      "",
-      "    match code:",
-      "        1:",
-      "            return 10",
-      "        _:",
-      "            return 20",
-      "",
-      "function main() -> int:",
-      "    return describe(2)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+function describe(code: int) -> int:
+    if code < 0:
+        return 0
+
+    match code:
+        1:
+            return 10
+        _:
+            return 20
+
+function main() -> int:
+    return describe(2)
+
+    MT
 
     output = with_program(source, relative_path: File.join("demo", "pretty_match.mt")) do |program|
       MilkTea::PrettyPrinter.format_ir(MilkTea::Lowering.lower(program))

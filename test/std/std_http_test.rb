@@ -13,40 +13,41 @@ class MilkTeaStdHttpTest < Minitest::Test
       File.write(File.join(root, "message.txt"), "hello over http\n")
 
       with_static_http_server(root) do |base_url|
-        source = [
-          "import std.bytes as bytes",
-          "import std.http as http",
-          "",
-          "",
-          "import std.str as text",
-          "",
-          "async function main() -> int:",
-          "    let response_result = await http.get(\"#{base_url}/message.txt?cache=1\")",
-          "    match response_result:",
-          "        Result.failure as payload:",
-          "            var error = payload.error",
-          "            defer error.release()",
-          "            return 1",
-          "        Result.success as payload:",
-          "            var response = payload.value",
-          "            defer response.release()",
-          "            if response.status_code != 200:",
-          "                return 2",
-          "            match response.header(\"content-type\"):",
-          "                Option.none:",
-          "                    return 3",
-          "                Option.some as header_payload:",
-          "                    if not header_payload.value.starts_with(\"text/plain\"):",
-          "                        return 4",
-          "            match response.body.as_str():",
-          "                Option.none:",
-          "                    return 5",
-          "                Option.some as body_payload:",
-          "                    if not body_payload.value.equal(\"hello over http\\n\"):",
-          "                        return 6",
-          "            return 0",
-          "",
-        ].join("\n")
+        source = <<~MT
+
+import std.bytes as bytes
+import std.http as http
+
+
+import std.str as text
+
+async function main() -> int:
+    let response_result = await http.get(\"#{base_url}/message.txt?cache=1\")
+    match response_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            if response.status_code != 200:
+                return 2
+            match response.header(\"content-type\"):
+                Option.none:
+                    return 3
+                Option.some as header_payload:
+                    if not header_payload.value.starts_with(\"text/plain\"):
+                        return 4
+            match response.body.as_str():
+                Option.none:
+                    return 5
+                Option.some as body_payload:
+                    if not body_payload.value.equal(\"hello over http\\n\"):
+                        return 6
+            return 0
+
+        MT
 
         result = run_program(source, compiler:)
 
@@ -74,42 +75,43 @@ class MilkTeaStdHttpTest < Minitest::Test
       client.write("\r\n")
       client.write(body)
     end) do |base_url|
-      source = [
-        "import std.http as http",
-        "",
-        "",
-        "import std.str as text",
-        "",
-        "async function main() -> int:",
-        "    var headers = array[http.RequestHeader, 2](",
-        "        http.RequestHeader(name = \"Content-Type\", value = \"application/x-www-form-urlencoded\"),",
-        "        http.RequestHeader(name = \"X-Test\", value = \"milk-tea\"),",
-        "    )",
-        "    let response_result = await http.request(",
-        "        \"#{base_url}/submit\",",
-        "        \"POST\",",
-        "        headers,",
-        "        Option[span[ubyte]].some(value = text.as_byte_span(\"name=milk+tea\")),",
-        "    )",
-        "    match response_result:",
-        "        Result.failure as payload:",
-        "            var error = payload.error",
-        "            defer error.release()",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var response = payload.value",
-        "            defer response.release()",
-        "            if response.status_code != 201:",
-        "                return 2",
-        "            match response.body.as_str():",
-        "                Option.none:",
-        "                    return 3",
-        "                Option.some as body_payload:",
-        "                    if not body_payload.value.equal(\"accepted\\n\"):",
-        "                        return 4",
-        "            return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.http as http
+
+
+import std.str as text
+
+async function main() -> int:
+    var headers = array[http.RequestHeader, 2](
+        http.RequestHeader(name = \"Content-Type\", value = \"application/x-www-form-urlencoded\"),
+        http.RequestHeader(name = \"X-Test\", value = \"milk-tea\"),
+    )
+    let response_result = await http.request(
+        \"#{base_url}/submit\",
+        \"POST\",
+        headers,
+        Option[span[ubyte]].some(value = text.as_byte_span(\"name=milk+tea\")),
+    )
+    match response_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            if response.status_code != 201:
+                return 2
+            match response.body.as_str():
+                Option.none:
+                    return 3
+                Option.some as body_payload:
+                    if not body_payload.value.equal(\"accepted\\n\"):
+                        return 4
+            return 0
+
+      MT
 
       result = run_program(source, compiler:)
 
@@ -147,33 +149,34 @@ class MilkTeaStdHttpTest < Minitest::Test
       client.write("8\r\nchunked\n\r\n")
       client.write("0\r\n\r\n")
     end) do |base_url|
-      source = [
-        "import std.http as http",
-        "",
-        "",
-        "import std.str as text",
-        "",
-        "async function main() -> int:",
-        "    let response_result = await http.get(\"#{base_url}/chunked\")",
-        "    match response_result:",
-        "        Result.failure as payload:",
-        "            var error = payload.error",
-        "            defer error.release()",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var response = payload.value",
-        "            defer response.release()",
-        "            if response.status_code != 200:",
-        "                return 2",
-        "            match response.body.as_str():",
-        "                Option.none:",
-        "                    return 3",
-        "                Option.some as body_payload:",
-        "                    if not body_payload.value.equal(\"hello chunked\\n\"):",
-        "                        return 4",
-        "            return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.http as http
+
+
+import std.str as text
+
+async function main() -> int:
+    let response_result = await http.get(\"#{base_url}/chunked\")
+    match response_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            if response.status_code != 200:
+                return 2
+            match response.body.as_str():
+                Option.none:
+                    return 3
+                Option.some as body_payload:
+                    if not body_payload.value.equal(\"hello chunked\\n\"):
+                        return 4
+            return 0
+
+      MT
 
       result = run_program(source, compiler:)
 
@@ -200,39 +203,40 @@ class MilkTeaStdHttpTest < Minitest::Test
       client.write("\r\n")
       client.write(body)
     end) do |base_url|
-      source = [
-        "import std.http as http",
-        "",
-        "",
-        "import std.str as text",
-        "",
-        "async function main() -> int:",
-        "    let response_result = await http.get(\"#{base_url}/secure.txt?cache=1\")",
-        "    match response_result:",
-        "        Result.failure as payload:",
-        "            var error = payload.error",
-        "            defer error.release()",
-        "            return 1",
-        "        Result.success as payload:",
-        "            var response = payload.value",
-        "            defer response.release()",
-        "            if response.status_code != 200:",
-        "                return 2",
-        "            match response.header(\"content-type\"):",
-        "                Option.none:",
-        "                    return 3",
-        "                Option.some as header_payload:",
-        "                    if not header_payload.value.starts_with(\"text/plain\"):",
-        "                        return 4",
-        "            match response.body.as_str():",
-        "                Option.none:",
-        "                    return 5",
-        "                Option.some as body_payload:",
-        "                    if not body_payload.value.equal(\"hello over https\\n\"):",
-        "                        return 6",
-        "            return 0",
-        "",
-      ].join("\n")
+      source = <<~MT
+
+import std.http as http
+
+
+import std.str as text
+
+async function main() -> int:
+    let response_result = await http.get(\"#{base_url}/secure.txt?cache=1\")
+    match response_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            if response.status_code != 200:
+                return 2
+            match response.header(\"content-type\"):
+                Option.none:
+                    return 3
+                Option.some as header_payload:
+                    if not header_payload.value.starts_with(\"text/plain\"):
+                        return 4
+            match response.body.as_str():
+                Option.none:
+                    return 5
+                Option.some as body_payload:
+                    if not body_payload.value.equal(\"hello over https\\n\"):
+                        return 6
+            return 0
+
+      MT
 
       result = run_program(source, compiler:)
 

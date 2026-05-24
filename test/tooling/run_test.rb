@@ -65,12 +65,14 @@ class MilkTeaRunTest < Minitest::Test
       File.chmod(0o755, compiler_path)
 
       source_path = File.join(dir, "cwd.mt")
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler_path)
 
       assert_equal "#{dir}\n", result.stdout
@@ -91,12 +93,14 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-real") do |dir|
       source_path = File.join(dir, "smoke.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 42",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 42
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -126,12 +130,14 @@ class MilkTeaRunTest < Minitest::Test
       TOML
 
       source_path = File.join(src_dir, "main.mt")
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       error = assert_raises(MilkTea::BuildError) do
         MilkTea::Run.run(source_path, cc: compiler_path)
       end
@@ -223,12 +229,14 @@ class MilkTeaRunTest < Minitest::Test
         end
       end
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(
         source_path,
         cc: compiler_path,
@@ -292,22 +300,24 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-generic-helper") do |dir|
       source_path = File.join(dir, "generic-helper.mt")
 
-      File.write(source_path, [
-        "function clamp[T](value: T, min_value: T, max_value: T) -> T:",
-        "    if value < min_value:",
-        "        return min_value",
-        "    else if value > max_value:",
-        "        return max_value",
-        "    return value",
-        "",
-        "function main() -> int:",
-        "    let clamped = clamp(42, 0, 40)",
-        "    if clamped == 40:",
-        "        return 7",
-        "    return 1",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function clamp[T](value: T, min_value: T, max_value: T) -> T:
+    if value < min_value:
+        return min_value
+    else if value > max_value:
+        return max_value
+    return value
+
+function main() -> int:
+    let clamped = clamp(42, 0, 40)
+    if clamped == 40:
+        return 7
+    return 1
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -327,15 +337,17 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-numeric") do |dir|
       source_path = File.join(dir, "numeric.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    let sum = 1 + 2.5",
-        "    if 3 < 3.5 and sum > 3.0:",
-        "        return 7",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    let sum = 1 + 2.5
+    if 3 < 3.5 and sum > 3.0:
+        return 7
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -355,21 +367,23 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-pointers") do |dir|
       source_path = File.join(dir, "pointers.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 3)",
-        "    let counter_ptr = ptr_of(counter)",
-        "    var value = 0",
-        "    unsafe:",
-        "        counter_ptr.value = 7",
-        "        value = counter_ptr.value",
-        "    return value",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    var value = 0
+    unsafe:
+        counter_ptr.value = 7
+        value = counter_ptr.value
+    return value
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -389,18 +403,20 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-char-buffer") do |dir|
       source_path = File.join(dir, "char-buffer.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    let first = 65",
-        "    var buffer = zero[array[char, 4]]",
-        "    unsafe:",
-        "        var raw_buffer = ptr_of(buffer[0])",
-        "        raw_buffer[0] = first",
-        "        raw_buffer[1] = char<-66",
-        "    return int<-buffer[0] + int<-buffer[1] - 131",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    let first = 65
+    var buffer = zero[array[char, 4]]
+    unsafe:
+        var raw_buffer = ptr_of(buffer[0])
+        raw_buffer[0] = first
+        raw_buffer[1] = char<-66
+    return int<-buffer[0] + int<-buffer[1] - 131
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -420,34 +436,36 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-refs") do |dir|
       source_path = File.join(dir, "refs.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "extending Counter:",
-        "    mutable function add(delta: int):",
-        "        this.value += delta",
-        "",
-        "    function read() -> int:",
-        "        return this.value",
-        "",
-        "function increment(counter: ref[Counter], amount: int) -> void:",
-        "    counter.add(amount)",
-        "    counter.value += 1",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 3)",
-        "    let handle = ref_of(counter)",
-        "    increment(handle, 4)",
-        "    let value_ref = ref_of(handle.value)",
-        "    read(value_ref) += 2",
-        "    unsafe:",
-        "        let raw_counter = ptr_of(handle)",
-        "        raw_counter.value += 1",
-        "    return handle.read()",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+extending Counter:
+    mutable function add(delta: int):
+        this.value += delta
+
+    function read() -> int:
+        return this.value
+
+function increment(counter: ref[Counter], amount: int) -> void:
+    counter.add(amount)
+    counter.value += 1
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let handle = ref_of(counter)
+    increment(handle, 4)
+    let value_ref = ref_of(handle.value)
+    read(value_ref) += 2
+    unsafe:
+        let raw_counter = ptr_of(handle)
+        raw_counter.value += 1
+    return handle.read()
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -467,26 +485,28 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-pointer-methods") do |dir|
       source_path = File.join(dir, "pointer-methods.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "extending Counter:",
-        "    mutable function add(delta: int):",
-        "        this.value += delta",
-        "",
-        "    function read() -> int:",
-        "        return this.value",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 3)",
-        "    let counter_ptr = ptr_of(counter)",
-        "    unsafe:",
-        "        counter_ptr.add(4)",
-        "        return counter_ptr.read()",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+extending Counter:
+    mutable function add(delta: int):
+        this.value += delta
+
+    function read() -> int:
+        return this.value
+
+function main() -> int:
+    var counter = Counter(value = 3)
+    let counter_ptr = ptr_of(counter)
+    unsafe:
+        counter_ptr.add(4)
+        return counter_ptr.read()
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -506,21 +526,23 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-explicit-value") do |dir|
       source_path = File.join(dir, "explicit-value.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "function project(counter: Counter) -> int:",
-        "    return counter.value",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 9)",
-        "    let handle = ref_of(counter)",
-        "    counter.value = 12",
-        "    return project(read(handle))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+function project(counter: Counter) -> int:
+    return counter.value
+
+function main() -> int:
+    var counter = Counter(value = 9)
+    let handle = ref_of(counter)
+    counter.value = 12
+    return project(read(handle))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -540,20 +562,22 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-spans") do |dir|
       source_path = File.join(dir, "spans.mt")
 
-      File.write(source_path, [
-        "function first(items: span[int]) -> int:",
-        "    if items.len == 0:",
-        "        return 0",
-        "    unsafe:",
-        "        return read(items.data)",
-        "",
-        "function main() -> int:",
-        "    var value = 7",
-        "    let items = span[int](data = ptr_of(value), len = 1)",
-        "    return first(items)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function first(items: span[int]) -> int:
+    if items.len == 0:
+        return 0
+    unsafe:
+        return read(items.data)
+
+function main() -> int:
+    var value = 7
+    let items = span[int](data = ptr_of(value), len = 1)
+    return first(items)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -573,19 +597,21 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-span-index") do |dir|
       source_path = File.join(dir, "span_index.mt")
 
-      File.write(source_path, [
-        "function bump(items: span[int]) -> int:",
-        "    let first = items[0]",
-        "    items[0] = first + 2",
-        "    return items[0]",
-        "",
-        "function main() -> int:",
-        "    var value = 7",
-        "    let items = span[int](data = ptr_of(value), len = 1)",
-        "    return bump(items)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function bump(items: span[int]) -> int:
+    let first = items[0]
+    items[0] = first + 2
+    return items[0]
+
+function main() -> int:
+    var value = 7
+    let items = span[int](data = ptr_of(value), len = 1)
+    return bump(items)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -605,27 +631,29 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-generics") do |dir|
       source_path = File.join(dir, "generics.mt")
 
-      File.write(source_path, [
-        "struct Slice[T]:",
-        "    data: ptr[T]",
-        "    len: ptr_uint",
-        "",
-        "struct Holder:",
-        "    items: Slice[int]",
-        "",
-        "function first(items: Slice[int]) -> int:",
-        "    if items.len == 0:",
-        "        return 0",
-        "    unsafe:",
-        "        return read(items.data)",
-        "",
-        "function main() -> int:",
-        "    var value = 7",
-        "    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))",
-        "    return first(holder.items)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+struct Holder:
+    items: Slice[int]
+
+function first(items: Slice[int]) -> int:
+    if items.len == 0:
+        return 0
+    unsafe:
+        return read(items.data)
+
+function main() -> int:
+    var value = 7
+    let holder = Holder(items = Slice[int](data = ptr_of(value), len = 1))
+    return first(holder.items)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -645,18 +673,20 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-generic-expression-only") do |dir|
       source_path = File.join(dir, "generic-expression-only.mt")
 
-      File.write(source_path, [
-        "struct Box[T]:",
-        "    value: T",
-        "",
-        "function main() -> int:",
-        "    let ok: bool = Box[int](value = 7).value == 7",
-        "    if ok:",
-        "        return 1",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Box[T]:
+    value: T
+
+function main() -> int:
+    let ok: bool = Box[int](value = 7).value == 7
+    if ok:
+        return 1
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -676,28 +706,30 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-generic-functions") do |dir|
       source_path = File.join(dir, "generic-functions.mt")
 
-      File.write(source_path, [
-        "struct Slice[T]:",
-        "    data: ptr[T]",
-        "    len: ptr_uint",
-        "",
-        "function head[T](items: Slice[T]) -> ptr[T]:",
-        "    return items.data",
-        "",
-        "function min[T](a: T, b: T) -> T:",
-        "    if a < b:",
-        "        return a",
-        "    return b",
-        "",
-        "function main() -> int:",
-        "    var value = 7",
-        "    let items = Slice[int](data = ptr_of(value), len = 1)",
-        "    let smallest = min(9, 4)",
-        "    unsafe:",
-        "        return read(head(items)) + smallest",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Slice[T]:
+    data: ptr[T]
+    len: ptr_uint
+
+function head[T](items: Slice[T]) -> ptr[T]:
+    return items.data
+
+function min[T](a: T, b: T) -> T:
+    if a < b:
+        return a
+    return b
+
+function main() -> int:
+    var value = 7
+    let items = Slice[int](data = ptr_of(value), len = 1)
+    let smallest = min(9, 4)
+    unsafe:
+        return read(head(items)) + smallest
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -717,21 +749,23 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-ref-value-args") do |dir|
       source_path = File.join(dir, "ref-value-args.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "function project(counter: Counter) -> int:",
-        "    return counter.value",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 9)",
-        "    let handle = ref_of(counter)",
-        "    counter.value = 12",
-        "    return project(read(handle))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+function project(counter: Counter) -> int:
+    return counter.value
+
+function main() -> int:
+    var counter = Counter(value = 9)
+    let handle = ref_of(counter)
+    counter.value = 12
+    return project(read(handle))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -751,34 +785,36 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-result") do |dir|
       source_path = File.join(dir, "result.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "enum LoadError: ubyte",
-        "    invalid_format = 1",
-        "",
-        "function load(available: bool) -> Result[int, LoadError]:",
-        "    if available:",
-        "        return Result[int, LoadError].success(value= 7)",
-        "    return Result[int, LoadError].failure(error= LoadError.invalid_format)",
-        "",
-        "function main() -> int:",
-        "    let success = load(true)",
-        "    let failure = load(false)",
-        "    match success:",
-        "        Result.success as success_payload:",
-        "            match failure:",
-        "                Result.failure as failure_payload:",
-        "                    if failure_payload.error == LoadError.invalid_format:",
-        "                        return success_payload.value + 1",
-        "                Result.success as ignored_payload:",
-        "                    return 0",
-        "        Result.failure as ignored_error:",
-        "            return 0",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+enum LoadError: ubyte
+    invalid_format = 1
+
+function load(available: bool) -> Result[int, LoadError]:
+    if available:
+        return Result[int, LoadError].success(value= 7)
+    return Result[int, LoadError].failure(error= LoadError.invalid_format)
+
+function main() -> int:
+    let success = load(true)
+    let failure = load(false)
+    match success:
+        Result.success as success_payload:
+            match failure:
+                Result.failure as failure_payload:
+                    if failure_payload.error == LoadError.invalid_format:
+                        return success_payload.value + 1
+                Result.success as ignored_payload:
+                    return 0
+        Result.failure as ignored_error:
+            return 0
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -798,32 +834,34 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-option-result") do |dir|
       source_path = File.join(dir, "option_result_reader.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "import std.asset_pack as pack",
-        "",
-        "type Reader = pack.Reader",
-        "",
-        "function make() -> Result[Option[Reader], int]:",
-        "    return Result[Option[Reader], int].success(value= Option[Reader].some(value= Reader(file = null, entry_count = 0)))",
-        "",
-        "function main() -> int:",
-        "    let result = make()",
-        "    match result:",
-        "        Result.failure as payload:",
-        "            return payload.error",
-        "        Result.success as payload:",
-        "            match payload.value:",
-        "                Option.none:",
-        "                    return 1",
-        "                Option.some as reader_payload:",
-        "                    if reader_payload.value.file == null:",
-        "                        return int<-reader_payload.value.entry_count",
-        "                    return 2",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+import std.asset_pack as pack
+
+type Reader = pack.Reader
+
+function make() -> Result[Option[Reader], int]:
+    return Result[Option[Reader], int].success(value= Option[Reader].some(value= Reader(file = null, entry_count = 0)))
+
+function main() -> int:
+    let result = make()
+    match result:
+        Result.failure as payload:
+            return payload.error
+        Result.success as payload:
+            match payload.value:
+                Option.none:
+                    return 1
+                Option.some as reader_payload:
+                    if reader_payload.value.file == null:
+                        return int<-reader_payload.value.entry_count
+                    return 2
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -843,13 +881,15 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-fatal") do |dir|
       source_path = File.join(dir, "fatal.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    fatal(\"bad state\")",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    fatal(\"bad state\")
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -869,23 +909,25 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-match") do |dir|
       source_path = File.join(dir, "match.mt")
 
-      File.write(source_path, [
-        "enum EventKind: ubyte",
-        "    quit = 1",
-        "    resize = 2",
-        "",
-        "function dispatch(kind: EventKind) -> int:",
-        "    match kind:",
-        "        EventKind.quit:",
-        "            return 4",
-        "        EventKind.resize:",
-        "            return 7",
-        "",
-        "function main() -> int:",
-        "    return dispatch(EventKind.resize)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+enum EventKind: ubyte
+    quit = 1
+    resize = 2
+
+function dispatch(kind: EventKind) -> int:
+    match kind:
+        EventKind.quit:
+            return 4
+        EventKind.resize:
+            return 7
+
+function main() -> int:
+    return dispatch(EventKind.resize)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -905,20 +947,22 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-for") do |dir|
       source_path = File.join(dir, "for.mt")
 
-      File.write(source_path, [
-        "function sum(items: array[int, 4]) -> int:",
-        "    var total = 0",
-        "    for item in items:",
-        "        total += item",
-        "    for i in 0..4:",
-        "        total += i",
-        "    return total",
-        "",
-        "function main() -> int:",
-        "    return sum(array[int, 4](1, 2, 3, 4))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function sum(items: array[int, 4]) -> int:
+    var total = 0
+    for item in items:
+        total += item
+    for i in 0..4:
+        total += i
+    return total
+
+function main() -> int:
+    return sum(array[int, 4](1, 2, 3, 4))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -938,39 +982,41 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-result") do |dir|
       source_path = File.join(dir, "result.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "enum ParseError: ubyte",
-        "    empty = 1",
-        "    invalid = 2",
-        "",
-        "function parse(flag: int) -> Result[int, ParseError]:",
-        "    if flag == 0:",
-        "        return Result[int, ParseError].failure(error= ParseError.empty)",
-        "    else if flag < 0:",
-        "        return Result[int, ParseError].failure(error= ParseError.invalid)",
-        "    return Result[int, ParseError].success(value= flag + 10)",
-        "",
-        "function value_or_code(result: Result[int, ParseError]) -> int:",
-        "    match result:",
-        "        Result.success as payload:",
-        "            return payload.value",
-        "        Result.failure as payload:",
-        "            match payload.error:",
-        "                ParseError.empty:",
-        "                    return 2",
-        "                ParseError.invalid:",
-        "                    return 3",
-        "    return 0",
-        "",
-        "function main() -> int:",
-        "    let parsed = parse(4)",
-        "    let failed = parse(0)",
-        "    return value_or_code(parsed) + value_or_code(failed)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+enum ParseError: ubyte
+    empty = 1
+    invalid = 2
+
+function parse(flag: int) -> Result[int, ParseError]:
+    if flag == 0:
+        return Result[int, ParseError].failure(error= ParseError.empty)
+    else if flag < 0:
+        return Result[int, ParseError].failure(error= ParseError.invalid)
+    return Result[int, ParseError].success(value= flag + 10)
+
+function value_or_code(result: Result[int, ParseError]) -> int:
+    match result:
+        Result.success as payload:
+            return payload.value
+        Result.failure as payload:
+            match payload.error:
+                ParseError.empty:
+                    return 2
+                ParseError.invalid:
+                    return 3
+    return 0
+
+function main() -> int:
+    let parsed = parse(4)
+    let failed = parse(0)
+    return value_or_code(parsed) + value_or_code(failed)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -990,24 +1036,26 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-status-let-else") do |dir|
       source_path = File.join(dir, "status_let_else.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "function parse(flag: int) -> Result[int, int]:",
-        "    if flag < 0:",
-        "        return Result[int, int].failure(error= 20)",
-        "    return Result[int, int].success(value= flag + 1)",
-        "",
-        "function consume(flag: int) -> int:",
-        "    let value: int = parse(flag) else:",
-        "        return 20",
-        "    return value + 3",
-        "",
-        "function main() -> int:",
-        "    return consume(4) + consume(-1)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+function parse(flag: int) -> Result[int, int]:
+    if flag < 0:
+        return Result[int, int].failure(error= 20)
+    return Result[int, int].success(value= flag + 1)
+
+function consume(flag: int) -> int:
+    let value: int = parse(flag) else:
+        return 20
+    return value + 3
+
+function main() -> int:
+    return consume(4) + consume(-1)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1027,24 +1075,26 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-status-let-else-error") do |dir|
       source_path = File.join(dir, "status_let_else_error.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "function parse(flag: int) -> Result[int, int]:",
-        "    if flag < 0:",
-        "        return Result[int, int].failure(error= 20)",
-        "    return Result[int, int].success(value= flag + 1)",
-        "",
-        "function consume(flag: int) -> int:",
-        "    let value: int = parse(flag) else as error:",
-        "        return error",
-        "    return value + 3",
-        "",
-        "function main() -> int:",
-        "    return consume(4) + consume(-1)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+function parse(flag: int) -> Result[int, int]:
+    if flag < 0:
+        return Result[int, int].failure(error= 20)
+    return Result[int, int].success(value= flag + 1)
+
+function consume(flag: int) -> int:
+    let value: int = parse(flag) else as error:
+        return error
+    return value + 3
+
+function main() -> int:
+    return consume(4) + consume(-1)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1064,27 +1114,29 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-status-let-else-void") do |dir|
       source_path = File.join(dir, "status_let_else_void.mt")
 
-      File.write(source_path, [
-        "",
-        "",
-        "function done() -> void:",
-        "    return",
-        "",
-        "function parse(flag: int) -> Result[void, int]:",
-        "    if flag < 0:",
-        "        return Result[void, int].failure(error= 20)",
-        "    return Result[void, int].success(value= done())",
-        "",
-        "function consume(flag: int) -> int:",
-        "    let _ = parse(flag) else as error:",
-        "        return error",
-        "    return 8",
-        "",
-        "function main() -> int:",
-        "    return consume(1) + consume(-1)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+
+function done() -> void:
+    return
+
+function parse(flag: int) -> Result[void, int]:
+    if flag < 0:
+        return Result[void, int].failure(error= 20)
+    return Result[void, int].success(value= done())
+
+function consume(flag: int) -> int:
+    let _ = parse(flag) else as error:
+        return error
+    return 8
+
+function main() -> int:
+    return consume(1) + consume(-1)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1104,23 +1156,25 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-callable") do |dir|
       source_path = File.join(dir, "callable.mt")
 
-      File.write(source_path, [
-        "struct Entry:",
-        "    callback: fn(value: int) -> int",
-        "",
-        "function add_two(value: int) -> int:",
-        "    return value + 2",
-        "",
-        "function triple(value: int) -> int:",
-        "    return value * 3",
-        "",
-        "function main() -> int:",
-        "    let callbacks = array[fn(value: int) -> int, 2](add_two, triple)",
-        "    let entry = Entry(callback = callbacks[1])",
-        "    return callbacks[0](5) + entry.callback(4)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Entry:
+    callback: fn(value: int) -> int
+
+function add_two(value: int) -> int:
+    return value + 2
+
+function triple(value: int) -> int:
+    return value * 3
+
+function main() -> int:
+    let callbacks = array[fn(value: int) -> int, 2](add_two, triple)
+    let entry = Entry(callback = callbacks[1])
+    return callbacks[0](5) + entry.callback(4)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1140,18 +1194,20 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-proc") do |dir|
       source_path = File.join(dir, "proc_closure.mt")
 
-      File.write(source_path, [
-        "function apply(callback: proc(value: int) -> int, value: int) -> int:",
-        "    return callback(value)",
-        "",
-        "function main() -> int:",
-        "    let offset = 4",
-        "    let callback = proc(value: int) -> int:",
-        "        return value * 2 + offset",
-        "    return apply(callback, 3)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function apply(callback: proc(value: int) -> int, value: int) -> int:
+    return callback(value)
+
+function main() -> int:
+    let offset = 4
+    let callback = proc(value: int) -> int:
+        return value * 2 + offset
+    return apply(callback, 3)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1171,31 +1227,33 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-loop-control") do |dir|
       source_path = File.join(dir, "loop_control.mt")
 
-      File.write(source_path, [
-        "enum Step: ubyte",
-        "    skip = 1",
-        "    keep = 2",
-        "    stop = 3",
-        "",
-        "function add(target: ptr[int], amount: int) -> void:",
-        "    unsafe:",
-        "        read(target) += amount",
-        "",
-        "function main() -> int:",
-        "    var total = 0",
-        "    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):",
-        "        defer add(ptr_of(total), 1)",
-        "        match step:",
-        "            Step.skip:",
-        "                continue",
-        "            Step.keep:",
-        "                total += 10",
-        "            Step.stop:",
-        "                break",
-        "    return total",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+enum Step: ubyte
+    skip = 1
+    keep = 2
+    stop = 3
+
+function add(target: ptr[int], amount: int) -> void:
+    unsafe:
+        read(target) += amount
+
+function main() -> int:
+    var total = 0
+    for step in array[Step, 4](Step.keep, Step.skip, Step.keep, Step.stop):
+        defer add(ptr_of(total), 1)
+        match step:
+            Step.skip:
+                continue
+            Step.keep:
+                total += 10
+            Step.stop:
+                break
+    return total
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1215,19 +1273,21 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-layout") do |dir|
       source_path = File.join(dir, "layout.mt")
 
-      File.write(source_path, [
-        "struct Header:",
-        "    magic: array[ubyte, 4]",
-        "    version: ushort",
-        "",
-        "static_assert(size_of(Header) == 6, \"Header size should stay stable\")",
-        "static_assert(offset_of(Header, version) == 4, \"Header.version offset drifted\")",
-        "",
-        "function main() -> int:",
-        "    return int<-(size_of(Header) + align_of(Header) + offset_of(Header, version))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Header:
+    magic: array[ubyte, 4]
+    version: ushort
+
+static_assert(size_of(Header) == 6, \"Header size should stay stable\")
+static_assert(offset_of(Header, version) == 4, \"Header.version offset drifted\")
+
+function main() -> int:
+    return int<-(size_of(Header) + align_of(Header) + offset_of(Header, version))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1247,23 +1307,25 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-layout-modifiers") do |dir|
       source_path = File.join(dir, "layout_modifiers.mt")
 
-      File.write(source_path, [
-        "packed struct Header:",
-        "    tag: ubyte",
-        "    value: uint",
-        "",
-        "align(16) struct Mat4:",
-        "    data: array[float, 16]",
-        "",
-        "static_assert(size_of(Header) == 5, \"Header should stay packed\")",
-        "static_assert(offset_of(Header, value) == 1, \"Header.value offset drifted\")",
-        "static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")",
-        "",
-        "function main() -> int:",
-        "    return int<-(size_of(Header) + offset_of(Header, value) + align_of(Mat4))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+packed struct Header:
+    tag: ubyte
+    value: uint
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+static_assert(size_of(Header) == 5, \"Header should stay packed\")
+static_assert(offset_of(Header, value) == 1, \"Header.value offset drifted\")
+static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")
+
+function main() -> int:
+    return int<-(size_of(Header) + offset_of(Header, value) + align_of(Mat4))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1283,17 +1345,19 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str") do |dir|
       source_path = File.join(dir, "str_value.mt")
 
-      File.write(source_path, [
-        "const greeting: str = \"hello\"",
-        "",
-        "function score(message: str) -> int:",
-        "    return 7",
-        "",
-        "function main() -> int:",
-        "    return score(greeting)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+const greeting: str = \"hello\"
+
+function score(message: str) -> int:
+    return 7
+
+function main() -> int:
+    return score(greeting)
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1313,23 +1377,25 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-ops") do |dir|
       source_path = File.join(dir, "str_ops.mt")
 
-      File.write(source_path, [
-        "import std.str as text_ops",
-        "import std.mem.arena as arena",
-        "import std.c.libc as libc",
-        "",
-        "function main() -> int:",
-        "    var scratch = arena.create(64)",
-        "    defer scratch.release()",
-        "    let text = \"12345!\"",
-        "    let part = text.slice(0, 5)",
-        "    let copied = part.to_cstr(ref_of(scratch))",
-        "    if text.len == ptr_uint<-6 and libc.atoi(copied) == 12345:",
-        "        return int<-part.len",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.str as text_ops
+import std.mem.arena as arena
+import std.c.libc as libc
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+    let text = \"12345!\"
+    let part = text.slice(0, 5)
+    let copied = part.to_cstr(ref_of(scratch))
+    if text.len == ptr_uint<-6 and libc.atoi(copied) == 12345:
+        return int<-part.len
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1349,19 +1415,21 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-std-libc") do |dir|
       source_path = File.join(dir, "std_libc.mt")
 
-      File.write(source_path, [
-        "import std.libc as libc",
-        "import std.str as text_ops",
-        "",
-        "function main() -> int:",
-        "    let text = \"12345!\"",
-        "    let part = text.slice(0, 5)",
-        "    if libc.parse_int(part) == 12345:",
-        "        return int<-part.len",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.libc as libc
+import std.str as text_ops
+
+function main() -> int:
+    let text = \"12345!\"
+    let part = text.slice(0, 5)
+    if libc.parse_int(part) == 12345:
+        return int<-part.len
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1381,24 +1449,26 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-defer-block") do |dir|
       source_path = File.join(dir, "defer_block.mt")
 
-      File.write(source_path, [
-        "function append_digit(target: ptr[int], digit: int) -> void:",
-        "    unsafe:",
-        "        read(target) = read(target) * 10 + digit",
-        "",
-        "function run(target: ptr[int]) -> void:",
-        "    defer append_digit(target, 3)",
-        "    defer:",
-        "        append_digit(target, 1)",
-        "        append_digit(target, 2)",
-        "",
-        "function main() -> int:",
-        "    var total = 0",
-        "    run(ptr_of(total))",
-        "    return total",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function append_digit(target: ptr[int], digit: int) -> void:
+    unsafe:
+        read(target) = read(target) * 10 + digit
+
+function run(target: ptr[int]) -> void:
+    defer append_digit(target, 3)
+    defer:
+        append_digit(target, 1)
+        append_digit(target, 2)
+
+function main() -> int:
+    var total = 0
+    run(ptr_of(total))
+    return total
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1418,18 +1488,20 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-utf8-slice") do |dir|
       source_path = File.join(dir, "str_utf8_slice.mt")
 
-      File.write(source_path, [
-        "import std.str as text_ops",
-        "",
-        "function main() -> int:",
-        "    let text = \"éx\"",
-        "    let part = text.slice(0, 2)",
-        "    if text.len == ptr_uint<-3 and part.len == ptr_uint<-2:",
-        "        return int<-part.len",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.str as text_ops
+
+function main() -> int:
+    let text = \"éx\"
+    let part = text.slice(0, 2)
+    if text.len == ptr_uint<-3 and part.len == ptr_uint<-2:
+        return int<-part.len
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1449,16 +1521,18 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-bad-start-boundary") do |dir|
       source_path = File.join(dir, "str_bad_start_boundary.mt")
 
-      File.write(source_path, [
-        "import std.str as text_ops",
-        "",
-        "function main() -> int:",
-        "    let text = \"éx\"",
-        "    let part = text.slice(1, 2)",
-        "    return int<-part.len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.str as text_ops
+
+function main() -> int:
+    let text = \"éx\"
+    let part = text.slice(1, 2)
+    return int<-part.len
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1478,16 +1552,18 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-bad-end-boundary") do |dir|
       source_path = File.join(dir, "str_bad_end_boundary.mt")
 
-      File.write(source_path, [
-        "import std.str as text_ops",
-        "",
-        "function main() -> int:",
-        "    let text = \"éx\"",
-        "    let part = text.slice(0, 1)",
-        "    return int<-part.len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.str as text_ops
+
+function main() -> int:
+    let text = \"éx\"
+    let part = text.slice(0, 1)
+    return int<-part.len
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1504,14 +1580,16 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-char-bad-str") do |dir|
       source_path = File.join(dir, "array_char_bad_str.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    var buffer: array[char, 2]",
-        "    let view = buffer.as_str()",
-        "    return int<-view.len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    var buffer: array[char, 2]
+    let view = buffer.as_str()
+    return int<-view.len
+
+      MT
+
+      )
       error = assert_raises(MilkTea::SemaError) do
         MilkTea::Run.run(source_path)
       end
@@ -1524,14 +1602,16 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-char-bad-cstr") do |dir|
       source_path = File.join(dir, "array_char_bad_cstr.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    var buffer: array[char, 2]",
-        "    let label = buffer.as_cstr()",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    var buffer: array[char, 2]
+    let label = buffer.as_cstr()
+    return 0
+
+      MT
+
+      )
       error = assert_raises(MilkTea::SemaError) do
         MilkTea::Run.run(source_path)
       end
@@ -1547,36 +1627,38 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-builder") do |dir|
       source_path = File.join(dir, "str_buffer.mt")
 
-      File.write(source_path, [
-        "function write_raw(items: span[char]) -> void:",
-        "    unsafe:",
-        "        items.data[0] = char<-65",
-        "        items.data[1] = 0",
-        "",
-        "function view(items: span[char]) -> ptr_uint:",
-        "    return items.len",
-        "",
-        "function main() -> int:",
-        "    var buffer: str_buffer[8]",
-        "    buffer.assign(\"ab\")",
-        "    buffer.append(\"cd\")",
-        "    if view(buffer) != ptr_uint<-9:",
-        "        return 1",
-        "    if buffer.len() != ptr_uint<-4:",
-        "        return 2",
-        "    write_raw(buffer)",
-        "    let text = buffer.as_str()",
-        "    if text.len != ptr_uint<-1:",
-        "        return 3",
-        "    if buffer.len() != ptr_uint<-1:",
-        "        return 4",
-        "    buffer.clear()",
-        "    if buffer.len() != ptr_uint<-0:",
-        "        return 5",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function write_raw(items: span[char]) -> void:
+    unsafe:
+        items.data[0] = char<-65
+        items.data[1] = 0
+
+function view(items: span[char]) -> ptr_uint:
+    return items.len
+
+function main() -> int:
+    var buffer: str_buffer[8]
+    buffer.assign(\"ab\")
+    buffer.append(\"cd\")
+    if view(buffer) != ptr_uint<-9:
+        return 1
+    if buffer.len() != ptr_uint<-4:
+        return 2
+    write_raw(buffer)
+    let text = buffer.as_str()
+    if text.len != ptr_uint<-1:
+        return 3
+    if buffer.len() != ptr_uint<-1:
+        return 4
+    buffer.clear()
+    if buffer.len() != ptr_uint<-0:
+        return 5
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1596,20 +1678,22 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-str-builder-bad-str") do |dir|
       source_path = File.join(dir, "str_buffer_bad_str.mt")
 
-      File.write(source_path, [
-        "function corrupt(items: span[char]) -> void:",
-        "    unsafe:",
-        "        items.data[0] = char<-0x80",
-        "        items.data[1] = 0",
-        "",
-        "function main() -> int:",
-        "    var buffer: str_buffer[4]",
-        "    corrupt(buffer)",
-        "    let text = buffer.as_str()",
-        "    return int<-text.len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function corrupt(items: span[char]) -> void:
+    unsafe:
+        items.data[0] = char<-0x80
+        items.data[1] = 0
+
+function main() -> int:
+    var buffer: str_buffer[4]
+    corrupt(buffer)
+    let text = buffer.as_str()
+    return int<-text.len
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1636,29 +1720,33 @@ class MilkTeaRunTest < Minitest::Test
     begin
       module_prefix = "tmp.#{dir_name}"
 
-      File.write(sample_path, [
-        "import std.c.libc as libc",
-        "",
-        "public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])",
-        "public foreign function second(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[1])",
-        "",
-      ].join("\n"))
+      File.write(sample_path, <<~MT
 
-      File.write(source_path, [
-        "import #{module_prefix}.sample as sample",
-        "",
-        "function main() -> int:",
-        "    var labels = array[str, 2](\"12\", \"34\")",
-        "    let first = sample.first(labels)",
-        "    let second = sample.second(labels)",
-        "    if first != 12:",
-        "        return 1",
-        "    if second != 34:",
-        "        return 2",
-        "    return 0",
-        "",
-      ].join("\n"))
+import std.c.libc as libc
 
+public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])
+public foreign function second(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[1])
+
+      MT
+
+      )
+      File.write(source_path, <<~MT
+
+import #{module_prefix}.sample as sample
+
+function main() -> int:
+    var labels = array[str, 2](\"12\", \"34\")
+    let first = sample.first(labels)
+    let second = sample.second(labels)
+    if first != 12:
+        return 1
+    if second != 34:
+        return 2
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1689,42 +1777,46 @@ class MilkTeaRunTest < Minitest::Test
     begin
       module_prefix = "tmp.#{dir_name}"
 
-      File.write(sample_path, [
-        "import std.c.libc as libc",
-        "",
-        "public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])",
-        "public foreign function second(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[1])",
-        "public foreign function same_div(value: int) -> libc.div_t = libc.div(value, value)",
-        "",
-      ].join("\n"))
+      File.write(sample_path, <<~MT
 
-      File.write(source_path, [
-        "import #{module_prefix}.sample as sample",
-        "",
-        "function keep(value: int) -> int:",
-        "    return value",
-        "",
-        "function main() -> int:",
-        "    var labels = array[str, 2](\"12\", \"34\")",
-        "    var short_labels = array[str, 1](\"12\")",
-        "    let nested_sum = keep(sample.first(labels) + sample.second(labels))",
-        "    if nested_sum != 46:",
-        "        return 1",
-        "    let duplicated = sample.same_div(1 + 2).quot",
-        "    if duplicated != 1:",
-        "        return 2",
-        "    let chosen = if true: keep(sample.first(labels)) else: keep(sample.second(short_labels))",
-        "    if chosen != 12:",
-        "        return 3",
-        "    if false and sample.second(short_labels) != 0:",
-        "        return 4",
-        "    let always_true = if true or sample.second(short_labels) != 0: 1 else: 0",
-        "    if always_true != 1:",
-        "        return 5",
-        "    return 0",
-        "",
-      ].join("\n"))
+import std.c.libc as libc
 
+public foreign function first(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[0])
+public foreign function second(labels: span[str] as span[ptr[char]]) -> int = libc.atoi(labels[1])
+public foreign function same_div(value: int) -> libc.div_t = libc.div(value, value)
+
+      MT
+
+      )
+      File.write(source_path, <<~MT
+
+import #{module_prefix}.sample as sample
+
+function keep(value: int) -> int:
+    return value
+
+function main() -> int:
+    var labels = array[str, 2](\"12\", \"34\")
+    var short_labels = array[str, 1](\"12\")
+    let nested_sum = keep(sample.first(labels) + sample.second(labels))
+    if nested_sum != 46:
+        return 1
+    let duplicated = sample.same_div(1 + 2).quot
+    if duplicated != 1:
+        return 2
+    let chosen = if true: keep(sample.first(labels)) else: keep(sample.second(short_labels))
+    if chosen != 12:
+        return 3
+    if false and sample.second(short_labels) != 0:
+        return 4
+    let always_true = if true or sample.second(short_labels) != 0: 1 else: 0
+    if always_true != 1:
+        return 5
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1748,29 +1840,31 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-match-expr") do |dir|
       source_path = File.join(dir, "match_expr.mt")
 
-      File.write(source_path, [
-        "struct Counter:",
-        "    value: int",
-        "",
-        "variant Step:",
-        "    keep(value: int)",
-        "    stop",
-        "",
-        "function next_step(counter: ref[Counter]) -> Step:",
-        "    counter.value += 1",
-        "    return Step.keep(value = 41)",
-        "",
-        "function main() -> int:",
-        "    var counter = Counter(value = 0)",
-        "    let result = match next_step(counter):",
-        "        Step.keep as payload: payload.value + counter.value",
-        "        Step.stop: 0",
-        "    if counter.value != 1:",
-        "        return 1",
-        "    return if result == 42: 0 else: 2",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Counter:
+    value: int
+
+variant Step:
+    keep(value: int)
+    stop
+
+function next_step(counter: ref[Counter]) -> Step:
+    counter.value += 1
+    return Step.keep(value = 41)
+
+function main() -> int:
+    var counter = Counter(value = 0)
+    let result = match next_step(counter):
+        Step.keep as payload: payload.value + counter.value
+        Step.stop: 0
+    if counter.value != 1:
+        return 1
+    return if result == 42: 0 else: 2
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1786,18 +1880,20 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-reinterpret") do |dir|
       source_path = File.join(dir, "reinterpret.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    let value: float = 1.0",
-        "    let expected: uint = 1065353216",
-        "    unsafe:",
-        "        let bits = reinterpret[uint](value)",
-        "        if bits != expected:",
-        "            return 1",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    let value: float = 1.0
+    let expected: uint = 1065353216
+    unsafe:
+        let bits = reinterpret[uint](value)
+        if bits != expected:
+            return 1
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1817,22 +1913,24 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-arrays") do |dir|
       source_path = File.join(dir, "arrays.mt")
 
-      File.write(source_path, [
-        "struct Palette:",
-        "    colors: array[uint, 4]",
-        "",
-        "function main() -> int:",
-        "    var palette = array[uint, 4](1, 2, 3, 4)",
-        "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-        "    unsafe:",
-        "        if read(ptr_of(palette[0])) != 1:",
-        "            return 1",
-        "        if read(ptr_of(holder.colors[0])) != 5:",
-        "            return 2",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    var palette = array[uint, 4](1, 2, 3, 4)
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    unsafe:
+        if read(ptr_of(palette[0])) != 1:
+            return 1
+        if read(ptr_of(holder.colors[0])) != 5:
+            return 2
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1852,22 +1950,24 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-ptr-array-addr") do |dir|
       source_path = File.join(dir, "ptr-array-addr.mt")
 
-      File.write(source_path, [
-        "struct Palette:",
-        "    colors: array[uint, 4]",
-        "",
-        "function main() -> int:",
-        "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-        "    unsafe:",
-        "        let base = ptr_of(holder)",
-        "        let first = ptr_of(base.colors[0])",
-        "        read(first) = 9",
-        "    if holder.colors[0] != 9:",
-        "        return 1",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    unsafe:
+        let base = ptr_of(holder)
+        let first = ptr_of(base.colors[0])
+        read(first) = 9
+    if holder.colors[0] != 9:
+        return 1
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1887,25 +1987,27 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-indexing") do |dir|
       source_path = File.join(dir, "array-indexing.mt")
 
-      File.write(source_path, [
-        "struct Palette:",
-        "    colors: array[uint, 4]",
-        "",
-        "function main() -> int:",
-        "    var palette = array[uint, 4](1, 2, 3, 4)",
-        "    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))",
-        "    palette[1] = 9",
-        "    holder.colors[2] = 10",
-        "    if palette[0] != 1:",
-        "        return 1",
-        "    if palette[1] != 9:",
-        "        return 2",
-        "    if holder.colors[2] != 10:",
-        "        return 3",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    var palette = array[uint, 4](1, 2, 3, 4)
+    var holder = Palette(colors = array[uint, 4](5, 6, 7, 8))
+    palette[1] = 9
+    holder.colors[2] = 10
+    if palette[0] != 1:
+        return 1
+    if palette[1] != 9:
+        return 2
+    if holder.colors[2] != 10:
+        return 3
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1925,13 +2027,15 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-bounds") do |dir|
       source_path = File.join(dir, "array-bounds.mt")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    let palette = array[int, 4](1, 2, 3, 4)",
-        "    return palette[4]",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    let palette = array[int, 4](1, 2, 3, 4)
+    return palette[4]
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_includes result.stderr, "array index out of bounds"
@@ -1950,27 +2054,29 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-copy") do |dir|
       source_path = File.join(dir, "array-copy.mt")
 
-      File.write(source_path, [
-        "function mutate(values: array[int, 4]) -> int:",
-        "    var local = values",
-        "    unsafe:",
-        "        local[1] = 9",
-        "        return local[1]",
-        "",
-        "function main() -> int:",
-        "    var lhs = array[int, 4](1, 2, 3, 4)",
-        "    let rhs = array[int, 4](5, 6, 7, 8)",
-        "    lhs = rhs",
-        "    let changed = mutate(lhs)",
-        "    if changed != 9:",
-        "        return 1",
-        "    unsafe:",
-        "        if lhs[1] != 6:",
-        "            return 2",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function mutate(values: array[int, 4]) -> int:
+    var local = values
+    unsafe:
+        local[1] = 9
+        return local[1]
+
+function main() -> int:
+    var lhs = array[int, 4](1, 2, 3, 4)
+    let rhs = array[int, 4](5, 6, 7, 8)
+    lhs = rhs
+    let changed = mutate(lhs)
+    if changed != 9:
+        return 1
+    unsafe:
+        if lhs[1] != 6:
+            return 2
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -1990,21 +2096,23 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-zero") do |dir|
       source_path = File.join(dir, "zero.mt")
 
-      File.write(source_path, [
-        "struct Palette:",
-        "    colors: array[uint, 4]",
-        "",
-        "function main() -> int:",
-        "    let palette = zero[array[uint, 4]]",
-        "    let holder = zero[Palette]",
-        "    if palette[0] != 0:",
-        "        return 1",
-        "    if holder.colors[3] != 0:",
-        "        return 2",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Palette:
+    colors: array[uint, 4]
+
+function main() -> int:
+    let palette = zero[array[uint, 4]]
+    let holder = zero[Palette]
+    if palette[0] != 0:
+        return 1
+    if holder.colors[3] != 0:
+        return 2
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -2024,34 +2132,36 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-partial-init") do |dir|
       source_path = File.join(dir, "partial-init.mt")
 
-      File.write(source_path, [
-        "struct Point:",
-        "    x: int",
-        "    y: int",
-        "",
-        "struct Holder:",
-        "    point: Point",
-        "    colors: array[uint, 4]",
-        "",
-        "function main() -> int:",
-        "    let origin = Point()",
-        "    let point = Point(x = 5)",
-        "    let colors = array[uint, 4](1, 2)",
-        "    let holder = Holder(point = point)",
-        "    if origin.x != 0 or origin.y != 0:",
-        "        return 1",
-        "    if point.x != 5 or point.y != 0:",
-        "        return 2",
-        "    if colors[0] != 1 or colors[1] != 2 or colors[2] != 0 or colors[3] != 0:",
-        "        return 3",
-        "    if holder.point.x != 5 or holder.point.y != 0:",
-        "        return 4",
-        "    if holder.colors[0] != 0 or holder.colors[3] != 0:",
-        "        return 5",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+struct Point:
+    x: int
+    y: int
+
+struct Holder:
+    point: Point
+    colors: array[uint, 4]
+
+function main() -> int:
+    let origin = Point()
+    let point = Point(x = 5)
+    let colors = array[uint, 4](1, 2)
+    let holder = Holder(point = point)
+    if origin.x != 0 or origin.y != 0:
+        return 1
+    if point.x != 5 or point.y != 0:
+        return 2
+    if colors[0] != 1 or colors[1] != 2 or colors[2] != 0 or colors[3] != 0:
+        return 3
+    if holder.point.x != 5 or holder.point.y != 0:
+        return 4
+    if holder.colors[0] != 0 or holder.colors[3] != 0:
+        return 5
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout
@@ -2071,22 +2181,24 @@ class MilkTeaRunTest < Minitest::Test
     Dir.mktmpdir("milk-tea-run-array-returns") do |dir|
       source_path = File.join(dir, "array-returns.mt")
 
-      File.write(source_path, [
-        "function make() -> array[int, 4]:",
-        "    return array[int, 4](1, 2, 3, 4)",
-        "",
-        "function clone(values: array[int, 4]) -> array[int, 4]:",
-        "    return values",
-        "",
-        "function read(values: array[int, 4]) -> int:",
-        "    unsafe:",
-        "        return values[1]",
-        "",
-        "function main() -> int:",
-        "    return read(clone(make()))",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function make() -> array[int, 4]:
+    return array[int, 4](1, 2, 3, 4)
+
+function clone(values: array[int, 4]) -> array[int, 4]:
+    return values
+
+function read(values: array[int, 4]) -> int:
+    unsafe:
+        return values[1]
+
+function main() -> int:
+    return read(clone(make()))
+
+      MT
+
+      )
       result = MilkTea::Run.run(source_path, cc: compiler)
 
       assert_equal "", result.stdout

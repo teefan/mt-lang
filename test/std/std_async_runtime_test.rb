@@ -8,19 +8,20 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "function compute_value() -> int:",
-      "    return 7",
-      "",
-      "async function child() -> int:",
-      "    return await aio.sleep(1) + await aio.work(compute_value) + 30",
-      "",
-      "async function main() -> int:",
-      "    return await child() + await aio.work(compute_value)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+function compute_value() -> int:
+    return 7
+
+async function child() -> int:
+    return await aio.sleep(1) + await aio.work(compute_value) + 30
+
+async function main() -> int:
+    return await child() + await aio.work(compute_value)
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -34,11 +35,12 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "async function main() -> int:",
-      "    return 42",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+async function main() -> int:
+    return 42
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -52,15 +54,16 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function main() -> void:",
-      "    await aio.sleep(1)",
-      "    await aio.sleep(1)",
-      "    return",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function main() -> void:
+    await aio.sleep(1)
+    await aio.sleep(1)
+    return
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -74,19 +77,20 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function run_once() -> void:",
-      "    await aio.sleep(1)",
-      "    await aio.sleep(1)",
-      "    return",
-      "",
-      "function main() -> int:",
-      "    aio.run(run_once())",
-      "    return 3",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function run_once() -> void:
+    await aio.sleep(1)
+    await aio.sleep(1)
+    return
+
+function main() -> int:
+    aio.run(run_once())
+    return 3
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -100,16 +104,17 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function app() -> int:",
-      "    return await aio.sleep(1) + 42",
-      "",
-      "function main() -> int:",
-      "    return aio.wait(app)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function app() -> int:
+    return await aio.sleep(1) + 42
+
+function main() -> int:
+    return aio.wait(app)
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -123,17 +128,18 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function child(bonus: int) -> int:",
-      "    return await aio.sleep(1) + bonus",
-      "",
-      "function main() -> int:",
-      "    let bonus = 42",
-      "    return aio.wait(child(bonus))",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function child(bonus: int) -> int:
+    return await aio.sleep(1) + bonus
+
+function main() -> int:
+    let bonus = 42
+    return aio.wait(child(bonus))
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -147,28 +153,29 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "struct Pair:",
-      "    left: int",
-      "    right: int",
-      "",
-      "function make_pair() -> Pair:",
-      "    return Pair(left = 18, right = 24)",
-      "",
-      "function run_with_runtime(runtime: aio.Runtime) -> int:",
-      "    let task = aio.work_on(runtime, make_pair)",
-      "    while not aio.completed(task):",
-      "        aio.pump(runtime)",
-      "",
-      "    let pair = aio.result(task)",
-      "    return pair.left + pair.right",
-      "",
-      "function main() -> int:",
-      "    return aio.with_runtime(run_with_runtime)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+struct Pair:
+    left: int
+    right: int
+
+function make_pair() -> Pair:
+    return Pair(left = 18, right = 24)
+
+function run_with_runtime(runtime: aio.Runtime) -> int:
+    let task = aio.work_on(runtime, make_pair)
+    while not aio.completed(task):
+        aio.pump(runtime)
+
+    let pair = aio.result(task)
+    return pair.left + pair.right
+
+function main() -> int:
+    return aio.with_runtime(run_with_runtime)
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -182,19 +189,20 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function main() -> int:",
-      "    var total = 0",
-      "    if true:",
-      "        defer:",
-      "            total += 2",
-      "        await aio.sleep(1)",
-      "        total += 40",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function main() -> int:
+    var total = 0
+    if true:
+        defer:
+            total += 2
+        await aio.sleep(1)
+        total += 40
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -208,19 +216,20 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function main() -> int:",
-      "    var total = 0",
-      "    if true:",
-      "        defer:",
-      "            total += await aio.sleep(1)",
-      "            total += 2",
-      "        total += 40",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function main() -> int:
+    var total = 0
+    if true:
+        defer:
+            total += await aio.sleep(1)
+            total += 2
+        total += 40
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -234,27 +243,28 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function maybe_value(flag: bool, handle: ptr[int]?) -> ptr[int]?:",
-      "    await aio.sleep(1)",
-      "    if flag:",
-      "        return handle",
-      "    return null[ptr[int]]",
-      "",
-      "async function main() -> int:",
-      "    var value = 42",
-      "    let handle = unsafe: ptr_of(value)",
-      "    let first = await maybe_value(false, handle) else:",
-      "        let second = await maybe_value(true, handle) else:",
-      "            return 1",
-      "        unsafe:",
-      "            return read(second)",
-      "    unsafe:",
-      "        return read(first)",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function maybe_value(flag: bool, handle: ptr[int]?) -> ptr[int]?:
+    await aio.sleep(1)
+    if flag:
+        return handle
+    return null[ptr[int]]
+
+async function main() -> int:
+    var value = 42
+    let handle = unsafe: ptr_of(value)
+    let first = await maybe_value(false, handle) else:
+        let second = await maybe_value(true, handle) else:
+            return 1
+        unsafe:
+            return read(second)
+    unsafe:
+        return read(first)
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -268,21 +278,22 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function tick() -> int:",
-      "    return 1",
-      "",
-      "async function main() -> int:",
-      "    let items = array[int, 3](10, 20, 30)",
-      "    var total = 0",
-      "    for item in items:",
-      "        total += await tick()",
-      "        total += item",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function tick() -> int:
+    return 1
+
+async function main() -> int:
+    let items = array[int, 3](10, 20, 30)
+    var total = 0
+    for item in items:
+        total += await tick()
+        total += item
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -296,18 +307,19 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function main() -> int:",
-      "    let items = array[int, 3](10, 20, 30)",
-      "    var total = 0",
-      "    for item in items:",
-      "        total += await aio.sleep(1)",
-      "        total += item",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function main() -> int:
+    let items = array[int, 3](10, 20, 30)
+    var total = 0
+    for item in items:
+        total += await aio.sleep(1)
+        total += item
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -321,19 +333,20 @@ class MilkTeaStdAsyncRuntimeTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.async as aio",
-      "",
-      "async function main() -> int:",
-      "    let lefts = array[int, 3](10, 20, 30)",
-      "    let rights = array[int, 3](1, 2, 3)",
-      "    var total = 0",
-      "    for left, right in lefts, rights:",
-      "        total += await aio.sleep(1)",
-      "        total += left + right",
-      "    return total",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.async as aio
+
+async function main() -> int:
+    let lefts = array[int, 3](10, 20, 30)
+    let rights = array[int, 3](1, 2, 3)
+    var total = 0
+    for left, right in lefts, rights:
+        total += await aio.sleep(1)
+        total += left + right
+    return total
+
+    MT
 
     result = run_program(source, compiler:)
 

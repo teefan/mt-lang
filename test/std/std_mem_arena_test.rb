@@ -8,44 +8,45 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(32)",
-      "    defer scratch.release()",
-      "",
-      "    let start = scratch.mark()",
-      "    if start != 0:",
-      "        return 1",
-      "",
-      "    let first = scratch.alloc_bytes(8)",
-      "    let after_first = scratch.mark()",
-      "    let second = scratch.alloc_bytes(16)",
-      "    if first == null or second == null:",
-      "        return 2",
-      "",
-      "    if after_first != 8:",
-      "        return 3",
-      "",
-      "    if scratch.remaining_bytes() != 8:",
-      "        return 4",
-      "",
-      "    scratch.reset(after_first)",
-      "    if scratch.remaining_bytes() != 24:",
-      "        return 5",
-      "",
-      "    scratch.reset(start)",
-      "    if scratch.remaining_bytes() != 32:",
-      "        return 6",
-      "",
-      "    let too_big = scratch.alloc_bytes(64)",
-      "    if too_big != null:",
-      "        return 7",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+
+function main() -> int:
+    var scratch = arena.create(32)
+    defer scratch.release()
+
+    let start = scratch.mark()
+    if start != 0:
+        return 1
+
+    let first = scratch.alloc_bytes(8)
+    let after_first = scratch.mark()
+    let second = scratch.alloc_bytes(16)
+    if first == null or second == null:
+        return 2
+
+    if after_first != 8:
+        return 3
+
+    if scratch.remaining_bytes() != 8:
+        return 4
+
+    scratch.reset(after_first)
+    if scratch.remaining_bytes() != 24:
+        return 5
+
+    scratch.reset(start)
+    if scratch.remaining_bytes() != 32:
+        return 6
+
+    let too_big = scratch.alloc_bytes(64)
+    if too_big != null:
+        return 7
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -59,35 +60,36 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "",
-      "struct Pair:",
-      "    left: int",
-      "    right: int",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create_for[Pair](1)",
-      "    defer scratch.release()",
-      "",
-      "    let pair = scratch.alloc[Pair](1)",
-      "    if pair == null:",
-      "        return 1",
-      "",
-      "    unsafe:",
-      "        let base = ptr[Pair]<-pair",
-      "        base.left = 7",
-      "        base.right = 3",
-      "        if base.left + base.right != 10:",
-      "            return 2",
-      "",
-      "    let exhausted = scratch.alloc[Pair](1)",
-      "    if exhausted != null:",
-      "        return 3",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+
+struct Pair:
+    left: int
+    right: int
+
+function main() -> int:
+    var scratch = arena.create_for[Pair](1)
+    defer scratch.release()
+
+    let pair = scratch.alloc[Pair](1)
+    if pair == null:
+        return 1
+
+    unsafe:
+        let base = ptr[Pair]<-pair
+        base.left = 7
+        base.right = 3
+        if base.left + base.right != 10:
+            return 2
+
+    let exhausted = scratch.alloc[Pair](1)
+    if exhausted != null:
+        return 3
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -101,27 +103,28 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "import std.str as text_ops",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(16)",
-      "    defer scratch.release()",
-      "",
-      "    let copied = scratch.try_to_cstr(\"milk\")",
-      "    if copied == null:",
-      "        return 1",
-      "    if not text_ops.cstr_as_str(copied).equal(\"milk\"):",
-      "        return 2",
-      "",
-      "    let copied_again = scratch.to_cstr(\"tea\")",
-      "    if not text_ops.cstr_as_str(copied_again).equal(\"tea\"):",
-      "        return 3",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+import std.str as text_ops
+
+function main() -> int:
+    var scratch = arena.create(16)
+    defer scratch.release()
+
+    let copied = scratch.try_to_cstr(\"milk\")
+    if copied == null:
+        return 1
+    if not text_ops.cstr_as_str(copied).equal(\"milk\"):
+        return 2
+
+    let copied_again = scratch.to_cstr(\"tea\")
+    if not text_ops.cstr_as_str(copied_again).equal(\"tea\"):
+        return 3
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -135,27 +138,28 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "",
-      "align(16) struct Mat4:",
-      "    data: array[float, 16]",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create_for[Mat4](1)",
-      "    defer scratch.release()",
-      "",
-      "    let matrix = scratch.alloc[Mat4](1)",
-      "    if matrix == null:",
-      "        return 1",
-      "",
-      "    let exhausted = scratch.alloc[Mat4](1)",
-      "    if exhausted != null:",
-      "        return 2",
-      "",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+
+align(16) struct Mat4:
+    data: array[float, 16]
+
+function main() -> int:
+    var scratch = arena.create_for[Mat4](1)
+    defer scratch.release()
+
+    let matrix = scratch.alloc[Mat4](1)
+    if matrix == null:
+        return 1
+
+    let exhausted = scratch.alloc[Mat4](1)
+    if exhausted != null:
+        return 2
+
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 
@@ -169,21 +173,22 @@ class MilkTeaStdMemArenaTest < Minitest::Test
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
 
-    source = [
-      "import std.mem.arena as arena",
-      "",
-      "function main() -> int:",
-      "    var scratch = arena.create(32)",
-      "    defer scratch.release()",
-      "",
-      "    let first = scratch.alloc_bytes(8)",
-      "    if first == null:",
-      "        return 1",
-      "",
-      "    scratch.reset(16)",
-      "    return 0",
-      "",
-    ].join("\n")
+    source = <<~MT
+
+import std.mem.arena as arena
+
+function main() -> int:
+    var scratch = arena.create(32)
+    defer scratch.release()
+
+    let first = scratch.alloc_bytes(8)
+    if first == null:
+        return 1
+
+    scratch.reset(16)
+    return 0
+
+    MT
 
     result = run_program(source, compiler:)
 

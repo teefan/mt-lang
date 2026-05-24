@@ -17,12 +17,14 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "emit-count.mt")
       output_path = File.join(dir, "emit-count")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       original_emit = MilkTea::CBackend.method(:emit)
       emit_calls = []
 
@@ -46,14 +48,16 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "frontend-modules.mt")
       output_path = File.join(dir, "frontend-modules")
 
-      File.write(source_path, [
-        "import std.c.zlib as zlib_c",
-        "",
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.c.zlib as zlib_c
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       program = MilkTea::ModuleLoader.new(module_roots: MilkTea::ModuleRoots.roots_for_path(source_path)).check_program(source_path)
       artifacts = MilkTea::Build.frontend_build_artifacts(program, binary_path: output_path)
 
@@ -199,12 +203,14 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "web-smoke.mt")
       output_path = File.join(dir, "web-smoke")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, platform: :wasm)
       expected_output = File.expand_path("#{output_path}.html")
 
@@ -322,12 +328,14 @@ class MilkTeaBuildTest < Minitest::Test
         html_template = "web/shell.html"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(web_dir, "shell.html"), <<~HTML)
         <!doctype html>
         <html lang="en">
@@ -383,12 +391,14 @@ class MilkTeaBuildTest < Minitest::Test
         html_template = "web/shell.html"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(web_dir, "shell.html"), <<~HTML)
         <!doctype html>
         <html>
@@ -431,11 +441,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = "assets"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
 
       MilkTea::Build.build(package_root, cc: compiler_path)
@@ -469,11 +482,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = ["assets", "credits.txt"]
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
       File.write(File.join(package_root, "credits.txt"), "credits")
 
@@ -510,11 +526,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = "assets"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
 
       result = MilkTea::Build.build(package_root, cc: compiler_path)
@@ -553,11 +572,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = "assets"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
 
       MilkTea::Build.build(package_root, output_path: custom_output, cc: compiler_path)
@@ -596,11 +618,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = ["assets", "credits.txt"]
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
       File.write(File.join(package_root, "credits.txt"), "credits")
 
@@ -642,11 +667,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = "assets"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
 
       result = MilkTea::Build.build(package_root, cc: compiler_path, bundle: true)
@@ -685,11 +713,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = ["assets", "credits.txt"]
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
       File.write(File.join(package_root, "credits.txt"), "credits")
 
@@ -743,11 +774,14 @@ class MilkTeaBuildTest < Minitest::Test
         entry = "src/main.mt"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(dist_dir, "desktop_demo"), "stale")
       marker_path = File.join(bin_dir, "keep")
       File.write(marker_path, "keep")
@@ -789,12 +823,14 @@ class MilkTeaBuildTest < Minitest::Test
         entry = "src/main.mt"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       error = assert_raises(MilkTea::BuildError) do
         MilkTea::Build.build(package_root, cc: compiler_path, bundle: true)
       end
@@ -825,11 +861,14 @@ class MilkTeaBuildTest < Minitest::Test
         assets = "assets"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(assets_dir, "note.txt"), "hello")
 
       result = MilkTea::Build.build(package_root, cc: compiler_path, archive: true)
@@ -875,11 +914,14 @@ class MilkTeaBuildTest < Minitest::Test
         entry = "src/main.mt"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
+
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       File.write(File.join(bundle_root, "desktop_demo"), "stale")
       File.write(archive_path, "archive")
 
@@ -898,16 +940,18 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "debug-map.mt")
       output_path = File.join(dir, "debug-map")
 
-      File.write(source_path, [
-        "function add(a: int, b: int) -> int:",
-        "    let total = a + b",
-        "    return total",
-        "",
-        "function main() -> int:",
-        "    return add(1, 2)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function add(a: int, b: int) -> int:
+    let total = a + b
+    return total
+
+function main() -> int:
+    return add(1, 2)
+
+      MT
+
+      )
       MilkTea::Build.build(source_path, output_path:, cc: compiler_path)
 
       debug_map_path = MilkTea::DebugMap.sidecar_path_for(output_path)
@@ -941,15 +985,17 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "smoke.mt")
       output_path = File.join(dir, "smoke")
 
-      File.write(source_path, [
-        "const base: int = 40",
-        "",
-        "function main() -> int:",
-        "    let value = base + 2",
-        "    return value",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+const base: int = 40
+
+function main() -> int:
+    let value = base + 2
+    return value
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -973,14 +1019,16 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "main-span-args.mt")
       output_path = File.join(dir, "main-span-args")
 
-      File.write(source_path, [
-        "function main(args: span[str]) -> int:",
-        "    if args.len != 2:",
-        "        return 9",
-        "    return int<-args[0].len + int<-args[1].len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main(args: span[str]) -> int:
+    if args.len != 2:
+        return 9
+    return int<-args[0].len + int<-args[1].len
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1002,14 +1050,16 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "async-main-span-args.mt")
       output_path = File.join(dir, "async-main-span-args")
 
-      File.write(source_path, [
-        "async function main(args: span[str]) -> int:",
-        "    if args.len != 2:",
-        "        return 9",
-        "    return int<-args[0].len + int<-args[1].len",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+async function main(args: span[str]) -> int:
+    if args.len != 2:
+        return 9
+    return int<-args[0].len + int<-args[1].len
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1029,12 +1079,14 @@ class MilkTeaBuildTest < Minitest::Test
       compiler_path = write_fake_compiler(dir, compiler_log)
       source_path = File.join(dir, "invalid-main.mt")
 
-      File.write(source_path, [
-        "function main(args: array[str, 2]) -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main(args: array[str, 2]) -> int:
+    return 0
+
+      MT
+
+      )
       error = assert_raises(MilkTea::BuildError) do
         MilkTea::Build.build(source_path, cc: compiler_path)
       end
@@ -1055,26 +1107,30 @@ class MilkTeaBuildTest < Minitest::Test
       FileUtils.mkdir_p(File.join(workspace_dir, "std", "c"))
       FileUtils.mkdir_p(File.join(workspace_dir, "demo"))
 
-      File.write(File.join(workspace_dir, "std", "c", "stdio.mt"), [
-        "external",
-        "include \"stdio.h\"",
-        "",
-        "external function printf(format: cstr, ...) -> int",
-        "",
-      ].join("\n"))
+      File.write(File.join(workspace_dir, "std", "c", "stdio.mt"), <<~MT
 
+external
+include \"stdio.h\"
+
+external function printf(format: cstr, ...) -> int
+
+      MT
+
+      )
       source_path = File.join(workspace_dir, "demo", "main.mt")
       output_path = File.join(workspace_dir, "demo", "main")
 
-      File.write(source_path, [
-        "import #{unique_root}.std.c.stdio as c",
-        "",
-        "function main() -> int:",
-        "    c.printf(c\"%d %s\\n\", 42, c\"ok\")",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import #{unique_root}.std.c.stdio as c
+
+function main() -> int:
+    c.printf(c\"%d %s\\n\", 42, c\"ok\")
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1097,24 +1153,26 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "time-smoke.mt")
       output_path = File.join(dir, "time-smoke")
 
-      File.write(source_path, [
-        "import std.c.time as ctime",
-        "",
-        "const time_format: cstr = c\"%H:%M:%S\"",
-        "",
-        "function main() -> int:",
-        "    var now: ctime.time_t = 0",
-        "    now = ctime.time(ptr_of(now))",
-        "    let tm_info = ctime.localtime(ptr_of(now))",
-        "    var time_buffer = zero[array[char, 9]]",
-        "    if tm_info == null:",
-        "        return 1",
-        "    unsafe:",
-        "        ctime.strftime(ptr_of(time_buffer[0]), 9, time_format, ptr[ctime.tm]<-tm_info)",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.c.time as ctime
+
+const time_format: cstr = c\"%H:%M:%S\"
+
+function main() -> int:
+    var now: ctime.time_t = 0
+    now = ctime.time(ptr_of(now))
+    let tm_info = ctime.localtime(ptr_of(now))
+    var time_buffer = zero[array[char, 9]]
+    if tm_info == null:
+        return 1
+    unsafe:
+        ctime.strftime(ptr_of(time_buffer[0]), 9, time_format, ptr[ctime.tm]<-tm_info)
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1147,22 +1205,26 @@ class MilkTeaBuildTest < Minitest::Test
         default = "linux"
       TOML
 
-      File.write(File.join(src_dir, "game_types.mt"), [
-        "public function value() -> int:",
-        "    return 41",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "game_types.mt"), <<~MT
 
+public function value() -> int:
+    return 41
+
+      MT
+
+      )
       source_path = File.join(src_dir, "main.mt")
-      File.write(source_path, [
-        "",
-        "import game_types as gt",
-        "",
-        "function main() -> int:",
-        "    return gt.value() + 1",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+
+import game_types as gt
+
+function main() -> int:
+    return gt.value() + 1
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, cc: compiler_path)
       expected_output = File.join(package_root, "build", "bin", "linux", "debug", "snake_duel")
 
@@ -1207,20 +1269,24 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       source_path = File.join(app_src_dir, "main.mt")
-      File.write(source_path, [
-        "import teefan.ui.layout as layout",
-        "",
-        "function main() -> int:",
-        "    return layout.default_width() - 10",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
-      File.write(File.join(ui_src_dir, "layout.mt"), [
-        "public function default_width() -> int:",
-        "    return 10",
-        "",
-      ].join("\n"))
+import teefan.ui.layout as layout
 
+function main() -> int:
+    return layout.default_width() - 10
+
+      MT
+
+      )
+      File.write(File.join(ui_src_dir, "layout.mt"), <<~MT
+
+public function default_width() -> int:
+    return 10
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, cc: compiler_path)
       expected_output = File.join(app_root, "build", "bin", "linux", "debug", "snake_duel")
 
@@ -1251,12 +1317,14 @@ class MilkTeaBuildTest < Minitest::Test
         default = "wasm"
       TOML
 
-      File.write(File.join(src_dir, "main.mt"), [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(File.join(src_dir, "main.mt"), <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Build.build(package_root, cc: compiler_path)
       expected_output = File.join(package_root, "build", "bin", "wasm", "debug", "web_demo.html")
 
@@ -1283,12 +1351,14 @@ class MilkTeaBuildTest < Minitest::Test
       TOML
 
       source_path = File.join(src_dir, "main.mt")
-      File.write(source_path, [
-        "function main() -> int:",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    return 0
+
+      MT
+
+      )
       error = assert_raises(MilkTea::BuildError) do
         MilkTea::Build.build(source_path, cc: compiler_path)
       end
@@ -1327,23 +1397,25 @@ class MilkTeaBuildTest < Minitest::Test
       source_path = File.join(dir, "loop-labels.mt")
       output_path = File.join(dir, "loop-labels")
 
-      File.write(source_path, [
-        "function main() -> int:",
-        "    var outer = 0",
-        "    while outer < 2:",
-        "        if outer == 0:",
-        "            var left = 0",
-        "            while left < 1:",
-        "                left += 1",
-        "        else:",
-        "            var right = 0",
-        "            while right < 1:",
-        "                right += 1",
-        "        outer += 1",
-        "    return outer",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+function main() -> int:
+    var outer = 0
+    while outer < 2:
+        if outer == 0:
+            var left = 0
+            while left < 1:
+                left += 1
+        else:
+            var right = 0
+            while right < 1:
+                right += 1
+        outer += 1
+    return outer
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1474,15 +1546,17 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "raygui-demo")
       c_path = File.join(dir, "raygui-demo.c")
 
-      File.write(source_path, [
-        "import std.c.raygui as gui",
-        "",
-        "function main() -> int:",
-        "    gui.GuiEnable()",
-        "    return 0",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.c.raygui as gui
+
+function main() -> int:
+    gui.GuiEnable()
+    return 0
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1509,16 +1583,18 @@ class MilkTeaBuildTest < Minitest::Test
       output_path = File.join(dir, "raymath-demo")
       c_path = File.join(dir, "raymath-demo.c")
 
-      File.write(source_path, [
-        "import std.raymath as rm",
-        "import std.raylib as rl",
-        "",
-        "function main() -> int:",
-        "    let unit = rl.Vector2.one().clamp_value(1.0, 1.0)",
-        "    return unit.equals(rl.Vector2.one()) + rm.float_equals(rm.clamp(2.0, 0.0, 1.0), 1.0)",
-        "",
-      ].join("\n"))
+      File.write(source_path, <<~MT
 
+import std.raymath as rm
+import std.raylib as rl
+
+function main() -> int:
+    let unit = rl.Vector2.one().clamp_value(1.0, 1.0)
+    return unit.equals(rl.Vector2.one()) + rm.float_equals(rm.clamp(2.0, 0.0, 1.0), 1.0)
+
+      MT
+
+      )
       result = MilkTea::Build.build(source_path, output_path:, cc: compiler_path, keep_c_path: c_path)
 
       assert_equal File.expand_path(output_path), result.output_path
@@ -1575,16 +1651,19 @@ class MilkTeaBuildTest < Minitest::Test
 
   def write_raylib_smoke_source(dir)
     path = File.join(dir, "raylib_smoke.mt")
-    File.write(path, [
-      "import std.raylib as rl",
-      "",
-      "function main() -> int:",
-      "    let tint = rl.RED.alpha(0.5)",
-      "    var image = rl.Image.text(\"hi\", 16, tint)",
-      "    image.mipmaps()",
-      "    return 0",
-      "",
-    ].join("\n"))
+    File.write(path, <<~MT
+
+import std.raylib as rl
+
+function main() -> int:
+    let tint = rl.RED.alpha(0.5)
+    var image = rl.Image.text(\"hi\", 16, tint)
+    image.mipmaps()
+    return 0
+
+    MT
+
+    )
     path
   end
 
