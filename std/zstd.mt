@@ -2,6 +2,7 @@
 
 import std.c.zstd as c
 
+public type ZSTD_ErrorCode = c.ZSTD_ErrorCode
 public type ZSTD_CCtx = c.ZSTD_CCtx
 public type ZSTD_DCtx = c.ZSTD_DCtx
 public type ZSTD_strategy = c.ZSTD_strategy

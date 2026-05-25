@@ -3867,6 +3867,7 @@ module MilkTea
             "field #{display_name}.#{argument.name} expects #{field_type}, got #{actual_type}",
             expression: argument.value,
             external_numeric: struct_type.respond_to?(:external) && struct_type.external,
+            external_pointer_null: struct_type.respond_to?(:external) && struct_type.external,
             contextual_int_to_float: contextual_int_to_float_target?(field_type),
           )
           provided[argument.name] = true
@@ -4620,11 +4621,11 @@ module MilkTea
         binding.const_value
       end
 
-      def ensure_assignable!(actual_type, expected_type, message, expression: nil, scopes: nil, external_numeric: false, contextual_int_to_float: false, line: nil, column: nil)
+      def ensure_assignable!(actual_type, expected_type, message, expression: nil, scopes: nil, external_numeric: false, external_pointer_null: false, contextual_int_to_float: false, line: nil, column: nil)
         line ||= source_line(expression)
         column ||= source_column(expression)
 
-        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, contextual_int_to_float:)
+        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
       end
 
       def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil, scopes: nil)
@@ -4723,10 +4724,11 @@ module MilkTea
         false
       end
 
-      def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, contextual_int_to_float: false)
+      def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, external_pointer_null: false, contextual_int_to_float: false)
         return true if error_type?(actual_type) || error_type?(expected_type)
         return true if actual_type == expected_type
         return true if null_assignable_to?(actual_type, expected_type)
+        return true if external_pointer_null && external_typed_null_pointer_compatibility?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
         return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type

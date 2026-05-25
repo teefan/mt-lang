@@ -1,0 +1,19 @@
+{
+  "module_name": "std.flecs",
+  "raw_module_name": "std.c.flecs",
+  "raw_import_alias": "c",
+  "types": {},
+  "constants": {
+    "rename_rules": [
+      { "kind": "prefix", "match": "Ecs", "replace_with": "" },
+      { "kind": "prefix", "match": "FLECS_", "replace_with": "" }
+    ],
+    "strip_prefix": "ECS_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "ecs_"
+    ],
+    "strip_prefix": "ecs_"
+  }
+}

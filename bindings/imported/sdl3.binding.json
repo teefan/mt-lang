@@ -38,6 +38,11 @@
     "strip_prefix": "SDL_",
     "overrides": [
       {
+        "raw": "SDL_Log",
+        "name": "log_application_info",
+        "mapping": "c.SDL_Log"
+      },
+      {
         "raw": "SDL_RunApp",
         "params": [
           {

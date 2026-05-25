@@ -261,6 +261,8 @@ module MilkTea
       vendored_box2d_library = vendored_box2d.library(root:)
       vendored_cjson = MilkTea::VendoredCJSON
       vendored_cjson_library = vendored_cjson.library(root:)
+      vendored_flecs = MilkTea::VendoredFlecs
+      vendored_flecs_library = vendored_flecs.library(root:)
       vendored_libuv = MilkTea::VendoredLibUV
       vendored_libuv_library = vendored_libuv.library(root:)
       vendored_pcre2 = MilkTea::VendoredPCRE2
@@ -1127,6 +1129,26 @@ module MilkTea
           ],
         ),
         Binding.new(
+          name: "flecs",
+          module_name: "std.c.flecs",
+          binding_path: root.join("std/c/flecs.mt"),
+          include_directives: ["flecs.h"],
+          link_libraries: ["flecs"],
+          vendored_library: vendored_flecs_library,
+          clang_args: vendored_flecs.include_flags(root:),
+          compiler_flags: vendored_flecs.include_flags(root:),
+          tracked_header_paths: [
+            vendored_flecs.header_path(root:).to_s,
+          ],
+          tracked_header_prefixes: [
+            vendored_flecs.include_root(root:).to_s,
+          ],
+          declaration_name_prefixes: ["ecs_", "Ecs", "ECS_", "FLECS_"],
+          header_candidates: [
+            vendored_flecs.header_path(root:).to_s,
+          ],
+        ),
+        Binding.new(
           name: "libuv",
           module_name: "std.c.libuv",
           binding_path: root.join("std/c/libuv.mt"),
@@ -1168,6 +1190,12 @@ module MilkTea
           include_directives: ["zstd.h"],
           link_libraries: ["zstd"],
           declaration_name_prefixes: ["ZSTD_", "ZSTD", "ZDICTLIB_", "ZDICT_", "HUF_", "FSE_"],
+          tracked_header_paths: [
+            "/usr/include/zstd.h",
+            "/usr/include/zstd_errors.h",
+            "/usr/local/include/zstd.h",
+            "/usr/local/include/zstd_errors.h",
+          ],
           header_candidates: [
             "/usr/include/zstd.h",
             "/usr/local/include/zstd.h",

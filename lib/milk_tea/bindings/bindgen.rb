@@ -782,8 +782,10 @@ module MilkTea
           next unless allowed_declaration_name?(constant_name_for(node))
 
           begin
-            type = map_c_type(constant_qual_type(node), context: constant_name_for(node))
             initializer = Array(node["inner"]).first
+            type = macro_string_constant_type(node, initializer, context: constant_name_for(node))
+            next if type.nil? && skip_macro_constant_declaration?(node, initializer)
+            type ||= map_c_type(constant_qual_type(node), context: constant_name_for(node))
             value = lower_constant_expression(initializer, expected_type: type, context: constant_name_for(node))
           rescue BindgenError
             raise unless macro_probe_declaration?(node)
@@ -799,6 +801,38 @@ module MilkTea
             value:,
           }
         end
+      end
+
+      def skip_macro_constant_declaration?(node, initializer)
+        return false unless macro_probe_declaration?(node)
+
+        false
+      end
+
+      def macro_string_constant_type(node, initializer, context:)
+        return nil unless macro_probe_declaration?(node)
+        return nil unless constant_expression_kind(initializer) == "StringLiteral"
+
+        qual_type = normalize_c_type(constant_qual_type(node))
+        qual_type, = extract_top_level_nullability(qual_type)
+        return "cstr" if string_literal_macro_compatible_c_type?(qual_type)
+
+        raise BindgenError, "unsupported string macro type #{qual_type.inspect} for #{context}"
+      end
+
+      def constant_expression_kind(node)
+        current = node
+
+        while current.is_a?(Hash)
+          case current["kind"]
+          when "ImplicitCastExpr", "ConstantExpr", "CompoundLiteralExpr", "ParenExpr"
+            current = Array(current["inner"]).first
+          else
+            return current["kind"]
+          end
+        end
+
+        nil
       end
 
       def constant_var_decl?(node)
@@ -1092,7 +1126,11 @@ module MilkTea
 
         case node["kind"]
         when "IntegerLiteral"
-          node.fetch("value")
+          integer_value = node.fetch("value")
+          typed_null = pointer_zero_literal(expected_type, integer_value)
+          return typed_null if typed_null
+
+          integer_value
         when "FloatingLiteral"
           emit_float_value(node.fetch("value"), expected_type)
         when "StringLiteral"
@@ -1160,7 +1198,9 @@ module MilkTea
         return "false" if expected_type == "bool"
         return "0" if %w[char byte ubyte short ushort int uint long ulong ptr_int ptr_uint].include?(expected_type)
         return "0.0" if %w[float double].include?(expected_type)
-        return "null" if expected_type == "cstr" || expected_type == "cstr?" || expected_type.start_with?("ptr[") || expected_type.start_with?("const_ptr[")
+        return "null[ptr[char]]" if expected_type == "cstr"
+        return "null" if expected_type == "cstr?"
+        return "null[#{expected_type}]" if expected_type.start_with?("ptr[") || expected_type.start_with?("const_ptr[")
 
         if @aggregate_declarations.key?(expected_type)
           return lower_aggregate_init_list([], aggregate: @aggregate_declarations.fetch(expected_type), expected_type:, context:)
@@ -1175,6 +1215,18 @@ module MilkTea
         end
 
         "#{expected_type}<-0"
+      end
+
+      def pointer_zero_literal(expected_type, value)
+        return nil unless Integer(value, 10).zero?
+
+        return "null[ptr[char]]" if expected_type == "cstr"
+        return "null" if expected_type == "cstr?"
+        return "null[#{expected_type}]" if expected_type.start_with?("ptr[") || expected_type.start_with?("const_ptr[")
+
+        nil
+      rescue ArgumentError
+        nil
       end
 
       def parse_array_type(type)
@@ -1826,6 +1878,16 @@ module MilkTea
         pointee = qual_type.sub(/\s*\*\z/, "")
         unqualified = strip_qualifiers(pointee)
         unqualified == "char" && pointee.split.include?("const")
+      end
+
+      def string_literal_macro_compatible_c_type?(qual_type)
+        pointer_candidate = strip_pointer_suffix_qualifiers(qual_type)
+        return true if c_string_pointer?(pointer_candidate)
+
+        match = qual_type.match(/\A(.+)\[[0-9]+\]\z/)
+        return false unless match
+
+        strip_qualifiers(match[1]) == "char"
       end
 
       def strip_qualifiers(qual_type)
