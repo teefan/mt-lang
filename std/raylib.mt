@@ -206,6 +206,7 @@ public foreign function take_screenshot(file_name: str as cstr) -> void = c.Take
 public foreign function set_config_flags(flag_bits: ConfigFlags) -> void = c.SetConfigFlags
 public foreign function open_url(url: str as cstr) -> void = c.OpenURL
 public foreign function set_trace_log_level(log_level: int) -> void = c.SetTraceLogLevel
+public foreign function trace_log(log_level: int, text: str as cstr, ...) -> void = c.TraceLog
 public foreign function mem_alloc[T](count: ptr_uint) -> ptr[T]? = c.MemAlloc(count * uint<-size_of(T))
 public foreign function mem_realloc[T](memory: ptr[T], count: ptr_uint) -> ptr[T]? = c.MemRealloc(memory, count * uint<-size_of(T))
 public foreign function mem_free[T](memory: ptr[T]) -> void = c.MemFree
@@ -533,6 +534,7 @@ public foreign function unload_text_lines(text: ptr[ptr[char]], line_count: int)
 public foreign function text_copy(dst: ptr[char], src: str as cstr) -> int = c.TextCopy
 public foreign function text_is_equal(text1: str as cstr, text2: str as cstr) -> bool = c.TextIsEqual
 public foreign function text_length(text: str as cstr) -> uint = c.TextLength
+public foreign function text_format(text: str as cstr, ...) -> cstr = c.TextFormat
 public foreign function text_subtext(text: str as cstr, position: int, length: int) -> cstr = c.TextSubtext
 public foreign function text_remove_spaces(text: str as cstr) -> cstr = c.TextRemoveSpaces
 public foreign function get_text_between(text: str as cstr, begin: str as cstr, end: str as cstr) -> ptr[char] = c.GetTextBetween

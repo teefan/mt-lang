@@ -31,6 +31,16 @@ module MilkTea
       actual_type.target_type == expected_type.base
     end
 
+    def external_typed_null_pointer_compatibility?(actual_type, expected_type)
+      return false unless actual_type.is_a?(Types::Null)
+      return false unless actual_type.target_type
+      return false if expected_type.is_a?(Types::Nullable)
+      return true if expected_type == @types.fetch("cstr") && char_pointer_type?(actual_type.target_type)
+      return false unless pointer_type?(expected_type)
+
+      actual_type.target_type == expected_type
+    end
+
     def numeric_constant_fits_type?(value, expected_type)
       if expected_type.integer?
         integer_constant_fits_type?(value, expected_type)

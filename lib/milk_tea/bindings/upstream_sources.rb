@@ -93,6 +93,17 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "flecs",
+          checkout_root: root.join("third_party/flecs-upstream"),
+          repository_url: "https://github.com/SanderMertens/flecs.git",
+          revision: "d7d0c4f7afb4518a6bae749efdc52c7cb5cffee6",
+          sentinel_paths: %w[
+            distr/flecs.c
+            distr/flecs.h
+            include/flecs.h
+          ],
+        ),
+        Source.new(
           name: "libuv",
           checkout_root: root.join("third_party/libuv-upstream"),
           repository_url: "https://github.com/libuv/libuv.git",

@@ -3497,6 +3497,32 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_typed_null_for_non_nullable_external_aggregate_pointer_field
+    program = check_program_source(
+      <<~MT,
+        # module demo.external_aggregate_typed_null
+
+        import std.c.demo as demo
+
+        function main() -> int:
+            let buffer = demo.Buffer(content = null[ptr[char]], label = null[ptr[char]], length = 0)
+            return buffer.length
+      MT
+      {
+        "std/c/demo.mt" => <<~MT,
+          # module std.c.demo
+          external
+          struct Buffer:
+              content: ptr[char]
+              label: cstr
+              length: int
+        MT
+      },
+    )
+
+    assert_equal true, program.analyses_by_module_name.key?("demo.external_aggregate_typed_null")
+  end
+
   def test_type_checks_external_ptr_to_void_argument_without_unsafe_cast
     source = <<~MT
       # module demo.ok

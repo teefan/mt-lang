@@ -382,6 +382,7 @@ module MilkTea
             params: entry.fetch(:params).map { |param| render_foreign_param(param) },
             return_type: entry.fetch(:return_type),
             mapping: entry.fetch(:mapping),
+            variadic: entry.fetch(:variadic, false),
           )
         end
       end
@@ -517,12 +518,6 @@ module MilkTea
 
               next generated_entries
             end
-
-            if spec[:include] == :all
-              next []
-            end
-
-            raise Error, "variadic raw function #{raw_name} in #{@raw_module_name} cannot be imported"
           end
 
           generated_entries = if overrides.key?(raw_name)
@@ -960,7 +955,7 @@ module MilkTea
         return_type = entry["return_type"] || render_public_foreign_type(raw_declaration.return_type)
         mapping = entry["mapping"] || "#{@import_alias}.#{raw_name}"
 
-        [function_name, [build_foreign_signature(function_name, type_params:, params:, return_type:, mapping:)]]
+        [function_name, [build_foreign_signature(function_name, type_params:, params:, return_type:, mapping:, variadic: false)]]
       end
 
       def render_pass_through_foreign_function(raw_declaration, spec:)
@@ -969,7 +964,7 @@ module MilkTea
         return_type = render_public_foreign_type(raw_declaration.return_type)
         mapping = "#{@import_alias}.#{raw_declaration.name}"
 
-        [function_name, [build_foreign_signature(function_name, type_params: raw_type_param_names(raw_declaration), params:, return_type:, mapping:)]]
+        [function_name, [build_foreign_signature(function_name, type_params: raw_type_param_names(raw_declaration), params:, return_type:, mapping:, variadic: raw_declaration.variadic)]]
       end
 
       def override_type_param_names(entry, raw_declaration)
@@ -1002,6 +997,7 @@ module MilkTea
           params: override_param_specs(entry, raw_declaration),
           return_type: entry["return_type"] || render_public_foreign_type(raw_declaration.return_type),
           mapping: entry["mapping"] || "#{@import_alias}.#{raw_name}",
+          variadic: false,
         }
       end
 
@@ -1013,6 +1009,7 @@ module MilkTea
           params: raw_declaration.params.map { |param| heuristic_foreign_param_spec(param) },
           return_type: render_public_foreign_type(raw_declaration.return_type),
           mapping: "#{@import_alias}.#{raw_declaration.name}",
+          variadic: raw_declaration.variadic,
         }
       end
 
@@ -1023,6 +1020,9 @@ module MilkTea
       def render_method_wrapper(function_entry, spec:)
         raw_name = function_entry.fetch(:raw_name)
         method_name = snake_case(default_public_name(raw_name, spec:, context: "generated method name", binding_kind: :value))
+        if function_entry.fetch(:variadic, false)
+          raise Error, "method generation for #{raw_name} in #{@policy_path} cannot wrap variadic functions"
+        end
         method_kind = method_kind(function_entry, spec:, raw_name:)
         method_params = method_kind == :static ? function_entry.fetch(:params) : function_entry.fetch(:params).drop(1)
         if method_params.any? { |param| param["mode"] }
@@ -1064,12 +1064,14 @@ module MilkTea
         end
       end
 
-      def build_foreign_signature(name, type_params:, params:, return_type:, mapping:, visibility: :public)
+      def build_foreign_signature(name, type_params:, params:, return_type:, mapping:, variadic: false, visibility: :public)
         signature = +""
         signature << "public " if visibility == :public
         signature << "foreign function #{name}"
         signature << render_type_params(type_params)
-        signature << "(#{params.join(', ')}) -> #{return_type}"
+        rendered_params = params.dup
+        rendered_params << "..." if variadic
+        signature << "(#{rendered_params.join(', ')}) -> #{return_type}"
         signature << " = #{mapping}"
         signature
       end
@@ -1430,6 +1432,13 @@ module MilkTea
           binding_path: root.join("std/cjson.mt"),
           raw_module_name: "std.c.cjson",
           policy_path: root.join("bindings/imported/cjson.binding.json"),
+        ),
+        Binding.new(
+          name: "flecs",
+          module_name: "std.flecs",
+          binding_path: root.join("std/flecs.mt"),
+          raw_module_name: "std.c.flecs",
+          policy_path: root.join("bindings/imported/flecs.binding.json"),
         ),
         Binding.new(
           name: "libuv",

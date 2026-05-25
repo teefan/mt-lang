@@ -762,6 +762,8 @@ class MilkTeaBindgenTest < Minitest::Test
         #define SAMPLE_INIT_VIDEO 0x00000020u
         #define SAMPLE_OLD_ALIAS renamed_SAMPLE_INIT_VIDEO
         #define SAMPLE_EPSILON 1.25E-4f
+        #define SAMPLE_VERSION_IMPL(MAJOR, MINOR) #MAJOR "." #MINOR
+        #define SAMPLE_VERSION SAMPLE_VERSION_IMPL(4, 1)
       C
       File.write(outer_path, <<~C)
         #include "inner.h"
@@ -785,6 +787,40 @@ class MilkTeaBindgenTest < Minitest::Test
       assert_match(/const SAMPLE_INIT_VIDEO: uint = 32/, generated)
       assert_match(/const SAMPLE_EPSILON: float = 1\.25\d*E-4/, generated)
       refute_match(/const SAMPLE_OLD_ALIAS:/, generated)
+      assert_match(/const SAMPLE_VERSION: cstr = c"4\.1"/, generated)
+    end
+  end
+
+  def test_generate_lowers_zero_initialized_aggregate_macros_with_pointer_fields
+    clang = ENV.fetch("CLANG", "clang")
+    skip "clang not available: #{clang}" unless executable_available?(clang)
+
+    Dir.mktmpdir("milk-tea-bindgen-zero-init-aggregate-macro") do |dir|
+      header_path = File.join(dir, "sample.h")
+      output_path = bindgen_output_path(dir)
+
+      File.write(header_path, <<~C)
+        typedef struct Buffer {
+          char *content;
+          int length;
+        } Buffer;
+
+        #define EMPTY_BUFFER ((Buffer){0})
+      C
+
+      generated = MilkTea::Bindgen.generate(
+        module_name: "std.c.sample",
+        header_path:,
+        include_directives: ["sample.h"],
+        clang:,
+      )
+
+      assert_match(/const EMPTY_BUFFER: Buffer = Buffer\(content = null\[ptr\[char\]\], length = 0\)/, generated)
+
+      File.write(output_path, generated)
+      analysis = check_generated_output(dir, output_path)
+
+      assert_includes analysis.values.keys, "EMPTY_BUFFER"
     end
   end
 

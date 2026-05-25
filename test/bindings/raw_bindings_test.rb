@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson libuv zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson flecs libuv zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -168,6 +168,17 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "cstr?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_GetErrorPtr")
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddNullToObject")
     assert_equal "ptr[cJSON]?", registry.fetch("cjson").function_return_type_overrides.fetch("cJSON_AddStringToObject")
+    assert_equal "std.c.flecs", registry.fetch("flecs").module_name
+    assert_equal ["flecs"], registry.fetch("flecs").link_libraries
+    assert_includes registry.fetch("flecs").compiler_flags, "-I#{MilkTea::VendoredFlecs.include_root}"
+    assert_includes registry.fetch("flecs").header_candidates.first, "third_party/flecs-upstream/distr/flecs.h"
+    assert_includes registry.fetch("flecs").tracked_header_paths.first, "third_party/flecs-upstream/distr/flecs.h"
+    assert_includes registry.fetch("flecs").tracked_header_prefixes.first, "third_party/flecs-upstream/distr"
+    assert_includes registry.fetch("flecs").link_flags, "-L#{MilkTea::VendoredFlecs.archive_path.dirname}"
+    assert_includes registry.fetch("flecs").link_flags, "-lrt"
+    assert_includes registry.fetch("flecs").link_flags, "-lpthread"
+    assert_includes registry.fetch("flecs").link_flags, "-lm"
+    assert_equal ["ecs_", "Ecs", "ECS_", "FLECS_"], registry.fetch("flecs").declaration_name_prefixes
     assert_equal "std.c.libuv", registry.fetch("libuv").module_name
     assert_equal ["uv"], registry.fetch("libuv").link_libraries
     assert_includes registry.fetch("libuv").compiler_flags, "-I#{MilkTea::VendoredLibUV.include_root}"
@@ -193,6 +204,8 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.zstd", registry.fetch("zstd").module_name
     assert_equal ["zstd"], registry.fetch("zstd").link_libraries
     assert_includes registry.fetch("zstd").header_candidates, "/usr/include/zstd.h"
+    assert_includes registry.fetch("zstd").tracked_header_paths, "/usr/include/zstd.h"
+    assert_includes registry.fetch("zstd").tracked_header_paths, "/usr/include/zstd_errors.h"
     assert_includes registry.fetch("zstd").declaration_name_prefixes, "ZSTD_"
     assert_equal "std.c.sqlite3", registry.fetch("sqlite3").module_name
     assert_equal ["sqlite3"], registry.fetch("sqlite3").link_libraries
@@ -277,6 +290,10 @@ class MilkTeaRawBindingsTest < Minitest::Test
       assert_equal root.join("third_party/sdl3-upstream"), registry.fetch("sdl3").vendored_library.source_root
       assert_includes registry.fetch("sdl3").compiler_flags, "-I#{root.join('third_party/sdl3-upstream/include')}"
       assert_includes registry.fetch("sdl3").header_candidates.first, root.join("third_party/sdl3-upstream/include/SDL3/SDL.h").to_s
+
+      assert_equal root.join("third_party/flecs-upstream"), registry.fetch("flecs").vendored_library.source_root
+      assert_includes registry.fetch("flecs").compiler_flags, "-I#{root.join('third_party/flecs-upstream/distr')}"
+      assert_includes registry.fetch("flecs").header_candidates.first, root.join("third_party/flecs-upstream/distr/flecs.h").to_s
     end
   end
 
