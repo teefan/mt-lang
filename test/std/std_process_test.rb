@@ -112,6 +112,196 @@ function main() -> int:
     end
   end
 
+  def test_spawn_supports_interactive_stdio
+    skip "requires /bin/sh" unless File.executable?("/bin/sh")
+
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+
+import std.process as process
+
+import std.str as text
+import std.vec as vec
+
+function main() -> int:
+    var command = vec.Vec[str].create()
+    defer command.release()
+    command.push("/bin/sh")
+    command.push("-c")
+    command.push("cat; printf 'err:done' >&2")
+
+    match process.spawn(command.as_span()):
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var child = payload.value
+            defer child.release()
+
+            match child.write_stdin("milk-tea\\n"):
+                Result.failure as write_payload:
+                    var error = write_payload.error
+                    defer error.release()
+                    return 2
+                Result.success as _:
+                    pass
+
+            match child.close_stdin():
+                Result.failure as close_payload:
+                    var error = close_payload.error
+                    defer error.release()
+                    return 3
+                Result.success as _:
+                    pass
+
+            match child.wait():
+                Result.failure as wait_payload:
+                    var error = wait_payload.error
+                    defer error.release()
+                    return 4
+                Result.success as wait_payload:
+                    if not wait_payload.value.success():
+                        return 5
+
+            match child.read_stdout(1000):
+                Result.failure as stdout_payload:
+                    var error = stdout_payload.error
+                    defer error.release()
+                    return 6
+                Result.success as stdout_payload:
+                    var stdout_chunk = stdout_payload.value
+                    defer stdout_chunk.release()
+                    if not stdout_chunk.ready:
+                        return 7
+                    match stdout_chunk.text():
+                        Option.some as text_payload:
+                            if not text_payload.value.equal("milk-tea\\n"):
+                                return 8
+                        Option.none:
+                            return 9
+
+            match child.read_stderr(1000):
+                Result.failure as stderr_payload:
+                    var error = stderr_payload.error
+                    defer error.release()
+                    return 10
+                Result.success as stderr_payload:
+                    var stderr_chunk = stderr_payload.value
+                    defer stderr_chunk.release()
+                    if not stderr_chunk.ready:
+                        return 11
+                    match stderr_chunk.text():
+                        Option.some as text_payload:
+                            if not text_payload.value.equal("err:done"):
+                                return 12
+                        Option.none:
+                            return 13
+
+            return 0
+      MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_spawn_pty_supports_resize_and_terminal_io
+    skip "requires /bin/sh" unless File.executable?("/bin/sh")
+
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+
+import std.process as process
+
+import std.str as text
+import std.string as string
+import std.vec as vec
+
+function main() -> int:
+    var command = vec.Vec[str].create()
+    defer command.release()
+    command.push("/bin/sh")
+    command.push("-c")
+    command.push("read ignored; stty size; printf 'pty:ready\\n'")
+
+    match process.spawn_pty(command.as_span(), 80, 24):
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var child = payload.value
+            defer child.release()
+
+            match child.resize(100, 40):
+                Result.failure as resize_payload:
+                    var error = resize_payload.error
+                    defer error.release()
+                    return 2
+                Result.success as _:
+                    pass
+
+            match child.write("milk-tea\\n"):
+                Result.failure as write_payload:
+                    var error = write_payload.error
+                    defer error.release()
+                    return 3
+                Result.success as _:
+                    pass
+
+            match child.wait():
+                Result.failure as wait_payload:
+                    var error = wait_payload.error
+                    defer error.release()
+                    return 4
+                Result.success as wait_payload:
+                    if not wait_payload.value.success():
+                        return 5
+
+            var output = string.String.create()
+            defer output.release()
+
+            var attempts = 0
+            while attempts < 6:
+                match child.read(1000):
+                    Result.failure as read_payload:
+                        var error = read_payload.error
+                        defer error.release()
+                        return 6
+                    Result.success as read_payload:
+                        var chunk = read_payload.value
+                        defer chunk.release()
+                        match chunk.text():
+                            Option.some as text_payload:
+                                output.append(text_payload.value)
+                            Option.none:
+                                pass
+                        if chunk.closed:
+                            break
+                attempts += 1
+
+            if not output.as_str().equal("milk-tea\\r\\n40 100\\r\\npty:ready\\r\\n"):
+                return 7
+
+            return 0
+      MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def run_program(source, compiler:)
