@@ -922,6 +922,97 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "+", declaration.value.operator
   end
 
+  def test_parses_range_expression_continued_after_operator
+    source = <<~MT
+      function main() -> void:
+          let values = 1 ..
+              4
+          pass
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    declaration = ast.declarations[0].body[0]
+
+    assert_instance_of MilkTea::AST::RangeExpr, declaration.value
+    assert_equal 1, declaration.value.start_expr.value
+    assert_equal 4, declaration.value.end_expr.value
+  end
+
+  def test_parses_multiline_type_and_parameter_lists_with_trailing_commas
+    source = <<~MT
+      struct Slice[T,]:
+          data: ptr[T]
+          len: ptr_uint
+
+      function first[T,](
+          items: Slice[
+              T,
+          ],
+      ) -> ptr[T]?:
+          return items.data
+
+      function main() -> ptr[int]?:
+          let value = 7
+          let items = Slice[
+              int,
+          ](
+              data = ptr_of(value),
+              len = 1,
+          )
+          let callback = proc(
+              current: ptr[int],
+          ) -> ptr[int]?:
+              return current
+          return callback(items.data)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+
+    slice = ast.declarations[0]
+    assert_equal ["T"], slice.type_params.map(&:name)
+
+    first = ast.declarations[1]
+    assert_equal ["T"], first.type_params.map(&:name)
+    assert_equal "Slice", first.params.first.type.name.to_s
+    assert_equal "T", first.params.first.type.arguments.first.value.name.to_s
+
+    main_fn = ast.declarations[2]
+    constructor = main_fn.body[1].value
+    assert_instance_of MilkTea::AST::Call, constructor
+    assert_instance_of MilkTea::AST::Specialization, constructor.callee
+    assert_equal "int", constructor.callee.arguments.first.value.name.to_s
+
+    callback = main_fn.body[2].value
+    assert_instance_of MilkTea::AST::ProcExpr, callback
+    assert_equal "current", callback.params.first.name
+  end
+
+  def test_parses_multiline_variant_fields_and_function_type_params_with_trailing_commas
+    source = <<~MT
+      variant Token[T,]:
+          callback(
+              handler: fn(
+                  value: int,
+              ) -> int,
+              payload: T,
+          )
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    token = ast.declarations[0]
+
+    assert_equal ["T"], token.type_params.map(&:name)
+
+    arm = token.arms[0]
+    assert_equal "callback", arm.name
+    assert_equal %w[handler payload], arm.fields.map(&:name)
+
+    handler_type = arm.fields[0].type
+    assert_instance_of MilkTea::AST::FunctionType, handler_type
+    assert_equal "value", handler_type.params[0].name
+    assert_equal "int", handler_type.return_type.name.to_s
+  end
+
   def test_rejects_binary_expression_split_before_operator_without_grouping
     source = <<~MT
       function main() -> int:

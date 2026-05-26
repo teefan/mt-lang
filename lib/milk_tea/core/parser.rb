@@ -455,15 +455,11 @@ module MilkTea
       arms = parse_named_block do
         arm_name = consume_name("expected variant arm name").lexeme
         fields = if match(:lparen)
-                   parsed = []
-                   unless check(:rparen)
-                     loop do
-                       field_name = consume_name("expected field name").lexeme
-                       consume(:colon, "expected ':' after field name")
-                       field_type = parse_type_ref
-                       parsed << AST::Field.new(name: field_name, type: field_type)
-                       break unless match(:comma)
-                     end
+                   parsed = parse_comma_separated_until(:rparen) do
+                     field_name = consume_name("expected field name").lexeme
+                     consume(:colon, "expected ':' after field name")
+                     field_type = parse_type_ref
+                     AST::Field.new(name: field_name, type: field_type)
                    end
                    consume(:rparen, "expected ')' after variant arm fields")
                    parsed
@@ -677,7 +673,7 @@ module MilkTea
 
           params << yield
           break unless match(:comma)
-          raise error(peek, "unexpected trailing ',' in parameter list") if check(:rparen)
+          break if check(:rparen)
         end
       end
 
@@ -718,11 +714,8 @@ module MilkTea
       name = parse_qualified_name
       arguments = []
       if match(:lbracket)
-        unless check(:rbracket)
-          loop do
-            arguments << AST::TypeArgument.new(value: parse_type_argument)
-            break unless match(:comma)
-          end
+        arguments = parse_comma_separated_until(:rbracket) do
+          AST::TypeArgument.new(value: parse_type_argument)
         end
         consume(:rbracket, "expected ']' after type arguments")
       end
@@ -745,14 +738,7 @@ module MilkTea
 
     def parse_callable_type_ref(keyword:, param_context:)
       consume(:lparen, "expected '(' after #{keyword}")
-      params = []
-
-      unless check(:rparen)
-        loop do
-          params << parse_function_type_param
-          break unless match(:comma)
-        end
-      end
+      params = parse_comma_separated_until(:rparen) { parse_function_type_param }
 
       consume(:rparen, "expected ')' after #{param_context}")
       consume(:arrow, "expected '->' after #{param_context}")
@@ -783,14 +769,10 @@ module MilkTea
     def parse_declaration_type_params
       return [] unless match(:lbracket)
 
-      params = []
-      unless check(:rbracket)
-        loop do
-          name = consume_name("expected type parameter name").lexeme
-          constraints = parse_type_param_constraints
-          params << AST::TypeParam.new(name:, constraints:)
-          break unless match(:comma)
-        end
+      params = parse_comma_separated_until(:rbracket) do
+        name = consume_name("expected type parameter name").lexeme
+        constraints = parse_type_param_constraints
+        AST::TypeParam.new(name:, constraints:)
       end
 
       consume(:rbracket, "expected ']' after type parameters")
@@ -1487,12 +1469,8 @@ module MilkTea
 
       saved_current = @current
       advance
-      arguments = []
-      unless check(:rbracket)
-        loop do
-          arguments << AST::TypeArgument.new(value: parse_type_argument)
-          break unless match(:comma)
-        end
+      arguments = parse_comma_separated_until(:rbracket) do
+        AST::TypeArgument.new(value: parse_type_argument)
       end
       consume(:rbracket, "expected ']' after specialization arguments")
 
@@ -1601,14 +1579,7 @@ module MilkTea
 
     def parse_proc_expr
       consume(:lparen, "expected '(' after proc")
-      params = []
-
-      unless check(:rparen)
-        loop do
-          params << parse_function_type_param
-          break unless match(:comma)
-        end
-      end
+      params = parse_comma_separated_until(:rparen) { parse_function_type_param }
 
       consume(:rparen, "expected ')' after proc parameters")
       consume(:arrow, "expected '->' after proc parameters")
@@ -1623,6 +1594,20 @@ module MilkTea
                [AST::ReturnStmt.new(value: parse_expression)]
              end
       AST::ProcExpr.new(params:, return_type:, body:)
+    end
+
+    def parse_comma_separated_until(closing_type)
+      items = []
+
+      unless check(closing_type)
+        loop do
+          items << yield
+          break unless match(:comma)
+          break if check(closing_type)
+        end
+      end
+
+      items
     end
 
     def block_expression?(expression)
