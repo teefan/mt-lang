@@ -3616,8 +3616,31 @@ function main() -> ptr_uint:
     generated = generate_c_from_source(source)
 
     assert_match(/#include <stddef\.h>/, generated)
-    assert_match(/_Static_assert\(sizeof\(demo_layout_surface_Header\) == 6, "Header size should stay stable"\);/, generated)
+    assert_match(/_Static_assert\(true, "Header size should stay stable"\);/, generated)
     assert_match(/return offsetof\(demo_layout_surface_Header, version\) \+ _Alignof\(demo_layout_surface_Header\);/, generated)
+  end
+
+  def test_generate_c_for_local_layout_query_const_reused_in_static_assert
+    source = <<~MT
+
+# module demo.layout_local_const_surface
+
+struct Header:
+    magic: array[ubyte, 4]
+    version: ushort
+
+function main() -> int:
+    let header_size = size_of(Header)
+    static_assert(header_size == 6, "Header size should stay stable")
+    return int<-header_size
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/uintptr_t header_size = sizeof\(demo_layout_local_const_surface_Header\);/, generated)
+    assert_match(/_Static_assert\(true, "Header size should stay stable"\);/, generated)
+    refute_match(/_Static_assert\(header_size == 6,/, generated)
   end
 
   def test_generate_c_for_real_str_literals_and_fatal
@@ -3762,8 +3785,8 @@ function main() -> int:
     assert_match(/\} __attribute__\(\(packed\)\);/, generated)
     assert_match(/struct demo_layout_modifiers_surface_Mat4 \{/, generated)
     assert_match(/\} __attribute__\(\(aligned\(16\)\)\);/, generated)
-    assert_match(/_Static_assert\(sizeof\(demo_layout_modifiers_surface_Header\) == 5, "Header should stay packed"\);/, generated)
-    assert_match(/_Static_assert\(_Alignof\(demo_layout_modifiers_surface_Mat4\) == 16, "Mat4 alignment drifted"\);/, generated)
+    assert_match(/_Static_assert\(true, "Header should stay packed"\);/, generated)
+    assert_match(/_Static_assert\(true, "Mat4 alignment drifted"\);/, generated)
   end
 
   def test_generate_c_for_address_of_and_dereference_assignment

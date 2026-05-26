@@ -4447,6 +4447,61 @@ function main() -> int:
     assert_match(/static_assert message must be a string literal/, error.message)
   end
 
+  def test_rejects_static_assert_with_non_constant_condition
+    source = <<~MT
+      # module demo.layout
+
+      function main(count: int) -> int:
+          static_assert(count > 0, "count must stay positive")
+          return count
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/static_assert condition must be a compile-time bool constant/, error.message)
+  end
+
+  def test_type_checks_layout_query_const_reuse_in_static_assert_and_type_argument_slots
+    source = <<~MT
+      # module demo.layout_const
+
+      struct Header:
+          magic: array[ubyte, 4]
+          version: ushort
+
+      const HEADER_SIZE: ptr_uint = size_of(Header)
+      static_assert(HEADER_SIZE == 6, "Header size should stay stable")
+
+      function main() -> int:
+          var values: array[int, HEADER_SIZE]
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal 6, result.values.fetch("HEADER_SIZE").const_value
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_relational_const_reuse_in_static_assert
+    source = <<~MT
+      # module demo.static_assert_const_compare
+
+      const OK: bool = 1 < 2
+      static_assert(OK, "ok")
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.values.fetch("OK").const_value
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_packed_and_aligned_struct_layout
     source = <<~MT
       # module demo.layout

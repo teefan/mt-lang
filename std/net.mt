@@ -18,13 +18,20 @@ public type NativeSocketStorage = libuv.sockaddr_storage
 public type NativeTcpHandle = libuv.uv_tcp_t
 public type NativeUdpHandle = libuv.uv_udp_t
 
+type NativeSockAddr = libuv.sockaddr
+type NativeSockAddrIn = libuv.sockaddr_in
+type NativeSockAddrIn6 = libuv.sockaddr_in6
 type NativeHandle = libuv.uv_handle_t
 type NativeStreamHandle = libuv.uv_stream_t
+type NativeRequest = libuv.uv_req_t
+type NativeGetAddrInfoRequest = libuv.uv_getaddrinfo_t
 type NativeConnectRequest = libuv.uv_connect_t
 type NativeWriteRequest = libuv.uv_write_t
 type NativeShutdownRequest = libuv.uv_shutdown_t
 type NativeUdpSendRequest = libuv.uv_udp_send_t
 type NativeBuffer = libuv.uv_buf_t
+type NativeAddrInfo = libuv.addrinfo
+type NativeOsFd = libuv.uv_os_fd_t
 
 
 public struct TcpStream:
@@ -68,7 +75,7 @@ struct ResolveState:
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
-    req: ptr[libuv.uv_getaddrinfo_t]?
+    req: ptr[NativeGetAddrInfoRequest]?
     storage: arena.Arena
     node: cstr?
     service: cstr?
@@ -83,7 +90,7 @@ struct ResolveAllState:
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
-    req: ptr[libuv.uv_getaddrinfo_t]?
+    req: ptr[NativeGetAddrInfoRequest]?
     storage: arena.Arena
     node: cstr?
     service: cstr?
@@ -216,16 +223,16 @@ function resolve_all_state(frame: ptr[void]) -> ptr[ResolveAllState]:
     return unsafe: ptr[ResolveAllState]<-frame
 
 
-function req_as_base(req: ptr[libuv.uv_getaddrinfo_t]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-req
+function req_as_base(req: ptr[NativeGetAddrInfoRequest]) -> ptr[NativeRequest]:
+    return unsafe: ptr[NativeRequest]<-req
 
 
 function connect_state(frame: ptr[void]) -> ptr[ConnectState]:
     return unsafe: ptr[ConnectState]<-frame
 
 
-function connect_req_as_base(req: ptr[NativeConnectRequest]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-req
+function connect_req_as_base(req: ptr[NativeConnectRequest]) -> ptr[NativeRequest]:
+    return unsafe: ptr[NativeRequest]<-req
 
 
 function accept_state(frame: ptr[void]) -> ptr[AcceptState]:
@@ -252,28 +259,28 @@ function udp_receive_state(frame: ptr[void]) -> ptr[UdpReceiveState]:
     return unsafe: ptr[UdpReceiveState]<-frame
 
 
-function write_req_as_base(req: ptr[NativeWriteRequest]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-req
+function write_req_as_base(req: ptr[NativeWriteRequest]) -> ptr[NativeRequest]:
+    return unsafe: ptr[NativeRequest]<-req
 
 
-function shutdown_req_as_base(req: ptr[NativeShutdownRequest]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-req
+function shutdown_req_as_base(req: ptr[NativeShutdownRequest]) -> ptr[NativeRequest]:
+    return unsafe: ptr[NativeRequest]<-req
 
 
-function udp_send_req_as_base(req: ptr[NativeUdpSendRequest]) -> ptr[libuv.uv_req_t]:
-    return unsafe: ptr[libuv.uv_req_t]<-req
+function udp_send_req_as_base(req: ptr[NativeUdpSendRequest]) -> ptr[NativeRequest]:
+    return unsafe: ptr[NativeRequest]<-req
 
 
-function sockaddr_storage_as_sockaddr(storage: ptr[NativeSocketStorage]) -> ptr[libuv.sockaddr]:
-    return unsafe: ptr[libuv.sockaddr]<-storage
+function sockaddr_storage_as_sockaddr(storage: ptr[NativeSocketStorage]) -> ptr[NativeSockAddr]:
+    return unsafe: ptr[NativeSockAddr]<-storage
 
 
-function sockaddr_as_sockaddr_in(address: ptr[libuv.sockaddr]) -> ptr[libuv.sockaddr_in]:
-    return unsafe: ptr[libuv.sockaddr_in]<-address
+function sockaddr_as_sockaddr_in(address: ptr[NativeSockAddr]) -> ptr[NativeSockAddrIn]:
+    return unsafe: ptr[NativeSockAddrIn]<-address
 
 
-function sockaddr_as_sockaddr_in6(address: ptr[libuv.sockaddr]) -> ptr[libuv.sockaddr_in6]:
-    return unsafe: ptr[libuv.sockaddr_in6]<-address
+function sockaddr_as_sockaddr_in6(address: ptr[NativeSockAddr]) -> ptr[NativeSockAddrIn6]:
+    return unsafe: ptr[NativeSockAddrIn6]<-address
 
 
 function tcp_as_handle(handle: ptr[NativeTcpHandle]) -> ptr[NativeHandle]:
@@ -399,16 +406,16 @@ function ipv6_socket_family() -> ushort:
     return raw.sin6_family
 
 
-function socket_address_from_unknown_sockaddr(address: const_ptr[libuv.sockaddr]?) -> Result[SocketAddress, Error]:
+function socket_address_from_unknown_sockaddr(address: const_ptr[NativeSockAddr]?) -> Result[SocketAddress, Error]:
     let live_address = address else:
         return Result[SocketAddress, Error].failure(error= invalid_address_error("socket address is missing"))
 
     let family = unsafe: read(live_address).sa_family
     if family == ipv4_socket_family():
-        return socket_address_from_sockaddr(unsafe: ptr[libuv.sockaddr]?<-address, ptr_uint<-size_of(libuv.sockaddr_in))
+        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, ptr_uint<-size_of(NativeSockAddrIn))
 
     if family == ipv6_socket_family():
-        return socket_address_from_sockaddr(unsafe: ptr[libuv.sockaddr]?<-address, ptr_uint<-size_of(libuv.sockaddr_in6))
+        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, ptr_uint<-size_of(NativeSockAddrIn6))
 
     return Result[SocketAddress, Error].failure(error= invalid_address_error("unsupported socket address family"))
 
@@ -429,12 +436,12 @@ function invalid_address_error(message: str) -> Error:
     return net_error(message)
 
 
-function socket_address_from_sockaddr(address: ptr[libuv.sockaddr]?, length: ptr_uint) -> Result[SocketAddress, Error]:
+function socket_address_from_sockaddr(address: ptr[NativeSockAddr]?, length: ptr_uint) -> Result[SocketAddress, Error]:
     let live_address = address else:
         return Result[SocketAddress, Error].failure(error= invalid_address_error("resolver returned null address"))
 
-    let ipv4_size = ptr_uint<-size_of(libuv.sockaddr_in)
-    let ipv6_size = ptr_uint<-size_of(libuv.sockaddr_in6)
+    let ipv4_size = ptr_uint<-size_of(NativeSockAddrIn)
+    let ipv6_size = ptr_uint<-size_of(NativeSockAddrIn6)
     let storage = heap.must_alloc_zeroed[NativeSocketStorage](1)
 
     var result = SocketAddress(storage = storage, len = 0, kind = AddressKind.ipv4)
@@ -466,12 +473,12 @@ function socket_address_to_string_result(address: SocketAddress) -> Result[strin
 
     var buffer: array[char, address_name_capacity] = zero[array[char, address_name_capacity]]
     if address.kind == AddressKind.ipv4:
-        var value = unsafe: read(ptr[libuv.sockaddr_in]<-storage_ptr)
+        var value = unsafe: read(ptr[NativeSockAddrIn]<-storage_ptr)
         let status_code = libuv.ip4_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
         if status_code != 0:
             return Result[string.String, Error].failure(error= libuv_error(status_code))
     else:
-        var value = unsafe: read(ptr[libuv.sockaddr_in6]<-storage_ptr)
+        var value = unsafe: read(ptr[NativeSockAddrIn6]<-storage_ptr)
         let status_code = libuv.ip6_name(ptr_of(value), ptr_of(buffer[0]), address_name_capacity)
         if status_code != 0:
             return Result[string.String, Error].failure(error= libuv_error(status_code))
@@ -517,7 +524,7 @@ function tcp_socket_fd(handle: ptr[NativeTcpHandle]?) -> Result[int, Error]:
     let live_handle = handle else:
         return Result[int, Error].failure(error= net_error("tcp handle is released"))
 
-    var fd = zero[libuv.uv_os_fd_t]
+    var fd = zero[NativeOsFd]
     let status_code = libuv.fileno(tcp_as_handle(live_handle), fd)
     if status_code != 0:
         return Result[int, Error].failure(error= libuv_error(status_code))
@@ -1848,7 +1855,7 @@ function udp_send_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], dest
         finish_udp_send(state, Result[ptr_uint, Error].failure(error= net_error("udp send missing storage")), -1, true)
         return udp_send_task(state)
 
-    var remote_address: const_ptr[libuv.sockaddr]? = null[const_ptr[libuv.sockaddr]]
+    var remote_address: const_ptr[NativeSockAddr]? = null[const_ptr[NativeSockAddr]]
     if use_destination:
         let destination_storage = unsafe: read(state).destination.storage else:
             var payload = copied
@@ -2018,7 +2025,7 @@ function udp_receive_alloc_callback(handle: ptr[NativeHandle], suggested_size: p
     unsafe: read(buf) = libuv.buf_init(storage, uint<-capacity)
 
 
-function udp_receive_callback(handle: ptr[NativeUdpHandle], nread: ptr_int, buf: const_ptr[NativeBuffer], addr: const_ptr[libuv.sockaddr], flags_: uint) -> void:
+function udp_receive_callback(handle: ptr[NativeUdpHandle], nread: ptr_int, buf: const_ptr[NativeBuffer], addr: const_ptr[NativeSockAddr], flags_: uint) -> void:
     let raw_buffer = unsafe: read(buf)
 
     let state_raw = libuv.handle_get_data(udp_as_handle(handle)) else:
@@ -2188,11 +2195,11 @@ function finish_resolve_all(state: ptr[ResolveAllState], result_value: Result[ve
         waiter(unsafe: ptr[void]<-waiter_frame)
 
 
-function resolve_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, result_ptr: ptr[libuv.addrinfo]) -> void:
-    let maybe_result = unsafe: ptr[libuv.addrinfo]?<-result_ptr
+function resolve_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, result_ptr: ptr[NativeAddrInfo]) -> void:
+    let maybe_result = unsafe: ptr[NativeAddrInfo]?<-result_ptr
 
     let state_raw = libuv.req_get_data(req_as_base(req)) else:
-        if maybe_result != null[ptr[libuv.addrinfo]]:
+        if maybe_result != null[ptr[NativeAddrInfo]]:
             libuv.freeaddrinfo(result_ptr)
         return
 
@@ -2200,12 +2207,12 @@ function resolve_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, re
     unsafe: read(state).req = null
 
     if status_code != 0:
-        if maybe_result != null[ptr[libuv.addrinfo]]:
+        if maybe_result != null[ptr[NativeAddrInfo]]:
             libuv.freeaddrinfo(result_ptr)
         finish_resolve(state, Result[SocketAddress, Error].failure(error= libuv_error(status_code)), status_code)
         return
 
-    if maybe_result == null[ptr[libuv.addrinfo]]:
+    if maybe_result == null[ptr[NativeAddrInfo]]:
         finish_resolve(state, Result[SocketAddress, Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
         return
 
@@ -2215,11 +2222,11 @@ function resolve_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, re
     finish_resolve(state, address_result, 0)
 
 
-function resolve_all_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, result_ptr: ptr[libuv.addrinfo]) -> void:
-    let maybe_result = unsafe: ptr[libuv.addrinfo]?<-result_ptr
+function resolve_all_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, result_ptr: ptr[NativeAddrInfo]) -> void:
+    let maybe_result = unsafe: ptr[NativeAddrInfo]?<-result_ptr
 
     let state_raw = libuv.req_get_data(req_as_base(req)) else:
-        if maybe_result != null[ptr[libuv.addrinfo]]:
+        if maybe_result != null[ptr[NativeAddrInfo]]:
             libuv.freeaddrinfo(result_ptr)
         return
 
@@ -2227,22 +2234,22 @@ function resolve_all_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int
     unsafe: read(state).req = null
 
     if status_code != 0:
-        if maybe_result != null[ptr[libuv.addrinfo]]:
+        if maybe_result != null[ptr[NativeAddrInfo]]:
             libuv.freeaddrinfo(result_ptr)
         finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(status_code)), status_code)
         return
 
-    if maybe_result == null[ptr[libuv.addrinfo]]:
+    if maybe_result == null[ptr[NativeAddrInfo]]:
         finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
         return
 
     var addresses = vec.Vec[SocketAddress].create()
-    var current: ptr[libuv.addrinfo]? = maybe_result
+    var current: ptr[NativeAddrInfo]? = maybe_result
     while true:
         if current == null:
             break
 
-        let live_current = unsafe: ptr[libuv.addrinfo]<-current
+        let live_current = unsafe: ptr[NativeAddrInfo]<-current
         let ai = unsafe: read(live_current)
         let address_result = socket_address_from_sockaddr(ai.ai_addr, ptr_uint<-ai.ai_addrlen)
         match address_result:
@@ -2271,7 +2278,7 @@ function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[
     let state = heap.must_alloc_zeroed[ResolveState](1)
 
     let req_size = libuv.req_size(libuv.uv_req_type.UV_GETADDRINFO)
-    let req = unsafe: ptr[libuv.uv_getaddrinfo_t]<-heap.must_alloc_zeroed_bytes(1, req_size)
+    let req = unsafe: ptr[NativeGetAddrInfoRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
     var storage = arena.create(node.len + service.len + 2)
     let node_cstr = storage.to_cstr(node)
     let service_cstr = storage.to_cstr(service)
@@ -2291,7 +2298,7 @@ function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[
         read(state).released = false
         libuv.req_set_data(req_as_base(req), ptr[void]<-state)
 
-    let queue_status = libuv.getaddrinfo(loop, req, resolve_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[libuv.addrinfo]])
+    let queue_status = libuv.getaddrinfo(loop, req, resolve_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[NativeAddrInfo]])
     if queue_status != 0:
         unsafe:
             heap.release(req)
@@ -2306,7 +2313,7 @@ function resolve_all_on_impl(runtime: aio.Runtime, node: str, service: str) -> T
     let state = heap.must_alloc_zeroed[ResolveAllState](1)
 
     let req_size = libuv.req_size(libuv.uv_req_type.UV_GETADDRINFO)
-    let req = unsafe: ptr[libuv.uv_getaddrinfo_t]<-heap.must_alloc_zeroed_bytes(1, req_size)
+    let req = unsafe: ptr[NativeGetAddrInfoRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
     var storage = arena.create(node.len + service.len + 2)
     let node_cstr = storage.to_cstr(node)
     let service_cstr = storage.to_cstr(service)
@@ -2326,7 +2333,7 @@ function resolve_all_on_impl(runtime: aio.Runtime, node: str, service: str) -> T
         read(state).released = false
         libuv.req_set_data(req_as_base(req), ptr[void]<-state)
 
-    let queue_status = libuv.getaddrinfo(loop, req, resolve_all_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[libuv.addrinfo]])
+    let queue_status = libuv.getaddrinfo(loop, req, resolve_all_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[NativeAddrInfo]])
     if queue_status != 0:
         unsafe:
             heap.release(req)

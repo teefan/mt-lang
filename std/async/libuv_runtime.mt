@@ -24,7 +24,7 @@ struct SleepState:
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
-    timer: ptr[libuv.uv_timer_t]?
+    timer: ptr[NativeTimerHandle]?
     closing: bool
     closed: bool
     released: bool
@@ -36,7 +36,7 @@ struct WorkState[T]:
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
-    work: ptr[libuv.uv_work_t]?
+    work: ptr[NativeWorkRequest]?
     queued: bool
     released: bool
     execute: fn(state_frame: ptr[void]) -> void
@@ -50,7 +50,7 @@ struct WorkStateBase:
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
     waiter_registered: bool
-    work: ptr[libuv.uv_work_t]?
+    work: ptr[NativeWorkRequest]?
     queued: bool
     released: bool
     execute: fn(state_frame: ptr[void]) -> void
@@ -68,19 +68,19 @@ function work_state_base(frame: ptr[void]) -> ptr[WorkStateBase]:
     return unsafe: ptr[WorkStateBase]<-frame
 
 
-function timer_as_handle(timer: ptr[libuv.uv_timer_t]) -> ptr[libuv.uv_handle_t]:
+function timer_as_handle(timer: ptr[NativeTimerHandle]) -> ptr[NativeHandle]:
     return unsafe: ptr[NativeHandle]<-timer
 
 
-function handle_as_timer(handle: ptr[libuv.uv_handle_t]) -> ptr[libuv.uv_timer_t]:
+function handle_as_timer(handle: ptr[NativeHandle]) -> ptr[NativeTimerHandle]:
     return unsafe: ptr[NativeTimerHandle]<-handle
 
 
-function req_as_work(req: ptr[libuv.uv_req_t]) -> ptr[libuv.uv_work_t]:
+function req_as_work(req: ptr[NativeRequest]) -> ptr[NativeWorkRequest]:
     return unsafe: ptr[NativeWorkRequest]<-req
 
 
-function work_as_req(work: ptr[libuv.uv_work_t]) -> ptr[libuv.uv_req_t]:
+function work_as_req(work: ptr[NativeWorkRequest]) -> ptr[NativeRequest]:
     return unsafe: ptr[NativeRequest]<-work
 
 
@@ -142,7 +142,7 @@ function work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
         )
 
 
-function sleep_timer_close(handle: ptr[libuv.uv_handle_t]) -> void:
+function sleep_timer_close(handle: ptr[NativeHandle]) -> void:
     let state_raw = libuv.handle_get_data(handle) else:
         unsafe: heap.release_bytes(ptr[void]<-handle_as_timer(handle))
         return
@@ -159,7 +159,7 @@ function sleep_timer_close(handle: ptr[libuv.uv_handle_t]) -> void:
             heap.release(state)
 
 
-function sleep_timer_fire(timer: ptr[libuv.uv_timer_t]) -> void:
+function sleep_timer_fire(timer: ptr[NativeTimerHandle]) -> void:
     let handle = timer_as_handle(timer)
     let state_raw = libuv.handle_get_data(handle) else:
         return
@@ -180,7 +180,7 @@ function sleep_timer_fire(timer: ptr[libuv.uv_timer_t]) -> void:
 
 public function runtime_create() -> Runtime:
     let loop_size = libuv.loop_size()
-    let loop = unsafe: ptr[libuv.uv_loop_t]<-heap.must_alloc_zeroed_bytes(1, loop_size)
+    let loop = unsafe: ptr[NativeLoopHandle]<-heap.must_alloc_zeroed_bytes(1, loop_size)
     let init_status = libuv.loop_init(loop)
     if init_status != 0:
         unsafe: heap.release_bytes(ptr[void]<-loop)
@@ -238,7 +238,7 @@ public function sleep_release(frame: ptr[void]) -> void:
 
         if not state.closing:
             state.closing = true
-            let handle = timer_as_handle(ptr[libuv.uv_timer_t]<-state.timer)
+            let handle = timer_as_handle(unsafe: ptr[NativeTimerHandle]<-state.timer)
             libuv.close(handle, sleep_timer_close)
 
 
@@ -250,7 +250,7 @@ public function work_ready[T](frame: ptr[void]) -> bool:
     return unsafe: work_state[T](frame).ready
 
 
-function work_execute(req: ptr[libuv.uv_work_t]) -> void:
+function work_execute(req: ptr[NativeWorkRequest]) -> void:
     let state_raw = libuv.req_get_data(work_as_req(req)) else:
         return
 
@@ -259,7 +259,7 @@ function work_execute(req: ptr[libuv.uv_work_t]) -> void:
         state.execute(ptr[void]<-state)
 
 
-function work_complete(req: ptr[libuv.uv_work_t], status_code: int) -> void:
+function work_complete(req: ptr[NativeWorkRequest], status_code: int) -> void:
     let state_raw = libuv.req_get_data(work_as_req(req)) else:
         unsafe: heap.release_bytes(ptr[void]<-req)
         return
@@ -312,7 +312,7 @@ public function work_release[T](frame: ptr[void]) -> void:
 
         state.released = true
         if state.queued and state.work != null:
-            libuv.cancel(work_as_req(ptr[libuv.uv_work_t]<-state.work))
+            libuv.cancel(work_as_req(unsafe: ptr[NativeWorkRequest]<-state.work))
     return
 
 
@@ -340,7 +340,7 @@ public function sleep_on(runtime: Runtime, timeout: ptr_uint) -> Task[int]:
         state.released = false
 
     let timer_size = libuv.handle_size(libuv.uv_handle_type.UV_TIMER)
-    let timer = unsafe: ptr[libuv.uv_timer_t]<-heap.must_alloc_zeroed_bytes(1, timer_size)
+    let timer = unsafe: ptr[NativeTimerHandle]<-heap.must_alloc_zeroed_bytes(1, timer_size)
     unsafe: state.timer = timer
 
     let init_status = libuv.timer_init(loop, timer)
@@ -373,7 +373,7 @@ public function sleep(timeout: ptr_uint) -> Task[int]:
 
 public function create_runtime() -> Result[Runtime, int]:
     let loop_size = libuv.loop_size()
-    let loop = unsafe: ptr[libuv.uv_loop_t]<-heap.must_alloc_zeroed_bytes(1, loop_size)
+    let loop = unsafe: ptr[NativeLoopHandle]<-heap.must_alloc_zeroed_bytes(1, loop_size)
     let init_status = libuv.loop_init(loop)
     if init_status != 0:
         unsafe: heap.release_bytes(ptr[void]<-loop)
@@ -393,7 +393,7 @@ public function release_runtime(runtime: ref[Runtime]) -> int:
         runtime.active = false
         return 0
 
-    let loop = unsafe: ptr[libuv.uv_loop_t]<-runtime.loop
+    let loop = unsafe: ptr[NativeLoopHandle]<-runtime.loop
     var close_status = libuv.loop_close(loop)
     while close_status != 0:
         libuv.run(loop, libuv.uv_run_mode.UV_RUN_DEFAULT)
@@ -410,7 +410,7 @@ public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
     let state = heap.must_alloc_zeroed[WorkState[T]](1)
 
     let req_size = libuv.req_size(libuv.uv_req_type.UV_WORK)
-    let req = unsafe: ptr[libuv.uv_work_t]<-heap.must_alloc_zeroed_bytes(1, req_size)
+    let req = unsafe: ptr[NativeWorkRequest]<-heap.must_alloc_zeroed_bytes(1, req_size)
 
     unsafe:
         state.ready = false

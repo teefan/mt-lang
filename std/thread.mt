@@ -4,13 +4,16 @@ import std.str as text
 import std.string as string
 
 
+public type NativeThreadHandle = libuv.uv_thread_t
+
+
 public struct Error:
     code: int
     message: string.String
 
 
 public struct Thread:
-    handle: ptr[libuv.uv_thread_t]?
+    handle: ptr[NativeThreadHandle]?
 
 
 struct RawStartState:
@@ -26,7 +29,7 @@ function libuv_error(code: int) -> Error:
     return Error(code = code, message = string.String.from_str(text.cstr_as_str(libuv.strerror(code))))
 
 
-function thread_handle(handle: ptr[libuv.uv_thread_t]?) -> ptr[libuv.uv_thread_t]:
+function thread_handle(handle: ptr[NativeThreadHandle]?) -> ptr[NativeThreadHandle]:
     let live_handle = handle else:
         fatal(c"thread handle is released")
 
@@ -49,7 +52,7 @@ function thread_entry_void(frame: ptr[void]) -> void:
 
 
 public function spawn_raw(entry: fn(arg: ptr[void]) -> void, arg: ptr[void]) -> Result[Thread, Error]:
-    let handle = heap.must_alloc_zeroed[libuv.uv_thread_t](1)
+    let handle = heap.must_alloc_zeroed[NativeThreadHandle](1)
     let state = heap.must_alloc_zeroed[RawStartState](1)
     unsafe:
         state.entry = entry
@@ -65,7 +68,7 @@ public function spawn_raw(entry: fn(arg: ptr[void]) -> void, arg: ptr[void]) -> 
 
 
 public function spawn(run: fn() -> void) -> Result[Thread, Error]:
-    let handle = heap.must_alloc_zeroed[libuv.uv_thread_t](1)
+    let handle = heap.must_alloc_zeroed[NativeThreadHandle](1)
     let state = heap.must_alloc_zeroed[VoidStartState](1)
     unsafe: state.run = run
 
@@ -98,7 +101,7 @@ extending Thread:
 
 
     public function joinable() -> bool:
-        return this.handle != null[ptr[libuv.uv_thread_t]]
+        return this.handle != null[ptr[NativeThreadHandle]]
 
 
     public mutable function join() -> Result[bool, Error]:
