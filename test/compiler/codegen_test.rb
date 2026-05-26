@@ -3243,6 +3243,32 @@ async function child() -> int:
     assert_match(/__mt_frame->local_task\.release\(__mt_frame->local_task\.frame\);/, generated)
   end
 
+  def test_generate_c_preserves_task_local_await_after_exhaustive_match
+    source = <<~MT
+
+# module demo.async_match_wait
+
+import std.async as aio
+
+async function main() -> int:
+    let task = aio.sleep(1)
+    let tick = await aio.sleep(1)
+    match tick:
+        0:
+            pass
+        _:
+            pass
+    return await task + 1
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/switch \(__mt_frame->local_tick\)/, generated)
+    assert_match(/if \(!__mt_frame->local_task\.ready\(__mt_frame->local_task\.frame\)\)/, generated)
+    assert_match(/__mt_frame->local___mt_async_tmp_\d+ = __mt_frame->local_task\.take_result\(__mt_frame->local_task\.frame\);/, generated)
+  end
+
   def test_generate_c_for_generic_functions_with_literal_type_arguments
     source = <<~MT
 
@@ -3694,6 +3720,7 @@ function main() -> int:
     assert_match(/while \(current >= 0\) \{/, generated)
     assert_match(/if \(__mt_match_value_\d+\.kind == Option_int_kind_some\) \{/, generated)
     assert_match(/if \(payload.value == 2\) \{\n        break;/, generated)
+    refute_match(/total \+= payload\.value;\n\s+break;/, generated)
     refute_match(/goto __mt_loop_break_\d+;/, generated)
     refute_match(/__mt_loop_break_\d+:;/, generated)
     end
