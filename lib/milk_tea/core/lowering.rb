@@ -350,11 +350,18 @@ module MilkTea
 
       def lower_static_asserts
         @analysis.ast.declarations.grep(AST::StaticAssert).map do |statement|
-          IR::StaticAssert.new(
-            condition: lower_expression(statement.condition, env: empty_env, expected_type: @types.fetch("bool")),
-            message: lower_expression(statement.message, env: empty_env, expected_type: @types.fetch("str")),
-          )
+          lower_static_assert(statement, env: empty_env)
         end
+      end
+
+      def lower_static_assert(statement, env:)
+        condition_value = compile_time_const_value(statement.condition, env:)
+        raise LoweringError, "static_assert condition must lower to a compile-time bool constant" unless condition_value == true || condition_value == false
+
+        IR::StaticAssert.new(
+          condition: IR::BooleanLiteral.new(value: condition_value, type: @types.fetch("bool")),
+          message: lower_expression(statement.message, env:, expected_type: @types.fetch("str")),
+        )
       end
 
       def lower_structs
@@ -2607,10 +2614,7 @@ module MilkTea
               statement.body, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers, loop_flow: nested_loop_flow(loop_flow, local_defers)
             ))
           when AST::StaticAssert
-            lowered << IR::StaticAssert.new(
-              condition: lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool")),
-              message: lower_expression(statement.message, env: local_env, expected_type: @types.fetch("str")),
-            )
+            lowered << lower_static_assert(statement, env: local_env)
           else
             raise LoweringError, "unsupported async non-await statement #{statement.class.name}"
           end
@@ -3575,10 +3579,7 @@ module MilkTea
             end
             lowered.concat(expression_cleanups.flat_map(&:itself))
           when AST::StaticAssert
-            lowered << IR::StaticAssert.new(
-              condition: lower_expression(statement.condition, env: local_env, expected_type: @types.fetch("bool")),
-              message: lower_expression(statement.message, env: local_env, expected_type: @types.fetch("str")),
-            )
+            lowered << lower_static_assert(statement, env: local_env)
           when AST::ForStmt
             lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
           when AST::WhileStmt
@@ -5283,10 +5284,6 @@ module MilkTea
 
       def lower_expression(expression, env:, expected_type: nil)
         type = infer_expression_type(expression, env:, expected_type:)
-        if type.is_a?(Types::Primitive) && type.boolean?
-          constant = compile_time_const_value(expression, env:)
-          return IR::BooleanLiteral.new(value: constant, type:) if constant == true || constant == false
-        end
 
         case expression
         when AST::AwaitExpr
@@ -9273,7 +9270,29 @@ module MilkTea
       end
 
       def lower_static_storage_initializer(expression, env:, expected_type: nil)
+        if expected_type && (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), expected_type))
+          return literal
+        end
+
         lower_expression(rewrite_static_storage_initializer(expression), env:, expected_type: expected_type)
+      end
+
+      def lower_compile_time_literal(value, type)
+        case value
+        when true, false
+          return IR::BooleanLiteral.new(value:, type:) if type.is_a?(Types::Primitive) && type.boolean?
+        when Integer
+          return IR::IntegerLiteral.new(value:, type:) if type.is_a?(Types::Primitive) && type.integer?
+          return IR::FloatLiteral.new(value: value.to_f, type:) if type.is_a?(Types::Primitive) && type.float?
+        when Float
+          return IR::FloatLiteral.new(value:, type:) if type.is_a?(Types::Primitive) && type.float?
+        when String
+          if type == @types.fetch("str") || type == @types.fetch("cstr")
+            return IR::StringLiteral.new(value:, type:, cstring: type == @types.fetch("cstr"))
+          end
+        end
+
+        nil
       end
 
       def rewrite_static_storage_initializer(expression)

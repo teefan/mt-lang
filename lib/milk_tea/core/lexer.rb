@@ -20,6 +20,7 @@ module MilkTea
     StringSegment = Data.define(:next_index, :value)
 
     LINE_CONTINUATION_OPERATORS = %i[
+      dot_dot
       plus minus star slash percent
       pipe amp caret
       or and

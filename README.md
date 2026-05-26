@@ -29,6 +29,7 @@ Blocks are indentation-based:
 - Indentation must be a multiple of 4 spaces.
 - Indentation can increase by only one level at a time.
 - Newlines end statements except inside `()` and `[]`, or when the previous physical line ends with a binary operator such as `+`, `and`, or `==`.
+- Comma-separated lists inside `()` and `[]` accept trailing commas. Prefer them for multiline parameters, arguments, and type lists.
 
 Long expressions should usually be wrapped with delimiters, following the same broad shape as Python's implicit line joining:
 
@@ -46,6 +47,13 @@ Milk Tea also accepts operator-led continuation when the previous line ends with
 let total = subtotal +
     tax -
     discount
+```
+
+This also applies to range expressions:
+
+```mt
+let values = 1 ..
+    4
 ```
 
 Do not rely on starting the next physical line with the operator; wrap the expression in `()` instead if that layout reads better.
