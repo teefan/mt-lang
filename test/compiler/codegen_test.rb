@@ -3618,6 +3618,30 @@ function main() -> int:
     refute_match(/__mt_loop_break_\d+:;/, generated)
   end
 
+  def test_generate_c_canonicalizes_top_guarded_infinite_loop
+    source = <<~MT
+
+# module demo.top_guarded_loop_surface
+
+function main() -> int:
+    var index = 0
+    while true:
+        if index >= 3:
+            break
+        index += 1
+    return index
+
+    MT
+
+    generated = generate_c_from_source(source)
+    function_body = generated[/static int32_t demo_top_guarded_loop_surface_main\(void\) \{.*?^\}/m]
+
+    refute_nil(function_body)
+    assert_match(/while \(index < 3\) \{/, function_body)
+    refute_match(/while \(true\) \{/, function_body)
+    refute_match(/if \(index >= 3\) \{\n      break;/, function_body)
+  end
+
   def test_generate_c_uses_structured_continue_for_simple_while_loop
     source = <<~MT
 
