@@ -2618,7 +2618,7 @@ module MilkTea
     end
 
     def emit_call_expression(expression, array_out_argument: nil)
-      callee = expression.callee.is_a?(String) ? expression.callee : wrap_expression(expression.callee)
+      callee = expression.callee.is_a?(String) ? expression.callee : emit_call_callee(expression.callee)
       omit_receiver = omitted_method_receiver_call?(expression)
       arguments = []
       arguments << array_out_argument if array_out_argument
@@ -2682,6 +2682,8 @@ module MilkTea
     end
 
     def emit_address_of_operand(expression)
+      return emit_expression(expression.operand) if expression.is_a?(IR::Unary) && expression.operator == "*"
+
       "&#{wrap_expression(expression)}"
     end
 
@@ -2691,6 +2693,15 @@ module MilkTea
         emit_expression(expression)
       else
         "(#{emit_expression(expression)})"
+      end
+    end
+
+    def emit_call_callee(expression)
+      case expression
+      when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call
+        emit_expression(expression)
+      else
+        wrap_expression(expression)
       end
     end
 
@@ -2912,6 +2923,12 @@ module MilkTea
 
     def wrap_member_receiver(expression)
       case expression
+      when IR::Unary
+        if expression.operator == "*"
+          wrap_pointer_member_receiver(expression.operand)
+        else
+          "(#{emit_expression(expression)})"
+        end
       when IR::CheckedIndex, IR::CheckedSpanIndex
         checked_index_alias(expression) || emit_expression(expression)
       when IR::Name, IR::Member, IR::Index
@@ -2923,9 +2940,21 @@ module MilkTea
 
     def pointer_member_receiver?(expression)
       return true if checked_index_alias(expression)
+      return true if expression.is_a?(IR::Unary) && expression.operator == "*"
 
       (expression.is_a?(IR::Name) && expression.pointer) ||
         (expression.respond_to?(:type) && (raw_pointer_type?(expression.type) || ref_type?(expression.type)))
+    end
+
+    def wrap_pointer_member_receiver(expression)
+      case expression
+      when IR::CheckedIndex, IR::CheckedSpanIndex
+        checked_index_alias(expression) || emit_expression(expression)
+      when IR::Name, IR::Member, IR::Index, IR::Call
+        emit_expression(expression)
+      else
+        "(#{emit_expression(expression)})"
+      end
     end
 
     def wrap_index_receiver(expression)

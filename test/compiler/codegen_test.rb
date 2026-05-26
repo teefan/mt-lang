@@ -4237,7 +4237,7 @@ function main() -> uint:
     generated = generate_c_from_source(source)
 
     assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
-    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&\(\*base\)\.colors, 0\);/, generated)
+    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&base->colors, 0\);/, generated)
     assert_match(/\*first = 9;/, generated)
     assert_match(/return \(\*mt_checked_index_array_uint_4\(&holder\.colors, 0\)\);/, generated)
   end
@@ -4461,6 +4461,24 @@ function main() -> void:
 
     assert_match(/set_text\(\(const char\*\) raw_buffer\);/, generated)
     assert_match(/char \*writable = \(char\*\) clipboard;/, generated)
+  end
+
+  def test_generate_c_simplifies_address_of_pointer_deref
+    source = <<~MT
+
+# module demo.addr_of_deref_surface
+
+function identity(handle: ptr[int]) -> ptr[int]:
+    unsafe:
+        return ptr_of(read(handle))
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static int32_t \*demo_addr_of_deref_surface_identity\(int32_t \*handle\)/, generated)
+    assert_match(/return handle;/, generated)
+    refute_match(/return &\(\*handle\);/, generated)
   end
 
   def test_generate_c_for_const_pointer_ro_addr_calls
@@ -5068,7 +5086,7 @@ function main() -> int:
 
     assert_match(/float \(\*callback\)\(float value\);/, generated)
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\)/, generated)
-    assert_match(/int32_t left = \(\(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\)\(1\);/, generated)
+    assert_match(/int32_t left = \(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\(1\);/, generated)
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
@@ -5104,7 +5122,7 @@ public function times_two(value: int) -> int:
 
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_times_two \};/, generated)
     assert_match(/\.callback = std_ease_times_two/, generated)
-    assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\(3\) \+ entry\.callback\(4\);/, generated)
   end
 
   def test_generate_c_for_proc_closure_capture_and_param_calls
