@@ -882,6 +882,30 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_collect_diagnostics_reports_keyword_local_name_clearly
+    Dir.mktmpdir("lsp_workspace_keyword_local_name") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        function main() -> int:
+            let if = 1
+            return 0
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      messages = diagnostics.map { |diagnostic| diagnostic[:message] }
+
+      assert messages.any? { |message| message.include?("keyword 'if' cannot be used as local variable name") },
+             "expected clearer keyword-local-name diagnostic, got: #{messages.inspect}"
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_and_facts_preserve_recovered_let_else_declaration
     Dir.mktmpdir("lsp_workspace_let_else_recovery") do |dir|
       path = File.join(dir, "main.mt")

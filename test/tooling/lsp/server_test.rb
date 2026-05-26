@@ -2161,6 +2161,102 @@ function main(value: int) -> int:
     end
   end
 
+  def test_source_fixall_preserves_required_match_bindings
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_fixall_match_bindings.mt"
+      source = <<~MT
+        function main(value: Result[int, str]) -> int:
+            match value:
+                Result.failure as payload:
+                    return payload.error.length()
+                Result.success as _:
+                    return 0
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 0, "character" => 0 },
+          "end" => { "line" => 5, "character" => 0 }
+        },
+        "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+      })
+
+      actions = response.fetch("result")
+      fixall = actions.find { |a| a["kind"] == "source.fixAll" }
+      assert fixall, "expected a source.fixAll action"
+      edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
+      assert_includes edit_text, "Result.failure as payload:"
+      assert_includes edit_text, "return payload.error.length()"
+      assert_includes edit_text, "Result.success:"
+      refute_includes edit_text, "Result.success as _:"
+    end
+  end
+
+  def test_source_fixall_honors_active_formatter_mode_and_invalidates_cache
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+      uri = "file:///tmp/lsp_fixall_formatter_mode.mt"
+      source = <<~MT
+        struct Ball:
+            x: int
+        extending Ball:
+            function draw() -> void:
+                return
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      tidy_expected = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+      safe_expected = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :safe)
+      refute_equal tidy_expected, safe_expected
+
+      tidy_response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 0, "character" => 0 },
+          "end" => { "line" => 4, "character" => 0 }
+        },
+        "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+      })
+
+      tidy_actions = tidy_response.fetch("result")
+      tidy_fixall = tidy_actions.find { |action| action["kind"] == "source.fixAll" }
+      assert tidy_fixall, "expected a source.fixAll action for tidy mode"
+      assert_equal tidy_expected, tidy_fixall.dig("edit", "changes", uri, 0, "newText")
+
+      client.send_notification("workspace/didChangeConfiguration", {
+        "settings" => {
+          "milkTea" => {
+            "format" => {
+              "mode" => "safe"
+            }
+          }
+        }
+      })
+
+      safe_response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => {
+          "start" => { "line" => 0, "character" => 0 },
+          "end" => { "line" => 4, "character" => 0 }
+        },
+        "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+      })
+
+      safe_actions = safe_response.fetch("result")
+      safe_fixall = safe_actions.find { |action| action["kind"] == "source.fixAll" }
+      assert safe_fixall, "expected a source.fixAll action for safe mode"
+      assert_equal safe_expected, safe_fixall.dig("edit", "changes", uri, 0, "newText")
+    end
+  end
+
   def test_code_action_skips_source_fixall_for_workspace_std_files
     Dir.mktmpdir("milk-tea-lsp-code-action-std") do |dir|
       std_dir = File.join(dir, "std", "c")
@@ -7120,6 +7216,48 @@ function main(value: int) -> int:
       assert_equal "", edit["newText"]
       assert_equal({ "line" => 2, "character" => 0 }, edit.dig("range", "start"))
       assert_equal({ "line" => 3, "character" => 0 }, edit.dig("range", "end"))
+    end
+  end
+
+  def test_code_action_quickfix_redundant_ignored_match_binding
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_ignored_match_binding.mt"
+      source = <<~MT
+        function main(value: Option[int]) -> int:
+            match value:
+                Option.some as _:
+                    return 1
+                Option.none:
+                    return 0
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      span_start = source.lines[2].index(" as _")
+      span_end = span_start + " as _".length
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code" => "redundant-ignored-match-binding",
+        "range" => { "start" => { "line" => 2, "character" => span_start }, "end" => { "line" => 2, "character" => span_end } },
+        "message" => "ignored match binding is redundant; remove 'as _'"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 2, "character" => span_start }, "end" => { "line" => 2, "character" => span_end } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Remove redundant as _" }
+      assert quickfix, "expected a quickFix action for redundant-ignored-match-binding"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "", edit["newText"]
+      assert_equal({ "line" => 2, "character" => span_start }, edit.dig("range", "start"))
+      assert_equal({ "line" => 2, "character" => span_end }, edit.dig("range", "end"))
     end
   end
 

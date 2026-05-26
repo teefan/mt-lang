@@ -135,6 +135,20 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/let-else is only allowed on let declarations/, error.message)
   end
 
+  def test_rejects_keyword_as_local_variable_name_with_clear_message
+    source = <<~MT
+      function main() -> int:
+          let if = 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/keyword 'if' cannot be used as local variable name/, error.message)
+  end
+
   def test_parses_public_declarations_and_methods
     source = <<~MT
       public const answer: int = 42

@@ -6,6 +6,27 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaLinterTest < Minitest::Test
+  def test_warns_on_redundant_ignored_match_binding
+    source = <<~MT
+      function main(value: Option[int]) -> int:
+          match value:
+              Option.some as _:
+                  return 1
+              Option.none:
+                  return 0
+    MT
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt")
+
+    warning = warnings.find { |entry| entry.code == "redundant-ignored-match-binding" }
+    assert warning, "expected redundant ignored match binding warning"
+    span_start = source.lines[2].index(" as _")
+    assert_equal 3, warning.line
+    assert_equal span_start + 1, warning.column
+    assert_equal 5, warning.length
+    assert_equal :hint, warning.severity
+    assert_match(/remove 'as _'/, warning.message)
+  end
+
   def test_warns_on_local_named_after_reserved_primitive_type
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function main() -> int:

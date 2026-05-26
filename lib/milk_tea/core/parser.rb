@@ -1878,7 +1878,21 @@ module MilkTea
     end
 
     def consume_name(message)
+      if keyword_token?(peek)
+        name_role = message.sub(/\A(?:expected|required)\s+/, "")
+        clearer_message = if name_role == message
+                            message
+                          else
+                            "keyword '#{peek.lexeme}' cannot be used as #{name_role}"
+                          end
+        raise error(peek, clearer_message)
+      end
+
       consume(:identifier, message)
+    end
+
+    def keyword_token?(token)
+      token && Token::KEYWORDS.key?(token.lexeme)
     end
 
     def check(type)

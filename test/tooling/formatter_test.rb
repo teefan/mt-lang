@@ -124,6 +124,23 @@ class MilkTeaFormatterTest < Minitest::Test
     MT
   end
 
+  def test_canonical_mode_preserves_match_statement_bindings
+    source = <<~MT
+      function main(value: Option[int]) -> int:
+          match value:
+              Option.some as payload:
+                  return payload.value
+              Option.none:
+                  return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_includes formatted, "Option.some as payload:"
+    assert_includes formatted, "return payload.value"
+    refute_includes formatted, "Option.some:\n        return payload.value"
+  end
+
   def test_safe_mode_preserves_comments_in_canonical_output
     source = <<~MT
       # banner

@@ -469,7 +469,8 @@ module MilkTea
           line("match #{render_expression(statement.expression)}:")
           with_indent do
             statement.arms.each do |arm|
-              line("#{render_expression(arm.pattern)}:")
+              binding = arm.binding_name ? " as #{arm.binding_name}" : ""
+              line("#{render_expression(arm.pattern)}#{binding}:")
               with_indent do
                 arm.body.each { |nested| emit_statement(nested) }
               end

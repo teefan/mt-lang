@@ -12,6 +12,7 @@ module MilkTea
     RESERVED_TYPE_BINDING_NAMES = Types::RESERVED_TYPE_BINDING_NAMES.to_set.freeze
     AUTO_FIXABLE_RULE_CODES = %w[
       prefer-let
+      redundant-ignored-match-binding
       redundant-read-cast
       redundant-read-release-temp
       prefer-let-else
@@ -28,6 +29,7 @@ module MilkTea
     EXPENSIVE_LINT_RULE_CODES = %w[redundant-unsafe redundant-cast].to_set.freeze
     STATIC_QUICK_FIX_TITLES = {
       "prefer-let" => "Replace 'var' with 'let'",
+      "redundant-ignored-match-binding" => "Remove redundant as _",
       "redundant-else" => "Remove redundant else",
       "redundant-unsafe" => "Remove redundant unsafe",
       "redundant-return" => "Remove redundant return",
@@ -236,8 +238,9 @@ module MilkTea
     end
 
     # Apply auto-fixable rules to source text.
-    # Handles: prefer-let, redundant-read-cast, redundant-read-release-temp,
-    # prefer-let-else, directional-ffi-arg, redundant-else, redundant-unsafe,
+    # Handles: prefer-let, redundant-ignored-match-binding,
+    # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
+    # directional-ffi-arg, redundant-else, redundant-unsafe,
     # redundant-return, redundant-cast.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_facts: nil)
@@ -258,6 +261,20 @@ module MilkTea
         next unless lines[idx]
 
         lines[idx] = lines[idx].sub(/\bvar\b/, "let")
+      end
+
+      redundant_ignored_match_binding_fixes = warnings.select do |w|
+        w.code == "redundant-ignored-match-binding" && w.line && w.column
+      end
+      redundant_ignored_match_binding_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
+        idx = w.line - 1
+        next unless lines[idx]
+
+        span = redundant_ignored_match_binding_span(lines[idx], column: w.column)
+        next unless span
+
+        lines[idx] = lines[idx].dup
+        lines[idx][span[:start_char]...span[:end_char]] = ""
       end
 
       # redundant-read-cast: replace read(T<-value) with read(value).
@@ -625,6 +642,24 @@ module MilkTea
       return line unless suffix&.start_with?("unsafe:")
 
       prefix + suffix.sub(/\Aunsafe:\s*/, "")
+    end
+
+    def self.redundant_ignored_match_binding_span(line, column:)
+      anchor_idx = column - 1
+      return nil unless anchor_idx >= 0 && anchor_idx < line.length
+
+      scan_start = [anchor_idx - 5, 0].max
+      match = line[scan_start..]&.match(/\s+as\s+_/)
+      return nil unless match
+
+      start_char = scan_start + match.begin(0)
+      end_char = scan_start + match.end(0)
+      return nil unless anchor_idx >= start_char && anchor_idx < end_char
+
+      {
+        start_char:,
+        end_char:,
+      }
     end
 
     def self.load_lint_package_graph(path)
@@ -1794,6 +1829,7 @@ module MilkTea
           with_scope do
             binding_line = arm.binding_line || statement.line
             binding_column = arm.binding_column
+            warn_redundant_ignored_match_binding(arm.binding_name, line: binding_line, column: binding_column)
             declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
             visit_statement_list(arm.body)
           end
@@ -1872,6 +1908,17 @@ module MilkTea
         visit_expression(expression.condition)
         visit_expression(expression.then_expression)
         visit_expression(expression.else_expression)
+      when AST::MatchExpr
+        visit_expression(expression.expression)
+        expression.arms.each do |arm|
+          with_scope do
+            binding_line = arm.binding_line || expression.line
+            binding_column = arm.binding_column
+            warn_redundant_ignored_match_binding(arm.binding_name, line: binding_line, column: binding_column)
+            declare_local(arm.binding_name, binding_line, column: binding_column, var: false) if arm.binding_name
+            visit_expression(arm.value)
+          end
+        end
       when AST::UnsafeExpr
         visit_expression(expression.expression)
       when AST::ProcExpr
@@ -2096,6 +2143,26 @@ module MilkTea
         message: "#{kind_label} '#{name}' uses reserved built-in type name '#{name}'; rename it before this becomes a hard error",
         severity: :warning,
         symbol_name: name,
+      )
+    end
+
+    def warn_redundant_ignored_match_binding(name, line:, column:)
+      return unless name == "_"
+
+      span = nil
+      if line && column
+        source_line = @source_lines[line - 1].to_s
+        span = self.class.redundant_ignored_match_binding_span(source_line, column:)
+      end
+
+      @warnings << Warning.new(
+        path: @path,
+        line:,
+        column: span ? span[:start_char] + 1 : column,
+        length: span ? span[:end_char] - span[:start_char] : 1,
+        code: "redundant-ignored-match-binding",
+        message: "ignored match binding is redundant; remove 'as _'",
+        severity: :hint,
       )
     end
 
