@@ -222,6 +222,39 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_lint_command_init_creates_default_config
+    Dir.mktmpdir("milk-tea-cli-lint-init") do |dir|
+      out = StringIO.new
+      err = StringIO.new
+
+      status = Dir.chdir(dir) { MilkTea::CLI.start(["lint", "--init"], out:, err:) }
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      config_path = File.join(dir, ".mt-lint.yml")
+      assert File.exist?(config_path)
+      contents = File.read(config_path)
+      assert_match(/max_line_length: 120/, contents)
+      assert_match(/- line-too-long/, contents)
+      assert_match(/- unused-local/, contents)
+      assert_match(/created .*\.mt-lint\.yml/, out.string)
+    end
+  end
+
+  def test_lint_command_init_refuses_to_overwrite_existing_config
+    Dir.mktmpdir("milk-tea-cli-lint-init-existing") do |dir|
+      File.write(File.join(dir, ".mt-lint.yml"), "ignore: []\n")
+      out = StringIO.new
+      err = StringIO.new
+
+      status = Dir.chdir(dir) { MilkTea::CLI.start(["lint", "--init"], out:, err:) }
+
+      assert_equal 1, status
+      assert_equal "", out.string
+      assert_match(/lint config already exists/, err.string)
+    end
+  end
+
   def test_lint_command_locked_and_frozen_follow_package_lock
     Dir.mktmpdir("milk-tea-cli-lint-locked") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")

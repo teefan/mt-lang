@@ -197,6 +197,7 @@ module MilkTea
       select = nil
       ignore = nil
       fix = false
+      init = false
       output_format = :text
       input_paths = []
       until @argv.empty?
@@ -224,6 +225,8 @@ module MilkTea
           ignore = arg.split(",").map(&:strip).to_set
         when "--fix"
           fix = true
+        when "--init"
+          init = true
         when "--locked"
           resolution[:locked] = true
         when "--frozen"
@@ -246,6 +249,15 @@ module MilkTea
           @err.puts("unknown lint flag: #{flag}")
           return 1
         end
+      end
+
+      if init
+        if input_paths.empty? && !select && !ignore && !fix && output_format == :text && !resolution[:locked] && !resolution[:frozen]
+          return init_lint_config
+        end
+
+        @err.puts("--init does not accept source paths or lint options")
+        return 1
       end
 
       if input_paths.empty?
@@ -315,6 +327,18 @@ module MilkTea
       files_str = file_count == 1 ? "1 file" : "#{file_count} files"
       @out.puts("Found #{all_warnings.size} #{noun} in #{files_str}.")
       1
+    end
+
+    def init_lint_config
+      path = File.join(Dir.pwd, Linter::DEFAULT_CONFIG_FILE_NAME)
+      if File.exist?(path)
+        @err.puts("lint config already exists at #{path}")
+        return 1
+      end
+
+      File.write(path, Linter.default_config_source)
+      @out.puts("created #{path}")
+      0
     end
 
     def check_command
@@ -787,12 +811,14 @@ module MilkTea
         HELP
       "lint"            => <<~HELP,
         Usage: mtc lint PATH|DIR [OPTIONS]
+               mtc lint --init
 
           Lint Milk Tea source files and report warnings.
           Some rules and auto-fixes are semantic/import-aware, so lint can use
           the same dependency resolution mode as check/build.
 
           Options:
+            --init                  Create a default .mt-lint.yml in the current directory.
             --select RULES          Comma-separated list of rule codes to enable.
             --ignore RULES          Comma-separated list of rule codes to suppress.
             --fix                   Apply auto-fixable changes in place.
@@ -914,6 +940,7 @@ module MilkTea
       io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc lint --init")
       io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")

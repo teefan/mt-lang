@@ -12,7 +12,7 @@ function write_stdout_text(value: str) -> int:
             var error = payload.error
             defer error.release()
             return 1
-        Result.success as _:
+        Result.success:
             return 0
 
 
@@ -22,7 +22,7 @@ function write_stderr_text(value: str) -> int:
             var error = payload.error
             defer error.release()
             return 1
-        Result.success as _:
+        Result.success:
             return 0
 
 
@@ -76,13 +76,32 @@ function app_definition(options: span[cli.OptionSpec], commands: span[cli.Comman
 function main(args: span[str]) -> int:
     var options = vec.Vec[cli.OptionSpec].create()
     defer options.release()
-    options.push(cli.value_option("interval-ms", Option[str].some(value= "i"), "MS", "Dashboard refresh interval in milliseconds", false, Option[str].some(value= "900")))
+    options.push(cli.value_option(
+        "interval-ms",
+        Option[str].some(value= "i"),
+        "MS",
+        "Dashboard refresh interval in milliseconds",
+        false,
+        Option[str].some(value= "900"),
+    ))
     options.push(cli.flag_option("no-mouse", Option[str].none, "Disable mouse reporting in dashboard mode"))
 
     var commands = vec.Vec[cli.CommandSpec].create()
     defer commands.release()
-    commands.push(cli.command_spec("dashboard", "Run the interactive terminal dashboard", "Run the interactive terminal dashboard", zero[span[cli.OptionSpec]], Option[str].none))
-    commands.push(cli.command_spec("once", "Print a single snapshot and exit", "Print a single snapshot and exit", zero[span[cli.OptionSpec]], Option[str].none))
+    commands.push(cli.command_spec(
+        "dashboard",
+        "Run the interactive terminal dashboard",
+        "Run the interactive terminal dashboard",
+        zero[span[cli.OptionSpec]],
+        Option[str].none,
+    ))
+    commands.push(cli.command_spec(
+        "once",
+        "Print a single snapshot and exit",
+        "Print a single snapshot and exit",
+        zero[span[cli.OptionSpec]],
+        Option[str].none,
+    ))
 
     let app = app_definition(options.as_span(), commands.as_span())
     match cli.parse(app, args):
