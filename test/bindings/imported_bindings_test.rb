@@ -982,16 +982,11 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
         public type Vector2 = c.Vector2
 
-
         extending Vector2:
             public static function zero() -> Vector2:
                 return helper.vector2_zero()
-
-
             public function add(v2: Vector2) -> Vector2:
                 return helper.vector2_add(this, v2)
-
-
             public function tag() -> helper.SampleTag:
                 return helper.vector2_tag(this)
       MT
