@@ -3469,6 +3469,31 @@ function main() -> int:
     refute_match(/goto __mt_loop_(continue|break)_\d+;/, generated)
   end
 
+  def test_generate_c_omits_synthetic_fallback_return_after_total_infinite_loop
+    source = <<~MT
+
+# module demo.total_infinite_loop_surface
+
+function spin_until(target: int) -> int:
+    var current = 0
+    while true:
+        if current == target:
+            return current
+        current += 1
+
+function main() -> int:
+    return spin_until(3)
+
+    MT
+
+    generated = generate_c_from_source(source)
+    function_body = generated[/static int32_t demo_total_infinite_loop_surface_spin_until\(int32_t target\) \{.*?^\}/m]
+
+    refute_nil(function_body)
+    assert_match(/while \(true\) \{/, function_body)
+    refute_match(/return 0;/, function_body)
+  end
+
   def test_generate_c_rewrites_imported_aggregate_constants_for_static_storage
     source = <<~MT
       # module demo.static_const_colors
@@ -5201,7 +5226,7 @@ function main() -> int:
     assert_match(/return 1;/, generated)
   end
 
-  def test_generate_c_adds_non_void_fallback_after_exhaustive_match_switch
+  def test_generate_c_omits_non_void_fallback_after_exhaustive_match_switch
     source = <<~MT
       # module demo.non_void_match_fallback
 
@@ -5234,8 +5259,37 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/static bool demo_non_void_match_fallback_select_bool\(.*?switch \(value\.kind\) \{.*?\n  \}\n  return false;\n\}/m, generated)
-    assert_match(/static int32_t \*demo_non_void_match_fallback_select_ptr\(.*?switch \(value\.kind\) \{.*?\n  \}\n  return \(int32_t \*\) NULL;\n\}/m, generated)
+    function_select_bool = generated[/static bool demo_non_void_match_fallback_select_bool\(.*?^\}/m]
+    function_select_ptr = generated[/static int32_t \*demo_non_void_match_fallback_select_ptr\(.*?^\}/m]
+
+    refute_nil(function_select_bool)
+    refute_nil(function_select_ptr)
+    refute_match(/\n  \}\n  return false;\n\}/m, function_select_bool)
+    refute_match(/\n  \}\n  return \(int32_t \*\) NULL;\n\}/m, function_select_ptr)
+  end
+
+  def test_generate_c_omits_dead_code_after_nested_exhaustive_match
+    source = <<~MT
+      # module demo.nested_match_dead_code
+
+      function select(value: Result[Option[bool], int]) -> bool:
+          match value:
+              Result.failure as payload:
+                  return payload.error == 0
+              Result.success as payload:
+                  match payload.value:
+                      Option.none:
+                          return false
+                      Option.some as inner:
+                          return inner.value
+                  return true
+    MT
+
+    generated = generate_c_from_program_source(source)
+    function_body = generated[/static bool demo_nested_match_dead_code_select\(.*?^\}/m]
+
+    refute_nil(function_body)
+    refute_match(/return true;/, function_body)
   end
 
   def test_generate_c_for_variant_tagged_union_structs

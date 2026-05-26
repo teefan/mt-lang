@@ -1651,7 +1651,7 @@ module MilkTea
         lines.concat(unused_param_lines)
         lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
       end
-      if function_returns_value_in_c?(function) && !body_ends_with_explicit_c_return?(body)
+      if function_returns_value_in_c?(function) && body_needs_fallback_return?(body)
         lines << "#{INDENT}return #{emit_zero_expression(function.return_type)};"
       end
       lines << "}"
@@ -1784,25 +1784,39 @@ module MilkTea
       transformed = statements.map { |statement| transform_compactable_nested_bodies(statement) }
       compacted = []
       index = 0
+      reachable = true
 
       while index < transformed.length
         current = transformed[index]
+
+        unless reachable
+          if current.is_a?(IR::LabelStmt)
+            compacted << current
+            reachable = true
+          end
+          index += 1
+          next
+        end
+
         following = transformed[index + 1]
         remaining = transformed[(index + 2)..] || []
 
         if following && (folded_local_alias = fold_single_use_local_alias(current, following, remaining))
           compacted << folded_local_alias
+          reachable = !statement_prevents_sequential_fallthrough?(folded_local_alias)
           index += 2
           next
         end
 
         if following && (folded_if = fold_single_use_bool_if_temp(current, following, remaining))
           compacted << folded_if
+          reachable = !statement_prevents_sequential_fallthrough?(folded_if)
           index += 2
           next
         end
 
         compacted << current
+        reachable = !statement_prevents_sequential_fallthrough?(current)
         index += 1
       end
 
@@ -1831,6 +1845,7 @@ module MilkTea
       when IR::SwitchStmt
         IR::SwitchStmt.new(
           expression: statement.expression,
+          exhaustive: statement.exhaustive,
           cases: statement.cases.map do |switch_case|
             if switch_case.is_a?(IR::SwitchDefaultCase)
               IR::SwitchDefaultCase.new(body: compact_generated_statement_sequence(switch_case.body))
@@ -2146,10 +2161,10 @@ module MilkTea
       statement_terminates?(statements.last)
     end
 
-    def body_ends_with_explicit_c_return?(statements)
-      return false if statements.empty?
+    def body_needs_fallback_return?(statements)
+      return true if statements.empty?
 
-      statement_ends_with_explicit_c_return?(statements.last)
+      !statement_prevents_c_fallthrough?(statements.last)
     end
 
     def constant_boolean_value(expression)
@@ -2218,20 +2233,66 @@ module MilkTea
       when IR::IfStmt
         statement.else_body && body_terminates?(statement.then_body) && body_terminates?(statement.else_body)
       when IR::SwitchStmt
-        statement.cases.any? && statement.cases.all? { |switch_case| body_terminates?(switch_case.body) }
+        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| body_terminates?(switch_case.body) }
       else
         false
       end
     end
 
-    def statement_ends_with_explicit_c_return?(statement)
+    def statement_prevents_c_fallthrough?(statement)
       case statement
       when IR::ReturnStmt
         true
       when IR::BlockStmt
-        body_ends_with_explicit_c_return?(statement.body)
+        !body_needs_fallback_return?(statement.body)
+      when IR::SwitchStmt
+        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| !body_needs_fallback_return?(switch_case.body) }
+      when IR::WhileStmt
+        constant_boolean_value(statement.condition) == true && !contains_visible_loop_exit?(statement.body)
       else
         false
+      end
+    end
+
+    def statement_prevents_sequential_fallthrough?(statement)
+      case statement
+      when IR::ReturnStmt, IR::BreakStmt, IR::ContinueStmt, IR::GotoStmt
+        true
+      when IR::BlockStmt
+        !body_has_sequential_fallthrough?(statement.body)
+      when IR::IfStmt
+        statement.else_body && !body_has_sequential_fallthrough?(statement.then_body) && !body_has_sequential_fallthrough?(statement.else_body)
+      when IR::SwitchStmt
+        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| !body_has_sequential_fallthrough?(switch_case.body) }
+      when IR::WhileStmt
+        constant_boolean_value(statement.condition) == true && !contains_visible_loop_exit?(statement.body)
+      else
+        false
+      end
+    end
+
+    def body_has_sequential_fallthrough?(statements)
+      return true if statements.empty?
+
+      !statement_prevents_sequential_fallthrough?(statements.last)
+    end
+
+    def contains_visible_loop_exit?(statements)
+      statements.any? do |statement|
+        case statement
+        when IR::BreakStmt, IR::GotoStmt
+          true
+        when IR::BlockStmt
+          contains_visible_loop_exit?(statement.body)
+        when IR::IfStmt
+          contains_visible_loop_exit?(statement.then_body) || (statement.else_body && contains_visible_loop_exit?(statement.else_body))
+        when IR::SwitchStmt
+          statement.cases.any? { |switch_case| contains_visible_loop_exit?(switch_case.body) }
+        when IR::WhileStmt, IR::ForStmt
+          false
+        else
+          false
+        end
       end
     end
 
