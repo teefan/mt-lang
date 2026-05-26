@@ -128,7 +128,7 @@ function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
 
         return string.String.create()
 
-    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len)
+    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len, owns_storage = true)
 
 
 function take_error(raw: c.mt_terminal_error, fallback: str) -> Error:
@@ -646,11 +646,7 @@ public function move_cursor(row: int, column: int) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
     defer sequence.release()
     append_escape(ref_of(sequence))
-    sequence.append("[")
-    fmt.append_int(ref_of(sequence), clamp_cursor_position(row))
-    sequence.append(";")
-    fmt.append_int(ref_of(sequence), clamp_cursor_position(column))
-    sequence.append("H")
+    sequence.append_format(f"[#{clamp_cursor_position(row)};#{clamp_cursor_position(column)}H")
     return write_stdout_sequence(sequence, "terminal move cursor failed")
 
 
@@ -724,13 +720,9 @@ public function set_rgb_foreground(red: int, green: int, blue: int) -> Result[bo
     var sequence = string.String.with_capacity(24)
     defer sequence.release()
     append_escape(ref_of(sequence))
-    sequence.append("[38;2;")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(red))
-    sequence.append(";")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(green))
-    sequence.append(";")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(blue))
-    sequence.append("m")
+    sequence.append_format(
+        f"[38;2;#{clamp_color_channel(red)};#{clamp_color_channel(green)};#{clamp_color_channel(blue)}m"
+    )
     return write_stdout_sequence(sequence, "terminal foreground color failed")
 
 
@@ -738,13 +730,9 @@ public function set_rgb_background(red: int, green: int, blue: int) -> Result[bo
     var sequence = string.String.with_capacity(24)
     defer sequence.release()
     append_escape(ref_of(sequence))
-    sequence.append("[48;2;")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(red))
-    sequence.append(";")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(green))
-    sequence.append(";")
-    fmt.append_int(ref_of(sequence), clamp_color_channel(blue))
-    sequence.append("m")
+    sequence.append_format(
+        f"[48;2;#{clamp_color_channel(red)};#{clamp_color_channel(green)};#{clamp_color_channel(blue)}m"
+    )
     return write_stdout_sequence(sequence, "terminal background color failed")
 
 

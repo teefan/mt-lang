@@ -20,7 +20,7 @@ function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
 
         return string.String.create()
 
-    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len)
+    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len, owns_storage = true)
 
 
 function take_owned_bytes(data: ptr[ubyte]?, len: ptr_uint) -> bytes.Bytes:

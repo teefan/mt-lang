@@ -59,7 +59,7 @@ function take_owned_string(data: ptr[char]?, len: ptr_uint) -> string.String:
 
         return string.String.create()
 
-    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len)
+    return unsafe: string.String(data = ptr[ubyte]<-data, len = len, capacity = len, owns_storage = true)
 
 
 function safe_text_view(value: string.String) -> Option[str]:

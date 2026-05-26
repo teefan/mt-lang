@@ -3170,7 +3170,8 @@ module MilkTea
         when :callable_value
           check_callable_value_call(callable, expression.arguments, scopes:, callee_expression: expression.callee)
           callable.return_type
-        when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
+        when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
+          :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
           check_str_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
@@ -3661,8 +3662,8 @@ module MilkTea
               raise_sema_error("unsupported format spec #{part.format_spec.inspect}")
             end
           else
-            next if format_string_interpolation_supported?(value_type)
-            raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{value_type}")
+            next if format_string_interpolation_supported?(value_type, context: "formatted string interpolation of #{value_type}")
+            raise_sema_error("formatted string interpolation supports str, cstr, bool, numeric primitives, integer-backed enums/flags, and types implementing format_len()/append_format(output: ref[std.string.String]), got #{value_type}")
           end
         end
       end
@@ -3672,15 +3673,24 @@ module MilkTea
         resolved.is_a?(Types::Primitive) && resolved.integer?
       end
 
-      def format_string_interpolation_supported?(type)
+      def format_string_interpolation_supported?(type, context:)
         return true if type == @types.fetch("str")
         return true if type == @types.fetch("cstr")
         return true if type == @types.fetch("bool")
         return true if type.is_a?(Types::Primitive) && type.integer?
         return true if type.is_a?(Types::Primitive) && type.float?
         return true if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
+        return true if resolve_explicit_format_binding(type, context:)
 
         false
+      end
+
+      def string_builder_type?(type)
+        type.respond_to?(:name) && type.respond_to?(:module_name) && type.name == "String" && type.module_name == "std.string"
+      end
+
+      def string_builder_ref_type?(type)
+        ref_type?(type) && string_builder_type?(referenced_type(type))
       end
 
       def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
@@ -4037,10 +4047,65 @@ module MilkTea
         end
       end
 
+      def resolve_explicit_format_binding(target_type, context:)
+        length_binding = resolve_explicit_format_len_binding(target_type, context:)
+        append_binding = resolve_explicit_format_append_binding(target_type, context:)
+
+        return [length_binding, append_binding] if length_binding && append_binding
+
+        if length_binding || append_binding
+          raise_sema_error("#{context} requires methods #{target_type}.format_len() -> ptr_uint and #{target_type}.append_format(output: ref[std.string.String]) -> void")
+        end
+
+        nil
+      end
+
+      def resolve_explicit_format_len_binding(target_type, context:)
+        requirement_message = "#{context} requires method #{target_type}.format_len() -> ptr_uint"
+        resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method|
+          raise_sema_error("#{context} requires #{target_type}.format_len() to take 0 arguments") unless method.type.params.empty?
+          raise_sema_error("#{context} requires #{target_type}.format_len() to be non-mutable") if method.type.receiver_mutable
+          unless method.type.return_type == @types.fetch("ptr_uint")
+            raise_sema_error("#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method.type.return_type}")
+          end
+        end
+      end
+
+      def resolve_explicit_format_append_binding(target_type, context:)
+        requirement_message = "#{context} requires method #{target_type}.append_format(output: ref[std.string.String]) -> void"
+        resolve_explicit_instance_binding(target_type, "append_format", requirement_message:) do |method|
+          raise_sema_error("#{context} requires #{target_type}.append_format() to be non-mutable") if method.type.receiver_mutable
+          unless method.type.params.length == 1 && string_builder_ref_type?(method.type.params.first.type)
+            raise_sema_error("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void")
+          end
+          unless method.type.return_type == @types.fetch("void")
+            raise_sema_error("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method.type.return_type}")
+          end
+        end
+      end
+
       def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
         method = lookup_method(target_type, method_name)
         if method
           raise_sema_error(requirement_message) unless method.type.receiver_type.nil?
+
+          method = instantiate_function_binding_with_receiver(method, [], receiver_type: target_type) if method.type_params.any?
+          yield method
+
+          return method
+        end
+
+        if (imported_module = imported_module_with_private_method(target_type, method_name))
+          raise_sema_error("#{target_type}.#{method_name} is private to module #{imported_module.name}")
+        end
+
+        nil
+      end
+
+      def resolve_explicit_instance_binding(target_type, method_name, requirement_message:)
+        method = lookup_method(target_type, method_name)
+        if method
+          raise_sema_error(requirement_message) if method.type.receiver_type.nil?
 
           method = instantiate_function_binding_with_receiver(method, [], receiver_type: target_type) if method.type_params.any?
           yield method
@@ -4104,7 +4169,7 @@ module MilkTea
         when :str_buffer_clear, :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
           raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
           raise_sema_error("#{method_name} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
-        when :str_buffer_assign, :str_buffer_append
+        when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
           raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
           raise_sema_error("#{method_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
         else
@@ -4117,7 +4182,7 @@ module MilkTea
           raise_sema_error("cannot call mutable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
-        when :str_buffer_assign, :str_buffer_append
+        when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
           record_mutable_receiver_expression(receiver)
           raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
@@ -4266,6 +4331,10 @@ module MilkTea
           :str_buffer_assign
         when "append"
           :str_buffer_append
+        when "assign_format"
+          :str_buffer_assign_format
+        when "append_format"
+          :str_buffer_append_format
         when "len"
           :str_buffer_len
         when "capacity"
@@ -4282,6 +4351,8 @@ module MilkTea
           str_buffer_clear: "clear",
           str_buffer_assign: "assign",
           str_buffer_append: "append",
+          str_buffer_assign_format: "assign_format",
+          str_buffer_append_format: "append_format",
           str_buffer_len: "len",
           str_buffer_capacity: "capacity",
           str_buffer_as_str: "as_str",

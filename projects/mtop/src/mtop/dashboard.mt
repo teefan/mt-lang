@@ -131,17 +131,11 @@ function collect_snapshot(refresh_count: int) -> Snapshot:
 
 
 function append_label_line(output: ref[string.String], label: str, value: str) -> void:
-    output.append("  ")
-    output.append(label)
-    output.append(": ")
-    output.append(value)
-    output.append("\n")
+    output.append_format(f"  #{label}: #{value}\n")
 
 
 function set_status_message(target: ref[string.String], prefix: str, detail: str) -> void:
-    var message = fmt.format(f"#{prefix}#{detail}")
-    read(target).assign(message.as_str())
-    message.release()
+    read(target).assign_format(f"#{prefix}#{detail}")
 
 
 function append_transcript(target: ref[string.String], value: str) -> void:
@@ -258,17 +252,11 @@ function append_repeated_byte(output: ref[string.String], value: ubyte, repeat_c
 
 
 function append_panel_line(output: ref[string.String], label: str, value: str) -> void:
-    output.append(label)
-    output.append(": ")
-    output.append(value)
-    output.append("\n")
+    output.append_format(f"#{label}: #{value}\n")
 
 
 function append_panel_int(output: ref[string.String], label: str, value: int) -> void:
-    output.append(label)
-    output.append(": ")
-    fmt.append_int(output, value)
-    output.append("\n")
+    output.append_format(f"#{label}: #{value}\n")
 
 
 function tab_name(tab: DashboardTab) -> str:
@@ -1325,11 +1313,7 @@ public function run(config: Config) -> int:
                         let event = event_payload.value
                         if event.kind == terminal.EventKind.resize:
                             current_size = event.size
-                            var resize_message = fmt.format(
-                                f"resize #{event.size.width}x#{event.size.height}"
-                            )
-                            last_event.assign(resize_message.as_str())
-                            resize_message.release()
+                            last_event.assign_format(f"resize #{event.size.width}x#{event.size.height}")
                         else if event.kind == terminal.EventKind.mouse:
                             var mouse_message = describe_mouse_event(event.mouse)
                             last_event.assign(mouse_message.as_str())

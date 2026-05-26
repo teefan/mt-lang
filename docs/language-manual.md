@@ -772,6 +772,8 @@ String categories:
 - `clear()`
 - `assign(str)`
 - `append(str)`
+- `assign_format(str)`
+- `append_format(str)`
 - `len()`
 - `capacity()`
 - `as_str()`
@@ -800,11 +802,22 @@ Ordinary `"..."` and `c"..."` literals may continue across following indented li
 
 In the VS Code extension, specific heredoc tags opt into embedded highlighting without changing the Milk Tea type: `GLSL`, `VERT`, `FRAG`, `COMP`, `JSON`, `JSONC`, and `SQL`. These still produce ordinary `str` or `cstr` values, and SQL heredocs should still use bound parameters rather than string interpolation.
 
-Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, or an integer-backed enum or flags type. A precision specifier `:.N` is allowed on `float` and `double` interpolations. Integer-base specifiers `:x` / `:X` (hex), `:o` / `:O` (octal), and `:b` / `:B` (binary) are allowed on integer primitives and integer-backed enum/flags interpolations.
+Format strings have type `str` and are valid anywhere a `str` value is accepted. Interpolated expressions must be one of: `str`, `cstr`, `bool`, a numeric primitive, an integer-backed enum or flags type, or a type implementing both `format_len() -> ptr_uint` and `append_format(output: ref[std.string.String]) -> void`. A precision specifier `:.N` is allowed on `float` and `double` interpolations. Integer-base specifiers `:x` / `:X` (hex), `:o` / `:O` (octal), and `:b` / `:B` (binary) are allowed on integer primitives and integer-backed enum/flags interpolations.
 
 The following standard library functions receive special lowering for format strings — they build the formatted output directly without an intermediate allocation:
 
 - `std.fmt.format` — returns `string.String`
+- `std.fmt.append_format` / `std.fmt.assign_format` — write directly into an existing `string.String` sink
+- `std.string.String.append_format` / `std.string.String.assign_format` — same direct-sink lowering on the builder methods
+- `str_buffer[N].append_format` / `str_buffer[N].assign_format` — same direct-sink lowering on fixed-capacity string buffers
+
+Custom formatting hook notes:
+
+- The hook pair is compiler-known; it is not declared through a separate interface.
+- `format_len()` and `append_format(...)` must both be present, non-mutable, and use the exact signatures above.
+- Direct `string.String` sinks call the custom `append_format(...)` hook directly.
+- Plain `f"..."` expressions and `str_buffer` sinks still need a raw `str` result, so the compiler passes each custom part a borrowed `string.String` view onto the destination slice.
+- For those borrowed-slice paths, `append_format(...)` must write exactly `format_len()` bytes; writing fewer or more bytes raises a runtime error.
 
 ## 9. Safety And Conversion Rules
 

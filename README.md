@@ -543,6 +543,8 @@ Text categories:
 - `clear()`
 - `assign(str)`
 - `append(str)`
+- `assign_format(str)`
+- `append_format(str)`
 - `len()`
 - `capacity()`
 - `as_str()`
@@ -551,11 +553,15 @@ Text categories:
 Format strings:
 
 - `f"count=#{count}"` has type `str`.
-- Allowed interpolations: `str`, `cstr`, `bool`, numeric primitives, integer-backed enums and flags.
+- Allowed interpolations: `str`, `cstr`, `bool`, numeric primitives, integer-backed enums and flags, plus types implementing `format_len() -> ptr_uint` and `append_format(output: ref[std.string.String]) -> void`.
 - Float and double interpolations support `:.N` precision.
 - Integer primitive and integer-backed enum/flags interpolations support `:x` (lowercase hex) and `:X` (uppercase hex).
 - Integer primitive and integer-backed enum/flags interpolations support `:o` / `:O` (octal) and `:b` / `:B` (binary).
 - `std.fmt.format(...)` receives special lowering and returns `string.String`.
+- `std.fmt.append_format(...)` / `std.fmt.assign_format(...)` receive special lowering when passed a format string and write directly into an existing `string.String` sink.
+- `string.String.append_format(...)` / `string.String.assign_format(...)` receive the same direct-sink lowering when passed a format string.
+- `str_buffer[N].append_format(...)` / `str_buffer[N].assign_format(...)` receive the same direct-sink lowering for fixed-capacity buffers.
+- Custom interpolation hooks use the direct sink when formatting into `string.String`; plain `f"..."` expressions and `str_buffer` sinks pass a borrowed `string.String` view onto the destination slice, so those paths stay allocation-free as long as the hook writes exactly `format_len()` bytes.
 
 Heredoc notes:
 
