@@ -2197,6 +2197,94 @@ function main(value: int) -> int:
     end
   end
 
+  def test_source_fixall_wraps_long_call_arguments_using_project_max_line_length
+    Dir.mktmpdir("milk-tea-lsp-fixall-line-length") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 0, "character" => 0 },
+            "end" => { "line" => 2, "character" => 0 }
+          },
+          "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+        })
+
+        actions = response.fetch("result")
+        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
+        assert fixall, "expected a source.fixAll action"
+        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
+        assert_includes edit_text, "return log_value(\n"
+        assert_includes edit_text, "        \"delta\",\n"
+        refute_includes edit_text, "return log_value(\"alpha\", \"beta\", \"gamma\", \"delta\")"
+      end
+    end
+  end
+
+  def test_source_fixall_wraps_long_tuple_literal_using_project_max_line_length
+    Dir.mktmpdir("milk-tea-lsp-fixall-line-length-tuple") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            let pair = (alpha_value, beta_value, gamma_value)
+            return 0
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 0, "character" => 0 },
+            "end" => { "line" => 3, "character" => 0 }
+          },
+          "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+        })
+
+        actions = response.fetch("result")
+        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
+        assert fixall, "expected a source.fixAll action"
+        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
+        assert_includes edit_text, "let pair = (\n"
+        assert_includes edit_text, "        alpha_value,\n"
+        assert_includes edit_text, "        gamma_value\n"
+        refute_includes edit_text, "        gamma_value,\n"
+      end
+    end
+  end
+
   def test_source_fixall_honors_active_formatter_mode_and_invalidates_cache
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -7216,6 +7304,99 @@ function main(value: int) -> int:
       assert_equal "", edit["newText"]
       assert_equal({ "line" => 2, "character" => 0 }, edit.dig("range", "start"))
       assert_equal({ "line" => 3, "character" => 0 }, edit.dig("range", "end"))
+    end
+  end
+
+  def test_code_action_quickfix_line_too_long_wraps_argument_list
+    Dir.mktmpdir("milk-tea-lsp-line-too-long") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => { "start" => { "line" => 1, "character" => 40 }, "end" => { "line" => 1, "character" => 55 } },
+          "context" => {
+            "diagnostics" => [{
+              "source" => "milk-tea",
+              "code" => "line-too-long",
+              "range" => { "start" => { "line" => 1, "character" => 40 }, "end" => { "line" => 1, "character" => 55 } },
+              "message" => "line exceeds max length of 40 columns (55); wrap the delimited list"
+            }]
+          }
+        })
+
+        actions = response.fetch("result")
+        quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Wrap long line" }
+        assert quickfix, "expected a quickFix action for line-too-long"
+        edit = quickfix.dig("edit", "changes", uri, 0)
+        assert_includes edit["newText"], "return log_value(\n"
+        assert_includes edit["newText"], "        \"delta\",\n"
+      end
+    end
+  end
+
+  def test_code_action_quickfix_line_too_long_wraps_type_argument_list
+    Dir.mktmpdir("milk-tea-lsp-line-too-long-type-list") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 50
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> Result[Option[AlphaValue], BetaValue, GammaValue]:
+            return 0
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => { "start" => { "line" => 0, "character" => 50 }, "end" => { "line" => 0, "character" => 68 } },
+          "context" => {
+            "diagnostics" => [{
+              "source" => "milk-tea",
+              "code" => "line-too-long",
+              "range" => { "start" => { "line" => 0, "character" => 50 }, "end" => { "line" => 0, "character" => 68 } },
+              "message" => "line exceeds max length of 50 columns (68); wrap the delimited list"
+            }]
+          }
+        })
+
+        actions = response.fetch("result")
+        quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Wrap long line" }
+        assert quickfix, "expected a quickFix action for line-too-long"
+        edit = quickfix.dig("edit", "changes", uri, 0)
+        assert_includes edit["newText"], "function main() -> Result[\n"
+        assert_includes edit["newText"], "    Option[AlphaValue],\n"
+        assert_includes edit["newText"], "    GammaValue,\n"
+      end
     end
   end
 

@@ -70,6 +70,61 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, formatted
   end
 
+  def test_tidy_mode_wraps_long_call_arguments_using_project_max_line_length
+    Dir.mktmpdir("milk-tea-formatter-wrap-long-call") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+
+      formatted = MilkTea::Formatter.format_source(source, path: path, mode: :tidy)
+
+      assert_includes formatted, "return log_value(\n"
+      assert_includes formatted, "        \"alpha\",\n"
+      assert_includes formatted, "        \"delta\",\n"
+      formatted.lines.each do |line|
+        assert_operator line.delete_suffix("\n").length, :<=, 40
+      end
+    end
+  end
+
+  def test_tidy_mode_wraps_long_tuple_literal_without_trailing_comma
+    source = <<~MT
+      function main() -> int:
+          let pair = (alpha_value, beta_value, gamma_value)
+          return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 40)
+
+    assert_includes formatted, "let pair = (\n"
+    assert_includes formatted, "        alpha_value,\n"
+    assert_includes formatted, "        gamma_value\n"
+    refute_includes formatted, "        gamma_value,\n"
+  end
+
+  def test_tidy_mode_wraps_long_type_argument_list
+    source = <<~MT
+      function main() -> Result[Option[AlphaValue], BetaValue, GammaValue]:
+          return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 50)
+
+    assert_includes formatted, "function main() -> Result[\n"
+    assert_includes formatted, "    Option[AlphaValue],\n"
+    assert_includes formatted, "    GammaValue,\n"
+    assert_includes formatted, "]:\n"
+  end
+
   def test_canonical_mode_flattens_grouped_multiline_binary_expression
     source = <<~MT
       function main() -> int:

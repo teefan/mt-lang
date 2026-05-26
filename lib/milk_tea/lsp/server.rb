@@ -1134,7 +1134,7 @@ module MilkTea
         uri     = params['textDocument']['uri']
         content = @workspace.get_content(uri)
 
-        formatted = Formatter.format_source(content, mode: @format_mode)
+        formatted = Formatter.format_source(content, path: uri, mode: @format_mode)
         line_count = content.count("\n")
 
         [
@@ -1163,7 +1163,7 @@ module MilkTea
         return [] if end_off < start_off
 
         segment = content.byteslice(start_off...end_off).to_s
-        formatted_segment = Formatter.format_source(segment, mode: @format_mode)
+        formatted_segment = Formatter.format_source(segment, path: uri, mode: @format_mode)
 
         [
           {
@@ -1575,6 +1575,32 @@ module MilkTea
               }
             }
 
+          when 'line-too-long'
+            fix = Formatter.build_long_line_wrap_fix(
+              content,
+              diag_line - 1,
+              max_line_length: Formatter.resolve_max_line_length(uri),
+              path: uri,
+            )
+            next unless fix
+
+            actions << {
+              title: Linter.quick_fix_title('line-too-long'),
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: fix[:start_line_idx], character: 0 },
+                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
+                    },
+                    newText: fix[:new_text]
+                  }]
+                }
+              }
+            }
+
           when 'redundant-read-cast'
             next if source_line.empty?
 
@@ -1803,7 +1829,7 @@ module MilkTea
               fixed = cached_fixall[:fixed]
             else
               formatted = begin
-                Formatter.format_source(content, mode: format_mode)
+                Formatter.format_source(content, path: uri, mode: format_mode)
               rescue StandardError
                 content
               end

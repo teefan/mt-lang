@@ -6,6 +6,80 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaLinterTest < Minitest::Test
+  def test_warns_on_line_too_long_using_file_uri_config
+    Dir.mktmpdir("milk-tea-linter-line-too-long-uri") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+
+      warnings = MilkTea::Linter.lint_source(source, path: "file://#{path}")
+
+      warning = warnings.find { |entry| entry.code == "line-too-long" }
+      assert warning, "expected line-too-long warning"
+      assert_equal 2, warning.line
+      assert_equal 41, warning.column
+      assert_match(/line exceeds max length of 40 columns/, warning.message)
+    end
+  end
+
+  def test_fix_source_wraps_long_call_arguments_for_line_too_long
+    Dir.mktmpdir("milk-tea-linter-fix-line-too-long") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+
+      fixed = MilkTea::Linter.fix_source(source, path: path)
+
+      assert_includes fixed, "return log_value(\n"
+      assert_includes fixed, "        \"alpha\",\n"
+      assert_includes fixed, "        \"delta\",\n"
+      refute_includes fixed, "return log_value(\"alpha\", \"beta\", \"gamma\", \"delta\")"
+    end
+  end
+
+  def test_fix_source_wraps_long_tuple_literal_without_trailing_comma
+    Dir.mktmpdir("milk-tea-linter-fix-line-too-long-tuple") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> int:
+            let pair = (alpha_value, beta_value, gamma_value)
+            return 0
+      MT
+
+      fixed = MilkTea::Linter.fix_source(source, path: path)
+
+      assert_includes fixed, "let pair = (\n"
+      assert_includes fixed, "        alpha_value,\n"
+      assert_includes fixed, "        gamma_value\n"
+      refute_includes fixed, "        gamma_value,\n"
+    end
+  end
+
   def test_warns_on_redundant_ignored_match_binding
     source = <<~MT
       function main(value: Option[int]) -> int:

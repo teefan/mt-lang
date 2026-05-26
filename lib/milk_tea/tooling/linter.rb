@@ -7,10 +7,41 @@ require "uri"
 module MilkTea
   class Linter
     UNSET = Object.new.freeze
+    DEFAULT_CONFIG_FILE_NAME = ".mt-lint.yml".freeze
+    KNOWN_RULE_CODES = %w[
+      borrow-and-mutate
+      constant-condition
+      dead-assignment
+      directional-ffi-arg
+      line-too-long
+      loop-single-iteration
+      missing-return
+      platform-api-drift
+      prefer-let
+      prefer-let-else
+      redundant-cast
+      redundant-else
+      redundant-ignored-match-binding
+      redundant-null-check
+      redundant-read-cast
+      redundant-read-release-temp
+      redundant-return
+      redundant-unsafe
+      reserved-primitive-name
+      self-assignment
+      self-comparison
+      shadow
+      unreachable-code
+      unused-import
+      unused-local
+      unused-param
+      useless-expression
+    ].freeze
     RESERVED_VALUE_TYPE_NAMES = Types::RESERVED_VALUE_TYPE_NAMES.to_set.freeze
     RESERVED_IMPORT_ALIAS_NAMES = Types::RESERVED_IMPORT_ALIAS_NAMES.to_set.freeze
     RESERVED_TYPE_BINDING_NAMES = Types::RESERVED_TYPE_BINDING_NAMES.to_set.freeze
     AUTO_FIXABLE_RULE_CODES = %w[
+      line-too-long
       prefer-let
       redundant-ignored-match-binding
       redundant-read-cast
@@ -28,6 +59,7 @@ module MilkTea
     LINT_TIERS = %i[fast full].freeze
     EXPENSIVE_LINT_RULE_CODES = %w[redundant-unsafe redundant-cast].to_set.freeze
     STATIC_QUICK_FIX_TITLES = {
+      "line-too-long" => "Wrap long line",
       "prefer-let" => "Replace 'var' with 'let'",
       "redundant-ignored-match-binding" => "Remove redundant as _",
       "redundant-else" => "Remove redundant else",
@@ -126,6 +158,7 @@ module MilkTea
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_facts: UNSET, unresolved_import_paths: UNSET, profile: nil, lint_tier: :full)
       sema_facts_provided = !sema_facts.equal?(UNSET)
       unresolved_import_paths_provided = !unresolved_import_paths.equal?(UNSET)
+      cfg = load_config(path)
       context = nil
       if !sema_facts_provided || !unresolved_import_paths_provided
         context = best_effort_lint_context(source, path:, profile:, label: "context_bootstrap")
@@ -149,11 +182,12 @@ module MilkTea
         source_ast: ast,
         profile:,
         lint_tier: normalize_lint_tier(lint_tier),
+        max_line_length: cfg&.fetch(:max_line_length, nil),
       ).lint(ast)
       warnings = profile_phase(profile, "apply_suppressions") { apply_suppressions(warnings, suppressions) }
 
       # Layer in config-file defaults before per-call overrides
-      if (cfg = load_config(path))
+      if cfg
         select ||= cfg[:select]
         ignore ||= cfg[:ignore]
       end
@@ -164,6 +198,24 @@ module MilkTea
 
     def self.quick_fix_title(code)
       STATIC_QUICK_FIX_TITLES[code]
+    end
+
+    def self.effective_max_line_length(path = nil)
+      load_config(path)&.fetch(:max_line_length, nil) || Formatter::DEFAULT_MAX_LINE_LENGTH
+    end
+
+    def self.default_config_source
+      lines = [
+        "# Default Milk Tea lint configuration.",
+        "# Remove entries from `select` to disable rules globally.",
+        "max_line_length: #{Formatter::DEFAULT_MAX_LINE_LENGTH}",
+        "select:",
+      ]
+      KNOWN_RULE_CODES.each do |code|
+        lines << "  - #{code}"
+      end
+      lines << "ignore: []"
+      "#{lines.join("\n")}\n"
     end
 
     def self.collect_reserved_primitive_name_fixes(source, path: nil, sema_facts: UNSET, unresolved_import_paths: UNSET)
@@ -187,12 +239,13 @@ module MilkTea
     # Load the nearest .mt-lint.yml walking up from the source file's directory.
     # Returns Hash { select: Set|nil, ignore: Set|nil } or nil if no config found.
     def self.load_config(path)
-      return nil unless path
+      resolved_path = resolve_lint_path(path)
+      return nil unless resolved_path
 
-      dir = File.directory?(path) ? path : File.dirname(path)
+      dir = File.directory?(resolved_path) ? resolved_path : File.dirname(resolved_path)
       # Walk up until we either find a config or leave the project
       100.times do
-        candidate = File.join(dir, ".mt-lint.yml")
+        candidate = File.join(dir, DEFAULT_CONFIG_FILE_NAME)
         if File.exist?(candidate)
           return parse_config_file(candidate)
         end
@@ -215,6 +268,10 @@ module MilkTea
       end
       if (i = raw[:ignore])
         result[:ignore] = Array(i).map(&:to_s).to_set
+      end
+      if raw.key?(:max_line_length)
+        max_line_length = raw[:max_line_length].to_i
+        result[:max_line_length] = max_line_length if max_line_length.positive?
       end
       result
     rescue StandardError
@@ -241,7 +298,7 @@ module MilkTea
     # Handles: prefer-let, redundant-ignored-match-binding,
     # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
     # directional-ffi-arg, redundant-else, redundant-unsafe,
-    # redundant-return, redundant-cast.
+    # redundant-return, redundant-cast, line-too-long.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_facts: nil)
       working_context = best_effort_lint_context(source, path:)
@@ -418,6 +475,11 @@ module MilkTea
       end
 
       fixed_source = lines.join
+      fixed_source = Formatter.wrap_long_argument_lists(
+        fixed_source,
+        max_line_length: effective_max_line_length(path),
+        path:,
+      )
       redundant_cast_warnings = lint_source(fixed_source, path:).select do |w|
         w.code == "redundant-cast" && w.line && w.column && w.length
       end
@@ -858,7 +920,7 @@ module MilkTea
       warnings
     end
 
-    def initialize(path: nil, sema_facts: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil, lint_tier: :full)
+    def initialize(path: nil, sema_facts: nil, source: nil, unresolved_import_paths: nil, imported_modules: nil, source_ast: nil, profile: nil, lint_tier: :full, max_line_length: nil)
       @path = path
       @sema_facts = sema_facts
       @unresolved_import_paths = (unresolved_import_paths || Set.new).to_set
@@ -880,6 +942,7 @@ module MilkTea
       @recheck_context_cache = {}
       @reserved_primitive_name_fixes = []
       @lint_tier = self.class.normalize_lint_tier(lint_tier)
+      @max_line_length = max_line_length&.to_i&.positive? ? max_line_length.to_i : Formatter::DEFAULT_MAX_LINE_LENGTH
       @cfg_binding_resolution = nil
       @cfg_binding_resolution_computed = false
       @statement_flow_analysis_cache = {}
@@ -889,6 +952,7 @@ module MilkTea
     def lint(ast)
       @source_ast ||= ast
       visit_source_file(ast)
+      profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
       profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings } if expensive_lint_rules_enabled?
       @warnings
     end
@@ -898,6 +962,29 @@ module MilkTea
     end
 
     private
+
+    def emit_line_too_long_warnings
+      return unless @max_line_length.positive?
+      return if @source.empty?
+
+      @source_lines.each_with_index do |line, index|
+        next if line.empty?
+        next unless line.length > @max_line_length
+
+        fix = Formatter.build_long_line_wrap_fix(@source, index, max_line_length: @max_line_length, path: @path)
+        message = "line exceeds max length of #{@max_line_length} columns (#{line.length})"
+        message << "; wrap the delimited list" if fix
+        @warnings << Warning.new(
+          path: @path,
+          line: index + 1,
+          column: @max_line_length + 1,
+          length: line.length - @max_line_length,
+          code: "line-too-long",
+          message:,
+          severity: :warning,
+        )
+      end
+    end
 
     def profile_phase(name)
       return yield unless @profile

@@ -9,8 +9,9 @@ module MilkTea
   class Formatter
     CheckResult = Data.define(:changed, :formatted_source)
     MODES = %i[safe canonical preserve tidy].freeze
+    DEFAULT_MAX_LINE_LENGTH = 120
 
-    def self.format_source(source, path: nil, mode: :safe)
+    def self.format_source(source, path: nil, mode: :safe, max_line_length: nil)
       validate_mode!(mode)
 
       case mode
@@ -19,12 +20,12 @@ module MilkTea
       when :preserve
         preserve_format(source, path:)
       when :tidy
-        tidy_format(source, path:)
+        tidy_format(source, path:, max_line_length: resolve_max_line_length(path, explicit: max_line_length))
       end
     end
 
-    def self.check_source(source, path: nil, mode: :canonical)
-      formatted = format_source(source, path:, mode:)
+    def self.check_source(source, path: nil, mode: :canonical, max_line_length: nil)
+      formatted = format_source(source, path:, mode:, max_line_length:)
       CheckResult.new(changed: source != formatted, formatted_source: formatted)
     end
 
@@ -43,10 +44,115 @@ module MilkTea
       CSTFormatter.format(cst)
     end
 
-    def self.tidy_format(source, path:)
+    def self.tidy_format(source, path:, max_line_length: DEFAULT_MAX_LINE_LENGTH)
       cst = build_cst(source, path:)
       normalized = CSTFormatter.format_normalized(cst)
-      normalize_blank_lines(normalized, path:)
+      wrapped = wrap_long_argument_lists(normalized, max_line_length:, path:)
+      normalize_blank_lines(wrapped, path:)
+    end
+
+    def self.resolve_max_line_length(path = nil, explicit: nil)
+      value = explicit
+      if (!value || value.to_i <= 0) && defined?(Linter) && Linter.respond_to?(:load_config)
+        value = Linter.load_config(path)&.fetch(:max_line_length, nil)
+      end
+
+      value = value.to_i if value
+      value&.positive? ? value : DEFAULT_MAX_LINE_LENGTH
+    end
+
+    def self.wrap_long_argument_lists(source, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil)
+      return source unless max_line_length.to_i.positive?
+
+      current = source
+      100.times do
+        lines = current.lines
+        fix = nil
+
+        lines.each_index do |line_index|
+          next unless lines[line_index].delete_suffix("\n").length > max_line_length
+
+          fix = build_long_line_wrap_fix(current, line_index, max_line_length:, path:)
+          break if fix
+        end
+
+        break unless fix
+
+        updated_lines = current.lines
+        updated_lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
+        updated = updated_lines.join
+        break if updated == current
+
+        current = updated
+      end
+
+      return current if current == source
+
+      Parser.parse(current, path:)
+      current
+    rescue StandardError
+      source
+    end
+
+    def self.build_long_line_wrap_fix(source, line_index, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil)
+      return nil unless max_line_length.to_i.positive?
+
+      lines = source.lines
+      return nil unless line_index >= 0 && line_index < lines.length
+
+      original_line = lines[line_index]
+      line = original_line.delete_suffix("\n")
+      return nil if line.length <= max_line_length
+
+      tokens = Lexer.lex(source)
+      candidates = long_line_wrap_candidates(tokens, line_index + 1, line)
+      return nil if candidates.empty?
+
+      indent = line[/\A\s*/] || ""
+      arg_indent = indent + "    "
+      line_terminator = original_line.end_with?("\n") ? "\n" : ""
+
+      candidates
+        .sort_by { |entry| [-entry[:depth], -(entry[:end_char] - entry[:start_char])] }
+        .each do |candidate|
+          [true, false].each do |trailing_commas|
+            new_text = build_wrapped_delimited_group_text(
+              line,
+              candidate,
+              indent:,
+              item_indent: arg_indent,
+              line_terminator:,
+              trailing_commas:,
+            )
+            next if new_text == original_line
+
+            updated_lines = lines.dup
+            updated_lines[line_index..line_index] = [new_text]
+            Parser.parse(updated_lines.join, path:)
+
+            return {
+              start_line_idx: line_index,
+              end_line_idx: line_index,
+              new_text:,
+            }
+          rescue StandardError
+            next
+          end
+        end
+
+      nil
+    rescue StandardError
+      nil
+    end
+
+    def self.build_wrapped_delimited_group_text(line, candidate, indent:, item_indent:, line_terminator:, trailing_commas:)
+      new_text = +"#{line[0...candidate[:start_char]]}#{candidate[:opening_delimiter]}\n"
+      candidate[:arguments].each_with_index do |argument, index|
+        suffix = trailing_commas || index < candidate[:arguments].length - 1 ? "," : ""
+        new_text << "#{item_indent}#{argument}#{suffix}\n"
+      end
+      new_text << "#{indent}#{candidate[:closing_delimiter]}#{line[candidate[:end_char]..].to_s}#{line_terminator}"
+      new_text
     end
 
     # Enforce blank-line rules:
@@ -160,6 +266,86 @@ module MilkTea
       return false unless stripped.end_with?(":")
 
       stripped.start_with?("interface ")
+    end
+
+    def self.long_line_wrap_candidates(tokens, target_line_number, line)
+      stack = []
+      candidates = []
+
+      tokens.each_with_index do |token, index|
+        case token.type
+        when :lparen, :lbracket
+          stack << { token:, index:, depth: stack.length }
+        when :rparen, :rbracket
+          opening = stack.pop
+          next unless opening
+          next unless matching_delimiter_pair?(opening[:token].type, token.type)
+          next unless opening[:token].line == target_line_number && token.line == target_line_number
+
+          candidate = build_long_line_wrap_candidate(
+            line,
+            tokens,
+            opening[:token],
+            opening[:index],
+            token,
+            index,
+            opening[:depth],
+          )
+          candidates << candidate if candidate
+        end
+      end
+
+      candidates
+    end
+
+    def self.matching_delimiter_pair?(opening_type, closing_type)
+      (opening_type == :lparen && closing_type == :rparen) ||
+        (opening_type == :lbracket && closing_type == :rbracket)
+    end
+
+    def self.build_long_line_wrap_candidate(line, tokens, open_token, open_index, close_token, close_index, depth)
+      nested_group_depth = 0
+      comma_tokens = []
+
+      (open_index + 1...close_index).each do |index|
+        token = tokens[index]
+        case token.type
+        when :lparen, :lbracket
+          nested_group_depth += 1
+        when :rparen, :rbracket
+          nested_group_depth -= 1 if nested_group_depth.positive?
+        when :comma
+          comma_tokens << token if nested_group_depth.zero? && token.line == open_token.line
+        end
+      end
+
+      return nil if comma_tokens.empty?
+
+      start_char = open_token.column - 1
+      end_char = close_token.column
+      current_start = start_char + 1
+      arguments = []
+
+      comma_tokens.each do |comma|
+        argument = line[current_start...(comma.column - 1)].to_s.strip
+        return nil if argument.empty?
+
+        arguments << argument
+        current_start = comma.column
+      end
+
+      final_argument = line[current_start...(close_token.column - 1)].to_s.strip
+      return nil if final_argument.empty?
+
+      arguments << final_argument
+      {
+        depth:,
+        start_char:,
+        end_char:,
+        opening_delimiter: open_token.lexeme,
+        closing_delimiter: close_token.lexeme,
+        arguments:,
+      }
     end
 
     def self.validate_mode!(mode)
