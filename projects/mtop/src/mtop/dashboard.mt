@@ -374,6 +374,15 @@ function clamp_process_selection(process_table: str, selected_index: int) -> int
     return min_int(max_int(selected_index, 0), entry_count - 1)
 
 
+function selected_process_label(process_table: str, selected_index: int) -> string.String:
+    let process_count = process_entry_count(process_table)
+    if process_count == 0:
+        return string.String.from_str("none")
+
+    let selected = clamp_process_selection(process_table, selected_index) + 1
+    return fmt.format(f"#{selected}/#{process_count}")
+
+
 function selected_process_line(process_table: str, selected_index: int) -> Option[str]:
     if process_entry_count(process_table) == 0:
         return Option[str].none
@@ -724,34 +733,24 @@ function render_footer(
     selected_index: int,
     last_event: str,
 ) -> bool:
-    var hint_line = string.String.create()
-    defer hint_line.release()
+    var hint_text = "  Type into the input panel. Backspace edits, Enter submits, Ctrl+N restarts the child."
     if active_tab == DashboardTab.overview:
-        hint_line.append("  Mouse tabs are active. Click a preview row to jump into the process view.")
+        hint_text = "  Mouse tabs are active. Click a preview row to jump into the process view."
     else if active_tab == DashboardTab.processes:
-        hint_line.append("  Up/Down moves selection. Mouse click selects a process row. Tab switches views.")
-    else:
-        hint_line.append("  Type into the input panel. Backspace edits, Enter submits, Ctrl+N restarts the child.")
+        hint_text = "  Up/Down moves selection. Mouse click selects a process row. Tab switches views."
 
-    if not render_plain_line(app_terminal, size, size.height - 1, hint_line.as_str()):
+    if not render_plain_line(app_terminal, size, size.height - 1, hint_text):
         return false
 
-    var status_line = string.String.create()
+    var selected_label = selected_process_label(process_table, selected_index)
+    defer selected_label.release()
+    let mouse_status = mouse_label(config.mouse_enabled)
+    let child_status = child_label(echo)
+    let selected_text = selected_label.as_str()
+    var status_line = fmt.format(
+        f"  Mouse: #{mouse_status}  Child: #{child_status}  Selected: #{selected_text}  Last: #{last_event}"
+    )
     defer status_line.release()
-    status_line.append("  Mouse: ")
-    status_line.append(mouse_label(config.mouse_enabled))
-    status_line.append("  Child: ")
-    status_line.append(child_label(echo))
-    status_line.append("  Selected: ")
-    let process_count = process_entry_count(process_table)
-    if process_count == 0:
-        status_line.append("none")
-    else:
-        fmt.append_int(ref_of(status_line), clamp_process_selection(process_table, selected_index) + 1)
-        status_line.append("/")
-        fmt.append_int(ref_of(status_line), process_count)
-    status_line.append("  Last: ")
-    status_line.append(last_event)
 
     return render_plain_line(app_terminal, size, size.height, status_line.as_str())
 
@@ -908,14 +907,9 @@ function render_dashboard(
         append_panel_line(ref_of(session_body), "Mouse", mouse_label(config.mouse_enabled))
         append_panel_int(ref_of(session_body), "Refresh", snapshot.refresh_count)
         append_panel_line(ref_of(session_body), "Child", child_label(echo))
-        let process_count = process_entry_count(process_table)
-        if process_count == 0:
-            append_panel_line(ref_of(session_body), "Selected", "none")
-        else:
-            let selected = clamp_process_selection(process_table, selected_process_index) + 1
-            var selected_label = fmt.format(f"#{selected}/#{process_count}")
-            defer selected_label.release()
-            append_panel_line(ref_of(session_body), "Selected", selected_label.as_str())
+        var selected_label = selected_process_label(process_table, selected_process_index)
+        defer selected_label.release()
+        append_panel_line(ref_of(session_body), "Selected", selected_label.as_str())
         append_panel_line(ref_of(session_body), "Last event", last_event)
 
         if not render_panel(
@@ -969,13 +963,10 @@ function render_dashboard(
         append_panel_line(ref_of(inspector_body), "Updates", updates_label(paused))
         append_panel_line(ref_of(inspector_body), "Mouse", mouse_label(config.mouse_enabled))
         let process_count = process_entry_count(process_table)
-        if process_count == 0:
-            append_panel_line(ref_of(inspector_body), "Selected", "none")
-        else:
-            let selected = clamp_process_selection(process_table, selected_process_index) + 1
-            var selected_label = fmt.format(f"#{selected}/#{process_count}")
-            defer selected_label.release()
-            append_panel_line(ref_of(inspector_body), "Selected", selected_label.as_str())
+        var selected_label = selected_process_label(process_table, selected_process_index)
+        defer selected_label.release()
+        append_panel_line(ref_of(inspector_body), "Selected", selected_label.as_str())
+        if process_count != 0:
             match selected_process_line(process_table, selected_process_index):
                 Option.some as selected_payload:
                     append_panel_line(ref_of(inspector_body), "Entry", selected_payload.value)
@@ -1226,16 +1217,13 @@ extending EchoSession:
             if not this.active:
                 return
 
-        var outgoing = string.String.create()
+        let input_text = byte_buffer_as_str(this.input) else:
+            this.status.assign("input buffer is not valid UTF-8")
+            this.input.clear()
+            return
+
+        var outgoing = fmt.format(f"#{input_text}\n")
         defer outgoing.release()
-        match byte_buffer_as_str(this.input):
-            Option.some as payload:
-                outgoing.append(payload.value)
-            Option.none:
-                this.status.assign("input buffer is not valid UTF-8")
-                this.input.clear()
-                return
-        outgoing.append("\n")
 
         match this.child.write_stdin(outgoing.as_str()):
             Result.failure as payload:
