@@ -90,12 +90,7 @@ class MilkTeaPackageRegistryStoreTest < Minitest::Test
       File.file?(candidate) && File.executable?(candidate)
     end
   end
-end# frozen_string_literal: true
 
-require "tmpdir"
-require_relative "../test_helper"
-
-class MilkTeaPackageRegistryStoreTest < Minitest::Test
   def test_default_root_prefers_explicit_registry_env_over_xdg_data_home
     root = MilkTea::PackageRegistryStore.default_root(
       env: {
