@@ -177,7 +177,7 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/uint8_t \*advanced = \(\(\(uint8_t\*\) memory\)\) \+ 4;/, generated)
+    assert_match(/uint8_t \*advanced = \(uint8_t\*\) memory \+ 4;/, generated)
     assert_match(/release\(memory\);/, generated)
   end
 
@@ -303,7 +303,7 @@ function main() -> int:
     assert_match(/static bool demo_iterator_current_NumbersIter_next\(demo_iterator_current_NumbersIter \*this\)/, generated)
     assert_match(/static int32_t demo_iterator_current_NumbersIter_current\(demo_iterator_current_NumbersIter this\)/, generated)
     assert_match(/demo_iterator_current_NumbersIter_current\([A-Za-z0-9_]+\)/, generated)
-    assert_match(/if \(![A-Za-z0-9_]+\([^)]*\)\)/, generated)
+    assert_match(/while \([A-Za-z0-9_]+\([^)]*\)\) \{/, generated)
     assert_match(/total \+= value;/, generated)
   end
 
@@ -1136,7 +1136,7 @@ function main() -> int:
 
     refute_match(/mt_foreign_str_to_cstr_temp/, generated)
     refute_match(/mt_free_foreign_cstr_temp/, generated)
-    assert_match(/return Load\(\(\(const char\*\) demo_main_PATH\.data\)\);/, generated)
+    assert_match(/return Load\(\(const char\*\) demo_main_PATH\.data\);/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_in_const_void_pointer
@@ -1168,9 +1168,9 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/Inspect\(\(\(const void\*\) \(&value\)\)\);/, generated)
+    assert_match(/Inspect\(\(const void\*\) &value\);/, generated)
     assert_match(/int32_t __mt_foreign_in_\d+ = value \+ 1;/, generated)
-    assert_match(/Inspect\(\(\(const void\*\) \(&__mt_foreign_in_\d+\)\)\);/, generated)
+    assert_match(/Inspect\(\(const void\*\) &__mt_foreign_in_\d+\);/, generated)
   end
 
   def test_generate_c_for_external_out_params
@@ -1307,7 +1307,7 @@ function main() -> int:
     refute_match(/mt_foreign_strs_to_cstrs_temp/, generated)
     refute_match(/mt_free_foreign_cstrs_temp/, generated)
     assert_match(/UseNames\(/, generated)
-    assert_match(/const char\* __mt_foreign_cstr_items_\d+\[3\] = \{ \(\(const char\*\) labels\[0\]\.data\), \(\(const char\*\) labels\[1\]\.data\), \(\(const char\*\) labels\[2\]\.data\) \};/, generated)
+    assert_match(/const char\* __mt_foreign_cstr_items_\d+\[3\] = \{ \(const char\*\) labels\[0\]\.data, \(const char\*\) labels\[1\]\.data, \(const char\*\) labels\[2\]\.data \};/, generated)
     assert_match(/__mt_foreign_arg_\d+\.data/, generated)
     assert_match(/\(\(int32_t\) __mt_foreign_arg_\d+\.len\)|\(int32_t\) __mt_foreign_arg_\d+\.len/, generated)
   end
@@ -1855,8 +1855,8 @@ function main() -> int:
     generated = generate_c_from_program_source(source, imported_sources)
 
     refute_match(/__mt_foreign_arg_\d+/, generated)
-    assert_match(/DrawText\(\(\(const char\*\) label\.data\), \(GetScreenWidth\(\) \/ 2\) - \(MeasureText\(\(\(const char\*\) label\.data\), 20\) \/ 2\), 10, 20, std_sample_BLACK\);/, generated)
-    assert_match(/DrawText\(TextFormat\("Collision Area: %i", area\), \(GetScreenWidth\(\) \/ 2\) - 100, 20, 20, std_sample_BLACK\);/, generated)
+    assert_match(/DrawText\(\(const char\*\) label\.data, GetScreenWidth\(\) \/ 2 - MeasureText\(\(const char\*\) label\.data, 20\) \/ 2, 10, 20, std_sample_BLACK\);/, generated)
+    assert_match(/DrawText\(TextFormat\("Collision Area: %i", area\), GetScreenWidth\(\) \/ 2 - 100, 20, 20, std_sample_BLACK\);/, generated)
   end
 
   def test_generate_c_for_foreign_text_calls_with_dynamic_format_literals_without_extra_cstr_copy
@@ -1892,7 +1892,7 @@ function main() -> int:
 
     refute_match(/demo_main__fmt_\d+/, generated)
     assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
-    assert_match(/DrawText\(\(\(const char\*\) __mt_fmt_string_1\.data\), 10, 20, 20, std_sample_BLACK\);/, generated)
+    assert_match(/DrawText\(\(const char\*\) __mt_fmt_string_1\.data, 10, 20, 20, std_sample_BLACK\);/, generated)
     assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
     refute_match(/mt_foreign_str_to_cstr_temp/, generated)
     refute_match(/mt_free_foreign_cstr_temp/, generated)
@@ -1956,9 +1956,9 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source, imported_sources)
 
-    assert_match(/return \(\(\(uint8_t\*\) AllocateBytes\(16\)\)\)\[0\];/, generated)
+    assert_match(/return \(\(uint8_t\*\) AllocateBytes\(16\)\)\[0\];/, generated)
     refute_match(/__mt_foreign_arg_\d+/, generated)
-    assert_match(/ReleaseBytes\(\(\(uint8_t\*\) AllocateBytes\(8\)\)\);/, generated)
+    assert_match(/ReleaseBytes\(\(uint8_t\*\) AllocateBytes\(8\)\);/, generated)
     assert_match(/SetLabel\(buffer\);/, generated)
   end
 
@@ -2570,8 +2570,8 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/double sum = \(\(\(double\) 1\)\) \+ 2\.5;/, generated)
-    assert_match(/if \(\(\(\(\(double\) 3\)\) < 3\.5\) && \(sum > 3\.0\)\)/, generated)
+    assert_match(/double sum = \(double\) 1 \+ 2\.5;/, generated)
+    assert_match(/if \(\(double\) 3 < 3\.5 && sum > 3\.0\)/, generated)
   end
 
   def test_generate_c_for_prefix_cast_syntax
@@ -2588,8 +2588,8 @@ function main(value: float, a: int, b: int) -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/int32_t left = \(\(int32_t\) value\);/, generated)
-    assert_match(/uint8_t right = \(\(uint8_t\) \(a - b\)\);/, generated)
+    assert_match(/int32_t left = \(int32_t\) value;/, generated)
+    assert_match(/uint8_t right = \(uint8_t\) \(a - b\);/, generated)
   end
 
   def test_generate_c_for_if_expressions
@@ -2674,10 +2674,10 @@ function main() -> int:
       },
     )
 
-    assert_match(/\.r = \(\(int16_t\) shade\)/, generated)
-    assert_match(/color\.g = \(\(int16_t\) shade\);/, generated)
-    assert_match(/set_count\(\(\(int32_t\) count\)\);/, generated)
-    assert_match(/set_opacity\(\(\(double\) alpha\)\);/, generated)
+    assert_match(/\.r = \(int16_t\) shade/, generated)
+    assert_match(/color\.g = \(int16_t\) shade;/, generated)
+    assert_match(/set_count\(\(int32_t\) count\);/, generated)
+    assert_match(/set_opacity\(\(double\) alpha\);/, generated)
   end
 
   def test_generate_c_for_exact_compile_time_numeric_coercion
@@ -2706,9 +2706,9 @@ function main() -> int:
       },
     )
 
-    assert_match(/int32_t whole = \(\(int32_t\) 2\.0\);/, generated)
-    assert_match(/set_channel\(\(\(uint8_t\) local_opaque\)\);/, generated)
-    assert_match(/set_scale\(\(\(float\) 200\)\);/, generated)
+    assert_match(/int32_t whole = \(int32_t\) 2\.0;/, generated)
+    assert_match(/set_channel\(\(uint8_t\) local_opaque\);/, generated)
+    assert_match(/set_scale\(\(float\) 200\);/, generated)
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_local_assignment_and_return_boundaries
@@ -2732,12 +2732,12 @@ function project(value: int) -> float:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/float total = \(\(float\) value\);/, generated)
-    assert_match(/total = \(\(float\) \(value \+ 1\)\);/, generated)
-    assert_match(/total \+= \(\(float\) \(value \+ 2\)\);/, generated)
-    assert_match(/total -= \(\(float\) \(value \+ 3\)\);/, generated)
-    assert_match(/point\.x = \(\(float\) \(value \+ 4\)\);/, generated)
-    assert_match(/return \(\(float\) \(value \+ 5\)\);/, generated)
+    assert_match(/float total = \(float\) value;/, generated)
+    assert_match(/total = \(float\) \(value \+ 1\);/, generated)
+    assert_match(/total \+= \(float\) \(value \+ 2\);/, generated)
+    assert_match(/total -= \(float\) \(value \+ 3\);/, generated)
+    assert_match(/point\.x = \(float\) \(value \+ 4\);/, generated)
+    assert_match(/return \(float\) \(value \+ 5\);/, generated)
   end
 
   def test_generate_c_for_contextual_integer_to_float_at_call_and_field_boundaries
@@ -2763,10 +2763,10 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/\.x = \(\(float\) value\)/, generated)
-    assert_match(/\.y = \(\(\(float\) value\)\) \* 0\.5f/, generated)
-    assert_match(/takes_float\(\(\(float\) value\)\);/, generated)
-    assert_match(/takes_float\(\(\(\(float\) value\)\) \* 0\.5f\);/, generated)
+    assert_match(/\.x = \(float\) value/, generated)
+    assert_match(/\.y = \(float\) value \* 0\.5f/, generated)
+    assert_match(/takes_float\(\(float\) value\);/, generated)
+    assert_match(/takes_float\(\(float\) value \* 0\.5f\);/, generated)
   end
 
   def test_generate_c_for_generic_struct_instantiation_and_embedding
@@ -2860,7 +2860,7 @@ function main() -> int:
     assert_match(/static int32_t \*demo_generic_functions_head_int\(demo_generic_functions_Slice_int items\)/, generated)
     assert_match(/static int32_t demo_generic_functions_min_int\(int32_t a, int32_t b\)/, generated)
     assert_match(/int32_t smallest = demo_generic_functions_min_int\(9, 4\);/, generated)
-    assert_match(/return \(\*demo_generic_functions_head_int\(items\)\) \+ smallest;/, generated)
+    assert_match(/return \*demo_generic_functions_head_int\(items\) \+ smallest;/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_interface_constraints
@@ -3241,7 +3241,7 @@ function main() -> int:
 
     assert_match(/static uintptr_t demo_generic_builder_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(\(int32_t\) \(demo_generic_builder_capacity_of_32\(buffer\) \+ demo_generic_builder_capacity_of_32\(buffer\)\)\);/, generated)
+    assert_match(/return \(int32_t\) \(demo_generic_builder_capacity_of_32\(buffer\) \+ demo_generic_builder_capacity_of_32\(buffer\)\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_literal_type_arguments
@@ -3262,7 +3262,7 @@ function main() -> int:
 
     assert_match(/static uintptr_t demo_generic_builder_explicit_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(\(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\)\);/, generated)
+    assert_match(/return \(int32_t\) demo_generic_builder_explicit_capacity_of_32\(buffer\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_named_const_type_arguments
@@ -3286,7 +3286,7 @@ function main() -> int:
 
     assert_match(/static uintptr_t demo_generic_builder_named_const_capacity_of_32\(mt_str_buffer_32 buffer\)/, generated)
     assert_match(/return 32;/, generated)
-    assert_match(/return \(\(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\)\);/, generated)
+    assert_match(/return \(int32_t\) demo_generic_builder_named_const_capacity_of_32\(buffer\);/, generated)
   end
 
   def test_generate_c_for_builtin_fatal_helper
@@ -3788,7 +3788,7 @@ function main() -> int:
     assert_match(/return \(mt_str\)\{ \.data = this\.data \+ start, \.len = len \};/, generated)
     assert_match(/static const char\* std_mem_arena_Arena_to_cstr\(std_mem_arena_Arena \*this, mt_str text\)/, generated)
     assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
-    assert_match(/char \*buffer = \(\(char\*\) memory\);/, generated)
+    assert_match(/char \*buffer = \(char\*\) memory;/, generated)
     assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
     assert_match(/mt_str text = \{ \.data = "hello world", \.len = 11 \};/, generated)
     assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
@@ -4138,7 +4138,7 @@ function main() -> int:
 
     assert_match(/static void demo_fn_array_return_surface_make\(int32_t \(\*__mt_out\)\[2\]\);/, generated)
     assert_match(/static int32_t demo_fn_array_return_surface_read_first\(void \(\*callback\)\(int32_t \(\*__mt_out\)\[2\]\)\);/, generated)
-    assert_match(/int32_t values\[2\];\n  callback\(&\(values\)\);/, generated)
+    assert_match(/int32_t values\[2\];\n  callback\(&values\);/, generated)
     assert_match(/return demo_fn_array_return_surface_read_first\(demo_fn_array_return_surface_make\);/, generated)
   end
 
@@ -4237,9 +4237,9 @@ function main() -> uint:
     generated = generate_c_from_source(source)
 
     assert_match(/demo_ptr_array_addr_Palette \*base = &holder;/, generated)
-    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&\(\(\*base\)\.colors\), 0\);/, generated)
+    assert_match(/uint32_t \*first = mt_checked_index_array_uint_4\(&\(\*base\)\.colors, 0\);/, generated)
     assert_match(/\*first = 9;/, generated)
-    assert_match(/return \(\*mt_checked_index_array_uint_4\(&\(holder\.colors\), 0\)\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_uint_4\(&holder\.colors, 0\)\);/, generated)
   end
 
   def test_generate_c_hoists_repeated_checked_index_helper_within_expression_statement
@@ -4272,9 +4272,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&\(points\), index\);/, generated)
+    assert_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&points, index\);/, generated)
     assert_match(/demo_checked_index_alias_surface_use\(__mt_checked_index_ptr_\d+->x, __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x \+ __mt_checked_index_ptr_\d+->y, __mt_checked_index_ptr_\d+->x\);/, generated)
-    refute_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&\(points\), demo_checked_index_alias_surface_next\(&cursor\)\);/, generated)
+    refute_match(/demo_checked_index_alias_surface_Point \*__mt_checked_index_ptr_\d+ = mt_checked_index_array_demo_checked_index_alias_surface_Point_2\(&points, demo_checked_index_alias_surface_next\(&cursor\)\);/, generated)
   end
 
   def test_generate_c_for_safe_array_indexing_and_assignment
@@ -4302,9 +4302,9 @@ function main() -> int:
 
     assert_match(/static inline uint32_t \*mt_checked_index_array_uint_4\(uint32_t \(\*array\)\[4\], uintptr_t index\)/, generated)
     assert_match(/if \(index >= 4\) mt_fatal\("array index out of bounds"\);/, generated)
-    assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(palette\), 1\)\) = 9;/, generated)
-    assert_match(/\(\*mt_checked_index_array_uint_4\(\&\(holder\.colors\), 2\)\) = 10;/, generated)
-    assert_match(/if \(\(\(\*mt_checked_index_array_uint_4\(\&\(palette\), 0\)\)\) != 1\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(\&palette, 1\)\) = 9;/, generated)
+    assert_match(/\(\*mt_checked_index_array_uint_4\(\&holder\.colors, 2\)\) = 10;/, generated)
+    assert_match(/if \(\(\*mt_checked_index_array_uint_4\(\&palette, 0\)\) != 1\)/, generated)
   end
 
   def test_generate_c_for_zero_initialization
@@ -4382,8 +4382,8 @@ function main() -> int:
     assert_match(/int32_t values\[4\];\n  memcpy\(values, values_input, sizeof\(values\)\);/, generated)
     assert_match(/int32_t local\[4\];\n  memcpy\(local, values, sizeof\(local\)\);/, generated)
     assert_match(/memcpy\(lhs, rhs, sizeof\(lhs\)\);/, generated)
-    assert_match(/return \(\*mt_checked_index_array_int_4\(\&\(local\), 1\)\);/, generated)
-    assert_match(/if \(\(\(\*mt_checked_index_array_int_4\(\&\(lhs\), 1\)\)\) != 6\)/, generated)
+    assert_match(/return \(\*mt_checked_index_array_int_4\(\&local, 1\)\);/, generated)
+    assert_match(/if \(\(\*mt_checked_index_array_int_4\(\&lhs, 1\)\) != 6\)/, generated)
   end
 
   def test_generate_c_for_local_array_returns
@@ -4413,8 +4413,8 @@ function main() -> int:
     assert_match(/static void demo_array_return_surface_clone\(int32_t \(\*__mt_out\)\[4\], int32_t values_input\[4\]\);/, generated)
     assert_match(/memcpy\(\*__mt_out, \(int32_t \[4\]\) \{ 1, 2, 3, 4 \}, sizeof\(\*__mt_out\)\);/, generated)
     assert_match(/memcpy\(\*__mt_out, values, sizeof\(\*__mt_out\)\);/, generated)
-    assert_match(/demo_array_return_surface_make\(&\(__mt_array_call_\d+\)\);/, generated)
-    assert_match(/demo_array_return_surface_clone\(&\(__mt_array_call_\d+\), __mt_array_call_\d+\);/, generated)
+    assert_match(/demo_array_return_surface_make\(&__mt_array_call_\d+\);/, generated)
+    assert_match(/demo_array_return_surface_clone\(&__mt_array_call_\d+, __mt_array_call_\d+\);/, generated)
     assert_match(/return demo_array_return_surface_read\(__mt_array_call_\d+\);/, generated)
   end
 
@@ -4459,8 +4459,8 @@ function main() -> void:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/set_text\(\(\(const char\*\) raw_buffer\)\);/, generated)
-    assert_match(/char \*writable = \(\(char\*\) clipboard\);/, generated)
+    assert_match(/set_text\(\(const char\*\) raw_buffer\);/, generated)
+    assert_match(/char \*writable = \(char\*\) clipboard;/, generated)
   end
 
   def test_generate_c_for_const_pointer_ro_addr_calls
@@ -4501,7 +4501,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/char buffer\[32\] = \{ 0 \};/, generated)
-    assert_match(/\(\*mt_checked_index_array_char_32\(&\(buffer\), 0\)\) = \(\(char\) 65\);/, generated)
+    assert_match(/\(\*mt_checked_index_array_char_32\(&buffer, 0\)\) = \(char\) 65;/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = &buffer\[0\], \.len = 32 \}/, generated)
   end
 
@@ -4680,7 +4680,7 @@ function main() -> int:
     generated = generate_c_from_program_source(root_source, imported_sources)
 
     assert_match(/mt_span_char __mt_foreign_arg_public_1 = \{ \.data = mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \};/, generated)
-    assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(\(int32_t\) __mt_foreign_arg_public_1\.len\)\);/, generated)
+    assert_match(/TextBox\(__mt_foreign_arg_public_1\.data, \(int32_t\) __mt_foreign_arg_public_1\.len\);/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_default_calls_and_interface_constraints
@@ -4747,7 +4747,7 @@ function main() -> int:
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(int32_t\) (?:33|\(32 \+ 1\))\);/, generated)
   end
 
   def test_generate_c_for_explicit_literal_specialization_on_imported_generic_foreign_defs
@@ -4780,7 +4780,7 @@ function main() -> int:
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(int32_t\) (?:33|\(32 \+ 1\))\);/, generated)
   end
 
   def test_generate_c_for_explicit_literal_specialization_on_local_generic_foreign_defs
@@ -4808,7 +4808,7 @@ function main() -> int:
 
     generated = generate_c_from_program_source(root_source, imported_sources)
 
-    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(\(int32_t\) (?:33|\(32 \+ 1\))\)\);/, generated)
+    assert_match(/TextBox\(mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \(int32_t\) (?:33|\(32 \+ 1\))\);/, generated)
   end
 
   def test_rejects_codegen_for_removed_cstr_list_buffer_type
@@ -4930,7 +4930,7 @@ function main() -> int:
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_match(/mt_span_char __mt_foreign_arg_public_\d+ = \{ \.data = &buffer\[0\], \.len = 32 \};/, generated)
-    assert_match(/TextBox\(__mt_foreign_arg_public_\d+\.data, \(\(int32_t\) __mt_foreign_arg_public_\d+\.len\)\);/, generated)
+    assert_match(/TextBox\(__mt_foreign_arg_public_\d+\.data, \(int32_t\) __mt_foreign_arg_public_\d+\.len\);/, generated)
   end
 
   def test_generate_c_for_unsafe_typed_null_pointer_to_cstr_casts
@@ -4948,7 +4948,7 @@ function main() -> void:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/set_text\(\(\(const char\*\) NULL\)\);/, generated)
+    assert_match(/set_text\(\(const char\*\) NULL\);/, generated)
   end
 
   def test_generate_c_for_unsafe_integer_to_char_buffer_writes
@@ -4967,8 +4967,8 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/ptr\[0\] = \(\(char\) 65\);/, generated)
-    assert_match(/ptr\[1\] = \(\(char\) 66\);/, generated)
+    assert_match(/ptr\[0\] = \(char\) 65;/, generated)
+    assert_match(/ptr\[1\] = \(char\) 66;/, generated)
   end
 
   def test_generate_c_for_unsafe_pointer_offsets_without_ptr_uint_casts
@@ -4989,7 +4989,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/char \*next = ptr \+ offset;/, generated)
-    assert_match(/next\[offset - 1\] = \(\(char\) 65\);/, generated)
+    assert_match(/next\[offset - 1\] = \(char\) 65;/, generated)
   end
 
   def test_generate_c_for_ref_arguments_passed_to_by_value_parameters
@@ -5037,7 +5037,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/float inverse = 1\.0f \/ value;/, generated)
-    assert_match(/float scaled = \(-2\.0f\) \/ value;/, generated)
+    assert_match(/float scaled = -2\.0f \/ value;/, generated)
   end
 
   def test_generate_c_for_callable_value_storage_and_indirect_calls
@@ -5068,7 +5068,7 @@ function main() -> int:
 
     assert_match(/float \(\*callback\)\(float value\);/, generated)
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\)/, generated)
-    assert_match(/int32_t left = \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(1\);/, generated)
+    assert_match(/int32_t left = \(\(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\)\(1\);/, generated)
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
@@ -5104,7 +5104,7 @@ public function times_two(value: int) -> int:
 
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_times_two \};/, generated)
     assert_match(/\.callback = std_ease_times_two/, generated)
-    assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&\(callbacks\), 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+    assert_match(/return \(\(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\)\(3\) \+ entry\.callback\(4\);/, generated)
   end
 
   def test_generate_c_for_proc_closure_capture_and_param_calls

@@ -2175,7 +2175,7 @@ module MilkTea
     def emit_checked_index_pointer(expression)
       case expression
       when IR::CheckedIndex
-        "#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)})"
+        "#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)})"
       when IR::CheckedSpanIndex
         "#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
       else
@@ -2416,7 +2416,7 @@ module MilkTea
         if (alias_name = checked_index_alias(expression))
           "(*#{alias_name})"
         else
-          "(*#{checked_array_index_helper_name(expression.receiver_type)}(&(#{emit_expression(expression.receiver)}), #{emit_expression(expression.index)}))"
+          "(*#{checked_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)}))"
         end
       when IR::CheckedSpanIndex
         if (alias_name = checked_index_alias(expression))
@@ -2468,18 +2468,18 @@ module MilkTea
         case expression.expression
         when IR::CheckedIndex
           alias_name = checked_index_alias(expression.expression)
-          alias_name || "#{checked_array_index_helper_name(expression.expression.receiver_type)}(&(#{emit_expression(expression.expression.receiver)}), #{emit_expression(expression.expression.index)})"
+          alias_name || "#{checked_array_index_helper_name(expression.expression.receiver_type)}(#{emit_address_of_operand(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
         when IR::CheckedSpanIndex
           alias_name = checked_index_alias(expression.expression)
           alias_name || "#{checked_span_index_helper_name(expression.expression.receiver_type)}(#{emit_expression(expression.expression.receiver)}, #{emit_expression(expression.expression.index)})"
         else
-          "&#{wrap_expression(expression.expression)}"
+          emit_address_of_operand(expression.expression)
         end
       when IR::Cast
         if no_op_cast?(expression)
           emit_expression(expression.expression)
         else
-          "((#{c_type(expression.target_type)}) #{wrap_expression(expression.expression)})"
+          "(#{c_type(expression.target_type)}) #{emit_cast_operand(expression.expression)}"
         end
       when IR::AggregateLiteral
         emit_aggregate_literal(expression)
@@ -2681,8 +2681,21 @@ module MilkTea
       "(void)#{wrap_expression(expression)}"
     end
 
+    def emit_address_of_operand(expression)
+      "&#{wrap_expression(expression)}"
+    end
+
+    def emit_cast_operand(expression)
+      case expression
+      when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr, IR::AddressOf, IR::Cast, IR::Unary
+        emit_expression(expression)
+      else
+        "(#{emit_expression(expression)})"
+      end
+    end
+
     def emit_array_out_argument(destination)
-      "&(#{destination})"
+      "&#{destination}"
     end
 
     def emit_array_initializer(expression)
