@@ -975,55 +975,20 @@ module MilkTea
       private_class_method :eval_assignment_const
 
       def self.eval_expr_const(expr, state, binding_resolution:, strict_binding_ids:)
-        case expr
-        when nil                 then NAC
-        when AST::IntegerLiteral then ConstVal.new(expr.value.to_i)
-        when AST::FloatLiteral   then ConstVal.new(expr.value.to_f)
-        when AST::BooleanLiteral then ConstVal.new(expr.value)
-        when AST::Identifier
-          key = identifier_key(expr, binding_resolution:, strict_binding_ids:)
-          return NAC unless key
+        return NAC if expr.nil?
 
-          v = state[key]
-          v.is_a?(ConstVal) ? v : NAC
-        when AST::UnaryOp
-          operand = eval_expr_const(expr.operand, state, binding_resolution:, strict_binding_ids:)
-          return NAC unless operand.is_a?(ConstVal)
+        value = CompileTime.evaluate(
+          expr,
+          resolve_identifier: lambda do |identifier_expression|
+            key = identifier_key(identifier_expression, binding_resolution:, strict_binding_ids:)
+            next unless key
 
-          case expr.operator
-          when "-" then ConstVal.new(-operand.value)
-          when "not" then ConstVal.new(!operand.value)
-          else NAC
-          end
-        when AST::BinaryOp
-          left  = eval_expr_const(expr.left,  state, binding_resolution:, strict_binding_ids:)
-          right = eval_expr_const(expr.right, state, binding_resolution:, strict_binding_ids:)
-          return NAC unless left.is_a?(ConstVal) && right.is_a?(ConstVal)
-
-          begin
-            v = case expr.operator
-                when "+"   then left.value + right.value
-                when "-"   then left.value - right.value
-                when "*"   then left.value * right.value
-                when "/"   then right.value.zero? ? (return NAC) : left.value / right.value
-                when "%"   then right.value.zero? ? (return NAC) : left.value % right.value
-                when "=="  then left.value == right.value
-                when "!="  then left.value != right.value
-                when "<"   then left.value < right.value
-                when "<="  then left.value <= right.value
-                when ">"   then left.value > right.value
-                when ">="  then left.value >= right.value
-                when "and" then left.value && right.value
-                when "or"  then left.value || right.value
-                else return NAC
-                end
-            ConstVal.new(v)
-          rescue StandardError
-            NAC
-          end
-        else
-          NAC
-        end
+            state_value = state[key]
+            state_value.is_a?(ConstVal) ? state_value.value : nil
+          end,
+          resolve_member_access: nil,
+        )
+        value.nil? ? NAC : ConstVal.new(value)
       end
       private_class_method :eval_expr_const
 

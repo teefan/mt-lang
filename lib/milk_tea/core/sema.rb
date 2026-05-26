@@ -1045,110 +1045,25 @@ module MilkTea
       end
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
-        case expression
-        when AST::ErrorExpr
-          nil
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
-          expression.value
-        when AST::StringLiteral
-          expression.value
-        when AST::Identifier
-          if scopes
-            binding = lookup_value(expression.name, scopes)
-            return binding.const_value unless binding&.const_value.nil?
-          end
+        CompileTime.evaluate(
+          expression,
+          resolve_identifier: lambda do |identifier_expression|
+            if scopes
+              binding = lookup_value(identifier_expression.name, scopes)
+              return binding.const_value unless binding&.const_value.nil?
+            end
 
-          resolve_current_module_const_value(expression.name)
-        when AST::MemberAccess
-          if expression.receiver.is_a?(AST::Identifier)
-            resolve_imported_module_const_value(expression.receiver.name, expression.member)
-          end
-        when AST::UnaryOp
-          operand = evaluate_compile_time_const_value(expression.operand, scopes:)
-          if expression.operator == "not"
-            return !operand if operand == true || operand == false
+            resolve_current_module_const_value(identifier_expression.name)
+          end,
+          resolve_member_access: lambda do |member_access_expression|
+            next unless member_access_expression.receiver.is_a?(AST::Identifier)
 
-            return
-          end
-
-          return unless operand.is_a?(Numeric)
-
-          case expression.operator
-          when "+"
-            operand
-          when "-"
-            -operand
-          when "~"
-            operand.is_a?(Integer) ? ~operand : nil
-          end
-        when AST::BinaryOp
-          left = evaluate_compile_time_const_value(expression.left, scopes:)
-          right = evaluate_compile_time_const_value(expression.right, scopes:)
-          evaluate_compile_time_const_binary(expression.operator, left, right)
-        end
-      end
-
-      def evaluate_compile_time_const_binary(operator, left, right)
-        case operator
-        when "=="
-          return compile_time_equality_result(left, right)
-        when "!="
-          result = compile_time_equality_result(left, right)
-          return result.nil? ? nil : !result
-        when "and"
-          return left && right if (left == true || left == false) && (right == true || right == false)
-
-          return
-        when "or"
-          return left || right if (left == true || left == false) && (right == true || right == false)
-
-          return
-        end
-
-        return unless left.is_a?(Numeric) && right.is_a?(Numeric)
-
-        case operator
-        when "+"
-          left + right
-        when "-"
-          left - right
-        when "*"
-          left * right
-        when "/"
-          left / right
-        when "%"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left % right
-        when "<<"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left << right
-        when ">>"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left >> right
-        when "|"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left | right
-        when "&"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left & right
-        when "^"
-          return unless left.is_a?(Integer) && right.is_a?(Integer)
-
-          left ^ right
-        end
-      end
-
-      def compile_time_equality_result(left, right)
-        return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
-        return left == right if left.is_a?(String) && right.is_a?(String)
-        return left == right if (left == true || left == false) && (right == true || right == false)
-
-        nil
+            resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
+          end,
+          resolve_type_ref: lambda do |type_ref|
+            resolve_type_ref(type_ref)
+          end,
+        )
       end
 
       def check_top_level_static_asserts
@@ -2411,6 +2326,8 @@ module MilkTea
         validate_hoistable_foreign_expression!(statement.message, scopes:, root_hoistable: false)
         condition_type = infer_expression(statement.condition, scopes:, expected_type: @types.fetch("bool"))
         ensure_assignable!(condition_type, @types.fetch("bool"), "static_assert condition must be bool, got #{condition_type}")
+        condition_value = evaluate_compile_time_const_value(statement.condition, scopes:)
+        raise_sema_error("static_assert condition must be a compile-time bool constant") unless condition_value == true || condition_value == false
         raise_sema_error("static_assert message must be a string literal") unless statement.message.is_a?(AST::StringLiteral)
 
         message_type = infer_expression(statement.message, scopes:, expected_type: @types.fetch("str"))

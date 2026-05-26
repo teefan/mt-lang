@@ -1300,6 +1300,40 @@ function main() -> int:
     end
   end
 
+  def test_run_with_host_compiler_executes_program_using_layout_query_const_in_static_assert
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-run-layout-const") do |dir|
+      source_path = File.join(dir, "layout_const.mt")
+
+      File.write(source_path, <<~MT
+
+struct Header:
+    magic: array[ubyte, 4]
+    version: ushort
+
+const HEADER_SIZE: ptr_uint = size_of(Header)
+static_assert(HEADER_SIZE == 6, "Header size should stay stable")
+
+function main() -> int:
+    return int<-HEADER_SIZE
+
+      MT
+
+      )
+      result = MilkTea::Run.run(source_path, cc: compiler)
+
+      assert_equal "", result.stdout
+      assert_equal "", result.stderr
+      assert_equal 6, result.exit_status
+      assert_nil result.output_path
+      assert_nil result.c_path
+      assert_equal compiler, result.compiler
+      assert_equal [], result.link_flags
+    end
+  end
+
   def test_run_with_host_compiler_executes_program_using_packed_and_aligned_structs
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

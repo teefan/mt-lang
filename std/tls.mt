@@ -11,6 +11,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
+type NativeHandle = libuv.uv_handle_t
 type NativePollHandle = libuv.uv_poll_t
 
 const tls_io_ready: int = 0
@@ -110,11 +111,11 @@ function poll_state(frame: ptr[void]) -> ptr[PollState]:
     return unsafe: ptr[PollState]<-frame
 
 
-function poll_as_handle(handle: ptr[NativePollHandle]) -> ptr[libuv.uv_handle_t]:
-    return unsafe: ptr[libuv.uv_handle_t]<-handle
+function poll_as_handle(handle: ptr[NativePollHandle]) -> ptr[NativeHandle]:
+    return unsafe: ptr[NativeHandle]<-handle
 
 
-function handle_as_poll(handle: ptr[libuv.uv_handle_t]) -> ptr[NativePollHandle]:
+function handle_as_poll(handle: ptr[NativeHandle]) -> ptr[NativePollHandle]:
     return unsafe: ptr[NativePollHandle]<-handle
 
 
@@ -140,7 +141,7 @@ function release_poll_error(state: ptr[PollState]) -> void:
             state.error_owned = false
 
 
-function poll_close_callback(handle: ptr[libuv.uv_handle_t]) -> void:
+function poll_close_callback(handle: ptr[NativeHandle]) -> void:
     let state_raw = libuv.handle_get_data(handle) else:
         unsafe: heap.release_bytes(ptr[void]<-handle_as_poll(handle))
         return

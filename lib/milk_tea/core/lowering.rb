@@ -8254,83 +8254,25 @@ module MilkTea
       end
 
       def compile_time_const_value(expression, env: nil)
-        case expression
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral, AST::StringLiteral
-          expression.value
-        when AST::Identifier
-          if env
-            binding = lookup_value(expression.name, env)
-            return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
-          end
+        CompileTime.evaluate(
+          expression,
+          resolve_identifier: lambda do |identifier_expression|
+            if env
+              binding = lookup_value(identifier_expression.name, env)
+              return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
+            end
 
-          resolve_current_module_const_value(expression.name)
-        when AST::MemberAccess
-          return unless expression.receiver.is_a?(AST::Identifier)
+            resolve_current_module_const_value(identifier_expression.name)
+          end,
+          resolve_member_access: lambda do |member_access_expression|
+            next unless member_access_expression.receiver.is_a?(AST::Identifier)
 
-          resolve_imported_module_const_value(expression.receiver.name, expression.member)
-        when AST::UnaryOp
-          operand = compile_time_const_value(expression.operand, env:)
-          return if operand.nil?
-
-          case expression.operator
-          when "+"
-            operand
-          when "-"
-            -operand
-          when "not"
-            !operand
-          end
-        when AST::BinaryOp
-          left = compile_time_const_value(expression.left, env:)
-          right = compile_time_const_value(expression.right, env:)
-          return if left.nil? || right.nil?
-
-          case expression.operator
-          when "=="
-            return compile_time_equality_result(left, right)
-          when "!="
-            result = compile_time_equality_result(left, right)
-            return result.nil? ? nil : !result
-          when "and"
-            return left && right if (left == true || left == false) && (right == true || right == false)
-
-            return
-          when "or"
-            return left || right if (left == true || left == false) && (right == true || right == false)
-
-            return
-          when "+"
-            left + right
-          when "-"
-            left - right
-          when "*"
-            left * right
-          when "/"
-            left / right
-          when "%"
-            left % right
-          when "<<"
-            left << right
-          when ">>"
-            left >> right
-          when "&"
-            left & right
-          when "|"
-            left | right
-          when "^"
-            left ^ right
-          else
-            nil
-          end
-        end
-      end
-
-      def compile_time_equality_result(left, right)
-        return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
-        return left == right if left.is_a?(String) && right.is_a?(String)
-        return left == right if (left == true || left == false) && (right == true || right == false)
-
-        nil
+            resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
+          end,
+          resolve_type_ref: lambda do |type_ref|
+            resolve_type_ref(type_ref)
+          end,
+        )
       end
 
       def specialize_function_binding(binding, arguments, env, receiver_type: nil)
