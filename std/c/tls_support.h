@@ -28,6 +28,12 @@ typedef struct mt_tls_error {
   uintptr_t message_len;
 } mt_tls_error;
 
+typedef struct mt_tls_client {
+  SSL_CTX* ctx;
+  SSL* ssl;
+  int fd;
+} mt_tls_client;
+
 static inline void mt_tls_reset_bytes(mt_tls_bytes* value) {
   if (value == NULL) {
     return;
@@ -45,6 +51,16 @@ static inline void mt_tls_reset_error(mt_tls_error* error) {
   error->code = 0;
   error->message_data = NULL;
   error->message_len = 0;
+}
+
+static inline void mt_tls_client_cleanup(SSL_CTX* ctx, SSL* ssl) {
+  if (ssl != NULL) {
+    SSL_free(ssl);
+  }
+
+  if (ctx != NULL) {
+    SSL_CTX_free(ctx);
+  }
 }
 
 static inline int mt_tls_set_message(mt_tls_error* error, int code, const char* prefix, const char* detail) {
@@ -183,6 +199,231 @@ static inline int mt_tls_grow_buffer(uint8_t** data, size_t* capacity, size_t mi
   *data = resized;
   *capacity = next_capacity;
   return 0;
+}
+
+static inline int mt_tls_ssl_io_status(SSL* ssl, int io_status, const char* prefix, mt_tls_error* out_error, int eof_status) {
+  if (io_status > 0) {
+    return 0;
+  }
+
+  int ssl_error = SSL_get_error(ssl, io_status);
+  if (ssl_error == SSL_ERROR_WANT_READ) {
+    return 1;
+  }
+
+  if (ssl_error == SSL_ERROR_WANT_WRITE) {
+    return 2;
+  }
+
+  if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+    return eof_status;
+  }
+
+  if (ssl_error == SSL_ERROR_SYSCALL && errno == 0) {
+    return eof_status;
+  }
+
+  mt_tls_set_ssl_error(out_error, ssl_error, prefix);
+  return -1;
+}
+
+static inline int mt_tls_client_create(const char* host, int fd, mt_tls_client** out_client, mt_tls_error* out_error) {
+  if (out_client != NULL) {
+    *out_client = NULL;
+  }
+  mt_tls_reset_error(out_error);
+
+  if (host == NULL || host[0] == '\0') {
+    return mt_tls_set_message(out_error, -1, "tls connect failed", "host is required");
+  }
+  if (fd < 0) {
+    return mt_tls_set_message(out_error, -1, "tls connect failed", "socket fd must be non-negative");
+  }
+
+  SSL_CTX* ctx = NULL;
+  SSL* ssl = NULL;
+  mt_tls_client* client = NULL;
+
+  ERR_clear_error();
+  ctx = SSL_CTX_new(TLS_client_method());
+  if (ctx == NULL) {
+    return mt_tls_set_ssl_error(out_error, -1, "tls connect failed");
+  }
+
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+  SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+#ifdef SSL_OP_IGNORE_UNEXPECTED_EOF
+  SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
+#endif
+
+  if (mt_tls_load_verify_paths(ctx, out_error) != 0) {
+    mt_tls_client_cleanup(ctx, ssl);
+    return out_error == NULL ? -1 : out_error->code;
+  }
+
+  ERR_clear_error();
+  ssl = SSL_new(ctx);
+  if (ssl == NULL) {
+    mt_tls_client_cleanup(ctx, ssl);
+    return mt_tls_set_ssl_error(out_error, -1, "tls connect failed");
+  }
+
+  SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+  SSL_set_connect_state(ssl);
+
+  if (mt_tls_configure_peer_name(ssl, host, out_error) != 0) {
+    mt_tls_client_cleanup(ctx, ssl);
+    return out_error == NULL ? -1 : out_error->code;
+  }
+
+  if (SSL_set_fd(ssl, fd) != 1) {
+    mt_tls_client_cleanup(ctx, ssl);
+    return mt_tls_set_ssl_error(out_error, -1, "tls connect failed");
+  }
+
+  client = (mt_tls_client*) malloc(sizeof(mt_tls_client));
+  if (client == NULL) {
+    mt_tls_client_cleanup(ctx, ssl);
+    return mt_tls_set_message(out_error, -1, "tls connect failed", "out of memory");
+  }
+
+  client->ctx = ctx;
+  client->ssl = ssl;
+  client->fd = fd;
+
+  if (out_client != NULL) {
+    *out_client = client;
+  }
+  return 0;
+}
+
+static inline int mt_tls_client_handshake(mt_tls_client* client, mt_tls_error* out_error) {
+  mt_tls_reset_error(out_error);
+
+  if (client == NULL || client->ssl == NULL) {
+    mt_tls_set_message(out_error, -1, "tls connect failed", "tls client is released");
+    return -1;
+  }
+
+  ERR_clear_error();
+  int connect_status = SSL_connect(client->ssl);
+  if (connect_status == 1) {
+    long verify_status = SSL_get_verify_result(client->ssl);
+    if (verify_status != X509_V_OK) {
+      mt_tls_set_message(out_error, (int) verify_status, "tls connect failed", X509_verify_cert_error_string(verify_status));
+      return -1;
+    }
+
+    return 0;
+  }
+
+  int status = mt_tls_ssl_io_status(client->ssl, connect_status, "tls connect failed", out_error, -1);
+  if (status != -1) {
+    return status;
+  }
+
+  long verify_status = SSL_get_verify_result(client->ssl);
+  if (verify_status != X509_V_OK) {
+    mt_tls_reset_error(out_error);
+    mt_tls_set_message(out_error, (int) verify_status, "tls connect failed", X509_verify_cert_error_string(verify_status));
+  }
+
+  return -1;
+}
+
+static inline int mt_tls_client_write(mt_tls_client* client, const uint8_t* data, uintptr_t len, uintptr_t* out_written, mt_tls_error* out_error) {
+  if (out_written != NULL) {
+    *out_written = 0;
+  }
+  mt_tls_reset_error(out_error);
+
+  if (client == NULL || client->ssl == NULL) {
+    mt_tls_set_message(out_error, -1, "tls write failed", "tls client is released");
+    return -1;
+  }
+  if (len != 0 && data == NULL) {
+    mt_tls_set_message(out_error, -1, "tls write failed", "missing write buffer");
+    return -1;
+  }
+  if (len == 0) {
+    return 0;
+  }
+
+  size_t written = 0;
+  ERR_clear_error();
+  int write_status = SSL_write_ex(client->ssl, data, (size_t) len, &written);
+  if (write_status == 1) {
+    if (out_written != NULL) {
+      *out_written = (uintptr_t) written;
+    }
+    return 0;
+  }
+
+  return mt_tls_ssl_io_status(client->ssl, write_status, "tls write failed", out_error, 3);
+}
+
+static inline int mt_tls_client_read(mt_tls_client* client, uint8_t* buffer, uintptr_t capacity, uintptr_t* out_read, mt_tls_error* out_error) {
+  if (out_read != NULL) {
+    *out_read = 0;
+  }
+  mt_tls_reset_error(out_error);
+
+  if (client == NULL || client->ssl == NULL) {
+    mt_tls_set_message(out_error, -1, "tls read failed", "tls client is released");
+    return -1;
+  }
+  if (capacity == 0) {
+    mt_tls_set_message(out_error, -1, "tls read failed", "read capacity must be greater than zero");
+    return -1;
+  }
+  if (buffer == NULL) {
+    mt_tls_set_message(out_error, -1, "tls read failed", "missing read buffer");
+    return -1;
+  }
+
+  size_t read_count = 0;
+  ERR_clear_error();
+  int read_status = SSL_read_ex(client->ssl, buffer, (size_t) capacity, &read_count);
+  if (read_status == 1) {
+    if (out_read != NULL) {
+      *out_read = (uintptr_t) read_count;
+    }
+    return 0;
+  }
+
+  return mt_tls_ssl_io_status(client->ssl, read_status, "tls read failed", out_error, 3);
+}
+
+static inline int mt_tls_client_shutdown(mt_tls_client* client, mt_tls_error* out_error) {
+  mt_tls_reset_error(out_error);
+
+  if (client == NULL || client->ssl == NULL) {
+    mt_tls_set_message(out_error, -1, "tls shutdown failed", "tls client is released");
+    return -1;
+  }
+
+  ERR_clear_error();
+  int shutdown_status = SSL_shutdown(client->ssl);
+  if (shutdown_status == 1) {
+    return 0;
+  }
+
+  if (shutdown_status == 0) {
+    return 1;
+  }
+
+  return mt_tls_ssl_io_status(client->ssl, shutdown_status, "tls shutdown failed", out_error, 0);
+}
+
+static inline void mt_tls_client_release(mt_tls_client* client) {
+  if (client == NULL) {
+    return;
+  }
+
+  mt_tls_client_cleanup(client->ctx, client->ssl);
+  client->ctx = NULL;
+  client->ssl = NULL;
+  free(client);
 }
 
 static inline void mt_tls_cleanup(SSL_CTX* ctx, SSL* ssl, int fd, struct addrinfo* addresses) {

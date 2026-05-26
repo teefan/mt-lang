@@ -255,6 +255,93 @@ async function main() -> int:
     assert_equal "close", request[:headers].fetch("connection")
   end
 
+  def test_https_request_does_not_block_other_async_http_tasks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    slow_completed = false
+    slow_mutex = Mutex.new
+
+    with_http_test_server(lambda do |client|
+      read_http_request(client)
+      body = slow_mutex.synchronize { slow_completed ? "after\n" : "before\n" }
+      client.write("HTTP/1.1 200 OK\r\n")
+      client.write("Content-Type: text/plain; charset=utf-8\r\n")
+      client.write("Content-Length: #{body.bytesize}\r\n")
+      client.write("Connection: close\r\n")
+      client.write("\r\n")
+      client.write(body)
+    end) do |http_base_url|
+      with_https_test_server(lambda do |client|
+        read_http_request(client)
+        sleep(0.2)
+        slow_mutex.synchronize { slow_completed = true }
+        body = "slow\n"
+        client.write("HTTP/1.1 200 OK\r\n")
+        client.write("Content-Type: text/plain; charset=utf-8\r\n")
+        client.write("Content-Length: #{body.bytesize}\r\n")
+        client.write("Connection: close\r\n")
+        client.write("\r\n")
+        client.write(body)
+      end) do |https_base_url|
+        source = <<~MT
+
+import std.http as http
+
+
+import std.str as text
+
+async function main() -> int:
+    let slow_task = http.get("#{https_base_url}/slow")
+    let fast_task = http.get("#{http_base_url}/fast")
+
+    let fast_result = await fast_task
+    match fast_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 1
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            match response.body.as_str():
+                Option.none:
+                    return 2
+                Option.some as body_payload:
+                    if not body_payload.value.equal("before\\n"):
+                        return 3
+
+    let slow_result = await slow_task
+    match slow_result:
+        Result.failure as payload:
+            var error = payload.error
+            defer error.release()
+            return 4
+        Result.success as payload:
+            var response = payload.value
+            defer response.release()
+            match response.body.as_str():
+                Option.none:
+                    return 5
+                Option.some as body_payload:
+                    if not body_payload.value.equal("slow\\n"):
+                        return 6
+
+    return 0
+
+        MT
+
+        result = run_program(source, compiler:)
+
+        assert_equal "", result.stdout
+        assert_equal "", result.stderr
+        assert_equal 0, result.exit_status
+        assert_includes result.link_flags, "-lssl"
+        assert_includes result.link_flags, "-lcrypto"
+      end
+    end
+  end
+
   private
 
   def with_http_test_server(handler)

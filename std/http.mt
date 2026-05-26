@@ -990,15 +990,45 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
                     return await read_response(stream)
 
 
+async function read_buffered_tls_response(stream: tls.Stream) -> Result[Response, Error]:
+    var received = vec.Vec[ubyte].create()
+    defer received.release()
+
+    while true:
+        let chunk_result = await stream.read_once(4096)
+        match chunk_result:
+            Result.failure as error_payload:
+                return Result[Response, Error].failure(error = status_tls_error(error_payload.error))
+            Result.success as chunk_payload:
+                var chunk = chunk_payload.value
+                if chunk.len == 0:
+                    chunk.release()
+                    break
+
+                received.append_span(chunk.as_span())
+                chunk.release()
+
+    return parse_buffered_response(received.as_span())
+
+
 async function request_https(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
-    let exchange_result = tls.exchange(parsed.host.as_str(), parsed.port, request_bytes)
-    match exchange_result:
+    let connect_result = await tls.connect(parsed.host.as_str(), parsed.port)
+    match connect_result:
         Result.failure as payload:
             return Result[Response, Error].failure(error = status_tls_error(payload.error))
         Result.success as payload:
-            var raw_response = payload.value
-            defer raw_response.release()
-            return parse_buffered_response(raw_response.as_span())
+            var stream = payload.value
+            defer stream.release()
+
+            let write_result = await stream.write_bytes(request_bytes)
+            match write_result:
+                Result.failure as write_error_payload:
+                    return Result[Response, Error].failure(error = status_tls_error(write_error_payload.error))
+                Result.success as write_payload:
+                    if write_payload.value != request_bytes.len:
+                        return Result[Response, Error].failure(error = status_error("https request write did not send the full request"))
+
+            return await read_buffered_tls_response(stream)
 
 
 async function request_with_transport(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Result[Response, Error]:
