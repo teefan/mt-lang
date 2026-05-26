@@ -705,8 +705,16 @@ module MilkTea
           validate_allowed_keys!(entry, %w[kind match replace_with], context: "#{context} rename rule")
 
           kind = entry.fetch("kind")
-          unless %w[prefix replace].include?(kind)
-            raise Error, "#{context} rename rule kind in #{@policy_path} must be prefix or replace"
+          unless %w[prefix replace camelize].include?(kind)
+            raise Error, "#{context} rename rule kind in #{@policy_path} must be prefix, replace, or camelize"
+          end
+
+          if kind == "camelize"
+            next {
+              kind: :camelize,
+              match: nil,
+              replace_with: nil,
+            }
           end
 
           match = entry.fetch("match")
@@ -910,6 +918,8 @@ module MilkTea
             transformed = rule[:replace_with] + transformed.delete_prefix(rule[:match])
           when :replace
             transformed = transformed.gsub(rule[:match], rule[:replace_with])
+          when :camelize
+            transformed = camelize_binding_name(transformed)
           else
             raise Error, "unsupported #{context} rename rule #{rule[:kind]} in #{@policy_path}"
           end
@@ -1305,6 +1315,19 @@ module MilkTea
           .gsub(/([a-z0-9])([A-Z])/, '\\1_\\2')
           .downcase
           .gsub(/([a-z])(\d+)_d\b/, '\\1_\\2d')
+      end
+
+      def camelize_binding_name(name)
+        parts = name.to_s.split("_").reject(&:empty?)
+        return "" if parts.empty?
+
+        parts.map do |part|
+          if part.match?(/\A\d+\z/)
+            part
+          else
+            part[0].upcase + part[1..].to_s.downcase
+          end
+        end.join
       end
 
       def render_type(type)
