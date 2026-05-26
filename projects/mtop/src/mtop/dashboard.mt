@@ -5,11 +5,9 @@ import std.string as string
 import std.terminal as terminal
 import std.vec as vec
 
-
 public struct Config:
     interval_ms: int
     mouse_enabled: bool
-
 
 struct Snapshot:
     collected_at: string.String
@@ -18,7 +16,6 @@ struct Snapshot:
     process_table: string.String
     refresh_count: int
 
-
 struct EchoSession:
     active: bool
     child: process.ChildProcess
@@ -26,19 +23,16 @@ struct EchoSession:
     input: vec.Vec[ubyte]
     status: string.String
 
-
 enum DashboardTab: int
     overview = 0
     processes = 1
     echo = 2
-
 
 struct Rect:
     left: int
     top: int
     width: int
     height: int
-
 
 const ascii_plus: ubyte = ubyte<-43
 const ascii_dash: ubyte = ubyte<-45
@@ -479,8 +473,13 @@ function clipped_line_text(value: str, width: int) -> str:
 
     return value.slice(0, end)
 
-
-function render_plain_line_at(app_terminal: ref[terminal.Terminal], column: int, row: int, width: int, value: str) -> bool:
+function render_plain_line_at(
+    app_terminal: ref[terminal.Terminal],
+    column: int,
+    row: int,
+    width: int,
+    value: str,
+) -> bool:
     if column <= 0 or row <= 0 or width <= 0:
         return true
 
@@ -496,8 +495,14 @@ function render_plain_line(app_terminal: ref[terminal.Terminal], size: terminal.
 
     return render_plain_line_at(app_terminal, 1, row, size.width, value)
 
-
-function render_heading_line_at(app_terminal: ref[terminal.Terminal], column: int, row: int, width: int, color: terminal.Color, value: str) -> bool:
+function render_heading_line_at(
+    app_terminal: ref[terminal.Terminal],
+    column: int,
+    row: int,
+    width: int,
+    color: terminal.Color,
+    value: str,
+) -> bool:
     if column <= 0 or row <= 0 or width <= 0:
         return true
 
@@ -511,15 +516,26 @@ function render_heading_line_at(app_terminal: ref[terminal.Terminal], column: in
         return false
     return terminal_bool_ok(terminal.reset_style())
 
-
-function render_heading_line(app_terminal: ref[terminal.Terminal], size: terminal.Size, row: int, color: terminal.Color, value: str) -> bool:
+function render_heading_line(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    row: int,
+    color: terminal.Color,
+    value: str,
+) -> bool:
     if row <= 0 or row > size.height:
         return true
 
     return render_heading_line_at(app_terminal, 1, row, size.width, color, value)
 
-
-function render_text_block_at(app_terminal: ref[terminal.Terminal], column: int, start_row: int, width: int, max_rows: int, value: str) -> bool:
+function render_text_block_at(
+    app_terminal: ref[terminal.Terminal],
+    column: int,
+    start_row: int,
+    width: int,
+    max_rows: int,
+    value: str,
+) -> bool:
     if width <= 0 or max_rows <= 0:
         return true
 
@@ -543,8 +559,12 @@ function render_text_block_at(app_terminal: ref[terminal.Terminal], column: int,
 
     return true
 
-
-function render_text_block(app_terminal: ref[terminal.Terminal], size: terminal.Size, start_row: int, value: str) -> int:
+function render_text_block(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    start_row: int,
+    value: str,
+) -> int:
     if start_row > size.height:
         return start_row
 
@@ -568,8 +588,13 @@ function render_text_block(app_terminal: ref[terminal.Terminal], size: terminal.
 
     return row
 
-
-function render_heading_block(app_terminal: ref[terminal.Terminal], size: terminal.Size, start_row: int, color: terminal.Color, value: str) -> int:
+function render_heading_block(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    start_row: int,
+    color: terminal.Color,
+    value: str,
+) -> int:
     if not render_heading_line(app_terminal, size, start_row, color, value):
         return -1
 
@@ -584,8 +609,12 @@ function panel_inner_rect(panel: Rect) -> Rect:
         height = max_int(panel.height - 3, 0),
     )
 
-
-function render_panel_frame(app_terminal: ref[terminal.Terminal], panel: Rect, color: terminal.Color, title: str) -> bool:
+function render_panel_frame(
+    app_terminal: ref[terminal.Terminal],
+    panel: Rect,
+    color: terminal.Color,
+    title: str,
+) -> bool:
     if panel.width < 4 or panel.height < 4:
         return true
 
@@ -597,7 +626,14 @@ function render_panel_frame(app_terminal: ref[terminal.Terminal], panel: Rect, c
 
     if not render_heading_line_at(app_terminal, panel.left, panel.top, panel.width, color, border.as_str()):
         return false
-    if not render_heading_line_at(app_terminal, panel.left, panel.top + panel.height - 1, panel.width, color, border.as_str()):
+    if not render_heading_line_at(
+        app_terminal,
+        panel.left,
+        panel.top + panel.height - 1,
+        panel.width,
+        color,
+        border.as_str(),
+    ):
         return false
 
     var row = panel.top + 1
@@ -610,16 +646,29 @@ function render_panel_frame(app_terminal: ref[terminal.Terminal], panel: Rect, c
 
     return render_heading_line_at(app_terminal, panel.left + 2, panel.top + 1, panel.width - 4, color, title)
 
-
-function render_panel(app_terminal: ref[terminal.Terminal], panel: Rect, color: terminal.Color, title: str, body: str, focused: bool) -> bool:
+function render_panel(
+    app_terminal: ref[terminal.Terminal],
+    panel: Rect,
+    color: terminal.Color,
+    title: str,
+    body: str,
+    focused: bool,
+) -> bool:
     if not render_panel_frame(app_terminal, panel, panel_frame_color(color, focused), title):
         return false
 
     let inner = panel_inner_rect(panel)
     return render_text_block_at(app_terminal, inner.left, inner.top, inner.width, inner.height, body)
 
-
-function render_process_table_panel(app_terminal: ref[terminal.Terminal], panel: Rect, color: terminal.Color, title: str, process_table: str, selected_index: int, focused: bool) -> bool:
+function render_process_table_panel(
+    app_terminal: ref[terminal.Terminal],
+    panel: Rect,
+    color: terminal.Color,
+    title: str,
+    process_table: str,
+    selected_index: int,
+    focused: bool,
+) -> bool:
     let frame_color = panel_frame_color(color, focused)
     if not render_panel_frame(app_terminal, panel, frame_color, title):
         return false
@@ -627,7 +676,14 @@ function render_process_table_panel(app_terminal: ref[terminal.Terminal], panel:
     let inner = panel_inner_rect(panel)
     match line_at(process_table, 0):
         Option.some as header_payload:
-            if not render_heading_line_at(app_terminal, inner.left, inner.top, inner.width, color, header_payload.value):
+            if not render_heading_line_at(
+                app_terminal,
+                inner.left,
+                inner.top,
+                inner.width,
+                color,
+                header_payload.value,
+            ):
                 return false
         Option.none:
             return true
@@ -646,9 +702,22 @@ function render_process_table_panel(app_terminal: ref[terminal.Terminal], panel:
 
         var ok = true
         if is_selected:
-            ok = render_heading_line_at(app_terminal, inner.left, inner.top + visual_row, inner.width, frame_color, rendered_line.as_str())
+            ok = render_heading_line_at(
+                app_terminal,
+                inner.left,
+                inner.top + visual_row,
+                inner.width,
+                frame_color,
+                rendered_line.as_str(),
+            )
         else:
-            ok = render_plain_line_at(app_terminal, inner.left, inner.top + visual_row, inner.width, rendered_line.as_str())
+            ok = render_plain_line_at(
+                app_terminal,
+                inner.left,
+                inner.top + visual_row,
+                inner.width,
+                rendered_line.as_str(),
+            )
 
         rendered_line.release()
         if not ok:
@@ -658,8 +727,16 @@ function render_process_table_panel(app_terminal: ref[terminal.Terminal], panel:
 
     return true
 
-
-function render_footer(app_terminal: ref[terminal.Terminal], size: terminal.Size, active_tab: DashboardTab, config: Config, echo: EchoSession, process_table: str, selected_index: int, last_event: str) -> bool:
+function render_footer(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    active_tab: DashboardTab,
+    config: Config,
+    echo: EchoSession,
+    process_table: str,
+    selected_index: int,
+    last_event: str,
+) -> bool:
     var hint_line = string.String.create()
     defer hint_line.release()
     if active_tab == DashboardTab.overview:
@@ -691,8 +768,13 @@ function render_footer(app_terminal: ref[terminal.Terminal], size: terminal.Size
 
     return render_plain_line(app_terminal, size, size.height, status_line.as_str())
 
-
-function render_tab_button(app_terminal: ref[terminal.Terminal], column: int, row: int, label: str, active: bool) -> int:
+function render_tab_button(
+    app_terminal: ref[terminal.Terminal],
+    column: int,
+    row: int,
+    label: str,
+    active: bool,
+) -> int:
     let label_width = int<-label.len
     if active:
         if not render_heading_line_at(app_terminal, column, row, label_width, terminal.Color.bright_cyan, label):
@@ -715,8 +797,17 @@ function render_tab_bar(app_terminal: ref[terminal.Terminal], active_tab: Dashbo
     column = render_tab_button(app_terminal, column, 2, "[Echo]", active_tab == DashboardTab.echo)
     return column >= 0
 
-
-function render_small_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.Size, snapshot: Snapshot, echo: EchoSession, active_tab: DashboardTab, config: Config, selected_process_index: int, paused: bool, last_event: str) -> bool:
+function render_small_dashboard(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    snapshot: Snapshot,
+    echo: EchoSession,
+    active_tab: DashboardTab,
+    config: Config,
+    selected_process_index: int,
+    paused: bool,
+    last_event: str,
+) -> bool:
     if not render_heading_line(app_terminal, size, 1, terminal.Color.bright_cyan, "MTOP  Milk Tea CLI/TUI Demo"):
         return false
     if not render_tab_bar(app_terminal, active_tab):
@@ -741,25 +832,58 @@ function render_small_dashboard(app_terminal: ref[terminal.Terminal], size: term
     if render_text_block(app_terminal, size, next_row, snapshot.process_table.as_str()) < 0:
         return false
 
-    if not render_footer(app_terminal, size, active_tab, config, echo, snapshot.process_table.as_str(), selected_process_index, last_event):
+    if not render_footer(
+        app_terminal,
+        size,
+        active_tab,
+        config,
+        echo,
+        snapshot.process_table.as_str(),
+        selected_process_index,
+        last_event,
+    ):
         return false
 
     return terminal_bool_ok(app_terminal.flush())
 
-
-function render_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.Size, snapshot: Snapshot, echo: EchoSession, config: Config, active_tab: DashboardTab, selected_process_index: int, paused: bool, last_event: str) -> bool:
+function render_dashboard(
+    app_terminal: ref[terminal.Terminal],
+    size: terminal.Size,
+    snapshot: Snapshot,
+    echo: EchoSession,
+    config: Config,
+    active_tab: DashboardTab,
+    selected_process_index: int,
+    paused: bool,
+    last_event: str,
+) -> bool:
     if not terminal_bool_ok(terminal.clear_screen()):
         return false
 
     let process_table = snapshot.process_table.as_str()
     if size.width < 72 or size.height < 24:
-        return render_small_dashboard(app_terminal, size, snapshot, echo, active_tab, config, selected_process_index, paused, last_event)
+        return render_small_dashboard(
+            app_terminal,
+            size,
+            snapshot,
+            echo,
+            active_tab,
+            config,
+            selected_process_index,
+            paused,
+            last_event,
+        )
 
     if not render_heading_line(app_terminal, size, 1, terminal.Color.bright_cyan, "MTOP  Milk Tea CLI/TUI Demo"):
         return false
     if not render_tab_bar(app_terminal, active_tab):
         return false
-    if not render_plain_line(app_terminal, size, 3, "  Tab/Left/Right switch view  Ctrl+R refresh  Ctrl+P pause  Esc quit"):
+    if not render_plain_line(
+        app_terminal,
+        size,
+        3,
+        "  Tab/Left/Right switch view  Ctrl+R refresh  Ctrl+P pause  Esc quit",
+    ):
         return false
 
     var status_line = string.String.create()
@@ -816,11 +940,33 @@ function render_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.S
             append_panel_line(ref_of(session_body), "Selected", selected_label.as_str())
         append_panel_line(ref_of(session_body), "Last event", last_event)
 
-        if not render_panel(app_terminal, system_panel, terminal.Color.bright_green, "System Snapshot", system_body.as_str(), false):
+        if not render_panel(
+            app_terminal,
+            system_panel,
+            terminal.Color.bright_green,
+            "System Snapshot",
+            system_body.as_str(),
+            false,
+        ):
             return false
-        if not render_panel(app_terminal, session_panel, terminal.Color.bright_blue, "Session", session_body.as_str(), true):
+        if not render_panel(
+            app_terminal,
+            session_panel,
+            terminal.Color.bright_blue,
+            "Session",
+            session_body.as_str(),
+            true,
+        ):
             return false
-        if not render_process_table_panel(app_terminal, process_panel, terminal.Color.bright_yellow, "Top Processes Preview", process_table, selected_process_index, false):
+        if not render_process_table_panel(
+            app_terminal,
+            process_panel,
+            terminal.Color.bright_yellow,
+            "Top Processes Preview",
+            process_table,
+            selected_process_index,
+            false,
+        ):
             return false
     else if active_tab == DashboardTab.processes:
         let side_width = 26
@@ -830,7 +976,12 @@ function render_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.S
 
         let process_panel = make_rect(1, body_top, main_width, body_height)
         let inspector_panel = make_rect(main_width + gap + 1, body_top, side_width, inspector_height)
-        let activity_panel = make_rect(main_width + gap + 1, body_top + inspector_height + gap, side_width, activity_height)
+        let activity_panel = make_rect(
+            main_width + gap + 1,
+            body_top + inspector_height + gap,
+            side_width,
+            activity_height,
+        )
 
         var inspector_body = string.String.create()
         defer inspector_body.release()
@@ -864,11 +1015,33 @@ function render_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.S
         append_panel_line(ref_of(activity_body), "Refresh", "Ctrl+R")
         append_panel_line(ref_of(activity_body), "Pause", "Ctrl+P")
 
-        if not render_process_table_panel(app_terminal, process_panel, terminal.Color.bright_yellow, "Top Processes", process_table, selected_process_index, true):
+        if not render_process_table_panel(
+            app_terminal,
+            process_panel,
+            terminal.Color.bright_yellow,
+            "Top Processes",
+            process_table,
+            selected_process_index,
+            true,
+        ):
             return false
-        if not render_panel(app_terminal, inspector_panel, terminal.Color.bright_green, "Inspector", inspector_body.as_str(), false):
+        if not render_panel(
+            app_terminal,
+            inspector_panel,
+            terminal.Color.bright_green,
+            "Inspector",
+            inspector_body.as_str(),
+            false,
+        ):
             return false
-        if not render_panel(app_terminal, activity_panel, terminal.Color.bright_magenta, "Activity", activity_body.as_str(), false):
+        if not render_panel(
+            app_terminal,
+            activity_panel,
+            terminal.Color.bright_magenta,
+            "Activity",
+            activity_body.as_str(),
+            false,
+        ):
             return false
     else:
         let top_height = 8
@@ -898,14 +1071,37 @@ function render_dashboard(app_terminal: ref[terminal.Terminal], size: terminal.S
         append_panel_line(ref_of(help_body), "Views", "Tab / Shift+Tab")
         append_panel_line(ref_of(help_body), "Last event", last_event)
 
-        if not render_panel(app_terminal, pipe_panel, terminal.Color.bright_magenta, "Interactive Pipe", pipe_body.as_str(), true):
+        if not render_panel(
+            app_terminal,
+            pipe_panel,
+            terminal.Color.bright_magenta,
+            "Interactive Pipe",
+            pipe_body.as_str(),
+            true,
+        ):
             return false
-        if not render_panel(app_terminal, transcript_panel, terminal.Color.bright_yellow, "Transcript", echo.transcript.as_str(), false):
+        if not render_panel(
+            app_terminal,
+            transcript_panel,
+            terminal.Color.bright_yellow,
+            "Transcript",
+            echo.transcript.as_str(),
+            false,
+        ):
             return false
         if not render_panel(app_terminal, help_panel, terminal.Color.bright_blue, "Help", help_body.as_str(), false):
             return false
 
-    if not render_footer(app_terminal, size, active_tab, config, echo, process_table, selected_process_index, last_event):
+    if not render_footer(
+        app_terminal,
+        size,
+        active_tab,
+        config,
+        echo,
+        process_table,
+        selected_process_index,
+        last_event,
+    ):
         return false
 
     return terminal_bool_ok(app_terminal.flush())
@@ -1130,7 +1326,17 @@ public function run(config: Config) -> int:
 
     while running:
         echo.pump()
-        if not render_dashboard(ref_of(app_terminal), current_size, snapshot, echo, config, active_tab, selected_process_index, paused, last_event.as_str()):
+        if not render_dashboard(
+            ref_of(app_terminal),
+            current_size,
+            snapshot,
+            echo,
+            config,
+            active_tab,
+            selected_process_index,
+            paused,
+            last_event.as_str(),
+        ):
             return 1
 
         match app_terminal.poll_event(config.interval_ms):
@@ -1146,7 +1352,10 @@ public function run(config: Config) -> int:
                             snapshot.release()
                             snapshot = next_snapshot
                             refresh_count += 1
-                            selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), selected_process_index)
+                            selected_process_index = clamp_process_selection(
+                                snapshot.process_table.as_str(),
+                                selected_process_index,
+                            )
                             last_event.assign("timer refresh")
                     Option.some as event_payload:
                         let event = event_payload.value
@@ -1173,7 +1382,12 @@ public function run(config: Config) -> int:
 
                                 if current_size.width >= 72 and current_size.height >= 24:
                                     if active_tab == DashboardTab.overview:
-                                        match process_selection_from_mouse(overview_process_panel(current_size), snapshot.process_table.as_str(), event.mouse.column, event.mouse.row):
+                                        match process_selection_from_mouse(
+                                            overview_process_panel(current_size),
+                                            snapshot.process_table.as_str(),
+                                            event.mouse.column,
+                                            event.mouse.row,
+                                        ):
                                             Option.some as selection_payload:
                                                 selected_process_index = selection_payload.value
                                                 active_tab = DashboardTab.processes
@@ -1182,7 +1396,12 @@ public function run(config: Config) -> int:
                                             Option.none:
                                                 pass
                                     else if active_tab == DashboardTab.processes:
-                                        match process_selection_from_mouse(processes_main_panel(current_size), snapshot.process_table.as_str(), event.mouse.column, event.mouse.row):
+                                        match process_selection_from_mouse(
+                                            processes_main_panel(current_size),
+                                            snapshot.process_table.as_str(),
+                                            event.mouse.column,
+                                            event.mouse.row,
+                                        ):
                                             Option.some as selection_payload:
                                                 selected_process_index = selection_payload.value
                                                 mouse_message.release()
@@ -1215,7 +1434,10 @@ public function run(config: Config) -> int:
                                 snapshot.release()
                                 snapshot = next_snapshot
                                 refresh_count += 1
-                                selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), selected_process_index)
+                                selected_process_index = clamp_process_selection(
+                                    snapshot.process_table.as_str(),
+                                    selected_process_index,
+                                )
                                 key_message.release()
                                 continue
 
@@ -1230,12 +1452,18 @@ public function run(config: Config) -> int:
                                 continue
 
                             if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.up:
-                                selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), selected_process_index - 1)
+                                selected_process_index = clamp_process_selection(
+                                    snapshot.process_table.as_str(),
+                                    selected_process_index - 1,
+                                )
                                 key_message.release()
                                 continue
 
                             if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.down:
-                                selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), selected_process_index + 1)
+                                selected_process_index = clamp_process_selection(
+                                    snapshot.process_table.as_str(),
+                                    selected_process_index + 1,
+                                )
                                 key_message.release()
                                 continue
 
@@ -1245,7 +1473,10 @@ public function run(config: Config) -> int:
                                 continue
 
                             if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.end:
-                                selected_process_index = clamp_process_selection(snapshot.process_table.as_str(), process_entry_count(snapshot.process_table.as_str()) - 1)
+                                selected_process_index = clamp_process_selection(
+                                    snapshot.process_table.as_str(),
+                                    process_entry_count(snapshot.process_table.as_str()) - 1,
+                                )
                                 key_message.release()
                                 continue
 

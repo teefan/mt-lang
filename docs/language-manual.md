@@ -892,18 +892,30 @@ The auto-fix column corresponds to `mtc lint --fix`.
 
 ### 11.3 Config file
 
-Place `.mt-lint.yml` in the project root (or any ancestor directory):
+Create a default config with:
+
+```sh
+mtc lint --init
+```
+
+Or place `.mt-lint.yml` in the project root (or any ancestor directory):
 
 ```yaml
+max_line_length: 120
+select:
+    - line-too-long
+    - prefer-let
+    - missing-return
 ignore:
   - shadow
   - useless-expression
-# select:
-#   - prefer-let
-#   - missing-return
 ```
 
 When both `select` and `ignore` are present, `select` takes precedence and `ignore` is unused.
+
+`max_line_length` defaults to `120` when omitted.
+
+`line-too-long` auto-fix currently rewrites only parser-valid same-line comma-delimited `()` groups and type-position `[]` groups. Tuple literals may be rewritten without a trailing comma when the parser requires it.
 
 ### 11.4 Per-line suppressions
 

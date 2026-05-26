@@ -524,7 +524,7 @@ module MilkTea
       return fixed_source if fixed_source == original_source
 
       fixed_context = best_effort_lint_context(fixed_source, path:)
-      return fixed_source if fixed_context[:facts] && !introduces_new_errors?(
+      return fixed_source if fixed_context[:ast] && !introduces_new_errors?(
         error_signature_counts(fixed_context[:errors]),
         error_signature_counts(baseline_errors),
       )
@@ -973,7 +973,7 @@ module MilkTea
 
         fix = Formatter.build_long_line_wrap_fix(@source, index, max_line_length: @max_line_length, path: @path)
         message = "line exceeds max length of #{@max_line_length} columns (#{line.length})"
-        message << "; wrap the delimited list" if fix
+        message << "; wrap the expression" if fix
         @warnings << Warning.new(
           path: @path,
           line: index + 1,
