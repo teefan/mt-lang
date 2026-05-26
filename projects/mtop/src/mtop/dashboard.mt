@@ -101,10 +101,7 @@ function capture_shell_output(script: str) -> string.String:
         Result.failure as payload:
             var error = payload.error
             defer error.release()
-            var message = string.String.from_str("<capture failed: ")
-            message.append(error.message.as_str())
-            message.append(">")
-            return message
+            return fmt.format(f"<capture failed: #{error.message.as_str()}>")
         Result.success as payload:
             var result = payload.value
             defer result.release()
@@ -118,10 +115,7 @@ function capture_shell_output(script: str) -> string.String:
 
             match result.stderr_text():
                 Option.some as stderr_payload:
-                    var message = string.String.from_str("<command failed: ")
-                    message.append(trim_output(stderr_payload.value))
-                    message.append(">")
-                    return message
+                    return fmt.format(f"<command failed: #{trim_output(stderr_payload.value)}>")
                 Option.none:
                     return string.String.from_str("<command failed>")
 
@@ -145,8 +139,7 @@ function append_label_line(output: ref[string.String], label: str, value: str) -
 
 
 function set_status_message(target: ref[string.String], prefix: str, detail: str) -> void:
-    var message = string.String.from_str(prefix)
-    message.append(detail)
+    var message = fmt.format(f"#{prefix}#{detail}")
     read(target).assign(message.as_str())
     message.release()
 
@@ -221,25 +214,19 @@ function describe_key_event(key: terminal.KeyEvent) -> string.String:
 
 
 function describe_mouse_event(mouse: terminal.MouseEvent) -> string.String:
-    var message = string.String.from_str("mouse ")
+    var action_name = "none"
     if mouse.action == terminal.MouseAction.press:
-        message.append("press")
+        action_name = "press"
     else if mouse.action == terminal.MouseAction.release:
-        message.append("release")
+        action_name = "release"
     else if mouse.action == terminal.MouseAction.move:
-        message.append("move")
+        action_name = "move"
     else if mouse.action == terminal.MouseAction.scroll_up:
-        message.append("scroll-up")
+        action_name = "scroll-up"
     else if mouse.action == terminal.MouseAction.scroll_down:
-        message.append("scroll-down")
-    else:
-        message.append("none")
+        action_name = "scroll-down"
 
-    message.append(" @ ")
-    fmt.append_int(ref_of(message), mouse.column)
-    message.append(",")
-    fmt.append_int(ref_of(message), mouse.row)
-    return message
+    return fmt.format(f"mouse #{action_name} @ #{mouse.column},#{mouse.row}")
 
 
 function make_rect(left: int, top: int, width: int, height: int) -> Rect:
@@ -815,14 +802,10 @@ function render_small_dashboard(
     if not render_plain_line(app_terminal, size, 4, "Resize terminal to at least 72x24 for panel layout."):
         return false
 
-    var status_line = string.String.create()
+    let updates = updates_label(paused)
+    let refresh = snapshot.refresh_count
+    var status_line = fmt.format(f"  Updates: #{updates}  Refresh: #{refresh}  Last: #{last_event}")
     defer status_line.release()
-    status_line.append("  Updates: ")
-    status_line.append(updates_label(paused))
-    status_line.append("  Refresh: ")
-    fmt.append_int(ref_of(status_line), snapshot.refresh_count)
-    status_line.append("  Last: ")
-    status_line.append(last_event)
     if not render_plain_line(app_terminal, size, 5, status_line.as_str()):
         return false
 
@@ -886,18 +869,15 @@ function render_dashboard(
     ):
         return false
 
-    var status_line = string.String.create()
+    let view = tab_name(active_tab)
+    let width = size.width
+    let height = size.height
+    let refresh = snapshot.refresh_count
+    let updates = updates_label(paused)
+    var status_line = fmt.format(
+        f"  View: #{view}  Screen: #{width}x#{height}  Refresh: #{refresh}  Updates: #{updates}"
+    )
     defer status_line.release()
-    status_line.append("  View: ")
-    status_line.append(tab_name(active_tab))
-    status_line.append("  Screen: ")
-    fmt.append_int(ref_of(status_line), size.width)
-    status_line.append("x")
-    fmt.append_int(ref_of(status_line), size.height)
-    status_line.append("  Refresh: ")
-    fmt.append_int(ref_of(status_line), snapshot.refresh_count)
-    status_line.append("  Updates: ")
-    status_line.append(updates_label(paused))
     if not render_plain_line(app_terminal, size, 4, status_line.as_str()):
         return false
 
@@ -932,11 +912,9 @@ function render_dashboard(
         if process_count == 0:
             append_panel_line(ref_of(session_body), "Selected", "none")
         else:
-            var selected_label = string.String.create()
+            let selected = clamp_process_selection(process_table, selected_process_index) + 1
+            var selected_label = fmt.format(f"#{selected}/#{process_count}")
             defer selected_label.release()
-            fmt.append_int(ref_of(selected_label), clamp_process_selection(process_table, selected_process_index) + 1)
-            selected_label.append("/")
-            fmt.append_int(ref_of(selected_label), process_count)
             append_panel_line(ref_of(session_body), "Selected", selected_label.as_str())
         append_panel_line(ref_of(session_body), "Last event", last_event)
 
@@ -994,11 +972,9 @@ function render_dashboard(
         if process_count == 0:
             append_panel_line(ref_of(inspector_body), "Selected", "none")
         else:
-            var selected_label = string.String.create()
+            let selected = clamp_process_selection(process_table, selected_process_index) + 1
+            var selected_label = fmt.format(f"#{selected}/#{process_count}")
             defer selected_label.release()
-            fmt.append_int(ref_of(selected_label), clamp_process_selection(process_table, selected_process_index) + 1)
-            selected_label.append("/")
-            fmt.append_int(ref_of(selected_label), process_count)
             append_panel_line(ref_of(inspector_body), "Selected", selected_label.as_str())
             match selected_process_line(process_table, selected_process_index):
                 Option.some as selected_payload:
@@ -1361,10 +1337,9 @@ public function run(config: Config) -> int:
                         let event = event_payload.value
                         if event.kind == terminal.EventKind.resize:
                             current_size = event.size
-                            var resize_message = string.String.from_str("resize ")
-                            fmt.append_int(ref_of(resize_message), event.size.width)
-                            resize_message.append("x")
-                            fmt.append_int(ref_of(resize_message), event.size.height)
+                            var resize_message = fmt.format(
+                                f"resize #{event.size.width}x#{event.size.height}"
+                            )
                             last_event.assign(resize_message.as_str())
                             resize_message.release()
                         else if event.kind == terminal.EventKind.mouse:
