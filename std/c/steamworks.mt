@@ -3,11 +3,9 @@ external
 
 link "steam_api"
 include "steamworks.h"
-
 union SteamInputActionEvent_t_anonymous_union_2:
     analogAction: SteamInputActionEvent_t_AnalogAction_t
     digitalAction: SteamInputActionEvent_t_DigitalAction_t
-
 opaque CCallbackBase = c"CCallbackBase"
 opaque CallbackMsg_t = c"CallbackMsg_t"
 opaque ISteamApps = c"ISteamApps"
@@ -109,11 +107,9 @@ type SteamNetworkingPOPID = uint
 type SteamNetworkingMicroseconds = long
 type uint64_steamid = ulong
 type uint64_gameid = ulong
-
 flags ESteamIPType: int
     k_ESteamIPTypeIPv4 = 0
     k_ESteamIPTypeIPv6 = 1
-
 enum EUniverse: int
     k_EUniverseInvalid = 0
     k_EUniversePublic = 1
@@ -121,7 +117,6 @@ enum EUniverse: int
     k_EUniverseInternal = 3
     k_EUniverseDev = 4
     k_EUniverseMax = 5
-
 enum EResult: int
     k_EResultNone = 0
     k_EResultOK = 1
@@ -254,7 +249,6 @@ enum EResult: int
     k_EResultFamilySizeLimitExceeded = 129
     k_EResultOfflineAppCacheInvalid = 130
     k_EResultTryLater = 131
-
 enum EVoiceResult: int
     k_EVoiceResultOK = 0
     k_EVoiceResultNotInitialized = 1
@@ -266,7 +260,6 @@ enum EVoiceResult: int
     k_EVoiceResultUnsupportedCodec = 7
     k_EVoiceResultReceiverOutOfDate = 8
     k_EVoiceResultReceiverDidNotAnswer = 9
-
 enum EDenyReason: int
     k_EDenyInvalid = 0
     k_EDenyInvalidVersion = 1
@@ -284,7 +277,6 @@ enum EDenyReason: int
     k_EDenySteamResponseTimedOut = 13
     k_EDenySteamValidationStalled = 14
     k_EDenySteamOwnerLeftGuestUser = 15
-
 enum EBeginAuthSessionResult: int
     k_EBeginAuthSessionResultOK = 0
     k_EBeginAuthSessionResultInvalidTicket = 1
@@ -292,7 +284,6 @@ enum EBeginAuthSessionResult: int
     k_EBeginAuthSessionResultInvalidVersion = 3
     k_EBeginAuthSessionResultGameMismatch = 4
     k_EBeginAuthSessionResultExpiredTicket = 5
-
 enum EAuthSessionResponse: int
     k_EAuthSessionResponseOK = 0
     k_EAuthSessionResponseUserNotConnectedToSteam = 1
@@ -305,12 +296,10 @@ enum EAuthSessionResponse: int
     k_EAuthSessionResponseAuthTicketInvalid = 8
     k_EAuthSessionResponsePublisherIssuedBan = 9
     k_EAuthSessionResponseAuthTicketNetworkIdentityFailure = 10
-
 flags EUserHasLicenseForAppResult: int
     k_EUserHasLicenseResultHasLicense = 0
     k_EUserHasLicenseResultDoesNotHaveLicense = 1
     k_EUserHasLicenseResultNoAuth = 2
-
 enum EAccountType: int
     k_EAccountTypeInvalid = 0
     k_EAccountTypeIndividual = 1
@@ -324,7 +313,6 @@ enum EAccountType: int
     k_EAccountTypeConsoleUser = 9
     k_EAccountTypeAnonUser = 10
     k_EAccountTypeMax = 11
-
 enum EChatEntryType: int
     k_EChatEntryTypeInvalid = 0
     k_EChatEntryTypeChatMsg = 1
@@ -338,7 +326,6 @@ enum EChatEntryType: int
     k_EChatEntryTypeDisconnected = 10
     k_EChatEntryTypeHistoricalChat = 11
     k_EChatEntryTypeLinkBlocked = 14
-
 enum EChatRoomEnterResponse: int
     k_EChatRoomEnterResponseSuccess = 1
     k_EChatRoomEnterResponseDoesntExist = 2
@@ -352,20 +339,17 @@ enum EChatRoomEnterResponse: int
     k_EChatRoomEnterResponseMemberBlockedYou = 10
     k_EChatRoomEnterResponseYouBlockedMember = 11
     k_EChatRoomEnterResponseRatelimitExceeded = 15
-
 enum EChatSteamIDInstanceFlags: int
     k_EChatAccountInstanceMask = 4095
     k_EChatInstanceFlagClan = 524288
     k_EChatInstanceFlagLobby = 262144
     k_EChatInstanceFlagMMSLobby = 131072
-
 enum ENotificationPosition: int
     k_EPositionInvalid = -1
     k_EPositionTopLeft = 0
     k_EPositionTopRight = 1
     k_EPositionBottomLeft = 2
     k_EPositionBottomRight = 3
-
 enum EBroadcastUploadResult: int
     k_EBroadcastUploadResultNone = 0
     k_EBroadcastUploadResultOK = 1
@@ -391,7 +375,6 @@ enum EBroadcastUploadResult: int
     k_EBroadcastUploadResultDisconnect = 21
     k_EBroadcastUploadResultVideoInitFailed = 22
     k_EBroadcastUploadResultAudioInitFailed = 23
-
 flags EMarketNotAllowedReasonFlags: int
     k_EMarketNotAllowedReason_None = 0
     k_EMarketNotAllowedReason_TemporaryFailure = 1
@@ -411,7 +394,6 @@ flags EMarketNotAllowedReasonFlags: int
     k_EMarketNotAllowedReason_NoRecentPurchases = 16384
     k_EMarketNotAllowedReason_AcceptedWalletGift = 32768
     k_EMarketNotAllowedReason_TradeCooldown = 65536
-
 enum EDurationControlProgress: int
     k_EDurationControlProgress_Full = 0
     k_EDurationControlProgress_Half = 1
@@ -419,7 +401,6 @@ enum EDurationControlProgress: int
     k_EDurationControl_ExitSoon_3h = 3
     k_EDurationControl_ExitSoon_5h = 4
     k_EDurationControl_ExitSoon_Night = 5
-
 enum EDurationControlNotification: int
     k_EDurationControlNotification_None = 0
     k_EDurationControlNotification_1Hour = 1
@@ -429,13 +410,11 @@ enum EDurationControlNotification: int
     k_EDurationControlNotification_ExitSoon_3h = 5
     k_EDurationControlNotification_ExitSoon_5h = 6
     k_EDurationControlNotification_ExitSoon_Night = 7
-
 enum EDurationControlOnlineState: int
     k_EDurationControlOnlineState_Invalid = 0
     k_EDurationControlOnlineState_Offline = 1
     k_EDurationControlOnlineState_Online = 2
     k_EDurationControlOnlineState_OnlineHighPri = 3
-
 flags EBetaBranchFlags: int
     k_EBetaBranch_None = 0
     k_EBetaBranch_Default = 1
@@ -443,17 +422,14 @@ flags EBetaBranchFlags: int
     k_EBetaBranch_Private = 4
     k_EBetaBranch_Selected = 8
     k_EBetaBranch_Installed = 16
-
 flags ESteamIPv6ConnectivityProtocol: int
     k_ESteamIPv6ConnectivityProtocol_Invalid = 0
     k_ESteamIPv6ConnectivityProtocol_HTTP = 1
     k_ESteamIPv6ConnectivityProtocol_UDP = 2
-
 flags ESteamIPv6ConnectivityState: int
     k_ESteamIPv6ConnectivityState_Unknown = 0
     k_ESteamIPv6ConnectivityState_Good = 1
     k_ESteamIPv6ConnectivityState_Bad = 2
-
 enum EFriendRelationship: int
     k_EFriendRelationshipNone = 0
     k_EFriendRelationshipBlocked = 1
@@ -464,7 +440,6 @@ enum EFriendRelationship: int
     k_EFriendRelationshipIgnoredFriend = 6
     k_EFriendRelationshipSuggested_DEPRECATED = 7
     k_EFriendRelationshipMax = 8
-
 enum EPersonaState: int
     k_EPersonaStateOffline = 0
     k_EPersonaStateOnline = 1
@@ -475,7 +450,6 @@ enum EPersonaState: int
     k_EPersonaStateLookingToPlay = 6
     k_EPersonaStateInvisible = 7
     k_EPersonaStateMax = 8
-
 enum EFriendFlags: int
     k_EFriendFlagNone = 0
     k_EFriendFlagBlocked = 1
@@ -489,23 +463,19 @@ enum EFriendFlags: int
     k_EFriendFlagIgnoredFriend = 1024
     k_EFriendFlagChatMember = 4096
     k_EFriendFlagAll = 65535
-
 flags EOverlayToStoreFlag: int
     k_EOverlayToStoreFlag_None = 0
     k_EOverlayToStoreFlag_AddToCart = 1
     k_EOverlayToStoreFlag_AddToCartAndShow = 2
-
 flags EActivateGameOverlayToWebPageMode: int
     k_EActivateGameOverlayToWebPageMode_Default = 0
     k_EActivateGameOverlayToWebPageMode_Modal = 1
-
 enum ECommunityProfileItemType: int
     k_ECommunityProfileItemType_AnimatedAvatar = 0
     k_ECommunityProfileItemType_AvatarFrame = 1
     k_ECommunityProfileItemType_ProfileModifier = 2
     k_ECommunityProfileItemType_ProfileBackground = 3
     k_ECommunityProfileItemType_MiniProfileBackground = 4
-
 enum ECommunityProfileItemProperty: int
     k_ECommunityProfileItemProperty_ImageSmall = 0
     k_ECommunityProfileItemProperty_ImageLarge = 1
@@ -519,7 +489,6 @@ enum ECommunityProfileItemProperty: int
     k_ECommunityProfileItemProperty_MovieMP4 = 9
     k_ECommunityProfileItemProperty_MovieWebMSmall = 10
     k_ECommunityProfileItemProperty_MovieMP4Small = 11
-
 flags EPersonaChange: int
     k_EPersonaChangeName = 1
     k_EPersonaChangeStatus = 2
@@ -536,53 +505,44 @@ flags EPersonaChange: int
     k_EPersonaChangeNickname = 4096
     k_EPersonaChangeSteamLevel = 8192
     k_EPersonaChangeRichPresence = 16384
-
 enum ESteamAPICallFailure: int
     k_ESteamAPICallFailureNone = -1
     k_ESteamAPICallFailureSteamGone = 0
     k_ESteamAPICallFailureNetworkFailure = 1
     k_ESteamAPICallFailureInvalidHandle = 2
     k_ESteamAPICallFailureMismatchedCallback = 3
-
 flags EGamepadTextInputMode: int
     k_EGamepadTextInputModeNormal = 0
     k_EGamepadTextInputModePassword = 1
-
 flags EGamepadTextInputLineMode: int
     k_EGamepadTextInputLineModeSingleLine = 0
     k_EGamepadTextInputLineModeMultipleLines = 1
-
 enum EFloatingGamepadTextInputMode: int
     k_EFloatingGamepadTextInputModeModeSingleLine = 0
     k_EFloatingGamepadTextInputModeModeMultipleLines = 1
     k_EFloatingGamepadTextInputModeModeEmail = 2
     k_EFloatingGamepadTextInputModeModeNumeric = 3
-
 enum ETextFilteringContext: int
     k_ETextFilteringContextUnknown = 0
     k_ETextFilteringContextGameContent = 1
     k_ETextFilteringContextChat = 2
     k_ETextFilteringContextName = 3
-
 enum ECheckFileSignature: int
     k_ECheckFileSignatureInvalidSignature = 0
     k_ECheckFileSignatureValidSignature = 1
     k_ECheckFileSignatureFileNotFound = 2
     k_ECheckFileSignatureNoSignaturesFoundForThisApp = 3
     k_ECheckFileSignatureNoSignaturesFoundForThisFile = 4
-
 flags EMatchMakingServerResponse: int
     eServerResponded = 0
     eServerFailedToRespond = 1
     eNoServersListedOnMasterServer = 2
-
 enum ELobbyType: int
     k_ELobbyTypePrivate = 0
     k_ELobbyTypeFriendsOnly = 1
     k_ELobbyTypePublic = 2
     k_ELobbyTypeInvisible = 3
     k_ELobbyTypePrivateUnique = 4
-
 enum ELobbyComparison: int
     k_ELobbyComparisonEqualToOrLessThan = -2
     k_ELobbyComparisonLessThan = -1
@@ -590,32 +550,27 @@ enum ELobbyComparison: int
     k_ELobbyComparisonGreaterThan = 1
     k_ELobbyComparisonEqualToOrGreaterThan = 2
     k_ELobbyComparisonNotEqual = 3
-
 enum ELobbyDistanceFilter: int
     k_ELobbyDistanceFilterClose = 0
     k_ELobbyDistanceFilterDefault = 1
     k_ELobbyDistanceFilterFar = 2
     k_ELobbyDistanceFilterWorldwide = 3
-
 flags EChatMemberStateChange: int
     k_EChatMemberStateChangeEntered = 1
     k_EChatMemberStateChangeLeft = 2
     k_EChatMemberStateChangeDisconnected = 4
     k_EChatMemberStateChangeKicked = 8
     k_EChatMemberStateChangeBanned = 16
-
 flags ESteamPartyBeaconLocationType: int
     k_ESteamPartyBeaconLocationType_Invalid = 0
     k_ESteamPartyBeaconLocationType_ChatGroup = 1
     k_ESteamPartyBeaconLocationType_Max = 2
-
 enum ESteamPartyBeaconLocationData: int
     k_ESteamPartyBeaconLocationDataInvalid = 0
     k_ESteamPartyBeaconLocationDataName = 1
     k_ESteamPartyBeaconLocationDataIconURLSmall = 2
     k_ESteamPartyBeaconLocationDataIconURLMedium = 3
     k_ESteamPartyBeaconLocationDataIconURLLarge = 4
-
 enum ERemoteStoragePlatform: int
     k_ERemoteStoragePlatformNone = 0
     k_ERemoteStoragePlatformWindows = 1
@@ -626,13 +581,11 @@ enum ERemoteStoragePlatform: int
     k_ERemoteStoragePlatformAndroid = 32
     k_ERemoteStoragePlatformIOS = 64
     k_ERemoteStoragePlatformAll = -1
-
 enum ERemoteStoragePublishedFileVisibility: int
     k_ERemoteStoragePublishedFileVisibilityPublic = 0
     k_ERemoteStoragePublishedFileVisibilityFriendsOnly = 1
     k_ERemoteStoragePublishedFileVisibilityPrivate = 2
     k_ERemoteStoragePublishedFileVisibilityUnlisted = 3
-
 enum EWorkshopFileType: int
     k_EWorkshopFileTypeFirst = 0
     k_EWorkshopFileTypeCommunity = 0
@@ -653,17 +606,14 @@ enum EWorkshopFileType: int
     k_EWorkshopFileTypeGameManagedItem = 15
     k_EWorkshopFileTypeClip = 16
     k_EWorkshopFileTypeMax = 17
-
 enum EWorkshopVote: int
     k_EWorkshopVoteUnvoted = 0
     k_EWorkshopVoteFor = 1
     k_EWorkshopVoteAgainst = 2
     k_EWorkshopVoteLater = 3
-
 flags EWorkshopFileAction: int
     k_EWorkshopFileActionPlayed = 0
     k_EWorkshopFileActionCompleted = 1
-
 enum EWorkshopEnumerationType: int
     k_EWorkshopEnumerationTypeRankedByVote = 0
     k_EWorkshopEnumerationTypeRecent = 1
@@ -672,48 +622,39 @@ enum EWorkshopEnumerationType: int
     k_EWorkshopEnumerationTypeVotedByFriends = 4
     k_EWorkshopEnumerationTypeContentByFriends = 5
     k_EWorkshopEnumerationTypeRecentFromFollowedUsers = 6
-
 flags EWorkshopVideoProvider: int
     k_EWorkshopVideoProviderNone = 0
     k_EWorkshopVideoProviderYoutube = 1
-
 flags EUGCReadAction: int
     k_EUGCRead_ContinueReadingUntilFinished = 0
     k_EUGCRead_ContinueReading = 1
     k_EUGCRead_Close = 2
-
 flags ERemoteStorageLocalFileChange: int
     k_ERemoteStorageLocalFileChange_Invalid = 0
     k_ERemoteStorageLocalFileChange_FileUpdated = 1
     k_ERemoteStorageLocalFileChange_FileDeleted = 2
-
 flags ERemoteStorageFilePathType: int
     k_ERemoteStorageFilePathType_Invalid = 0
     k_ERemoteStorageFilePathType_Absolute = 1
     k_ERemoteStorageFilePathType_APIFilename = 2
-
 enum ELeaderboardDataRequest: int
     k_ELeaderboardDataRequestGlobal = 0
     k_ELeaderboardDataRequestGlobalAroundUser = 1
     k_ELeaderboardDataRequestFriends = 2
     k_ELeaderboardDataRequestUsers = 3
-
 flags ELeaderboardSortMethod: int
     k_ELeaderboardSortMethodNone = 0
     k_ELeaderboardSortMethodAscending = 1
     k_ELeaderboardSortMethodDescending = 2
-
 enum ELeaderboardDisplayType: int
     k_ELeaderboardDisplayTypeNone = 0
     k_ELeaderboardDisplayTypeNumeric = 1
     k_ELeaderboardDisplayTypeTimeSeconds = 2
     k_ELeaderboardDisplayTypeTimeMilliSeconds = 3
-
 flags ELeaderboardUploadScoreMethod: int
     k_ELeaderboardUploadScoreMethodNone = 0
     k_ELeaderboardUploadScoreMethodKeepBest = 1
     k_ELeaderboardUploadScoreMethodForceUpdate = 2
-
 enum EP2PSessionError: int
     k_EP2PSessionErrorNone = 0
     k_EP2PSessionErrorNoRightsToApp = 2
@@ -721,13 +662,11 @@ enum EP2PSessionError: int
     k_EP2PSessionErrorNotRunningApp_DELETED = 1
     k_EP2PSessionErrorDestinationNotLoggedIn_DELETED = 3
     k_EP2PSessionErrorMax = 5
-
 enum EP2PSend: int
     k_EP2PSendUnreliable = 0
     k_EP2PSendUnreliableNoDelay = 1
     k_EP2PSendReliable = 2
     k_EP2PSendReliableWithBuffering = 3
-
 enum ESNetSocketState: int
     k_ESNetSocketStateInvalid = 0
     k_ESNetSocketStateConnected = 1
@@ -740,12 +679,10 @@ enum ESNetSocketState: int
     k_ESNetSocketStateTimeoutDuringConnect = 23
     k_ESNetSocketStateRemoteEndDisconnected = 24
     k_ESNetSocketStateConnectionBroken = 25
-
 flags ESNetSocketConnectionType: int
     k_ESNetSocketConnectionTypeNotConnected = 0
     k_ESNetSocketConnectionTypeUDP = 1
     k_ESNetSocketConnectionTypeUDPRelay = 2
-
 enum EVRScreenshotType: int
     k_EVRScreenshotType_None = 0
     k_EVRScreenshotType_Mono = 1
@@ -753,13 +690,11 @@ enum EVRScreenshotType: int
     k_EVRScreenshotType_MonoCubemap = 3
     k_EVRScreenshotType_MonoPanorama = 4
     k_EVRScreenshotType_StereoPanorama = 5
-
 enum AudioPlayback_Status: int
     AudioPlayback_Undefined = 0
     AudioPlayback_Playing = 1
     AudioPlayback_Paused = 2
     AudioPlayback_Idle = 3
-
 enum EHTTPMethod: int
     k_EHTTPMethodInvalid = 0
     k_EHTTPMethodGET = 1
@@ -769,7 +704,6 @@ enum EHTTPMethod: int
     k_EHTTPMethodDELETE = 5
     k_EHTTPMethodOPTIONS = 6
     k_EHTTPMethodPATCH = 7
-
 enum EHTTPStatusCode: int
     k_EHTTPStatusCodeInvalid = 0
     k_EHTTPStatusCode100Continue = 100
@@ -831,7 +765,6 @@ enum EHTTPStatusCode: int
     k_EHTTPStatusCode510NotExtended = 510
     k_EHTTPStatusCode511NetworkAuthenticationRequired = 511
     k_EHTTPStatusCode5xxUnknown = 599
-
 enum EInputSourceMode: int
     k_EInputSourceMode_None = 0
     k_EInputSourceMode_Dpad = 1
@@ -850,7 +783,6 @@ enum EInputSourceMode: int
     k_EInputSourceMode_RadialMenu = 14
     k_EInputSourceMode_SingleButton = 15
     k_EInputSourceMode_Switches = 16
-
 enum EInputActionOrigin: int
     k_EInputActionOrigin_None = 0
     k_EInputActionOrigin_SteamController_A = 1
@@ -1349,7 +1281,6 @@ enum EInputActionOrigin: int
     k_EInputActionOrigin_Generic_MISC8 = 494
     k_EInputActionOrigin_Count = 495
     k_EInputActionOrigin_MaximumPossibleValue = 32767
-
 enum EXboxOrigin: int
     k_EXboxOrigin_A = 0
     k_EXboxOrigin_B = 1
@@ -1380,21 +1311,17 @@ enum EXboxOrigin: int
     k_EXboxOrigin_DPad_West = 26
     k_EXboxOrigin_DPad_East = 27
     k_EXboxOrigin_Count = 28
-
 flags ESteamControllerPad: int
     k_ESteamControllerPad_Left = 0
     k_ESteamControllerPad_Right = 1
-
 enum EControllerHapticLocation: int
     k_EControllerHapticLocation_Left = 1
     k_EControllerHapticLocation_Right = 2
     k_EControllerHapticLocation_Both = 3
-
 flags EControllerHapticType: int
     k_EControllerHapticType_Off = 0
     k_EControllerHapticType_Tick = 1
     k_EControllerHapticType_Click = 2
-
 enum ESteamInputType: int
     k_ESteamInputType_Unknown = 0
     k_ESteamInputType_SteamController = 1
@@ -1413,35 +1340,29 @@ enum ESteamInputType: int
     k_ESteamInputType_SteamDeckController = 14
     k_ESteamInputType_Count = 15
     k_ESteamInputType_MaximumPossibleValue = 255
-
 flags ESteamInputConfigurationEnableType: int
     k_ESteamInputConfigurationEnableType_None = 0
     k_ESteamInputConfigurationEnableType_Playstation = 1
     k_ESteamInputConfigurationEnableType_Xbox = 2
     k_ESteamInputConfigurationEnableType_Generic = 4
     k_ESteamInputConfigurationEnableType_Switch = 8
-
 flags ESteamInputLEDFlag: int
     k_ESteamInputLEDFlag_SetColor = 0
     k_ESteamInputLEDFlag_RestoreUserDefault = 1
-
 enum ESteamInputGlyphSize: int
     k_ESteamInputGlyphSize_Small = 0
     k_ESteamInputGlyphSize_Medium = 1
     k_ESteamInputGlyphSize_Large = 2
     k_ESteamInputGlyphSize_Count = 3
-
 flags ESteamInputGlyphStyle: int
     ESteamInputGlyphStyle_Knockout = 0
     ESteamInputGlyphStyle_Light = 1
     ESteamInputGlyphStyle_Dark = 2
     ESteamInputGlyphStyle_NeutralColorABXY = 16
     ESteamInputGlyphStyle_SolidABXY = 32
-
 flags ESteamInputActionEventType: int
     ESteamInputActionEventType_DigitalAction = 0
     ESteamInputActionEventType_AnalogAction = 1
-
 enum EControllerActionOrigin: int
     k_EControllerActionOrigin_None = 0
     k_EControllerActionOrigin_A = 1
@@ -1920,11 +1841,9 @@ enum EControllerActionOrigin: int
     k_EControllerActionOrigin_Generic_MISC8 = 474
     k_EControllerActionOrigin_Count = 475
     k_EControllerActionOrigin_MaximumPossibleValue = 32767
-
 flags ESteamControllerLEDFlag: int
     k_ESteamControllerLEDFlag_SetColor = 0
     k_ESteamControllerLEDFlag_RestoreUserDefault = 1
-
 enum EUGCMatchingUGCType: int
     k_EUGCMatchingUGCType_Items = 0
     k_EUGCMatchingUGCType_Items_Mtx = 1
@@ -1940,7 +1859,6 @@ enum EUGCMatchingUGCType: int
     k_EUGCMatchingUGCType_ControllerBindings = 11
     k_EUGCMatchingUGCType_GameManagedItems = 12
     k_EUGCMatchingUGCType_All = -1
-
 enum EUserUGCList: int
     k_EUserUGCList_Published = 0
     k_EUserUGCList_VotedOn = 1
@@ -1951,7 +1869,6 @@ enum EUserUGCList: int
     k_EUserUGCList_Subscribed = 6
     k_EUserUGCList_UsedOrPlayed = 7
     k_EUserUGCList_Followed = 8
-
 enum EUserUGCListSortOrder: int
     k_EUserUGCListSortOrder_CreationOrderDesc = 0
     k_EUserUGCListSortOrder_CreationOrderAsc = 1
@@ -1960,7 +1877,6 @@ enum EUserUGCListSortOrder: int
     k_EUserUGCListSortOrder_SubscriptionDateDesc = 4
     k_EUserUGCListSortOrder_VoteScoreDesc = 5
     k_EUserUGCListSortOrder_ForModeration = 6
-
 enum EUGCQuery: int
     k_EUGCQuery_RankedByVote = 0
     k_EUGCQuery_RankedByPublicationDate = 1
@@ -1982,7 +1898,6 @@ enum EUGCQuery: int
     k_EUGCQuery_RankedByPlaytimeSessionsTrend = 17
     k_EUGCQuery_RankedByLifetimePlaytimeSessions = 18
     k_EUGCQuery_RankedByLastUpdatedDate = 19
-
 enum EItemUpdateStatus: int
     k_EItemUpdateStatusInvalid = 0
     k_EItemUpdateStatusPreparingConfig = 1
@@ -1990,7 +1905,6 @@ enum EItemUpdateStatus: int
     k_EItemUpdateStatusUploadingContent = 3
     k_EItemUpdateStatusUploadingPreviewFile = 4
     k_EItemUpdateStatusCommittingChanges = 5
-
 flags EItemState: int
     k_EItemStateNone = 0
     k_EItemStateSubscribed = 1
@@ -2000,7 +1914,6 @@ flags EItemState: int
     k_EItemStateDownloading = 16
     k_EItemStateDownloadPending = 32
     k_EItemStateDisabledLocally = 64
-
 enum EItemStatistic: int
     k_EItemStatistic_NumSubscriptions = 0
     k_EItemStatistic_NumFavorites = 1
@@ -2015,7 +1928,6 @@ enum EItemStatistic: int
     k_EItemStatistic_NumComments = 10
     k_EItemStatistic_NumSecondsPlayedDuringTimePeriod = 11
     k_EItemStatistic_NumPlaytimeSessionsDuringTimePeriod = 12
-
 enum EItemPreviewType: int
     k_EItemPreviewType_Image = 0
     k_EItemPreviewType_YouTubeVideo = 1
@@ -2024,19 +1936,16 @@ enum EItemPreviewType: int
     k_EItemPreviewType_EnvironmentMap_LatLong = 4
     k_EItemPreviewType_Clip = 5
     k_EItemPreviewType_ReservedMax = 255
-
 enum EUGCContentDescriptorID: int
     k_EUGCContentDescriptor_NudityOrSexualContent = 1
     k_EUGCContentDescriptor_FrequentViolenceOrGore = 2
     k_EUGCContentDescriptor_AdultOnlySexualContent = 3
     k_EUGCContentDescriptor_GratuitousSexualContent = 4
     k_EUGCContentDescriptor_AnyMatureContent = 5
-
 flags ESteamItemFlags: int
     k_ESteamItemNoTrade = 1
     k_ESteamItemRemoved = 256
     k_ESteamItemConsumed = 512
-
 enum ETimelineGameMode: int
     k_ETimelineGameMode_Invalid = 0
     k_ETimelineGameMode_Playing = 1
@@ -2044,13 +1953,11 @@ enum ETimelineGameMode: int
     k_ETimelineGameMode_Menus = 3
     k_ETimelineGameMode_LoadingScreen = 4
     k_ETimelineGameMode_Max = 5
-
 enum ETimelineEventClipPriority: int
     k_ETimelineEventClipPriority_Invalid = 0
     k_ETimelineEventClipPriority_None = 1
     k_ETimelineEventClipPriority_Standard = 2
     k_ETimelineEventClipPriority_Featured = 3
-
 enum EParentalFeature: int
     k_EFeatureInvalid = 0
     k_EFeatureStore = 1
@@ -2070,7 +1977,6 @@ enum EParentalFeature: int
     k_EFeatureBlockAlways = 15
     k_EFeatureDesktop = 16
     k_EFeatureMax = 17
-
 enum ESteamDeviceFormFactor: int
     k_ESteamDeviceFormFactorUnknown = 0
     k_ESteamDeviceFormFactorPhone = 1
@@ -2078,7 +1984,6 @@ enum ESteamDeviceFormFactor: int
     k_ESteamDeviceFormFactorComputer = 3
     k_ESteamDeviceFormFactorTV = 4
     k_ESteamDeviceFormFactorVRHeadset = 5
-
 enum ERemotePlayInputType: int
     k_ERemotePlayInputUnknown = 0
     k_ERemotePlayInputMouseMotion = 1
@@ -2087,20 +1992,17 @@ enum ERemotePlayInputType: int
     k_ERemotePlayInputMouseWheel = 4
     k_ERemotePlayInputKeyDown = 5
     k_ERemotePlayInputKeyUp = 6
-
 flags ERemotePlayMouseButton: int
     k_ERemotePlayMouseButtonLeft = 1
     k_ERemotePlayMouseButtonRight = 2
     k_ERemotePlayMouseButtonMiddle = 16
     k_ERemotePlayMouseButtonX1 = 32
     k_ERemotePlayMouseButtonX2 = 64
-
 enum ERemotePlayMouseWheelDirection: int
     k_ERemotePlayMouseWheelUp = 1
     k_ERemotePlayMouseWheelDown = 2
     k_ERemotePlayMouseWheelLeft = 3
     k_ERemotePlayMouseWheelRight = 4
-
 enum ERemotePlayScancode: int
     k_ERemotePlayScancodeUnknown = 0
     k_ERemotePlayScancodeA = 4
@@ -2202,7 +2104,6 @@ enum ERemotePlayScancode: int
     k_ERemotePlayScancodeRightShift = 229
     k_ERemotePlayScancodeRightALT = 230
     k_ERemotePlayScancodeRightGUI = 231
-
 enum ERemotePlayKeyModifier: int
     k_ERemotePlayKeyModifierNone = 0
     k_ERemotePlayKeyModifierLeftShift = 1
@@ -2216,7 +2117,6 @@ enum ERemotePlayKeyModifier: int
     k_ERemotePlayKeyModifierNumLock = 4096
     k_ERemotePlayKeyModifierCapsLock = 8192
     k_ERemotePlayKeyModifierMask = 65535
-
 enum ESteamNetworkingAvailability: int
     k_ESteamNetworkingAvailability_CannotTry = -102
     k_ESteamNetworkingAvailability_Failed = -101
@@ -2228,7 +2128,6 @@ enum ESteamNetworkingAvailability: int
     k_ESteamNetworkingAvailability_Current = 100
     k_ESteamNetworkingAvailability_Unknown = 0
     k_ESteamNetworkingAvailability__Force32bit = 2147483647
-
 enum ESteamNetworkingIdentityType: int
     k_ESteamNetworkingIdentityType_Invalid = 0
     k_ESteamNetworkingIdentityType_SteamID = 16
@@ -2239,14 +2138,12 @@ enum ESteamNetworkingIdentityType: int
     k_ESteamNetworkingIdentityType_GenericBytes = 3
     k_ESteamNetworkingIdentityType_UnknownType = 4
     k_ESteamNetworkingIdentityType__Force32bit = 2147483647
-
 enum ESteamNetworkingFakeIPType: int
     k_ESteamNetworkingFakeIPType_Invalid = 0
     k_ESteamNetworkingFakeIPType_NotFake = 1
     k_ESteamNetworkingFakeIPType_GlobalIPv4 = 2
     k_ESteamNetworkingFakeIPType_LocalIPv4 = 3
     k_ESteamNetworkingFakeIPType__Force32Bit = 2147483647
-
 enum ESteamNetworkingConnectionState: int
     k_ESteamNetworkingConnectionState_None = 0
     k_ESteamNetworkingConnectionState_Connecting = 1
@@ -2258,7 +2155,6 @@ enum ESteamNetworkingConnectionState: int
     k_ESteamNetworkingConnectionState_Linger = -2
     k_ESteamNetworkingConnectionState_Dead = -3
     k_ESteamNetworkingConnectionState__Force32Bit = 2147483647
-
 enum ESteamNetConnectionEnd: int
     k_ESteamNetConnectionEnd_Invalid = 0
     k_ESteamNetConnectionEnd_App_Min = 1000
@@ -2293,14 +2189,12 @@ enum ESteamNetConnectionEnd: int
     k_ESteamNetConnectionEnd_Misc_PeerSentNoConnection = 5010
     k_ESteamNetConnectionEnd_Misc_Max = 5999
     k_ESteamNetConnectionEnd__Force32Bit = 2147483647
-
 enum ESteamNetworkingConfigScope: int
     k_ESteamNetworkingConfig_Global = 1
     k_ESteamNetworkingConfig_SocketsInterface = 2
     k_ESteamNetworkingConfig_ListenSocket = 3
     k_ESteamNetworkingConfig_Connection = 4
     k_ESteamNetworkingConfigScope__Force32Bit = 2147483647
-
 enum ESteamNetworkingConfigDataType: int
     k_ESteamNetworkingConfig_Int32 = 1
     k_ESteamNetworkingConfig_Int64 = 2
@@ -2308,7 +2202,6 @@ enum ESteamNetworkingConfigDataType: int
     k_ESteamNetworkingConfig_String = 4
     k_ESteamNetworkingConfig_Ptr = 5
     k_ESteamNetworkingConfigDataType__Force32Bit = 2147483647
-
 enum ESteamNetworkingConfigValue: int
     k_ESteamNetworkingConfig_Invalid = 0
     k_ESteamNetworkingConfig_TimeoutInitial = 24
@@ -2388,7 +2281,6 @@ enum ESteamNetworkingConfigValue: int
     k_ESteamNetworkingConfig_SDRClient_EnableTOSProbes = 998
     k_ESteamNetworkingConfig_DELETED_EnumerateDevVars = 35
     k_ESteamNetworkingConfigValue__Force32Bit = 2147483647
-
 enum ESteamNetworkingGetConfigValueResult: int
     k_ESteamNetworkingGetConfigValue_BadValue = -1
     k_ESteamNetworkingGetConfigValue_BadScopeObj = -2
@@ -2396,7 +2288,6 @@ enum ESteamNetworkingGetConfigValueResult: int
     k_ESteamNetworkingGetConfigValue_OK = 1
     k_ESteamNetworkingGetConfigValue_OKInherited = 2
     k_ESteamNetworkingGetConfigValueResult__Force32Bit = 2147483647
-
 enum ESteamNetworkingSocketsDebugOutputType: int
     k_ESteamNetworkingSocketsDebugOutputType_None = 0
     k_ESteamNetworkingSocketsDebugOutputType_Bug = 1
@@ -2408,24 +2299,20 @@ enum ESteamNetworkingSocketsDebugOutputType: int
     k_ESteamNetworkingSocketsDebugOutputType_Debug = 7
     k_ESteamNetworkingSocketsDebugOutputType_Everything = 8
     k_ESteamNetworkingSocketsDebugOutputType__Force32Bit = 2147483647
-
 enum ESteamAPIInitResult: int
     k_ESteamAPIInitResult_OK = 0
     k_ESteamAPIInitResult_FailedGeneric = 1
     k_ESteamAPIInitResult_NoSteamClient = 2
     k_ESteamAPIInitResult_VersionMismatch = 3
-
 enum EServerMode: int
     eServerModeInvalid = 0
     eServerModeNoAuthentication = 1
     eServerModeAuthentication = 2
     eServerModeAuthenticationAndSecure = 3
-
 flags EHTMLMouseButton: int
     eHTMLMouseButton_Left = 0
     eHTMLMouseButton_Right = 1
     eHTMLMouseButton_Middle = 2
-
 enum EHTMLMouseCursor: int
     k_EHTMLMouseCursor_User = 0
     k_EHTMLMouseCursor_None = 1
@@ -2471,37 +2358,30 @@ enum EHTMLMouseCursor: int
     k_EHTMLMouseCursor_SizeNWSE = 41
     k_EHTMLMouseCursor_SizeNESW = 42
     k_EHTMLMouseCursor_last = 43
-
 flags EHTMLKeyModifiers: int
     k_eHTMLKeyModifier_None = 0
     k_eHTMLKeyModifier_AltDown = 1
     k_eHTMLKeyModifier_CtrlDown = 2
     k_eHTMLKeyModifier_ShiftDown = 4
-
 flags EFailureType: int
     k_EFailureFlushedCallbackQueue = 0
     k_EFailurePipeFail = 1
-
 struct SteamIPAddress_t:
     m_rgubIPv6: array[uint8, 16]
     m_eType: ESteamIPType
-
 struct FriendGameInfo_t:
     m_gameID: ulong
     m_unGameIP: uint
     m_usGamePort: ushort
     m_usQueryPort: ushort
     m_steamIDLobby: ulong
-
 struct MatchMakingKeyValuePair_t:
     m_szKey: array[char, 256]
     m_szValue: array[char, 256]
-
 struct servernetadr_t:
     m_usConnectionPort: ushort
     m_usQueryPort: ushort
     m_unIP: uint
-
 struct gameserveritem_t:
     m_NetAdr: servernetadr_t
     m_nPing: int
@@ -2521,22 +2401,18 @@ struct gameserveritem_t:
     m_szServerName: array[char, 64]
     m_szGameTags: array[char, 128]
     m_steamID: ulong
-
 struct SteamPartyBeaconLocation_t:
     m_eType: ESteamPartyBeaconLocationType
     m_ulLocationID: ulong
-
 struct SteamParamStringArray_t:
     m_ppStrings: ptr[cstr]
     m_nNumStrings: int
-
 struct LeaderboardEntry_t:
     m_steamIDUser: ulong
     m_nGlobalRank: int
     m_nScore: int
     m_cDetails: int
     m_hUGC: ulong
-
 struct P2PSessionState_t:
     m_bConnectionActive: ubyte
     m_bConnecting: ubyte
@@ -2546,17 +2422,14 @@ struct P2PSessionState_t:
     m_nPacketsQueuedForSend: int
     m_nRemoteIP: uint
     m_nRemotePort: ushort
-
 struct InputAnalogActionData_t:
     eMode: EInputSourceMode
     x: float
     y: float
     bActive: bool
-
 struct InputDigitalActionData_t:
     bState: bool
     bActive: bool
-
 struct InputMotionData_t:
     rotQuatX: float
     rotQuatY: float
@@ -2568,7 +2441,6 @@ struct InputMotionData_t:
     rotVelX: float
     rotVelY: float
     rotVelZ: float
-
 struct SteamUGCDetails_t:
     m_nPublishedFileId: ulong
     m_eResult: EResult
@@ -2597,43 +2469,35 @@ struct SteamUGCDetails_t:
     m_flScore: float
     m_unNumChildren: uint
     m_ulTotalFilesSize: ulong
-
 struct SteamItemDetails_t:
     m_itemId: ulong
     m_iDefinition: int
     m_unQuantity: ushort
     m_unFlags: ushort
-
 struct RemotePlayInputMouseMotion_t:
     m_bAbsolute: bool
     m_flNormalizedX: float
     m_flNormalizedY: float
     m_nDeltaX: int
     m_nDeltaY: int
-
 struct RemotePlayInputMouseWheel_t:
     m_eDirection: ERemotePlayMouseWheelDirection
     m_flAmount: float
-
 struct RemotePlayInputKey_t:
     m_eScancode: int
     m_unModifiers: uint
     m_unKeycode: uint
-
 struct RemotePlayInput_t:
     m_unSessionID: uint
     m_eType: ERemotePlayInputType
     padding: array[char, 56]
-
 struct SteamNetworkingIPAddr:
     m_ipv6: array[uint8, 16]
     m_port: ushort
-
 struct SteamNetworkingIdentity:
     m_eType: ESteamNetworkingIdentityType
     m_cbSize: int
     m_szUnknownRawString: array[char, 128]
-
 struct SteamNetConnectionInfo_t:
     m_identityRemote: SteamNetworkingIdentity
     m_nUserData: long
@@ -2648,7 +2512,6 @@ struct SteamNetConnectionInfo_t:
     m_szConnectionDescription: array[char, 128]
     m_nFlags: int
     reserved: array[uint32, 63]
-
 struct SteamNetConnectionRealTimeStatus_t:
     m_eState: ESteamNetworkingConnectionState
     m_nPing: int
@@ -2665,7 +2528,6 @@ struct SteamNetConnectionRealTimeStatus_t:
     m_usecQueueTime: long
     m_usecMaxJitter: int
     reserved: array[uint32, 15]
-
 struct SteamNetConnectionRealTimeLaneStatus_t:
     m_cbPendingUnreliable: int
     m_cbPendingReliable: int
@@ -2673,7 +2535,6 @@ struct SteamNetConnectionRealTimeLaneStatus_t:
     _reservePad1: int
     m_usecQueueTime: long
     reserved: array[uint32, 10]
-
 struct SteamNetworkingMessage_t:
     m_pData: ptr[void]
     m_cbSize: int
@@ -2689,19 +2550,15 @@ struct SteamNetworkingMessage_t:
     m_nUserData: long
     m_idxLane: ushort
     _pad1__: ushort
-
 struct SteamNetworkPingLocation_t:
     m_data: array[uint8, 512]
-
 struct SteamNetworkingConfigValue_t:
     m_eValue: ESteamNetworkingConfigValue
     m_eDataType: ESteamNetworkingConfigDataType
     m_int64: ptr_int
-
 struct SteamDatagramHostedAddress:
     m_cbSize: int
     m_data: array[char, 128]
-
 struct SteamDatagramGameCoordinatorServerLogin:
     m_identity: SteamNetworkingIdentity
     m_routing: SteamDatagramHostedAddress
@@ -2709,60 +2566,46 @@ struct SteamDatagramGameCoordinatorServerLogin:
     m_rtime: uint
     m_cbAppData: int
     m_appData: array[char, 2048]
-
 struct SteamServersConnected_t:
     _mt_dummy: char
-
 struct SteamServerConnectFailure_t:
     m_eResult: EResult
     m_bStillRetrying: bool
-
 struct SteamServersDisconnected_t:
     m_eResult: EResult
-
 struct ClientGameServerDeny_t:
     m_uAppID: uint
     m_unGameServerIP: uint
     m_usGameServerPort: ushort
     m_bSecure: ushort
     m_uReason: uint
-
 struct IPCFailure_t:
     m_eFailureType: ubyte
-
 struct LicensesUpdated_t:
     _mt_dummy: char
-
 struct ValidateAuthTicketResponse_t:
     m_SteamID: ulong
     m_eAuthSessionResponse: EAuthSessionResponse
     m_OwnerSteamID: ulong
-
 struct MicroTxnAuthorizationResponse_t:
     m_unAppID: uint
     m_ulOrderID: ulong
     m_bAuthorized: ubyte
-
 struct EncryptedAppTicketResponse_t:
     m_eResult: EResult
-
 struct GetAuthSessionTicketResponse_t:
     m_hAuthTicket: uint
     m_eResult: EResult
-
 struct GameWebCallback_t:
     m_szURL: array[char, 256]
-
 struct StoreAuthURLResponse_t:
     m_szURL: array[char, 512]
-
 struct MarketEligibilityResponse_t:
     m_bAllowed: bool
     m_eNotAllowedReason: EMarketNotAllowedReasonFlags
     m_rtAllowedAtTime: uint
     m_cdaySteamGuardRequiredDays: int
     m_cdayNewDeviceCooldown: int
-
 struct DurationControl_t:
     m_eResult: EResult
     m_appid: uint
@@ -2772,101 +2615,79 @@ struct DurationControl_t:
     m_notification: EDurationControlNotification
     m_csecsToday: int
     m_csecsRemaining: int
-
 struct GetTicketForWebApiResponse_t:
     m_hAuthTicket: uint
     m_eResult: EResult
     m_cubTicket: int
     m_rgubTicket: array[uint8, 2560]
-
 struct PersonaStateChange_t:
     m_ulSteamID: ulong
     m_nChangeFlags: int
-
 struct GameOverlayActivated_t:
     m_bActive: ubyte
     m_bUserInitiated: bool
     m_nAppID: uint
     m_dwOverlayPID: uint
-
 struct GameServerChangeRequested_t:
     m_rgchServer: array[char, 64]
     m_rgchPassword: array[char, 64]
-
 struct GameLobbyJoinRequested_t:
     m_steamIDLobby: ulong
     m_steamIDFriend: ulong
-
 struct AvatarImageLoaded_t:
     m_steamID: ulong
     m_iImage: int
     m_iWide: int
     m_iTall: int
-
 struct ClanOfficerListResponse_t:
     m_steamIDClan: ulong
     m_cOfficers: int
     m_bSuccess: ubyte
-
 struct FriendRichPresenceUpdate_t:
     m_steamIDFriend: ulong
     m_nAppID: uint
-
 struct GameRichPresenceJoinRequested_t:
     m_steamIDFriend: ulong
     m_rgchConnect: array[char, 256]
-
 struct GameConnectedClanChatMsg_t:
     m_steamIDClanChat: ulong
     m_steamIDUser: ulong
     m_iMessageID: int
-
 struct GameConnectedChatJoin_t:
     m_steamIDClanChat: ulong
     m_steamIDUser: ulong
-
 struct GameConnectedChatLeave_t:
     m_steamIDClanChat: ulong
     m_steamIDUser: ulong
     m_bKicked: bool
     m_bDropped: bool
-
 struct DownloadClanActivityCountsResult_t:
     m_bSuccess: bool
-
 struct JoinClanChatRoomCompletionResult_t:
     m_steamIDClanChat: ulong
     m_eChatRoomEnterResponse: EChatRoomEnterResponse
-
 struct GameConnectedFriendChatMsg_t:
     m_steamIDUser: ulong
     m_iMessageID: int
-
 struct FriendsGetFollowerCount_t:
     m_eResult: EResult
     m_steamID: ulong
     m_nCount: int
-
 struct FriendsIsFollowing_t:
     m_eResult: EResult
     m_steamID: ulong
     m_bIsFollowing: bool
-
 struct FriendsEnumerateFollowingList_t:
     m_eResult: EResult
     m_rgSteamID: array[uint64_steamid, 50]
     m_nResultsReturned: int
     m_nTotalResultCount: int
-
 struct UnreadChatMessagesChanged_t:
     _mt_dummy: char
-
 struct OverlayBrowserProtocolNavigation_t:
     rgchURI: array[char, 1024]
-
 struct EquippedProfileItemsChanged_t:
     m_steamID: ulong
-
 struct EquippedProfileItems_t:
     m_eResult: EResult
     m_steamID: ulong
@@ -2876,38 +2697,28 @@ struct EquippedProfileItems_t:
     m_bHasProfileBackground: bool
     m_bHasMiniProfileBackground: bool
     m_bFromCache: bool
-
 struct IPCountry_t:
     _mt_dummy: char
-
 struct LowBatteryPower_t:
     m_nMinutesBatteryLeft: ubyte
-
 struct SteamAPICallCompleted_t:
     m_hAsyncCall: ulong
     m_iCallback: int
     m_cubParam: uint
-
 struct SteamShutdown_t:
     _mt_dummy: char
-
 struct CheckFileSignature_t:
     m_eCheckFileSignature: ECheckFileSignature
-
 struct GamepadTextInputDismissed_t:
     m_bSubmitted: bool
     m_unSubmittedText: uint
     m_unAppID: uint
-
 struct AppResumingFromSuspend_t:
     _mt_dummy: char
-
 struct FloatingGamepadTextInputDismissed_t:
     _mt_dummy: char
-
 struct FilterTextDictionaryChanged_t:
     m_eLanguage: int
-
 struct FavoritesListChanged_t:
     m_nIP: uint
     m_nQueryPort: uint
@@ -2916,119 +2727,94 @@ struct FavoritesListChanged_t:
     m_nFlags: uint
     m_bAdd: bool
     m_unAccountId: uint
-
 struct LobbyInvite_t:
     m_ulSteamIDUser: ulong
     m_ulSteamIDLobby: ulong
     m_ulGameID: ulong
-
 struct LobbyEnter_t:
     m_ulSteamIDLobby: ulong
     m_rgfChatPermissions: uint
     m_bLocked: bool
     m_EChatRoomEnterResponse: uint
-
 struct LobbyDataUpdate_t:
     m_ulSteamIDLobby: ulong
     m_ulSteamIDMember: ulong
     m_bSuccess: ubyte
-
 struct LobbyChatUpdate_t:
     m_ulSteamIDLobby: ulong
     m_ulSteamIDUserChanged: ulong
     m_ulSteamIDMakingChange: ulong
     m_rgfChatMemberStateChange: uint
-
 struct LobbyChatMsg_t:
     m_ulSteamIDLobby: ulong
     m_ulSteamIDUser: ulong
     m_eChatEntryType: ubyte
     m_iChatID: uint
-
 struct LobbyGameCreated_t:
     m_ulSteamIDLobby: ulong
     m_ulSteamIDGameServer: ulong
     m_unIP: uint
     m_usPort: ushort
-
 struct LobbyMatchList_t:
     m_nLobbiesMatching: uint
-
 struct LobbyKicked_t:
     m_ulSteamIDLobby: ulong
     m_ulSteamIDAdmin: ulong
     m_bKickedDueToDisconnect: ubyte
-
 struct LobbyCreated_t:
     m_eResult: EResult
     m_ulSteamIDLobby: ulong
-
 struct FavoritesListAccountsUpdated_t:
     m_eResult: EResult
-
 struct JoinPartyCallback_t:
     m_eResult: EResult
     m_ulBeaconID: ulong
     m_SteamIDBeaconOwner: ulong
     m_rgchConnectString: array[char, 256]
-
 struct CreateBeaconCallback_t:
     m_eResult: EResult
     m_ulBeaconID: ulong
-
 struct ReservationNotificationCallback_t:
     m_ulBeaconID: ulong
     m_steamIDJoiner: ulong
-
 struct ChangeNumOpenSlotsCallback_t:
     m_eResult: EResult
-
 struct AvailableBeaconLocationsUpdated_t:
     _mt_dummy: char
-
 struct ActiveBeaconsUpdated_t:
     _mt_dummy: char
-
 struct RemoteStorageFileShareResult_t:
     m_eResult: EResult
     m_hFile: ulong
     m_rgchFilename: array[char, 260]
-
 struct RemoteStoragePublishFileResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_bUserNeedsToAcceptWorkshopLegalAgreement: bool
-
 struct RemoteStorageDeletePublishedFileResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
-
 struct RemoteStorageEnumerateUserPublishedFilesResult_t:
     m_eResult: EResult
     m_nResultsReturned: int
     m_nTotalResultCount: int
     m_rgPublishedFileId: array[PublishedFileId_t, 50]
-
 struct RemoteStorageSubscribePublishedFileResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
-
 struct RemoteStorageEnumerateUserSubscribedFilesResult_t:
     m_eResult: EResult
     m_nResultsReturned: int
     m_nTotalResultCount: int
     m_rgPublishedFileId: array[PublishedFileId_t, 50]
     m_rgRTimeSubscribed: array[uint32, 50]
-
 struct RemoteStorageUnsubscribePublishedFileResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
-
 struct RemoteStorageUpdatePublishedFileResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_bUserNeedsToAcceptWorkshopLegalAgreement: bool
-
 struct RemoteStorageDownloadUGCResult_t:
     m_eResult: EResult
     m_hFile: ulong
@@ -3036,7 +2822,6 @@ struct RemoteStorageDownloadUGCResult_t:
     m_nSizeInBytes: int
     m_pchFileName: array[char, 260]
     m_ulSteamIDOwner: ulong
-
 struct RemoteStorageGetPublishedFileDetailsResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
@@ -3059,7 +2844,6 @@ struct RemoteStorageGetPublishedFileDetailsResult_t:
     m_rgchURL: array[char, 256]
     m_eFileType: EWorkshopFileType
     m_bAcceptedForUse: bool
-
 struct RemoteStorageEnumerateWorkshopFilesResult_t:
     m_eResult: EResult
     m_nResultsReturned: int
@@ -3068,7 +2852,6 @@ struct RemoteStorageEnumerateWorkshopFilesResult_t:
     m_rgScore: array[float, 50]
     m_nAppId: uint
     m_unStartIndex: uint
-
 struct RemoteStorageGetPublishedItemVoteDetailsResult_t:
     m_eResult: EResult
     m_unPublishedFileId: ulong
@@ -3076,39 +2859,31 @@ struct RemoteStorageGetPublishedItemVoteDetailsResult_t:
     m_nVotesAgainst: int
     m_nReports: int
     m_fScore: float
-
 struct RemoteStoragePublishedFileSubscribed_t:
     m_nPublishedFileId: ulong
     m_nAppID: uint
-
 struct RemoteStoragePublishedFileUnsubscribed_t:
     m_nPublishedFileId: ulong
     m_nAppID: uint
-
 struct RemoteStoragePublishedFileDeleted_t:
     m_nPublishedFileId: ulong
     m_nAppID: uint
-
 struct RemoteStorageUpdateUserPublishedItemVoteResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
-
 struct RemoteStorageUserVoteDetails_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_eVote: EWorkshopVote
-
 struct RemoteStorageEnumerateUserSharedWorkshopFilesResult_t:
     m_eResult: EResult
     m_nResultsReturned: int
     m_nTotalResultCount: int
     m_rgPublishedFileId: array[PublishedFileId_t, 50]
-
 struct RemoteStorageSetUserPublishedFileActionResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_eAction: EWorkshopFileAction
-
 struct RemoteStorageEnumeratePublishedFilesByUserActionResult_t:
     m_eResult: EResult
     m_eAction: EWorkshopFileAction
@@ -3116,53 +2891,42 @@ struct RemoteStorageEnumeratePublishedFilesByUserActionResult_t:
     m_nTotalResultCount: int
     m_rgPublishedFileId: array[PublishedFileId_t, 50]
     m_rgRTimeUpdated: array[uint32, 50]
-
 struct RemoteStoragePublishFileProgress_t:
     m_dPercentFile: double
     m_bPreview: bool
-
 struct RemoteStoragePublishedFileUpdated_t:
     m_nPublishedFileId: ulong
     m_nAppID: uint
     m_ulUnused: ulong
-
 struct RemoteStorageFileWriteAsyncComplete_t:
     m_eResult: EResult
-
 struct RemoteStorageFileReadAsyncComplete_t:
     m_hFileReadAsync: ulong
     m_eResult: EResult
     m_nOffset: uint
     m_cubRead: uint
-
 struct RemoteStorageLocalFileChange_t:
     _mt_dummy: char
-
 struct UserStatsReceived_t:
     m_nGameID: ulong
     m_eResult: EResult
     m_steamIDUser: ulong
-
 struct UserStatsStored_t:
     m_nGameID: ulong
     m_eResult: EResult
-
 struct UserAchievementStored_t:
     m_nGameID: ulong
     m_bGroupAchievement: bool
     m_rgchAchievementName: array[char, 128]
     m_nCurProgress: uint
     m_nMaxProgress: uint
-
 struct LeaderboardFindResult_t:
     m_hSteamLeaderboard: ulong
     m_bLeaderboardFound: ubyte
-
 struct LeaderboardScoresDownloaded_t:
     m_hSteamLeaderboard: ulong
     m_hSteamLeaderboardEntries: ulong
     m_cEntryCount: int
-
 struct LeaderboardScoreUploaded_t:
     m_bSuccess: ubyte
     m_hSteamLeaderboard: ulong
@@ -3170,105 +2934,81 @@ struct LeaderboardScoreUploaded_t:
     m_bScoreChanged: ubyte
     m_nGlobalRankNew: int
     m_nGlobalRankPrevious: int
-
 struct NumberOfCurrentPlayers_t:
     m_bSuccess: ubyte
     m_cPlayers: int
-
 struct UserStatsUnloaded_t:
     m_steamIDUser: ulong
-
 struct UserAchievementIconFetched_t:
     m_nGameID: ulong
     m_rgchAchievementName: array[char, 128]
     m_bAchieved: bool
     m_nIconHandle: int
-
 struct GlobalAchievementPercentagesReady_t:
     m_nGameID: ulong
     m_eResult: EResult
-
 struct LeaderboardUGCSet_t:
     m_eResult: EResult
     m_hSteamLeaderboard: ulong
-
 struct GlobalStatsReceived_t:
     m_nGameID: ulong
     m_eResult: EResult
-
 struct DlcInstalled_t:
     m_nAppID: uint
-
 struct NewUrlLaunchParameters_t:
     _mt_dummy: char
-
 struct AppProofOfPurchaseKeyResponse_t:
     m_eResult: EResult
     m_nAppID: uint
     m_cchKeyLength: uint
     m_rgchKey: array[char, 240]
-
 struct FileDetailsResult_t:
     m_eResult: EResult
     m_ulFileSize: ulong
     m_FileSHA: array[uint8, 20]
     m_unFlags: uint
-
 struct TimedTrialStatus_t:
     m_unAppID: uint
     m_bIsOffline: bool
     m_unSecondsAllowed: uint
     m_unSecondsPlayed: uint
-
 struct P2PSessionRequest_t:
     m_steamIDRemote: ulong
-
 struct P2PSessionConnectFail_t:
     m_steamIDRemote: ulong
     m_eP2PSessionError: ubyte
-
 struct SocketStatusCallback_t:
     m_hSocket: uint
     m_hListenSocket: uint
     m_steamIDRemote: ulong
     m_eSNetSocketState: int
-
 struct ScreenshotReady_t:
     m_hLocal: uint
     m_eResult: EResult
-
 struct ScreenshotRequested_t:
     _mt_dummy: char
-
 struct PlaybackStatusHasChanged_t:
     _mt_dummy: char
-
 struct VolumeHasChanged_t:
     m_flNewVolume: float
-
 struct HTTPRequestCompleted_t:
     m_hRequest: uint
     m_ulContextValue: ulong
     m_bRequestSuccessful: bool
     m_eStatusCode: EHTTPStatusCode
     m_unBodySize: uint
-
 struct HTTPRequestHeadersReceived_t:
     m_hRequest: uint
     m_ulContextValue: ulong
-
 struct HTTPRequestDataReceived_t:
     m_hRequest: uint
     m_ulContextValue: ulong
     m_cOffset: uint
     m_cBytesReceived: uint
-
 struct SteamInputDeviceConnected_t:
     m_ulConnectedDeviceHandle: ulong
-
 struct SteamInputDeviceDisconnected_t:
     m_ulDisconnectedDeviceHandle: ulong
-
 struct SteamInputConfigurationLoaded_t:
     m_unAppID: uint
     m_ulDeviceHandle: ulong
@@ -3277,14 +3017,12 @@ struct SteamInputConfigurationLoaded_t:
     m_unMinorRevision: uint
     m_bUsesSteamInputAPI: bool
     m_bUsesGamepadAPI: bool
-
 struct SteamInputGamepadSlotChange_t:
     m_unAppID: uint
     m_ulDeviceHandle: ulong
     m_eDeviceType: ESteamInputType
     m_nOldGamepadSlot: int
     m_nNewGamepadSlot: int
-
 struct SteamUGCQueryCompleted_t:
     m_handle: ulong
     m_eResult: EResult
@@ -3292,89 +3030,71 @@ struct SteamUGCQueryCompleted_t:
     m_unTotalMatchingResults: uint
     m_bCachedData: bool
     m_rgchNextCursor: array[char, 256]
-
 struct SteamUGCRequestUGCDetailsResult_t:
     m_details: SteamUGCDetails_t
     m_bCachedData: bool
-
 struct CreateItemResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_bUserNeedsToAcceptWorkshopLegalAgreement: bool
-
 struct SubmitItemUpdateResult_t:
     m_eResult: EResult
     m_bUserNeedsToAcceptWorkshopLegalAgreement: bool
     m_nPublishedFileId: ulong
-
 struct ItemInstalled_t:
     m_unAppID: uint
     m_nPublishedFileId: ulong
     m_hLegacyContent: ulong
     m_unManifestID: ulong
-
 struct DownloadItemResult_t:
     m_unAppID: uint
     m_nPublishedFileId: ulong
     m_eResult: EResult
-
 struct UserFavoriteItemsListChanged_t:
     m_nPublishedFileId: ulong
     m_eResult: EResult
     m_bWasAddRequest: bool
-
 struct SetUserItemVoteResult_t:
     m_nPublishedFileId: ulong
     m_eResult: EResult
     m_bVoteUp: bool
-
 struct GetUserItemVoteResult_t:
     m_nPublishedFileId: ulong
     m_eResult: EResult
     m_bVotedUp: bool
     m_bVotedDown: bool
     m_bVoteSkipped: bool
-
 struct StartPlaytimeTrackingResult_t:
     m_eResult: EResult
-
 struct StopPlaytimeTrackingResult_t:
     m_eResult: EResult
-
 struct AddUGCDependencyResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_nChildPublishedFileId: ulong
-
 struct RemoveUGCDependencyResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_nChildPublishedFileId: ulong
-
 struct AddAppDependencyResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_nAppID: uint
-
 struct RemoveAppDependencyResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_nAppID: uint
-
 struct GetAppDependenciesResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
     m_rgAppIDs: array[AppId_t, 32]
     m_nNumAppDependencies: uint
     m_nTotalNumAppDependencies: uint
-
 struct DeleteItemResult_t:
     m_eResult: EResult
     m_nPublishedFileId: ulong
-
 struct UserSubscribedItemsListChanged_t:
     m_nAppID: uint
-
 struct WorkshopEULAStatus_t:
     m_eResult: EResult
     m_nAppID: uint
@@ -3382,10 +3102,8 @@ struct WorkshopEULAStatus_t:
     m_rtAction: uint
     m_bAccepted: bool
     m_bNeedsAction: bool
-
 struct HTML_BrowserReady_t:
     unBrowserHandle: uint
-
 struct HTML_NeedsPaint_t:
     unBrowserHandle: uint
     pBGRA: cstr
@@ -3399,17 +3117,14 @@ struct HTML_NeedsPaint_t:
     unScrollY: uint
     flPageScale: float
     unPageSerial: uint
-
 struct HTML_StartRequest_t:
     unBrowserHandle: uint
     pchURL: cstr
     pchTarget: cstr
     pchPostData: cstr
     bIsRedirect: bool
-
 struct HTML_CloseBrowser_t:
     unBrowserHandle: uint
-
 struct HTML_URLChanged_t:
     unBrowserHandle: uint
     pchURL: cstr
@@ -3417,30 +3132,24 @@ struct HTML_URLChanged_t:
     bIsRedirect: bool
     pchPageTitle: cstr
     bNewNavigation: bool
-
 struct HTML_FinishedRequest_t:
     unBrowserHandle: uint
     pchURL: cstr
     pchPageTitle: cstr
-
 struct HTML_OpenLinkInNewTab_t:
     unBrowserHandle: uint
     pchURL: cstr
-
 struct HTML_ChangedTitle_t:
     unBrowserHandle: uint
     pchTitle: cstr
-
 struct HTML_SearchResults_t:
     unBrowserHandle: uint
     unResults: uint
     unCurrentMatch: uint
-
 struct HTML_CanGoBackAndForward_t:
     unBrowserHandle: uint
     bCanGoBack: bool
     bCanGoForward: bool
-
 struct HTML_HorizontalScroll_t:
     unBrowserHandle: uint
     unScrollMax: uint
@@ -3448,7 +3157,6 @@ struct HTML_HorizontalScroll_t:
     flPageScale: float
     bVisible: bool
     unPageSize: uint
-
 struct HTML_VerticalScroll_t:
     unBrowserHandle: uint
     unScrollMax: uint
@@ -3456,7 +3164,6 @@ struct HTML_VerticalScroll_t:
     flPageScale: float
     bVisible: bool
     unPageSize: uint
-
 struct HTML_LinkAtPosition_t:
     unBrowserHandle: uint
     x: uint
@@ -3464,20 +3171,16 @@ struct HTML_LinkAtPosition_t:
     pchURL: cstr
     bInput: bool
     bLiveLink: bool
-
 struct HTML_JSAlert_t:
     unBrowserHandle: uint
     pchMessage: cstr
-
 struct HTML_JSConfirm_t:
     unBrowserHandle: uint
     pchMessage: cstr
-
 struct HTML_FileOpenDialog_t:
     unBrowserHandle: uint
     pchTitle: cstr
     pchInitialFile: cstr
-
 struct HTML_NewWindow_t:
     unBrowserHandle: uint
     pchURL: cstr
@@ -3486,154 +3189,118 @@ struct HTML_NewWindow_t:
     unWide: uint
     unTall: uint
     unNewWindow_BrowserHandle_IGNORE: uint
-
 struct HTML_SetCursor_t:
     unBrowserHandle: uint
     eMouseCursor: uint
-
 struct HTML_StatusText_t:
     unBrowserHandle: uint
     pchMsg: cstr
-
 struct HTML_ShowToolTip_t:
     unBrowserHandle: uint
     pchMsg: cstr
-
 struct HTML_UpdateToolTip_t:
     unBrowserHandle: uint
     pchMsg: cstr
-
 struct HTML_HideToolTip_t:
     unBrowserHandle: uint
-
 struct HTML_BrowserRestarted_t:
     unBrowserHandle: uint
     unOldBrowserHandle: uint
-
 struct SteamInventoryResultReady_t:
     m_handle: int
     m_result: EResult
-
 struct SteamInventoryFullUpdate_t:
     m_handle: int
-
 struct SteamInventoryDefinitionUpdate_t:
     _mt_dummy: char
-
 struct SteamInventoryEligiblePromoItemDefIDs_t:
     m_result: EResult
     m_steamID: ulong
     m_numEligiblePromoItemDefs: int
     m_bCachedData: bool
-
 struct SteamInventoryStartPurchaseResult_t:
     m_result: EResult
     m_ulOrderID: ulong
     m_ulTransID: ulong
-
 struct SteamInventoryRequestPricesResult_t:
     m_result: EResult
     m_rgchCurrency: array[char, 4]
-
 struct SteamTimelineGamePhaseRecordingExists_t:
     m_rgchPhaseID: array[char, 64]
     m_ulRecordingMS: ulong
     m_ulLongestClipMS: ulong
     m_unClipCount: uint
     m_unScreenshotCount: uint
-
 struct SteamTimelineEventRecordingExists_t:
     m_ulEventID: ulong
     m_bRecordingExists: bool
-
 struct GetVideoURLResult_t:
     m_eResult: EResult
     m_unVideoAppID: uint
     m_rgchURL: array[char, 256]
-
 struct GetOPFSettingsResult_t:
     m_eResult: EResult
     m_unVideoAppID: uint
-
 struct BroadcastUploadStart_t:
     m_bIsRTMP: bool
-
 struct BroadcastUploadStop_t:
     m_eResult: EBroadcastUploadResult
-
 struct SteamParentalSettingsChanged_t:
     _mt_dummy: char
-
 struct SteamRemotePlaySessionConnected_t:
     m_unSessionID: uint
-
 struct SteamRemotePlaySessionDisconnected_t:
     m_unSessionID: uint
-
 struct SteamRemotePlayTogetherGuestInvite_t:
     m_szConnectURL: array[char, 1024]
-
 struct SteamRemotePlaySessionAvatarLoaded_t:
     m_unSessionID: uint
     m_iImage: int
     m_iWide: int
     m_iTall: int
-
 struct SteamNetworkingMessagesSessionRequest_t:
     m_identityRemote: SteamNetworkingIdentity
-
 struct SteamNetworkingMessagesSessionFailed_t:
     m_info: SteamNetConnectionInfo_t
-
 struct SteamNetConnectionStatusChangedCallback_t:
     m_hConn: uint
     m_info: SteamNetConnectionInfo_t
     m_eOldState: ESteamNetworkingConnectionState
-
 struct SteamNetAuthenticationStatus_t:
     m_eAvail: ESteamNetworkingAvailability
     m_debugMsg: array[char, 256]
-
 struct SteamRelayNetworkStatus_t:
     m_eAvail: ESteamNetworkingAvailability
     m_bPingMeasurementInProgress: int
     m_eAvailNetworkConfig: ESteamNetworkingAvailability
     m_eAvailAnyRelay: ESteamNetworkingAvailability
     m_debugMsg: array[char, 256]
-
 struct GSClientApprove_t:
     m_SteamID: ulong
     m_OwnerSteamID: ulong
-
 struct GSClientDeny_t:
     m_SteamID: ulong
     m_eDenyReason: EDenyReason
     m_rgchOptionalText: array[char, 128]
-
 struct GSClientKick_t:
     m_SteamID: ulong
     m_eDenyReason: EDenyReason
-
 struct GSClientAchievementStatus_t:
     m_SteamID: ulong
     m_pchAchievement: array[char, 128]
     m_bUnlocked: bool
-
 struct GSPolicyResponse_t:
     m_bSecure: ubyte
-
 struct GSGameplayStats_t:
     m_eResult: EResult
     m_nRank: int
     m_unTotalConnects: uint
     m_unTotalMinutesPlayed: uint
-
 struct GSClientGroupStatus_t:
     m_SteamIDUser: ulong
     m_SteamIDGroup: ulong
     m_bMember: bool
     m_bOfficer: bool
-
 struct GSReputation_t:
     m_eResult: EResult
     m_unReputationScore: uint
@@ -3642,47 +3309,37 @@ struct GSReputation_t:
     m_usBannedPort: ushort
     m_ulBannedGameID: ulong
     m_unBanExpires: uint
-
 struct AssociateWithClanResult_t:
     m_eResult: EResult
-
 struct ComputeNewPlayerCompatibilityResult_t:
     m_eResult: EResult
     m_cPlayersThatDontLikeCandidate: int
     m_cPlayersThatCandidateDoesntLike: int
     m_cClanPlayersThatDontLikeCandidate: int
     m_SteamIDCandidate: ulong
-
 struct GSStatsReceived_t:
     m_eResult: EResult
     m_steamIDUser: ulong
-
 struct GSStatsStored_t:
     m_eResult: EResult
     m_steamIDUser: ulong
-
 struct GSStatsUnloaded_t:
     m_steamIDUser: ulong
-
 struct SteamNetworkingFakeIPResult_t:
     m_eResult: EResult
     m_identity: SteamNetworkingIdentity
     m_unIP: uint
     m_unPorts: array[uint16, 8]
-
 struct SteamInputActionEvent_t_AnalogAction_t:
     actionHandle: ulong
     analogActionData: InputAnalogActionData_t
-
 struct SteamInputActionEvent_t_DigitalAction_t:
     actionHandle: ulong
     digitalActionData: InputDigitalActionData_t
-
 struct SteamInputActionEvent_t:
     controllerHandle: ulong
     eEventType: ESteamInputActionEventType
     anonymous_union_2: SteamInputActionEvent_t_anonymous_union_2
-
 type PFNPreMinidumpCallback = fn(arg0: ptr[void]) -> void
 type SteamInputActionEventCallbackPointer = fn(arg0: ptr[SteamInputActionEvent_t]) -> void
 type FnSteamNetConnectionStatusChanged = fn(arg0: ptr[SteamNetConnectionStatusChangedCallback_t]) -> void
@@ -3693,9 +3350,7 @@ type FnSteamNetworkingMessagesSessionFailed = fn(arg0: ptr[SteamNetworkingMessag
 type FnSteamNetworkingFakeIPResult = fn(arg0: ptr[SteamNetworkingFakeIPResult_t]) -> void
 type FSteamNetworkingSocketsDebugOutput = fn(arg0: ESteamNetworkingSocketsDebugOutputType, arg1: cstr) -> void
 type SteamAPIWarningMessageHook_t = fn(arg0: int, arg1: cstr) -> void
-
 const k_flMaxTimelineEventDuration: float = 600.0
-
 external function SteamAPI_InitFlat(pOutErrMsg: ptr[SteamErrMsg]) -> ESteamAPIInitResult
 external function SteamAPI_Shutdown() -> void
 external function SteamAPI_RestartAppIfNecessary(unOwnAppID: uint) -> bool

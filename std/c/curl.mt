@@ -3,22 +3,18 @@ external
 
 link "curl"
 include "curl/curl.h"
-
 struct curl_fileinfo_strings:
     time: ptr[char]
     perm: ptr[char]
     user: ptr[char]
     group: ptr[char]
     target: ptr[char]
-
 union CURLMsg_data:
     whatever: ptr[void]
     result: CURLcode
-
 struct sockaddr = c"struct sockaddr":
     sa_family: ushort
     sa_data: array[char, 14]
-
 struct curl_header = c"struct curl_header":
     name: ptr[char]
     value: ptr[char]
@@ -26,20 +22,17 @@ struct curl_header = c"struct curl_header":
     index: ptr_uint
     origin: uint
     anchor: ptr[void]
-
 struct curl_ws_frame = c"struct curl_ws_frame":
     age: int
     flags_: int
     offset: ptr_int
     bytesleft: ptr_int
     len: ptr_uint
-
 opaque va_list = c"va_list"
 type curl_off_t = ptr_int
 type CURL = void
 type CURLSH = void
 type curl_socket_t = int
-
 enum curl_sslbackend: int
     CURLSSLBACKEND_NONE = 0
     CURLSSLBACKEND_OPENSSL = 1
@@ -56,7 +49,6 @@ enum curl_sslbackend: int
     CURLSSLBACKEND_MESALINK = 12
     CURLSSLBACKEND_BEARSSL = 13
     CURLSSLBACKEND_RUSTLS = 14
-
 struct curl_httppost = c"struct curl_httppost":
     next: ptr[curl_httppost]
     name: ptr[char]
@@ -72,12 +64,10 @@ struct curl_httppost = c"struct curl_httppost":
     showfilename: ptr[char]
     userp: ptr[void]
     contentlen: ptr_int
-
 type curl_progress_callback = fn(arg0: ptr[void], arg1: double, arg2: double, arg3: double, arg4: double) -> int
 type curl_xferinfo_callback = fn(arg0: ptr[void], arg1: curl_off_t, arg2: curl_off_t, arg3: curl_off_t, arg4: curl_off_t) -> int
 type curl_write_callback = fn(arg0: ptr[char], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint
 type curl_resolver_start_callback = fn(arg0: ptr[void], arg1: ptr[void], arg2: ptr[void]) -> int
-
 enum curlfiletype: int
     CURLFILETYPE_FILE = 0
     CURLFILETYPE_DIRECTORY = 1
@@ -88,7 +78,6 @@ enum curlfiletype: int
     CURLFILETYPE_SOCKET = 6
     CURLFILETYPE_DOOR = 7
     CURLFILETYPE_UNKNOWN = 8
-
 struct curl_fileinfo = c"struct curl_fileinfo":
     filename: ptr[char]
     filetype: int
@@ -103,28 +92,24 @@ struct curl_fileinfo = c"struct curl_fileinfo":
     b_data: ptr[char]
     b_size: ptr_uint
     b_used: ptr_uint
-
 type curl_chunk_bgn_callback = fn(arg0: const_ptr[void], arg1: ptr[void], arg2: int) -> ptr_int
 type curl_chunk_end_callback = fn(arg0: ptr[void]) -> ptr_int
 type curl_fnmatch_callback = fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> int
 type curl_seek_callback = fn(arg0: ptr[void], arg1: curl_off_t, arg2: int) -> int
 type curl_read_callback = fn(arg0: ptr[char], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint
 type curl_trailer_callback = fn(arg0: ptr[ptr[curl_slist]], arg1: ptr[void]) -> int
-
 struct curl_sockaddr = c"struct curl_sockaddr":
     family: int
     socktype: int
     protocol: int
     addrlen: uint
     addr: sockaddr
-
 type curl_closesocket_callback = fn(arg0: ptr[void], arg1: curl_socket_t) -> int
 type curl_malloc_callback = fn(arg0: ptr_uint) -> ptr[void]
 type curl_free_callback = fn(arg0: ptr[void]) -> void
 type curl_realloc_callback = fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void]
 type curl_strdup_callback = fn(arg0: cstr) -> ptr[char]
 type curl_calloc_callback = fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void]
-
 enum curl_infotype: int
     CURLINFO_TEXT = 0
     CURLINFO_HEADER_IN = 1
@@ -134,10 +119,8 @@ enum curl_infotype: int
     CURLINFO_SSL_DATA_IN = 5
     CURLINFO_SSL_DATA_OUT = 6
     CURLINFO_END = 7
-
 type curl_debug_callback = fn(arg0: ptr[CURL], arg1: curl_infotype, arg2: ptr[char], arg3: ptr_uint, arg4: ptr[void]) -> int
 type curl_prereq_callback = fn(arg0: ptr[void], arg1: ptr[char], arg2: ptr[char], arg3: int, arg4: int) -> int
-
 enum CURLcode: int
     CURLE_OK = 0
     CURLE_UNSUPPORTED_PROTOCOL = 1
@@ -242,7 +225,6 @@ enum CURLcode: int
     CURLE_TOO_LARGE = 100
     CURLE_ECH_REQUIRED = 101
     CURL_LAST = 102
-
 enum CURLproxycode: int
     CURLPX_OK = 0
     CURLPX_BAD_ADDRESS_TYPE = 1
@@ -279,13 +261,10 @@ enum CURLproxycode: int
     CURLPX_UNKNOWN_MODE = 32
     CURLPX_USER_REJECTED = 33
     CURLPX_LAST = 34
-
 type curl_conv_callback = fn(arg0: ptr[char], arg1: ptr_uint) -> CURLcode
 type curl_ssl_ctx_callback = fn(arg0: ptr[CURL], arg1: ptr[void], arg2: ptr[void]) -> CURLcode
-
 flags curl_proxytype: int
     CURLPROXY_LAST = 8
-
 enum curl_khtype: int
     CURLKHTYPE_UNKNOWN = 0
     CURLKHTYPE_RSA1 = 1
@@ -293,12 +272,10 @@ enum curl_khtype: int
     CURLKHTYPE_DSS = 3
     CURLKHTYPE_ECDSA = 4
     CURLKHTYPE_ED25519 = 5
-
 struct curl_khkey = c"struct curl_khkey":
     key: cstr
     len: ptr_uint
     keytype: curl_khtype
-
 enum curl_khstat: int
     CURLKHSTAT_FINE_ADD_TO_FILE = 0
     CURLKHSTAT_FINE = 1
@@ -306,49 +283,37 @@ enum curl_khstat: int
     CURLKHSTAT_DEFER = 3
     CURLKHSTAT_FINE_REPLACE = 4
     CURLKHSTAT_LAST = 5
-
 enum curl_khmatch: int
     CURLKHMATCH_OK = 0
     CURLKHMATCH_MISMATCH = 1
     CURLKHMATCH_MISSING = 2
     CURLKHMATCH_LAST = 3
-
 type curl_sshkeycallback = fn(arg0: ptr[CURL], arg1: const_ptr[curl_khkey], arg2: const_ptr[curl_khkey], arg3: curl_khmatch, arg4: ptr[void]) -> int
 type curl_sshhostkeycallback = fn(arg0: ptr[void], arg1: int, arg2: cstr, arg3: ptr_uint) -> int
-
 flags curl_usessl: int
     CURLUSESSL_LAST = 4
-
 enum curl_ftpccc: int
     CURLFTPSSL_CCC_LAST = 3
-
 enum curl_ftpauth: int
     CURLFTPAUTH_LAST = 3
-
 enum curl_ftpcreatedir: int
     CURLFTP_CREATE_DIR_LAST = 3
-
 flags curl_ftpmethod: int
     CURLFTPMETHOD_LAST = 4
-
 struct curl_hstsentry = c"struct curl_hstsentry":
     name: ptr[char]
     namelen: ptr_uint
     includeSubDomains: uint
     expire: array[char, 18]
-
 struct curl_index = c"struct curl_index":
     index: ptr_uint
     total: ptr_uint
-
 flags CURLSTScode: int
     CURLSTS_OK = 0
     CURLSTS_DONE = 1
     CURLSTS_FAIL = 2
-
 type curl_hstsread_callback = fn(arg0: ptr[CURL], arg1: ptr[curl_hstsentry], arg2: ptr[void]) -> CURLSTScode
 type curl_hstswrite_callback = fn(arg0: ptr[CURL], arg1: ptr[curl_hstsentry], arg2: ptr[curl_index], arg3: ptr[void]) -> CURLSTScode
-
 enum CURLoption: int
     CURLOPT_WRITEDATA = 10001
     CURLOPT_URL = 10002
@@ -659,22 +624,16 @@ enum CURLoption: int
     CURLOPT_UPLOAD_FLAGS = 327
     CURLOPT_SSL_SIGNATURE_ALGORITHMS = 10328
     CURLOPT_LASTENTRY = 10329
-
 enum CURL_NETRC_OPTION: int
     CURL_NETRC_LAST = 3
-
 flags CURL_TLSAUTH: int
     CURL_TLSAUTH_LAST = 2
-
 flags curl_TimeCond: int
     CURL_TIMECOND_LAST = 4
-
 external function curl_strequal(s1: cstr, s2: cstr) -> int
 external function curl_strnequal(s1: cstr, s2: cstr, n: ptr_uint) -> int
-
 opaque curl_mime = c"curl_mime"
 opaque curl_mimepart = c"curl_mimepart"
-
 external function curl_mime_init(easy: ptr[CURL]) -> ptr[curl_mime]
 external function curl_mime_free(mime: ptr[curl_mime]) -> void
 external function curl_mime_addpart(mime: ptr[curl_mime]) -> ptr[curl_mimepart]
@@ -687,7 +646,6 @@ external function curl_mime_filedata(part: ptr[curl_mimepart], filename: cstr) -
 external function curl_mime_data_cb(part: ptr[curl_mimepart], datasize: ptr_int, readfunc: fn(arg0: ptr[char], arg1: ptr_uint, arg2: ptr_uint, arg3: ptr[void]) -> ptr_uint, seekfunc: fn(arg0: ptr[void], arg1: curl_off_t, arg2: int) -> int, freefunc: fn(arg0: ptr[void]) -> void, arg: ptr[void]) -> CURLcode
 external function curl_mime_subparts(part: ptr[curl_mimepart], subparts: ptr[curl_mime]) -> CURLcode
 external function curl_mime_headers(part: ptr[curl_mimepart], headers: ptr[curl_slist], take_ownership: int) -> CURLcode
-
 enum CURLformoption: int
     CURLFORM_NOTHING = 0
     CURLFORM_COPYNAME = 1
@@ -711,11 +669,9 @@ enum CURLformoption: int
     CURLFORM_STREAM = 19
     CURLFORM_CONTENTLEN = 20
     CURLFORM_LASTENTRY = 21
-
 struct curl_forms = c"struct curl_forms":
     option: CURLformoption
     value: cstr
-
 enum CURLFORMcode: int
     CURL_FORMADD_OK = 0
     CURL_FORMADD_MEMORY = 1
@@ -726,11 +682,8 @@ enum CURLFORMcode: int
     CURL_FORMADD_ILLEGAL_ARRAY = 6
     CURL_FORMADD_DISABLED = 7
     CURL_FORMADD_LAST = 8
-
 external function curl_formadd(httppost: ptr[ptr[curl_httppost]], last_post: ptr[ptr[curl_httppost]], ...) -> CURLFORMcode
-
 type curl_formget_callback = fn(arg0: ptr[void], arg1: cstr, arg2: ptr_uint) -> ptr_uint
-
 external function curl_formget(form: ptr[curl_httppost], arg: ptr[void], append: fn(arg0: ptr[void], arg1: cstr, arg2: ptr_uint) -> ptr_uint) -> int
 external function curl_formfree(form: ptr[curl_httppost]) -> void
 external function curl_getenv(variable: cstr) -> ptr[char]
@@ -744,33 +697,26 @@ external function curl_global_init(flags_: ptr_int) -> CURLcode
 external function curl_global_init_mem(flags_: ptr_int, m: fn(arg0: ptr_uint) -> ptr[void], f: fn(arg0: ptr[void]) -> void, r: fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void], s: fn(arg0: cstr) -> ptr[char], c: fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void]) -> CURLcode
 external function curl_global_cleanup() -> void
 external function curl_global_trace(config: cstr) -> CURLcode
-
 struct curl_slist = c"struct curl_slist":
     data: ptr[char]
     next: ptr[curl_slist]
-
 struct curl_ssl_backend:
     id: curl_sslbackend
     name: cstr
-
 enum CURLsslset: int
     CURLSSLSET_OK = 0
     CURLSSLSET_UNKNOWN_BACKEND = 1
     CURLSSLSET_TOO_LATE = 2
     CURLSSLSET_NO_BACKENDS = 3
-
 external function curl_global_sslset(id: curl_sslbackend, name: cstr, avail: ptr[ptr[const_ptr[curl_ssl_backend]]]) -> CURLsslset
 external function curl_slist_append(list: ptr[curl_slist], data: cstr) -> ptr[curl_slist]
 external function curl_slist_free_all(list: ptr[curl_slist]) -> void
-
 struct curl_certinfo = c"struct curl_certinfo":
     num_of_certs: int
     certinfo: ptr[ptr[curl_slist]]
-
 struct curl_tlssessioninfo = c"struct curl_tlssessioninfo":
     backend: curl_sslbackend
     internals: ptr[void]
-
 enum CURLINFO: int
     CURLINFO_NONE = 0
     CURLINFO_EFFECTIVE_URL = 1048577
@@ -852,7 +798,6 @@ enum CURLINFO: int
     CURLINFO_PROXYAUTH_USED = 2097222
     CURLINFO_SIZE_DELIVERED = 6291527
     CURLINFO_LASTONE = 71
-
 enum curl_closepolicy: int
     CURLCLOSEPOLICY_NONE = 0
     CURLCLOSEPOLICY_OLDEST = 1
@@ -861,7 +806,6 @@ enum curl_closepolicy: int
     CURLCLOSEPOLICY_SLOWEST = 4
     CURLCLOSEPOLICY_CALLBACK = 5
     CURLCLOSEPOLICY_LAST = 6
-
 enum curl_lock_data: int
     CURL_LOCK_DATA_NONE = 0
     CURL_LOCK_DATA_SHARE = 1
@@ -872,16 +816,13 @@ enum curl_lock_data: int
     CURL_LOCK_DATA_PSL = 6
     CURL_LOCK_DATA_HSTS = 7
     CURL_LOCK_DATA_LAST = 8
-
 enum curl_lock_access: int
     CURL_LOCK_ACCESS_NONE = 0
     CURL_LOCK_ACCESS_SHARED = 1
     CURL_LOCK_ACCESS_SINGLE = 2
     CURL_LOCK_ACCESS_LAST = 3
-
 type curl_lock_function = fn(arg0: ptr[CURL], arg1: curl_lock_data, arg2: curl_lock_access, arg3: ptr[void]) -> void
 type curl_unlock_function = fn(arg0: ptr[CURL], arg1: curl_lock_data, arg2: ptr[void]) -> void
-
 enum CURLSHcode: int
     CURLSHE_OK = 0
     CURLSHE_BAD_OPTION = 1
@@ -890,7 +831,6 @@ enum CURLSHcode: int
     CURLSHE_NOMEM = 4
     CURLSHE_NOT_BUILT_IN = 5
     CURLSHE_LAST = 6
-
 enum CURLSHoption: int
     CURLSHOPT_NONE = 0
     CURLSHOPT_SHARE = 1
@@ -899,11 +839,9 @@ enum CURLSHoption: int
     CURLSHOPT_UNLOCKFUNC = 4
     CURLSHOPT_USERDATA = 5
     CURLSHOPT_LAST = 6
-
 external function curl_share_init() -> ptr[CURLSH]
 external function curl_share_setopt(sh: ptr[CURLSH], option: CURLSHoption, ...) -> CURLSHcode
 external function curl_share_cleanup(sh: ptr[CURLSH]) -> CURLSHcode
-
 enum CURLversion: int
     CURLVERSION_FIRST = 0
     CURLVERSION_SECOND = 1
@@ -918,7 +856,6 @@ enum CURLversion: int
     CURLVERSION_ELEVENTH = 10
     CURLVERSION_TWELFTH = 11
     CURLVERSION_LAST = 12
-
 struct curl_version_info_data:
     age: CURLversion
     version: cstr
@@ -947,15 +884,12 @@ struct curl_version_info_data:
     gsasl_version: cstr
     feature_names: const_ptr[cstr]
     rtmp_version: cstr
-
 external function curl_version_info(stamp: CURLversion) -> ptr[curl_version_info_data]
 external function curl_easy_strerror(error: CURLcode) -> cstr
 external function curl_share_strerror(error: CURLSHcode) -> cstr
 external function curl_easy_pause(curl: ptr[CURL], action: int) -> CURLcode
 external function curl_easy_ssls_import(curl: ptr[CURL], session_key: cstr, shmac: const_ptr[ubyte], shmac_len: ptr_uint, sdata: const_ptr[ubyte], sdata_len: ptr_uint) -> CURLcode
-
 type curl_ssls_export_cb = fn(arg0: ptr[CURL], arg1: ptr[void], arg2: cstr, arg3: const_ptr[ubyte], arg4: ptr_uint, arg5: const_ptr[ubyte], arg6: ptr_uint, arg7: curl_off_t, arg8: int, arg9: cstr, arg10: ptr_uint) -> CURLcode
-
 external function curl_easy_ssls_export(curl: ptr[CURL], export_fn: ptr[curl_ssls_export_cb], userptr: ptr[void]) -> CURLcode
 external function curl_easy_init() -> ptr[CURL]
 external function curl_easy_setopt(curl: ptr[CURL], option: CURLoption, ...) -> CURLcode
@@ -967,7 +901,6 @@ external function curl_easy_reset(curl: ptr[CURL]) -> void
 external function curl_easy_recv(curl: ptr[CURL], buffer: ptr[void], buflen: ptr_uint, n: ptr[ptr_uint]) -> CURLcode
 external function curl_easy_send(curl: ptr[CURL], buffer: const_ptr[void], buflen: ptr_uint, n: ptr[ptr_uint]) -> CURLcode
 external function curl_easy_upkeep(curl: ptr[CURL]) -> CURLcode
-
 enum CURLMcode: int
     CURLM_CALL_MULTI_PERFORM = -1
     CURLM_OK = 0
@@ -984,26 +917,20 @@ enum CURLMcode: int
     CURLM_ABORTED_BY_CALLBACK = 11
     CURLM_UNRECOVERABLE_POLL = 12
     CURLM_LAST = 13
-
 flags CURLMSG: int
     CURLMSG_NONE = 0
     CURLMSG_DONE = 1
     CURLMSG_LAST = 2
-
 struct CURLMsg:
     msg: CURLMSG
     easy_handle: ptr[CURL]
     data: CURLMsg_data
-
 struct curl_waitfd = c"struct curl_waitfd":
     fd: int
     events: short
     revents: short
-
 external function curl_multi_strerror(error: CURLMcode) -> cstr
-
 type curl_socket_callback = fn(arg0: ptr[CURL], arg1: curl_socket_t, arg2: int, arg3: ptr[void], arg4: ptr[void]) -> int
-
 enum CURLMoption: int
     CURLMOPT_SOCKETFUNCTION = 20001
     CURLMOPT_SOCKETDATA = 10002
@@ -1027,7 +954,6 @@ enum CURLMoption: int
     CURLMOPT_RESOLVE_THREADS_MAX = 20
     CURLMOPT_QUICK_EXIT = 21
     CURLMOPT_LASTENTRY = 22
-
 enum CURLMinfo_offt: int
     CURLMINFO_NONE = 0
     CURLMINFO_XFERS_CURRENT = 1
@@ -1036,14 +962,10 @@ enum CURLMinfo_offt: int
     CURLMINFO_XFERS_DONE = 4
     CURLMINFO_XFERS_ADDED = 5
     CURLMINFO_LASTENTRY = 6
-
 opaque curl_pushheaders = c"struct curl_pushheaders"
-
 external function curl_pushheader_bynum(h: ptr[curl_pushheaders], num: ptr_uint) -> ptr[char]
 external function curl_pushheader_byname(h: ptr[curl_pushheaders], name: cstr) -> ptr[char]
-
 type curl_push_callback = fn(arg0: ptr[CURL], arg1: ptr[CURL], arg2: ptr_uint, arg3: ptr[curl_pushheaders], arg4: ptr[void]) -> int
-
 enum CURLUPart: int
     CURLUPART_URL = 0
     CURLUPART_SCHEME = 1
@@ -1056,26 +978,21 @@ enum CURLUPart: int
     CURLUPART_QUERY = 8
     CURLUPART_FRAGMENT = 9
     CURLUPART_ZONEID = 10
-
 opaque CURLU = c"CURLU"
-
 external function curl_url() -> ptr[CURLU]
 external function curl_url_cleanup(u: ptr[CURLU]) -> void
 external function curl_url_dup(in_: const_ptr[CURLU]) -> ptr[CURLU]
 external function curl_url_get(u: const_ptr[CURLU], what: CURLUPart, part: ptr[ptr[char]], flags_: uint) -> int
 external function curl_url_set(u: ptr[CURLU], what: CURLUPart, part: cstr, flags_: uint) -> int
 external function curl_url_strerror(error: int) -> cstr
-
 struct curl_easyoption = c"struct curl_easyoption":
     name: cstr
     id: CURLoption
     type_: int
     flags_: uint
-
 external function curl_easy_option_by_name(name: cstr) -> const_ptr[curl_easyoption]
 external function curl_easy_option_by_id(id: CURLoption) -> const_ptr[curl_easyoption]
 external function curl_easy_option_next(prev: const_ptr[curl_easyoption]) -> const_ptr[curl_easyoption]
-
 enum CURLHcode: int
     CURLHE_OK = 0
     CURLHE_BADINDEX = 1
@@ -1085,7 +1002,6 @@ enum CURLHcode: int
     CURLHE_OUT_OF_MEMORY = 5
     CURLHE_BAD_ARGUMENT = 6
     CURLHE_NOT_BUILT_IN = 7
-
 external function curl_easy_header(curl: ptr[CURL], name: cstr, nameindex: ptr_uint, origin: uint, request: int, hout: ptr[ptr[curl_header]]) -> CURLHcode
 external function curl_easy_nextheader(curl: ptr[CURL], origin: uint, request: int, prev: ptr[curl_header]) -> ptr[curl_header]
 external function curl_ws_recv(curl: ptr[CURL], buffer: ptr[void], buflen: ptr_uint, recv: ptr[ptr_uint], metap: ptr[const_ptr[curl_ws_frame]]) -> CURLcode
@@ -1099,7 +1015,6 @@ external function curl_mvsprintf(buffer: ptr[char], format: cstr, args: va_list)
 external function curl_mvsnprintf(buffer: ptr[char], maxlength: ptr_uint, format: cstr, args: va_list) -> int
 external function curl_maprintf(format: cstr, ...) -> ptr[char]
 external function curl_mvaprintf(format: cstr, args: va_list) -> ptr[char]
-
 const CURL_SOCKET_BAD: int = -1
 const CURLFOLLOW_ALL: ptr_int = 1
 const CURLFOLLOW_OBEYCODE: ptr_int = 2

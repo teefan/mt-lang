@@ -3,7 +3,6 @@ external
 
 link "zstd"
 include "zstd.h"
-
 enum ZSTD_ErrorCode: int
     ZSTD_error_no_error = 0
     ZSTD_error_GENERIC = 1
@@ -41,7 +40,6 @@ enum ZSTD_ErrorCode: int
     ZSTD_error_sequenceProducer_failed = 106
     ZSTD_error_externalSequences_invalid = 107
     ZSTD_error_maxCode = 120
-
 external function ZSTD_getErrorString(code: ZSTD_ErrorCode) -> cstr
 external function ZSTD_versionNumber() -> uint
 external function ZSTD_versionString() -> cstr
@@ -57,19 +55,14 @@ external function ZSTD_getErrorName(result: ptr_uint) -> cstr
 external function ZSTD_minCLevel() -> int
 external function ZSTD_maxCLevel() -> int
 external function ZSTD_defaultCLevel() -> int
-
 opaque ZSTD_CCtx = c"ZSTD_CCtx"
-
 external function ZSTD_createCCtx() -> ptr[ZSTD_CCtx]
 external function ZSTD_freeCCtx(cctx: ptr[ZSTD_CCtx]) -> ptr_uint
 external function ZSTD_compressCCtx(cctx: ptr[ZSTD_CCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint, compressionLevel: int) -> ptr_uint
-
 opaque ZSTD_DCtx = c"ZSTD_DCtx"
-
 external function ZSTD_createDCtx() -> ptr[ZSTD_DCtx]
 external function ZSTD_freeDCtx(dctx: ptr[ZSTD_DCtx]) -> ptr_uint
 external function ZSTD_decompressDCtx(dctx: ptr[ZSTD_DCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint) -> ptr_uint
-
 enum ZSTD_strategy: int
     ZSTD_fast = 1
     ZSTD_dfast = 2
@@ -80,7 +73,6 @@ enum ZSTD_strategy: int
     ZSTD_btopt = 7
     ZSTD_btultra = 8
     ZSTD_btultra2 = 9
-
 enum ZSTD_cParameter: int
     ZSTD_c_compressionLevel = 100
     ZSTD_c_windowLog = 101
@@ -121,24 +113,19 @@ enum ZSTD_cParameter: int
     ZSTD_c_experimentalParam18 = 1015
     ZSTD_c_experimentalParam19 = 1016
     ZSTD_c_experimentalParam20 = 1017
-
 struct ZSTD_bounds:
     error: ptr_uint
     lowerBound: int
     upperBound: int
-
 external function ZSTD_cParam_getBounds(cParam: ZSTD_cParameter) -> ZSTD_bounds
 external function ZSTD_CCtx_setParameter(cctx: ptr[ZSTD_CCtx], param: ZSTD_cParameter, value: int) -> ptr_uint
 external function ZSTD_CCtx_setPledgedSrcSize(cctx: ptr[ZSTD_CCtx], pledgedSrcSize: ulong) -> ptr_uint
-
 enum ZSTD_ResetDirective: int
     ZSTD_reset_session_only = 1
     ZSTD_reset_parameters = 2
     ZSTD_reset_session_and_parameters = 3
-
 external function ZSTD_CCtx_reset(cctx: ptr[ZSTD_CCtx], reset: ZSTD_ResetDirective) -> ptr_uint
 external function ZSTD_compress2(cctx: ptr[ZSTD_CCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint) -> ptr_uint
-
 enum ZSTD_dParameter: int
     ZSTD_d_windowLogMax = 100
     ZSTD_d_experimentalParam1 = 1000
@@ -147,31 +134,24 @@ enum ZSTD_dParameter: int
     ZSTD_d_experimentalParam4 = 1003
     ZSTD_d_experimentalParam5 = 1004
     ZSTD_d_experimentalParam6 = 1005
-
 external function ZSTD_dParam_getBounds(dParam: ZSTD_dParameter) -> ZSTD_bounds
 external function ZSTD_DCtx_setParameter(dctx: ptr[ZSTD_DCtx], param: ZSTD_dParameter, value: int) -> ptr_uint
 external function ZSTD_DCtx_reset(dctx: ptr[ZSTD_DCtx], reset: ZSTD_ResetDirective) -> ptr_uint
-
 struct ZSTD_inBuffer:
     src: const_ptr[void]
     size: ptr_uint
     pos: ptr_uint
-
 struct ZSTD_outBuffer:
     dst: ptr[void]
     size: ptr_uint
     pos: ptr_uint
-
 type ZSTD_CStream = ZSTD_CCtx
-
 external function ZSTD_createCStream() -> ptr[ZSTD_CStream]
 external function ZSTD_freeCStream(zcs: ptr[ZSTD_CStream]) -> ptr_uint
-
 flags ZSTD_EndDirective: int
     ZSTD_e_continue = 0
     ZSTD_e_flush = 1
     ZSTD_e_end = 2
-
 external function ZSTD_compressStream2(cctx: ptr[ZSTD_CCtx], output: ptr[ZSTD_outBuffer], input: ptr[ZSTD_inBuffer], endOp: ZSTD_EndDirective) -> ptr_uint
 external function ZSTD_CStreamInSize() -> ptr_uint
 external function ZSTD_CStreamOutSize() -> ptr_uint
@@ -179,9 +159,7 @@ external function ZSTD_initCStream(zcs: ptr[ZSTD_CStream], compressionLevel: int
 external function ZSTD_compressStream(zcs: ptr[ZSTD_CStream], output: ptr[ZSTD_outBuffer], input: ptr[ZSTD_inBuffer]) -> ptr_uint
 external function ZSTD_flushStream(zcs: ptr[ZSTD_CStream], output: ptr[ZSTD_outBuffer]) -> ptr_uint
 external function ZSTD_endStream(zcs: ptr[ZSTD_CStream], output: ptr[ZSTD_outBuffer]) -> ptr_uint
-
 type ZSTD_DStream = ZSTD_DCtx
-
 external function ZSTD_createDStream() -> ptr[ZSTD_DStream]
 external function ZSTD_freeDStream(zds: ptr[ZSTD_DStream]) -> ptr_uint
 external function ZSTD_initDStream(zds: ptr[ZSTD_DStream]) -> ptr_uint
@@ -190,15 +168,11 @@ external function ZSTD_DStreamInSize() -> ptr_uint
 external function ZSTD_DStreamOutSize() -> ptr_uint
 external function ZSTD_compress_usingDict(ctx: ptr[ZSTD_CCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint, dict: const_ptr[void], dictSize: ptr_uint, compressionLevel: int) -> ptr_uint
 external function ZSTD_decompress_usingDict(dctx: ptr[ZSTD_DCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint, dict: const_ptr[void], dictSize: ptr_uint) -> ptr_uint
-
 opaque ZSTD_CDict = c"ZSTD_CDict"
-
 external function ZSTD_createCDict(dictBuffer: const_ptr[void], dictSize: ptr_uint, compressionLevel: int) -> ptr[ZSTD_CDict]
 external function ZSTD_freeCDict(CDict: ptr[ZSTD_CDict]) -> ptr_uint
 external function ZSTD_compress_usingCDict(cctx: ptr[ZSTD_CCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint, cdict: const_ptr[ZSTD_CDict]) -> ptr_uint
-
 opaque ZSTD_DDict = c"ZSTD_DDict"
-
 external function ZSTD_createDDict(dictBuffer: const_ptr[void], dictSize: ptr_uint) -> ptr[ZSTD_DDict]
 external function ZSTD_freeDDict(ddict: ptr[ZSTD_DDict]) -> ptr_uint
 external function ZSTD_decompress_usingDDict(dctx: ptr[ZSTD_DCtx], dst: ptr[void], dstCapacity: ptr_uint, src: const_ptr[void], srcSize: ptr_uint, ddict: const_ptr[ZSTD_DDict]) -> ptr_uint
@@ -218,7 +192,6 @@ external function ZSTD_sizeof_CStream(zcs: const_ptr[ZSTD_CStream]) -> ptr_uint
 external function ZSTD_sizeof_DStream(zds: const_ptr[ZSTD_DStream]) -> ptr_uint
 external function ZSTD_sizeof_CDict(cdict: const_ptr[ZSTD_CDict]) -> ptr_uint
 external function ZSTD_sizeof_DDict(ddict: const_ptr[ZSTD_DDict]) -> ptr_uint
-
 const ZSTD_VERSION_MAJOR: int = 1
 const ZSTD_VERSION_MINOR: int = 5
 const ZSTD_VERSION_RELEASE: int = 7

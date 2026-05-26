@@ -695,771 +695,400 @@ public foreign function detach_audio_stream_processor(stream: AudioStream, proce
 public foreign function attach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.AttachAudioMixedProcessor
 public foreign function detach_audio_mixed_processor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void = c.DetachAudioMixedProcessor
 
-
 extending Color:
     public function is_equal(col2: Color) -> bool:
         return color_is_equal(this, col2)
-
-
     public function to_int() -> int:
         return color_to_int(this)
-
-
     public function normalize() -> Vector4:
         return color_normalize(this)
-
-
     public static function from_normalized(normalized: Vector4) -> Color:
         return color_from_normalized(normalized)
-
-
     public function to_hsv() -> Vector3:
         return color_to_hsv(this)
-
-
     public static function from_hsv(hue: float, saturation: float, value: float) -> Color:
         return color_from_hsv(hue, saturation, value)
-
-
     public function tint(tint: Color) -> Color:
         return color_tint(this, tint)
-
-
     public function brightness(factor: float) -> Color:
         return color_brightness(this, factor)
-
-
     public function contrast(contrast: float) -> Color:
         return color_contrast(this, contrast)
-
-
     public function alpha(alpha: float) -> Color:
         return color_alpha(this, alpha)
-
-
     public function alpha_blend(src: Color, tint: Color) -> Color:
         return color_alpha_blend(this, src, tint)
-
-
     public function lerp(color2: Color, factor: float) -> Color:
         return color_lerp(this, color2, factor)
-
 
 extending Image:
     public function copy() -> Image:
         return image_copy(this)
-
-
     public static function text(text: str, font_size: int, color: Color) -> Image:
         return image_text(text, font_size, color)
-
-
     public static function text_ex(font: Font, text: str, font_size: float, spacing: float, tint: Color) -> Image:
         return image_text_ex(font, text, font_size, spacing, tint)
-
-
     public mutable function format(new_format: int) -> void:
         image_format(this, new_format)
-
-
     public mutable function to_pot(fill: Color) -> void:
         image_to_pot(this, fill)
-
-
     public mutable function crop(crop: Rectangle) -> void:
         image_crop(this, crop)
-
-
     public mutable function alpha_crop(threshold: float) -> void:
         image_alpha_crop(this, threshold)
-
-
     public mutable function alpha_clear(color: Color, threshold: float) -> void:
         image_alpha_clear(this, color, threshold)
-
-
     public mutable function alpha_mask(alpha_mask: Image) -> void:
         image_alpha_mask(this, alpha_mask)
-
-
     public mutable function alpha_premultiply() -> void:
         image_alpha_premultiply(this)
-
-
     public mutable function blur_gaussian(blur_size: int) -> void:
         image_blur_gaussian(this, blur_size)
-
-
     public mutable function kernel_convolution(kernel: span[float]) -> void:
         image_kernel_convolution(this, kernel)
-
-
     public mutable function resize(new_width: int, new_height: int) -> void:
         image_resize(this, new_width, new_height)
-
-
     public mutable function resize_nn(new_width: int, new_height: int) -> void:
         image_resize_nn(this, new_width, new_height)
-
-
     public mutable function resize_canvas(new_width: int, new_height: int, offset_x: int, offset_y: int, fill: Color) -> void:
         image_resize_canvas(this, new_width, new_height, offset_x, offset_y, fill)
-
-
     public mutable function mipmaps() -> void:
         image_mipmaps(this)
-
-
     public mutable function dither(r_bpp: int, g_bpp: int, b_bpp: int, a_bpp: int) -> void:
         image_dither(this, r_bpp, g_bpp, b_bpp, a_bpp)
-
-
     public mutable function flip_vertical() -> void:
         image_flip_vertical(this)
-
-
     public mutable function flip_horizontal() -> void:
         image_flip_horizontal(this)
-
-
     public mutable function rotate(degrees: int) -> void:
         image_rotate(this, degrees)
-
-
     public mutable function rotate_cw() -> void:
         image_rotate_cw(this)
-
-
     public mutable function rotate_ccw() -> void:
         image_rotate_ccw(this)
-
-
     public mutable function color_tint(color: Color) -> void:
         image_color_tint(this, color)
-
-
     public mutable function color_invert() -> void:
         image_color_invert(this)
-
-
     public mutable function color_grayscale() -> void:
         image_color_grayscale(this)
-
-
     public mutable function color_contrast(contrast: float) -> void:
         image_color_contrast(this, contrast)
-
-
     public mutable function color_brightness(brightness: int) -> void:
         image_color_brightness(this, brightness)
-
-
     public mutable function color_replace(color: Color, replace: Color) -> void:
         image_color_replace(this, color, replace)
-
-
     public mutable function clear_background(color: Color) -> void:
         image_clear_background(this, color)
-
-
     public mutable function draw_pixel(pos_x: int, pos_y: int, color: Color) -> void:
         image_draw_pixel(this, pos_x, pos_y, color)
-
-
     public mutable function draw_pixel_v(position: Vector2, color: Color) -> void:
         image_draw_pixel_v(this, position, color)
-
-
     public mutable function draw_line(start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void:
         image_draw_line(this, start_pos_x, start_pos_y, end_pos_x, end_pos_y, color)
-
-
     public mutable function draw_line_v(start: Vector2, end: Vector2, color: Color) -> void:
         image_draw_line_v(this, start, end, color)
-
-
     public mutable function draw_line_ex(start: Vector2, end: Vector2, thick: int, color: Color) -> void:
         image_draw_line_ex(this, start, end, thick, color)
-
-
     public mutable function draw_circle(center_x: int, center_y: int, radius: int, color: Color) -> void:
         image_draw_circle(this, center_x, center_y, radius, color)
-
-
     public mutable function draw_circle_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_v(this, center, radius, color)
-
-
     public mutable function draw_circle_lines(center_x: int, center_y: int, radius: int, color: Color) -> void:
         image_draw_circle_lines(this, center_x, center_y, radius, color)
-
-
     public mutable function draw_circle_lines_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_lines_v(this, center, radius, color)
-
-
     public mutable function draw_rectangle(pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void:
         image_draw_rectangle(this, pos_x, pos_y, width, height, color)
-
-
     public mutable function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void:
         image_draw_rectangle_v(this, position, size, color)
-
-
     public mutable function draw_rectangle_rec(rec: Rectangle, color: Color) -> void:
         image_draw_rectangle_rec(this, rec, color)
-
-
     public mutable function draw_rectangle_lines(rec: Rectangle, thick: int, color: Color) -> void:
         image_draw_rectangle_lines(this, rec, thick, color)
-
-
     public mutable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle(this, v_1, v_2, v_3, color)
-
-
     public mutable function draw_triangle_ex(v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void:
         image_draw_triangle_ex(this, v_1, v_2, v_3, c_1, c_2, c_3)
-
-
     public mutable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle_lines(this, v_1, v_2, v_3, color)
-
-
     public mutable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_fan(this, points, point_count, color)
-
-
     public mutable function draw_triangle_strip(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_strip(this, points, point_count, color)
-
-
     public mutable function draw(src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void:
         image_draw(this, src, src_rec, dst_rec, tint)
-
-
     public mutable function draw_text(text: str, pos_x: int, pos_y: int, font_size: int, color: Color) -> void:
         image_draw_text(this, text, pos_x, pos_y, font_size, color)
-
-
     public mutable function draw_text_ex(font: Font, text: str, position: Vector2, font_size: float, spacing: float, tint: Color) -> void:
         image_draw_text_ex(this, font, text, position, font_size, spacing, tint)
-
 
 extending Wave:
     public function copy() -> Wave:
         return wave_copy(this)
 
-
 extending ptr[Wave]:
     public function crop(init_frame: int, final_frame: int) -> void:
         wave_crop(this, init_frame, final_frame)
-
-
     public function format(sample_rate: int, sample_size: int, channels: int) -> void:
         wave_format(this, sample_rate, sample_size, channels)
-
 
 extending Vector2:
     public static function zero() -> Vector2:
         return math.vector2_zero()
-
-
     public static function one() -> Vector2:
         return math.vector2_one()
-
-
     public function add(v2: Vector2) -> Vector2:
         return math.vector2_add(this, v2)
-
-
     public function add_value(add: float) -> Vector2:
         return math.vector2_add_value(this, add)
-
-
     public function subtract(v2: Vector2) -> Vector2:
         return math.vector2_subtract(this, v2)
-
-
     public function subtract_value(sub: float) -> Vector2:
         return math.vector2_subtract_value(this, sub)
-
-
     public function length() -> float:
         return math.vector2_length(this)
-
-
     public function length_sqr() -> float:
         return math.vector2_length_sqr(this)
-
-
     public function dot_product(v2: Vector2) -> float:
         return math.vector2_dot_product(this, v2)
-
-
     public function cross_product(v2: Vector2) -> float:
         return math.vector2_cross_product(this, v2)
-
-
     public function distance(v2: Vector2) -> float:
         return math.vector2_distance(this, v2)
-
-
     public function distance_sqr(v2: Vector2) -> float:
         return math.vector2_distance_sqr(this, v2)
-
-
     public function angle(v2: Vector2) -> float:
         return math.vector2_angle(this, v2)
-
-
     public function line_angle(end: Vector2) -> float:
         return math.vector2_line_angle(this, end)
-
-
     public function scale(scale: float) -> Vector2:
         return math.vector2_scale(this, scale)
-
-
     public function multiply(v2: Vector2) -> Vector2:
         return math.vector2_multiply(this, v2)
-
-
     public function negate() -> Vector2:
         return math.vector2_negate(this)
-
-
     public function divide(v2: Vector2) -> Vector2:
         return math.vector2_divide(this, v2)
-
-
     public function normalize() -> Vector2:
         return math.vector2_normalize(this)
-
-
     public function transform(mat: Matrix) -> Vector2:
         return math.vector2_transform(this, mat)
-
-
     public function lerp(v2: Vector2, amount: float) -> Vector2:
         return math.vector2_lerp(this, v2, amount)
-
-
     public function reflect(normal: Vector2) -> Vector2:
         return math.vector2_reflect(this, normal)
-
-
     public function min(v2: Vector2) -> Vector2:
         return math.vector2_min(this, v2)
-
-
     public function max(v2: Vector2) -> Vector2:
         return math.vector2_max(this, v2)
-
-
     public function rotate(angle: float) -> Vector2:
         return math.vector2_rotate(this, angle)
-
-
     public function move_towards(target: Vector2, max_distance: float) -> Vector2:
         return math.vector2_move_towards(this, target, max_distance)
-
-
     public function invert() -> Vector2:
         return math.vector2_invert(this)
-
-
     public function clamp(min: Vector2, max: Vector2) -> Vector2:
         return math.vector2_clamp(this, min, max)
-
-
     public function clamp_value(min: float, max: float) -> Vector2:
         return math.vector2_clamp_value(this, min, max)
-
-
     public function equals(q: Vector2) -> int:
         return math.vector2_equals(this, q)
-
-
     public function refract(n: Vector2, r: float) -> Vector2:
         return math.vector2_refract(this, n, r)
-
 
 extending Vector3:
     public static function zero() -> Vector3:
         return math.vector3_zero()
-
-
     public static function one() -> Vector3:
         return math.vector3_one()
-
-
     public function add(v2: Vector3) -> Vector3:
         return math.vector3_add(this, v2)
-
-
     public function add_value(add: float) -> Vector3:
         return math.vector3_add_value(this, add)
-
-
     public function subtract(v2: Vector3) -> Vector3:
         return math.vector3_subtract(this, v2)
-
-
     public function subtract_value(sub: float) -> Vector3:
         return math.vector3_subtract_value(this, sub)
-
-
     public function scale(scalar: float) -> Vector3:
         return math.vector3_scale(this, scalar)
-
-
     public function multiply(v2: Vector3) -> Vector3:
         return math.vector3_multiply(this, v2)
-
-
     public function cross_product(v2: Vector3) -> Vector3:
         return math.vector3_cross_product(this, v2)
-
-
     public function perpendicular() -> Vector3:
         return math.vector3_perpendicular(this)
-
-
     public function length() -> float:
         return math.vector3_length(this)
-
-
     public function length_sqr() -> float:
         return math.vector3_length_sqr(this)
-
-
     public function dot_product(v2: Vector3) -> float:
         return math.vector3_dot_product(this, v2)
-
-
     public function distance(v2: Vector3) -> float:
         return math.vector3_distance(this, v2)
-
-
     public function distance_sqr(v2: Vector3) -> float:
         return math.vector3_distance_sqr(this, v2)
-
-
     public function angle(v2: Vector3) -> float:
         return math.vector3_angle(this, v2)
-
-
     public function negate() -> Vector3:
         return math.vector3_negate(this)
-
-
     public function divide(v2: Vector3) -> Vector3:
         return math.vector3_divide(this, v2)
-
-
     public function normalize() -> Vector3:
         return math.vector3_normalize(this)
-
-
     public function project(v2: Vector3) -> Vector3:
         return math.vector3_project(this, v2)
-
-
     public function reject(v2: Vector3) -> Vector3:
         return math.vector3_reject(this, v2)
-
-
     public function transform(mat: Matrix) -> Vector3:
         return math.vector3_transform(this, mat)
-
-
     public function rotate_by_quaternion(q: Vector4) -> Vector3:
         return math.vector3_rotate_by_quaternion(this, q)
-
-
     public function rotate_by_axis_angle(axis: Vector3, angle: float) -> Vector3:
         return math.vector3_rotate_by_axis_angle(this, axis, angle)
-
-
     public function move_towards(target: Vector3, max_distance: float) -> Vector3:
         return math.vector3_move_towards(this, target, max_distance)
-
-
     public function lerp(v2: Vector3, amount: float) -> Vector3:
         return math.vector3_lerp(this, v2, amount)
-
-
     public function cubic_hermite(tangent1: Vector3, v2: Vector3, tangent2: Vector3, amount: float) -> Vector3:
         return math.vector3_cubic_hermite(this, tangent1, v2, tangent2, amount)
-
-
     public function reflect(normal: Vector3) -> Vector3:
         return math.vector3_reflect(this, normal)
-
-
     public function min(v2: Vector3) -> Vector3:
         return math.vector3_min(this, v2)
-
-
     public function max(v2: Vector3) -> Vector3:
         return math.vector3_max(this, v2)
-
-
     public function barycenter(a: Vector3, b: Vector3, c: Vector3) -> Vector3:
         return math.vector3_barycenter(this, a, b, c)
-
-
     public function unproject(projection: Matrix, view: Matrix) -> Vector3:
         return math.vector3_unproject(this, projection, view)
-
-
     public function to_float_v() -> array[float, 3]:
         return math.vector3_to_float_v(this)
-
-
     public function invert() -> Vector3:
         return math.vector3_invert(this)
-
-
     public function clamp(min: Vector3, max: Vector3) -> Vector3:
         return math.vector3_clamp(this, min, max)
-
-
     public function clamp_value(min: float, max: float) -> Vector3:
         return math.vector3_clamp_value(this, min, max)
-
-
     public function equals(q: Vector3) -> int:
         return math.vector3_equals(this, q)
-
-
     public function refract(n: Vector3, r: float) -> Vector3:
         return math.vector3_refract(this, n, r)
-
 
 extending Vector4:
     public static function zero() -> Vector4:
         return math.vector4_zero()
-
-
     public static function one() -> Vector4:
         return math.vector4_one()
-
-
     public function add(v2: Vector4) -> Vector4:
         return math.vector4_add(this, v2)
-
-
     public function add_value(add: float) -> Vector4:
         return math.vector4_add_value(this, add)
-
-
     public function subtract(v2: Vector4) -> Vector4:
         return math.vector4_subtract(this, v2)
-
-
     public function subtract_value(add: float) -> Vector4:
         return math.vector4_subtract_value(this, add)
-
-
     public function length() -> float:
         return math.vector4_length(this)
-
-
     public function length_sqr() -> float:
         return math.vector4_length_sqr(this)
-
-
     public function dot_product(v2: Vector4) -> float:
         return math.vector4_dot_product(this, v2)
-
-
     public function distance(v2: Vector4) -> float:
         return math.vector4_distance(this, v2)
-
-
     public function distance_sqr(v2: Vector4) -> float:
         return math.vector4_distance_sqr(this, v2)
-
-
     public function scale(scale: float) -> Vector4:
         return math.vector4_scale(this, scale)
-
-
     public function multiply(v2: Vector4) -> Vector4:
         return math.vector4_multiply(this, v2)
-
-
     public function negate() -> Vector4:
         return math.vector4_negate(this)
-
-
     public function divide(v2: Vector4) -> Vector4:
         return math.vector4_divide(this, v2)
-
-
     public function normalize() -> Vector4:
         return math.vector4_normalize(this)
-
-
     public function min(v2: Vector4) -> Vector4:
         return math.vector4_min(this, v2)
-
-
     public function max(v2: Vector4) -> Vector4:
         return math.vector4_max(this, v2)
-
-
     public function lerp(v2: Vector4, amount: float) -> Vector4:
         return math.vector4_lerp(this, v2, amount)
-
-
     public function move_towards(target: Vector4, max_distance: float) -> Vector4:
         return math.vector4_move_towards(this, target, max_distance)
-
-
     public function invert() -> Vector4:
         return math.vector4_invert(this)
-
-
     public function equals(q: Vector4) -> int:
         return math.vector4_equals(this, q)
-
 
 extending Matrix:
     public function determinant() -> float:
         return math.matrix_determinant(this)
-
-
     public function trace() -> float:
         return math.matrix_trace(this)
-
-
     public function transpose() -> Matrix:
         return math.matrix_transpose(this)
-
-
     public function invert() -> Matrix:
         return math.matrix_invert(this)
-
-
     public static function identity() -> Matrix:
         return math.matrix_identity()
-
-
     public function add(right: Matrix) -> Matrix:
         return math.matrix_add(this, right)
-
-
     public function subtract(right: Matrix) -> Matrix:
         return math.matrix_subtract(this, right)
-
-
     public function multiply(right: Matrix) -> Matrix:
         return math.matrix_multiply(this, right)
-
-
     public function multiply_value(value: float) -> Matrix:
         return math.matrix_multiply_value(this, value)
-
-
     public static function translate(x: float, y: float, z: float) -> Matrix:
         return math.matrix_translate(x, y, z)
-
-
     public static function rotate(axis: Vector3, angle: float) -> Matrix:
         return math.matrix_rotate(axis, angle)
-
-
     public static function rotate_x(angle: float) -> Matrix:
         return math.matrix_rotate_x(angle)
-
-
     public static function rotate_y(angle: float) -> Matrix:
         return math.matrix_rotate_y(angle)
-
-
     public static function rotate_z(angle: float) -> Matrix:
         return math.matrix_rotate_z(angle)
-
-
     public static function rotate_xyz(angle: Vector3) -> Matrix:
         return math.matrix_rotate_xyz(angle)
-
-
     public static function rotate_zyx(angle: Vector3) -> Matrix:
         return math.matrix_rotate_zyx(angle)
-
-
     public static function scale(x: float, y: float, z: float) -> Matrix:
         return math.matrix_scale(x, y, z)
-
-
     public static function frustum(left: double, right: double, bottom: double, top: double, near_plane: double, far_plane: double) -> Matrix:
         return math.matrix_frustum(left, right, bottom, top, near_plane, far_plane)
-
-
     public static function perspective(fov_y: double, aspect: double, near_plane: double, far_plane: double) -> Matrix:
         return math.matrix_perspective(fov_y, aspect, near_plane, far_plane)
-
-
     public static function ortho(left: double, right: double, bottom: double, top: double, near_plane: double, far_plane: double) -> Matrix:
         return math.matrix_ortho(left, right, bottom, top, near_plane, far_plane)
-
-
     public static function look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
         return math.matrix_look_at(eye, target, up)
-
-
     public function to_float_v() -> array[float, 16]:
         return math.matrix_to_float_v(this)
-
-
     public static function compose(translation: Vector3, rotation: Vector4, scale: Vector3) -> Matrix:
         return math.matrix_compose(translation, rotation, scale)
-
 
 extending Quaternion:
     public static function identity() -> Quaternion:
         return math.quaternion_identity()
-
-
     public function nlerp(q2: Vector4, amount: float) -> Quaternion:
         return math.quaternion_nlerp(this, q2, amount)
-
-
     public function slerp(q2: Vector4, amount: float) -> Quaternion:
         return math.quaternion_slerp(this, q2, amount)
-
-
     public function cubic_hermite_spline(out_tangent1: Vector4, q2: Vector4, in_tangent2: Vector4, t: float) -> Quaternion:
         return math.quaternion_cubic_hermite_spline(this, out_tangent1, q2, in_tangent2, t)
-
-
     public static function from_vector3_to_vector3(from: Vector3, to: Vector3) -> Quaternion:
         return math.quaternion_from_vector3_to_vector3(from, to)
-
-
     public static function from_matrix(mat: Matrix) -> Quaternion:
         return math.quaternion_from_matrix(mat)
-
-
     public function to_matrix() -> Matrix:
         return math.quaternion_to_matrix(this)
-
-
     public static function from_axis_angle(axis: Vector3, angle: float) -> Quaternion:
         return math.quaternion_from_axis_angle(axis, angle)
-
-
     public static function from_euler(pitch: float, yaw: float, roll: float) -> Quaternion:
         return math.quaternion_from_euler(pitch, yaw, roll)
-
-
     public function to_euler() -> Vector3:
         return math.quaternion_to_euler(this)
-
-
     public function transform(mat: Matrix) -> Quaternion:
         return math.quaternion_transform(this, mat)

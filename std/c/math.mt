@@ -3,7 +3,6 @@ external
 
 link "m"
 include "math_bindgen.h"
-
 external function mt_math_abs(value: double) -> double
 external function mt_math_sqrt(value: double) -> double
 external function mt_math_pow(base: double, exponent: double) -> double

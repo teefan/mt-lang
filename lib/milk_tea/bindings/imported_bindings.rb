@@ -3,7 +3,6 @@
 require "json"
 require_relative "../core/token"
 require_relative "../core/types"
-require_relative "../tooling/formatter"
 
 module MilkTea
   module ImportedBindings
@@ -183,7 +182,7 @@ module MilkTea
           lines.concat(section_lines)
         end
 
-        Formatter.format_source(lines.join("\n") + "\n", path: generated_module_path, mode: :tidy)
+        lines.join("\n") + "\n"
       end
 
       private
@@ -521,12 +520,12 @@ module MilkTea
           end
 
           generated_entries = if overrides.key?(raw_name)
-                                 overrides.fetch(raw_name).map do |entry|
-                                   plan_overridden_function(entry, raw_declaration, spec:)
-                                   end
-                                 else
-                                   [plan_pass_through_foreign_function(raw_declaration, spec:)]
-                                 end
+                                overrides.fetch(raw_name).map do |entry|
+                                  plan_overridden_function(entry, raw_declaration, spec:)
+                                end
+                              else
+                                [plan_pass_through_foreign_function(raw_declaration, spec:)]
+                              end
 
           generated_entries.each do |entry|
             public_name = entry.fetch(:public_name)
