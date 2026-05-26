@@ -125,6 +125,22 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_includes formatted, "]:\n"
   end
 
+  def test_tidy_mode_wraps_long_if_logical_chain
+    source = <<~MT
+      function main(kind: int, has_byte: bool, ctrl: bool, alt: bool, input_byte: int) -> void:
+          if kind == 2 and has_byte and not ctrl and not alt and input_byte >= 32 and input_byte < 127 and input_byte != 64:
+              pass
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 100)
+
+    assert_includes formatted, "    if (\n"
+    assert_includes formatted, "        kind == 2\n"
+    assert_includes formatted, "        and has_byte\n"
+    assert_includes formatted, "        and input_byte != 64\n"
+    assert_includes formatted, "    ):\n"
+  end
+
   def test_canonical_mode_flattens_grouped_multiline_binary_expression
     source = <<~MT
       function main() -> int:

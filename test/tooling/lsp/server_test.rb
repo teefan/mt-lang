@@ -2285,6 +2285,51 @@ function main(value: int) -> int:
     end
   end
 
+  def test_source_fixall_wraps_long_if_logical_chain_using_project_max_line_length
+    Dir.mktmpdir("milk-tea-lsp-fixall-line-length-condition") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 100
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main(kind: int, has_byte: bool, ctrl: bool, alt: bool, input_byte: int) -> void:
+            if kind == 2 and has_byte and not ctrl and not alt and input_byte >= 32 and input_byte < 127 and input_byte != 64:
+                pass
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => {
+            "start" => { "line" => 0, "character" => 0 },
+            "end" => { "line" => 3, "character" => 0 }
+          },
+          "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
+        })
+
+        actions = response.fetch("result")
+        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
+        assert fixall, "expected a source.fixAll action"
+        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
+        assert_includes edit_text, "    if (\n"
+        assert_includes edit_text, "        and has_byte\n"
+        assert_includes edit_text, "        and input_byte != 64\n"
+        assert_includes edit_text, "    ):\n"
+      end
+    end
+  end
+
   def test_source_fixall_honors_active_formatter_mode_and_invalidates_cache
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -7338,7 +7383,7 @@ function main(value: int) -> int:
               "source" => "milk-tea",
               "code" => "line-too-long",
               "range" => { "start" => { "line" => 1, "character" => 40 }, "end" => { "line" => 1, "character" => 55 } },
-              "message" => "line exceeds max length of 40 columns (55); wrap the delimited list"
+              "message" => "line exceeds max length of 40 columns (55); wrap the expression"
             }]
           }
         })
@@ -7384,7 +7429,7 @@ function main(value: int) -> int:
               "source" => "milk-tea",
               "code" => "line-too-long",
               "range" => { "start" => { "line" => 0, "character" => 50 }, "end" => { "line" => 0, "character" => 68 } },
-              "message" => "line exceeds max length of 50 columns (68); wrap the delimited list"
+              "message" => "line exceeds max length of 50 columns (68); wrap the expression"
             }]
           }
         })
@@ -7396,6 +7441,55 @@ function main(value: int) -> int:
         assert_includes edit["newText"], "function main() -> Result[\n"
         assert_includes edit["newText"], "    Option[AlphaValue],\n"
         assert_includes edit["newText"], "    GammaValue,\n"
+      end
+    end
+  end
+
+  def test_code_action_quickfix_line_too_long_wraps_if_logical_chain
+    Dir.mktmpdir("milk-tea-lsp-line-too-long-condition") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 100
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main(kind: int, has_byte: bool, ctrl: bool, alt: bool, input_byte: int) -> void:
+            if kind == 2 and has_byte and not ctrl and not alt and input_byte >= 32 and input_byte < 127 and input_byte != 64:
+                pass
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => { "start" => { "line" => 1, "character" => 100 }, "end" => { "line" => 1, "character" => 114 } },
+          "context" => {
+            "diagnostics" => [{
+              "source" => "milk-tea",
+              "code" => "line-too-long",
+              "range" => { "start" => { "line" => 1, "character" => 100 }, "end" => { "line" => 1, "character" => 114 } },
+              "message" => "line exceeds max length of 100 columns (114); wrap the expression"
+            }]
+          }
+        })
+
+        actions = response.fetch("result")
+        quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Wrap long line" }
+        assert quickfix, "expected a quickFix action for line-too-long"
+        edit = quickfix.dig("edit", "changes", uri, 0)
+        assert_includes edit["newText"], "    if (\n"
+        assert_includes edit["newText"], "        and has_byte\n"
+        assert_includes edit["newText"], "        and input_byte != 64\n"
+        assert_includes edit["newText"], "    ):\n"
       end
     end
   end

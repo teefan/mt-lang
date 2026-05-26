@@ -106,39 +106,50 @@ module MilkTea
 
       tokens = Lexer.lex(source)
       candidates = long_line_wrap_candidates(tokens, line_index + 1, line)
-      return nil if candidates.empty?
 
       indent = line[/\A\s*/] || ""
       arg_indent = indent + "    "
       line_terminator = original_line.end_with?("\n") ? "\n" : ""
 
-      candidates
-        .sort_by { |entry| [-entry[:depth], -(entry[:end_char] - entry[:start_char])] }
-        .each do |candidate|
-          [true, false].each do |trailing_commas|
-            new_text = build_wrapped_delimited_group_text(
-              line,
-              candidate,
-              indent:,
-              item_indent: arg_indent,
-              line_terminator:,
-              trailing_commas:,
-            )
-            next if new_text == original_line
+      unless candidates.empty?
+        candidates
+          .sort_by { |entry| [-entry[:depth], -(entry[:end_char] - entry[:start_char])] }
+          .each do |candidate|
+            [true, false].each do |trailing_commas|
+              new_text = build_wrapped_delimited_group_text(
+                line,
+                candidate,
+                indent:,
+                item_indent: arg_indent,
+                line_terminator:,
+                trailing_commas:,
+              )
+              next if new_text == original_line
 
-            updated_lines = lines.dup
-            updated_lines[line_index..line_index] = [new_text]
-            Parser.parse(updated_lines.join, path:)
+              updated_lines = lines.dup
+              updated_lines[line_index..line_index] = [new_text]
+              Parser.parse(updated_lines.join, path:)
 
-            return {
-              start_line_idx: line_index,
-              end_line_idx: line_index,
-              new_text:,
-            }
-          rescue StandardError
-            next
+              return {
+                start_line_idx: line_index,
+                end_line_idx: line_index,
+                new_text:,
+              }
+            rescue StandardError
+              next
+            end
           end
-        end
+      end
+
+      logical_chain_fix = build_wrapped_logical_chain_fix(
+        lines,
+        line_index,
+        line,
+        tokens,
+        line_terminator:,
+        path:,
+      )
+      return logical_chain_fix if logical_chain_fix
 
       nil
     rescue StandardError
@@ -152,6 +163,44 @@ module MilkTea
         new_text << "#{item_indent}#{argument}#{suffix}\n"
       end
       new_text << "#{indent}#{candidate[:closing_delimiter]}#{line[candidate[:end_char]..].to_s}#{line_terminator}"
+      new_text
+    end
+
+    def self.build_wrapped_logical_chain_fix(lines, line_index, line, tokens, line_terminator:, path:)
+      candidate = logical_chain_wrap_candidate(tokens, line_index + 1, line)
+      return nil unless candidate
+
+      indent = line[/\A\s*/] || ""
+      item_indent = indent + "    "
+      new_text = build_wrapped_logical_chain_text(
+        line,
+        candidate,
+        indent:,
+        item_indent:,
+        line_terminator:,
+      )
+      return nil if new_text == lines[line_index]
+
+      updated_lines = lines.dup
+      updated_lines[line_index..line_index] = [new_text]
+      Parser.parse(updated_lines.join, path:)
+
+      {
+        start_line_idx: line_index,
+        end_line_idx: line_index,
+        new_text:,
+      }
+    rescue StandardError
+      nil
+    end
+
+    def self.build_wrapped_logical_chain_text(line, candidate, indent:, item_indent:, line_terminator:)
+      new_text = +"#{line[0...candidate[:start_char]]}(\n"
+      new_text << "#{item_indent}#{candidate[:segments].first}\n"
+      candidate[:operators].each_with_index do |operator, index|
+        new_text << "#{item_indent}#{operator} #{candidate[:segments][index + 1]}\n"
+      end
+      new_text << "#{indent})#{line[candidate[:end_char]..].to_s}#{line_terminator}"
       new_text
     end
 
@@ -296,6 +345,61 @@ module MilkTea
       end
 
       candidates
+    end
+
+    def self.logical_chain_wrap_candidate(tokens, target_line_number, line)
+      line_tokens = tokens.select do |token|
+        token.line == target_line_number && !%i[newline indent dedent eof].include?(token.type)
+      end
+      return nil if line_tokens.length < 4
+
+      header_token = line_tokens.first
+      return nil unless %i[if while].include?(header_token.type)
+
+      colon_token = line_tokens.reverse.find { |token| token.type == :colon }
+      return nil unless colon_token
+
+      expression_start_token = line_tokens[1]
+      return nil unless expression_start_token
+
+      start_char = expression_start_token.column - 1
+      return nil if line[start_char] == "("
+
+      nested_group_depth = 0
+      operators = []
+      segments = []
+      current_start = start_char
+
+      line_tokens[1...line_tokens.index(colon_token)].each do |token|
+        case token.type
+        when :lparen, :lbracket
+          nested_group_depth += 1
+        when :rparen, :rbracket
+          nested_group_depth -= 1 if nested_group_depth.positive?
+        when :and, :or
+          next unless nested_group_depth.zero?
+
+          segment = line[current_start...(token.column - 1)].to_s.strip
+          return nil if segment.empty?
+
+          segments << segment
+          operators << token.lexeme
+          current_start = token.column - 1 + token.lexeme.length
+        end
+      end
+
+      return nil if operators.empty?
+
+      final_segment = line[current_start...(colon_token.column - 1)].to_s.strip
+      return nil if final_segment.empty?
+
+      segments << final_segment
+      {
+        start_char:,
+        end_char: colon_token.column - 1,
+        operators:,
+        segments:,
+      }
     end
 
     def self.matching_delimiter_pair?(opening_type, closing_type)

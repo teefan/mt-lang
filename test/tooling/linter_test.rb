@@ -80,6 +80,55 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_fix_source_wraps_long_type_argument_list_for_line_too_long
+    Dir.mktmpdir("milk-tea-linter-fix-line-too-long-type-list") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 50
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main() -> Result[Option[AlphaValue], BetaValue, GammaValue]:
+            return 0
+      MT
+
+      fixed = MilkTea::Linter.fix_source(source, path: path)
+
+      assert_includes fixed, "function main() -> Result[\n"
+      assert_includes fixed, "    Option[AlphaValue],\n"
+      assert_includes fixed, "    GammaValue,\n"
+      assert_includes fixed, "]:\n"
+    end
+  end
+
+  def test_fix_source_wraps_long_if_logical_chain_for_line_too_long
+    Dir.mktmpdir("milk-tea-linter-fix-line-too-long-condition") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 100
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main(kind: int, has_byte: bool, ctrl: bool, alt: bool, input_byte: int) -> void:
+            if kind == 2 and has_byte and not ctrl and not alt and input_byte >= 32 and input_byte < 127 and input_byte != 64:
+                pass
+      MT
+
+      fixed = MilkTea::Linter.fix_source(source, path: path)
+
+      assert_includes fixed, "    if (\n"
+      assert_includes fixed, "        kind == 2\n"
+      assert_includes fixed, "        and input_byte != 64\n"
+      assert_includes fixed, "    ):\n"
+    end
+  end
+
   def test_warns_on_redundant_ignored_match_binding
     source = <<~MT
       function main(value: Option[int]) -> int:
