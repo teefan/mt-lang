@@ -2003,6 +2003,28 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_explicit_builder_format_sinks
+    source = <<~MT
+      # module demo.format_sink_api
+
+      import std.fmt as fmt
+      import std.string as string
+
+      function main(value: uint, ratio: double, raw: cstr) -> int:
+          var output = string.String.create()
+          defer output.release()
+          fmt.append_format(ref_of(output), f"hex=\#{value:x} raw=\#{raw}")
+          fmt.assign_format(ref_of(output), f"ratio=\#{ratio:.2}")
+          output.append_format(f" ok=\#{true}")
+          output.assign_format(f"HEX=\#{value:X}")
+          return int<-output.len()
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
   def test_type_checks_format_literal_as_general_str_expression
     source = <<~MT
       # module demo.format
@@ -6768,6 +6790,58 @@ extending Counter:
               return 1
           buffer.clear()
           return int<-(raw + buffer.capacity())
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_str_buffer_format_methods
+    source = <<~MT
+      # module demo.str_buffer_format_surface
+
+      function main(value: uint, ratio: double) -> int:
+          var buffer: str_buffer[64]
+          buffer.assign_format(f"hex=\#{value:x}")
+          buffer.append_format(f" ratio=\#{ratio:.2}")
+          let text = buffer.as_str()
+          return int<-text.len
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_custom_format_hooks
+    source = <<~MT
+      # module demo.custom_format_surface
+
+      import std.fmt as fmt
+      import std.string as string
+
+      struct Point:
+          x: int
+          y: int
+
+      extending Point:
+          function format_len() -> ptr_uint:
+              return f"(\#{this.x}, \#{this.y})".len
+
+          function append_format(output: ref[string.String]) -> void:
+              fmt.append_format(output, f"(\#{this.x}, \#{this.y})")
+
+      function main() -> int:
+          let point = Point(x = 2, y = 3)
+          let text = f"point=\#{point}"
+          var output = string.String.create()
+          defer output.release()
+          output.append_format(f"[\#{point}]")
+          var buffer: str_buffer[64]
+          buffer.assign_format(f"<\#{point}>")
+          fmt.assign_format(ref_of(output), f"\#{point}!")
+          return int<-(text.len + buffer.len())
     MT
 
     result = check_source(source)

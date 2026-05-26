@@ -488,7 +488,7 @@ function read_text_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_ui
     unsafe:
         heap.copy_bytes(copied, input.data + offset, used)
 
-    let owned = string.String(data = copied, len = used, capacity = used)
+    let owned = string.String(data = copied, len = used, capacity = used, owns_storage = true)
     match text.utf8_byte_span_as_str(unsafe: span[ubyte](data = copied, len = used)):
         Option.some as _:
             return Result[string.String, Error].success(value = owned)

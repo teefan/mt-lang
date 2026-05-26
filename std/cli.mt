@@ -1,3 +1,4 @@
+import std.fmt as fmt
 import std.str as text
 import std.string as string
 import std.vec as vec
@@ -90,27 +91,22 @@ function create_match() -> Match:
 
 
 function append_line(output: ref[string.String], line: str) -> void:
-    output.append(line)
-    output.append("\n")
+    output.append_format(f"#{line}\n")
 
 
 function append_switch_label(output: ref[string.String], spec: OptionSpec) -> void:
     match spec.short_name:
         Option.some as payload:
-            output.append("-")
-            output.append(payload.value)
-            output.append(", ")
+            output.append_format(f"-#{payload.value}, ")
         Option.none:
             pass
 
-    output.append("--")
-    output.append(spec.long_name)
+    output.append_format(f"--#{spec.long_name}")
 
     if spec.kind == OptionKind.value:
         match spec.value_name:
             Option.some as payload:
-                output.append(" ")
-                output.append(payload.value)
+                output.append_format(f" #{payload.value}")
             Option.none:
                 output.append(" VALUE")
 
@@ -118,13 +114,10 @@ function append_switch_label(output: ref[string.String], spec: OptionSpec) -> vo
 function append_option_help(output: ref[string.String], spec: OptionSpec) -> void:
     output.append("  ")
     append_switch_label(output, spec)
-    output.append(" - ")
-    output.append(spec.help)
+    output.append_format(f" - #{spec.help}")
     match spec.default_value:
         Option.some as payload:
-            output.append(" (default: ")
-            output.append(payload.value)
-            output.append(")")
+            output.append_format(f" (default: #{payload.value})")
         Option.none:
             pass
     if spec.required:
@@ -148,11 +141,7 @@ function append_commands_section(output: ref[string.String], commands: span[Comm
     var index: ptr_uint = 0
     while index < commands.len:
         let spec = unsafe: read(commands.data + index)
-        output.append("  ")
-        output.append(spec.name)
-        output.append(" - ")
-        output.append(spec.summary)
-        output.append("\n")
+        output.append_format(f"  #{spec.name} - #{spec.summary}\n")
         index += 1
     append_line(output, "")
 
@@ -301,20 +290,17 @@ function set_option_value(result: ptr[Match], spec: OptionSpec, value: str) -> R
 
 
 function require_value_arg(option_name: str) -> Error:
-    var message = string.String.from_str("missing value for ")
-    message.append(option_name)
+    var message = fmt.format(f"missing value for #{option_name}")
     return Error(message = message)
 
 
 function unknown_option_error(option_name: str) -> Error:
-    var message = string.String.from_str("unknown option ")
-    message.append(option_name)
+    var message = fmt.format(f"unknown option #{option_name}")
     return Error(message = message)
 
 
 function unknown_command_error(command_name: str) -> Error:
-    var message = string.String.from_str("unknown command ")
-    message.append(command_name)
+    var message = fmt.format(f"unknown command #{command_name}")
     return Error(message = message)
 
 
@@ -334,8 +320,8 @@ function split_long_option(arg: str) -> Option[ptr_uint]:
 
 
 function usage_for_app(app: AppSpec) -> string.String:
-    var usage = string.String.from_str("Usage: ")
-    usage.append(app.name)
+    var usage = string.String.create()
+    usage.append_format(f"Usage: #{app.name}")
     if app.options.len != 0:
         usage.append(" [options]")
     if app.commands.len != 0:
@@ -351,10 +337,8 @@ function usage_for_app(app: AppSpec) -> string.String:
 
 
 function usage_for_command(app: AppSpec, command: CommandSpec) -> string.String:
-    var usage = string.String.from_str("Usage: ")
-    usage.append(app.name)
-    usage.append(" ")
-    usage.append(command.name)
+    var usage = string.String.create()
+    usage.append_format(f"Usage: #{app.name} #{command.name}")
     if app.options.len != 0 or command.options.len != 0:
         usage.append(" [options]")
     match command.positional_help:
@@ -477,8 +461,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                     Option.none:
                         if index + 1 >= args.len:
                             result.release()
-                            var missing = string.String.from_str("--")
-                            missing.append(spec.long_name)
+                            var missing = fmt.format(f"--#{spec.long_name}")
                             return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
                         value = unsafe: read(args.data + index + 1)
                         consumed_next = true
@@ -533,8 +516,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                     else:
                         if index + 1 >= args.len:
                             result.release()
-                            var missing = string.String.from_str("-")
-                            missing.append(short_name)
+                            var missing = fmt.format(f"-#{short_name}")
                             return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
                         value = unsafe: read(args.data + index + 1)
                         consumed_next = true
@@ -595,9 +577,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
 
 public function render_help(app: AppSpec) -> string.String:
     var output = string.String.create()
-    var title = string.String.from_str(app.name)
-    title.append(" - ")
-    title.append(app.summary)
+    var title = fmt.format(f"#{app.name} - #{app.summary}")
     var usage = usage_for_app(app)
     append_help_header(ref_of(output), title.as_str(), app.summary, usage.as_str())
     append_commands_section(ref_of(output), app.commands)
@@ -613,11 +593,7 @@ public function render_command_help(app: AppSpec, command_name: str) -> Result[s
 
     let command = unsafe: read(command_ptr)
     var output = string.String.create()
-    var title = string.String.from_str(app.name)
-    title.append(" ")
-    title.append(command.name)
-    title.append(" - ")
-    title.append(command.help)
+    var title = fmt.format(f"#{app.name} #{command.name} - #{command.help}")
     var usage = usage_for_command(app, command)
     append_help_header(ref_of(output), title.as_str(), command.help, usage.as_str())
     append_options_section(ref_of(output), app.options, command.options)

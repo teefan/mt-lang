@@ -15,6 +15,7 @@ module MilkTea
       ExplicitHashBinding = Data.define(:binding, :callee_name)
       ExplicitEqualBinding = Data.define(:binding, :callee_name)
       ExplicitOrderBinding = Data.define(:binding, :callee_name)
+      ExplicitFormatBinding = Data.define(:length_binding, :length_callee_name, :append_binding, :append_callee_name)
       DefaultResolution = Data.define(:target_type, :binding, :callee_name)
       HashResolution = Data.define(:target_type, :binding, :callee_name)
       EqualResolution = Data.define(:target_type, :binding, :callee_name)
@@ -3636,6 +3637,11 @@ module MilkTea
             lowered.concat(cleanup)
             lowered << IR::ReturnStmt.new(value:, line: statement.line, source_path: @current_analysis_path)
           when AST::ExpressionStmt
+            if (format_sink_statements = lower_explicit_format_sink_expression_statement(statement.expression, env: local_env, line: statement.line))
+              lowered.concat(format_sink_statements)
+              next
+            end
+
             expression_expected_type = if statement.expression.is_a?(AST::UnaryOp) && statement.expression.operator == "?"
                                          nil
                                        else
@@ -4756,7 +4762,7 @@ module MilkTea
             value: IR::Binary.new(
               operator: "+",
               left: total_len_value,
-              right: format_string_part_length_expression(part),
+              right: format_string_part_length_expression(part, env:),
               type: @types.fetch("ptr_uint"),
             ),
           )
@@ -4776,11 +4782,7 @@ module MilkTea
         )
 
         format_parts.each do |part|
-          setup << IR::Assignment.new(
-            target: offset_value,
-            operator: "=",
-            value: format_string_part_append_expression(part, result_value, offset_value),
-          )
+          setup.concat(format_string_part_append_statements(part, result_value, offset_value, env:))
         end
 
         [setup, temp_name]
@@ -4890,23 +4892,47 @@ module MilkTea
               raise LoweringError, "unsupported format spec #{part.format_spec.inspect}"
             end
           else
-            append_function_name, append_argument_type = format_string_append_plan(value_type)
+            append_plan = format_string_append_plan(value_type, context: "formatted string interpolation of #{value_type}")
             parameter_c_name = fresh_c_temp_name(env, "fmt_part")
             setup << IR::LocalDecl.new(
               name: parameter_c_name,
               c_name: parameter_c_name,
-              type: append_argument_type,
+              type: append_plan[:append_argument_type],
               value: cast_expression(
                 lower_contextual_expression(prepared_expression, env:, expected_type: value_type),
-                append_argument_type,
+                append_plan[:append_argument_type],
               ),
             )
-            format_parts << {
-              kind: :expression,
-              append_function_name: append_function_name,
-              parameter_c_name: parameter_c_name,
-              parameter_type: append_argument_type,
-            }
+
+            if append_plan[:kind] == :custom
+              register_prepared_temp!(env, parameter_c_name, append_plan[:append_argument_type])
+              part_info = {
+                kind: :custom_expression,
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_plan[:append_argument_type],
+                format_binding: append_plan[:binding],
+                append_output_type: append_plan[:append_output_type],
+              }
+              expected_length_c_name = fresh_c_temp_name(env, "fmt_part_len")
+              setup << IR::LocalDecl.new(
+                name: expected_length_c_name,
+                c_name: expected_length_c_name,
+                type: @types.fetch("ptr_uint"),
+                value: IR::Call.new(
+                  callee: append_plan[:binding].length_callee_name,
+                  arguments: [format_string_custom_receiver_argument(part_info, hook: :length, env:)],
+                  type: @types.fetch("ptr_uint"),
+                ),
+              )
+              format_parts << part_info.merge(expected_length_c_name:)
+            else
+              format_parts << {
+                kind: :expression,
+                append_function_name: append_plan[:append_function_name],
+                parameter_c_name: parameter_c_name,
+                parameter_type: append_plan[:append_argument_type],
+              }
+            end
           end
         end
 
@@ -4917,7 +4943,362 @@ module MilkTea
         format_string.parts.any? { |part| part.is_a?(AST::FormatExprPart) }
       end
 
-      def format_string_part_length_expression(part)
+      def string_builder_type?(type)
+        type.respond_to?(:name) && type.respond_to?(:module_name) && type.name == "String" && type.module_name == "std.string"
+      end
+
+      def string_builder_ref_type?(type)
+        ref_type?(type) && string_builder_type?(referenced_type(type))
+      end
+
+      def explicit_format_sink_call_info(expression, env)
+        return unless expression.is_a?(AST::Call)
+
+        kind, _callee_name, receiver, callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
+
+        case kind
+        when :function
+          return unless callee_binding&.owner&.module_name == "std.fmt"
+          return unless expression.arguments.length == 2
+
+          operation = case callee_binding.name
+                      when "append_format"
+                        :append
+                      when "assign_format"
+                        :assign
+                      end
+          return unless operation
+
+          format_string = expression.arguments.fetch(1).value
+          return unless format_string.is_a?(AST::FormatString)
+
+          {
+            operation:,
+            sink_expression: expression.arguments.fetch(0).value,
+            sink_expected_type: callee_type.params.fetch(0).type,
+            format_string:,
+            sink_kind: :string,
+            method_call: false,
+            callee_type:,
+            callee_binding:,
+          }
+        when :method
+          return unless callee_binding&.owner&.module_name == "std.string"
+          return unless string_builder_type?(callee_type.receiver_type)
+          return unless expression.arguments.length == 1
+
+          operation = case callee_binding.name
+                      when "append_format"
+                        :append
+                      when "assign_format"
+                        :assign
+                      end
+          return unless operation
+
+          format_string = expression.arguments.fetch(0).value
+          return unless format_string.is_a?(AST::FormatString)
+
+          {
+            operation:,
+            sink_expression: receiver,
+            sink_expected_type: callee_type.receiver_type,
+            format_string:,
+            sink_kind: :string,
+            method_call: true,
+            callee_type:,
+            callee_binding:,
+          }
+        when :str_buffer_append_format, :str_buffer_assign_format
+          return unless expression.arguments.length == 1
+
+          format_string = expression.arguments.fetch(0).value
+          return unless format_string.is_a?(AST::FormatString)
+
+          {
+            operation: kind == :str_buffer_assign_format ? :assign : :append,
+            sink_expression: receiver,
+            sink_expected_type: callee_type.receiver_type,
+            format_string:,
+            sink_kind: :str_buffer,
+            method_call: false,
+            callee_type:,
+            callee_binding: nil,
+          }
+        end
+      end
+
+      def explicit_format_sink_target(info, prepared_sink_expression, env:)
+        case info[:sink_kind]
+        when :string
+          sink_value = if info[:method_call]
+                         lower_method_receiver_argument(prepared_sink_expression, info[:callee_type], info[:callee_binding], env:)
+                       else
+                         lower_contextual_expression(prepared_sink_expression, env:, expected_type: info[:sink_expected_type])
+                       end
+
+          { kind: :string, value: sink_value }
+        when :str_buffer
+          lowered_receiver = lower_expression(prepared_sink_expression, env:)
+          {
+            kind: :str_buffer,
+            receiver: lowered_receiver,
+            data_pointer: lower_str_buffer_data_pointer_from_lowered(lowered_receiver),
+            len_pointer: lower_str_buffer_len_pointer_from_lowered(lowered_receiver),
+            dirty_pointer: lower_str_buffer_dirty_pointer_from_lowered(lowered_receiver),
+            capacity: IR::IntegerLiteral.new(value: str_buffer_capacity(lowered_receiver.type), type: @types.fetch("ptr_uint")),
+          }
+        else
+          raise LoweringError, "unsupported explicit format sink #{info[:sink_kind]}"
+        end
+      end
+
+      def explicit_format_sink_target_buffer_view(sink_target)
+        case sink_target[:kind]
+        when :string
+          sink_target[:value]
+        when :str_buffer
+          IR::AggregateLiteral.new(
+            type: @types.fetch("str"),
+            fields: [
+              IR::AggregateField.new(name: "data", value: sink_target[:data_pointer]),
+              IR::AggregateField.new(name: "len", value: sink_target[:capacity]),
+            ],
+          )
+        else
+          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+        end
+      end
+
+      def lower_explicit_format_sink_expression_statement(expression, env:, line:)
+        info = explicit_format_sink_call_info(expression, env)
+        return unless info
+
+        sink_setup, prepared_sink_expression, sink_cleanups = prepare_expression_with_cleanups(
+          info[:sink_expression],
+          env:,
+          expected_type: info[:sink_expected_type],
+          allow_root_statement_foreign: true,
+        )
+        sink_target = explicit_format_sink_target(info, prepared_sink_expression, env:)
+
+        unless format_string_has_dynamic_parts?(info[:format_string])
+          return sink_setup + [
+            IR::ExpressionStmt.new(
+              expression: explicit_format_sink_runtime_call(
+                operation: info[:operation],
+                sink_target:,
+                text_value: IR::StringLiteral.new(
+                  value: format_string_static_text(info[:format_string]),
+                  type: @types.fetch("str"),
+                  cstring: false,
+                ),
+              ),
+              line:,
+              source_path: @current_analysis_path,
+            ),
+            *sink_cleanups.flat_map(&:itself),
+          ]
+        end
+
+        format_cleanup_start = (env[:prepared_expression_cleanups] ||= []).length
+        format_setup, format_parts = build_dynamic_format_string_parts(info[:format_string], env:)
+        format_cleanup_count = env[:prepared_expression_cleanups].length - format_cleanup_start
+        format_cleanups = format_cleanup_count.positive? ? env[:prepared_expression_cleanups].slice!(format_cleanup_start, format_cleanup_count) : []
+        copied_part_setup, copied_parts, copied_part_cleanups = copy_explicit_format_sink_str_parts(
+          format_parts,
+          env:,
+          sink_kind: info[:sink_kind],
+        )
+
+        sink_statements = sink_setup + format_setup + copied_part_setup
+        case sink_target[:kind]
+        when :string
+          if info[:operation] == :assign
+            sink_statements << IR::ExpressionStmt.new(
+              expression: IR::Call.new(callee: "std_string_String_clear", arguments: [sink_target[:value]], type: @types.fetch("void")),
+              line:,
+              source_path: @current_analysis_path,
+            )
+          end
+
+          copied_parts.each do |part|
+            sink_statements << IR::ExpressionStmt.new(
+              expression: explicit_format_sink_append_call(part, sink_value: sink_target[:value], env:),
+              line:,
+              source_path: @current_analysis_path,
+            )
+          end
+        when :str_buffer
+          if info[:operation] == :assign
+            sink_statements << IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: "mt_str_buffer_clear",
+                arguments: [
+                  sink_target[:data_pointer],
+                  sink_target[:capacity],
+                  sink_target[:len_pointer],
+                  sink_target[:dirty_pointer],
+                ],
+                type: @types.fetch("void"),
+              ),
+              line:,
+              source_path: @current_analysis_path,
+            )
+          end
+
+          offset_name = fresh_c_temp_name(env, "fmt_sink_offset")
+          offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
+          offset_init = if info[:operation] == :assign
+                          IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))
+                        else
+                          IR::Call.new(
+                            callee: "mt_str_buffer_len",
+                            arguments: [
+                              sink_target[:data_pointer],
+                              sink_target[:capacity],
+                              sink_target[:len_pointer],
+                              sink_target[:dirty_pointer],
+                            ],
+                            type: @types.fetch("ptr_uint"),
+                          )
+                        end
+          sink_statements << IR::LocalDecl.new(name: offset_name, c_name: offset_name, type: @types.fetch("ptr_uint"), value: offset_init)
+
+          target_value = explicit_format_sink_target_buffer_view(sink_target)
+          copied_parts.each do |part|
+            sink_statements.concat(format_string_part_append_statements(part, target_value, offset_value, env:))
+          end
+          sink_statements << IR::Assignment.new(
+            target: IR::Unary.new(operator: "*", operand: sink_target[:len_pointer], type: @types.fetch("ptr_uint")),
+            operator: "=",
+            value: offset_value,
+          )
+        else
+          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+        end
+
+        sink_statements.concat(copied_part_cleanups)
+        sink_statements.concat(sink_cleanups.flat_map(&:itself))
+        sink_statements.concat(format_cleanups.flat_map(&:itself))
+        sink_statements
+      end
+
+      def explicit_format_sink_runtime_call(operation:, sink_target:, text_value:)
+        case sink_target[:kind]
+        when :string
+          callee = operation == :assign ? "std_string_String_assign" : "std_string_String_append"
+          IR::Call.new(callee:, arguments: [sink_target[:value], text_value], type: @types.fetch("void"))
+        when :str_buffer
+          callee = operation == :assign ? "mt_str_buffer_assign" : "mt_str_buffer_append"
+          IR::Call.new(
+            callee:,
+            arguments: [
+              text_value,
+              sink_target[:data_pointer],
+              sink_target[:capacity],
+              sink_target[:len_pointer],
+              sink_target[:dirty_pointer],
+            ],
+            type: @types.fetch("void"),
+          )
+        else
+          raise LoweringError, "unsupported explicit format sink #{sink_target[:kind]}"
+        end
+      end
+
+      def copy_explicit_format_sink_str_parts(format_parts, env:, sink_kind:)
+        setup = []
+        cleanup = []
+
+        copied_parts = format_parts.map do |part|
+          next part unless part[:kind] == :expression
+
+          should_copy = part[:append_function_name] == "append" ||
+            (sink_kind == :str_buffer && part[:append_function_name] == "append_cstr")
+          next part unless should_copy
+
+          parameter = format_string_part_parameter_expression(part)
+          copy_name = fresh_c_temp_name(env, "fmt_sink_str")
+          copy_value = IR::Name.new(name: copy_name, type: @types.fetch("str"), pointer: false)
+          register_prepared_temp!(env, copy_name, @types.fetch("str"), cstr_backed: true)
+
+          length_value = if part[:append_function_name] == "append"
+                           IR::Member.new(receiver: parameter, member: "len", type: @types.fetch("ptr_uint"))
+                         else
+                           IR::Call.new(callee: "mt_format_cstr_len", arguments: [parameter], type: @types.fetch("ptr_uint"))
+                         end
+          append_callee = part[:append_function_name] == "append" ? "mt_format_append_str" : "mt_format_append_cstr"
+
+          setup << IR::LocalDecl.new(
+            name: copy_name,
+            c_name: copy_name,
+            type: @types.fetch("str"),
+            value: IR::Call.new(
+              callee: "mt_format_str_make",
+              arguments: [length_value],
+              type: @types.fetch("str"),
+            ),
+          )
+          setup << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: append_callee,
+              arguments: [copy_value, IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")), parameter],
+              type: @types.fetch("ptr_uint"),
+            ),
+          )
+          cleanup << IR::ExpressionStmt.new(
+            expression: IR::Call.new(callee: "mt_format_str_release", arguments: [copy_value], type: @types.fetch("void")),
+          )
+
+          part.merge(parameter_c_name: copy_name, parameter_type: @types.fetch("str"), append_function_name: "append")
+        end
+
+        [setup, copied_parts, cleanup]
+      end
+
+      def explicit_format_sink_append_call(part, sink_value:, env:)
+        if part[:kind] == :text
+          return IR::Call.new(
+            callee: "std_string_String_append",
+            arguments: [sink_value, IR::StringLiteral.new(value: part[:value], type: @types.fetch("str"), cstring: false)],
+            type: @types.fetch("void"),
+          )
+        end
+
+        parameter = format_string_part_parameter_expression(part)
+
+        if part[:kind] == :precision_expression
+          return IR::Call.new(
+            callee: "std_fmt_append_double_precision",
+            arguments: [sink_value, parameter, IR::IntegerLiteral.new(value: part[:precision], type: @types.fetch("int"))],
+            type: @types.fetch("void"),
+          )
+        end
+
+        if part[:kind] == :custom_expression
+          return IR::Call.new(
+            callee: part[:format_binding].append_callee_name,
+            arguments: [
+              format_string_custom_receiver_argument(part, hook: :append, env:),
+              sink_value,
+            ],
+            type: @types.fetch("void"),
+          )
+        end
+
+        callee = case part[:append_function_name]
+                 when "append"
+                   "std_string_String_append"
+                 when "append_cstr"
+                   "std_fmt_append_cstr"
+                 else
+                   "std_fmt_#{part[:append_function_name]}"
+                 end
+
+        IR::Call.new(callee:, arguments: [sink_value, parameter], type: @types.fetch("void"))
+      end
+
+      def format_string_part_length_expression(part, env:)
         parameter = format_string_part_parameter_expression(part)
 
         if part[:kind] == :precision_expression
@@ -4928,6 +5309,10 @@ module MilkTea
           )
         end
 
+        if part[:kind] == :custom_expression
+          return IR::Name.new(name: part[:expected_length_c_name], type: @types.fetch("ptr_uint"), pointer: false)
+        end
+
         case part[:append_function_name]
         when "append"
           IR::Member.new(receiver: parameter, member: "len", type: @types.fetch("ptr_uint"))
@@ -4936,6 +5321,97 @@ module MilkTea
         else
           IR::Call.new(callee: mt_format_length_c_name(part[:append_function_name]), arguments: [parameter], type: @types.fetch("ptr_uint"))
         end
+      end
+
+      def format_string_part_append_statements(part, result_value, offset_value, env:)
+        if part[:kind] == :custom_expression
+          output_type = part[:append_output_type]
+          output_ref_type = Types::GenericInstance.new("ref", [output_type])
+          output_value_name = fresh_c_temp_name(env, "fmt_part_output")
+          output_value = IR::Name.new(name: output_value_name, type: output_type, pointer: false)
+          output_len = IR::Member.new(receiver: output_value, member: "len", type: @types.fetch("ptr_uint"))
+          expected_length = IR::Name.new(name: part[:expected_length_c_name], type: @types.fetch("ptr_uint"), pointer: false)
+          data_pointer = format_string_result_data_pointer(result_value)
+          slice_data_pointer = cast_expression(
+            IR::Binary.new(operator: "+", left: data_pointer, right: offset_value, type: pointer_to(@types.fetch("char"))),
+            output_type.field("data"),
+          )
+
+          return [
+            IR::LocalDecl.new(
+              name: output_value_name,
+              c_name: output_value_name,
+              type: output_type,
+              value: IR::AggregateLiteral.new(
+                type: output_type,
+                fields: [
+                  IR::AggregateField.new(name: "data", value: slice_data_pointer),
+                  IR::AggregateField.new(
+                    name: "len",
+                    value: IR::IntegerLiteral.new(value: 0, type: output_type.field("len")),
+                  ),
+                  IR::AggregateField.new(name: "capacity", value: expected_length),
+                  IR::AggregateField.new(
+                    name: "owns_storage",
+                    value: IR::BooleanLiteral.new(value: false, type: output_type.field("owns_storage")),
+                  ),
+                ],
+              ),
+            ),
+            IR::ExpressionStmt.new(
+              expression: IR::Call.new(
+                callee: part[:format_binding].append_callee_name,
+                arguments: [
+                  format_string_custom_receiver_argument(part, hook: :append, env:),
+                  IR::AddressOf.new(expression: output_value, type: output_ref_type),
+                ],
+                type: @types.fetch("void"),
+              ),
+            ),
+            IR::IfStmt.new(
+              condition: IR::Binary.new(operator: "!=", left: output_len, right: expected_length, type: @types.fetch("bool")),
+              then_body: [
+                IR::ExpressionStmt.new(
+                  expression: IR::Call.new(
+                    callee: "mt_fatal",
+                    arguments: [
+                      IR::StringLiteral.new(
+                        value: "custom format hook length mismatch",
+                        type: @types.fetch("cstr"),
+                        cstring: true,
+                      ),
+                    ],
+                    type: @types.fetch("void"),
+                  ),
+                ),
+              ],
+              else_body: nil,
+            ),
+            IR::Assignment.new(
+              target: offset_value,
+              operator: "=",
+              value: IR::Binary.new(
+                operator: "+",
+                left: offset_value,
+                right: output_len,
+                type: @types.fetch("ptr_uint"),
+              ),
+            ),
+            IR::Assignment.new(
+              target: IR::Index.new(receiver: data_pointer, index: offset_value, type: @types.fetch("char")),
+              operator: "=",
+              value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("char")),
+            ),
+          ]
+        end
+
+        [
+          IR::Assignment.new(
+            target: offset_value,
+            operator: "=",
+            value: format_string_part_append_expression(part, result_value, offset_value),
+          ),
+        ]
       end
 
       def format_string_part_append_expression(part, result_value, offset_value)
@@ -4957,6 +5433,10 @@ module MilkTea
           )
         end
 
+        if part[:kind] == :custom_expression
+          raise LoweringError, "custom format parts require statement lowering"
+        end
+
         IR::Call.new(
           callee: mt_format_append_c_name(part[:append_function_name]),
           arguments: [result_value, offset_value, parameter],
@@ -4964,30 +5444,60 @@ module MilkTea
         )
       end
 
+      def format_string_custom_receiver_argument(part, hook:, env:)
+        binding = case hook
+                  when :length
+                    part[:format_binding].length_binding
+                  when :append
+                    part[:format_binding].append_binding
+                  else
+                    raise LoweringError, "unsupported custom format hook #{hook}"
+                  end
+
+        if env
+          return lower_method_receiver_argument(AST::Identifier.new(name: part[:parameter_c_name]), binding.type, binding, env:)
+        end
+
+        IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false)
+      end
+
+      def format_string_result_data_pointer(result_value)
+        IR::Member.new(receiver: result_value, member: "data", type: pointer_to(@types.fetch("char")))
+      end
+
       def format_string_part_parameter_expression(part)
         IR::Name.new(name: part[:parameter_c_name], type: part[:parameter_type], pointer: false)
       end
 
-      def format_string_append_plan(type)
-        return ["append", @types.fetch("str")] if type == @types.fetch("str")
-        return ["append_cstr", @types.fetch("cstr")] if type == @types.fetch("cstr")
-        return ["append_bool", @types.fetch("bool")] if type == @types.fetch("bool")
-        return ["append_float", @types.fetch("float")] if type == @types.fetch("float")
-        return ["append_double", @types.fetch("double")] if type == @types.fetch("double")
+      def format_string_append_plan(type, context:)
+        return { kind: :builtin, append_function_name: "append", append_argument_type: @types.fetch("str") } if type == @types.fetch("str")
+        return { kind: :builtin, append_function_name: "append_cstr", append_argument_type: @types.fetch("cstr") } if type == @types.fetch("cstr")
+        return { kind: :builtin, append_function_name: "append_bool", append_argument_type: @types.fetch("bool") } if type == @types.fetch("bool")
+        return { kind: :builtin, append_function_name: "append_float", append_argument_type: @types.fetch("float") } if type == @types.fetch("float")
+        return { kind: :builtin, append_function_name: "append_double", append_argument_type: @types.fetch("double") } if type == @types.fetch("double")
 
         if type.is_a?(Types::Primitive) && type.integer?
-          return ["append_int", @types.fetch("int")] if %w[byte short int].include?(type.name)
-          return ["append_uint", @types.fetch("uint")] if %w[ubyte ushort uint].include?(type.name)
-          return ["append_ptr_uint", @types.fetch("ptr_uint")] if type.name == "ptr_uint"
-          return ["append_long", @types.fetch("long")] if %w[long ptr_int].include?(type.name)
-          return ["append_ulong", @types.fetch("ulong")] if type.name == "ulong"
+          return { kind: :builtin, append_function_name: "append_int", append_argument_type: @types.fetch("int") } if %w[byte short int].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_uint", append_argument_type: @types.fetch("uint") } if %w[ubyte ushort uint].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_ptr_uint", append_argument_type: @types.fetch("ptr_uint") } if type.name == "ptr_uint"
+          return { kind: :builtin, append_function_name: "append_long", append_argument_type: @types.fetch("long") } if %w[long ptr_int].include?(type.name)
+          return { kind: :builtin, append_function_name: "append_ulong", append_argument_type: @types.fetch("ulong") } if type.name == "ulong"
         end
 
         if type.is_a?(Types::EnumBase) && type.backing_type.is_a?(Types::Primitive) && type.backing_type.integer?
-          return format_string_append_plan(type.backing_type)
+          return format_string_append_plan(type.backing_type, context:)
         end
 
-        raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, and integer-backed enums/flags, got #{type}"
+        if (custom_binding = resolve_explicit_format_binding(type, context:))
+          return {
+            kind: :custom,
+            append_argument_type: type,
+            binding: custom_binding,
+            append_output_type: referenced_type(custom_binding.append_binding.type.params.first.type),
+          }
+        end
+
+        raise LoweringError, "formatted string interpolation supports str, cstr, bool, numeric primitives, integer-backed enums/flags, and types implementing format_len()/append_format(output: ref[std.string.String]), got #{type}"
       end
 
       def format_string_hex_append_plan(type, uppercase:)
@@ -5466,7 +5976,7 @@ module MilkTea
             ],
             type:,
           )
-        when :str_buffer_assign
+        when :str_buffer_assign, :str_buffer_assign_format
           receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_assign",
@@ -5479,7 +5989,7 @@ module MilkTea
             ],
             type:,
           )
-        when :str_buffer_append
+        when :str_buffer_append, :str_buffer_append_format
           receiver_type = infer_expression_type(receiver, env:)
           IR::Call.new(
             callee: "mt_str_buffer_append",
@@ -7762,7 +8272,8 @@ module MilkTea
           kind, _callee_name, _receiver, callee_type = resolve_callee(expression.callee, env, arguments: expression.arguments)
           case kind
           when :function, :method, :associated_method, :callable_value,
-            :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
+            :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
+            :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
             :cast, :reinterpret, :zero, :hash, :equal, :order
             callee_type.return_type
           when :struct_literal, :array, :variant_arm_ctor
@@ -8141,6 +8652,48 @@ module MilkTea
         end
       end
 
+      def resolve_explicit_format_binding(target_type, context:)
+        length_binding = resolve_explicit_format_len_binding(target_type, context:)
+        append_binding = resolve_explicit_format_append_binding(target_type, context:)
+
+        return ExplicitFormatBinding.new(
+          length_binding: length_binding.fetch(:binding),
+          length_callee_name: length_binding.fetch(:callee_name),
+          append_binding: append_binding.fetch(:binding),
+          append_callee_name: append_binding.fetch(:callee_name),
+        ) if length_binding && append_binding
+
+        if length_binding || append_binding
+          raise LoweringError, "#{context} requires methods #{target_type}.format_len() -> ptr_uint and #{target_type}.append_format(output: ref[std.string.String]) -> void"
+        end
+
+        nil
+      end
+
+      def resolve_explicit_format_len_binding(target_type, context:)
+        requirement_message = "#{context} requires method #{target_type}.format_len() -> ptr_uint"
+        resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          raise LoweringError, "#{context} requires #{target_type}.format_len() to take 0 arguments" unless method_binding.type.params.empty?
+          raise LoweringError, "#{context} requires #{target_type}.format_len() to be non-mutable" if method_binding.type.receiver_mutable
+          unless method_binding.type.return_type == @types.fetch("ptr_uint")
+            raise LoweringError, "#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method_binding.type.return_type}"
+          end
+        end
+      end
+
+      def resolve_explicit_format_append_binding(target_type, context:)
+        requirement_message = "#{context} requires method #{target_type}.append_format(output: ref[std.string.String]) -> void"
+        resolve_explicit_instance_binding(target_type, "append_format", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
+          raise LoweringError, "#{context} requires #{target_type}.append_format() to be non-mutable" if method_binding.type.receiver_mutable
+          unless method_binding.type.params.length == 1 && string_builder_ref_type?(method_binding.type.params.first.type)
+            raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void"
+          end
+          unless method_binding.type.return_type == @types.fetch("void")
+            raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void, got #{method_binding.type.return_type}"
+          end
+        end
+      end
+
       def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
         dispatch_receiver_type = method_dispatch_receiver_type(target_type)
         method_entry_receiver_type = target_type
@@ -8176,6 +8729,35 @@ module MilkTea
         else
           raise LoweringError, "unsupported associated hook #{method_name}"
         end
+      end
+
+      def resolve_explicit_instance_binding(target_type, method_name, requirement_message:)
+        dispatch_receiver_type = method_dispatch_receiver_type(target_type)
+        method_entry_receiver_type = target_type
+        method_entry = @method_definitions[[target_type, method_name]]
+        unless method_entry || dispatch_receiver_type == target_type
+          method_entry_receiver_type = dispatch_receiver_type
+          method_entry = @method_definitions[[dispatch_receiver_type, method_name]]
+        end
+        return nil unless method_entry
+
+        method_analysis, method_ast = method_entry
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        raise LoweringError, requirement_message if method_binding.type.receiver_type.nil?
+
+        method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
+        yield method_binding, method_analysis, method_entry_receiver_type
+
+        callee_name = if method_binding.external
+                        method_binding.name
+                      else
+                        function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
+                      end
+
+        {
+          binding: method_binding,
+          callee_name: callee_name,
+        }
       end
 
       def resolve_specialization_type_arguments(expression)
@@ -8800,6 +9382,10 @@ module MilkTea
           :str_buffer_assign
         when "append"
           :str_buffer_append
+        when "assign_format"
+          :str_buffer_assign_format
+        when "append_format"
+          :str_buffer_append_format
         when "len"
           :str_buffer_len
         when "capacity"
@@ -8815,7 +9401,7 @@ module MilkTea
         return_type, params = case kind
                               when :str_buffer_clear
                                 [@types.fetch("void"), []]
-                              when :str_buffer_assign, :str_buffer_append
+                              when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
                                 [@types.fetch("void"), [Types::Parameter.new("value", @types.fetch("str"))]]
                               when :str_buffer_len, :str_buffer_capacity
                                 [@types.fetch("ptr_uint"), []]
@@ -8832,7 +9418,7 @@ module MilkTea
           params:,
           return_type:,
           receiver_type:,
-          receiver_mutable: %i[str_buffer_clear str_buffer_assign str_buffer_append].include?(kind),
+          receiver_mutable: %i[str_buffer_clear str_buffer_assign str_buffer_append str_buffer_assign_format str_buffer_append_format].include?(kind),
           external: false,
         )
       end

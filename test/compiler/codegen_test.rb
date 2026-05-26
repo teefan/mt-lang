@@ -1043,6 +1043,34 @@ function main() -> int:
     assert_equal 2, generated.scan(/mt_format_str_release\(__mt_fmt_string_\d+\);/).length
   end
 
+  def test_generate_c_for_explicit_builder_format_sinks
+    source = <<~MT
+      # module demo.explicit_format_sink_codegen
+
+      import std.fmt as fmt
+      import std.string as string
+
+      function main(value: uint, ratio: double, raw: cstr) -> int:
+          var output = string.String.create()
+          defer output.release()
+          fmt.append_format(ref_of(output), f"hex=\#{value:x} raw=\#{raw}")
+          output.assign_format(f"ratio=\#{ratio:.2} ok=\#{true}")
+          return int<-output.len()
+    MT
+
+    generated = generate_c_from_source(source)
+
+    refute_match(/mt_str __mt_fmt_string_\d+ = mt_format_str_make/, generated)
+    refute_match(/std_fmt_append_format\(/, generated)
+    refute_match(/std_string_String_append_format\(/, generated)
+    assert_match(/std_string_String_append\(&output, /, generated)
+    assert_match(/std_fmt_append_ulong_hex\(&output, /, generated)
+    assert_match(/std_fmt_append_cstr\(&output, /, generated)
+    assert_match(/std_string_String_clear\(&output\);/, generated)
+    assert_match(/std_fmt_append_double_precision\(&output, /, generated)
+    assert_match(/std_fmt_append_bool\(&output, /, generated)
+  end
+
   def test_generate_c_inlines_identical_format_string_builders_without_helpers
     source = <<~MT
       # module demo.format_dedup_codegen
@@ -4498,6 +4526,72 @@ function main() -> int:
     assert_match(/const char\* label = mt_str_buffer_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
     assert_match(/mt_str_buffer_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+  end
+
+  def test_generate_c_for_explicit_str_buffer_format_sinks
+    source = <<~MT
+
+# module demo.str_buffer_format_sink
+
+function main(value: uint, ratio: double) -> int:
+    var buffer: str_buffer[32]
+    buffer.assign_format(f"hex=\#{value:x}")
+    buffer.append_format(f" ratio=\#{ratio:.2}")
+    return int<-buffer.len()
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    refute_match(/mt_str __mt_fmt_string_\d+ = mt_format_str_make/, generated)
+    assert_match(/mt_str_buffer_clear\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_format_append_str\(/, generated)
+    assert_match(/mt_format_append_ulong_hex\(/, generated)
+    assert_match(/mt_format_append_double_precision\(/, generated)
+    assert_match(/\*\(&buffer\.len\) = __mt_fmt_sink_offset_\d+;/, generated)
+  end
+
+  def test_generate_c_for_custom_format_hooks
+    source = <<~MT
+
+# module demo.custom_format_codegen
+
+import std.fmt as fmt
+import std.string as string
+
+struct Point:
+    x: int
+    y: int
+
+extending Point:
+    function format_len() -> ptr_uint:
+        return f"(\#{this.x}, \#{this.y})".len
+
+    function append_format(output: ref[string.String]) -> void:
+        fmt.append_format(output, f"(\#{this.x}, \#{this.y})")
+
+function main() -> int:
+    let point = Point(x = 2, y = 3)
+    let text = f"point=\#{point}"
+    var output = string.String.create()
+    defer output.release()
+    output.append_format(f"[\#{point}]")
+    var buffer: str_buffer[64]
+    buffer.assign_format(f"<\#{point}>")
+    return int<-(text.len + buffer.len())
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/Point.*format_len\(/, generated)
+    assert_match(/Point.*append_format\(/, generated)
+    assert_match(/bool owns_storage;/, generated)
+    assert_match(/\.owns_storage = false/, generated)
+    assert_match(/mt_fatal\("custom format hook length mismatch"\);/, generated)
+    refute_match(/std_string_String __mt_fmt_part_output_\d+ = std_string_String_create\(\);/, generated)
+    refute_match(/std_string_String_as_str\(__mt_fmt_part_output_\d+\)/, generated)
+    refute_match(/std_string_String_release\(&__mt_fmt_part_output_\d+\);/, generated)
   end
 
   def test_generate_c_for_foreign_defs_with_str_buffer_and_span_char_ptr_char_boundary

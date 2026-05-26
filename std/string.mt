@@ -6,10 +6,11 @@ public struct String:
     data: ptr[ubyte]?
     len: ptr_uint
     capacity: ptr_uint
+    owns_storage: bool
 
 extending String:
     public static function create() -> String:
-        return String(data = null, len = 0, capacity = 0)
+        return String(data = null, len = 0, capacity = 0, owns_storage = true)
 
 
     public static function with_capacity(capacity: ptr_uint) -> String:
@@ -41,15 +42,21 @@ extending String:
 
 
     public mutable function release() -> void:
-        heap.release(this.data)
+        if this.owns_storage:
+            heap.release(this.data)
+
         this.data = null
         this.len = 0
         this.capacity = 0
+        this.owns_storage = true
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
+
+        if not this.owns_storage:
+            fatal(c"string.reserve cannot grow borrowed storage")
 
         var new_capacity = this.capacity
         if new_capacity == 0:
@@ -113,9 +120,17 @@ extending String:
         this.len = new_len
 
 
+    public mutable function append_format(text: str) -> void:
+        this.append(text)
+
+
     public mutable function assign(value_text: str) -> void:
         this.clear()
         this.append(value_text)
+
+
+    public mutable function assign_format(text: str) -> void:
+        this.assign(text)
 
 
     public function as_str() -> str:

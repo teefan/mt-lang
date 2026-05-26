@@ -3,6 +3,7 @@ import std.str as text_ops
 import std.string as string
 
 const float_buffer_capacity: ptr_uint = 64
+const integer_digit_buffer_capacity: ptr_uint = 64
 
 
 public function append(output: ref[string.String], text: str) -> void:
@@ -11,6 +12,15 @@ public function append(output: ref[string.String], text: str) -> void:
 
 public function format(text: str) -> string.String:
     return string.String.from_str(text)
+
+
+public function append_format(output: ref[string.String], text: str) -> void:
+    output.append(text)
+
+
+public function assign_format(output: ref[string.String], text: str) -> void:
+    output.clear()
+    output.append(text)
 
 
 public function append_str(output: ref[string.String], text: str) -> void:
@@ -52,6 +62,87 @@ public function append_double_precision(output: ref[string.String], number: doub
         fatal("fmt could not format float with precision")
 
     output.append(text_ops.chars_as_str(ptr_of(buffer[0])))
+
+
+function radix_digit_byte(digit: ulong, uppercase: bool) -> ubyte:
+    if digit < 10:
+        return ubyte<-(ulong<-48 + digit)
+
+    if uppercase:
+        return ubyte<-(ulong<-65 + (digit - 10))
+
+    return ubyte<-(ulong<-97 + (digit - 10))
+
+
+function append_ulong_radix(output: ref[string.String], number: ulong, base: ulong, uppercase: bool) -> void:
+    if number == 0:
+        output.push_byte(48)
+        return
+
+    var digits: array[ubyte, 64]
+    var count: ptr_uint = 0
+    var remaining = number
+    while remaining != 0:
+        let digit = remaining % base
+        digits[count] = radix_digit_byte(digit, uppercase)
+        remaining = remaining / base
+        count += 1
+
+    while count > 0:
+        count -= 1
+        output.push_byte(digits[count])
+
+
+public function append_ulong_hex(output: ref[string.String], number: ulong) -> void:
+    append_ulong_radix(output, number, 16, false)
+
+
+public function append_ulong_hex_upper(output: ref[string.String], number: ulong) -> void:
+    append_ulong_radix(output, number, 16, true)
+
+
+public function append_long_hex(output: ref[string.String], number: long) -> void:
+    if number < 0:
+        output.append("-")
+        append_ulong_hex(output, ulong<-(-(number + 1)) + 1)
+        return
+
+    append_ulong_hex(output, ulong<-number)
+
+
+public function append_long_hex_upper(output: ref[string.String], number: long) -> void:
+    if number < 0:
+        output.append("-")
+        append_ulong_hex_upper(output, ulong<-(-(number + 1)) + 1)
+        return
+
+    append_ulong_hex_upper(output, ulong<-number)
+
+
+public function append_ulong_oct(output: ref[string.String], number: ulong) -> void:
+    append_ulong_radix(output, number, 8, false)
+
+
+public function append_long_oct(output: ref[string.String], number: long) -> void:
+    if number < 0:
+        output.append("-")
+        append_ulong_oct(output, ulong<-(-(number + 1)) + 1)
+        return
+
+    append_ulong_oct(output, ulong<-number)
+
+
+public function append_ulong_bin(output: ref[string.String], number: ulong) -> void:
+    append_ulong_radix(output, number, 2, false)
+
+
+public function append_long_bin(output: ref[string.String], number: long) -> void:
+    if number < 0:
+        output.append("-")
+        append_ulong_bin(output, ulong<-(-(number + 1)) + 1)
+        return
+
+    append_ulong_bin(output, ulong<-number)
 
 
 public function append_ptr_uint(output: ref[string.String], number: ptr_uint) -> void:

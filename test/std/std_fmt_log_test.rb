@@ -108,6 +108,177 @@ function main() -> int:
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_executes_explicit_builder_format_sinks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.fmt as fmt
+import std.mem.arena as arena
+import std.string as string
+
+function main() -> int:
+    var scratch = arena.create(64)
+    defer scratch.release()
+    let value: uint = 26
+    let ratio: double = 3.5
+    var output = string.String.from_str("seed")
+    defer output.release()
+
+    fmt.append_format(ref_of(output), f" hex=\#{value:x} oct=\#{value:o}")
+    if output.as_str() != "seed hex=1a oct=32":
+        return 1
+
+    fmt.assign_format(ref_of(output), f"ratio=\#{ratio:.2} ok=\#{true}")
+    if output.as_str() != "ratio=3.50 ok=true":
+        return 2
+
+    output.append_format(f" raw=\#{scratch.to_cstr("wow")} bin=\#{value:b}")
+    if output.as_str() != "ratio=3.50 ok=true raw=wow bin=11010":
+        return 3
+
+    output.assign_format(f"HEX=\#{value:X}")
+    if output.as_str() != "HEX=1A":
+        return 4
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_preserves_aliasing_for_explicit_builder_format_sinks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.string as string
+
+function main() -> int:
+    var output = string.String.from_str("abc")
+    defer output.release()
+
+    output.assign_format(f"\#{output.as_str()}x")
+    if output.as_str() != "abcx":
+        return 1
+
+    output.append_format(f"|\#{output.as_str()}")
+    if output.as_str() != "abcx|abcx":
+        return 2
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+  def test_host_runtime_executes_explicit_str_buffer_format_sinks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+function main() -> int:
+    let value: uint = 26
+    let ratio: double = 3.5
+    var buffer: str_buffer[64]
+
+    buffer.assign_format(f"\#{value:x}")
+    if buffer.as_str() != "1a":
+        return 1
+
+    buffer.append_format(f"|\#{ratio:.2}")
+    if buffer.as_str() != "1a|3.50":
+        return 2
+
+    buffer.assign("abc")
+    buffer.assign_format(f"\#{buffer.as_str()}x")
+    if buffer.as_str() != "abcx":
+        return 3
+
+    buffer.append_format(f"|\#{buffer.as_cstr()}")
+    if buffer.as_str() != "abcx|abcx":
+        return 4
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+  end
+
+    def test_host_runtime_executes_custom_format_hooks
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+    import std.fmt as fmt
+    import std.string as string
+
+    struct Point:
+        x: int
+        y: int
+
+    extending Point:
+        function format_len() -> ptr_uint:
+            return f"(\#{this.x}, \#{this.y})".len
+
+        function append_format(output: ref[string.String]) -> void:
+            fmt.append_format(output, f"(\#{this.x}, \#{this.y})")
+
+    function main() -> int:
+        let point = Point(x = 2, y = 3)
+        let text = f"point=\#{point}"
+        if text != "point=(2, 3)":
+            return 1
+
+        var output = string.String.create()
+        defer output.release()
+        output.append_format(f"[\#{point}]")
+        if output.as_str() != "[(2, 3)]":
+            return 2
+
+        fmt.assign_format(ref_of(output), f"\#{point}!")
+        if output.as_str() != "(2, 3)!":
+            return 3
+
+        var buffer: str_buffer[64]
+        buffer.assign_format(f"<\#{point}>")
+        if buffer.as_str() != "<(2, 3)>":
+            return 4
+
+        return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+    assert_equal [], result.link_flags
+    end
+
   def test_host_runtime_executes_float_format_literals
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
