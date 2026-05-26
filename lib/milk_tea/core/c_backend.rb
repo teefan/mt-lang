@@ -2390,7 +2390,7 @@ module MilkTea
 
         emit_binary_expression(expression)
       when IR::Conditional
-        "#{wrap_expression(expression.condition)} ? #{wrap_expression(expression.then_expression)} : #{wrap_expression(expression.else_expression)}"
+        emit_conditional_expression(expression)
       when IR::ReinterpretExpr
         if no_op_reinterpret?(expression.target_type, expression.source_type)
           emit_expression(expression.expression)
@@ -2470,6 +2470,18 @@ module MilkTea
       else
         text
       end
+    end
+
+    def emit_conditional_expression(expression)
+      condition = emit_conditional_condition(expression.condition)
+      then_expression = emit_expression(expression.then_expression)
+      else_expression = emit_expression(expression.else_expression)
+      "#{condition} ? #{then_expression} : #{else_expression}"
+    end
+
+    def emit_conditional_condition(expression)
+      text = emit_expression(expression)
+      expression.is_a?(IR::Conditional) ? "(#{text})" : text
     end
 
     def binary_precedence(operator)
