@@ -2,11 +2,13 @@ import std.async as aio
 import std.async.libuv_runtime as aio_backend
 import std.bytes as bytes
 import std.c.libuv as libuv_c
+import std.cstring as cstring
 import std.libuv as libuv
 import std.mem.arena as arena
 import std.mem.heap as heap
 import std.str as text
 import std.string as string
+import std.vec as vec
 
 
 const address_name_capacity: ptr_uint = 128
@@ -62,6 +64,21 @@ struct ResolveState:
     ready: bool
     status_code: int
     result: Result[SocketAddress, Error]
+    result_owned: bool
+    waiter_frame: ptr[void]?
+    waiter: fn(frame: ptr[void]) -> void
+    waiter_registered: bool
+    req: ptr[libuv.uv_getaddrinfo_t]?
+    storage: arena.Arena
+    node: cstr?
+    service: cstr?
+    released: bool
+
+
+struct ResolveAllState:
+    ready: bool
+    status_code: int
+    result: Result[vec.Vec[SocketAddress], Error]
     result_owned: bool
     waiter_frame: ptr[void]?
     waiter: fn(frame: ptr[void]) -> void
@@ -193,6 +210,10 @@ function noop_waiter(frame: ptr[void]) -> void:
 
 function resolve_state(frame: ptr[void]) -> ptr[ResolveState]:
     return unsafe: ptr[ResolveState]<-frame
+
+
+function resolve_all_state(frame: ptr[void]) -> ptr[ResolveAllState]:
+    return unsafe: ptr[ResolveAllState]<-frame
 
 
 function req_as_base(req: ptr[libuv.uv_getaddrinfo_t]) -> ptr[libuv.uv_req_t]:
@@ -492,6 +513,18 @@ function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> R
     return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
 
 
+function tcp_socket_fd(handle: ptr[NativeTcpHandle]?) -> Result[int, Error]:
+    let live_handle = handle else:
+        return Result[int, Error].failure(error= net_error("tcp handle is released"))
+
+    var fd = zero[libuv.uv_os_fd_t]
+    let status_code = libuv.fileno(tcp_as_handle(live_handle), fd)
+    if status_code != 0:
+        return Result[int, Error].failure(error= libuv_error(status_code))
+
+    return Result[int, Error].success(value= int<-fd)
+
+
 function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> Result[SocketAddress, Error]:
     let live_handle = handle else:
         return Result[SocketAddress, Error].failure(error= net_error("udp handle is released"))
@@ -594,6 +627,73 @@ function resolve_task(state: ptr[ResolveState]) -> Task[Result[SocketAddress, Er
             set_waiter = resolve_set_waiter,
             release = resolve_release,
             take_result = resolve_take_result,
+        )
+
+
+function release_socket_addresses(values: ref[vec.Vec[SocketAddress]]) -> void:
+    var index: ptr_uint = 0
+    while index < values.len:
+        let current = values.get(index) else:
+            fatal(c"std.net release_socket_addresses missing value")
+
+        var address = unsafe: read(current)
+        address.release()
+        index += 1
+
+    values.release()
+
+
+function resolve_all_ready(frame: ptr[void]) -> bool:
+    return unsafe: read(resolve_all_state(frame)).ready
+
+
+function resolve_all_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+    let state = resolve_all_state(frame)
+    unsafe:
+        read(state).waiter_frame = waiter_frame
+        read(state).waiter = waiter
+        read(state).waiter_registered = true
+
+
+function resolve_all_release(frame: ptr[void]) -> void:
+    let state = resolve_all_state(frame)
+
+    unsafe:
+        if read(state).released:
+            return
+        read(state).released = true
+
+    unsafe:
+        if read(state).result_owned:
+            let result_value = read(state).result
+            match result_value:
+                Result.success as payload:
+                    var addresses = payload.value
+                    release_socket_addresses(ref_of(addresses))
+                Result.failure as payload:
+                    var error = payload.error
+                    error.release()
+
+        var storage = read(state).storage
+        storage.release()
+
+        heap.release(state)
+
+
+function resolve_all_take_result(frame: ptr[void]) -> Result[vec.Vec[SocketAddress], Error]:
+    let state = resolve_all_state(frame)
+    let result_value = unsafe: read(state).result
+    unsafe: read(state).result_owned = false
+    return result_value
+
+
+function resolve_all_task(state: ptr[ResolveAllState]) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+    return unsafe: Task[Result[vec.Vec[SocketAddress], Error]](
+            frame = ptr[void]<-state,
+            ready = resolve_all_ready,
+            set_waiter = resolve_all_set_waiter,
+            release = resolve_all_release,
+            take_result = resolve_all_take_result,
         )
 
 
@@ -2068,6 +2168,26 @@ function finish_resolve(state: ptr[ResolveState], result_value: Result[SocketAdd
         waiter(unsafe: ptr[void]<-waiter_frame)
 
 
+function finish_resolve_all(state: ptr[ResolveAllState], result_value: Result[vec.Vec[SocketAddress], Error], status_code: int) -> void:
+    var waiter: fn(frame: ptr[void]) -> void = noop_waiter
+    var waiter_frame: ptr[void]? = null
+    var notify = false
+
+    unsafe:
+        read(state).result = result_value
+        read(state).result_owned = true
+        read(state).status_code = status_code
+        read(state).ready = true
+        if read(state).waiter_registered:
+            waiter = read(state).waiter
+            waiter_frame = read(state).waiter_frame
+            read(state).waiter_registered = false
+            notify = true
+
+    if notify and waiter_frame != null[ptr[void]]:
+        waiter(unsafe: ptr[void]<-waiter_frame)
+
+
 function resolve_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, result_ptr: ptr[libuv.addrinfo]) -> void:
     let maybe_result = unsafe: ptr[libuv.addrinfo]?<-result_ptr
 
@@ -2093,6 +2213,57 @@ function resolve_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, re
     let address_result = socket_address_from_sockaddr(ai.ai_addr, ptr_uint<-ai.ai_addrlen)
     libuv.freeaddrinfo(result_ptr)
     finish_resolve(state, address_result, 0)
+
+
+function resolve_all_callback(req: ptr[libuv.uv_getaddrinfo_t], status_code: int, result_ptr: ptr[libuv.addrinfo]) -> void:
+    let maybe_result = unsafe: ptr[libuv.addrinfo]?<-result_ptr
+
+    let state_raw = libuv.req_get_data(req_as_base(req)) else:
+        if maybe_result != null[ptr[libuv.addrinfo]]:
+            libuv.freeaddrinfo(result_ptr)
+        return
+
+    let state = unsafe: ptr[ResolveAllState]<-state_raw
+    unsafe: read(state).req = null
+
+    if status_code != 0:
+        if maybe_result != null[ptr[libuv.addrinfo]]:
+            libuv.freeaddrinfo(result_ptr)
+        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(status_code)), status_code)
+        return
+
+    if maybe_result == null[ptr[libuv.addrinfo]]:
+        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
+        return
+
+    var addresses = vec.Vec[SocketAddress].create()
+    var current: ptr[libuv.addrinfo]? = maybe_result
+    while true:
+        if current == null:
+            break
+
+        let live_current = unsafe: ptr[libuv.addrinfo]<-current
+        let ai = unsafe: read(live_current)
+        let address_result = socket_address_from_sockaddr(ai.ai_addr, ptr_uint<-ai.ai_addrlen)
+        match address_result:
+            Result.failure as payload:
+                libuv.freeaddrinfo(result_ptr)
+                release_socket_addresses(ref_of(addresses))
+                finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= payload.error), -1)
+                return
+            Result.success as payload:
+                addresses.push(payload.value)
+
+        current = ai.ai_next
+
+    libuv.freeaddrinfo(result_ptr)
+
+    if addresses.len == 0:
+        addresses.release()
+        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
+        return
+
+    finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].success(value= addresses), 0)
 
 
 function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[Result[SocketAddress, Error]]:
@@ -2128,6 +2299,41 @@ function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[
         finish_resolve(state, Result[SocketAddress, Error].failure(error= libuv_error(queue_status)), queue_status)
 
     return resolve_task(state)
+
+
+function resolve_all_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+    let loop = aio_backend.runtime_loop(runtime)
+    let state = heap.must_alloc_zeroed[ResolveAllState](1)
+
+    let req_size = libuv.req_size(libuv.uv_req_type.UV_GETADDRINFO)
+    let req = unsafe: ptr[libuv.uv_getaddrinfo_t]<-heap.must_alloc_zeroed_bytes(1, req_size)
+    var storage = arena.create(node.len + service.len + 2)
+    let node_cstr = storage.to_cstr(node)
+    let service_cstr = storage.to_cstr(service)
+
+    unsafe:
+        read(state).ready = false
+        read(state).status_code = 0
+        read(state).result = Result[vec.Vec[SocketAddress], Error].success(value= vec.Vec[SocketAddress].create())
+        read(state).result_owned = false
+        read(state).waiter_frame = null
+        read(state).waiter = noop_waiter
+        read(state).waiter_registered = false
+        read(state).req = req
+        read(state).storage = storage
+        read(state).node = node_cstr
+        read(state).service = service_cstr
+        read(state).released = false
+        libuv.req_set_data(req_as_base(req), ptr[void]<-state)
+
+    let queue_status = libuv.getaddrinfo(loop, req, resolve_all_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[libuv.addrinfo]])
+    if queue_status != 0:
+        unsafe:
+            heap.release(req)
+            read(state).req = null
+        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(queue_status)), queue_status)
+
+    return resolve_all_task(state)
 
 
 function connect_on_impl(runtime: aio.Runtime, address: SocketAddress) -> Task[Result[TcpStream, Error]]:
@@ -2233,6 +2439,30 @@ extending SocketAddress:
         this.len = 0
 
 
+    public function copy() -> Result[SocketAddress, Error]:
+        let storage = this.storage else:
+            return Result[SocketAddress, Error].failure(error= invalid_address_error("socket address is released"))
+
+        return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(storage), this.len)
+
+
+    public function equal(other: SocketAddress) -> bool:
+        if this.len != other.len:
+            return false
+
+        let left = this.storage else:
+            return false
+
+        let right = other.storage else:
+            return false
+
+        return cstring.compare_bytes(
+                unsafe: const_ptr[void]<-left,
+                unsafe: const_ptr[void]<-right,
+                this.len,
+            ) == 0
+
+
     public function host() -> Result[string.String, Error]:
         return socket_address_to_string_result(this)
 
@@ -2258,6 +2488,10 @@ extending TcpStream:
 
     public function peer_address() -> Result[SocketAddress, Error]:
         return tcp_socket_address_from_getpeername(this.handle)
+
+
+    public function socket_fd() -> Result[int, Error]:
+        return tcp_socket_fd(this.handle)
 
 
     public function write_bytes(content: span[ubyte]) -> Task[Result[ptr_uint, Error]]:
@@ -2363,6 +2597,14 @@ public function resolve_first_on(runtime: aio.Runtime, node: str, service: str) 
 
 public function resolve_first(node: str, service: str) -> Task[Result[SocketAddress, Error]]:
     return resolve_first_on(aio.current_runtime(), node, service)
+
+
+public function resolve_all_on(runtime: aio.Runtime, node: str, service: str) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+    return resolve_all_on_impl(runtime, node, service)
+
+
+public function resolve_all(node: str, service: str) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+    return resolve_all_on(aio.current_runtime(), node, service)
 
 
 public function connect_on(runtime: aio.Runtime, address: SocketAddress) -> Task[Result[TcpStream, Error]]:
