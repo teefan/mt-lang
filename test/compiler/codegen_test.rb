@@ -2606,7 +2606,22 @@ function main(ready: bool) -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/int32_t score = ready \? 1 : 0;/, generated)
-    assert_match(/return ready \? score : \(score \+ 1\);/, generated)
+    assert_match(/return ready \? score : score \+ 1;/, generated)
+  end
+
+  def test_generate_c_for_nested_if_expressions
+    source = <<~MT
+
+# module demo.nested_if_expr_codegen
+
+function main(ready: bool, active: bool, fallback: bool, paused: bool, score: int) -> int:
+    return if (if ready: active else: fallback): if score > 0: score else: score + 1 else: if paused: 0 else: score + 2
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/return \(ready \? active : fallback\) \? score > 0 \? score : score \+ 1 : paused \? 0 : score \+ 2;/, generated)
   end
 
   def test_generate_c_for_variadic_extern_calls
