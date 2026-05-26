@@ -104,7 +104,7 @@ Rules for documentation comments:
 - Contiguous `##` lines form one markdown block.
 - A blank line breaks attachment.
 - Plain `#` comments are ignored by hover documentation.
-- Documentation attaches only to declarations (`function`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `extending`, `opaque`).
+- Documentation attaches only to declarations (`function`, `struct`, `union`, `enum`, `flags`, `variant`, `type`, `const`, `var`, `let`, `extending`, `opaque`, `interface`).
 
 ### 2.3 Literals
 
