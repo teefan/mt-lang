@@ -9,7 +9,7 @@ module MilkTea
     Constant = Data.define(:name, :c_name, :type, :value)
     Global = Data.define(:name, :c_name, :type, :value)
     OpaqueDecl = Data.define(:name, :c_name, :forward_declarable)
-      StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment)
+    StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment)
     UnionDecl = Data.define(:name, :c_name, :fields)
     EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)
     EnumMember = Data.define(:name, :c_name, :value)

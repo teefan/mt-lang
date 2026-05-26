@@ -2294,6 +2294,8 @@ module MilkTea
         true
       when IR::BlockStmt
         !body_needs_fallback_return?(statement.body)
+      when IR::IfStmt
+        statement.else_body && !body_needs_fallback_return?(statement.then_body) && !body_needs_fallback_return?(statement.else_body)
       when IR::SwitchStmt
         statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| !body_needs_fallback_return?(switch_case.body) }
       when IR::WhileStmt

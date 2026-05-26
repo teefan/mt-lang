@@ -3537,6 +3537,30 @@ function main() -> int:
     refute_match(/return 0;/, function_body)
   end
 
+  def test_generate_c_omits_synthetic_fallback_return_after_terminal_if_else
+    source = <<~MT
+
+# module demo.total_if_else_surface
+
+function choose(flag: bool) -> int:
+    if flag:
+        return 1
+    else:
+        return 2
+
+function main() -> int:
+    return choose(true)
+
+    MT
+
+    generated = generate_c_from_source(source)
+    function_body = generated[/static int32_t demo_total_if_else_surface_choose\(bool flag\) \{.*?^\}/m]
+
+    refute_nil(function_body)
+    assert_match(/if \(flag\) \{/, function_body)
+    refute_match(/return 0;/, function_body)
+  end
+
   def test_generate_c_rewrites_imported_aggregate_constants_for_static_storage
     source = <<~MT
       # module demo.static_const_colors
@@ -3917,7 +3941,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/demo_pointer_surface_Counter \*counter_ptr = &counter;/, generated)
-    assert_match(/\(\*counter_ptr\)\.value = 7;/, generated)
+    assert_match(/counter_ptr->value = 7;/, generated)
     assert_match(/return counter\.value;/, generated)
   end
 
@@ -4054,7 +4078,7 @@ function main() -> int:
     assert_match(/int32_t \*value_ref = &handle->value;/, generated)
     assert_match(/\*value_ref \+= 2;/, generated)
     assert_match(/demo_ref_surface_Counter \*raw_counter = handle;/, generated)
-    assert_match(/\(\*raw_counter\)\.value \+= 1;/, generated)
+    assert_match(/raw_counter->value \+= 1;/, generated)
     assert_match(/return demo_ref_surface_Counter_read\(\*handle\);/, generated)
   end
 
