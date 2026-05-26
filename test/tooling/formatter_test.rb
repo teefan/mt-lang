@@ -141,6 +141,25 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_includes formatted, "    ):\n"
   end
 
+  def test_tidy_mode_wraps_long_else_if_logical_chain
+    source = <<~MT
+      function main(flag: bool, value: int, other: int) -> int:
+          if flag:
+              return 1
+          else if flag and value > 0 and other > 0 and value != other and other < 100 and value < 200:
+              return 2
+          return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 90)
+
+    assert_includes formatted, "    else if (\n"
+    assert_includes formatted, "        flag\n"
+    assert_includes formatted, "        and value > 0\n"
+    assert_includes formatted, "        and value < 200\n"
+    assert_includes formatted, "    ):\n"
+  end
+
   def test_canonical_mode_flattens_grouped_multiline_binary_expression
     source = <<~MT
       function main() -> int:
