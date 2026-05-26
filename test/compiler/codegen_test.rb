@@ -643,6 +643,26 @@ function main() -> int:
     refute_match(/\} else \{\n\s+if \(/, function_body)
   end
 
+  def test_generate_c_for_async_function_without_await_omits_state_dispatch
+    source = <<~MT
+      # module demo.noawait_async_codegen
+
+      async function main() -> int:
+          var total = 0
+          if true:
+              total = 7
+          return total
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/demo_noawait_async_codegen___async_main__frame/, generated)
+    refute_match(/switch \(__mt_frame->state\)/, generated)
+    refute_match(/resume_state_0:/, generated)
+    refute_match(/goto demo_noawait_async_codegen___async_main__resume_state_0;/, generated)
+    refute_match(/typedef struct demo_noawait_async_codegen___async_main__frame \{[^}]*\bstate;/m, generated)
+  end
+
     def test_generate_c_for_await_in_if_body
       source = <<~MT
         # module demo.await_in_if
@@ -3482,9 +3502,10 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/for \(uintptr_t __mt_for_index_\d+ = 0; __mt_for_index_\d+ < 4; __mt_for_index_\d+ \+= 1\)/, generated)
-    assert_match(/goto __mt_loop_continue_\d+;/, generated)
     assert_match(/goto __mt_loop_break_\d+;/, generated)
-    assert_match(/__mt_loop_continue_\d+:;/, generated)
+    assert_match(/continue;/, generated)
+    refute_match(/goto __mt_loop_continue_\d+;/, generated)
+    refute_match(/__mt_loop_continue_\d+:;/, generated)
     assert_match(/__mt_loop_break_\d+:;/, generated)
   end
 
@@ -3641,6 +3662,41 @@ function main() -> int:
     refute_match(/goto __mt_loop_break_\d+;/, generated)
     refute_match(/__mt_loop_break_\d+:;/, generated)
   end
+
+    def test_generate_c_uses_structured_break_for_simple_option_match_inside_loop
+    source = <<~MT
+
+  # module demo.option_loop_match_break_surface
+
+  function next_value(current: int) -> Option[int]:
+      if current == 0:
+          return Option[int].none
+      return Option[int].some(value = current)
+
+  function main() -> int:
+      var total = 0
+      var current = 3
+      while current >= 0:
+          match next_value(current):
+              Option.some as payload:
+                  if payload.value == 2:
+                      break
+                  total += payload.value
+              Option.none:
+                  break
+          current -= 1
+      return total
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/while \(current >= 0\) \{/, generated)
+    assert_match(/if \(__mt_match_value_\d+\.kind == Option_int_kind_some\) \{/, generated)
+    assert_match(/if \(payload.value == 2\) \{\n        break;/, generated)
+    refute_match(/goto __mt_loop_break_\d+;/, generated)
+    refute_match(/__mt_loop_break_\d+:;/, generated)
+    end
 
   def test_generate_c_canonicalizes_top_guarded_infinite_loop
     source = <<~MT

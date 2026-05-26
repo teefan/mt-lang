@@ -1637,6 +1637,7 @@ module MilkTea
 
     def emit_function(function)
       @checked_index_alias_id = 0
+      @suppressed_labels = []
       body = compact_generated_statement_sequence(function.body)
       lines = ["#{function_signature(function)} {"]
       used_labels = collect_used_labels(body)
@@ -1658,19 +1659,21 @@ module MilkTea
       lines
     end
 
-    def emit_statement_sequence(statements, level, function:, used_labels:)
+    def emit_statement_sequence(statements, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil)
       statements.each_with_index.flat_map do |statement, index|
         emit_statement(
           statement,
           level,
           function:,
           used_labels:,
+          loop_continue_label:,
+          loop_break_label:,
           remaining_statements: statements[(index + 1)..] || [],
         )
       end
     end
 
-    def emit_statement(statement, level, function:, used_labels:, remaining_statements: [])
+    def emit_statement(statement, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil, remaining_statements: [])
       indent = INDENT * level
       aliases = checked_index_aliases_for_statement(statement)
       alias_lines = emit_checked_index_alias_declarations(aliases, indent)
@@ -1710,11 +1713,11 @@ module MilkTea
         when IR::BlockStmt
           if block_requires_scope?(statement.body)
             lines = ["#{indent}{"]
-            lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
+            lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:, loop_continue_label:, loop_break_label:))
             lines << "#{indent}}"
             lines
           else
-            emit_statement_sequence(statement.body, level, function:, used_labels:)
+            emit_statement_sequence(statement.body, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
           end
         when IR::ExpressionStmt
           ["#{indent}#{emit_expression(statement.expression)};"]
@@ -1729,13 +1732,21 @@ module MilkTea
             ["#{indent}return;"]
           end
         when IR::WhileStmt
+          body_continue_label = loop_continue_label_name(statement.body)
+          body = body_continue_label ? statement.body[0...-1] : statement.body
+          body_break_label = loop_break_label_name(body, remaining_statements)
+          @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
           lines = ["#{indent}while (#{emit_expression(statement.condition)}) {"]
-          lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
+          lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
           lines << "#{indent}}"
           lines
         when IR::ForStmt
+          body_continue_label = loop_continue_label_name(statement.body)
+          body = body_continue_label ? statement.body[0...-1] : statement.body
+          body_break_label = loop_break_label_name(body, remaining_statements)
+          @suppressed_labels << body_break_label if body_break_label && !statements_need_explicit_break_label_after_emission?(body, body_break_label, loop_break_label_active: true)
           lines = ["#{indent}for (#{emit_for_clause_statement(statement.init)}; #{emit_expression(statement.condition)}; #{emit_for_clause_statement(statement.post)}) {"]
-          lines.concat(emit_statement_sequence(statement.body, level + 1, function:, used_labels:))
+          lines.concat(emit_statement_sequence(body, level + 1, function:, used_labels:, loop_continue_label: body_continue_label, loop_break_label: body_break_label))
           lines << "#{indent}}"
           lines
         when IR::BreakStmt
@@ -1743,16 +1754,24 @@ module MilkTea
         when IR::ContinueStmt
           ["#{indent}continue;"]
         when IR::GotoStmt
+          return ["#{indent}continue;"] if loop_continue_label && statement.label == loop_continue_label
+          return ["#{indent}break;"] if loop_break_label && statement.label == loop_break_label
+
           ["#{indent}goto #{statement.label};"]
         when IR::LabelStmt
+          return [] if @suppressed_labels.include?(statement.name)
+          return [] if loop_continue_label && statement.name == loop_continue_label
           return [] unless used_labels.include?(statement.name)
 
           ["#{indent}#{statement.name}:;"]
         when IR::StaticAssert
           ["#{indent}#{emit_static_assert(statement)}"]
         when IR::IfStmt
-          emit_if_statement(statement, level, function:, used_labels:)
+          emit_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
         when IR::SwitchStmt
+          if switch_emittable_as_if?(statement, loop_break_label:)
+            emit_switch_as_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
+          else
           lines = ["#{indent}switch (#{emit_expression(statement.expression)}) {"]
           statement.cases.each do |switch_case|
             if switch_case.is_a?(IR::SwitchDefaultCase)
@@ -1760,12 +1779,13 @@ module MilkTea
             else
               lines << "#{indent}#{INDENT}case #{emit_expression(switch_case.value)}: {"
             end
-            lines.concat(emit_statement_sequence(switch_case.body, level + 2, function:, used_labels:))
+            lines.concat(emit_statement_sequence(switch_case.body, level + 2, function:, used_labels:, loop_continue_label:))
             lines << "#{indent}#{INDENT}#{INDENT}break;" unless body_terminates?(switch_case.body)
             lines << "#{indent}#{INDENT}}"
           end
           lines << "#{indent}}"
           lines
+          end
         else
           raise LoweringError, "unsupported IR statement #{statement.class.name}"
         end
@@ -1861,6 +1881,115 @@ module MilkTea
       end
     end
 
+    def loop_continue_label_name(statements)
+      return if statements.empty?
+
+      label = statements.last
+      return unless label.is_a?(IR::LabelStmt)
+
+      label.name
+    end
+
+    def loop_break_label_name(statements, remaining_statements)
+      return if remaining_statements.empty?
+
+      label = remaining_statements.first
+      return unless label.is_a?(IR::LabelStmt)
+      return unless statements_reference_label?(statements, label.name)
+
+      label.name
+    end
+
+    def statements_reference_label?(statements, label_name)
+      statements.any? { |statement| statement_references_label?(statement, label_name) }
+    end
+
+    def statement_references_label?(statement, label_name)
+      case statement
+      when IR::BlockStmt, IR::WhileStmt, IR::ForStmt
+        statements_reference_label?(statement.body, label_name)
+      when IR::IfStmt
+        statements_reference_label?(statement.then_body, label_name) ||
+          (statement.else_body && statements_reference_label?(statement.else_body, label_name))
+      when IR::SwitchStmt
+        statement.cases.any? { |switch_case| statements_reference_label?(switch_case.body, label_name) }
+      when IR::GotoStmt
+        statement.label == label_name
+      else
+        false
+      end
+    end
+
+    def statements_need_explicit_break_label_after_emission?(statements, label_name, loop_break_label_active:)
+      statements.any? do |statement|
+        statement_needs_explicit_break_label_after_emission?(statement, label_name, loop_break_label_active:)
+      end
+    end
+
+    def statement_needs_explicit_break_label_after_emission?(statement, label_name, loop_break_label_active:)
+      case statement
+      when IR::BlockStmt, IR::IfStmt
+        then_body = statement.is_a?(IR::IfStmt) ? statement.then_body : statement.body
+        else_body = statement.is_a?(IR::IfStmt) ? statement.else_body : nil
+        statements_need_explicit_break_label_after_emission?(then_body, label_name, loop_break_label_active:) ||
+          (else_body && statements_need_explicit_break_label_after_emission?(else_body, label_name, loop_break_label_active:))
+      when IR::WhileStmt, IR::ForStmt
+        statements_need_explicit_break_label_after_emission?(statement.body, label_name, loop_break_label_active: false)
+      when IR::SwitchStmt
+        return false unless statement_references_label?(statement, label_name)
+
+        active = loop_break_label_active && switch_emittable_as_if?(statement, loop_break_label: label_name)
+        statements_need_explicit_break_label_after_emission?(
+          statement.cases.flat_map(&:body),
+          label_name,
+          loop_break_label_active: active,
+        )
+      when IR::GotoStmt
+        statement.label == label_name && !loop_break_label_active
+      else
+        false
+      end
+    end
+
+    def switch_emittable_as_if?(statement, loop_break_label: nil)
+      return false unless loop_break_label
+      return false unless statement.exhaustive
+      return false unless statement.cases.length == 2
+      return false unless side_effect_free_expression?(statement.expression)
+      return false unless statement_references_label?(statement, loop_break_label)
+
+      statement.cases.count { |switch_case| switch_case.is_a?(IR::SwitchDefaultCase) } <= 1
+    end
+
+    def emit_switch_as_if_statement(statement, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
+      explicit_cases = statement.cases.select { |switch_case| switch_case.is_a?(IR::SwitchCase) }
+      default_case = statement.cases.find { |switch_case| switch_case.is_a?(IR::SwitchDefaultCase) }
+
+      condition, then_body, else_body = if default_case
+                                          explicit_case = explicit_cases.first
+                                          [
+                                            IR::Binary.new(operator: "==", left: statement.expression, right: explicit_case.value, type: nil),
+                                            explicit_case.body,
+                                            default_case.body,
+                                          ]
+                                        else
+                                          [
+                                            IR::Binary.new(operator: "==", left: statement.expression, right: explicit_cases.first.value, type: nil),
+                                            explicit_cases.first.body,
+                                            explicit_cases.last.body,
+                                          ]
+                                        end
+
+      emit_if_statement(
+        IR::IfStmt.new(condition:, then_body:, else_body:),
+        level,
+        function:,
+        used_labels:,
+        loop_continue_label:,
+        loop_break_label:,
+      )
+    end
+
     def canonicalize_top_guarded_while(statement)
       return statement unless constant_boolean_value(statement.condition) == true
       return statement if statement.body.empty?
@@ -1908,24 +2037,24 @@ module MilkTea
       }[operator]
     end
 
-    def emit_if_statement(statement, level, function:, used_labels:)
+    def emit_if_statement(statement, level, function:, used_labels:, loop_continue_label: nil, loop_break_label: nil)
       indent = INDENT * level
 
       case constant_boolean_value(statement.condition)
       when true
-        return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:)
+        return emit_statement(IR::BlockStmt.new(body: statement.then_body), level, function:, used_labels:, loop_continue_label:, loop_break_label:)
       when false
         return [] unless statement.else_body && !statement.else_body.empty?
 
-        return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:)
+        return emit_statement(IR::BlockStmt.new(body: statement.else_body), level, function:, used_labels:, loop_continue_label:, loop_break_label:)
       end
 
       lines = ["#{indent}if (#{emit_expression(statement.condition)}) {"]
-      lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:))
+      lines.concat(emit_statement_sequence(statement.then_body, level + 1, function:, used_labels:, loop_continue_label:, loop_break_label:))
 
       nested_else_if = nested_else_if_statement(statement.else_body)
       if nested_else_if
-        nested_lines = emit_if_statement(nested_else_if, level, function:, used_labels:)
+        nested_lines = emit_if_statement(nested_else_if, level, function:, used_labels:, loop_continue_label:, loop_break_label:)
         lines << "#{indent}} else #{nested_lines.first.sub(/^#{Regexp.escape(indent)}/, "") }"
         lines.concat(nested_lines.drop(1))
         return lines
@@ -1933,7 +2062,7 @@ module MilkTea
 
       if statement.else_body && !statement.else_body.empty?
         lines << "#{indent}} else {"
-        lines.concat(emit_statement_sequence(statement.else_body, level + 1, function:, used_labels:))
+        lines.concat(emit_statement_sequence(statement.else_body, level + 1, function:, used_labels:, loop_continue_label:, loop_break_label:))
       end
       lines << "#{indent}}"
       lines
