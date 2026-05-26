@@ -102,7 +102,7 @@ module MilkTea
     def write
       lock_path, content = rendered_lockfile
 
-      File.write(lock_path, content)
+      PackageAtomicWrite.write(lock_path, content)
 
       Result.new(lock_path:, content:)
     rescue SystemCallError => e

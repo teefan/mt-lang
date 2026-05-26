@@ -451,12 +451,21 @@ module MilkTea
 
     def with_manifest_edit(editor)
       original_source = File.read(editor.manifest_path)
+      lock_path = File.join(File.dirname(editor.manifest_path), "package.lock")
+      original_lock_content = File.file?(lock_path) ? File.binread(lock_path) : nil
+
       yield
       lock_result = PackageLock.write(editor.manifest_path, source_resolver: @services.source_resolver(:materialize))
+      fetch_results = @services.source_fetcher.fetch_locked_sources(editor.manifest_path)
       @out.puts("wrote #{lock_result.lock_path}")
-      emit_dependency_fetch_results(@services.source_fetcher.fetch_locked_sources(editor.manifest_path), editor.manifest_path)
+      emit_dependency_fetch_results(fetch_results, editor.manifest_path)
     rescue StandardError
-      File.write(editor.manifest_path, original_source) if original_source
+      PackageAtomicWrite.write(editor.manifest_path, original_source) if original_source
+      if original_lock_content
+        PackageAtomicWrite.write(lock_path, original_lock_content, binmode: true)
+      elsif File.file?(lock_path)
+        File.delete(lock_path)
+      end
       raise
     end
 
