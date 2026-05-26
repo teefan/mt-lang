@@ -3776,8 +3776,24 @@ function main() -> int:
     assert_match(/static const bool demo_str_compare_surface_same = true;/, generated)
     assert_match(/_Static_assert\(true, "string compare failed"\);/, generated)
     assert_match(/if \(mt_str_equal\(left, right\)\) \{/, generated)
-    assert_match(/if \(\(!mt_str_equal\(left, right\)\)\) \{/, generated)
+    assert_match(/if \(!mt_str_equal\(left, right\)\) \{/, generated)
     refute_match(/_Static_assert\(\(mt_str\)/, generated)
+  end
+
+  def test_generate_c_flattens_boolean_chains_and_preserves_right_grouping
+    source = <<~MT
+      # module demo.boolean_chain_surface
+
+      function main(active: bool, ctrl: bool, alt: bool, code: int, a: int, b: int, c: int) -> int:
+          if active and not ctrl and not alt and code >= 32 and code < 127:
+              return a - (b - c)
+          return 0
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/if \(active && !ctrl && !alt && code >= 32 && code < 127\) \{/, generated)
+    assert_match(/return a - \(b - c\);/, generated)
   end
 
   def test_rejects_codegen_for_direct_str_construction_outside_unsafe
