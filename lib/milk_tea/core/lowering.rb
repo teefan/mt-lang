@@ -2446,7 +2446,7 @@ module MilkTea
             end
           end
 
-          return expr_setup + [IR::SwitchStmt.new(expression: kind_expr, cases:)]
+          return expr_setup + [IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)]
         end
 
         cases = statement.arms.map do |arm|
@@ -2462,7 +2462,7 @@ module MilkTea
           end
         end
 
-        expr_setup + [IR::SwitchStmt.new(expression: match_expr, cases:)]
+        expr_setup + [IR::SwitchStmt.new(expression: match_expr, cases:, exhaustive: true)]
       end
 
       def lower_async_non_await_statements(statements, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers: [], loop_flow: nil)
@@ -2574,7 +2574,7 @@ module MilkTea
                   IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body: body)
                 end
               end
-              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
+              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
             else
               cases = statement.arms.map do |arm|
                 arm_body = lower_async_non_await_statements(
@@ -2587,7 +2587,7 @@ module MilkTea
                   IR::SwitchCase.new(value:, body: arm_body)
                 end
               end
-              lowered << IR::SwitchStmt.new(expression: expr, cases:)
+              lowered << IR::SwitchStmt.new(expression: expr, cases:, exhaustive: true)
             end
           when AST::WhileStmt
             lowered << lower_async_while_stmt(statement, env: local_env, frame_expr:, raw_frame_expr:, async_info:, active_defers: active_defers + local_defers)
@@ -3556,7 +3556,7 @@ module MilkTea
                   IR::SwitchCase.new(value: IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false), body:)
                 end
               end
-              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:)
+              lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
             else
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|
@@ -3575,7 +3575,7 @@ module MilkTea
                   IR::SwitchCase.new(value:, body:)
                 end
               end
-              lowered << IR::SwitchStmt.new(expression:, cases:)
+              lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
             end
             lowered.concat(expression_cleanups.flat_map(&:itself))
           when AST::StaticAssert
@@ -5232,7 +5232,7 @@ module MilkTea
                   end
                 end
 
-        [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases)], AST::Identifier.new(name: result_name)]
+        [setup + [IR::SwitchStmt.new(expression: switch_expression, cases: cases, exhaustive: true)], AST::Identifier.new(name: result_name)]
       end
 
       def materialize_prepared_expression(setup, value, env:, type:, prefix:)
