@@ -5,6 +5,44 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaPackageRegistryStoreTest < Minitest::Test
+  def test_publish_removes_new_package_root_and_archive_when_registry_artifact_write_fails
+    Dir.mktmpdir("milk-tea-package-registry-publish-rollback") do |dir|
+      package_root = File.join(dir, "packages", "ui")
+      registry_root = File.join(dir, "registry")
+
+      FileUtils.mkdir_p(File.join(package_root, "src", "teefan", "ui"))
+      File.write(File.join(package_root, "package.toml"), <<~TOML)
+        [package]
+        name = "teefan.ui"
+        version = "1.2.3"
+        kind = "library"
+        source_root = "src"
+      TOML
+      File.write(File.join(package_root, "src", "teefan", "ui", "layout.mt"), <<~MT)
+      MT
+
+      store = MilkTea::PackageRegistryStore.new(root: registry_root)
+      archive_path = File.join(registry_root, "packages", "teefan.ui", "1.2.3.tar.gz")
+      published_root = File.join(registry_root, "packages", "teefan.ui", "1.2.3")
+
+      store.define_singleton_method(:write_package_archive!) do |path, _package_root|
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, "archive")
+      end
+      store.define_singleton_method(:write_versions_index!) do |_root, _package_name|
+        raise Errno::EIO, "index failed"
+      end
+
+      error = assert_raises(MilkTea::PackageRegistryStoreError) do
+        store.publish(package_root)
+      end
+
+      assert_match(/failed to publish package/, error.message)
+      refute File.exist?(archive_path)
+      refute File.exist?(published_root)
+    end
+  end
+
   def test_publish_writes_archive_and_extract_restores_package_tree
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

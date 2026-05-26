@@ -372,6 +372,75 @@ class MilkTeaPackageManagerCliTest < Minitest::Test
     end
   end
 
+  def test_with_manifest_edit_restores_original_lockfile_when_post_write_step_fails
+    Dir.mktmpdir("milk-tea-manager-cli-lock-rollback") do |dir|
+      manifest_path = File.join(dir, "package.toml")
+      lock_path = File.join(dir, "package.lock")
+      editor = FakeEditor.new(manifest_path)
+      out = StringIO.new
+      err = StringIO.new
+      fetcher = Object.new
+      fetcher.define_singleton_method(:fetch_locked_sources) do |_path|
+        raise "fetch failed"
+      end
+
+      File.write(manifest_path, "original\n")
+      File.write(lock_path, "old lock\n")
+
+      with_singleton_method_override(MilkTea::PackageLock, :write, lambda do |_path, source_resolver:|
+        File.write(lock_path, "new lock\n")
+        LockWriteResult.new(lock_path)
+      end) do
+        error = assert_raises(RuntimeError) do
+          cli([], out:, err:, services: services(source_fetcher: fetcher)).send(:with_manifest_edit, editor) do
+            File.write(manifest_path, "changed\n")
+          end
+        end
+
+        assert_equal "fetch failed", error.message
+      end
+
+      assert_equal "", err.string
+      assert_equal "", out.string
+      assert_equal "original\n", File.read(manifest_path)
+      assert_equal "old lock\n", File.read(lock_path)
+    end
+  end
+
+  def test_with_manifest_edit_removes_new_lockfile_when_post_write_step_fails
+    Dir.mktmpdir("milk-tea-manager-cli-new-lock-rollback") do |dir|
+      manifest_path = File.join(dir, "package.toml")
+      lock_path = File.join(dir, "package.lock")
+      editor = FakeEditor.new(manifest_path)
+      out = StringIO.new
+      err = StringIO.new
+      fetcher = Object.new
+      fetcher.define_singleton_method(:fetch_locked_sources) do |_path|
+        raise "fetch failed"
+      end
+
+      File.write(manifest_path, "original\n")
+
+      with_singleton_method_override(MilkTea::PackageLock, :write, lambda do |_path, source_resolver:|
+        File.write(lock_path, "new lock\n")
+        LockWriteResult.new(lock_path)
+      end) do
+        error = assert_raises(RuntimeError) do
+          cli([], out:, err:, services: services(source_fetcher: fetcher)).send(:with_manifest_edit, editor) do
+            File.write(manifest_path, "changed\n")
+          end
+        end
+
+        assert_equal "fetch failed", error.message
+      end
+
+      assert_equal "", err.string
+      assert_equal "", out.string
+      assert_equal "original\n", File.read(manifest_path)
+      refute File.exist?(lock_path)
+    end
+  end
+
   def test_emit_dependency_fetch_results_reports_missing_cache_backed_sources
     out = StringIO.new
     err = StringIO.new

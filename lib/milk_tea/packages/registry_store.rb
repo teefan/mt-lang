@@ -105,9 +105,8 @@ module MilkTea
               "package #{manifest.package_name} version #{package_version} already published in registry: #{package_root}"
       end
 
-      FileUtils.mkdir_p(File.dirname(package_root))
-      FileUtils.copy_entry(manifest.root_dir, package_root)
-      write_registry_artifacts!(target_root, manifest.package_name, package_version, package_root)
+      materialize_package_copy!(manifest.root_dir, package_root)
+      write_registry_artifacts_with_rollback!(target_root, manifest.package_name, package_version, package_root)
 
       Result.new(package_name: manifest.package_name, version: package_version, path: package_root)
     rescue PackageManifestError => e
@@ -138,10 +137,8 @@ module MilkTea
               "upstream registry package at #{upstream_manifest.manifest_path} resolved to #{upstream_manifest.package_name}@#{upstream_manifest.package_version.inspect}; expected #{package_name}@#{package_version}"
       end
 
-      FileUtils.rm_rf(local_root) if File.exist?(local_root)
-      FileUtils.mkdir_p(File.dirname(local_root))
-      FileUtils.copy_entry(upstream_package_root, local_root)
-      write_registry_artifacts!(@root, package_name, package_version, local_root)
+      materialize_package_copy!(upstream_package_root, local_root)
+      write_registry_artifacts_with_rollback!(@root, package_name, package_version, local_root)
 
       Result.new(package_name:, version: package_version, path: local_root)
     rescue PackageManifestError => e
@@ -235,7 +232,7 @@ module MilkTea
       end
 
       validate_synced_package!(local_root, package_name, package_version)
-      write_registry_artifacts!(@root, package_name, package_version, local_root)
+      write_registry_artifacts_with_rollback!(@root, package_name, package_version, local_root)
 
       Result.new(package_name:, version: package_version, path: local_root)
     rescue PackageManifestError => e
@@ -257,17 +254,24 @@ module MilkTea
       write_versions_index!(root, package_name)
     end
 
-    def write_package_archive!(archive_path, package_root)
-      FileUtils.mkdir_p(File.dirname(archive_path))
+    def write_registry_artifacts_with_rollback!(root, package_name, package_version, package_root)
+      write_registry_artifacts!(root, package_name, package_version, package_root)
+    rescue StandardError
+      cleanup_registry_entry!(root, package_name, package_version, package_root)
+      raise
+    end
 
+    def write_package_archive!(archive_path, package_root)
       tar_buffer = StringIO.new(+"")
       Gem::Package::TarWriter.new(tar_buffer) do |tar|
         add_directory_to_archive(tar, package_root, package_root)
       end
       tar_buffer.rewind
 
-      Zlib::GzipWriter.open(archive_path) do |gzip|
+      PackageAtomicWrite.open(archive_path, binmode: true) do |file|
+        gzip = Zlib::GzipWriter.new(file)
         gzip.write(tar_buffer.string)
+        gzip.finish
       end
     end
 
@@ -294,8 +298,7 @@ module MilkTea
     def write_versions_index!(root, package_name)
       path = versions_index_path_for_root(root, package_name)
       versions = package_versions_for_root(root, package_name)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, versions.join("\n") + (versions.empty? ? "" : "\n"))
+      PackageAtomicWrite.write(path, versions.join("\n") + (versions.empty? ? "" : "\n"))
     end
 
     def extract_archive_to_root(archive_body, destination_root, scratch_dir)
@@ -327,7 +330,24 @@ module MilkTea
         end
       end
 
-      FileUtils.mv(extract_root, destination_root)
+      File.rename(extract_root, destination_root)
+    end
+
+    def materialize_package_copy!(source_root, destination_root)
+      staging_root = "#{destination_root}.tmp.#{$$}.#{Thread.current.object_id}"
+
+      FileUtils.rm_rf(staging_root)
+      FileUtils.mkdir_p(File.dirname(destination_root))
+      FileUtils.copy_entry(source_root, staging_root)
+      File.rename(staging_root, destination_root)
+    rescue StandardError
+      FileUtils.rm_rf(staging_root)
+      raise
+    end
+
+    def cleanup_registry_entry!(root, package_name, package_version, package_root)
+      FileUtils.rm_rf(package_root)
+      FileUtils.rm_f(archive_path_for_root(root, package_name, package_version))
     end
 
     def package_versions_url(package_name)

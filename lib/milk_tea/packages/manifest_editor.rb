@@ -54,7 +54,7 @@ module MilkTea
       source = File.read(@manifest_path)
       replacement = dependencies.empty? ? nil : render_dependencies_section(dependencies)
       updated_source = replace_dependencies_section(source, replacement)
-      File.write(@manifest_path, updated_source)
+      PackageAtomicWrite.write(@manifest_path, updated_source)
     rescue SystemCallError => e
       raise PackageManifestEditorError, "failed to update #{@manifest_path}: #{e.message}"
     end

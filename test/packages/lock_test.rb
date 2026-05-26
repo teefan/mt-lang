@@ -4,6 +4,30 @@ require "tmpdir"
 require_relative "../test_helper"
 
 class MilkTeaPackageLockTest < Minitest::Test
+  def test_write_preserves_original_lockfile_when_atomic_replace_fails
+    Dir.mktmpdir("milk-tea-package-lock-atomic") do |dir|
+      lock_path = File.join(dir, "package.lock")
+      original_content = "old lock\n"
+      File.write(lock_path, original_content)
+
+      lock = MilkTea::PackageLock.new(dir)
+      lock.define_singleton_method(:rendered_lockfile) do
+        [lock_path, "new lock\n"]
+      end
+
+      error = with_singleton_method_override(File, :rename, lambda do |*_args|
+        raise Errno::EIO, "rename failed"
+      end) do
+        assert_raises(MilkTea::PackageLockError) do
+          lock.write
+        end
+      end
+
+      assert_match(/failed to write/, error.message)
+      assert_equal original_content, File.read(lock_path)
+    end
+  end
+
   def test_load_supports_duplicate_package_names_when_schema_uses_package_instance_ids
     Dir.mktmpdir("milk-tea-package-lock-instance-ids") do |dir|
       app_root = File.join(dir, "apps", "snake-duel")
