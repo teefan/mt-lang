@@ -5,7 +5,6 @@ require "open3"
 require "tempfile"
 require_relative "../core/token"
 require_relative "../core/types"
-require_relative "../tooling/formatter"
 
 module MilkTea
   module Bindgen
@@ -155,7 +154,7 @@ module MilkTea
         declarations.concat(function_declarations)
         declarations.sort_by! { |declaration| declaration[:index] }
 
-        format_generated_source(emit_module(declarations))
+        emit_module(declarations)
       end
 
       def generate_with_report
@@ -903,10 +902,6 @@ module MilkTea
         end
 
         lines.join("\n") + "\n"
-      end
-
-      def format_generated_source(source)
-        Formatter.format_source(source, path: generated_module_path, mode: :canonical)
       end
 
       def generated_module_path

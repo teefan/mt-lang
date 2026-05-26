@@ -2,17 +2,13 @@
 external
 
 import std.c.raylib as rl
-
 link "m"
 include "raylib.h"
 include "raymath.h"
-
 struct Float3Array = c"float3":
     v: array[float, 3]
-
 struct Float16Array = c"float16":
     v: array[float, 16]
-
 external function Clamp(value: float, min: float, max: float) -> float
 external function Lerp(start: float, end: float, amount: float) -> float
 external function Normalize(value: float, start: float, end: float) -> float
@@ -159,5 +155,4 @@ external function QuaternionTransform(q: rl.Vector4, mat: rl.Matrix) -> rl.Quate
 external function QuaternionEquals(p: rl.Vector4, q: rl.Vector4) -> int
 external function MatrixCompose(translation: rl.Vector3, rotation: rl.Vector4, scale: rl.Vector3) -> rl.Matrix
 external function MatrixDecompose(mat: rl.Matrix, translation: ptr[rl.Vector3], rotation: ptr[rl.Quaternion], scale: ptr[rl.Vector3]) -> void
-
 const EPSILON: float = 9.99999997E-7

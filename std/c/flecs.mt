@@ -3,13 +3,11 @@ external
 
 link "flecs"
 include "flecs.h"
-
 union ecs_iter_private_t_iter:
     query: ecs_query_iter_t
     page: ecs_page_iter_t
     worker: ecs_worker_iter_t
     each: ecs_each_iter_t
-
 struct ecs_world_info_t_cmd:
     add_count: ptr_int
     remove_count: ptr_int
@@ -23,11 +21,9 @@ struct ecs_world_info_t_cmd:
     other_count: ptr_int
     batched_entity_count: ptr_int
     batched_command_count: ptr_int
-
 struct ecs_world_stats_t_entities:
     count: ecs_metric_t
     not_alive_count: ecs_metric_t
-
 struct ecs_world_stats_t_components:
     tag_count: ecs_metric_t
     component_count: ecs_metric_t
@@ -35,18 +31,15 @@ struct ecs_world_stats_t_components:
     type_count: ecs_metric_t
     create_count: ecs_metric_t
     delete_count: ecs_metric_t
-
 struct ecs_world_stats_t_tables:
     count: ecs_metric_t
     empty_count: ecs_metric_t
     create_count: ecs_metric_t
     delete_count: ecs_metric_t
-
 struct ecs_world_stats_t_queries:
     query_count: ecs_metric_t
     observer_count: ecs_metric_t
     system_count: ecs_metric_t
-
 struct ecs_world_stats_t_commands:
     add_count: ecs_metric_t
     remove_count: ecs_metric_t
@@ -59,7 +52,6 @@ struct ecs_world_stats_t_commands:
     discard_count: ecs_metric_t
     batched_entity_count: ecs_metric_t
     batched_count: ecs_metric_t
-
 struct ecs_world_stats_t_frame:
     frame_count: ecs_metric_t
     merge_count: ecs_metric_t
@@ -68,7 +60,6 @@ struct ecs_world_stats_t_frame:
     systems_ran: ecs_metric_t
     observers_ran: ecs_metric_t
     event_emit_count: ecs_metric_t
-
 struct ecs_world_stats_t_performance:
     world_time_raw: ecs_metric_t
     world_time: ecs_metric_t
@@ -79,7 +70,6 @@ struct ecs_world_stats_t_performance:
     rematch_time: ecs_metric_t
     fps: ecs_metric_t
     delta_time: ecs_metric_t
-
 struct ecs_world_stats_t_memory:
     alloc_count: ecs_metric_t
     realloc_count: ecs_metric_t
@@ -91,7 +81,6 @@ struct ecs_world_stats_t_memory:
     stack_alloc_count: ecs_metric_t
     stack_free_count: ecs_metric_t
     stack_outstanding_alloc_count: ecs_metric_t
-
 struct ecs_world_stats_t_http:
     request_received_count: ecs_metric_t
     request_invalid_count: ecs_metric_t
@@ -102,12 +91,10 @@ struct ecs_world_stats_t_http:
     send_ok_count: ecs_metric_t
     send_error_count: ecs_metric_t
     busy_count: ecs_metric_t
-
 union ecs_meta_op_t_is:
     members: ptr[ecs_hashmap_t]
     constants: ptr[ecs_map_t]
     opaque_: fn(arg0: const_ptr[ecs_serializer_t], arg1: const_ptr[void]) -> int
-
 opaque ecs_event_id_record_t = c"struct ecs_event_id_record_t"
 opaque ecs_query_var_t = c"struct ecs_query_var_t"
 opaque ecs_query_op_t = c"struct ecs_query_op_t"
@@ -120,28 +107,23 @@ type ecs_flags64_t = ptr_uint
 type ecs_size_t = int
 type ecs_id_t = ptr_uint
 type ecs_entity_t = ptr_uint
-
 struct ecs_type_t:
     array: ptr[ecs_id_t]
     count: int
-
 opaque ecs_world_t = c"ecs_world_t"
 opaque ecs_stage_t = c"ecs_stage_t"
 opaque ecs_table_t = c"ecs_table_t"
 opaque ecs_component_record_t = c"ecs_component_record_t"
 type ecs_poly_t = void
 opaque ecs_mixins_t = c"ecs_mixins_t"
-
 struct ecs_header_t:
     type_: int
     refcount: int
     mixins: ptr[ecs_mixins_t]
-
 struct ecs_vec_t:
     array: ptr[void]
     count: int
     size: int
-
 external function ecs_vec_init(allocator: ptr[ecs_allocator_t], vec: ptr[ecs_vec_t], size: int, elem_count: int) -> void
 external function ecs_vec_init_w_dbg_info(allocator: ptr[ecs_allocator_t], vec: ptr[ecs_vec_t], size: int, elem_count: int, type_name: cstr) -> void
 external function ecs_vec_init_if(vec: ptr[ecs_vec_t], size: int) -> void
@@ -169,11 +151,9 @@ external function ecs_vec_size(vec: const_ptr[ecs_vec_t]) -> int
 external function ecs_vec_get(vec: const_ptr[ecs_vec_t], size: int, index: int) -> ptr[void]
 external function ecs_vec_first(vec: const_ptr[ecs_vec_t]) -> ptr[void]
 external function ecs_vec_last(vec: const_ptr[ecs_vec_t], size: int) -> ptr[void]
-
 struct ecs_sparse_page_t:
     sparse: ptr[int]
     data: ptr[void]
-
 struct ecs_sparse_t:
     dense: ecs_vec_t
     pages: ecs_vec_t
@@ -182,21 +162,17 @@ struct ecs_sparse_t:
     max_id: ptr_uint
     allocator: ptr[ecs_allocator_t]
     page_allocator: ptr[ecs_block_allocator_t]
-
 external function ecs_sparse_init(sparse: ptr[ecs_sparse_t], elem_size: int) -> void
 external function ecs_sparse_add(sparse: ptr[ecs_sparse_t], elem_size: int) -> ptr[void]
 external function ecs_sparse_last_id(sparse: const_ptr[ecs_sparse_t]) -> ulong
 external function ecs_sparse_count(sparse: const_ptr[ecs_sparse_t]) -> int
 external function ecs_sparse_get_dense(sparse: const_ptr[ecs_sparse_t], elem_size: int, index: int) -> ptr[void]
 external function ecs_sparse_get(sparse: const_ptr[ecs_sparse_t], elem_size: int, id: ptr_uint) -> ptr[void]
-
 struct ecs_block_allocator_block_t:
     memory: ptr[void]
     next: ptr[ecs_block_allocator_block_t]
-
 struct ecs_block_allocator_chunk_header_t:
     next: ptr[ecs_block_allocator_chunk_header_t]
-
 struct ecs_block_allocator_t:
     data_size: int
     chunk_size: int
@@ -204,38 +180,31 @@ struct ecs_block_allocator_t:
     block_size: int
     head: ptr[ecs_block_allocator_chunk_header_t]
     block_head: ptr[ecs_block_allocator_block_t]
-
 struct ecs_stack_page_t:
     data: ptr[void]
     next: ptr[ecs_stack_page_t]
     sp: short
     id: uint
-
 struct ecs_stack_cursor_t:
     prev: ptr[ecs_stack_cursor_t]
     page: ptr[ecs_stack_page_t]
     sp: short
     is_free: bool
     owner: ptr[ecs_stack_t]
-
 struct ecs_stack_t:
     first: ptr[ecs_stack_page_t]
     tail_page: ptr[ecs_stack_page_t]
     tail_cursor: ptr[ecs_stack_cursor_t]
     cursor_count: int
-
 type ecs_map_data_t = ptr_uint
 type ecs_map_key_t = ptr_uint
 type ecs_map_val_t = ptr_uint
-
 struct ecs_bucket_entry_t:
     key: ptr_uint
     value: ptr_uint
     next: ptr[ecs_bucket_entry_t]
-
 struct ecs_bucket_t:
     first: ptr[ecs_bucket_entry_t]
-
 struct ecs_map_t:
     buckets: ptr[ecs_bucket_t]
     bucket_count: int
@@ -244,14 +213,12 @@ struct ecs_map_t:
     allocator: ptr[ecs_allocator_t]
     change_count: int
     last_iterated: ptr_uint
-
 struct ecs_map_iter_t:
     map: const_ptr[ecs_map_t]
     bucket: ptr[ecs_bucket_t]
     entry: ptr[ecs_bucket_entry_t]
     res: ptr[ecs_map_data_t]
     change_count: int
-
 external function ecs_map_init(map: ptr[ecs_map_t], allocator: ptr[ecs_allocator_t]) -> void
 external function ecs_map_init_if(map: ptr[ecs_map_t], allocator: ptr[ecs_allocator_t]) -> void
 external function ecs_map_reclaim(map: ptr[ecs_map_t]) -> void
@@ -269,15 +236,12 @@ external function ecs_map_iter(map: const_ptr[ecs_map_t]) -> ecs_map_iter_t
 external function ecs_map_iter_valid(iter: ptr[ecs_map_iter_t]) -> bool
 external function ecs_map_next(iter: ptr[ecs_map_iter_t]) -> bool
 external function ecs_map_copy(dst: ptr[ecs_map_t], src: const_ptr[ecs_map_t]) -> void
-
 struct ecs_allocator_t:
     chunks: ecs_block_allocator_t
     sizes: ecs_sparse_t
-
 struct ecs_strbuf_list_elem:
     count: int
     separator: cstr
-
 struct ecs_strbuf_t:
     content: ptr[char]
     length: int
@@ -285,7 +249,6 @@ struct ecs_strbuf_t:
     list_stack: array[ecs_strbuf_list_elem, 32]
     list_sp: int
     small_string: array[char, 512]
-
 external function ecs_strbuf_append(buffer: ptr[ecs_strbuf_t], fmt: cstr, ...) -> void
 external function ecs_strbuf_vappend(buffer: ptr[ecs_strbuf_t], fmt: cstr, args: va_list) -> void
 external function ecs_strbuf_appendstr(buffer: ptr[ecs_strbuf_t], str_: cstr) -> void
@@ -306,11 +269,9 @@ external function ecs_strbuf_list_append(buffer: ptr[ecs_strbuf_t], fmt: cstr, .
 external function ecs_strbuf_list_appendstr(buffer: ptr[ecs_strbuf_t], str_: cstr) -> void
 external function ecs_strbuf_list_appendstrn(buffer: ptr[ecs_strbuf_t], str_: cstr, n: int) -> void
 external function ecs_strbuf_written(buffer: const_ptr[ecs_strbuf_t]) -> int
-
 struct ecs_time_t:
     sec: uint
     nanosec: uint
-
 type ecs_os_thread_t = ptr_uint
 type ecs_os_cond_t = ptr_uint
 type ecs_os_mutex_t = ptr_uint
@@ -353,7 +314,6 @@ type ecs_os_api_dlproc_t = fn(arg0: ecs_os_dl_t, arg1: cstr) -> ecs_os_proc_t
 type ecs_os_api_dlclose_t = fn(arg0: ecs_os_dl_t) -> void
 type ecs_os_api_module_to_path_t = fn(arg0: cstr) -> ptr[char]
 type ecs_os_api_perf_trace_t = fn(arg0: cstr, arg1: ptr_uint, arg2: cstr) -> void
-
 struct ecs_os_api_t:
     init_: fn() -> void
     fini_: fn() -> void
@@ -398,7 +358,6 @@ struct ecs_os_api_t:
     log_last_timestamp_: ptr_int
     flags_: uint
     log_out_: ptr[void]
-
 external function ecs_os_init() -> void
 external function ecs_os_fini() -> void
 external function ecs_os_set_api(os_api: ptr[ecs_os_api_t]) -> void
@@ -425,7 +384,6 @@ external function ecs_os_has_time() -> bool
 external function ecs_os_has_logging() -> bool
 external function ecs_os_has_dl() -> bool
 external function ecs_os_has_modules() -> bool
-
 type ecs_run_action_t = fn(arg0: ptr[ecs_iter_t]) -> void
 type ecs_iter_action_t = fn(arg0: ptr[ecs_iter_t]) -> void
 type ecs_iter_next_action_t = fn(arg0: ptr[ecs_iter_t]) -> bool
@@ -445,7 +403,6 @@ type ecs_copy_t = fn(arg0: ptr[void], arg1: const_ptr[void], arg2: int, arg3: co
 type ecs_move_t = fn(arg0: ptr[void], arg1: ptr[void], arg2: int, arg3: const_ptr[ecs_type_info_t]) -> void
 type ecs_cmp_t = fn(arg0: const_ptr[void], arg1: const_ptr[void], arg2: const_ptr[ecs_type_info_t]) -> int
 type ecs_equals_t = fn(arg0: const_ptr[void], arg1: const_ptr[void], arg2: const_ptr[ecs_type_info_t]) -> bool
-
 enum ecs_inout_kind_t: int
     EcsInOutDefault = 0
     EcsInOutNone = 1
@@ -453,7 +410,6 @@ enum ecs_inout_kind_t: int
     EcsInOut = 3
     EcsIn = 4
     EcsOut = 5
-
 enum ecs_oper_kind_t: int
     EcsAnd = 0
     EcsOr = 1
@@ -462,17 +418,14 @@ enum ecs_oper_kind_t: int
     EcsAndFrom = 4
     EcsOrFrom = 5
     EcsNotFrom = 6
-
 enum ecs_query_cache_kind_t: int
     EcsQueryCacheDefault = 0
     EcsQueryCacheAuto = 1
     EcsQueryCacheAll = 2
     EcsQueryCacheNone = 3
-
 struct ecs_term_ref_t:
     id: ptr_uint
     name: cstr
-
 struct ecs_term_t:
     id: ptr_uint
     src: ecs_term_ref_t
@@ -483,7 +436,6 @@ struct ecs_term_t:
     oper: short
     field_index: byte
     flags_: ushort
-
 struct ecs_query_t:
     hdr: ecs_header_t
     terms: ptr[ecs_term_t]
@@ -511,7 +463,6 @@ struct ecs_query_t:
     real_world: ptr[ecs_world_t]
     world: ptr[ecs_world_t]
     eval_count: int
-
 struct ecs_observer_t:
     hdr: ecs_header_t
     query: ptr[ecs_query_t]
@@ -528,7 +479,6 @@ struct ecs_observer_t:
     observable: ptr[ecs_observable_t]
     world: ptr[ecs_world_t]
     entity: ptr_uint
-
 struct ecs_type_hooks_t:
     ctor: fn(arg0: ptr[void], arg1: int, arg2: const_ptr[ecs_type_info_t]) -> void
     dtor: fn(arg0: ptr[void], arg1: int, arg2: const_ptr[ecs_type_info_t]) -> void
@@ -551,25 +501,21 @@ struct ecs_type_hooks_t:
     ctx_free: fn(arg0: ptr[void]) -> void
     binding_ctx_free: fn(arg0: ptr[void]) -> void
     lifecycle_ctx_free: fn(arg0: ptr[void]) -> void
-
 struct ecs_type_info_t:
     size: int
     alignment: int
     hooks: ecs_type_hooks_t
     component: ptr_uint
     name: cstr
-
 opaque ecs_data_t = c"ecs_data_t"
 opaque ecs_query_cache_match_t = c"ecs_query_cache_match_t"
 opaque ecs_query_cache_group_t = c"ecs_query_cache_group_t"
-
 struct ecs_event_record_t:
     any: ptr[ecs_event_id_record_t]
     wildcard: ptr[ecs_event_id_record_t]
     wildcard_pair: ptr[ecs_event_id_record_t]
     event_ids: ecs_map_t
     event: ptr_uint
-
 struct ecs_observable_t:
     on_add: ecs_event_record_t
     on_remove: ecs_event_record_t
@@ -578,16 +524,13 @@ struct ecs_observable_t:
     events: ecs_sparse_t
     global_observers: ecs_vec_t
     last_observer_id: ptr_uint
-
 struct ecs_table_range_t:
     table: ptr[ecs_table_t]
     offset: int
     count: int
-
 struct ecs_var_t:
     range: ecs_table_range_t
     entity: ptr_uint
-
 struct ecs_ref_t:
     entity: ptr_uint
     id: ptr_uint
@@ -596,22 +539,18 @@ struct ecs_ref_t:
     table_version: ushort
     record: ptr[ecs_record_t]
     ptr: ptr[void]
-
 struct ecs_page_iter_t:
     offset: int
     limit: int
     remaining: int
-
 struct ecs_worker_iter_t:
     index: int
     count: int
-
 struct ecs_table_cache_iter_t:
     cur: const_ptr[ecs_table_cache_hdr_t]
     next: const_ptr[ecs_table_cache_hdr_t]
     iter_fill: bool
     iter_empty: bool
-
 struct ecs_each_iter_t:
     it: ecs_table_cache_iter_t
     ids: ptr_uint
@@ -619,10 +558,8 @@ struct ecs_each_iter_t:
     sizes: int
     columns: int
     trs: const_ptr[ecs_table_record_t]
-
 struct ecs_query_op_profile_t:
     count: array[int, 2]
-
 struct ecs_query_iter_t:
     vars: ptr[ecs_var_t]
     query_vars: const_ptr[ecs_query_var_t]
@@ -638,17 +575,14 @@ struct ecs_query_iter_t:
     profile: ptr[ecs_query_op_profile_t]
     op: short
     iter_single_group: bool
-
 struct ecs_iter_private_t:
     iter: ecs_iter_private_t_iter
     entity_iter: ptr[void]
     stack_cursor: ptr[ecs_stack_cursor_t]
-
 struct ecs_commands_t:
     queue: ecs_vec_t
     stack: ecs_stack_t
     entries: ecs_sparse_t
-
 struct ecs_suspend_readonly_state_t:
     is_readonly: bool
     is_deferred: bool
@@ -659,45 +593,37 @@ struct ecs_suspend_readonly_state_t:
     cmd_stack: array[ecs_commands_t, 2]
     cmd: ptr[ecs_commands_t]
     stage: ptr[ecs_stage_t]
-
 struct ecs_hm_bucket_t:
     keys: ecs_vec_t
     values: ecs_vec_t
-
 struct ecs_hashmap_t:
     hash: fn(arg0: const_ptr[void]) -> ulong
     compare: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int
     key_size: int
     value_size: int
     impl: ecs_map_t
-
 struct ecs_record_t:
     table: ptr[ecs_table_t]
     row: uint
     dense: int
-
 struct ecs_table_cache_hdr_t:
     cr: ptr[ecs_component_record_t]
     table: ptr[ecs_table_t]
     prev: ptr[ecs_table_cache_hdr_t]
     next: ptr[ecs_table_cache_hdr_t]
-
 struct ecs_table_record_t:
     hdr: ecs_table_cache_hdr_t
     index: short
     count: short
     column: short
-
 struct ecs_table_diff_t:
     added: ecs_type_t
     removed: ecs_type_t
     added_flags: uint
     removed_flags: uint
-
 struct ecs_parent_record_t:
     entity: uint
     count: int
-
 external function ecs_record_find(world: const_ptr[ecs_world_t], entity: ptr_uint) -> ptr[ecs_record_t]
 external function ecs_record_get_entity(record: const_ptr[ecs_record_t]) -> ecs_entity_t
 external function ecs_write_begin(world: ptr[ecs_world_t], entity: ptr_uint) -> ptr[ecs_record_t]
@@ -708,15 +634,12 @@ external function ecs_record_get_id(world: const_ptr[ecs_world_t], record: const
 external function ecs_record_ensure_id(world: ptr[ecs_world_t], record: ptr[ecs_record_t], id: ptr_uint) -> ptr[void]
 external function ecs_record_has_id(world: ptr[ecs_world_t], record: const_ptr[ecs_record_t], id: ptr_uint) -> bool
 external function ecs_record_get_by_column(record: const_ptr[ecs_record_t], column: int, size: ptr_uint) -> ptr[void]
-
 struct ecs_table_records_t:
     array: const_ptr[ecs_table_record_t]
     count: int
-
 struct ecs_value_t:
     type_: ptr_uint
     ptr: ptr[void]
-
 struct ecs_entity_desc_t:
     _canary: int
     id: ptr_uint
@@ -729,7 +652,6 @@ struct ecs_entity_desc_t:
     add: const_ptr[ecs_id_t]
     set: const_ptr[ecs_value_t]
     add_expr: cstr
-
 struct ecs_bulk_desc_t:
     _canary: int
     entities: ptr[ecs_entity_t]
@@ -737,12 +659,10 @@ struct ecs_bulk_desc_t:
     ids: array[ecs_id_t, 32]
     data: ptr[ptr[void]]
     table: ptr[ecs_table_t]
-
 struct ecs_component_desc_t:
     _canary: int
     entity: ptr_uint
     type_: ecs_type_info_t
-
 struct ecs_iter_t:
     world: ptr[ecs_world_t]
     real_world: ptr[ecs_world_t]
@@ -783,7 +703,6 @@ struct ecs_iter_t:
     callback: fn(arg0: ptr[ecs_iter_t]) -> void
     fini: fn(arg0: ptr[ecs_iter_t]) -> void
     chain_it: ptr[ecs_iter_t]
-
 struct ecs_query_desc_t:
     _canary: int
     terms: array[ecs_term_t, 32]
@@ -804,7 +723,6 @@ struct ecs_query_desc_t:
     ctx_free: fn(arg0: ptr[void]) -> void
     binding_ctx_free: fn(arg0: ptr[void]) -> void
     entity: ptr_uint
-
 struct ecs_observer_desc_t:
     _canary: int
     entity: ptr_uint
@@ -823,7 +741,6 @@ struct ecs_observer_desc_t:
     last_event_id: ptr[int]
     term_index_: byte
     flags_: uint
-
 struct ecs_event_desc_t:
     event: ptr_uint
     ids: const_ptr[ecs_type_t]
@@ -836,7 +753,6 @@ struct ecs_event_desc_t:
     const_param: const_ptr[void]
     observable: ptr[ecs_poly_t]
     flags_: uint
-
 struct ecs_build_info_t:
     compiler: cstr
     addons: ptr[cstr]
@@ -848,7 +764,6 @@ struct ecs_build_info_t:
     debug: bool
     sanitize: bool
     perf_trace: bool
-
 struct ecs_world_info_t:
     last_component_id: ptr_uint
     min_id: ptr_uint
@@ -883,57 +798,45 @@ struct ecs_world_info_t:
     creation_time: uint
     cmd: ecs_world_info_t_cmd
     name_prefix: cstr
-
 struct ecs_query_group_info_t:
     id: ptr_uint
     match_count: int
     table_count: int
     ctx: ptr[void]
-
 struct EcsIdentifier:
     value: ptr[char]
     length: int
     hash: ptr_uint
     index_hash: ptr_uint
     index: ptr[ecs_hashmap_t]
-
 struct EcsComponent:
     size: int
     alignment: int
-
 struct EcsPoly:
     poly: ptr[ecs_poly_t]
-
 struct EcsDefaultChildComponent:
     component: ptr_uint
-
 struct EcsParent:
     value: ptr_uint
-
 struct ecs_tree_spawner_child_t:
     child_name: cstr
     table: ptr[ecs_table_t]
     child: uint
     parent_index: int
-
 struct ecs_tree_spawner_t:
     children: ecs_vec_t
-
 struct EcsTreeSpawner:
     data: array[ecs_tree_spawner_t, 6]
-
 external function ecs_init() -> ptr[ecs_world_t]
 external function ecs_mini() -> ptr[ecs_world_t]
 external function ecs_init_w_args(argc: int, argv: ptr[ptr[char]]) -> ptr[ecs_world_t]
 external function ecs_fini(world: ptr[ecs_world_t]) -> int
 external function ecs_is_fini(world: const_ptr[ecs_world_t]) -> bool
 external function ecs_atfini(world: ptr[ecs_world_t], action: fn(arg0: ptr[ecs_world_t], arg1: ptr[void]) -> void, ctx: ptr[void]) -> void
-
 struct ecs_entities_t:
     ids: const_ptr[ecs_entity_t]
     count: int
     alive_count: int
-
 external function ecs_get_entities(world: const_ptr[ecs_world_t]) -> ecs_entities_t
 external function ecs_world_get_flags(world: const_ptr[ecs_world_t]) -> ecs_flags32_t
 external function ecs_frame_begin(world: ptr[ecs_world_t], delta_time: float) -> float
@@ -973,12 +876,10 @@ external function ecs_set_entity_range(world: ptr[ecs_world_t], id_start: ptr_ui
 external function ecs_enable_range_check(world: ptr[ecs_world_t], enable: bool) -> bool
 external function ecs_get_max_id(world: const_ptr[ecs_world_t]) -> ecs_entity_t
 external function ecs_run_aperiodic(world: ptr[ecs_world_t], flags_: uint) -> void
-
 struct ecs_delete_empty_tables_desc_t:
     clear_generation: ushort
     delete_generation: ushort
     time_budget_seconds: double
-
 external function ecs_delete_empty_tables(world: ptr[ecs_world_t], desc: const_ptr[ecs_delete_empty_tables_desc_t]) -> int
 external function ecs_get_world(poly: const_ptr[ecs_poly_t]) -> const_ptr[ecs_world_t]
 external function ecs_get_entity(poly: const_ptr[ecs_poly_t]) -> ecs_entity_t
@@ -1106,12 +1007,10 @@ external function ecs_iter_set_group(it: ptr[ecs_iter_t], group_id: ptr_uint) ->
 external function ecs_query_get_groups(query: const_ptr[ecs_query_t]) -> const_ptr[ecs_map_t]
 external function ecs_query_get_group_ctx(query: const_ptr[ecs_query_t], group_id: ptr_uint) -> ptr[void]
 external function ecs_query_get_group_info(query: const_ptr[ecs_query_t], group_id: ptr_uint) -> const_ptr[ecs_query_group_info_t]
-
 struct ecs_query_count_t:
     results: int
     entities: int
     tables: int
-
 external function ecs_query_count(query: const_ptr[ecs_query_t]) -> ecs_query_count_t
 external function ecs_query_is_true(query: const_ptr[ecs_query_t]) -> bool
 external function ecs_query_get_cache_query(query: const_ptr[ecs_query_t]) -> const_ptr[ecs_query_t]
@@ -1216,9 +1115,7 @@ external function ecs_log_enable_timedelta(enabled: bool) -> bool
 external function ecs_log_last_error() -> int
 external function ecs_log_start_capture(capture_try: bool) -> void
 external function ecs_log_stop_capture() -> ptr[char]
-
 type ecs_app_init_action_t = fn(arg0: ptr[ecs_world_t]) -> int
-
 struct ecs_app_desc_t:
     target_fps: float
     delta_time: float
@@ -1229,27 +1126,21 @@ struct ecs_app_desc_t:
     port: ushort
     init: fn(arg0: ptr[ecs_world_t]) -> int
     ctx: ptr[void]
-
 type ecs_app_run_action_t = fn(arg0: ptr[ecs_world_t], arg1: ptr[ecs_app_desc_t]) -> int
 type ecs_app_frame_action_t = fn(arg0: ptr[ecs_world_t], arg1: const_ptr[ecs_app_desc_t]) -> int
-
 external function ecs_app_run(world: ptr[ecs_world_t], desc: ptr[ecs_app_desc_t]) -> int
 external function ecs_app_run_frame(world: ptr[ecs_world_t], desc: const_ptr[ecs_app_desc_t]) -> int
 external function ecs_app_set_run_action(callback: fn(arg0: ptr[ecs_world_t], arg1: ptr[ecs_app_desc_t]) -> int) -> int
 external function ecs_app_set_frame_action(callback: fn(arg0: ptr[ecs_world_t], arg1: const_ptr[ecs_app_desc_t]) -> int) -> int
-
 opaque ecs_http_server_t = c"ecs_http_server_t"
-
 struct ecs_http_connection_t:
     id: ptr_uint
     server: ptr[ecs_http_server_t]
     host: array[char, 128]
     port: array[char, 16]
-
 struct ecs_http_key_value_t:
     key: cstr
     value: cstr
-
 enum ecs_http_method_t: int
     EcsHttpGet = 0
     EcsHttpPost = 1
@@ -1257,7 +1148,6 @@ enum ecs_http_method_t: int
     EcsHttpDelete = 3
     EcsHttpOptions = 4
     EcsHttpMethodUnsupported = 5
-
 struct ecs_http_request_t:
     id: ptr_uint
     method: ecs_http_method_t
@@ -1268,16 +1158,13 @@ struct ecs_http_request_t:
     header_count: int
     param_count: int
     conn: ptr[ecs_http_connection_t]
-
 struct ecs_http_reply_t:
     code: int
     body: ecs_strbuf_t
     status: cstr
     content_type: cstr
     headers: ecs_strbuf_t
-
 type ecs_http_reply_action_t = fn(arg0: const_ptr[ecs_http_request_t], arg1: ptr[ecs_http_reply_t], arg2: ptr[void]) -> bool
-
 struct ecs_http_server_desc_t:
     callback: fn(arg0: const_ptr[ecs_http_request_t], arg1: ptr[ecs_http_reply_t], arg2: ptr[void]) -> bool
     ctx: ptr[void]
@@ -1286,7 +1173,6 @@ struct ecs_http_server_desc_t:
     send_queue_wait_ms: int
     cache_timeout: double
     cache_purge_timeout: double
-
 external function ecs_http_server_init(desc: const_ptr[ecs_http_server_desc_t]) -> ptr[ecs_http_server_t]
 external function ecs_http_server_fini(server: ptr[ecs_http_server_t]) -> void
 external function ecs_http_server_start(server: ptr[ecs_http_server_t]) -> int
@@ -1297,22 +1183,18 @@ external function ecs_http_server_request(srv: ptr[ecs_http_server_t], method: c
 external function ecs_http_server_ctx(srv: ptr[ecs_http_server_t]) -> ptr[void]
 external function ecs_http_get_header(req: const_ptr[ecs_http_request_t], name: cstr) -> cstr
 external function ecs_http_get_param(req: const_ptr[ecs_http_request_t], name: cstr) -> cstr
-
 struct ecs_rest_ctx_t:
     world: ptr[ecs_world_t]
     srv: ptr[ecs_http_server_t]
     rc: int
     cmd_captures: ecs_map_t
     last_time: double
-
 struct EcsRest:
     port: ushort
     ipaddr: ptr[char]
     impl: ptr[ecs_rest_ctx_t]
-
 external function ecs_rest_server_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_http_server_desc_t]) -> ptr[ecs_http_server_t]
 external function ecs_rest_server_fini(srv: ptr[ecs_http_server_t]) -> void
-
 struct EcsTimer:
     timeout: float
     time: float
@@ -1320,13 +1202,11 @@ struct EcsTimer:
     fired_count: int
     active: bool
     single_shot: bool
-
 struct EcsRateFilter:
     src: ptr_uint
     rate: int
     tick_count: int
     time_elapsed: float
-
 external function ecs_set_timeout(world: ptr[ecs_world_t], tick_source: ptr_uint, timeout: float) -> ecs_entity_t
 external function ecs_get_timeout(world: const_ptr[ecs_world_t], tick_source: ptr_uint) -> float
 external function ecs_set_interval(world: ptr[ecs_world_t], tick_source: ptr_uint, interval: float) -> ecs_entity_t
@@ -1337,11 +1217,9 @@ external function ecs_reset_timer(world: ptr[ecs_world_t], tick_source: ptr_uint
 external function ecs_randomize_timers(world: ptr[ecs_world_t]) -> void
 external function ecs_set_rate(world: ptr[ecs_world_t], tick_source: ptr_uint, rate: int, source: ptr_uint) -> ecs_entity_t
 external function ecs_set_tick_source(world: ptr[ecs_world_t], system: ptr_uint, tick_source: ptr_uint) -> void
-
 struct ecs_pipeline_desc_t:
     entity: ptr_uint
     query: ecs_query_desc_t
-
 external function ecs_pipeline_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_pipeline_desc_t]) -> ecs_entity_t
 external function ecs_set_pipeline(world: ptr[ecs_world_t], pipeline: ptr_uint) -> void
 external function ecs_get_pipeline(world: const_ptr[ecs_world_t]) -> ecs_entity_t
@@ -1352,11 +1230,9 @@ external function ecs_run_pipeline(world: ptr[ecs_world_t], pipeline: ptr_uint, 
 external function ecs_set_threads(world: ptr[ecs_world_t], threads: int) -> void
 external function ecs_set_task_threads(world: ptr[ecs_world_t], task_threads: int) -> void
 external function ecs_using_task_threads(world: ptr[ecs_world_t]) -> bool
-
 struct EcsTickSource:
     tick: bool
     time_elapsed: float
-
 struct ecs_system_desc_t:
     _canary: int
     entity: ptr_uint
@@ -1375,9 +1251,7 @@ struct ecs_system_desc_t:
     tick_source: ptr_uint
     multi_threaded: bool
     immediate: bool
-
 external function ecs_system_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_system_desc_t]) -> ecs_entity_t
-
 struct ecs_system_t:
     hdr: ecs_header_t
     run: fn(arg0: ptr[ecs_iter_t]) -> void
@@ -1399,25 +1273,20 @@ struct ecs_system_t:
     time_passed: float
     last_frame: ptr_int
     dtor: fn(arg0: ptr[ecs_poly_t]) -> void
-
 external function ecs_system_get(world: const_ptr[ecs_world_t], system: ptr_uint) -> const_ptr[ecs_system_t]
 external function ecs_system_set_group(world: ptr[ecs_world_t], system: ptr_uint, group_id: ptr_uint) -> void
 external function ecs_run(world: ptr[ecs_world_t], system: ptr_uint, delta_time: float, param: ptr[void]) -> ecs_entity_t
 external function ecs_run_worker(world: ptr[ecs_world_t], system: ptr_uint, stage_current: int, stage_count: int, delta_time: float, param: ptr[void]) -> ecs_entity_t
-
 struct ecs_gauge_t:
     avg: array[float, 60]
     min: array[float, 60]
     max: array[float, 60]
-
 struct ecs_counter_t:
     rate: ecs_gauge_t
     value: array[double, 60]
-
 union ecs_metric_t:
     gauge: ecs_gauge_t
     counter: ecs_counter_t
-
 struct ecs_world_stats_t:
     first_: ptr_int
     entities: ecs_world_stats_t_entities
@@ -1431,7 +1300,6 @@ struct ecs_world_stats_t:
     http: ecs_world_stats_t_http
     last_: ptr_int
     t: int
-
 struct ecs_query_stats_t:
     first_: ptr_int
     result_count: ecs_metric_t
@@ -1439,14 +1307,12 @@ struct ecs_query_stats_t:
     matched_entity_count: ecs_metric_t
     last_: ptr_int
     t: int
-
 struct ecs_system_stats_t:
     first_: ptr_int
     time_spent: ecs_metric_t
     last_: ptr_int
     task: bool
     query: ecs_query_stats_t
-
 struct ecs_sync_stats_t:
     first_: ptr_int
     time_spent: ecs_metric_t
@@ -1455,7 +1321,6 @@ struct ecs_sync_stats_t:
     system_count: int
     multi_threaded: bool
     immediate: bool
-
 struct ecs_pipeline_stats_t:
     canary_: byte
     systems: ecs_vec_t
@@ -1464,7 +1329,6 @@ struct ecs_pipeline_stats_t:
     system_count: int
     active_system_count: int
     rebuild_count: int
-
 external function ecs_world_stats_get(world: const_ptr[ecs_world_t], stats: ptr[ecs_world_stats_t]) -> void
 external function ecs_world_stats_reduce(dst: ptr[ecs_world_stats_t], src: const_ptr[ecs_world_stats_t]) -> void
 external function ecs_world_stats_reduce_last(stats: ptr[ecs_world_stats_t], old: const_ptr[ecs_world_stats_t], count: int) -> void
@@ -1490,23 +1354,18 @@ external function ecs_pipeline_stats_copy_last(dst: ptr[ecs_pipeline_stats_t], s
 external function ecs_metric_reduce(dst: ptr[ecs_metric_t], src: const_ptr[ecs_metric_t], t_dst: int, t_src: int) -> void
 external function ecs_metric_reduce_last(m: ptr[ecs_metric_t], t: int, count: int) -> void
 external function ecs_metric_copy(m: ptr[ecs_metric_t], dst: int, src: int) -> void
-
 struct EcsStatsHeader:
     elapsed: float
     reduce_count: int
-
 struct EcsWorldStats:
     hdr: EcsStatsHeader
     stats: ptr[ecs_world_stats_t]
-
 struct EcsSystemStats:
     hdr: EcsStatsHeader
     stats: ecs_map_t
-
 struct EcsPipelineStats:
     hdr: EcsStatsHeader
     stats: ecs_map_t
-
 struct EcsWorldSummary:
     target_fps: double
     time_scale: double
@@ -1536,21 +1395,18 @@ struct EcsWorldSummary:
     simulation_time: double
     uptime: uint
     build_info: ecs_build_info_t
-
 struct ecs_entities_memory_t:
     alive_count: int
     not_alive_count: int
     bytes_entity_index: int
     bytes_names: int
     bytes_doc_strings: int
-
 struct ecs_component_memory_t:
     instances: int
     bytes_table_components: int
     bytes_table_components_unused: int
     bytes_toggle_bitsets: int
     bytes_sparse_components: int
-
 struct ecs_component_index_memory_t:
     count: int
     bytes_component_record: int
@@ -1559,7 +1415,6 @@ struct ecs_component_index_memory_t:
     bytes_ordered_children: int
     bytes_children_table_map: int
     bytes_reachable_cache: int
-
 struct ecs_query_memory_t:
     count: int
     cached_count: int
@@ -1570,7 +1425,6 @@ struct ecs_query_memory_t:
     bytes_plan: int
     bytes_terms: int
     bytes_misc: int
-
 struct ecs_table_memory_t:
     count: int
     empty_count: int
@@ -1583,10 +1437,8 @@ struct ecs_table_memory_t:
     bytes_component_map: int
     bytes_dirty_state: int
     bytes_edges: int
-
 struct ecs_table_histogram_t:
     entity_counts: array[int, 14]
-
 struct ecs_misc_memory_t:
     bytes_world: int
     bytes_observers: int
@@ -1604,7 +1456,6 @@ struct ecs_misc_memory_t:
     bytes_prefab_child_indices: int
     bytes_stats: int
     bytes_rest: int
-
 struct ecs_allocator_memory_t:
     bytes_graph_edge: int
     bytes_component_record: int
@@ -1617,7 +1468,6 @@ struct ecs_allocator_memory_t:
     bytes_query_impl: int
     bytes_query_cache: int
     bytes_misc: int
-
 struct EcsWorldMemory:
     entities: ecs_entities_memory_t
     components: ecs_component_memory_t
@@ -1628,7 +1478,6 @@ struct EcsWorldMemory:
     misc: ecs_misc_memory_t
     allocators: ecs_allocator_memory_t
     collection_time: double
-
 external function ecs_entity_memory_get(world: const_ptr[ecs_world_t]) -> ecs_entities_memory_t
 external function ecs_component_record_memory_get(cr: const_ptr[ecs_component_record_t], result: ptr[ecs_component_index_memory_t]) -> void
 external function ecs_component_index_memory_get(world: const_ptr[ecs_world_t]) -> ecs_component_index_memory_t
@@ -1642,13 +1491,10 @@ external function ecs_table_histogram_get(world: const_ptr[ecs_world_t]) -> ecs_
 external function ecs_misc_memory_get(world: const_ptr[ecs_world_t]) -> ecs_misc_memory_t
 external function ecs_allocator_memory_get(world: const_ptr[ecs_world_t]) -> ecs_allocator_memory_t
 external function ecs_memory_get(world: const_ptr[ecs_world_t]) -> ecs_size_t
-
 struct EcsMetricValue:
     value: double
-
 struct EcsMetricSource:
     entity: ptr_uint
-
 struct ecs_metric_desc_t:
     _canary: int
     entity: ptr_uint
@@ -1658,24 +1504,19 @@ struct ecs_metric_desc_t:
     targets: bool
     kind: ptr_uint
     brief: cstr
-
 external function ecs_metric_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_metric_desc_t]) -> ecs_entity_t
-
 struct EcsAlertInstance:
     message: ptr[char]
-
 struct EcsAlertsActive:
     info_count: int
     warning_count: int
     error_count: int
     alerts: ecs_map_t
-
 struct ecs_alert_severity_filter_t:
     severity: ptr_uint
     with: ptr_uint
     var_: cstr
     _var_index: int
-
 struct ecs_alert_desc_t:
     _canary: int
     entity: ptr_uint
@@ -1689,18 +1530,15 @@ struct ecs_alert_desc_t:
     member: ptr_uint
     id: ptr_uint
     var_: cstr
-
 external function ecs_alert_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_alert_desc_t]) -> ecs_entity_t
 external function ecs_get_alert_count(world: const_ptr[ecs_world_t], entity: ptr_uint, alert: ptr_uint) -> int
 external function ecs_get_alert(world: const_ptr[ecs_world_t], entity: ptr_uint, alert: ptr_uint) -> ecs_entity_t
-
 struct ecs_from_json_desc_t:
     name: cstr
     expr: cstr
     lookup_action: fn(arg0: ptr[ecs_world_t], arg1: cstr, arg2: ptr[void]) -> ecs_entity_t
     lookup_ctx: ptr[void]
     strict: bool
-
 external function ecs_ptr_from_json(world: const_ptr[ecs_world_t], type_: ptr_uint, ptr: ptr[void], json: cstr, desc: const_ptr[ecs_from_json_desc_t]) -> cstr
 external function ecs_entity_from_json(world: ptr[ecs_world_t], entity: ptr_uint, json: cstr, desc: const_ptr[ecs_from_json_desc_t]) -> cstr
 external function ecs_world_from_json(world: ptr[ecs_world_t], json: cstr, desc: const_ptr[ecs_from_json_desc_t]) -> cstr
@@ -1711,7 +1549,6 @@ external function ecs_ptr_to_json(world: const_ptr[ecs_world_t], type_: ptr_uint
 external function ecs_ptr_to_json_buf(world: const_ptr[ecs_world_t], type_: ptr_uint, data: const_ptr[void], buf_out: ptr[ecs_strbuf_t]) -> int
 external function ecs_type_info_to_json(world: const_ptr[ecs_world_t], type_: ptr_uint) -> ptr[char]
 external function ecs_type_info_to_json_buf(world: const_ptr[ecs_world_t], type_: ptr_uint, buf_out: ptr[ecs_strbuf_t]) -> int
-
 struct ecs_entity_to_json_desc_t:
     serialize_entity_id: bool
     serialize_doc: bool
@@ -1724,10 +1561,8 @@ struct ecs_entity_to_json_desc_t:
     serialize_refs: ptr_uint
     serialize_matches: bool
     component_filter: fn(arg0: const_ptr[ecs_world_t], arg1: ecs_entity_t) -> bool
-
 external function ecs_entity_to_json(world: ptr[ecs_world_t], entity: ptr_uint, desc: const_ptr[ecs_entity_to_json_desc_t]) -> ptr[char]
 external function ecs_entity_to_json_buf(world: ptr[ecs_world_t], entity: ptr_uint, buf_out: ptr[ecs_strbuf_t], desc: const_ptr[ecs_entity_to_json_desc_t]) -> int
-
 struct ecs_iter_to_json_desc_t:
     serialize_entity_ids: bool
     serialize_values: bool
@@ -1749,26 +1584,20 @@ struct ecs_iter_to_json_desc_t:
     serialize_parents_before_children: bool
     component_filter: fn(arg0: const_ptr[ecs_world_t], arg1: ecs_entity_t) -> bool
     query: ptr[ecs_poly_t]
-
 external function ecs_iter_to_json(iter: ptr[ecs_iter_t], desc: const_ptr[ecs_iter_to_json_desc_t]) -> ptr[char]
 external function ecs_iter_to_json_buf(iter: ptr[ecs_iter_t], buf_out: ptr[ecs_strbuf_t], desc: const_ptr[ecs_iter_to_json_desc_t]) -> int
-
 struct ecs_world_to_json_desc_t:
     serialize_builtin: bool
     serialize_modules: bool
-
 external function ecs_world_to_json(world: ptr[ecs_world_t], desc: const_ptr[ecs_world_to_json_desc_t]) -> ptr[char]
 external function ecs_world_to_json_buf(world: ptr[ecs_world_t], buf_out: ptr[ecs_strbuf_t], desc: const_ptr[ecs_world_to_json_desc_t]) -> int
-
 opaque ecs_script_template_t = c"ecs_script_template_t"
-
 struct ecs_script_var_t:
     name: cstr
     value: ecs_value_t
     type_info: const_ptr[ecs_type_info_t]
     sp: int
     is_const: bool
-
 struct ecs_script_vars_t:
     parent: ptr[ecs_script_vars_t]
     sp: int
@@ -1778,58 +1607,46 @@ struct ecs_script_vars_t:
     stack: ptr[ecs_stack_t]
     cursor: ptr[ecs_stack_cursor_t]
     allocator: ptr[ecs_allocator_t]
-
 struct ecs_script_t:
     world: ptr[ecs_world_t]
     name: cstr
     code: cstr
-
 opaque ecs_script_runtime_t = c"ecs_script_runtime_t"
-
 struct EcsScript:
     filename: ptr[char]
     code: ptr[char]
     error: ptr[char]
     script: ptr[ecs_script_t]
     template_: ptr[ecs_script_template_t]
-
 struct ecs_function_ctx_t:
     world: ptr[ecs_world_t]
     function_: ptr_uint
     ctx: ptr[void]
-
 type ecs_function_callback_t = fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
 type ecs_vector_function_callback_t = fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t], arg4: int) -> void
-
 struct ecs_script_parameter_t:
     name: cstr
     type_: ptr_uint
-
 struct EcsScriptConstVar:
     value: ecs_value_t
     type_info: const_ptr[ecs_type_info_t]
-
 struct EcsScriptMethod:
     return_type: ptr_uint
     params: ecs_vec_t
     callback: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
     vector_callbacks: array[ecs_vector_function_callback_t, 18]
     ctx: ptr[void]
-
 struct EcsScriptFunction = c"EcsScriptMethod":
     return_type: ptr_uint
     params: ecs_vec_t
     callback: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
     vector_callbacks: array[ecs_vector_function_callback_t, 18]
     ctx: ptr[void]
-
 struct ecs_script_eval_desc_t:
     vars: ptr[ecs_script_vars_t]
     runtime: ptr[ecs_script_runtime_t]
-
 struct ecs_script_eval_result_t:
     error: ptr[char]
-
 external function ecs_script_parse(world: ptr[ecs_world_t], name: cstr, code: cstr, desc: const_ptr[ecs_script_eval_desc_t], result: ptr[ecs_script_eval_result_t]) -> ptr[ecs_script_t]
 external function ecs_script_eval(script: const_ptr[ecs_script_t], desc: const_ptr[ecs_script_eval_desc_t], result: ptr[ecs_script_eval_result_t]) -> int
 external function ecs_script_free(script: ptr[ecs_script_t]) -> void
@@ -1839,12 +1656,10 @@ external function ecs_script_runtime_new() -> ptr[ecs_script_runtime_t]
 external function ecs_script_runtime_free(runtime: ptr[ecs_script_runtime_t]) -> void
 external function ecs_script_ast_to_buf(script: ptr[ecs_script_t], buf: ptr[ecs_strbuf_t], colors: bool) -> int
 external function ecs_script_ast_to_str(script: ptr[ecs_script_t], colors: bool) -> ptr[char]
-
 struct ecs_script_desc_t:
     entity: ptr_uint
     filename: cstr
     code: cstr
-
 external function ecs_script_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_script_desc_t]) -> ecs_entity_t
 external function ecs_script_update(world: ptr[ecs_world_t], script: ptr_uint, instance: ptr_uint, code: cstr) -> int
 external function ecs_script_clear(world: ptr[ecs_world_t], script: ptr_uint, instance: ptr_uint) -> void
@@ -1859,7 +1674,6 @@ external function ecs_script_vars_from_sp(vars: const_ptr[ecs_script_vars_t], sp
 external function ecs_script_vars_print(vars: const_ptr[ecs_script_vars_t]) -> void
 external function ecs_script_vars_set_size(vars: ptr[ecs_script_vars_t], count: int) -> void
 external function ecs_script_vars_from_iter(it: const_ptr[ecs_iter_t], vars: ptr[ecs_script_vars_t], offset: int) -> void
-
 struct ecs_expr_eval_desc_t:
     name: cstr
     expr: cstr
@@ -1872,25 +1686,20 @@ struct ecs_expr_eval_desc_t:
     allow_unresolved_identifiers: bool
     runtime: ptr[ecs_script_runtime_t]
     script_visitor: ptr[void]
-
 external function ecs_expr_run(world: ptr[ecs_world_t], ptr: cstr, value: ptr[ecs_value_t], desc: const_ptr[ecs_expr_eval_desc_t]) -> cstr
 external function ecs_expr_parse(world: ptr[ecs_world_t], expr: cstr, desc: const_ptr[ecs_expr_eval_desc_t]) -> ptr[ecs_script_t]
 external function ecs_expr_eval(script: const_ptr[ecs_script_t], value: ptr[ecs_value_t], desc: const_ptr[ecs_expr_eval_desc_t]) -> int
 external function ecs_script_string_interpolate(world: ptr[ecs_world_t], str_: cstr, vars: const_ptr[ecs_script_vars_t]) -> ptr[char]
-
 struct ecs_const_var_desc_t:
     name: cstr
     parent: ptr_uint
     type_: ptr_uint
     value: ptr[void]
-
 external function ecs_const_var_init(world: ptr[ecs_world_t], desc: ptr[ecs_const_var_desc_t]) -> ecs_entity_t
 external function ecs_const_var_get(world: const_ptr[ecs_world_t], var_: ptr_uint) -> ecs_value_t
-
 struct ecs_vector_fn_callbacks_t:
     i8: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t], arg4: int) -> void
     i32: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t], arg4: int) -> void
-
 struct ecs_function_desc_t:
     name: cstr
     parent: ptr_uint
@@ -1899,19 +1708,15 @@ struct ecs_function_desc_t:
     callback: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
     vector_callbacks: array[ecs_vector_function_callback_t, 18]
     ctx: ptr[void]
-
 external function ecs_function_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_function_desc_t]) -> ecs_entity_t
 external function ecs_method_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_function_desc_t]) -> ecs_entity_t
 external function ecs_ptr_to_expr(world: const_ptr[ecs_world_t], type_: ptr_uint, data: const_ptr[void]) -> ptr[char]
 external function ecs_ptr_to_expr_buf(world: const_ptr[ecs_world_t], type_: ptr_uint, data: const_ptr[void], buf: ptr[ecs_strbuf_t]) -> int
 external function ecs_ptr_to_str(world: const_ptr[ecs_world_t], type_: ptr_uint, data: const_ptr[void]) -> ptr[char]
 external function ecs_ptr_to_str_buf(world: const_ptr[ecs_world_t], type_: ptr_uint, data: const_ptr[void], buf: ptr[ecs_strbuf_t]) -> int
-
 opaque ecs_expr_node_t = c"ecs_expr_node_t"
-
 struct EcsDocDescription:
     value: ptr[char]
-
 external function ecs_doc_set_uuid(world: ptr[ecs_world_t], entity: ptr_uint, uuid: cstr) -> void
 external function ecs_doc_set_name(world: ptr[ecs_world_t], entity: ptr_uint, name: cstr) -> void
 external function ecs_doc_set_brief(world: ptr[ecs_world_t], entity: ptr_uint, description: cstr) -> void
@@ -1924,7 +1729,6 @@ external function ecs_doc_get_brief(world: const_ptr[ecs_world_t], entity: ptr_u
 external function ecs_doc_get_detail(world: const_ptr[ecs_world_t], entity: ptr_uint) -> cstr
 external function ecs_doc_get_link(world: const_ptr[ecs_world_t], entity: ptr_uint) -> cstr
 external function ecs_doc_get_color(world: const_ptr[ecs_world_t], entity: ptr_uint) -> cstr
-
 type ecs_bool_t = bool
 type ecs_char_t = char
 type ecs_byte_t = ubyte
@@ -1941,7 +1745,6 @@ type ecs_iptr_t = ptr_int
 type ecs_f32_t = float
 type ecs_f64_t = double
 type ecs_string_t = ptr[char]
-
 enum ecs_type_kind_t: int
     EcsPrimitiveType = 0
     EcsBitmaskType = 1
@@ -1951,12 +1754,10 @@ enum ecs_type_kind_t: int
     EcsVectorType = 5
     EcsOpaqueType = 6
     EcsTypeKindLast = 6
-
 struct EcsType:
     kind: ecs_type_kind_t
     existing: bool
     partial: bool
-
 enum ecs_primitive_kind_t: int
     EcsBool = 1
     EcsChar = 2
@@ -1977,26 +1778,21 @@ enum ecs_primitive_kind_t: int
     EcsEntity = 17
     EcsId = 18
     EcsPrimitiveKindLast = 18
-
 struct EcsPrimitive:
     kind: ecs_primitive_kind_t
-
 struct EcsMember:
     type_: ptr_uint
     count: int
     unit: ptr_uint
     offset: int
     use_offset: bool
-
 struct ecs_member_value_range_t:
     min: double
     max: double
-
 struct EcsMemberRanges:
     value: ecs_member_value_range_t
     warning: ecs_member_value_range_t
     error: ecs_member_value_range_t
-
 struct ecs_member_t:
     name: cstr
     type_: ptr_uint
@@ -2009,49 +1805,38 @@ struct ecs_member_t:
     warning_range: ecs_member_value_range_t
     size: int
     member: ptr_uint
-
 struct EcsStruct:
     members: ecs_vec_t
-
 struct ecs_enum_constant_t:
     name: cstr
     value: ptr_int
     value_unsigned: ptr_uint
     constant: ptr_uint
-
 struct EcsEnum:
     underlying_type: ptr_uint
-
 struct ecs_bitmask_constant_t:
     name: cstr
     value: ptr_uint
     _unused: ptr_int
     constant: ptr_uint
-
 struct EcsBitmask:
     dummy_: int
-
 struct EcsConstants:
     constants: ptr[ecs_map_t]
     ordered_constants: ecs_vec_t
-
 struct EcsArray:
     type_: ptr_uint
     count: int
-
 struct EcsVector:
     type_: ptr_uint
-
 struct ecs_serializer_t:
     value: fn(arg0: const_ptr[ecs_serializer_t], arg1: ecs_entity_t, arg2: const_ptr[void]) -> int
     member: fn(arg0: const_ptr[ecs_serializer_t], arg1: cstr) -> int
     world: const_ptr[ecs_world_t]
     ctx: ptr[void]
-
 type ecs_meta_serialize_t = fn(arg0: const_ptr[ecs_serializer_t], arg1: const_ptr[void]) -> int
 type ecs_meta_serialize_member_t = fn(arg0: const_ptr[ecs_serializer_t], arg1: const_ptr[void], arg2: cstr) -> int
 type ecs_meta_serialize_element_t = fn(arg0: const_ptr[ecs_serializer_t], arg1: const_ptr[void], arg2: ptr_uint) -> int
-
 struct EcsOpaque:
     as_type: ptr_uint
     serialize: fn(arg0: const_ptr[ecs_serializer_t], arg1: const_ptr[void]) -> int
@@ -2071,22 +1856,18 @@ struct EcsOpaque:
     ensure_member: fn(arg0: ptr[void], arg1: cstr) -> ptr[void]
     count: fn(arg0: const_ptr[void]) -> ptr_uint
     resize: fn(arg0: ptr[void], arg1: ptr_uint) -> void
-
 struct ecs_unit_translation_t:
     factor: int
     power: int
-
 struct EcsUnit:
     symbol: ptr[char]
     prefix: ptr_uint
     base: ptr_uint
     over: ptr_uint
     translation: ecs_unit_translation_t
-
 struct EcsUnitPrefix:
     symbol: ptr[char]
     translation: ecs_unit_translation_t
-
 enum ecs_meta_op_kind_t: int
     EcsOpPushStruct = 0
     EcsOpPushArray = 1
@@ -2120,7 +1901,6 @@ enum ecs_meta_op_kind_t: int
     EcsOpEntity = 29
     EcsOpId = 30
     EcsMetaTypeOpKindLast = 30
-
 struct ecs_meta_op_t:
     kind: ecs_meta_op_kind_t
     underlying_kind: ecs_meta_op_kind_t
@@ -2132,11 +1912,9 @@ struct ecs_meta_op_t:
     type_: ptr_uint
     type_info: const_ptr[ecs_type_info_t]
     is: ecs_meta_op_t_is
-
 struct EcsTypeSerializer:
     kind: ecs_type_kind_t
     ops: ecs_vec_t
-
 struct ecs_meta_scope_t:
     type_: ptr_uint
     ops: ptr[ecs_meta_op_t]
@@ -2151,7 +1929,6 @@ struct ecs_meta_scope_t:
     is_moved_scope: bool
     elem: int
     elem_count: int
-
 struct ecs_meta_cursor_t:
     world: const_ptr[ecs_world_t]
     scope: array[ecs_meta_scope_t, 32]
@@ -2160,7 +1937,6 @@ struct ecs_meta_cursor_t:
     is_primitive_scope: bool
     lookup_action: fn(arg0: ptr[ecs_world_t], arg1: cstr, arg2: ptr[void]) -> ecs_entity_t
     lookup_ctx: ptr[void]
-
 external function ecs_meta_serializer_to_str(world: ptr[ecs_world_t], type_: ptr_uint) -> ptr[char]
 external function ecs_meta_cursor(world: const_ptr[ecs_world_t], type_: ptr_uint, ptr: ptr[void]) -> ecs_meta_cursor_t
 external function ecs_meta_get_ptr(cursor: ptr[ecs_meta_cursor_t]) -> ptr[void]
@@ -2198,55 +1974,40 @@ external function ecs_meta_get_entity(cursor: const_ptr[ecs_meta_cursor_t]) -> e
 external function ecs_meta_get_id(cursor: const_ptr[ecs_meta_cursor_t]) -> ecs_id_t
 external function ecs_meta_ptr_to_float(type_kind: ecs_primitive_kind_t, ptr: const_ptr[void]) -> double
 external function ecs_meta_op_get_elem_count(op: const_ptr[ecs_meta_op_t], ptr: const_ptr[void]) -> ecs_size_t
-
 struct ecs_primitive_desc_t:
     entity: ptr_uint
     kind: ecs_primitive_kind_t
-
 external function ecs_primitive_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_primitive_desc_t]) -> ecs_entity_t
-
 struct ecs_enum_desc_t:
     entity: ptr_uint
     constants: array[ecs_enum_constant_t, 32]
     underlying_type: ptr_uint
-
 external function ecs_enum_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_enum_desc_t]) -> ecs_entity_t
-
 struct ecs_bitmask_desc_t:
     entity: ptr_uint
     constants: array[ecs_bitmask_constant_t, 32]
-
 external function ecs_bitmask_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_bitmask_desc_t]) -> ecs_entity_t
-
 struct ecs_array_desc_t:
     entity: ptr_uint
     type_: ptr_uint
     count: int
-
 external function ecs_array_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_array_desc_t]) -> ecs_entity_t
-
 struct ecs_vector_desc_t:
     entity: ptr_uint
     type_: ptr_uint
-
 external function ecs_vector_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_vector_desc_t]) -> ecs_entity_t
-
 struct ecs_struct_desc_t:
     entity: ptr_uint
     members: array[ecs_member_t, 32]
     create_member_entities: bool
-
 external function ecs_struct_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_struct_desc_t]) -> ecs_entity_t
 external function ecs_struct_add_member(world: ptr[ecs_world_t], type_: ptr_uint, member: const_ptr[ecs_member_t]) -> int
 external function ecs_struct_get_member(world: ptr[ecs_world_t], type_: ptr_uint, name: cstr) -> ptr[ecs_member_t]
 external function ecs_struct_get_nth_member(world: ptr[ecs_world_t], type_: ptr_uint, i: int) -> ptr[ecs_member_t]
-
 struct ecs_opaque_desc_t:
     entity: ptr_uint
     type_: EcsOpaque
-
 external function ecs_opaque_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_opaque_desc_t]) -> ecs_entity_t
-
 struct ecs_unit_desc_t:
     entity: ptr_uint
     symbol: cstr
@@ -2255,14 +2016,11 @@ struct ecs_unit_desc_t:
     over: ptr_uint
     translation: ecs_unit_translation_t
     prefix: ptr_uint
-
 external function ecs_unit_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_unit_desc_t]) -> ecs_entity_t
-
 struct ecs_unit_prefix_desc_t:
     entity: ptr_uint
     symbol: cstr
     translation: ecs_unit_translation_t
-
 external function ecs_unit_prefix_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_unit_prefix_desc_t]) -> ecs_entity_t
 external function ecs_quantity_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_entity_desc_t]) -> ecs_entity_t
 external function ecs_meta_from_desc(world: ptr[ecs_world_t], component: ptr_uint, kind: ecs_type_kind_t, desc: cstr) -> int
@@ -2275,9 +2033,7 @@ external function ecs_cpp_get_type_name(type_name: ptr[char], func_name: cstr, l
 external function ecs_cpp_get_symbol_name(symbol_name: ptr[char], type_name: cstr, len: ptr_uint) -> ptr[char]
 external function ecs_cpp_get_constant_name(constant_name: ptr[char], func_name: cstr, len: ptr_uint, back_len: ptr_uint) -> ptr[char]
 external function ecs_cpp_trim_module(world: ptr[ecs_world_t], type_name: cstr) -> cstr
-
 type ecs_cpp_type_action_t = fn(arg0: ptr[ecs_world_t], arg1: ecs_entity_t) -> void
-
 struct ecs_cpp_component_desc_t:
     id: ptr_uint
     ids_index: int
@@ -2290,22 +2046,18 @@ struct ecs_cpp_component_desc_t:
     enum_action: fn(arg0: ptr[ecs_world_t], arg1: ecs_entity_t) -> void
     is_component: bool
     explicit_registration: bool
-
 external function ecs_cpp_component_register(world: ptr[ecs_world_t], desc: const_ptr[ecs_cpp_component_desc_t]) -> ecs_entity_t
 external function ecs_cpp_enum_init(world: ptr[ecs_world_t], id: ptr_uint, underlying_type: ptr_uint) -> void
 external function ecs_cpp_enum_constant_register(world: ptr[ecs_world_t], parent: ptr_uint, id: ptr_uint, name: cstr, value: ptr[void], value_type: ptr_uint, value_size: ptr_uint) -> ecs_entity_t
-
 struct ecs_cpp_get_mut_t:
     world: ptr[ecs_world_t]
     stage: ptr[ecs_stage_t]
     ptr: ptr[void]
     call_modified: bool
-
 external function ecs_cpp_set(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint, new_ptr: const_ptr[void], size: ptr_uint) -> ecs_cpp_get_mut_t
 external function ecs_cpp_assign(world: ptr[ecs_world_t], entity: ptr_uint, component: ptr_uint, new_ptr: const_ptr[void], size: ptr_uint) -> ecs_cpp_get_mut_t
 external function ecs_cpp_new(world: ptr[ecs_world_t], parent: ptr_uint, name: cstr, sep: cstr, root_sep: cstr) -> ecs_entity_t
 external function ecs_cpp_last_member(world: const_ptr[ecs_world_t], type_: ptr_uint) -> ptr[ecs_member_t]
-
 const FLECS_VERSION_MAJOR: int = 4
 const FLECS_VERSION_MINOR: int = 1
 const FLECS_VERSION_PATCH: int = 5

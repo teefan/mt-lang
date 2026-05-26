@@ -2,7 +2,6 @@
 external
 
 include "string_bindgen.h"
-
 external function mt_string_memcpy(destination: ptr[void], source: const_ptr[void], size_bytes: ptr_uint) -> ptr[void]
 external function mt_string_memmove(destination: ptr[void], source: const_ptr[void], size_bytes: ptr_uint) -> ptr[void]
 external function mt_string_memset(destination: ptr[void], value: int, size_bytes: ptr_uint) -> ptr[void]

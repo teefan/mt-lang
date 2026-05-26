@@ -3,7 +3,6 @@ external
 
 link "pcre2-8"
 include "pcre2.h"
-
 type PCRE2_UCHAR8 = ubyte
 type PCRE2_UCHAR16 = ushort
 type PCRE2_UCHAR32 = uint
@@ -18,7 +17,6 @@ opaque pcre2_code_8 = c"pcre2_code_8"
 opaque pcre2_match_data_8 = c"pcre2_match_data_8"
 opaque pcre2_jit_stack_8 = c"pcre2_jit_stack_8"
 type pcre2_jit_callback_8 = fn(arg0: ptr[void]) -> ptr[pcre2_jit_stack_8]
-
 struct pcre2_callout_block_8:
     version: uint
     callout_number: uint
@@ -36,7 +34,6 @@ struct pcre2_callout_block_8:
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR8]
     callout_flags: uint
-
 struct pcre2_callout_enumerate_block_8:
     version: uint
     pattern_position: ptr_uint
@@ -45,7 +42,6 @@ struct pcre2_callout_enumerate_block_8:
     callout_string_offset: ptr_uint
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR8]
-
 struct pcre2_substitute_callout_block_8:
     version: uint
     input: const_ptr[PCRE2_UCHAR8]
@@ -54,7 +50,6 @@ struct pcre2_substitute_callout_block_8:
     ovector: ptr[ptr_uint]
     oveccount: uint
     subscount: uint
-
 external function pcre2_config_8(arg0: uint, arg1: ptr[void]) -> int
 external function pcre2_general_context_copy_8(arg0: ptr[pcre2_general_context_8]) -> ptr[pcre2_general_context_8]
 external function pcre2_general_context_create_8(arg0: fn(arg0: ptr_uint, arg1: ptr[void]) -> ptr[void], arg1: fn(arg0: ptr[void], arg1: ptr[void]) -> void, arg2: ptr[void]) -> ptr[pcre2_general_context_8]
@@ -133,7 +128,6 @@ external function pcre2_jit_stack_free_8(arg0: ptr[pcre2_jit_stack_8]) -> void
 external function pcre2_get_error_message_8(arg0: int, arg1: ptr[PCRE2_UCHAR8], arg2: ptr_uint) -> int
 external function pcre2_maketables_8(arg0: ptr[pcre2_general_context_8]) -> const_ptr[ubyte]
 external function pcre2_maketables_free_8(arg0: ptr[pcre2_general_context_8], arg1: const_ptr[ubyte]) -> void
-
 opaque pcre2_general_context_16 = c"pcre2_general_context_16"
 opaque pcre2_compile_context_16 = c"pcre2_compile_context_16"
 opaque pcre2_match_context_16 = c"pcre2_match_context_16"
@@ -142,7 +136,6 @@ opaque pcre2_code_16 = c"pcre2_code_16"
 opaque pcre2_match_data_16 = c"pcre2_match_data_16"
 opaque pcre2_jit_stack_16 = c"pcre2_jit_stack_16"
 type pcre2_jit_callback_16 = fn(arg0: ptr[void]) -> ptr[pcre2_jit_stack_16]
-
 struct pcre2_callout_block_16:
     version: uint
     callout_number: uint
@@ -160,7 +153,6 @@ struct pcre2_callout_block_16:
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR16]
     callout_flags: uint
-
 struct pcre2_callout_enumerate_block_16:
     version: uint
     pattern_position: ptr_uint
@@ -169,7 +161,6 @@ struct pcre2_callout_enumerate_block_16:
     callout_string_offset: ptr_uint
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR16]
-
 struct pcre2_substitute_callout_block_16:
     version: uint
     input: const_ptr[PCRE2_UCHAR16]
@@ -178,7 +169,6 @@ struct pcre2_substitute_callout_block_16:
     ovector: ptr[ptr_uint]
     oveccount: uint
     subscount: uint
-
 external function pcre2_config_16(arg0: uint, arg1: ptr[void]) -> int
 external function pcre2_general_context_copy_16(arg0: ptr[pcre2_general_context_16]) -> ptr[pcre2_general_context_16]
 external function pcre2_general_context_create_16(arg0: fn(arg0: ptr_uint, arg1: ptr[void]) -> ptr[void], arg1: fn(arg0: ptr[void], arg1: ptr[void]) -> void, arg2: ptr[void]) -> ptr[pcre2_general_context_16]
@@ -257,7 +247,6 @@ external function pcre2_jit_stack_free_16(arg0: ptr[pcre2_jit_stack_16]) -> void
 external function pcre2_get_error_message_16(arg0: int, arg1: ptr[PCRE2_UCHAR16], arg2: ptr_uint) -> int
 external function pcre2_maketables_16(arg0: ptr[pcre2_general_context_16]) -> const_ptr[ubyte]
 external function pcre2_maketables_free_16(arg0: ptr[pcre2_general_context_16], arg1: const_ptr[ubyte]) -> void
-
 opaque pcre2_general_context_32 = c"pcre2_general_context_32"
 opaque pcre2_compile_context_32 = c"pcre2_compile_context_32"
 opaque pcre2_match_context_32 = c"pcre2_match_context_32"
@@ -266,7 +255,6 @@ opaque pcre2_code_32 = c"pcre2_code_32"
 opaque pcre2_match_data_32 = c"pcre2_match_data_32"
 opaque pcre2_jit_stack_32 = c"pcre2_jit_stack_32"
 type pcre2_jit_callback_32 = fn(arg0: ptr[void]) -> ptr[pcre2_jit_stack_32]
-
 struct pcre2_callout_block_32:
     version: uint
     callout_number: uint
@@ -284,7 +272,6 @@ struct pcre2_callout_block_32:
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR32]
     callout_flags: uint
-
 struct pcre2_callout_enumerate_block_32:
     version: uint
     pattern_position: ptr_uint
@@ -293,7 +280,6 @@ struct pcre2_callout_enumerate_block_32:
     callout_string_offset: ptr_uint
     callout_string_length: ptr_uint
     callout_string: const_ptr[PCRE2_UCHAR32]
-
 struct pcre2_substitute_callout_block_32:
     version: uint
     input: const_ptr[PCRE2_UCHAR32]
@@ -302,7 +288,6 @@ struct pcre2_substitute_callout_block_32:
     ovector: ptr[ptr_uint]
     oveccount: uint
     subscount: uint
-
 external function pcre2_config_32(arg0: uint, arg1: ptr[void]) -> int
 external function pcre2_general_context_copy_32(arg0: ptr[pcre2_general_context_32]) -> ptr[pcre2_general_context_32]
 external function pcre2_general_context_create_32(arg0: fn(arg0: ptr_uint, arg1: ptr[void]) -> ptr[void], arg1: fn(arg0: ptr[void], arg1: ptr[void]) -> void, arg2: ptr[void]) -> ptr[pcre2_general_context_32]
@@ -381,7 +366,6 @@ external function pcre2_jit_stack_free_32(arg0: ptr[pcre2_jit_stack_32]) -> void
 external function pcre2_get_error_message_32(arg0: int, arg1: ptr[PCRE2_UCHAR32], arg2: ptr_uint) -> int
 external function pcre2_maketables_32(arg0: ptr[pcre2_general_context_32]) -> const_ptr[ubyte]
 external function pcre2_maketables_free_32(arg0: ptr[pcre2_general_context_32], arg1: const_ptr[ubyte]) -> void
-
 const PCRE2_MAJOR: int = 10
 const PCRE2_MINOR: int = 46
 const PCRE2_ANCHORED: uint = 2147483648
