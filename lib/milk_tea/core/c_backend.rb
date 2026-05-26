@@ -1828,7 +1828,9 @@ module MilkTea
       when IR::BlockStmt
         IR::BlockStmt.new(body: compact_generated_statement_sequence(statement.body))
       when IR::WhileStmt
-        IR::WhileStmt.new(condition: statement.condition, body: compact_generated_statement_sequence(statement.body))
+        canonicalize_top_guarded_while(
+          IR::WhileStmt.new(condition: statement.condition, body: compact_generated_statement_sequence(statement.body))
+        )
       when IR::ForStmt
         IR::ForStmt.new(
           init: statement.init,
@@ -1857,6 +1859,53 @@ module MilkTea
       else
         statement
       end
+    end
+
+    def canonicalize_top_guarded_while(statement)
+      return statement unless constant_boolean_value(statement.condition) == true
+      return statement if statement.body.empty?
+
+      break_condition = top_guard_break_condition(statement.body.first)
+      return statement unless break_condition
+
+      IR::WhileStmt.new(
+        condition: invert_break_guard_condition(break_condition),
+        body: statement.body.drop(1),
+      )
+    end
+
+    def top_guard_break_condition(statement)
+      return unless statement.is_a?(IR::IfStmt)
+      return unless statement.else_body.nil? || statement.else_body.empty?
+      return unless statement.then_body.length == 1 && statement.then_body.first.is_a?(IR::BreakStmt)
+
+      statement.condition
+    end
+
+    def invert_break_guard_condition(expression)
+      case expression
+      when IR::BooleanLiteral
+        IR::BooleanLiteral.new(value: !expression.value, type: expression.type)
+      when IR::Unary
+        return expression.operand if expression.operator == "not"
+      when IR::Binary
+        if (operator = inverted_boolean_operator(expression.operator))
+          return IR::Binary.new(operator:, left: expression.left, right: expression.right, type: expression.type)
+        end
+      end
+
+      IR::Unary.new(operator: "not", operand: expression, type: expression.type)
+    end
+
+    def inverted_boolean_operator(operator)
+      {
+        "==" => "!=",
+        "!=" => "==",
+        "<" => ">=",
+        "<=" => ">",
+        ">" => "<=",
+        ">=" => "<",
+      }[operator]
     end
 
     def emit_if_statement(statement, level, function:, used_labels:)
