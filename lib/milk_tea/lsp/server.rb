@@ -1420,6 +1420,29 @@ module MilkTea
               }
             }
 
+          when 'redundant-ignored-match-binding'
+            next if source_line.empty?
+
+            span = Linter.redundant_ignored_match_binding_span(source_line, column: diag_start_char + 1)
+            next unless span
+
+            actions << {
+              title: Linter.quick_fix_title('redundant-ignored-match-binding'),
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: diag_line - 1, character: span[:start_char] },
+                      end:   { line: diag_line - 1, character: span[:end_char] }
+                    },
+                    newText: ''
+                  }]
+                }
+              }
+            }
+
           when 'redundant-else'
             # Remove the `else:` line above and dedent the body.
             # Supports diagnostics anchored either on `else:` or the first body line.
@@ -1772,12 +1795,15 @@ module MilkTea
           fixall_start = monotonic_time
           begin
             content_hash = content.hash
+            format_mode = @format_mode
             cached_fixall = @fixall_cache[uri]
-            if cached_fixall && cached_fixall[:content_hash] == content_hash
+            if cached_fixall &&
+               cached_fixall[:content_hash] == content_hash &&
+               cached_fixall[:format_mode] == format_mode
               fixed = cached_fixall[:fixed]
             else
               formatted = begin
-                Formatter.format_source(content, mode: :safe)
+                Formatter.format_source(content, mode: format_mode)
               rescue StandardError
                 content
               end
@@ -1786,7 +1812,11 @@ module MilkTea
               rescue StandardError
                 formatted
               end
-              @fixall_cache[uri] = { content_hash: content_hash, fixed: fixed }
+              @fixall_cache[uri] = {
+                content_hash: content_hash,
+                format_mode: format_mode,
+                fixed: fixed,
+              }
             end
             line_count = content.count("\n")
             actions << {
