@@ -1969,14 +1969,14 @@ module MilkTea
                                           explicit_case = explicit_cases.first
                                           [
                                             IR::Binary.new(operator: "==", left: statement.expression, right: explicit_case.value, type: nil),
-                                            explicit_case.body,
-                                            default_case.body,
+                                            strip_terminal_switch_break(explicit_case.body),
+                                            strip_terminal_switch_break(default_case.body),
                                           ]
                                         else
                                           [
                                             IR::Binary.new(operator: "==", left: statement.expression, right: explicit_cases.first.value, type: nil),
-                                            explicit_cases.first.body,
-                                            explicit_cases.last.body,
+                                            strip_terminal_switch_break(explicit_cases.first.body),
+                                            strip_terminal_switch_break(explicit_cases.last.body),
                                           ]
                                         end
 
@@ -1988,6 +1988,12 @@ module MilkTea
         loop_continue_label:,
         loop_break_label:,
       )
+    end
+
+    def strip_terminal_switch_break(statements)
+      return statements unless statements.last.is_a?(IR::BreakStmt)
+
+      statements[0...-1]
     end
 
     def canonicalize_top_guarded_while(statement)
@@ -2411,7 +2417,7 @@ module MilkTea
       when IR::IfStmt
         statement.else_body && body_terminates?(statement.then_body) && body_terminates?(statement.else_body)
       when IR::SwitchStmt
-        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| body_terminates?(switch_case.body) }
+        switch_statement_prevents_outer_fallthrough?(statement)
       else
         false
       end
@@ -2426,7 +2432,7 @@ module MilkTea
       when IR::IfStmt
         statement.else_body && !body_needs_fallback_return?(statement.then_body) && !body_needs_fallback_return?(statement.else_body)
       when IR::SwitchStmt
-        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| !body_needs_fallback_return?(switch_case.body) }
+        switch_statement_prevents_outer_fallthrough?(statement)
       when IR::WhileStmt
         constant_boolean_value(statement.condition) == true && !contains_visible_loop_exit?(statement.body)
       else
@@ -2443,7 +2449,40 @@ module MilkTea
       when IR::IfStmt
         statement.else_body && !body_has_sequential_fallthrough?(statement.then_body) && !body_has_sequential_fallthrough?(statement.else_body)
       when IR::SwitchStmt
-        statement.exhaustive && statement.cases.any? && statement.cases.all? { |switch_case| !body_has_sequential_fallthrough?(switch_case.body) }
+        switch_statement_prevents_outer_fallthrough?(statement)
+      when IR::WhileStmt
+        constant_boolean_value(statement.condition) == true && !contains_visible_loop_exit?(statement.body)
+      else
+        false
+      end
+    end
+
+    def switch_statement_prevents_outer_fallthrough?(statement)
+      return false unless statement.exhaustive && statement.cases.any?
+
+      statement.cases.all? { |switch_case| switch_case_body_prevents_outer_fallthrough?(switch_case.body) }
+    end
+
+    def switch_case_body_prevents_outer_fallthrough?(statements)
+      return false if statements.empty?
+
+      switch_case_statement_prevents_outer_fallthrough?(statements.last)
+    end
+
+    def switch_case_statement_prevents_outer_fallthrough?(statement)
+      case statement
+      when IR::ReturnStmt, IR::ContinueStmt, IR::GotoStmt
+        true
+      when IR::BreakStmt
+        false
+      when IR::BlockStmt
+        switch_case_body_prevents_outer_fallthrough?(statement.body)
+      when IR::IfStmt
+        statement.else_body &&
+          switch_case_body_prevents_outer_fallthrough?(statement.then_body) &&
+          switch_case_body_prevents_outer_fallthrough?(statement.else_body)
+      when IR::SwitchStmt
+        switch_statement_prevents_outer_fallthrough?(statement)
       when IR::WhileStmt
         constant_boolean_value(statement.condition) == true && !contains_visible_loop_exit?(statement.body)
       else
