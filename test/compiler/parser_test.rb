@@ -1773,7 +1773,7 @@ class MilkTeaParserTest < Minitest::Test
       MilkTea::Parser.parse(source)
     end
 
-    assert_match(/expected field name/, error.message)
+    assert_match(/keyword 'type' cannot be used as field name/, error.message)
   end
 
   def test_rejects_untyped_non_self_parameters

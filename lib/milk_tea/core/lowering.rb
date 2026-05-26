@@ -1192,11 +1192,11 @@ module MilkTea
 
       def build_async_frame_type(frame_c_name, async_info)
         fields = {
-          "state" => @types.fetch("int"),
           "ready" => @types.fetch("bool"),
           "waiter_frame" => async_info[:void_ptr],
           "waiter" => async_info[:wake_type],
         }
+        fields["state"] = @types.fetch("int") unless async_info[:await_fields].empty?
         unless async_info[:result_type] == @types.fetch("void")
           fields["result"] = async_info[:result_type]
         end
@@ -1290,19 +1290,21 @@ module MilkTea
         raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
         body = [async_frame_cast_declaration(frame_type, async_info)]
 
-        cases = (0..async_info[:await_fields].length).map do |state|
-          IR::SwitchCase.new(
-            value: IR::IntegerLiteral.new(value: state, type: @types.fetch("int")),
-            body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
-          )
-        end
-        body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("int")), cases:)
-        body << IR::ReturnStmt.new(value: nil)
-        body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
-
         env = async_resume_env_for(async_info)
-
-        body.concat(lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: []))
+        if async_info[:await_fields].empty?
+          body.concat(lower_async_non_await_statements(statements, env:, frame_expr:, raw_frame_expr:, async_info:, active_defers: []))
+        else
+          cases = (0..async_info[:await_fields].length).map do |state|
+            IR::SwitchCase.new(
+              value: IR::IntegerLiteral.new(value: state, type: @types.fetch("int")),
+              body: [IR::GotoStmt.new(label: async_state_label(resume_c_name, state))],
+            )
+          end
+          body << IR::SwitchStmt.new(expression: async_frame_field_expression(frame_expr, "state", @types.fetch("int")), cases:)
+          body << IR::ReturnStmt.new(value: nil)
+          body << IR::LabelStmt.new(name: async_state_label(resume_c_name, 0))
+          body.concat(lower_async_cf_statements(statements, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: []))
+        end
 
         if async_info[:result_type] == @types.fetch("void") && !cfg_block_always_terminates?(statements)
           body.concat(async_complete_statements(frame_expr:, raw_frame_expr:, async_info:, value: nil, result_already_stored: true))
