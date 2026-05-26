@@ -2388,7 +2388,7 @@ module MilkTea
       when IR::Binary
         return emit_str_equality_expression(expression) if str_equality_expression?(expression)
 
-        "#{wrap_expression(expression.left)} #{c_operator(expression.operator)} #{wrap_expression(expression.right)}"
+        emit_binary_expression(expression)
       when IR::Conditional
         "#{wrap_expression(expression.condition)} ? #{wrap_expression(expression.then_expression)} : #{wrap_expression(expression.else_expression)}"
       when IR::ReinterpretExpr
@@ -2447,9 +2447,51 @@ module MilkTea
       ["==", "!="].include?(expression.operator) && expression.left.type.is_a?(Types::StringView) && expression.right.type.is_a?(Types::StringView)
     end
 
+    def emit_binary_expression(expression)
+      parent_precedence = binary_precedence(expression.operator)
+      left = emit_binary_operand(expression.left, parent_precedence, side: :left)
+      right = emit_binary_operand(expression.right, parent_precedence, side: :right)
+      "#{left} #{c_operator(expression.operator)} #{right}"
+    end
+
+    def emit_binary_operand(expression, parent_precedence, side:)
+      text = emit_expression(expression)
+
+      case expression
+      when IR::Conditional
+        "(#{text})"
+      when IR::Binary
+        child_precedence = binary_precedence(expression.operator)
+        if child_precedence < parent_precedence || (side == :right && child_precedence == parent_precedence)
+          "(#{text})"
+        else
+          text
+        end
+      else
+        text
+      end
+    end
+
+    def binary_precedence(operator)
+      case operator
+      when "or" then 1
+      when "and" then 2
+      when "|" then 3
+      when "^" then 4
+      when "&" then 5
+      when "==", "!=" then 6
+      when "<", "<=", ">", ">=" then 7
+      when "<<", ">>" then 8
+      when "+", "-" then 9
+      when "*", "/", "%" then 10
+      else
+        raise LoweringError, "unsupported binary operator #{operator}"
+      end
+    end
+
     def emit_str_equality_expression(expression)
       call = "mt_str_equal(#{emit_expression(expression.left)}, #{emit_expression(expression.right)})"
-      expression.operator == "!=" ? "(!#{call})" : call
+      expression.operator == "!=" ? "!#{call}" : call
     end
 
     def emit_initializer(expression)
