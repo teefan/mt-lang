@@ -17,19 +17,14 @@
       "pcre2_callout_block_8",
       "pcre2_substitute_callout_block_8"
     ],
+    "rename_rules": [
+      { "kind": "prefix", "match": "pcre2_" },
+      { "kind": "replace", "match": "_8", "replace_with": "" },
+      { "kind": "camelize" }
+    ],
     "overrides": [
       { "raw": "PCRE2_UCHAR8", "name": "UChar" },
-      { "raw": "PCRE2_SPTR8", "name": "SPTR" },
-      { "raw": "pcre2_general_context_8", "name": "GeneralContext" },
-      { "raw": "pcre2_compile_context_8", "name": "CompileContext" },
-      { "raw": "pcre2_match_context_8", "name": "MatchContext" },
-      { "raw": "pcre2_convert_context_8", "name": "ConvertContext" },
-      { "raw": "pcre2_code_8", "name": "Code" },
-      { "raw": "pcre2_match_data_8", "name": "MatchData" },
-      { "raw": "pcre2_jit_stack_8", "name": "JitStack" },
-      { "raw": "pcre2_jit_callback_8", "name": "JitCallback" },
-      { "raw": "pcre2_callout_block_8", "name": "CalloutBlock" },
-      { "raw": "pcre2_substitute_callout_block_8", "name": "SubstituteCalloutBlock" }
+      { "raw": "PCRE2_SPTR8", "name": "SPTR" }
     ]
   },
   "constants": {
