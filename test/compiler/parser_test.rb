@@ -1629,6 +1629,34 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "create", call.callee.member
   end
 
+  def test_parses_multiline_generic_receiver_self_specialization_call
+    source = <<~MT
+      struct Box[T]:
+          value: T
+
+      extending Box[T]:
+          static function create() -> Box[T]:
+              return Box[T](value = zero[T])
+
+          static function with_default() -> Box[T]:
+              return Box[
+                  T,
+              ].create()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    methods = ast.declarations[1]
+    return_stmt = methods.methods[1].body.first
+    call = return_stmt.value
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::MemberAccess, call.callee
+    assert_instance_of MilkTea::AST::Specialization, call.callee.receiver
+    assert_equal "Box", call.callee.receiver.callee.name
+    assert_equal "T", call.callee.receiver.arguments.first.value.name.to_s
+    assert_equal "create", call.callee.member
+  end
+
   def test_parses_unsafe_blocks_with_pointer_cast_and_arithmetic
     source = <<~MT
       function main(memory: ptr[void]) -> int:

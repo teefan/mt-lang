@@ -1371,7 +1371,10 @@ public function run(config: Config) -> int:
                             var mouse_message = describe_mouse_event(event.mouse)
                             last_event.assign(mouse_message.as_str())
 
-                            if event.mouse.action == terminal.MouseAction.press and event.mouse.button == terminal.MouseButton.left:
+                            if (
+                                event.mouse.action == terminal.MouseAction.press
+                                and event.mouse.button == terminal.MouseButton.left
+                            ):
                                 match tab_hit_test(event.mouse.column, event.mouse.row):
                                     Option.some as tab_payload:
                                         active_tab = tab_payload.value
@@ -1424,7 +1427,10 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if event.key.code == terminal.KeyCode.escape or (event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-99):
+                            if (
+                                event.key.code == terminal.KeyCode.escape
+                                or (event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-99)
+                            ):
                                 key_message.release()
                                 running = false
                                 continue
@@ -1490,7 +1496,15 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.echo and event.key.code == terminal.KeyCode.character and event.key.has_byte and not event.key.ctrl and not event.key.alt and event.key.input_byte >= 32 and event.key.input_byte < 127:
+                            if (
+                                active_tab == DashboardTab.echo
+                                and event.key.code == terminal.KeyCode.character
+                                and event.key.has_byte
+                                and not event.key.ctrl
+                                and not event.key.alt
+                                and event.key.input_byte >= 32
+                                and event.key.input_byte < 127
+                            ):
                                 echo.push_input_byte(event.key.input_byte)
 
                             key_message.release()

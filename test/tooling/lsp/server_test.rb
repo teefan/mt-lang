@@ -7494,6 +7494,58 @@ function main(value: int) -> int:
     end
   end
 
+  def test_code_action_quickfix_line_too_long_wraps_else_if_logical_chain
+    Dir.mktmpdir("milk-tea-lsp-line-too-long-else-if") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 90
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main(flag: bool, value: int, other: int) -> int:
+            if flag:
+                return 1
+            else if flag and value > 0 and other > 0 and value != other and other < 100 and value < 200:
+                return 2
+            return 0
+      MT
+      uri = path_to_uri(path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/codeAction", {
+          "textDocument" => { "uri" => uri },
+          "range" => { "start" => { "line" => 3, "character" => 90 }, "end" => { "line" => 3, "character" => 101 } },
+          "context" => {
+            "diagnostics" => [{
+              "source" => "milk-tea",
+              "code" => "line-too-long",
+              "range" => { "start" => { "line" => 3, "character" => 90 }, "end" => { "line" => 3, "character" => 101 } },
+              "message" => "line exceeds max length of 90 columns (101); wrap the expression"
+            }]
+          }
+        })
+
+        actions = response.fetch("result")
+        quickfix = actions.find { |action| action["kind"] == "quickFix" && action["title"] == "Wrap long line" }
+        assert quickfix, "expected a quickFix action for line-too-long"
+        edit = quickfix.dig("edit", "changes", uri, 0)
+        assert_includes edit["newText"], "    else if (\n"
+        assert_includes edit["newText"], "        and value > 0\n"
+        assert_includes edit["newText"], "        and value < 200\n"
+        assert_includes edit["newText"], "    ):\n"
+      end
+    end
+  end
+
   def test_code_action_quickfix_redundant_ignored_match_binding
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

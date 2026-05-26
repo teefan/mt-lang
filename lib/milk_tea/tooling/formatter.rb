@@ -353,13 +353,20 @@ module MilkTea
       end
       return nil if line_tokens.length < 4
 
-      header_token = line_tokens.first
-      return nil unless %i[if while].include?(header_token.type)
+      header_length = case line_tokens.first.type
+                      when :if, :while
+                        1
+                      when :else
+                        line_tokens[1]&.type == :if ? 2 : 0
+                      else
+                        0
+                      end
+      return nil if header_length.zero?
 
       colon_token = line_tokens.reverse.find { |token| token.type == :colon }
       return nil unless colon_token
 
-      expression_start_token = line_tokens[1]
+      expression_start_token = line_tokens[header_length]
       return nil unless expression_start_token
 
       start_char = expression_start_token.column - 1
@@ -370,7 +377,7 @@ module MilkTea
       segments = []
       current_start = start_char
 
-      line_tokens[1...line_tokens.index(colon_token)].each do |token|
+      line_tokens[header_length...line_tokens.index(colon_token)].each do |token|
         case token.type
         when :lparen, :lbracket
           nested_group_depth += 1

@@ -129,6 +129,34 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_fix_source_wraps_long_else_if_logical_chain_for_line_too_long
+    Dir.mktmpdir("milk-tea-linter-fix-line-too-long-else-if") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 90
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        function main(flag: bool, value: int, other: int) -> int:
+            if flag:
+                return 1
+            else if flag and value > 0 and other > 0 and value != other and other < 100 and value < 200:
+                return 2
+            return 0
+      MT
+
+      fixed = MilkTea::Linter.fix_source(source, path: path)
+
+      assert_includes fixed, "    else if (\n"
+      assert_includes fixed, "        flag\n"
+      assert_includes fixed, "        and value < 200\n"
+      assert_includes fixed, "    ):\n"
+    end
+  end
+
   def test_warns_on_redundant_ignored_match_binding
     source = <<~MT
       function main(value: Option[int]) -> int:
