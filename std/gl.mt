@@ -1402,6 +1402,7 @@ public const NUM_SPIR_V_EXTENSIONS: int = c.GL_NUM_SPIR_V_EXTENSIONS
 public foreign function reset_loader() -> void = c.mt_gl_reset_loader
 public foreign function use_glfw_loader() -> void = c.mt_gl_use_glfw_loader
 public foreign function use_sdl_loader() -> void = c.mt_gl_use_sdl_loader
+public foreign function use_raylib_loader() -> void = c.mt_gl_use_raylib_loader
 public foreign function active_shader_program(pipeline: uint, program: uint) -> void = c.glActiveShaderProgram
 public foreign function active_texture(texture: uint) -> void = c.glActiveTexture
 public foreign function attach_shader(program: uint, shader: uint) -> void = c.glAttachShader

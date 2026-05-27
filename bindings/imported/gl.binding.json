@@ -40,6 +40,10 @@
         "name": "use_glfw_loader"
       },
       {
+        "raw": "mt_gl_use_raylib_loader",
+        "name": "use_raylib_loader"
+      },
+      {
         "raw": "glFenceSync",
         "return_type": "Sync?"
       },

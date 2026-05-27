@@ -952,6 +952,7 @@ module MilkTea
           include_directives: ["raylib.h"],
           link_libraries: ["raylib"],
           vendored_library: vendored_raylib_library,
+          compiler_flags: ["-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"],
           header_candidates: [
             vendored_raylib.source_root(root:).join("raylib.h").to_s,
           ],
@@ -1009,7 +1010,7 @@ module MilkTea
           include_directives: ["rlgl.h"],
           link_libraries: ["raylib"],
           vendored_library: vendored_raylib_library,
-          compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
+          compiler_flags: ["-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB", "-DGRAPHICS_API_OPENGL_43"],
           function_param_type_overrides: {
             "rlLoadTexture" => { "data" => "const_ptr[void]?" },
             "rlLoadTextureCubemap" => { "data" => "const_ptr[void]?" },

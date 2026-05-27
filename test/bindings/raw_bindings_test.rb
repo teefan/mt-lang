@@ -12,6 +12,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
+    assert_includes registry.fetch("raylib").compiler_flags, "-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"
     assert_equal({ "indices" => "ptr[ushort]?" }, registry.fetch("raylib").field_type_overrides.fetch("Mesh"))
     assert_equal({ "fileName" => "cstr?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadAutomationEventList"))
     assert_equal({ "codepoints" => "ptr[int]?" }, registry.fetch("raylib").function_param_type_overrides.fetch("LoadFontEx"))
@@ -39,6 +40,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "std.c.rlgl", registry.fetch("rlgl").module_name
     assert_equal ["raylib"], registry.fetch("rlgl").link_libraries
     assert_includes registry.fetch("rlgl").header_candidates.first, "third_party/raylib-upstream/src/rlgl.h"
+    assert_includes registry.fetch("rlgl").compiler_flags, "-DMT_LANG_GL_REGISTRY_HAVE_RAYLIB"
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadTexture"))
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadTextureCubemap"))
     assert_equal({ "data" => "const_ptr[void]?" }, registry.fetch("rlgl").function_param_type_overrides.fetch("rlLoadShaderBuffer"))

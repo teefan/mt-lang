@@ -1465,6 +1465,7 @@ typedef void (MTLANG_GL_APIENTRY *GLVULKANPROCNV)(void);
 void mt_gl_reset_loader(void);
 void mt_gl_use_glfw_loader(void);
 void mt_gl_use_sdl_loader(void);
+void mt_gl_use_raylib_loader(void);
 void MTLANG_GL_APIENTRY glActiveShaderProgram(GLuint pipeline, GLuint program);
 void MTLANG_GL_APIENTRY glActiveTexture(GLenum texture);
 void MTLANG_GL_APIENTRY glAttachShader(GLuint program, GLuint shader);
@@ -2128,6 +2129,9 @@ void MTLANG_GL_APIENTRY glWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeo
 #endif
 #if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)
 #include <SDL3/SDL.h>
+#endif
+#if defined(MT_LANG_GL_REGISTRY_HAVE_RAYLIB)
+void *rlGetProcAddress(const char *proc_name);
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -4161,6 +4165,16 @@ static mtlang_gl_proc_glWaitSync mtlang_gl_ptr_glWaitSync;
               abort();
           #endif
           }
+
+            void mt_gl_use_raylib_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_RAYLIB)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) rlGetProcAddress);
+            #else
+              fprintf(stderr, "OpenGL raylib loader support is unavailable in this build\n");
+              abort();
+            #endif
+            }
 void MTLANG_GL_APIENTRY glActiveShaderProgram(GLuint pipeline, GLuint program)
 {
     if (mtlang_gl_ptr_glActiveShaderProgram == NULL)

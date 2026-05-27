@@ -102,6 +102,7 @@ class MilkTeaOpenGLRegistryTest < Minitest::Test
       assert_match(/external function glCreateShader\(type_: uint\) -> GLuint/, generated)
       assert_match(/external function mt_gl_use_glfw_loader\(\) -> void/, generated)
       assert_match(/external function mt_gl_use_sdl_loader\(\) -> void/, generated)
+      assert_match(/external function mt_gl_use_raylib_loader\(\) -> void/, generated)
 
       File.write(output_path, generated)
       analysis = MilkTea::ModuleLoader.check_file(output_path)
@@ -111,11 +112,12 @@ class MilkTeaOpenGLRegistryTest < Minitest::Test
       assert_includes analysis.functions.keys, "glBindBuffer"
       assert_includes analysis.functions.keys, "mt_gl_use_glfw_loader"
       assert_includes analysis.functions.keys, "mt_gl_use_sdl_loader"
+      assert_includes analysis.functions.keys, "mt_gl_use_raylib_loader"
       assert_includes analysis.types.keys, "GLenum"
     end
   end
 
-  def test_generated_header_compiles_loader_selectors_for_glfw_and_sdl
+  def test_generated_header_compiles_loader_selectors_for_glfw_sdl_and_raylib
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless executable_available?(compiler)
 
@@ -150,15 +152,17 @@ class MilkTeaOpenGLRegistryTest < Minitest::Test
         #define #{MilkTea::OpenGLRegistry::IMPLEMENTATION_DEFINE}
         #define MT_LANG_GL_REGISTRY_HAVE_GLFW
         #define MT_LANG_GL_REGISTRY_HAVE_SDL3
+        #define MT_LANG_GL_REGISTRY_HAVE_RAYLIB
         #include "gl_registry_helpers.h"
 
         static int glfw_loader_calls = 0;
         static int sdl_loader_calls = 0;
+        static int raylib_loader_calls = 0;
         static int bind_buffer_calls = 0;
 
         static void MTLANG_GL_APIENTRY fake_glBindBuffer(GLenum target, GLuint buffer)
         {
-            if ((target == 10u && buffer == 20u) || (target == 30u && buffer == 40u) || (target == 50u && buffer == 60u)) {
+            if ((target == 10u && buffer == 20u) || (target == 30u && buffer == 40u) || (target == 50u && buffer == 60u) || (target == 70u && buffer == 80u)) {
                 bind_buffer_calls += 1;
                 return;
             }
@@ -177,6 +181,12 @@ class MilkTeaOpenGLRegistryTest < Minitest::Test
             return strcmp(proc_name, "glBindBuffer") == 0 ? (SDL_FunctionPointer) fake_glBindBuffer : (SDL_FunctionPointer) 0;
         }
 
+        void *rlGetProcAddress(const char *proc_name)
+        {
+          raylib_loader_calls += 1;
+          return strcmp(proc_name, "glBindBuffer") == 0 ? (void *) fake_glBindBuffer : (void *) 0;
+        }
+
         int main(void)
         {
             mt_gl_use_glfw_loader();
@@ -191,6 +201,13 @@ class MilkTeaOpenGLRegistryTest < Minitest::Test
             glBindBuffer(50u, 60u);
             if (sdl_loader_calls != 1 || bind_buffer_calls != 3) {
                 return 2;
+            }
+
+            mt_gl_reset_loader();
+            mt_gl_use_raylib_loader();
+            glBindBuffer(70u, 80u);
+            if (raylib_loader_calls != 1 || bind_buffer_calls != 4) {
+              return 3;
             }
 
             return 0;
