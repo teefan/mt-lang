@@ -423,6 +423,8 @@ The generated C is intended for Clang/GCC-family compilers. That matters most fo
 
 Wasm builds use `--cc` when you pass it explicitly. Otherwise Milk Tea switches to `$EMCC`, falling back to `emcc`.
 
+Because the wasm build path passes Emscripten-specific linker and shell flags, an explicit `--cc` for wasm must still resolve to `emcc` or an emcc-named wrapper.
+
 `emcc` uses the Clang frontend, so the same GNU-style attributes are accepted for wasm/browser builds. The layout rules still apply to generated C and to compile-time queries such as `size_of`, `align_of`, and `offset_of`. The main caveat is performance: packed data can force unaligned loads and stores, and while WebAssembly supports those accesses, Emscripten documents that they can be slower on some systems. Use packed layouts for ABI, file, and network formats, not as a default for ordinary hot-path game data.
 
 That means these two commands are equivalent when `EMCC` is configured:
