@@ -274,12 +274,12 @@
 
     "keyword-control": {
       "name": "keyword.control.milk-tea",
-      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|then)\\b"
+      "match": "\\b(if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await)\\b"
     },
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|methods|type|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link|align|equates|hashes)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link|align|equates|hashes)\\b"
     },
 
     "keyword-operator": {
@@ -289,7 +289,7 @@
 
     "keyword-modifier": {
       "name": "storage.modifier.milk-tea",
-      "match": "\\b(public|packed|async|editable)\\b"
+      "match": "\\b(public|packed|async|mutable)\\b"
     },
 
     "keyword-builtin": {

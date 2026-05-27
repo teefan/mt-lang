@@ -13,9 +13,9 @@ const LSP_PATH = path.join(REPO_ROOT, 'lib', 'milk_tea', 'lsp', 'server.rb');
 
 const EXPECTED_SCHEMA_URL = 'https://json.schemastore.org/tmlanguage.json';
 
-const CONTROL_KEYWORD_WORDS = ['if', 'else', 'for', 'in', 'while', 'break', 'continue', 'pass', 'return', 'match', 'defer', 'unsafe', 'await', 'then'];
+const CONTROL_KEYWORD_WORDS = ['if', 'else', 'for', 'in', 'while', 'break', 'continue', 'pass', 'return', 'match', 'defer', 'unsafe', 'await'];
 const OPERATOR_KEYWORD_WORDS = ['and', 'or', 'not', 'as', 'in', 'implements', 'defaults', 'size_of', 'align_of', 'offset_of', 'consuming', 'inout', 'out'];
-const MODIFIER_KEYWORD_WORDS = ['public', 'packed', 'async', 'editable'];
+const MODIFIER_KEYWORD_WORDS = ['public', 'packed', 'async', 'mutable'];
 const CONSTANT_LANGUAGE_WORDS = ['true', 'false', 'null'];
 const SPECIAL_LANGUAGE_WORDS = ['this'];
 const TEXTMATE_BUILTIN_EXCLUSIONS = new Set(['array', 'span']);
@@ -98,6 +98,23 @@ function main() {
   const lspSource = readText(LSP_PATH);
 
   const tokenKeywords = extractRubyHashKeys(tokenSource, 'KEYWORDS');
+  const configuredKeywordGroups = [
+    ...CONTROL_KEYWORD_WORDS,
+    ...OPERATOR_KEYWORD_WORDS,
+    ...MODIFIER_KEYWORD_WORDS,
+    ...CONSTANT_LANGUAGE_WORDS,
+  ];
+  const unknownConfiguredKeywords = configuredKeywordGroups.filter((keyword) => !tokenKeywords.includes(keyword));
+
+  if (unknownConfiguredKeywords.length) {
+    fail([
+      'Milk Tea tmLanguage sync check failed.',
+      '',
+      'keyword category constants mention non-keywords:',
+      formatWordList(unknownConfiguredKeywords),
+    ].join('\n'));
+  }
+
   const primitiveTypes = extractRubyPercentW(typesSource, 'BUILTIN_PRIMITIVE_NAMES');
   const builtinFunctions = extractRubyPercentW(lspSource, 'BUILTIN_FUNCTION_NAMES')
     .filter((name) => !TEXTMATE_BUILTIN_EXCLUSIONS.has(name));
