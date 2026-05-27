@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 box2d cjson flecs libuv zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet libjuice zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -148,6 +148,25 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForGUID")
     assert_equal "ptr[char]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_GetGamepadMappingForID")
     assert_equal "ptr[SDL_Surface]?", registry.fetch("sdl3").function_return_type_overrides.fetch("SDL_RenderReadPixels")
+    assert_equal "std.c.glfw", registry.fetch("glfw").module_name
+    assert_equal ["glfw3"], registry.fetch("glfw").link_libraries
+    assert_includes registry.fetch("glfw").compiler_flags, "-DMT_LANG_GL_REGISTRY_HAVE_GLFW"
+    assert_includes registry.fetch("glfw").compiler_flags, "-I#{MilkTea::VendoredGLFW.include_root}"
+    assert_includes registry.fetch("glfw").header_candidates.first, "third_party/glfw-upstream/include/GLFW/glfw3.h"
+    assert_includes registry.fetch("glfw").tracked_header_paths.first, "third_party/glfw-upstream/include/GLFW/glfw3.h"
+    assert_includes registry.fetch("glfw").tracked_header_prefixes.first, "third_party/glfw-upstream/include/GLFW"
+    assert_includes registry.fetch("glfw").link_flags, "-L#{MilkTea::VendoredGLFW.archive_path.dirname}"
+    assert_equal ["GLFW", "glfw"], registry.fetch("glfw").declaration_name_prefixes
+    assert_equal({ "description" => "ptr[cstr]?" }, registry.fetch("glfw").function_param_type_overrides.fetch("glfwGetError"))
+    assert_equal({ "window" => "ptr[GLFWwindow]?" }, registry.fetch("glfw").function_param_type_overrides.fetch("glfwMakeContextCurrent"))
+    assert_equal "ptr[GLFWwindow]?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwCreateWindow")
+    assert_equal "GLFWglproc?", registry.fetch("glfw").function_return_type_overrides.fetch("glfwGetProcAddress")
+    assert_equal "std.c.gl", registry.fetch("gl").module_name
+    assert_equal [], registry.fetch("gl").link_libraries
+    assert_equal [MilkTea::OpenGLRegistry::IMPLEMENTATION_DEFINE], registry.fetch("gl").implementation_defines
+    assert_includes registry.fetch("gl").header_candidates.first, "/std/c/gl_registry_helpers.h"
+    assert_includes registry.fetch("gl").tracked_header_paths.first, "/std/c/gl_registry_helpers.h"
+    assert_equal ["GL", "gl", "mt_gl_"], registry.fetch("gl").declaration_name_prefixes
     assert_equal "std.c.box2d", registry.fetch("box2d").module_name
     assert_equal ["box2d"], registry.fetch("box2d").link_libraries
     assert_includes registry.fetch("box2d").compiler_flags, "-I#{MilkTea::VendoredBox2D.include_root}"
@@ -201,6 +220,18 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_key_get")
     assert_equal "ptr[void]?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_loop_get_data")
     assert_equal "cstr?", registry.fetch("libuv").function_return_type_overrides.fetch("uv_dlerror")
+    assert_equal "std.c.enet", registry.fetch("enet").module_name
+    assert_equal ["enet"], registry.fetch("enet").link_libraries
+    assert_includes registry.fetch("enet").header_candidates, "/usr/include/enet/enet.h"
+    assert_includes registry.fetch("enet").tracked_header_paths, "/usr/include/enet/enet.h"
+    assert_includes registry.fetch("enet").tracked_header_prefixes, "/usr/include/enet"
+    assert_equal ["enet_", "ENET_", "ENet", "_ENet"], registry.fetch("enet").declaration_name_prefixes
+    assert_equal "std.c.libjuice", registry.fetch("libjuice").module_name
+    assert_equal ["juice", "pthread"], registry.fetch("libjuice").link_libraries
+    assert_includes registry.fetch("libjuice").header_candidates, "/usr/include/juice/juice.h"
+    assert_includes registry.fetch("libjuice").tracked_header_paths, "/usr/include/juice/juice.h"
+    assert_includes registry.fetch("libjuice").tracked_header_prefixes, "/usr/include/juice"
+    assert_equal ["juice_", "JUICE_"], registry.fetch("libjuice").declaration_name_prefixes
     assert_equal "std.c.zstd", registry.fetch("zstd").module_name
     assert_equal ["zstd"], registry.fetch("zstd").link_libraries
     assert_includes registry.fetch("zstd").header_candidates, "/usr/include/zstd.h"

@@ -1,0 +1,65 @@
+{
+  "module_name": "std.gl",
+  "raw_module_name": "std.c.gl",
+  "raw_import_alias": "c",
+  "types": {
+    "exclude": [
+      "GLsync"
+    ],
+    "overrides": [
+      {
+        "raw": "__GLsync",
+        "name": "Sync",
+        "kind": "opaque"
+      }
+    ]
+  },
+  "constants": {
+    "strip_prefix": "GL_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "gl"
+    ],
+    "rename_rules": [
+      {
+        "kind": "opengl"
+      }
+    ],
+    "overrides": [
+      {
+        "raw": "mt_gl_reset_loader",
+        "name": "reset_loader"
+      },
+      {
+        "raw": "mt_gl_use_sdl_loader",
+        "name": "use_sdl_loader"
+      },
+      {
+        "raw": "mt_gl_use_glfw_loader",
+        "name": "use_glfw_loader"
+      },
+      {
+        "raw": "glFenceSync",
+        "return_type": "Sync?"
+      },
+      {
+        "raw": "glMapBuffer",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "glMapBufferRange",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "glMapNamedBuffer",
+        "return_type": "ptr[void]?"
+      },
+      {
+        "raw": "glMapNamedBufferRange",
+        "return_type": "ptr[void]?"
+      }
+    ],
+    "strip_prefix": "gl"
+  }
+}

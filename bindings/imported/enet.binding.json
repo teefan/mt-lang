@@ -1,0 +1,113 @@
+{
+  "module_name": "std.enet",
+  "raw_module_name": "std.c.enet",
+  "raw_import_alias": "c",
+  "types": {
+    "exclude": [
+      "fd_set",
+      "enet_uint8",
+      "enet_uint16",
+      "enet_uint32",
+      "_ENetHost",
+      "_ENetEvent",
+      "_ENetPacket"
+    ],
+    "rename_rules": [
+      {
+        "kind": "prefix",
+        "match": "ENet"
+      }
+    ]
+  },
+  "constants": {
+    "strip_prefix": "ENET_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "enet_"
+    ],
+    "overrides": [
+      {
+        "raw": "enet_packet_create",
+        "params": [
+          {
+            "name": "data",
+            "type": "const_ptr[void]"
+          },
+          {
+            "name": "data_length",
+            "type": "ptr_uint"
+          },
+          {
+            "name": "flag_bits",
+            "type": "PacketFlag"
+          }
+        ],
+        "return_type": "ptr[Packet]?"
+      },
+      {
+        "raw": "enet_host_create",
+        "params": [
+          {
+            "name": "address",
+            "type": "const_ptr[Address]"
+          },
+          {
+            "name": "peer_count",
+            "type": "ptr_uint"
+          },
+          {
+            "name": "channel_limit",
+            "type": "ptr_uint"
+          },
+          {
+            "name": "incoming_bandwidth",
+            "type": "uint"
+          },
+          {
+            "name": "outgoing_bandwidth",
+            "type": "uint"
+          }
+        ],
+        "return_type": "ptr[Host]?"
+      },
+      {
+        "raw": "enet_host_connect",
+        "params": [
+          {
+            "name": "host",
+            "type": "ptr[Host]"
+          },
+          {
+            "name": "address",
+            "type": "const_ptr[Address]"
+          },
+          {
+            "name": "channel_count",
+            "type": "ptr_uint"
+          },
+          {
+            "name": "data",
+            "type": "uint"
+          }
+        ],
+        "return_type": "ptr[Peer]?"
+      },
+      {
+        "raw": "enet_peer_receive",
+        "params": [
+          {
+            "name": "peer",
+            "type": "ptr[Peer]"
+          },
+          {
+            "name": "channel_id",
+            "type": "ptr[ubyte]"
+          }
+        ],
+        "return_type": "ptr[Packet]?"
+      }
+    ],
+    "strip_prefix": "enet_"
+  }
+}

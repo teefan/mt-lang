@@ -74,6 +74,27 @@ module MilkTea
           ],
         ),
         Source.new(
+          name: "glfw",
+          checkout_root: root.join("third_party/glfw-upstream"),
+          repository_url: "https://github.com/glfw/glfw.git",
+          revision: "b00e6a8a88ad1b60c0a045e696301deb92c9a13e",
+          sentinel_paths: %w[
+            include/GLFW/glfw3.h
+            include/GLFW/glfw3native.h
+          ],
+        ),
+        Source.new(
+          name: "opengl_registry",
+          checkout_root: root.join("third_party/opengl-registry-upstream"),
+          repository_url: "https://github.com/KhronosGroup/OpenGL-Registry.git",
+          revision: "9cb90ca4902d588bef3c830fbb1da484893bd5fb",
+          sentinel_paths: %w[
+            xml/gl.xml
+            xml/glx.xml
+            xml/wgl.xml
+          ],
+        ),
+        Source.new(
           name: "box2d",
           checkout_root: root.join("third_party/box2d-upstream"),
           repository_url: "https://github.com/erincatto/box2d.git",

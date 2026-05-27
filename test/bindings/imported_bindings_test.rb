@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "box2d", "cjson", "flecs", "libuv", "zstd", "sqlite3", "curl", "pcre2", "steamworks"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "libjuice", "zstd", "sqlite3", "curl", "pcre2", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -35,6 +35,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_includes registry.fetch("sdl3").binding_path, "/std/sdl3.mt"
     assert_includes registry.fetch("sdl3").policy_path, "/bindings/imported/sdl3.binding.json"
 
+    assert_equal "std.gl", registry.fetch("gl").module_name
+    assert_equal "std.c.gl", registry.fetch("gl").raw_module_name
+    assert_includes registry.fetch("gl").binding_path, "/std/gl.mt"
+    assert_includes registry.fetch("gl").policy_path, "/bindings/imported/gl.binding.json"
+
+    assert_equal "std.glfw", registry.fetch("glfw").module_name
+    assert_equal "std.c.glfw", registry.fetch("glfw").raw_module_name
+    assert_includes registry.fetch("glfw").binding_path, "/std/glfw.mt"
+    assert_includes registry.fetch("glfw").policy_path, "/bindings/imported/glfw.binding.json"
+
     assert_equal "std.box2d", registry.fetch("box2d").module_name
     assert_equal "std.c.box2d", registry.fetch("box2d").raw_module_name
     assert_includes registry.fetch("box2d").binding_path, "/std/box2d.mt"
@@ -54,6 +64,16 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.libuv", registry.fetch("libuv").raw_module_name
     assert_includes registry.fetch("libuv").binding_path, "/std/libuv.mt"
     assert_includes registry.fetch("libuv").policy_path, "/bindings/imported/libuv.binding.json"
+
+    assert_equal "std.enet", registry.fetch("enet").module_name
+    assert_equal "std.c.enet", registry.fetch("enet").raw_module_name
+    assert_includes registry.fetch("enet").binding_path, "/std/enet.mt"
+    assert_includes registry.fetch("enet").policy_path, "/bindings/imported/enet.binding.json"
+
+    assert_equal "std.libjuice", registry.fetch("libjuice").module_name
+    assert_equal "std.c.libjuice", registry.fetch("libjuice").raw_module_name
+    assert_includes registry.fetch("libjuice").binding_path, "/std/libjuice.mt"
+    assert_includes registry.fetch("libjuice").policy_path, "/bindings/imported/libjuice.binding.json"
 
     assert_equal "std.zstd", registry.fetch("zstd").module_name
     assert_equal "std.c.zstd", registry.fetch("zstd").raw_module_name
@@ -202,6 +222,73 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public def preferred_locale_string\(locale: ptr\[Locale\]\) -> string\.String:$/, source)
     refute_match(/^public def render_debug_text_str\(renderer: ptr\[Renderer\], x: float, y: float, text: str\) -> bool:$/, source)
     assert_match(/^public foreign function quit\(\) -> void = c\.SDL_Quit$/, source)
+  end
+
+  def test_checked_in_gl_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("gl")
+
+    assert_includes binding.check!, "/std/c/gl.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.gl as c$/, source)
+    assert_match(/^public opaque Sync = c"struct __GLsync"$/, source)
+    assert_match(/^public type GLuint = c\.GLuint$/, source)
+    assert_match(/^public const COLOR_BUFFER_BIT: int = c\.GL_COLOR_BUFFER_BIT$/, source)
+    assert_match(/^public foreign function use_glfw_loader\(\) -> void = c\.mt_gl_use_glfw_loader$/, source)
+    assert_match(/^public foreign function clear\(mask: uint\) -> void = c\.glClear$/, source)
+    assert_match(/^public foreign function create_shader\(type_: uint\) -> GLuint = c\.glCreateShader$/, source)
+    assert_match(/^public foreign function map_buffer\(target: uint, access: uint\) -> ptr\[void\]\? = c\.glMapBuffer$/, source)
+    assert_match(/^public foreign function tex_image_2d_multisample\(/, source)
+    refute_match(/^public foreign function begin\(/, source)
+  end
+
+  def test_checked_in_glfw_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("glfw")
+
+    assert_includes binding.check!, "/std/c/glfw.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.glfw as c$/, source)
+    assert_match(/^public opaque Window = c"GLFWwindow"$/, source)
+    assert_match(/^public const VERSION_MAJOR: int = c\.GLFW_VERSION_MAJOR$/, source)
+    assert_match(/^public foreign function init\(\) -> bool = c\.glfwInit\(\) != 0$/, source)
+    assert_match(/^public foreign function create_window\(width: int, height: int, title: str as cstr, monitor: Monitor\?, share: Window\?\) -> Window\? = c\.glfwCreateWindow$/, source)
+    assert_match(/^public foreign function make_context_current\(window: Window\?\) -> void = c\.glfwMakeContextCurrent$/, source)
+    assert_match(/^public foreign function get_proc_address\(procname: str as cstr\) -> GLProc\? = c\.glfwGetProcAddress$/, source)
+  end
+
+  def test_checked_in_enet_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("enet")
+
+    assert_includes binding.check!, "/std/c/enet.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.enet as c$/, source)
+    refute_match(/^public type enet_uint32 = c\.enet_uint32$/, source)
+    assert_match(/^public type Host = c\.ENetHost$/, source)
+    assert_match(/^public const VERSION_MAJOR: int = c\.ENET_VERSION_MAJOR$/, source)
+    assert_match(/^public foreign function initialize\(\) -> int = c\.enet_initialize$/, source)
+    assert_match(/^public foreign function deinitialize\(\) -> void = c\.enet_deinitialize$/, source)
+    assert_match(/^public foreign function time_get\(\) -> uint = c\.enet_time_get$/, source)
+    assert_match(/^public foreign function packet_create\(data: const_ptr\[void\], data_length: ptr_uint, flag_bits: PacketFlag\) -> ptr\[Packet\]\? = c\.enet_packet_create$/, source)
+  end
+
+  def test_checked_in_libjuice_binding_matches_policy_and_loads
+    binding = MilkTea::ImportedBindings.default_registry.fetch("libjuice")
+
+    assert_includes binding.check!, "/std/c/libjuice.mt"
+
+    source = File.read(binding.binding_path)
+    refute_match(/^module /, source)
+    assert_match(/^import std\.c\.libjuice as c$/, source)
+    assert_match(/^public opaque Agent = c"juice_agent_t"$/, source)
+    assert_match(/^public const ERR_SUCCESS: int = c\.JUICE_ERR_SUCCESS$/, source)
+    assert_match(/^public foreign function create\(config: const_ptr\[Config\]\) -> Agent\? = c\.juice_create$/, source)
+    assert_match(/^public foreign function gather_candidates\(agent: Agent\) -> int = c\.juice_gather_candidates$/, source)
+    assert_match(/^public foreign function state_to_string\(state: State\) -> cstr = c\.juice_state_to_string$/, source)
   end
 
   def test_checked_in_box2d_binding_matches_policy_and_loads
@@ -1326,6 +1413,106 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
         public foreign function general_context_free_8(ctx: ptr[GeneralContext]) -> void = c.pcre2_general_context_free_8
         public foreign function match_data_free_8(data: ptr[MatchData]) -> void = c.pcre2_match_data_free_8
+      MT
+
+      generated = binding.generate(module_roots: [dir])
+      assert_equal expected, generated
+    end
+  end
+
+  def test_generate_supports_opengl_rename_rules
+    Dir.mktmpdir("milk-tea-imported-binding-opengl-rename-rules") do |dir|
+      raw_path = File.join(dir, "std", "c", "sample.mt")
+      binding_path = File.join(dir, "std", "sample.mt")
+      policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
+      FileUtils.mkdir_p(File.dirname(raw_path))
+      FileUtils.mkdir_p(File.dirname(policy_path))
+
+      File.write(raw_path, <<~MT)
+        external
+
+        external function glBufferSubData(target: uint) -> void
+        external function glClearBufferfi(target: uint) -> void
+        external function glCheckFramebufferStatus(target: uint) -> uint
+        external function glTexImage2D(target: uint) -> void
+        external function glTexImage2DMultisample(target: uint) -> void
+        external function glGetBooleani_v(target: uint) -> void
+        external function glGetBooleanv(target: uint) -> void
+        external function glGetBufferParameteri64v(target: uint) -> void
+        external function glGetBufferParameteriv(target: uint) -> void
+        external function glGetInternalformati64v(target: uint) -> void
+        external function glGetInteger64i_v(target: uint) -> void
+        external function glGetInteger64v(target: uint) -> void
+        external function glGetIntegeri_v(target: uint) -> void
+        external function glGetIntegerv(target: uint) -> void
+        external function glGetPointerv(target: uint) -> void
+        external function glGetProgramiv(target: uint) -> void
+        external function glGetQueryObjecti64v(target: uint) -> void
+        external function glGetGraphicsResetStatus() -> uint
+        external function glGetTransformFeedbacki_v(xfb: uint) -> void
+        external function glProgramUniform1uiv(program: uint) -> void
+        external function glProgramUniformMatrix4x3fv(program: uint) -> void
+        external function glSamplerParameterIuiv(sampler: uint) -> void
+        external function glTexParameteriv(target: uint) -> void
+        external function glVertexAttribI4uiv(index: uint) -> void
+        external function glVertexAttrib4Nub(index: uint) -> void
+        external function glGetTransformFeedbacki64_v(xfb: uint) -> void
+      MT
+
+      File.write(policy_path, JSON.pretty_generate({
+        module_name: "std.sample",
+        raw_module_name: "std.c.sample",
+        raw_import_alias: "c",
+        types: {},
+        constants: {},
+        functions: {
+          include_prefixes: ["gl"],
+          rename_rules: [
+            { kind: "opengl" },
+          ],
+          strip_prefix: "gl",
+        },
+      }))
+
+      binding = MilkTea::ImportedBindings::Binding.new(
+        name: "sample",
+        module_name: "std.sample",
+        binding_path:,
+        raw_module_name: "std.c.sample",
+        policy_path:,
+      )
+
+      expected = <<~MT
+        # generated by mtc imported-bindings from std.c.sample using sample.binding.json
+
+        import std.c.sample as c
+
+        public foreign function buffer_sub_data(target: uint) -> void = c.glBufferSubData
+        public foreign function clear_buffer_float_int(target: uint) -> void = c.glClearBufferfi
+        public foreign function check_framebuffer_status(target: uint) -> uint = c.glCheckFramebufferStatus
+        public foreign function tex_image_2d(target: uint) -> void = c.glTexImage2D
+        public foreign function tex_image_2d_multisample(target: uint) -> void = c.glTexImage2DMultisample
+        public foreign function get_boolean_indexed_values(target: uint) -> void = c.glGetBooleani_v
+        public foreign function get_boolean_values(target: uint) -> void = c.glGetBooleanv
+        public foreign function get_buffer_parameter_int64_values(target: uint) -> void = c.glGetBufferParameteri64v
+        public foreign function get_buffer_parameter_int_values(target: uint) -> void = c.glGetBufferParameteriv
+        public foreign function get_internalformat_int64_values(target: uint) -> void = c.glGetInternalformati64v
+        public foreign function get_integer64_indexed_values(target: uint) -> void = c.glGetInteger64i_v
+        public foreign function get_integer64_values(target: uint) -> void = c.glGetInteger64v
+        public foreign function get_integer_indexed_values(target: uint) -> void = c.glGetIntegeri_v
+        public foreign function get_integer_values(target: uint) -> void = c.glGetIntegerv
+        public foreign function get_pointer_values(target: uint) -> void = c.glGetPointerv
+        public foreign function get_program_int_values(target: uint) -> void = c.glGetProgramiv
+        public foreign function get_query_object_int64_values(target: uint) -> void = c.glGetQueryObjecti64v
+        public foreign function get_graphics_reset_status() -> uint = c.glGetGraphicsResetStatus
+        public foreign function get_transform_feedback_int_indexed_values(xfb: uint) -> void = c.glGetTransformFeedbacki_v
+        public foreign function program_uniform_1_uint_values(program: uint) -> void = c.glProgramUniform1uiv
+        public foreign function program_uniform_matrix_4x3_float_values(program: uint) -> void = c.glProgramUniformMatrix4x3fv
+        public foreign function sampler_parameter_integer_uint_values(sampler: uint) -> void = c.glSamplerParameterIuiv
+        public foreign function tex_parameter_int_values(target: uint) -> void = c.glTexParameteriv
+        public foreign function vertex_attrib_integer_4_uint_values(index: uint) -> void = c.glVertexAttribI4uiv
+        public foreign function vertex_attrib_4_normalized_ubyte(index: uint) -> void = c.glVertexAttrib4Nub
+        public foreign function get_transform_feedback_int64_indexed_values(xfb: uint) -> void = c.glGetTransformFeedbacki64_v
       MT
 
       generated = binding.generate(module_roots: [dir])
