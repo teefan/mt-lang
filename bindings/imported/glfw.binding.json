@@ -1,0 +1,195 @@
+{
+  "module_name": "std.glfw",
+  "raw_module_name": "std.c.glfw",
+  "raw_import_alias": "c",
+  "types": {
+    "overrides": [
+      {
+        "raw": "GLFWglproc",
+        "name": "GLProc"
+      },
+      {
+        "raw": "GLFWvkproc",
+        "name": "VKProc"
+      },
+      {
+        "raw": "GLFWmonitor",
+        "name": "Monitor",
+        "kind": "opaque"
+      },
+      {
+        "raw": "GLFWwindow",
+        "name": "Window",
+        "kind": "opaque"
+      },
+      {
+        "raw": "GLFWcursor",
+        "name": "Cursor",
+        "kind": "opaque"
+      },
+      {
+        "raw": "GLFWallocatefun",
+        "name": "AllocateCallback"
+      },
+      {
+        "raw": "GLFWreallocatefun",
+        "name": "ReallocateCallback"
+      },
+      {
+        "raw": "GLFWdeallocatefun",
+        "name": "DeallocateCallback"
+      },
+      {
+        "raw": "GLFWerrorfun",
+        "name": "ErrorCallback"
+      },
+      {
+        "raw": "GLFWwindowposfun",
+        "name": "WindowPosCallback"
+      },
+      {
+        "raw": "GLFWwindowsizefun",
+        "name": "WindowSizeCallback"
+      },
+      {
+        "raw": "GLFWwindowclosefun",
+        "name": "WindowCloseCallback"
+      },
+      {
+        "raw": "GLFWwindowrefreshfun",
+        "name": "WindowRefreshCallback"
+      },
+      {
+        "raw": "GLFWwindowfocusfun",
+        "name": "WindowFocusCallback"
+      },
+      {
+        "raw": "GLFWwindowiconifyfun",
+        "name": "WindowIconifyCallback"
+      },
+      {
+        "raw": "GLFWwindowmaximizefun",
+        "name": "WindowMaximizeCallback"
+      },
+      {
+        "raw": "GLFWframebuffersizefun",
+        "name": "FramebufferSizeCallback"
+      },
+      {
+        "raw": "GLFWwindowcontentscalefun",
+        "name": "WindowContentScaleCallback"
+      },
+      {
+        "raw": "GLFWmousebuttonfun",
+        "name": "MouseButtonCallback"
+      },
+      {
+        "raw": "GLFWcursorposfun",
+        "name": "CursorPosCallback"
+      },
+      {
+        "raw": "GLFWcursorenterfun",
+        "name": "CursorEnterCallback"
+      },
+      {
+        "raw": "GLFWscrollfun",
+        "name": "ScrollCallback"
+      },
+      {
+        "raw": "GLFWkeyfun",
+        "name": "KeyCallback"
+      },
+      {
+        "raw": "GLFWcharfun",
+        "name": "CharCallback"
+      },
+      {
+        "raw": "GLFWcharmodsfun",
+        "name": "CharModsCallback"
+      },
+      {
+        "raw": "GLFWdropfun",
+        "name": "DropCallback"
+      },
+      {
+        "raw": "GLFWmonitorfun",
+        "name": "MonitorCallback"
+      },
+      {
+        "raw": "GLFWjoystickfun",
+        "name": "JoystickCallback"
+      },
+      {
+        "raw": "GLFWvidmode",
+        "name": "VideoMode"
+      },
+      {
+        "raw": "GLFWgammaramp",
+        "name": "GammaRamp"
+      },
+      {
+        "raw": "GLFWimage",
+        "name": "Image"
+      },
+      {
+        "raw": "GLFWgamepadstate",
+        "name": "GamepadState"
+      },
+      {
+        "raw": "GLFWallocator",
+        "name": "Allocator"
+      }
+    ]
+  },
+  "constants": {
+    "strip_prefix": "GLFW_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "glfw"
+    ],
+    "overrides": [
+      {
+        "raw": "glfwInit",
+        "return_type": "bool",
+        "mapping": "c.glfwInit() != 0"
+      },
+      {
+        "raw": "glfwWindowShouldClose",
+        "return_type": "bool",
+        "mapping": "c.glfwWindowShouldClose(window) != 0"
+      },
+      {
+        "raw": "glfwRawMouseMotionSupported",
+        "return_type": "bool",
+        "mapping": "c.glfwRawMouseMotionSupported() != 0"
+      },
+      {
+        "raw": "glfwJoystickPresent",
+        "return_type": "bool",
+        "mapping": "c.glfwJoystickPresent(jid) != 0"
+      },
+      {
+        "raw": "glfwJoystickIsGamepad",
+        "return_type": "bool",
+        "mapping": "c.glfwJoystickIsGamepad(jid) != 0"
+      },
+      {
+        "raw": "glfwGetGamepadState",
+        "return_type": "bool",
+        "mapping": "c.glfwGetGamepadState(jid, state) != 0"
+      },
+      {
+        "raw": "glfwExtensionSupported",
+        "return_type": "bool",
+        "mapping": "c.glfwExtensionSupported(extension) != 0"
+      },
+      {
+        "raw": "glfwVulkanSupported",
+        "return_type": "bool",
+        "mapping": "c.glfwVulkanSupported() != 0"
+      }
+    ],
+    "strip_prefix": "glfw"
+  }
+}

@@ -749,13 +749,13 @@ module MilkTea
           validate_allowed_keys!(entry, %w[kind match replace_with], context: "#{context} rename rule")
 
           kind = entry.fetch("kind")
-          unless %w[prefix replace camelize].include?(kind)
-            raise Error, "#{context} rename rule kind in #{@policy_path} must be prefix, replace, or camelize"
+          unless %w[prefix replace camelize opengl].include?(kind)
+            raise Error, "#{context} rename rule kind in #{@policy_path} must be prefix, replace, camelize, or opengl"
           end
 
-          if kind == "camelize"
+          if %w[camelize opengl].include?(kind)
             next {
-              kind: :camelize,
+              kind: kind.to_sym,
               match: nil,
               replace_with: nil,
             }
@@ -964,6 +964,8 @@ module MilkTea
             transformed = transformed.gsub(rule[:match], rule[:replace_with])
           when :camelize
             transformed = camelize_binding_name(transformed)
+          when :opengl
+            transformed = openglize_binding_name(transformed)
           else
             raise Error, "unsupported #{context} rename rule #{rule[:kind]} in #{@policy_path}"
           end
@@ -1068,12 +1070,18 @@ module MilkTea
       end
 
       def foreign_function_name(raw_name, spec:)
-        snake_case(default_public_name(raw_name, spec:, context: "generated function name", binding_kind: :value))
+        normalize_generated_public_value_name(
+          default_public_name(raw_name, spec:, context: "generated function name", binding_kind: :value),
+          spec:,
+        )
       end
 
       def render_method_wrapper(function_entry, spec:)
         raw_name = function_entry.fetch(:raw_name)
-        method_name = snake_case(default_public_name(raw_name, spec:, context: "generated method name", binding_kind: :value))
+        method_name = normalize_generated_public_value_name(
+          default_public_name(raw_name, spec:, context: "generated method name", binding_kind: :value),
+          spec:,
+        )
         if function_entry.fetch(:variadic, false)
           raise Error, "method generation for #{raw_name} in #{@policy_path} cannot wrap variadic functions"
         end
@@ -1101,6 +1109,13 @@ module MilkTea
             "    #{body_line}",
           ],
         ]
+      end
+
+      def normalize_generated_public_value_name(name, spec:)
+        normalized = snake_case(name)
+        return normalized unless spec[:rename_rules].any? { |rule| rule[:kind] == :opengl }
+
+        normalize_opengl_snake_case(normalized)
       end
 
       def method_kind(function_entry, spec:, raw_name:)
@@ -1311,6 +1326,211 @@ module MilkTea
         end
       end
 
+      OPENGL_TYPED_SUFFIX_TOKENS = [
+        ["ui64v", %w[uint64 values]],
+        ["i64v", %w[int64 values]],
+        ["uiv", %w[uint values]],
+        ["iv", %w[int values]],
+        ["fi", %w[float int]],
+        ["fv", %w[float values]],
+        ["dv", %w[double values]],
+        ["ubv", %w[ubyte values]],
+        ["usv", %w[ushort values]],
+        ["bv", %w[byte values]],
+        ["sv", %w[short values]],
+        ["ui64", %w[uint64]],
+        ["i64", %w[int64]],
+        ["ui", %w[uint]],
+        ["i", %w[int]],
+        ["f", %w[float]],
+        ["d", %w[double]],
+        ["ub", %w[ubyte]],
+        ["us", %w[ushort]],
+        ["b", %w[byte]],
+        ["s", %w[short]],
+        ["v", %w[values]],
+      ].freeze
+      OPENGL_DOMAIN_MARKERS = {
+        "i" => "integer",
+        "l" => "long",
+        "p" => "packed",
+      }.freeze
+      OPENGL_TYPED_ALPHA_STEMS = %w[
+        attrib
+        boolean
+        buffer
+        double
+        feedback
+        float
+        framebuffer
+        integer
+        internalformat
+        interface
+        multisample
+        object
+        parameter
+        pipeline
+        pointer
+        program
+        query
+        resource
+        shader
+        stage
+        sync
+      ].freeze
+      OPENGL_TYPED_QUERY_BASES = %w[boolean double float integer].freeze
+      OPENGL_NUMERIC_SUFFIX_CONTEXTS = %w[
+        attrib
+        boolean
+        double
+        feedback
+        float
+        int
+        integer
+        integer64
+        long
+        matrix
+        normalized
+        object
+        packed
+        parameter
+        uint
+        uniform
+      ].freeze
+
+      def normalize_opengl_snake_case(name)
+        tokens = name.to_s.split("_").reject(&:empty?)
+        normalized = []
+        index = 0
+
+        while index < tokens.length
+          token = tokens[index]
+          next_token = tokens[index + 1]
+
+          case token
+          when "64i"
+            if next_token == "v"
+              if normalized.last == "integer"
+                normalized[-1] = "integer64"
+                normalized.concat(%w[indexed values])
+              else
+                normalized.concat(%w[int64 indexed values])
+              end
+              index += 2
+              next
+            end
+          when "i"
+            if next_token == "v"
+              if OPENGL_TYPED_QUERY_BASES.include?(normalized.last)
+                normalized.concat(%w[indexed values])
+              else
+                normalized.concat(%w[int indexed values])
+              end
+              index += 2
+              next
+            end
+          when "i64"
+            if next_token == "v"
+              normalized.concat(%w[int64 indexed values])
+              index += 2
+              next
+            end
+          when "ui64"
+            if next_token == "v"
+              normalized.concat(%w[uint64 indexed values])
+              index += 2
+              next
+            end
+          when "64v"
+            case normalized.last
+            when "integer"
+              normalized[-1] = "integer64"
+              normalized << "values"
+              index += 1
+              next
+            when "int"
+              normalized[-1] = "int64"
+              normalized << "values"
+              index += 1
+              next
+            when "uint"
+              normalized[-1] = "uint64"
+              normalized << "values"
+              index += 1
+              next
+            end
+          end
+
+          if (domain_marker = opengl_domain_marker(token, next_token))
+            normalized << domain_marker
+            index += 1
+            next
+          end
+
+          if (expanded = expand_opengl_special_token(token, numeric_context: opengl_numeric_suffix_context?(normalized)))
+            normalized.concat(expanded)
+            index += 1
+            next
+          end
+
+          normalized << token
+          index += 1
+        end
+
+        normalized.join("_")
+      end
+
+      def opengl_domain_marker(token, next_token)
+        return unless OPENGL_DOMAIN_MARKERS.key?(token)
+        return unless next_token
+        return unless next_token == "format" || next_token == "pointer" || next_token.match?(/\A\d/)
+
+        OPENGL_DOMAIN_MARKERS.fetch(token)
+      end
+
+      def opengl_numeric_suffix_context?(normalized_tokens)
+        last_token = normalized_tokens.last
+        last_token && OPENGL_NUMERIC_SUFFIX_CONTEXTS.include?(last_token)
+      end
+
+      def expand_opengl_special_token(token, numeric_context:)
+        return %w[integer int values] if token == "iiv"
+        return %w[integer uint values] if token == "iuiv"
+
+        if token.start_with?("n") && token.length > 1
+          expanded = expand_opengl_typed_token(token[1..], numeric_context: true)
+          return ["normalized", *expanded] if expanded
+        end
+
+        expand_opengl_typed_token(token, numeric_context:)
+      end
+
+      def expand_opengl_typed_token(token, numeric_context:)
+        OPENGL_TYPED_SUFFIX_TOKENS.each do |suffix, replacement|
+          next unless token.end_with?(suffix)
+
+          prefix = token.delete_suffix(suffix)
+          if prefix.empty?
+            return nil if suffix == "v"
+            return replacement if numeric_context
+
+            next
+          end
+
+          if prefix.match?(/\A\d+\z|\A\d+x\d+\z/)
+            return nil unless numeric_context
+
+            return [prefix, *replacement]
+          end
+
+          if prefix.match?(/\A[a-z]+\z/) && OPENGL_TYPED_ALPHA_STEMS.include?(prefix)
+            return [prefix, *replacement]
+          end
+        end
+
+        nil
+      end
+
       def render_public_foreign_type(type)
         projected_handle = project_public_handle_type(type)
         return projected_handle if projected_handle
@@ -1358,7 +1578,7 @@ module MilkTea
           .gsub(/([A-Z]+)([A-Z][a-z])/, '\\1_\\2')
           .gsub(/([a-z0-9])([A-Z])/, '\\1_\\2')
           .downcase
-          .gsub(/([a-z])(\d+)_d\b/, '\\1_\\2d')
+          .gsub(/([a-z])(\d+)_d\b/, '\1_\2d')
       end
 
       def camelize_binding_name(name)
@@ -1372,6 +1592,13 @@ module MilkTea
             part[0].upcase + part[1..].to_s.downcase
           end
         end.join
+      end
+
+      def openglize_binding_name(name)
+        name.to_s
+          .gsub(/([A-Za-z])((?:i64|i|ui)_v)(?=\z|_)/, '\\1_\\2')
+          .gsub(/(?<!_)([A-Za-z])(\d[A-Za-z0-9]*)(?=[A-Z_]|\z)/, '\1_\2')
+          .gsub(/_(\d)D(?=[A-Z_]|\z)/, '_\1d')
       end
 
       def render_type(type)
@@ -1487,6 +1714,20 @@ module MilkTea
           policy_path: root.join("bindings/imported/sdl3.binding.json"),
         ),
         Binding.new(
+          name: "gl",
+          module_name: "std.gl",
+          binding_path: root.join("std/gl.mt"),
+          raw_module_name: "std.c.gl",
+          policy_path: root.join("bindings/imported/gl.binding.json"),
+        ),
+        Binding.new(
+          name: "glfw",
+          module_name: "std.glfw",
+          binding_path: root.join("std/glfw.mt"),
+          raw_module_name: "std.c.glfw",
+          policy_path: root.join("bindings/imported/glfw.binding.json"),
+        ),
+        Binding.new(
           name: "box2d",
           module_name: "std.box2d",
           binding_path: root.join("std/box2d.mt"),
@@ -1513,6 +1754,20 @@ module MilkTea
           binding_path: root.join("std/libuv.mt"),
           raw_module_name: "std.c.libuv",
           policy_path: root.join("bindings/imported/libuv.binding.json"),
+        ),
+        Binding.new(
+          name: "enet",
+          module_name: "std.enet",
+          binding_path: root.join("std/enet.mt"),
+          raw_module_name: "std.c.enet",
+          policy_path: root.join("bindings/imported/enet.binding.json"),
+        ),
+        Binding.new(
+          name: "libjuice",
+          module_name: "std.libjuice",
+          binding_path: root.join("std/libjuice.mt"),
+          raw_module_name: "std.c.libjuice",
+          policy_path: root.join("bindings/imported/libjuice.binding.json"),
         ),
         Binding.new(
           name: "zstd",

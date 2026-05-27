@@ -1,0 +1,98 @@
+{
+  "module_name": "std.libjuice",
+  "raw_module_name": "std.c.libjuice",
+  "raw_import_alias": "c",
+  "types": {
+    "overrides": [
+      {
+        "raw": "juice_agent_t",
+        "name": "Agent",
+        "kind": "opaque"
+      },
+      {
+        "raw": "juice_state_t",
+        "name": "State"
+      },
+      {
+        "raw": "juice_cb_state_changed_t",
+        "name": "StateChangedCallback"
+      },
+      {
+        "raw": "juice_cb_candidate_t",
+        "name": "CandidateCallback"
+      },
+      {
+        "raw": "juice_cb_gathering_done_t",
+        "name": "GatheringDoneCallback"
+      },
+      {
+        "raw": "juice_cb_recv_t",
+        "name": "ReceiveCallback"
+      },
+      {
+        "raw": "juice_mux_binding_request_t",
+        "name": "MuxBindingRequest"
+      },
+      {
+        "raw": "juice_cb_mux_incoming_t",
+        "name": "MuxIncomingCallback"
+      },
+      {
+        "raw": "juice_turn_server_t",
+        "name": "TurnServer"
+      },
+      {
+        "raw": "juice_concurrency_mode_t",
+        "name": "ConcurrencyMode"
+      },
+      {
+        "raw": "juice_ice_tcp_mode_t",
+        "name": "IceTcpMode"
+      },
+      {
+        "raw": "juice_config_t",
+        "name": "Config"
+      },
+      {
+        "raw": "juice_server_t",
+        "name": "Server",
+        "kind": "opaque"
+      },
+      {
+        "raw": "juice_server_credentials_t",
+        "name": "ServerCredentials"
+      },
+      {
+        "raw": "juice_server_config_t",
+        "name": "ServerConfig"
+      },
+      {
+        "raw": "juice_log_level_t",
+        "name": "LogLevel"
+      },
+      {
+        "raw": "juice_log_cb_t",
+        "name": "LogCallback"
+      }
+    ]
+  },
+  "constants": {
+    "strip_prefix": "JUICE_"
+  },
+  "functions": {
+    "include_prefixes": [
+      "juice_"
+    ],
+    "overrides": [
+      {
+        "raw": "juice_create",
+        "return_type": "Agent?"
+      },
+      {
+        "raw": "juice_server_create",
+        "return_type": "Server?"
+      }
+    ],
+    "strip_prefix": "juice_"
+  }
+}
