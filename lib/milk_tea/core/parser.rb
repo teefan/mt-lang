@@ -1379,6 +1379,8 @@ module MilkTea
     def parse_unary
       if (cast_prefix = try_parse_prefix_cast_expression)
         cast_prefix
+      elsif match(:unsafe)
+        parse_unsafe_expression
       elsif match(:await)
         AST::AwaitExpr.new(expression: parse_unary)
       elsif match(:not, :minus, :plus, :tilde, :out, :in, :inout)

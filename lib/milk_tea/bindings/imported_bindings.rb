@@ -151,6 +151,7 @@ module MilkTea
         declarations = index_raw_declarations(raw_ast)
         import_specs = raw_import_specs(raw_ast)
         validate_import_specs!(import_specs)
+        extra_import_specs = policy_import_specs(policy)
         type_spec = normalize_alias_spec(policy["types"], context: "type")
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
@@ -159,7 +160,7 @@ module MilkTea
         @raw_type_declarations = declarations[:types]
         @public_type_names_by_raw_name = build_public_type_names(type_spec, declarations)
         function_entries = plan_foreign_functions(function_spec, declarations)
-        generated_import_specs = merge_import_specs(raw_import_specs(raw_ast), method_source_import_specs(method_sources))
+        generated_import_specs = merge_import_specs(raw_import_specs(raw_ast), extra_import_specs, method_source_import_specs(method_sources))
         validate_import_specs!(generated_import_specs)
         const_lines = emit_const_aliases(const_spec, declarations)
         function_lines = emit_foreign_functions(function_entries)
@@ -213,11 +214,7 @@ module MilkTea
           raise Error, "extra_source in #{@policy_path} is no longer supported; move helper code into a normal .mt module"
         end
 
-        if policy.key?("imports")
-          raise Error, "imports in #{@policy_path} are no longer supported; imported bindings must depend only on raw std.c.* modules"
-        end
-
-        validate_allowed_keys!(policy, %w[module_name raw_module_name raw_import_alias types constants functions methods], context: "imported binding policy")
+        validate_allowed_keys!(policy, %w[module_name raw_module_name raw_import_alias imports types constants functions methods], context: "imported binding policy")
 
         policy_module_name = policy.fetch("module_name")
         if policy_module_name != @module_name
@@ -246,6 +243,27 @@ module MilkTea
           {
             module_name: import.path.parts.join("."),
             alias: import.alias_name,
+          }
+        end
+      end
+
+      def policy_import_specs(policy)
+        entries = policy["imports"] || []
+        raise Error, "imports in #{@policy_path} must be an array" unless entries.is_a?(Array)
+
+        entries.map.with_index do |entry, index|
+          raise Error, "imports[#{index}] in #{@policy_path} must be an object" unless entry.is_a?(Hash)
+
+          validate_allowed_keys!(entry, %w[module_name alias], context: "policy import")
+
+          module_name = entry.fetch("module_name")
+          alias_name = entry.fetch("alias")
+          raise Error, "policy import module_name in #{@policy_path} must be a non-empty string" unless module_name.is_a?(String) && !module_name.empty?
+          raise Error, "policy import alias in #{@policy_path} must be a non-empty string" unless alias_name.is_a?(String) && !alias_name.empty?
+
+          {
+            module_name:,
+            alias: alias_name,
           }
         end
       end

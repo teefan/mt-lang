@@ -2,6 +2,12 @@
   "module_name": "std.raygui",
   "raw_module_name": "std.c.raygui",
   "raw_import_alias": "c",
+  "imports": [
+    {
+      "module_name": "std.raylib",
+      "alias": "rl"
+    }
+  ],
   "types": {
     "include": [
       "Color",
@@ -13,7 +19,29 @@
     "include_prefixes": [
       "Gui"
     ],
-    "strip_prefix": "Gui"
+    "strip_prefix": "Gui",
+    "overrides": [
+      {
+        "raw": "Color",
+        "mapping": "rl.Color"
+      },
+      {
+        "raw": "Font",
+        "mapping": "rl.Font"
+      },
+      {
+        "raw": "Rectangle",
+        "mapping": "rl.Rectangle"
+      },
+      {
+        "raw": "Vector2",
+        "mapping": "rl.Vector2"
+      },
+      {
+        "raw": "Vector3",
+        "mapping": "rl.Vector3"
+      }
+    ]
   },
   "constants": {
     "include": [

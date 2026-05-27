@@ -394,7 +394,10 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
     assert_includes binding.check!, "/std/c/raylib.mt"
 
+    raw_source = File.read(File.expand_path("../../std/c/raylib.mt", __dir__))
     source = File.read(binding.binding_path)
+    assert_match(/^type TraceLogCallback = /, raw_source)
+    assert_match(/^external function SetTraceLogCallback\(/, raw_source)
     refute_match(/^public type __va_list_tag = /, source)
     refute_match(/^public type va_list = /, source)
     refute_match(/^public type TraceLogCallback = /, source)
@@ -560,8 +563,9 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
     source = File.read(binding.binding_path)
     assert_match(/^import std\.c\.raygui as c$/, source)
-    refute_match(/^import std\.raylib as raylib$/, source)
-    assert_match(/^public type Rectangle = c\.Rectangle$/, source)
+    assert_match(/^import std\.raylib as rl$/, source)
+    assert_match(/^public type Rectangle = rl\.Rectangle$/, source)
+    assert_match(/^public type Color = rl\.Color$/, source)
     assert_match(/^public type State = c\.GuiState$/, source)
     assert_match(/^public foreign function set_state\(state: State\) -> void = c\.GuiSetState\(int<-state\)$/, source)
     assert_match(/^public foreign function get_state\(\) -> State = State<-c\.GuiGetState\(\)$/, source)
@@ -610,18 +614,28 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     refute_match(/^public foreign function steam_api_i_steam_friends_get_persona_name\(/, source)
   end
 
-  def test_generate_rejects_policy_imports
+  def test_generate_supports_policy_imports_for_shared_type_aliases
     Dir.mktmpdir("milk-tea-imported-binding-imports") do |dir|
       raw_path = File.join(dir, "std", "c", "sample.mt")
       binding_path = File.join(dir, "std", "sample.mt")
       policy_path = File.join(dir, "bindings", "imported", "sample.binding.json")
       FileUtils.mkdir_p(File.dirname(raw_path))
       FileUtils.mkdir_p(File.dirname(policy_path))
+      FileUtils.mkdir_p(File.join(dir, "std"))
 
       File.write(raw_path, <<~MT)
         external
 
-        external function rlSample() -> void
+        struct Rectangle:
+            x: float
+
+        external function Sample(bounds: Rectangle) -> void
+      MT
+
+      File.write(File.join(dir, "std", "shared.mt"), <<~MT)
+        import std.c.sample as c
+
+        public type Rectangle = c.Rectangle
       MT
 
       File.write(policy_path, JSON.pretty_generate({
@@ -634,9 +648,29 @@ class MilkTeaImportedBindingsTest < Minitest::Test
             alias: "shared",
           },
         ],
-        types: {},
+        types: {
+          include: ["Rectangle"],
+          overrides: [
+            {
+              raw: "Rectangle",
+              mapping: "shared.Rectangle",
+            },
+          ],
+        },
         constants: {},
-        functions: {},
+        functions: {
+          overrides: [
+            {
+              raw: "Sample",
+              params: [
+                {
+                  name: "bounds",
+                  type: "Rectangle",
+                },
+              ],
+            },
+          ],
+        },
       }))
 
       binding = MilkTea::ImportedBindings::Binding.new(
@@ -647,11 +681,12 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         policy_path:,
       )
 
-      error = assert_raises(MilkTea::ImportedBindings::Error) do
-        binding.generate(module_roots: [dir])
-      end
+      source = binding.generate(module_roots: [dir])
 
-      assert_match(/imports in #{Regexp.escape(policy_path)} are no longer supported; imported bindings must depend only on raw std\.c\.\* modules/, error.message)
+      assert_match(/^import std\.c\.sample as c$/, source)
+      assert_match(/^import std\.shared as shared$/, source)
+      assert_match(/^public type Rectangle = shared\.Rectangle$/, source)
+      assert_match(/^public foreign function sample\(bounds: Rectangle\) -> void = c\.Sample$/, source)
     end
   end
 

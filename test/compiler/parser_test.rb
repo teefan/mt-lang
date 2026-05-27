@@ -799,6 +799,42 @@ class MilkTeaParserTest < Minitest::Test
     assert_raises(MilkTea::ParseError) { MilkTea::Parser.parse(source) }
   end
 
+  def test_parses_unsafe_expression_after_boolean_operator_in_if_condition
+    source = <<~MT
+      function main(ready: bool, ptr: ptr[bool]) -> int:
+          if ready and unsafe: read(ptr):
+              return 1
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[0]
+    if_stmt = main_fn.body[0]
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert_instance_of MilkTea::AST::BinaryOp, if_stmt.branches[0].condition
+    assert_equal "and", if_stmt.branches[0].condition.operator
+    assert_instance_of MilkTea::AST::UnsafeExpr, if_stmt.branches[0].condition.right
+  end
+
+  def test_parses_not_unsafe_expression_in_if_condition
+    source = <<~MT
+      function main(ptr: ptr[bool]) -> int:
+          if not unsafe: read(ptr):
+              return 1
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations[0]
+    if_stmt = main_fn.body[0]
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert_instance_of MilkTea::AST::UnaryOp, if_stmt.branches[0].condition
+    assert_equal "not", if_stmt.branches[0].condition.operator
+    assert_instance_of MilkTea::AST::UnsafeExpr, if_stmt.branches[0].condition.operand
+  end
+
   def test_parses_match_statement_with_enum_member_arms
     source = <<~MT
       enum EventKind: ubyte
