@@ -1350,9 +1350,16 @@ packed struct Header:
 align(16) struct Mat4:
     data: array[float, 16]
 
+packed align(16) struct Packet:
+    tag: ubyte
+    value: uint
+
 static_assert(size_of(Header) == 5, \"Header should stay packed\")
 static_assert(offset_of(Header, value) == 1, \"Header.value offset drifted\")
 static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")
+static_assert(size_of(Packet) == 16, "Packet size drifted")
+static_assert(offset_of(Packet, value) == 1, "Packet.value offset drifted")
+static_assert(align_of(Packet) == 16, "Packet alignment drifted")
 
 function main() -> int:
     return int<-(size_of(Header) + offset_of(Header, value) + align_of(Mat4))
