@@ -1431,9 +1431,15 @@ class MilkTeaImportedBindingsTest < Minitest::Test
       File.write(raw_path, <<~MT)
         external
 
+        external function glBlendEquation(mode: uint) -> void
+        external function glBlendEquationi(buf: uint, mode: uint) -> void
+        external function glBlendFunc(sfactor: uint, dfactor: uint) -> void
+        external function glBlendFunci(buf: uint, src: uint, dst: uint) -> void
         external function glBufferSubData(target: uint) -> void
         external function glClearBufferfi(target: uint) -> void
         external function glCheckFramebufferStatus(target: uint) -> uint
+        external function glClearDepth(depth: double) -> void
+        external function glClearDepthf(d: float) -> void
         external function glTexImage2D(target: uint) -> void
         external function glTexImage2DMultisample(target: uint) -> void
         external function glGetBooleani_v(target: uint) -> void
@@ -1450,13 +1456,18 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         external function glGetQueryObjecti64v(target: uint) -> void
         external function glGetGraphicsResetStatus() -> uint
         external function glGetTransformFeedbacki_v(xfb: uint) -> void
+        external function glPixelStoref(pname: uint) -> void
+        external function glPixelStorei(pname: uint) -> void
         external function glProgramUniform1uiv(program: uint) -> void
         external function glProgramUniformMatrix4x3fv(program: uint) -> void
+        external function glSampleMaski(maskNumber: uint) -> void
         external function glSamplerParameterIuiv(sampler: uint) -> void
         external function glTexParameteriv(target: uint) -> void
         external function glVertexAttribI4uiv(index: uint) -> void
         external function glVertexAttrib4Nub(index: uint) -> void
         external function glGetTransformFeedbacki64_v(xfb: uint) -> void
+        external function glViewportIndexedf(index: uint) -> void
+        external function glViewportIndexedfv(index: uint) -> void
       MT
 
       File.write(policy_path, JSON.pretty_generate({
@@ -1487,9 +1498,15 @@ class MilkTeaImportedBindingsTest < Minitest::Test
 
         import std.c.sample as c
 
+        public foreign function blend_equation(mode: uint) -> void = c.glBlendEquation
+        public foreign function blend_equation_indexed(buf: uint, mode: uint) -> void = c.glBlendEquationi
+        public foreign function blend_func(sfactor: uint, dfactor: uint) -> void = c.glBlendFunc
+        public foreign function blend_func_indexed(buf: uint, src: uint, dst: uint) -> void = c.glBlendFunci
         public foreign function buffer_sub_data(target: uint) -> void = c.glBufferSubData
         public foreign function clear_buffer_float_int(target: uint) -> void = c.glClearBufferfi
         public foreign function check_framebuffer_status(target: uint) -> uint = c.glCheckFramebufferStatus
+        public foreign function clear_depth(depth: double) -> void = c.glClearDepth
+        public foreign function clear_depth_float(d: float) -> void = c.glClearDepthf
         public foreign function tex_image_2d(target: uint) -> void = c.glTexImage2D
         public foreign function tex_image_2d_multisample(target: uint) -> void = c.glTexImage2DMultisample
         public foreign function get_boolean_indexed_values(target: uint) -> void = c.glGetBooleani_v
@@ -1506,13 +1523,18 @@ class MilkTeaImportedBindingsTest < Minitest::Test
         public foreign function get_query_object_int64_values(target: uint) -> void = c.glGetQueryObjecti64v
         public foreign function get_graphics_reset_status() -> uint = c.glGetGraphicsResetStatus
         public foreign function get_transform_feedback_int_indexed_values(xfb: uint) -> void = c.glGetTransformFeedbacki_v
+        public foreign function pixel_store_float(pname: uint) -> void = c.glPixelStoref
+        public foreign function pixel_store_int(pname: uint) -> void = c.glPixelStorei
         public foreign function program_uniform_1_uint_values(program: uint) -> void = c.glProgramUniform1uiv
         public foreign function program_uniform_matrix_4x3_float_values(program: uint) -> void = c.glProgramUniformMatrix4x3fv
+        public foreign function sample_mask_indexed(mask_number: uint) -> void = c.glSampleMaski
         public foreign function sampler_parameter_integer_uint_values(sampler: uint) -> void = c.glSamplerParameterIuiv
         public foreign function tex_parameter_int_values(target: uint) -> void = c.glTexParameteriv
         public foreign function vertex_attrib_integer_4_uint_values(index: uint) -> void = c.glVertexAttribI4uiv
         public foreign function vertex_attrib_4_normalized_ubyte(index: uint) -> void = c.glVertexAttrib4Nub
         public foreign function get_transform_feedback_int64_indexed_values(xfb: uint) -> void = c.glGetTransformFeedbacki64_v
+        public foreign function viewport_indexed_float(index: uint) -> void = c.glViewportIndexedf
+        public foreign function viewport_indexed_float_values(index: uint) -> void = c.glViewportIndexedfv
       MT
 
       generated = binding.generate(module_roots: [dir])
