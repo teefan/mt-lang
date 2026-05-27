@@ -1937,6 +1937,50 @@ function main() -> int:
     assert_match(/snprintf\([^\n]*"n=%d", 7\);/, generated)
   end
 
+  def test_generate_c_for_nested_variadic_foreign_text_calls_inside_ordinary_calls
+    source = <<~MT
+      # module demo.main
+
+      import std.sample as sample
+
+      function measure(text: cstr) -> int:
+          return sample.measure_text(text, 20)
+
+      function particle_type_name(kind: int) -> str:
+          if kind == 0:
+              return "WATER"
+          return "FIRE"
+
+      function main(kind: int) -> int:
+          return measure(sample.text_format("%s", particle_type_name(kind)))
+    MT
+
+    imported_sources = {
+      "std/c/sample.mt" => <<~MT,
+        # module std.c.sample
+        external
+
+        external function TextFormat(format: cstr, ...) -> cstr
+        external function MeasureText(text: cstr, font_size: int) -> int
+      MT
+      "std/sample.mt" => <<~MT,
+        # module std.sample
+
+        import std.c.sample as c
+
+        public foreign function text_format(format: str as cstr, ...) -> cstr = c.TextFormat
+        public foreign function measure_text(text: cstr, font_size: int) -> int = c.MeasureText
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_match(/const char\* __mt_foreign_arg_\d+ = mt_foreign_str_to_cstr_temp\(/, generated)
+    assert_match(/const char\* __mt_foreign_result_\d+ = TextFormat\("%s", __mt_foreign_arg_\d+\);/, generated)
+    assert_match(/mt_free_foreign_cstr_temp\(__mt_foreign_arg_\d+\);/, generated)
+    assert_match(/return demo_main_measure\(__mt_foreign_result_\d+\);/, generated)
+  end
+
   def test_generate_c_for_foreign_defs_with_identity_pointer_projections
     source = <<~MT
       # module demo.main
