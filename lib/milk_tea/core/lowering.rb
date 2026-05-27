@@ -5791,6 +5791,10 @@ module MilkTea
           return true
         end
 
+        expression.arguments.drop(binding.type.params.length).each do |argument|
+          return true if automatic_variadic_foreign_cstr_temp_needed?(argument.value, env:)
+        end
+
         false
       end
 
@@ -6703,6 +6707,12 @@ module MilkTea
           raise LoweringError, "foreign call #{binding.name} cannot be used inline because #{param_ast.name} needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
         end
 
+        expression.arguments.drop(binding.type.params.length).each do |argument|
+          next unless automatic_variadic_foreign_cstr_temp_needed?(argument.value, env:)
+
+          raise LoweringError, "foreign call #{binding.name} cannot be used inline because a variadic argument needs temporary foreign text storage; use it as a statement, local initializer, assignment, or return expression"
+        end
+
         binding.ast.params.each_with_index do |param_ast, index|
           parameter = binding.type.params.fetch(index)
           argument = expression.arguments.fetch(index)
@@ -7306,6 +7316,13 @@ module MilkTea
         return false if cstr_backed_expression?(expression, env)
 
         infer_expression_type(expression, env:) != @types.fetch("cstr")
+      end
+
+      def automatic_variadic_foreign_cstr_temp_needed?(expression, env:)
+        return false if expression.is_a?(AST::StringLiteral) && !expression.cstring
+        return false if cstr_backed_expression?(expression, env)
+
+        infer_expression_type(expression, env:) == @types.fetch("str")
       end
 
       def temporary_foreign_cstr_expression?(expression)
