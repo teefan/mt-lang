@@ -826,6 +826,7 @@ module MilkTea
         @external = external
         @backing_type = nil
         @members = {}
+        @member_values = {}
       end
 
       def define_members(backing_type, member_names)
@@ -833,11 +834,21 @@ module MilkTea
         @members = member_names.each_with_object({}) do |member_name, members|
           members[member_name] = self
         end.freeze
+        @member_values = {}
+        self
+      end
+
+      def define_member_values(member_values)
+        @member_values = member_values.freeze
         self
       end
 
       def member(name)
         @members[name]
+      end
+
+      def member_value(name)
+        @member_values[name]
       end
 
       def members

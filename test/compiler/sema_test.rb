@@ -4634,6 +4634,29 @@ function main() -> int:
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_type_checks_flags_members_as_compile_time_constants
+    source = <<~MT
+      # module demo.flags_const_eval
+
+      flags Permission: uint
+          read = 1 << 0
+          write = 1 << 1
+          read_write = Permission.read | Permission.write
+
+      const DEFAULT_PERMISSION: Permission = Permission.read_write
+
+      static_assert((Permission.read | Permission.write) == Permission.read_write, "flags members should compose")
+      static_assert(DEFAULT_PERMISSION == Permission.read_write, "flags consts should stay compile-time")
+
+      function main() -> int:
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_same_width_enum_and_flags_arguments_without_explicit_cast_for_extern_calls
     source = <<~MT
       # module demo.call_values
@@ -7306,6 +7329,31 @@ extending Counter:
     end
 
     assert_match(/backing type must be an integer primitive/, error.message)
+  end
+
+  def test_rejects_non_constant_flags_members
+    source = <<~MT
+      # module demo.bad
+
+      import demo.dep as dep
+
+      flags BadFlags: uint
+          visible = dep.next_flag
+    MT
+
+    imported = {
+      "demo/dep.mt" => <<~MT,
+        # module demo.dep
+
+        public var next_flag: uint = 1
+      MT
+    }
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, imported)
+    end
+
+    assert_match(/member BadFlags\.visible must be a compile-time integer constant/, error.message)
   end
 
   def test_rejects_unknown_enum_members

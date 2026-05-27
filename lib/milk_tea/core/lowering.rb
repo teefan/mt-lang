@@ -7673,7 +7673,7 @@ module MilkTea
       end
 
       def contextual_numeric_compatibility?(expression, actual_type, expected_type, env:, external_numeric: false, contextual_int_to_float: false)
-        return true if exact_compile_time_numeric_compatibility?(expression, expected_type, env:)
+        return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, env:)
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -7898,8 +7898,9 @@ module MilkTea
         binding && binding[:cstr_list_backed]
       end
 
-      def exact_compile_time_numeric_compatibility?(expression, expected_type, env: nil)
+      def exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, env: nil)
         return false unless expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+        return false if actual_type.is_a?(Types::EnumBase)
 
         value = compile_time_const_value(expression, env:)
         return false unless value.is_a?(Numeric)

@@ -569,10 +569,22 @@ module MilkTea
 
             enum_type.define_members(backing_type, member_names)
 
+            member_values = {}
+
             decl.members.each do |member|
               actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
-              ensure_assignable!(actual_type, backing_type, "member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}")
+              const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
+
+              compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
+              compatible ||= const_value.is_a?(Integer) && numeric_constant_fits_type?(const_value, backing_type)
+              raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}") unless compatible
+
+              raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant") unless const_value.is_a?(Integer)
+
+              member_values[member.name] = const_value
             end
+
+            enum_type.define_member_values(member_values)
           end
         end
       end
@@ -1056,6 +1068,36 @@ module MilkTea
             resolve_current_module_const_value(identifier_expression.name)
           end,
           resolve_member_access: lambda do |member_access_expression|
+            if (receiver_type = resolve_type_expression(member_access_expression.receiver))
+              next resolve_enum_member_const_value(receiver_type, member_access_expression.member)
+            end
+
+            next unless member_access_expression.receiver.is_a?(AST::Identifier)
+
+            resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
+          end,
+          resolve_type_ref: lambda do |type_ref|
+            resolve_type_ref(type_ref)
+          end,
+        )
+      end
+
+      def evaluate_enum_member_const_value(expression, enum_type:, member_values:)
+        CompileTime.evaluate(
+          expression,
+          resolve_identifier: lambda do |identifier_expression|
+            resolve_current_module_const_value(identifier_expression.name)
+          end,
+          resolve_member_access: lambda do |member_access_expression|
+            if (receiver_type = resolve_type_expression(member_access_expression.receiver))
+              next resolve_enum_member_const_value(
+                receiver_type,
+                member_access_expression.member,
+                local_enum_type: enum_type,
+                local_member_values: member_values,
+              )
+            end
+
             next unless member_access_expression.receiver.is_a?(AST::Identifier)
 
             resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
@@ -4609,6 +4651,17 @@ module MilkTea
         binding.const_value
       end
 
+      def resolve_enum_member_const_value(receiver_type, member_name, local_enum_type: nil, local_member_values: nil)
+        return unless receiver_type.is_a?(Types::EnumBase)
+        return unless receiver_type.member(member_name)
+
+        if local_enum_type && receiver_type == local_enum_type && local_member_values&.key?(member_name)
+          return local_member_values[member_name]
+        end
+
+        receiver_type.member_value(member_name)
+      end
+
       def ensure_assignable!(actual_type, expected_type, message, expression: nil, scopes: nil, external_numeric: false, external_pointer_null: false, contextual_int_to_float: false, line: nil, column: nil)
         line ||= source_line(expression)
         column ||= source_column(expression)
@@ -4719,9 +4772,8 @@ module MilkTea
         return true if external_pointer_null && external_typed_null_pointer_compatibility?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
         return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
-        return true if actual_type.is_a?(Types::EnumBase) && actual_type.backing_type == expected_type
         return true if string_literal_cstr_compatibility?(expression, expected_type)
-        return true if exact_compile_time_numeric_compatibility?(expression, expected_type, scopes:)
+        return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes:)
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
@@ -4797,8 +4849,9 @@ module MilkTea
         actual_pointee == @types.fetch("void") || expected_pointee == @types.fetch("void")
       end
 
-      def exact_compile_time_numeric_compatibility?(expression, expected_type, scopes: nil)
+      def exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes: nil)
         return false unless expected_type.is_a?(Types::Primitive) && expected_type.numeric?
+        return false if actual_type.is_a?(Types::EnumBase)
 
         value = evaluate_compile_time_const_value(expression, scopes:)
         return false unless value.is_a?(Numeric)

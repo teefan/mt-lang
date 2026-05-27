@@ -300,6 +300,8 @@ align(16) struct Mat4:
 
 `align(...)` must be a positive power of two.
 
+The current C backend lowers `packed` / `align(...)` with GNU-style `__attribute__((...))`, so these layout modifiers currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these modifiers today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
+
 ### 3.5 Interfaces
 
 ```mt

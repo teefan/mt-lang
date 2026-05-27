@@ -3986,8 +3986,15 @@ packed struct Header:
 align(16) struct Mat4:
     data: array[float, 16]
 
+packed align(16) struct Packet:
+    tag: ubyte
+    value: uint
+
 static_assert(size_of(Header) == 5, \"Header should stay packed\")
 static_assert(align_of(Mat4) == 16, \"Mat4 alignment drifted\")
+static_assert(size_of(Packet) == 16, \"Packet size drifted\")
+static_assert(offset_of(Packet, value) == 1, \"Packet.value offset drifted\")
+static_assert(align_of(Packet) == 16, \"Packet alignment drifted\")
 
 function main() -> int:
     return 0
@@ -4000,8 +4007,13 @@ function main() -> int:
     assert_match(/\} __attribute__\(\(packed\)\);/, generated)
     assert_match(/struct demo_layout_modifiers_surface_Mat4 \{/, generated)
     assert_match(/\} __attribute__\(\(aligned\(16\)\)\);/, generated)
+    assert_match(/struct demo_layout_modifiers_surface_Packet \{/, generated)
+    assert_match(/\} __attribute__\(\(packed, aligned\(16\)\)\);/, generated)
     assert_match(/_Static_assert\(true, "Header should stay packed"\);/, generated)
     assert_match(/_Static_assert\(true, "Mat4 alignment drifted"\);/, generated)
+    assert_match(/_Static_assert\(true, "Packet size drifted"\);/, generated)
+    assert_match(/_Static_assert\(true, "Packet.value offset drifted"\);/, generated)
+    assert_match(/_Static_assert\(true, "Packet alignment drifted"\);/, generated)
   end
 
   def test_generate_c_for_address_of_and_dereference_assignment

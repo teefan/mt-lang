@@ -215,7 +215,11 @@ Rules:
 - `variant` arms may carry named payload fields.
 - Payload arm construction uses named fields: `Token.ident(text = "hello")`.
 - No-payload arms are bare member expressions: `Token.eof`.
+- `enum` and `flags` backing types must be integer primitives.
+- `enum` and `flags` members must be compile-time integer constants.
+- `flags` members may reference earlier members to spell composite aliases such as `read_write = Permission.read | Permission.write`.
 - `align(...)` must be a positive power of two.
+- The current C backend lowers `packed` / `align(...)` with GNU-style `__attribute__((...))`, so these layout modifiers currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these modifiers today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
 Generic variants and structs are supported, for example `Option[int]`.
 
@@ -278,6 +282,7 @@ Rules:
 - Cannot take `ref` parameters.
 - Cannot take `proc` parameters.
 - Cannot return arrays.
+- Calls may pass enum or flags values to same-width fixed-width integer parameters without an explicit cast for C ABI interop.
 
 Foreign functions:
 
@@ -495,14 +500,14 @@ Reference and pointer notes:
 
 Current collection modules in `std` are:
 
-- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `as_span`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
+- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `as_span`, `get`, `first`, `last`, `find`, `find_index`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
 - `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
 - `std.binary_heap.BinaryHeap[T]`: max-heap keyed by the canonical `order[T](...)` hook, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `push`, and `pop`.
 - `std.priority_queue.PriorityQueue[T]`: task-oriented facade over `BinaryHeap[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `enqueue`, and `dequeue`.
 - `std.ordered_set.OrderedSet[T]`: AVL-backed unique sorted set keyed by the canonical `order[T](...)` hook, with `create`, `len`, `is_empty`, `get`, `contains`, `iter`, `clear`, `release`, `insert`, and `remove`.
 - `std.ordered_map.OrderedMap[K, V]`: AVL-backed ordered map keyed by the canonical `order[K](...)` hook, with `create`, `len`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
-- `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `get`, `get_key`, `contains`, `set`, `get_or_insert`, `remove`, `remove_entry`, `keys`, `values`, `entries`, and `iter` (`iter()` is the same traversal as `entries()`).
-- `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `get`, `contains`, `insert`, `remove`, `is_subset`, `union_with`, `intersection`, `difference`, and `iter`. Set union is spelled `union_with` because `union` is a reserved keyword.
+- `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `set`, `get_or_insert`, `remove_entry`, and `remove` (`iter()` is the same traversal as `entries()`).
+- `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `contains`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `clear`, `release`, `reserve`, `insert`, and `remove`. Set union is spelled `union_with` because `union` is a reserved keyword.
 - `std.linked_map.LinkedMap[K, V]`: insertion-ordered hash map keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
 - `std.linked_set.LinkedSet[T]`: insertion-ordered hash set built on `LinkedMap[T, bool]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `contains`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `clear`, `release`, `reserve`, `insert`, and `remove`.
 - `std.counter.Counter[T]`: insertion-ordered frequency table built on `LinkedMap[T, ptr_uint]`, with `create`, `with_capacity`, `len`, `total_count`, `capacity`, `is_empty`, `count`, `contains`, `keys`, `counts`, `entries`, `iter`, `clear`, `release`, `reserve`, `add`, `increment`, `remove_one`, and `remove`.
@@ -517,7 +522,7 @@ Iterator notes for the collection modules:
 - `PriorityQueue.iter()` uses the same read-only pointer-returning iterator form as `BinaryHeap.iter()`.
 - `OrderedSet.iter()` uses the pointer-returning iterator form with read-only element pointers so in-place mutation cannot violate the sorted uniqueness invariant.
 - `OrderedMap.keys()` uses the pointer-returning iterator form with read-only key pointers, `OrderedMap.values()` returns mutable value pointers in key order, and `OrderedMap.entries()` / `OrderedMap.iter()` use the `next() -> bool` plus `current()` iterator form in key order.
-- `Map.keys()` and `Set.iter()` use the pointer-returning iterator form.
+- `Map.keys()` and `Set.iter()` use the pointer-returning iterator form with read-only key pointers.
 - `Map.values()` returns mutable value pointers during iteration.
 - `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.
 - `LinkedMap.keys()` and `LinkedSet.iter()` use the pointer-returning iterator form with read-only key pointers in insertion order.
@@ -575,6 +580,7 @@ Heredoc notes:
 
 - Conditions must be `bool`.
 - No truthy or falsy coercion.
+- Outside external-call boundaries, enum and flags values do not implicitly coerce to their backing integer types.
 - Mixed signed and unsigned integer arithmetic requires an explicit cast.
 - `%` requires integer-compatible operands.
 - Bitwise operators require matching integer or flags types.
@@ -620,14 +626,14 @@ Supported `await` contexts include:
 - assignment targets
 - `defer` cleanup bodies inside async functions
 
-## 15. Common Rejections
+## 15. Common V1 Rejections
 
-Current extending rejects:
+Current v1 rejects:
 
 - interface methods with `async` or generic signatures
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
 - legacy `in` / `out` / `inout` markers at call sites
-- consuming foreign calls used inside larger expressions
+- consuming foreign calls with `consuming` parameters outside top-level expression statements
 - external functions that are generic, async, or array-taking / array-returning
 - ordinary truthy or falsy conditions on integers and pointers
 
