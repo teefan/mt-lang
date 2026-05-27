@@ -4755,6 +4755,44 @@ function main() -> int:
     assert_equal true, result.functions.key?("project")
   end
 
+  def test_type_checks_contextual_float_expected_type_for_raylib_style_expressions
+    source = <<~MT
+      # module demo.contextual_float_raylib_style
+
+      struct Vector2:
+          x: float
+          y: float
+
+      function main() -> int:
+          let button_radius: float = 30.0
+          let button_step: float = button_radius * 1.5
+          let player_position = Vector2(x = 100.0, y = button_radius * 1.5)
+          return int<-(button_step + player_position.y)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_raygui_functions_with_raylib_shared_rectangle_type
+    source = <<~MT
+      # module demo.raygui_shared_rectangle
+
+      import std.raylib as rl
+      import std.raygui as gui
+
+      function main() -> int:
+          let bounds = rl.Rectangle(x = 0.0, y = 0.0, width = 120.0, height = 24.0)
+          gui.label(bounds, "hello")
+          return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_rejects_contextual_float_narrowing_without_float_expected_context
     source = <<~MT
       # module demo.contextual_float_expected_only
@@ -5617,6 +5655,24 @@ extending Counter:
     MT
 
     result = check_source(source)
+
+      def test_type_checks_unsafe_expressions_inside_boolean_control_flow
+        source = <<~MT
+          # module demo.unsafe_conditions
+
+          function main(ptr: ptr[bool], count: int) -> int:
+              let ready = true
+              if ready and unsafe: read(ptr):
+                  return 1
+              while count > 0 and unsafe: read(ptr):
+                  return count
+              return 0
+        MT
+
+        result = check_source(source)
+
+        assert_equal true, result.functions.key?("main")
+      end
 
     assert_equal true, result.functions.key?("main")
   end
