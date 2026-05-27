@@ -196,10 +196,58 @@ function main() -> int:
     assert_match(/C compiler not found/, error.message)
   end
 
+  def test_build_rejects_native_cl_backend_before_compile
+    Dir.mktmpdir("milk-tea-build-native-cl") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "cl.exe")
+      source_path = File.join(dir, "native-cl.mt")
+      output_path = File.join(dir, "native-cl")
+
+      File.write(source_path, <<~MT)
+
+function main() -> int:
+    return 0
+
+      MT
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(source_path, output_path:, cc: compiler_path)
+      end
+
+      assert_match(/unsupported C compiler backend for native target: .*cl\.exe/i, error.message)
+      assert_match(/clang\/gcc-style compiler driver/i, error.message)
+      refute File.exist?(compiler_log)
+    end
+  end
+
+  def test_build_rejects_wasm_non_emcc_backend_before_compile
+    Dir.mktmpdir("milk-tea-build-wasm-backend") do |dir|
+      compiler_log = File.join(dir, "compiler.log")
+      compiler_path = write_fake_compiler(dir, compiler_log)
+      source_path = File.join(dir, "wasm-backend.mt")
+      output_path = File.join(dir, "wasm-backend")
+
+      File.write(source_path, <<~MT)
+
+function main() -> int:
+    return 0
+
+      MT
+
+      error = assert_raises(MilkTea::BuildError) do
+        MilkTea::Build.build(source_path, output_path:, cc: compiler_path, platform: :wasm)
+      end
+
+      assert_match(/unsupported C compiler backend for wasm target: .*fake-cc/i, error.message)
+      assert_match(/Emscripten emcc/, error.message)
+      refute File.exist?(compiler_log)
+    end
+  end
+
   def test_build_wasm_normalizes_output_to_html_and_passes_shell_file
     Dir.mktmpdir("milk-tea-build-wasm") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "fake-emcc")
       source_path = File.join(dir, "web-smoke.mt")
       output_path = File.join(dir, "web-smoke")
 
@@ -1667,8 +1715,8 @@ function main() -> int:
     path
   end
 
-  def write_fake_compiler(dir, log_path, shell_copy_path: nil)
-    path = File.join(dir, "fake-cc")
+  def write_fake_compiler(dir, log_path, shell_copy_path: nil, basename: "fake-cc")
+    path = File.join(dir, basename)
     File.write(path, <<~SH)
       #!/bin/sh
       printf '%s\n' "$@" > #{log_path.inspect}

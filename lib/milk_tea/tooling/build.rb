@@ -206,6 +206,7 @@ module MilkTea
 
     def build
       ensure_compiler_available!
+      ensure_supported_backend!
       emit_line_directives = line_directives_required?
       artifacts = @frontend.compile(
         path: @resolved_source_path,
@@ -390,6 +391,18 @@ module MilkTea
       return if compiler_available?(@cc)
 
       raise BuildError, "C compiler not found: #{@cc}"
+    end
+
+    def ensure_supported_backend!
+      if target_wasm?
+        return if emscripten_backend?(@cc)
+
+        raise BuildError, "unsupported C compiler backend for wasm target: #{@cc}; use Emscripten emcc"
+      end
+
+      return unless msvc_style_backend?(@cc)
+
+      raise BuildError, "unsupported C compiler backend for native target: #{@cc}; use a clang/gcc-style compiler driver instead of cl.exe or clang-cl"
     end
 
     def collect_link_flags(frontend_modules)
@@ -682,6 +695,19 @@ module MilkTea
         candidate = File.join(entry, compiler)
         File.file?(candidate) && File.executable?(candidate)
       end
+    end
+
+    def compiler_command_name(compiler)
+      File.basename(compiler).downcase.sub(/\.(?:exe|bat|cmd|com|sh|py)\z/, "")
+    end
+
+    def emscripten_backend?(compiler)
+      compiler_command_name(compiler).split(/[-_.]/).include?("emcc")
+    end
+
+    def msvc_style_backend?(compiler)
+      tokens = compiler_command_name(compiler).split(/[-_.]/)
+      tokens.last == "cl" || tokens.last(2) == %w[clang cl]
     end
   end
 end

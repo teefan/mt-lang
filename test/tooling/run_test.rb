@@ -199,7 +199,7 @@ function main() -> int:
   def test_run_wasm_target_opens_browser_preview
     Dir.mktmpdir("milk-tea-run-wasm") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "", stderr: "", exit_status: 0)
+      compiler_path = write_fake_script_compiler(dir, compiler_log, stdout: "", stderr: "", exit_status: 0, basename: "fake-emcc")
       source_path = File.join(dir, "web.mt")
       opened_urls = []
       opened_after_listen = nil
@@ -2470,8 +2470,8 @@ function main() -> int:
 
   private
 
-  def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:)
-    path = File.join(dir, "fake-run-cc")
+  def write_fake_script_compiler(dir, log_path, stdout:, stderr:, exit_status:, basename: "fake-run-cc")
+    path = File.join(dir, basename)
     File.write(path, <<~SH)
       #!/bin/sh
       printf '%s\n' "$@" > #{log_path.inspect}
