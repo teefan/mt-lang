@@ -139,6 +139,7 @@ module MilkTea
         @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
         @public_type_names_by_raw_name = {}
         @public_type_kinds_by_raw_name = {}
+        @raw_function_declarations = {}
         @raw_type_declarations = {}
       end
 
@@ -157,6 +158,7 @@ module MilkTea
         function_spec = normalize_function_spec(policy["functions"])
         method_specs = normalize_method_specs(policy["methods"])
         method_sources = load_method_sources(method_specs)
+        @raw_function_declarations = declarations[:functions]
         @raw_type_declarations = declarations[:types]
         @public_type_names_by_raw_name = build_public_type_names(type_spec, declarations)
         function_entries = plan_foreign_functions(function_spec, declarations)
@@ -1072,6 +1074,7 @@ module MilkTea
       def foreign_function_name(raw_name, spec:)
         normalize_generated_public_value_name(
           default_public_name(raw_name, spec:, context: "generated function name", binding_kind: :value),
+          raw_name:,
           spec:,
         )
       end
@@ -1080,6 +1083,7 @@ module MilkTea
         raw_name = function_entry.fetch(:raw_name)
         method_name = normalize_generated_public_value_name(
           default_public_name(raw_name, spec:, context: "generated method name", binding_kind: :value),
+          raw_name:,
           spec:,
         )
         if function_entry.fetch(:variadic, false)
@@ -1111,11 +1115,11 @@ module MilkTea
         ]
       end
 
-      def normalize_generated_public_value_name(name, spec:)
+      def normalize_generated_public_value_name(name, raw_name:, spec:)
         normalized = snake_case(name)
         return normalized unless spec[:rename_rules].any? { |rule| rule[:kind] == :opengl }
 
-        normalize_opengl_snake_case(normalized)
+        normalize_opengl_terminal_suffix(normalize_opengl_snake_case(normalized), raw_name)
       end
 
       def method_kind(function_entry, spec:, raw_name:)
@@ -1355,6 +1359,7 @@ module MilkTea
         "l" => "long",
         "p" => "packed",
       }.freeze
+      OPENGL_INDEXED_PARAM_NAMES = %w[buf index mask_number].freeze
       OPENGL_TYPED_ALPHA_STEMS = %w[
         attrib
         boolean
@@ -1478,6 +1483,35 @@ module MilkTea
         end
 
         normalized.join("_")
+      end
+
+      def normalize_opengl_terminal_suffix(name, raw_name)
+        normalized = if name.end_with?("indexedfv")
+                       "#{name.delete_suffix('indexedfv')}indexed_float_values"
+                     elsif name.end_with?("indexedf")
+                       "#{name.delete_suffix('indexedf')}indexed_float"
+                     else
+                       name
+                     end
+
+        raw_text = raw_name.to_s
+        if raw_text.end_with?("i") && normalized.end_with?("i")
+          suffix = opengl_indexed_terminal_variant?(raw_name) ? "indexed" : "int"
+          return "#{normalized.delete_suffix('i')}_#{suffix}"
+        end
+
+        return "#{normalized.delete_suffix('f')}_float" if raw_text.end_with?("f") && normalized.end_with?("f")
+
+        normalized
+      end
+
+      def opengl_indexed_terminal_variant?(raw_name)
+        raw_declaration = @raw_function_declarations[raw_name]
+        return false unless raw_declaration
+
+        raw_declaration.params
+          .map { |param| snake_case(param.name) }
+          .any? { |name| OPENGL_INDEXED_PARAM_NAMES.include?(name) }
       end
 
       def opengl_domain_marker(token, next_token)
