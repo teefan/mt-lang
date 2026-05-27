@@ -46,6 +46,7 @@ type GLVULKANPROCNV = fn() -> void
 external function mt_gl_reset_loader() -> void
 external function mt_gl_use_glfw_loader() -> void
 external function mt_gl_use_sdl_loader() -> void
+external function mt_gl_use_raylib_loader() -> void
 external function glActiveShaderProgram(pipeline: uint, program: uint) -> void
 external function glActiveTexture(texture: uint) -> void
 external function glAttachShader(program: uint, shader: uint) -> void

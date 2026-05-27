@@ -307,6 +307,9 @@ module MilkTea
           "#if defined(MT_LANG_GL_REGISTRY_HAVE_SDL3)",
           "#include <SDL3/SDL.h>",
           "#endif",
+          "#if defined(MT_LANG_GL_REGISTRY_HAVE_RAYLIB)",
+          "void *rlGetProcAddress(const char *proc_name);",
+          "#endif",
           "#include <stdio.h>",
           "#include <stdlib.h>",
           "",
@@ -347,6 +350,7 @@ module MilkTea
           void mt_gl_reset_loader(void);
           void mt_gl_use_glfw_loader(void);
           void mt_gl_use_sdl_loader(void);
+          void mt_gl_use_raylib_loader(void);
         C
       end
 
@@ -439,6 +443,16 @@ module MilkTea
               abort();
           #endif
           }
+
+            void mt_gl_use_raylib_loader(void)
+            {
+            #if defined(MT_LANG_GL_REGISTRY_HAVE_RAYLIB)
+              mt_gl_set_loader_proc((mtlang_gl_loader_proc) rlGetProcAddress);
+            #else
+              fprintf(stderr, "OpenGL raylib loader support is unavailable in this build\\n");
+              abort();
+            #endif
+            }
         C
       end
 

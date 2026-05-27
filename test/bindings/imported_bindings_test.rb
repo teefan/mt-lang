@@ -236,6 +236,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public type GLuint = c\.GLuint$/, source)
     assert_match(/^public const COLOR_BUFFER_BIT: int = c\.GL_COLOR_BUFFER_BIT$/, source)
     assert_match(/^public foreign function use_glfw_loader\(\) -> void = c\.mt_gl_use_glfw_loader$/, source)
+    assert_match(/^public foreign function use_raylib_loader\(\) -> void = c\.mt_gl_use_raylib_loader$/, source)
     assert_match(/^public foreign function clear\(mask: uint\) -> void = c\.glClear$/, source)
     assert_match(/^public foreign function create_shader\(type_: uint\) -> GLuint = c\.glCreateShader$/, source)
     assert_match(/^public foreign function map_buffer\(target: uint, access: uint\) -> ptr\[void\]\? = c\.glMapBuffer$/, source)

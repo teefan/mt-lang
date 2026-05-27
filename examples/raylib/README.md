@@ -10,8 +10,8 @@ Current status:
 - `text/` is complete.
 - `textures/` is complete.
 - `models/` is complete.
-- `shaders/` is in progress with 10 examples ported: `ascii_rendering`, `color_correction`, `custom_uniform`, `model_shader`, `palette_switch`, `shapes_textures`, `simple_mask`, `texture_rendering`, `texture_tiling`, and `texture_waves`.
-- `others/` is still blocked by missing GLFW/OpenGL-facing standard bindings and by the embedded-header asset example.
+- `shaders/` is complete.
+- `others/` now has `raylib_opengl_interop` and `rlgl_standalone` ported. `embedded_files_loading` remains blocked by the embedded-header asset workflow.
 
 Shared helpers used by multiple ports:
 
