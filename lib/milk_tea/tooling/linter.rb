@@ -797,6 +797,11 @@ module MilkTea
         seen << key
         sites << matching_site
       end
+    rescue LexError
+      # Best-effort single-line scanning cannot lex heredoc opener lines such as
+      # `<<-TAG`, which also contain `<-`. Skip those lines instead of aborting
+      # redundant-cast analysis for the whole file.
+      []
     end
 
     def self.parse_prefix_cast_site(line, line_number, start_offset, facts: nil)

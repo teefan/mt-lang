@@ -3350,6 +3350,7 @@ module MilkTea
             end
 
             return [:property, []] if callable_field_member_access?(name, tokens, index, facts)
+            return [:method, []] if static_type_member_access?(tokens, index, facts)
           end
 
           return [:enumMember, []] if type_name_member_access?(tokens, index, facts)
@@ -3862,6 +3863,45 @@ module MilkTea
         return nil unless receiver.type == :identifier
 
         facts.imports[receiver.lexeme]
+      end
+
+      def static_type_member_access?(tokens, index, facts)
+        receiver_info = dot_type_receiver_info(tokens, index, facts)
+        return false unless receiver_info
+
+        !static_method_binding_for_receiver(facts, receiver_info[:type], tokens[index].lexeme).nil?
+      end
+
+      def dot_type_receiver_info(tokens, index, facts)
+        dot_index = previous_non_trivia_token_index(tokens, index)
+        return nil unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return nil unless receiver_index
+
+        if tokens[receiver_index].type == :rbracket
+          lbracket_index = matching_opener_index(tokens, receiver_index)
+          return nil unless lbracket_index
+
+          receiver_index = previous_non_trivia_token_index(tokens, lbracket_index)
+          return nil unless receiver_index
+        end
+
+        receiver = tokens[receiver_index]
+        return nil unless receiver.type == :identifier
+
+        receiver_name = receiver.lexeme
+        receiver_path = receiver_name
+
+        module_dot_index = previous_non_trivia_token_index(tokens, receiver_index)
+        if module_dot_index && tokens[module_dot_index].type == :dot
+          module_index = previous_non_trivia_token_index(tokens, module_dot_index)
+          return nil unless module_index && tokens[module_index].type == :identifier
+
+          receiver_path = "#{tokens[module_index].lexeme}.#{receiver_name}"
+        end
+
+        resolve_type_receiver_info(facts, receiver_name, receiver_path)
       end
 
       def specialized_call_with_type_args?(tokens, index)
