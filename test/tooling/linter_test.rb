@@ -1386,9 +1386,9 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
 
       warning = warnings.find { |entry| entry.code == "platform-api-drift" }
       assert warning, "expected platform-api-drift warning"
-      assert_equal 1, warning.line
-      assert_equal 15, warning.column
-      assert_equal "Counter".length, warning.length
+      assert_equal 5, warning.line
+      assert_equal 21, warning.column
+      assert_equal "read".length, warning.length
       assert_match(/counter\.windows\.mt/, warning.message)
       assert_match(/struct Counter \{ value: str \}/, warning.message)
       assert_match(/method Counter\.read\(\) -> str/, warning.message)
