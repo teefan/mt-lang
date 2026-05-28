@@ -357,7 +357,7 @@ function main() -> int:
     Dir.mktmpdir("milk-tea-build-wasm-template") do |dir|
       compiler_log = File.join(dir, "compiler.log")
       rendered_shell = File.join(dir, "rendered-shell.html")
-      compiler_path = write_fake_compiler(dir, compiler_log, shell_copy_path: rendered_shell)
+      compiler_path = write_fake_compiler(dir, compiler_log, shell_copy_path: rendered_shell, basename: "fake-emcc")
       package_root = File.join(dir, "web-demo")
       src_dir = File.join(package_root, "src")
       web_dir = File.join(package_root, "web")
@@ -420,7 +420,7 @@ function main() -> int:
   def test_build_wasm_package_rejects_html_template_missing_required_placeholder
     Dir.mktmpdir("milk-tea-build-wasm-template-error") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "fake-emcc")
       package_root = File.join(dir, "web-demo")
       src_dir = File.join(package_root, "src")
       web_dir = File.join(package_root, "web")
@@ -470,7 +470,7 @@ function main() -> int:
   def test_build_wasm_package_passes_assets_from_manifest_via_preload_file
     Dir.mktmpdir("milk-tea-build-wasm-assets") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "fake-emcc")
       package_root = File.join(dir, "web-demo")
       src_dir = File.join(package_root, "src")
       assets_dir = File.join(package_root, "assets")
@@ -511,7 +511,7 @@ function main() -> int:
   def test_build_wasm_package_passes_multiple_assets_from_manifest_via_preload_file
     Dir.mktmpdir("milk-tea-build-wasm-assets-multi") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "fake-emcc")
       package_root = File.join(dir, "web-demo")
       src_dir = File.join(package_root, "src")
       assets_dir = File.join(package_root, "assets")
@@ -1349,7 +1349,7 @@ public function default_width() -> int:
   def test_build_source_file_inside_package_uses_wasm_manifest_defaults
     Dir.mktmpdir("milk-tea-build-package-wasm") do |dir|
       compiler_log = File.join(dir, "compiler.log")
-      compiler_path = write_fake_compiler(dir, compiler_log)
+      compiler_path = write_fake_compiler(dir, compiler_log, basename: "fake-emcc")
       package_root = File.join(dir, "web-demo")
       src_dir = File.join(package_root, "src")
       FileUtils.mkdir_p(src_dir)
