@@ -5,6 +5,7 @@ require "set"
 module MilkTea
   module CFG
     BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids)
+    ReadSite = Data.define(:binding_key, :line, :column, :length)
 
     Node = Struct.new(
       :id,
@@ -12,6 +13,7 @@ module MilkTea
       :statement,
       :line,
       :reads,
+      :reads_info,
       :writes,
       :writes_info,
       :succs,
@@ -32,7 +34,7 @@ module MilkTea
         @edge_refinements = {} # Hash[(from_id, to_id) → Hash[binding_key → :non_null | :null]]
       end
 
-      def add_node(kind:, statement: nil, line: nil, reads: Set.new, writes: Set.new, writes_info: [])
+      def add_node(kind:, statement: nil, line: nil, reads: Set.new, reads_info: [], writes: Set.new, writes_info: [])
         id = @next_id
         @next_id += 1
         @nodes[id] = Node.new(
@@ -41,6 +43,7 @@ module MilkTea
           statement:,
           line:,
           reads: reads.dup,
+          reads_info: reads_info.map(&:dup),
           writes: writes.dup,
           writes_info: writes_info.map(&:dup),
           succs: [],
@@ -117,7 +120,7 @@ module MilkTea
         case stmt
         when AST::LocalDecl
           if stmt.else_body
-            reads = read_identifiers(stmt.value)
+            reads, reads_info = read_identifiers_with_sites(stmt.value)
             writes = Set.new
             writes_info = []
             declaration_key = declaration_binding_key(stmt, stmt.name)
@@ -133,13 +136,14 @@ module MilkTea
               statement: stmt,
               line: stmt.line,
               reads:,
+              reads_info:,
             )
             @graph.add_edge(condition_id, success_id, label: :non_null)
             @graph.add_edge(condition_id, null_entry, label: :null)
             return condition_id
           end
 
-          reads = read_identifiers(stmt.value)
+          reads, reads_info = read_identifiers_with_sites(stmt.value)
           writes = Set.new
           writes_info = []
           declaration_key = declaration_binding_key(stmt, stmt.name)
@@ -147,11 +151,11 @@ module MilkTea
             writes << declaration_key
             writes_info << { name: stmt.name, binding_key: declaration_key, line: stmt.line, column: stmt.column, origin: :declaration }
           end
-          add_linear_node(:local_decl, stmt, next_id, reads:, writes:, writes_info:)
+          add_linear_node(:local_decl, stmt, next_id, reads:, reads_info:, writes:, writes_info:)
         when AST::Assignment
-          reads = read_identifiers(stmt.value)
-          reads.merge(assignment_target_reads(stmt.target, stmt.operator))
-          reads.merge(assignment_target_side_effect_reads(stmt.target))
+          reads, reads_info = read_identifiers_with_sites(stmt.value)
+          merge_read_info!(reads, reads_info, *assignment_target_reads(stmt.target, stmt.operator))
+          merge_read_info!(reads, reads_info, *assignment_target_side_effect_reads(stmt.target))
 
           writes = Set.new
           writes_info = []
@@ -162,16 +166,18 @@ module MilkTea
               writes_info << { name: stmt.target.name, binding_key: target_key, line: stmt.line, column: stmt.target.column, origin: :assignment }
             end
           end
-          add_linear_node(:assignment, stmt, next_id, reads:, writes:, writes_info:)
+          add_linear_node(:assignment, stmt, next_id, reads:, reads_info:, writes:, writes_info:)
         when AST::IfStmt
           fallback_entry = stmt.else_body ? build_block(stmt.else_body, next_id, break_target:, continue_target:) : next_id
           stmt.branches.reverse_each do |branch|
             then_entry = build_block(branch.body, next_id, break_target:, continue_target:)
+            branch_reads, branch_reads_info = read_identifiers_with_sites(branch.condition)
             cond_id = @graph.add_node(
               kind: :if_condition,
               statement: branch,
               line: branch.respond_to?(:line) ? branch.line : stmt.line,
-              reads: read_identifiers(branch.condition)
+              reads: branch_reads,
+              reads_info: branch_reads_info,
             )
             @graph.add_edge(cond_id, then_entry, label: :true_branch)
             @graph.add_edge(cond_id, fallback_entry, label: :false_branch)
@@ -180,11 +186,13 @@ module MilkTea
           end
           fallback_entry
         when AST::MatchStmt
+          match_reads, match_reads_info = read_identifiers_with_sites(stmt.expression)
           match_id = @graph.add_node(
             kind: :match_condition,
             statement: stmt,
             line: stmt.line,
-            reads: read_identifiers(stmt.expression)
+            reads: match_reads,
+            reads_info: match_reads_info,
           )
           if stmt.arms.empty?
             @graph.add_edge(match_id, next_id)
@@ -216,11 +224,13 @@ module MilkTea
           end
           match_id
         when AST::WhileStmt
+          condition_reads, condition_reads_info = read_identifiers_with_sites(stmt.condition)
           cond_id = @graph.add_node(
             kind: :while_condition,
             statement: stmt,
             line: stmt.line,
-            reads: read_identifiers(stmt.condition)
+            reads: condition_reads,
+            reads_info: condition_reads_info,
           )
           body_entry = build_block(stmt.body, cond_id, break_target: next_id, continue_target: cond_id)
           @graph.add_edge(cond_id, body_entry, label: :true_branch)
@@ -243,11 +253,13 @@ module MilkTea
               }
             end
           end
+          iterable_reads, iterable_reads_info = read_identifiers_with_sites(stmt.iterable)
           header_id = @graph.add_node(
             kind: :for_header,
             statement: stmt,
             line: stmt.line,
-            reads: read_identifiers(stmt.iterable),
+            reads: iterable_reads,
+            reads_info: iterable_reads_info,
             writes:,
             writes_info:
           )
@@ -259,23 +271,27 @@ module MilkTea
           build_block(stmt.body, next_id, break_target:, continue_target:)
         when AST::DeferStmt
           body_entry = stmt.body ? build_block(stmt.body, next_id, break_target:, continue_target:) : next_id
+          expression_reads, expression_reads_info = stmt.expression ? read_identifiers_with_sites(stmt.expression) : [Set.new, []]
           defer_id = @graph.add_node(
             kind: :defer,
             statement: stmt,
             line: stmt.line,
-            reads: stmt.expression ? read_identifiers(stmt.expression) : Set.new
+            reads: expression_reads,
+            reads_info: expression_reads_info,
           )
           @graph.add_edge(defer_id, body_entry)
           defer_id
         when AST::ReturnStmt
+          return_reads, return_reads_info = read_identifiers_with_sites(stmt.value)
           @graph.add_node(
             kind: :return,
             statement: stmt,
             line: stmt.line,
-            reads: read_identifiers(stmt.value)
+            reads: return_reads,
+            reads_info: return_reads_info,
           )
         when AST::ExpressionStmt
-          reads = read_identifiers(stmt.expression)
+          reads, reads_info = read_identifiers_with_sites(stmt.expression)
           writes, writes_info = write_targets_from_expression(stmt.expression, line: stmt.line)
           if fatal_expression?(stmt.expression)
             @graph.add_node(
@@ -283,14 +299,16 @@ module MilkTea
               statement: stmt,
               line: stmt.line,
               reads:,
+              reads_info:,
               writes:,
               writes_info:
             )
           else
-            add_linear_node(:expression, stmt, next_id, reads:, writes:, writes_info:)
+            add_linear_node(:expression, stmt, next_id, reads:, reads_info:, writes:, writes_info:)
           end
         when AST::StaticAssert
-          add_linear_node(:static_assert, stmt, next_id, reads: read_identifiers(stmt.condition))
+          reads, reads_info = read_identifiers_with_sites(stmt.condition)
+          add_linear_node(:static_assert, stmt, next_id, reads:, reads_info:)
         when AST::PassStmt
           add_linear_node(:pass, stmt, next_id)
         when AST::BreakStmt
@@ -304,8 +322,8 @@ module MilkTea
         end
       end
 
-      def add_linear_node(kind, stmt, next_id, reads: Set.new, writes: Set.new, writes_info: [])
-        node_id = @graph.add_node(kind:, statement: stmt, line: stmt.respond_to?(:line) ? stmt.line : nil, reads:, writes:, writes_info:)
+      def add_linear_node(kind, stmt, next_id, reads: Set.new, reads_info: [], writes: Set.new, writes_info: [])
+        node_id = @graph.add_node(kind:, statement: stmt, line: stmt.respond_to?(:line) ? stmt.line : nil, reads:, reads_info:, writes:, writes_info:)
         @graph.add_edge(node_id, next_id)
         node_id
       end
@@ -315,8 +333,8 @@ module MilkTea
       end
 
       def assignment_target_reads(target, operator)
-        return Set.new if operator == "="
-        return Set[identifier_binding_key(target)].compact if target.is_a?(AST::Identifier)
+        return [Set.new, []] if operator == "="
+        return identifier_read_info(target) if target.is_a?(AST::Identifier)
 
         assignment_target_side_effect_reads(target)
       end
@@ -324,63 +342,87 @@ module MilkTea
       def assignment_target_side_effect_reads(target)
         case target
         when AST::Identifier
-          Set.new
+          [Set.new, []]
         when AST::MemberAccess
-          read_identifiers(target.receiver)
+          read_identifiers_with_sites(target.receiver)
         when AST::IndexAccess
-          read_identifiers(target.receiver).merge(read_identifiers(target.index))
+          receiver_reads, receiver_info = read_identifiers_with_sites(target.receiver)
+          merge_read_info!(receiver_reads, receiver_info, *read_identifiers_with_sites(target.index))
+          [receiver_reads, receiver_info]
         else
-          read_identifiers(target)
+          read_identifiers_with_sites(target)
         end
       end
 
-      def read_identifiers(expression, names = Set.new)
+      def merge_read_info!(reads, reads_info, extra_reads, extra_reads_info)
+        reads.merge(extra_reads)
+        reads_info.concat(extra_reads_info)
+      end
+
+      def identifier_read_info(identifier)
+        key = identifier_binding_key(identifier)
+        return [Set.new, []] unless key
+
+        [Set[key], [ReadSite.new(binding_key: key, line: identifier.line, column: identifier.column, length: identifier.name.to_s.length)]]
+      end
+
+      def read_identifiers_with_sites(expression)
+        reads = Set.new
+        reads_info = []
+        read_identifiers(expression, reads, reads_info)
+        [reads, reads_info]
+      end
+
+      def read_identifiers(expression, names = Set.new, reads_info = [])
         case expression
         when nil
           nil
         when AST::Identifier
           key = identifier_binding_key(expression)
-          names << key if key
+          if key
+            names << key
+            reads_info << ReadSite.new(binding_key: key, line: expression.line, column: expression.column, length: expression.name.to_s.length)
+          end
         when AST::MemberAccess
-          read_identifiers(expression.receiver, names)
+          read_identifiers(expression.receiver, names, reads_info)
         when AST::IndexAccess
-          read_identifiers(expression.receiver, names)
-          read_identifiers(expression.index, names)
+          read_identifiers(expression.receiver, names, reads_info)
+          read_identifiers(expression.index, names, reads_info)
         when AST::Specialization
-          read_identifiers(expression.callee, names)
+          read_identifiers(expression.callee, names, reads_info)
         when AST::Call
-          read_identifiers(expression.callee, names)
-          expression.arguments.each { |argument| read_identifiers(argument.value, names) }
+          read_identifiers(expression.callee, names, reads_info)
+          expression.arguments.each { |argument| read_identifiers(argument.value, names, reads_info) }
         when AST::UnaryOp
-          read_identifiers(expression.operand, names)
+          read_identifiers(expression.operand, names, reads_info)
         when AST::BinaryOp
-          read_identifiers(expression.left, names)
-          read_identifiers(expression.right, names)
+          read_identifiers(expression.left, names, reads_info)
+          read_identifiers(expression.right, names, reads_info)
         when AST::RangeExpr
-          read_identifiers(expression.start_expr, names)
-          read_identifiers(expression.end_expr, names)
+          read_identifiers(expression.start_expr, names, reads_info)
+          read_identifiers(expression.end_expr, names, reads_info)
         when AST::ExpressionList
-          expression.elements.each { |element| read_identifiers(element, names) }
+          expression.elements.each { |element| read_identifiers(element, names, reads_info) }
         when AST::IfExpr
-          read_identifiers(expression.condition, names)
-          read_identifiers(expression.then_expression, names)
-          read_identifiers(expression.else_expression, names)
+          read_identifiers(expression.condition, names, reads_info)
+          read_identifiers(expression.then_expression, names, reads_info)
+          read_identifiers(expression.else_expression, names, reads_info)
         when AST::MatchExpr
-          read_identifiers(expression.expression, names)
+          read_identifiers(expression.expression, names, reads_info)
           expression.arms.each do |arm|
-            read_identifiers(arm.pattern, names)
-            read_identifiers(arm.value, names)
+            read_identifiers(arm.pattern, names, reads_info)
+            read_identifiers(arm.value, names, reads_info)
           end
         when AST::UnsafeExpr
-          read_identifiers(expression.expression, names)
+          read_identifiers(expression.expression, names, reads_info)
         when AST::FormatString
           expression.parts.each do |part|
-            read_identifiers(part.expression, names) if part.is_a?(AST::FormatExprPart)
+            read_identifiers(part.expression, names, reads_info) if part.is_a?(AST::FormatExprPart)
           end
         when AST::ProcExpr
           nil
         when AST::AwaitExpr
-          read_identifiers(expression.expression, names)
+          read_identifiers(expression.expression, names, reads_info)
         when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral,
              AST::BooleanLiteral, AST::NullLiteral,
              AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
@@ -696,7 +738,7 @@ module MilkTea
     end
 
     class DefiniteAssignment
-      ReadBeforeAssignment = Data.define(:node_id, :binding_key, :line)
+      ReadBeforeAssignment = Data.define(:node_id, :binding_key, :line, :column, :length)
       Result = Data.define(:definitely_assigned_in, :definitely_assigned_out, :read_before_assignment)
 
       def self.solve(graph, initially_assigned: Set.new)
@@ -723,13 +765,30 @@ module MilkTea
         read_before_assignment = []
         graph.each_node do |node|
           in_state = result.in_states[node.id]
-          node.reads.each do |binding_key|
-            next if in_state.include?(binding_key)
+          if node.reads_info.empty?
+            node.reads.each do |binding_key|
+              next if in_state.include?(binding_key)
+
+              read_before_assignment << ReadBeforeAssignment.new(
+                node_id: node.id,
+                binding_key:,
+                line: node.line,
+                column: nil,
+                length: nil,
+              )
+            end
+            next
+          end
+
+          node.reads_info.each do |read_site|
+            next if in_state.include?(read_site.binding_key)
 
             read_before_assignment << ReadBeforeAssignment.new(
               node_id: node.id,
-              binding_key:,
-              line: node.line,
+              binding_key: read_site.binding_key,
+              line: read_site.line || node.line,
+              column: read_site.column,
+              length: read_site.length,
             )
           end
         end

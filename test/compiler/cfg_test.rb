@@ -102,6 +102,11 @@ class MilkTeaCFGTest < Minitest::Test
     result = MilkTea::CFG::DefiniteAssignment.solve(graph, initially_assigned:)
 
     refute_empty result.read_before_assignment
+    first_issue = result.read_before_assignment.min_by { |issue| [issue.line || Float::INFINITY, issue.column || Float::INFINITY, issue.node_id] }
+    refute_nil first_issue
+    assert_equal 5, first_issue.line
+    assert_equal 12, first_issue.column
+    assert_equal 1, first_issue.length
   end
 
   def test_definite_assignment_treats_format_string_interpolation_as_read
@@ -120,6 +125,11 @@ class MilkTeaCFGTest < Minitest::Test
     result = MilkTea::CFG::DefiniteAssignment.solve(graph, initially_assigned: Set["flag"])
 
     assert_includes result.read_before_assignment.map(&:binding_key), "x"
+    format_read = result.read_before_assignment.find { |issue| issue.binding_key == "x" }
+    refute_nil format_read
+    assert_equal 5, format_read.line
+    assert_equal 16, format_read.column
+    assert_equal 1, format_read.length
   end
 
   def test_assignment_reads_expression_list_values

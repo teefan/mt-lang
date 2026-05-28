@@ -766,6 +766,41 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_collect_diagnostics_anchor_platform_api_drift_to_export_name
+    Dir.mktmpdir("lsp_workspace_platform_api_drift_anchor") do |dir|
+      path = File.join(dir, "service.mt")
+      content = <<~MT
+        public function read() -> int:
+            return 1
+      MT
+      File.write(path, content)
+      File.write(File.join(dir, "service.windows.mt"), <<~MT)
+        public function read() -> int:
+            return 1
+
+        public function write() -> int:
+            return 2
+      MT
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      drift = diagnostics.find { |diagnostic| diagnostic[:code] == "platform-api-drift" }
+      expected_start = content.lines.first.index("read")
+      expected_end = expected_start + "read".length
+
+      refute_nil drift
+      assert_equal "lint", drift.dig(:data, :stage)
+      assert_equal 0, drift.dig(:range, :start, :line)
+      assert_equal expected_start, drift.dig(:range, :start, :character)
+      assert_equal expected_end, drift.dig(:range, :end, :character)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_keeps_resolved_imports_and_skips_unused_warning_for_missing_imports
     Dir.mktmpdir("lsp_workspace_partial_import_resolution") do |dir|
       path = File.join(dir, "main.mt")
