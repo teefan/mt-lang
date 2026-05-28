@@ -1341,11 +1341,18 @@ module MilkTea
         initially_assigned.merge(graph.read_bindings - local_declared_ids)
 
         result = CFG::DefiniteAssignment.solve(graph, initially_assigned:)
-        first_issue = result.read_before_assignment.first
+        first_issue = result.read_before_assignment.min_by do |issue|
+          [issue.line || Float::INFINITY, issue.column || Float::INFINITY, issue.node_id]
+        end
         return unless first_issue
 
         name = @binding_name_by_id[first_issue.binding_key] || first_issue.binding_key
-        raise SemaError.new("read of '#{name}' before definite assignment", line: first_issue.line)
+        raise SemaError.new(
+          "read of '#{name}' before definite assignment",
+          line: first_issue.line,
+          column: first_issue.column,
+          length: first_issue.length || name.to_s.length,
+        )
       end
 
       # Runs a strict binding-ID nullability pass before statement checks.

@@ -1387,6 +1387,8 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
       warning = warnings.find { |entry| entry.code == "platform-api-drift" }
       assert warning, "expected platform-api-drift warning"
       assert_equal 1, warning.line
+      assert_equal 15, warning.column
+      assert_equal "Counter".length, warning.length
       assert_match(/counter\.windows\.mt/, warning.message)
       assert_match(/struct Counter \{ value: str \}/, warning.message)
       assert_match(/method Counter\.read\(\) -> str/, warning.message)
@@ -1415,8 +1417,37 @@ class MilkTeaLinterPlatformApiDriftTest < Minitest::Test
 
       warning = warnings.find { |entry| entry.code == "platform-api-drift" }
       assert warning, "expected platform-api-drift warning"
+      assert_equal 4, warning.line
+      assert_equal 17, warning.column
+      assert_equal "same_key".length, warning.length
       assert_match(/function same_key\[T implements Named\]\(left: T, right: T\) -> bool/, warning.message)
       assert_match(/function same_key\[T\]\(left: T, right: T\) -> bool/, warning.message)
+    end
+  end
+
+  def test_warns_with_platform_api_drift_anchor_at_first_export_when_current_variant_only_missing_exports
+    Dir.mktmpdir("mt-lint-platform-missing-export-anchor") do |dir|
+      path = File.join(dir, "service.mt")
+      File.write(path, <<~MT)
+        public function read() -> int:
+            return 1
+      MT
+      File.write(File.join(dir, "service.windows.mt"), <<~MT)
+        public function read() -> int:
+            return 1
+
+        public function write() -> int:
+            return 2
+      MT
+
+      warnings = MilkTea::Linter.lint_source(File.read(path), path: path)
+
+      warning = warnings.find { |entry| entry.code == "platform-api-drift" }
+      assert warning, "expected platform-api-drift warning"
+      assert_equal 1, warning.line
+      assert_equal 17, warning.column
+      assert_equal "read".length, warning.length
+      assert_match(/missing 'function write\(\) -> int'/, warning.message)
     end
   end
 

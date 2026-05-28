@@ -1171,7 +1171,8 @@ module MilkTea
       sibling_paths = platform_variant_sibling_paths(resolved_path)
       return if sibling_paths.empty?
 
-      current_surface = exported_api_surface(source_file)
+      current_surface_sites = exported_api_surface_sites(source_file)
+      current_surface = current_surface_sites.keys.to_set
       sibling_paths.each do |sibling_path|
         sibling_source_file = load_sibling_source_file(sibling_path)
         next unless sibling_source_file
@@ -1182,15 +1183,96 @@ module MilkTea
 
         missing = (sibling_surface - current_surface).to_a.sort
         extra = (current_surface - sibling_surface).to_a.sort
+        anchor = platform_api_drift_anchor(source_file, current_surface_sites, extra:)
         @warnings << Warning.new(
           path: @path,
-          line: source_file.line || 1,
-          column: 1,
-          length: 1,
+          line: anchor[:line],
+          column: anchor[:column],
+          length: anchor[:length],
           code: "platform-api-drift",
-          message: platform_api_drift_message(sibling_path, missing:, extra:)
+          message: platform_api_drift_message(sibling_path, missing:, extra:),
+          symbol_name: anchor[:symbol_name],
         )
       end
+    end
+
+    def platform_api_drift_anchor(source_file, current_surface_sites, extra:)
+      extra.each do |surface_entry|
+        site = current_surface_sites[surface_entry]
+        return site if site
+      end
+
+      first_export_site = current_surface_sites.values.min_by do |site|
+        [site[:line] || Float::INFINITY, site[:column] || Float::INFINITY]
+      end
+      return first_export_site if first_export_site
+
+      first_declaration = source_file.declarations.find { |declaration| declaration.respond_to?(:line) && declaration.line }
+      return declaration_anchor(first_declaration) if first_declaration
+
+      { line: source_file.line || 1, column: 1, length: 1, symbol_name: nil }
+    end
+
+    def exported_api_surface_sites(source_file)
+      exported_type_names = exported_type_names(source_file)
+      source_file.declarations.each_with_object({}) do |declaration, sites|
+        case declaration
+        when AST::ConstDecl
+          sites[render_value_surface("const", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::VarDecl
+          sites[render_value_surface("var", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::TypeAliasDecl
+          sites["type #{declaration.name} = #{render_type_surface(declaration.target)}"] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::StructDecl
+          sites[render_struct_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::UnionDecl
+          sites[render_union_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::EnumDecl
+          sites[render_enum_surface("enum", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::FlagsDecl
+          sites[render_enum_surface("flags", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::OpaqueDecl
+          sites[render_opaque_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::InterfaceDecl
+          sites[render_interface_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::VariantDecl
+          sites[render_variant_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::FunctionDef
+          sites[render_callable_surface("function", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::ExternFunctionDecl
+          sites[render_callable_surface("external function", declaration, variadic: declaration.variadic)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::ForeignFunctionDecl
+          sites[render_callable_surface("foreign function", declaration, variadic: declaration.variadic)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::ExtendingBlock
+          next unless exported_type_names.include?(declaration.type_name.to_s)
+
+          declaration.methods.each do |method|
+            next unless method.visibility == :public
+
+            sites[render_method_surface(declaration.type_name.to_s, method)] = declaration_anchor(method)
+          end
+        end
+      end
+    end
+
+    def declaration_anchor(declaration)
+      return { line: 1, column: 1, length: 1, symbol_name: nil } unless declaration
+
+      symbol_name = declaration.respond_to?(:name) ? declaration.name : nil
+      length = symbol_name.to_s.empty? ? 1 : symbol_name.to_s.length
+      line = declaration.respond_to?(:line) && declaration.line ? declaration.line : 1
+
+      if declaration.respond_to?(:column) && declaration.column
+        return { line:, column: declaration.column, length:, symbol_name: }
+      end
+
+      if symbol_name && line
+        line_text = @source_lines[line - 1].to_s
+        index = line_text.index(symbol_name.to_s)
+        return { line:, column: index ? index + 1 : 1, length:, symbol_name: }
+      end
+
+      { line:, column: 1, length: 1, symbol_name: }
     end
 
     def platform_variant_sibling_paths(path)
