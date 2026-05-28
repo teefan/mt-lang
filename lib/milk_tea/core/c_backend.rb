@@ -241,166 +241,130 @@ module MilkTea
     end
 
     def collect_called_function_names_from_statements(statements, functions_by_name, reachable_names, worklist)
-      statements.each do |statement|
-        case statement
-        when IR::LocalDecl
-          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist)
-        when IR::Assignment
-          collect_called_function_names_from_expression(statement.target, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist)
-        when IR::BlockStmt
-          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
-        when IR::WhileStmt
-          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
-        when IR::ForStmt
-          collect_called_function_names_from_statements([statement.init], functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_statements(statement.body, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_statements([statement.post], functions_by_name, reachable_names, worklist)
-        when IR::IfStmt
-          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_statements(statement.then_body, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_statements(statement.else_body, functions_by_name, reachable_names, worklist) if statement.else_body
-        when IR::SwitchStmt
-          collect_called_function_names_from_expression(statement.expression, functions_by_name, reachable_names, worklist)
-          statement.cases.each do |switch_case|
-            collect_called_function_names_from_statements(switch_case.body, functions_by_name, reachable_names, worklist)
-          end
-        when IR::StaticAssert
-          collect_called_function_names_from_expression(statement.condition, functions_by_name, reachable_names, worklist)
-          collect_called_function_names_from_expression(statement.message, functions_by_name, reachable_names, worklist)
-        when IR::ReturnStmt
-          collect_called_function_names_from_expression(statement.value, functions_by_name, reachable_names, worklist) if statement.value
-        when IR::ExpressionStmt
-          collect_called_function_names_from_expression(statement.expression, functions_by_name, reachable_names, worklist)
+      traverse_ir_statements(statements) do |expression|
+        case expression
+        when IR::Name
+          callee = functions_by_name[expression.name]
+          worklist << callee if callee && !reachable_names[callee.c_name]
+        when IR::Call
+          next unless expression.callee.is_a?(String)
+
+          callee = functions_by_name[expression.callee]
+          worklist << callee if callee && !reachable_names[callee.c_name]
         end
       end
     end
 
     def collect_called_function_names_from_expression(expression, functions_by_name, reachable_names, worklist)
-      case expression
-      when IR::Name
-        callee = functions_by_name[expression.name]
-        if callee && !reachable_names[callee.c_name]
-          worklist << callee
-        end
-      when IR::Member
-        collect_called_function_names_from_expression(expression.receiver, functions_by_name, reachable_names, worklist)
-      when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
-        collect_called_function_names_from_expression(expression.receiver, functions_by_name, reachable_names, worklist)
-        collect_called_function_names_from_expression(expression.index, functions_by_name, reachable_names, worklist)
-      when IR::Call
-        if expression.callee.is_a?(String)
-          callee = functions_by_name[expression.callee]
-          if callee && !reachable_names[callee.c_name]
-            worklist << callee
-          end
-        else
-          collect_called_function_names_from_expression(expression.callee, functions_by_name, reachable_names, worklist)
-        end
-        expression.arguments.each do |argument|
-          collect_called_function_names_from_expression(argument, functions_by_name, reachable_names, worklist)
-        end
-      when IR::Unary
-        collect_called_function_names_from_expression(expression.operand, functions_by_name, reachable_names, worklist)
-      when IR::Binary
-        collect_called_function_names_from_expression(expression.left, functions_by_name, reachable_names, worklist)
-        collect_called_function_names_from_expression(expression.right, functions_by_name, reachable_names, worklist)
-      when IR::Conditional
-        collect_called_function_names_from_expression(expression.condition, functions_by_name, reachable_names, worklist)
-        collect_called_function_names_from_expression(expression.then_expression, functions_by_name, reachable_names, worklist)
-        collect_called_function_names_from_expression(expression.else_expression, functions_by_name, reachable_names, worklist)
-      when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
-        collect_called_function_names_from_expression(expression.expression, functions_by_name, reachable_names, worklist)
-      when IR::AggregateLiteral
-        expression.fields.each do |field|
-          collect_called_function_names_from_expression(field.value, functions_by_name, reachable_names, worklist)
-        end
-      when IR::ArrayLiteral
-        expression.elements.each do |element|
-          collect_called_function_names_from_expression(element, functions_by_name, reachable_names, worklist)
-        end
-      when IR::VariantLiteral
-        expression.fields.each do |field|
-          collect_called_function_names_from_expression(field.value, functions_by_name, reachable_names, worklist)
+      traverse_ir_expression(expression) do |candidate|
+        case candidate
+        when IR::Name
+          callee = functions_by_name[candidate.name]
+          worklist << callee if callee && !reachable_names[callee.c_name]
+        when IR::Call
+          next unless candidate.callee.is_a?(String)
+
+          callee = functions_by_name[candidate.callee]
+          worklist << callee if callee && !reachable_names[callee.c_name]
         end
       end
     end
 
     def collect_referenced_constant_names_from_statements(statements, constants_by_name, referenced_names)
-      statements.each do |statement|
+      visitor = constant_reference_visitor(constants_by_name, referenced_names)
+      traverse_ir_statements(statements, visit_switch_case_values: true, &visitor)
+    end
+
+    def collect_referenced_constant_names_from_expression(expression, constants_by_name, referenced_names)
+      visitor = constant_reference_visitor(constants_by_name, referenced_names)
+      traverse_ir_expression(expression, &visitor)
+    end
+
+    def constant_reference_visitor(constants_by_name, referenced_names)
+      lambda do |expression|
+        next unless expression.is_a?(IR::Name)
+
+        constant = constants_by_name[expression.name]
+        next unless constant
+        next if referenced_names[constant.c_name]
+
+        referenced_names[constant.c_name] = true
+        traverse_ir_expression(constant.value, &constant_reference_visitor(constants_by_name, referenced_names))
+      end
+    end
+
+    def traverse_ir_statements(statements, visit_switch_case_values: false, &expression_visitor)
+      Array(statements).compact.each do |statement|
         case statement
         when IR::LocalDecl
-          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.value, &expression_visitor)
         when IR::Assignment
-          collect_referenced_constant_names_from_expression(statement.target, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.target, &expression_visitor)
+          traverse_ir_expression(statement.value, &expression_visitor)
         when IR::BlockStmt
-          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+          traverse_ir_statements(statement.body, visit_switch_case_values:, &expression_visitor)
         when IR::WhileStmt
-          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.condition, &expression_visitor)
+          traverse_ir_statements(statement.body, visit_switch_case_values:, &expression_visitor)
         when IR::ForStmt
-          collect_referenced_constant_names_from_statements([statement.init], constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_statements(statement.body, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_statements([statement.post], constants_by_name, referenced_names)
+          traverse_ir_statements([statement.init], visit_switch_case_values:, &expression_visitor)
+          traverse_ir_expression(statement.condition, &expression_visitor)
+          traverse_ir_statements(statement.body, visit_switch_case_values:, &expression_visitor)
+          traverse_ir_statements([statement.post], visit_switch_case_values:, &expression_visitor)
         when IR::IfStmt
-          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_statements(statement.then_body, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_statements(statement.else_body, constants_by_name, referenced_names) if statement.else_body
+          traverse_ir_expression(statement.condition, &expression_visitor)
+          traverse_ir_statements(statement.then_body, visit_switch_case_values:, &expression_visitor)
+          traverse_ir_statements(statement.else_body, visit_switch_case_values:, &expression_visitor) if statement.else_body
         when IR::SwitchStmt
-          collect_referenced_constant_names_from_expression(statement.expression, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.expression, &expression_visitor)
           statement.cases.each do |switch_case|
-            collect_referenced_constant_names_from_expression(switch_case.value, constants_by_name, referenced_names) if switch_case.is_a?(IR::SwitchCase)
-            collect_referenced_constant_names_from_statements(switch_case.body, constants_by_name, referenced_names)
+            if visit_switch_case_values && switch_case.is_a?(IR::SwitchCase)
+              traverse_ir_expression(switch_case.value, &expression_visitor)
+            end
+            traverse_ir_statements(switch_case.body, visit_switch_case_values:, &expression_visitor)
           end
         when IR::StaticAssert
-          collect_referenced_constant_names_from_expression(statement.condition, constants_by_name, referenced_names)
-          collect_referenced_constant_names_from_expression(statement.message, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.condition, &expression_visitor)
+          traverse_ir_expression(statement.message, &expression_visitor)
         when IR::ReturnStmt
-          collect_referenced_constant_names_from_expression(statement.value, constants_by_name, referenced_names) if statement.value
+          traverse_ir_expression(statement.value, &expression_visitor) if statement.value
         when IR::ExpressionStmt
-          collect_referenced_constant_names_from_expression(statement.expression, constants_by_name, referenced_names)
+          traverse_ir_expression(statement.expression, &expression_visitor)
         end
       end
     end
 
-    def collect_referenced_constant_names_from_expression(expression, constants_by_name, referenced_names)
-      case expression
-      when IR::Name
-        constant = constants_by_name[expression.name]
-        return unless constant
-        return if referenced_names[constant.c_name]
+    def traverse_ir_expression(expression, &expression_visitor)
+      return if expression.nil?
 
-        referenced_names[constant.c_name] = true
-        collect_referenced_constant_names_from_expression(constant.value, constants_by_name, referenced_names)
+      expression_visitor.call(expression) if expression_visitor
+
+      case expression
       when IR::Member
-        collect_referenced_constant_names_from_expression(expression.receiver, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.receiver, &expression_visitor)
       when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
-        collect_referenced_constant_names_from_expression(expression.receiver, constants_by_name, referenced_names)
-        collect_referenced_constant_names_from_expression(expression.index, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.receiver, &expression_visitor)
+        traverse_ir_expression(expression.index, &expression_visitor)
       when IR::Call
-        collect_referenced_constant_names_from_expression(expression.callee, constants_by_name, referenced_names) unless expression.callee.is_a?(String)
-        expression.arguments.each { |argument| collect_referenced_constant_names_from_expression(argument, constants_by_name, referenced_names) }
+        traverse_ir_expression(expression.callee, &expression_visitor) unless expression.callee.is_a?(String)
+        expression.arguments.each { |argument| traverse_ir_expression(argument, &expression_visitor) }
       when IR::Unary
-        collect_referenced_constant_names_from_expression(expression.operand, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.operand, &expression_visitor)
       when IR::Binary
-        collect_referenced_constant_names_from_expression(expression.left, constants_by_name, referenced_names)
-        collect_referenced_constant_names_from_expression(expression.right, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.left, &expression_visitor)
+        traverse_ir_expression(expression.right, &expression_visitor)
       when IR::Conditional
-        collect_referenced_constant_names_from_expression(expression.condition, constants_by_name, referenced_names)
-        collect_referenced_constant_names_from_expression(expression.then_expression, constants_by_name, referenced_names)
-        collect_referenced_constant_names_from_expression(expression.else_expression, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.condition, &expression_visitor)
+        traverse_ir_expression(expression.then_expression, &expression_visitor)
+        traverse_ir_expression(expression.else_expression, &expression_visitor)
       when IR::ReinterpretExpr, IR::AddressOf, IR::Cast
-        collect_referenced_constant_names_from_expression(expression.expression, constants_by_name, referenced_names)
+        traverse_ir_expression(expression.expression, &expression_visitor)
       when IR::AggregateLiteral
-        expression.fields.each { |field| collect_referenced_constant_names_from_expression(field.value, constants_by_name, referenced_names) }
+        expression.fields.each { |field| traverse_ir_expression(field.value, &expression_visitor) }
       when IR::ArrayLiteral
-        expression.elements.each { |element| collect_referenced_constant_names_from_expression(element, constants_by_name, referenced_names) }
+        expression.elements.each { |element| traverse_ir_expression(element, &expression_visitor) }
       when IR::VariantLiteral
-        expression.fields.each { |field| collect_referenced_constant_names_from_expression(field.value, constants_by_name, referenced_names) }
+        expression.fields.each { |field| traverse_ir_expression(field.value, &expression_visitor) }
       end
     end
 
