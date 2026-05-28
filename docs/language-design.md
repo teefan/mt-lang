@@ -78,6 +78,8 @@ The intended reductions are deliberate:
 
 If a new feature introduces a second ordinary way to express the same concept, the language should delete one of them instead of documenting both.
 
+Declaration metadata should follow the same rule. The concrete follow-on proposal for user-defined and built-in declaration attributes lives in [Declaration Attributes](declaration-attributes.md).
+
 ## Overall shape
 
 - Indentation defines blocks.
