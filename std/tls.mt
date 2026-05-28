@@ -262,10 +262,10 @@ function alloc_poll_handle() -> ptr[NativePollHandle]:
 
 function poll_events_for_status(status_code: int) -> int:
     if status_code == tls_io_want_read:
-        return libuv.uv_poll_event.UV_READABLE | libuv.uv_poll_event.UV_DISCONNECT
+        return int<-(libuv.uv_poll_event.UV_READABLE | libuv.uv_poll_event.UV_DISCONNECT)
 
     if status_code == tls_io_want_write:
-        return libuv.uv_poll_event.UV_WRITABLE
+        return int<-libuv.uv_poll_event.UV_WRITABLE
 
     fatal(c"tls.poll_events_for_status requires WANT_READ or WANT_WRITE")
 
