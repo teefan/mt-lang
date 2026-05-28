@@ -3829,7 +3829,6 @@ module MilkTea
       return true if actual_type_text == expected_type_text
       return true if lossless_integer_surface_compatibility?(actual_type_text, expected_type_text)
       return true if lossless_float_surface_compatibility?(actual_type_text, expected_type_text)
-      return true if integer_to_float_surface_compatibility?(actual_type_text, expected_type_text)
 
       false
     end
@@ -3852,10 +3851,6 @@ module MilkTea
       actual_width = FLOAT_SURFACE_WIDTHS[actual_type_text]
       expected_width = FLOAT_SURFACE_WIDTHS[expected_type_text]
       actual_width && expected_width && expected_width >= actual_width
-    end
-
-    def integer_to_float_surface_compatibility?(actual_type_text, expected_type_text)
-      integer_surface_info(actual_type_text) && FLOAT_SURFACE_WIDTHS.key?(expected_type_text)
     end
 
     def integer_surface_info(type_text)
