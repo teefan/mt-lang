@@ -2442,6 +2442,9 @@ class MilkTeaSemaTest < Minitest::Test
     end
 
     assert_match(/type parameter span uses reserved built-in type name span/, error.message)
+    assert_equal 3, error.line
+    assert_equal source.lines[2].index("span") + 1, error.column
+    assert_equal "span".length, error.length
   end
 
   def test_rejects_type_declaration_named_after_reserved_builtin_type

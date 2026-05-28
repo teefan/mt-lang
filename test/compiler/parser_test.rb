@@ -215,6 +215,22 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal [[:interface, "Damageable"]], function_decl.type_params.first.constraints.map { |constraint| [constraint.kind, constraint.interface_ref&.to_s] }
   end
 
+  def test_parses_type_param_source_coordinates
+    source = <<~MT
+      function identity[span](value: span) -> span:
+          return value
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    function_decl = ast.declarations.first
+    type_param = function_decl.type_params.first
+
+    assert_equal "span", type_param.name
+    assert_equal 1, type_param.line
+    assert_equal source.lines.first.index("span") + 1, type_param.column
+    assert_equal "span".length, type_param.length
+  end
+
   def test_rejects_removed_defaults_constraint_with_explicit_diagnostic
     source = <<~MT
       interface ScreenState:

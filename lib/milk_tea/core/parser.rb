@@ -770,9 +770,16 @@ module MilkTea
       return [] unless match(:lbracket)
 
       params = parse_comma_separated_until(:rbracket) do
-        name = consume_name("expected type parameter name").lexeme
+        name_token = consume_name("expected type parameter name")
+        name = name_token.lexeme
         constraints = parse_type_param_constraints
-        AST::TypeParam.new(name:, constraints:)
+        AST::TypeParam.new(
+          name:,
+          constraints:,
+          line: name_token.line,
+          column: name_token.column,
+          length: name.length,
+        )
       end
 
       consume(:rbracket, "expected ']' after type parameters")

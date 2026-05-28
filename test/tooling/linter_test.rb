@@ -243,14 +243,17 @@ class MilkTeaLinterTest < Minitest::Test
   end
 
   def test_warns_on_type_parameter_named_after_non_primitive_builtin_type
-    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+    source = <<~MT
       function identity[span](value: span) -> span:
           return value
     MT
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt")
 
     assert_equal 1, warnings.length
     warning = warnings.first
     assert_equal "reserved-primitive-name", warning.code
+    assert_equal 1, warning.line
+    assert_equal source.lines.first.index("span") + 1, warning.column
     assert_match(/type parameter 'span' uses reserved built-in type name 'span'/, warning.message)
   end
 
