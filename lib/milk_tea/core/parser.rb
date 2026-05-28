@@ -534,70 +534,69 @@ module MilkTea
       line = previous.line
       name_token = consume_name("expected function name")
       name = name_token.lexeme
-      type_params = parse_declaration_type_params
-      params = nil
-      return_type = nil
-      body = nil
-      with_type_param_names(type_params.map(&:name)) do
-        params = parse_params
-        return_type = match(:arrow) ? parse_type_ref : nil
-        body = parse_block
-      end
+      type_params, params, return_type, body = parse_callable_signature
       AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:, column: name_token.column)
     end
 
     def parse_method_def
-      visibility, _visibility_token = parse_visibility
-      async = match(:async)
-
-      kind = if match(:mutable)
-           :mutable
-             elsif match(:static)
-               :static
-             else
-               :plain
-             end
-      consume(:function, "expected function declaration")
-      line = previous.line
-
-      name_token = consume_name("expected function name")
+      visibility, _visibility_token, async, kind, line, name_token = parse_method_like_decl_head
       name = name_token.lexeme
-      type_params = parse_declaration_type_params
-      params = nil
-      return_type = nil
-      body = nil
-      with_type_param_names(type_params.map(&:name)) do
-        params = parse_params
-        return_type = match(:arrow) ? parse_type_ref : nil
-        body = parse_block
-      end
+      type_params, params, return_type, body = parse_callable_signature
       AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:, column: name_token.column)
     end
 
     def parse_interface_method_decl
-      visibility, visibility_token = parse_visibility
+      visibility, visibility_token, async, kind, line, name_token = parse_method_like_decl_head
       raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
 
+      name = name_token.lexeme
+      _type_params, params, return_type, _body = parse_callable_signature(
+        allow_type_params: false,
+        generic_error_token: name_token,
+        generic_error_message: "interface method #{name} cannot be generic",
+        allow_body: false
+      )
+      AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, line:, column: name_token.column)
+    end
+
+    def parse_method_like_decl_head
+      visibility, visibility_token = parse_visibility
       async = match(:async)
-      kind = if match(:mutable)
-               :mutable
-             elsif match(:static)
-               :static
-             else
-               :plain
-             end
+      kind = parse_method_kind
       consume(:function, "expected function declaration")
       line = previous.line
-
       name_token = consume_name("expected function name")
-      name = name_token.lexeme
-      type_params = parse_declaration_type_params
-      raise error(name_token, "interface method #{name} cannot be generic") if type_params.any?
+      [visibility, visibility_token, async, kind, line, name_token]
+    end
 
-      params = parse_params
-      return_type = match(:arrow) ? parse_type_ref : nil
-      consume_end_of_statement
-      AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, line:, column: name_token.column)
+    def parse_method_kind
+      return :mutable if match(:mutable)
+      return :static if match(:static)
+
+      :plain
+    end
+
+    def parse_callable_signature(allow_type_params: true, generic_error_token: nil, generic_error_message: nil, allow_body: true)
+      type_params = parse_declaration_type_params
+      if !allow_type_params && type_params.any?
+        raise error(generic_error_token || previous, generic_error_message || "generic callable declarations are not allowed here")
+      end
+
+      params = nil
+      return_type = nil
+      body = nil
+
+      with_type_param_names(type_params.map(&:name)) do
+        params = parse_params
+        return_type = match(:arrow) ? parse_type_ref : nil
+        if allow_body
+          body = parse_block
+        else
+          consume_end_of_statement
+        end
+      end
+
+      [type_params, params, return_type, body]
     end
 
     def parse_visibility
@@ -808,18 +807,6 @@ module MilkTea
     def parse_type_param_constraint(interface_constraint_mode)
       if match(:implements)
         return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true]
-      end
-
-      if match(:defaults)
-        raise error(previous, "defaults constraint has been removed; remove 'defaults' and rely on default[T] to require T.default()")
-      end
-
-      if match(:hashes)
-        raise error(previous, "hashes constraint has been removed; remove 'hashes' and rely on hash[T](...) to require T.hash(...)")
-      end
-
-      if match(:equates)
-        raise error(previous, "equates constraint has been removed; remove 'equates' and rely on equal[T](...) to require T.equal(...)")
       end
 
       return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true] if interface_constraint_mode
@@ -1483,10 +1470,6 @@ module MilkTea
       end
       consume(:rbracket, "expected ']' after specialization arguments")
 
-      if removed_cast_call_form?(expression)
-        raise error(previous, "cast[T](value) is no longer supported; use T<-value")
-      end
-
       if match(:lparen)
         call_arguments = parse_call_arguments
         unless specialization_call_target?(expression, arguments, call_arguments)
@@ -1932,12 +1915,8 @@ module MilkTea
       expression.is_a?(AST::Identifier) && %w[array reinterpret span zero].include?(expression.name)
     end
 
-    def removed_cast_call_form?(expression)
-      expression.is_a?(AST::Identifier) && expression.name == "cast"
-    end
-
     def parse_diagnostic_hint?(error)
-      error.message.include?("did you mean T<-expr?") || error.message.include?("cast[T](value) is no longer supported")
+      error.message.include?("did you mean T<-expr?")
     end
 
     def aggregate_specialization_target?(expression)
@@ -1952,6 +1931,11 @@ module MilkTea
     end
 
     def specialization_call_target?(expression, arguments, call_arguments)
+      if expression.is_a?(AST::Identifier) && %w[cast default zero].include?(expression.name) &&
+          !known_type_like_name?(expression.name) && !generic_callable_specialization_target?(expression)
+        return false
+      end
+
       return true if builtin_specialization_target?(expression)
       return true if aggregate_specialization_target?(expression) && call_arguments.all?(&:name)
       return true if generic_callable_specialization_target?(expression) && arguments.all? { |argument| explicit_specialization_argument?(argument.value) }
