@@ -2621,6 +2621,50 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     assert_equal 6, warning.line
   end
 
+  def test_warns_on_redundant_unsafe_block_with_shadowed_read_after_partial_sema_failure
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
+      function read(value: int) -> int:
+          return value
+
+      function main(value: int) -> int:
+          unsafe:
+              let broken = missing
+              return read(value)
+    MT
+
+    warning = warnings.find { |w| w.code == "redundant-unsafe" }
+    assert warning, "expected redundant-unsafe warning"
+    assert_equal 5, warning.line
+  end
+
+  def test_does_not_warn_on_builtin_reinterpret_after_partial_sema_failure_even_when_name_is_shadowed
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
+      function reinterpret[T](value: T) -> T:
+          return value
+
+      function main(value: uint) -> uint:
+          unsafe:
+              let broken = missing
+              return reinterpret[uint](value)
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-unsafe" }
+  end
+
+  def test_does_not_warn_on_builtin_pointer_cast_after_partial_sema_failure_even_when_name_is_shadowed
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt", ignore: Set["unused-local", "prefer-let"])
+      function cast(value: int) -> int:
+          return value
+
+      function main(value: int) -> ptr[int]:
+          unsafe:
+              let broken = missing
+              return ptr[int]<-ptr_of(value)
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-unsafe" }
+  end
+
   def test_fix_source_removes_redundant_unsafe_block
     source = <<~MT
       function main(value: int) -> int:

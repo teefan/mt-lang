@@ -3879,14 +3879,13 @@ module MilkTea
       return false unless expression.callee.callee.is_a?(AST::Identifier)
       return false unless expression.callee.callee.name == "reinterpret"
 
-      !unsafe_builtin_name_shadowed?("reinterpret")
+      true
     end
 
     def builtin_pointer_cast_call_syntax?(expression)
       return false unless expression.callee.is_a?(AST::Specialization)
       return false unless expression.callee.callee.is_a?(AST::Identifier)
       return false unless expression.callee.callee.name == "cast"
-      return false if unsafe_builtin_name_shadowed?("cast")
 
       target_argument = expression.callee.arguments.first
       target_type = target_argument&.value
