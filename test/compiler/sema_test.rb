@@ -2447,6 +2447,34 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal "span".length, error.length
   end
 
+  def test_statement_level_sema_fallback_uses_statement_token_span
+    source = <<~MT
+      # module demo.bad
+
+      function main() -> int:
+          let value = 1
+          return value
+    MT
+
+    checker_class = MilkTea::Sema::Checker
+    original = checker_class.instance_method(:check_local_decl)
+    checker_class.send(:define_method, :check_local_decl) do |_statement, scopes:, return_type:, allow_return:|
+      raise MilkTea::SemaError.new("forced missing location")
+    end
+    checker_class.send(:private, :check_local_decl)
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_equal 4, error.line
+    assert_equal source.lines[3].index("value") + 1, error.column
+    assert_equal "value".length, error.length
+  ensure
+    checker_class.send(:define_method, :check_local_decl, original)
+    checker_class.send(:private, :check_local_decl)
+  end
+
   def test_rejects_type_declaration_named_after_reserved_builtin_type
     source = <<~MT
       # module demo.bad
