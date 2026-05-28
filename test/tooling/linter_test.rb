@@ -2163,6 +2163,16 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
     assert warnings.any? { |warning| warning.code == "redundant-cast" }
   end
 
+  def test_warns_on_redundant_lossless_local_int_to_float_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function main(value: int) -> int:
+          let widened: float = float<-value
+          return 0
+    MT
+
+    assert warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
   def test_does_not_warn_on_required_call_argument_cast
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       function takes_offset(offset: ptr_int) -> ptr_int:
@@ -2170,6 +2180,18 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
 
       function main(offset: ptr_uint) -> ptr_int:
           return takes_offset(ptr_int<-offset)
+    MT
+
+    refute warnings.any? { |warning| warning.code == "redundant-cast" }
+  end
+
+  def test_does_not_warn_on_required_lossy_external_float_argument_cast
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      external function set_scale(value: float) -> void
+
+      function main(channel: int) -> int:
+          set_scale(float<-channel)
+          return 0
     MT
 
     refute warnings.any? { |warning| warning.code == "redundant-cast" }
