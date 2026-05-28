@@ -389,16 +389,19 @@ module MilkTea
       def self.format_error(error)
         line = extract_line(error)
         column = extract_column(error)
+        length = extract_length(error)
+        start_char = [column.to_i - 1, 0].max
+        end_char = start_char + [length.to_i, 1].max
 
         {
           range: {
             start: {
               line: (line.to_i - 1),
-              character: (column.to_i - 1)
+              character: start_char
             },
             end: {
               line: (line.to_i - 1),
-              character: (column.to_i)
+              character: end_char
             }
           },
           severity: 1,  # Error
@@ -506,6 +509,17 @@ module MilkTea
           error.token&.column || 1
         when MilkTea::SemaError
           error.column || 1
+        else
+          1
+        end
+      end
+
+      def self.extract_length(error)
+        case error
+        when MilkTea::ParseError
+          error.token&.lexeme.to_s.length
+        when MilkTea::SemaError
+          error.length || 1
         else
           1
         end

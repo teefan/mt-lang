@@ -12,8 +12,8 @@ module MilkTea
       def initialize(kind:, interface_ref: nil) = super
     end
 
-    TypeParam = Data.define(:name, :constraints) do
-      def initialize(name:, constraints: []) = super
+    TypeParam = Data.define(:name, :constraints, :line, :column, :length) do
+      def initialize(name:, constraints: [], line: nil, column: nil, length: nil) = super
     end
     TypeArgument = Data.define(:value)
     class TypeRef < Data.define(:name, :arguments, :nullable)

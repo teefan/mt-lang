@@ -2262,8 +2262,8 @@ module MilkTea
       Array(type_params).each do |type_param|
         warn_reserved_primitive_name(
           type_param.name,
-          line: nil,
-          column: nil,
+          line: type_param.line,
+          column: type_param.column,
           kind_label:,
           reserved_names: RESERVED_TYPE_BINDING_NAMES,
         )

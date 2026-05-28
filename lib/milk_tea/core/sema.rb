@@ -2,12 +2,13 @@
 
 module MilkTea
   class SemaError < StandardError
-    attr_reader :line, :column
+    attr_reader :line, :column, :length
 
-    def initialize(msg = nil, line: nil, column: nil)
+    def initialize(msg = nil, line: nil, column: nil, length: nil)
       super(msg)
       @line = line
       @column = column
+      @length = length
     end
 
     def to_diagnostic(path: nil)
@@ -15,6 +16,7 @@ module MilkTea
         path:,
         line: @line,
         column: @column,
+        length: @length,
         code: "sema/error",
         message: message,
         severity: :error,
@@ -293,7 +295,7 @@ module MilkTea
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
 
-        { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line] } }
+        { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
       end
 
       private
@@ -852,7 +854,13 @@ module MilkTea
 
       def resolve_type_param_constraints(type_params)
         type_params.each_with_object({}) do |type_param, constraints|
-          ensure_non_reserved_type_binding_name!(type_param.name, kind_label: "type parameter")
+          ensure_non_reserved_type_binding_name!(
+            type_param.name,
+            kind_label: "type parameter",
+            line: type_param.line,
+            column: type_param.column,
+            length: type_param.length,
+          )
           next if type_param.constraints.empty?
 
           resolved_interfaces = []
@@ -4402,36 +4410,36 @@ module MilkTea
         }.fetch(kind)
       end
 
-      def ensure_available_type_name!(name, line: nil, column: nil)
-        ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:) unless raw_module?
+      def ensure_available_type_name!(name, line: nil, column: nil, length: nil)
+        ensure_non_reserved_type_binding_name!(name, kind_label: "type", line:, column:, length:) unless raw_module?
         raise_sema_error("duplicate type #{name}") if @types.key?(name) || @interfaces.key?(name)
       end
 
-      def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil)
-        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:)
+      def ensure_available_value_name!(name, kind_label: "value", line: nil, column: nil, length: nil)
+        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:, length:)
         raise_sema_error("duplicate value #{name}") if @top_level_values.key?(name) || @top_level_functions.key?(name)
       end
 
-      def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil)
+      def ensure_non_reserved_value_type_name!(name, kind_label:, line: nil, column: nil, length: nil)
         return unless Types::RESERVED_VALUE_TYPE_NAMES.include?(name)
 
-        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
       end
 
-      def ensure_non_reserved_import_alias_name!(name, kind_label:, line: nil, column: nil)
+      def ensure_non_reserved_import_alias_name!(name, kind_label:, line: nil, column: nil, length: nil)
         return unless Types::RESERVED_IMPORT_ALIAS_NAMES.include?(name)
 
-        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
       end
 
-      def ensure_non_reserved_type_binding_name!(name, kind_label:, line: nil, column: nil)
+      def ensure_non_reserved_type_binding_name!(name, kind_label:, line: nil, column: nil, length: nil)
         return unless Types::RESERVED_TYPE_BINDING_NAMES.include?(name)
 
-        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:)
+        raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
       end
 
-      def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil)
-        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:)
+      def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil, length: nil)
+        ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:, length:)
       end
 
       def current_type_params
@@ -4697,11 +4705,12 @@ module MilkTea
         @error_node_stack.reverse_each.find { |node| !node.nil? }
       end
 
-      def raise_sema_error(message, node = nil, line: nil, column: nil)
+      def raise_sema_error(message, node = nil, line: nil, column: nil, length: nil)
         target = node || current_error_node
         line ||= source_line(target)
         column ||= source_column(target)
-        raise SemaError.new(message, line:, column:)
+        length ||= source_length(target)
+        raise SemaError.new(message, line:, column:, length:)
       end
 
       def source_line(node)
@@ -4721,6 +4730,18 @@ module MilkTea
         when AST::AwaitExpr then source_line(node.expression)
         when AST::FormatExprPart then source_line(node.expression)
         else nil
+        end
+      end
+
+      def source_length(node)
+        return nil unless node
+        return node.length if node.respond_to?(:length) && node.length
+
+        case node
+        when AST::Identifier then node.name.to_s.length
+        when AST::MemberAccess then node.member.to_s.length
+        else
+          nil
         end
       end
 

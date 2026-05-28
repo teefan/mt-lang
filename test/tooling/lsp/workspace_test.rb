@@ -734,6 +734,38 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_collect_diagnostics_anchor_reserved_type_parameter_sema_and_lint_to_type_param_name
+    Dir.mktmpdir("lsp_workspace_reserved_type_param_anchor") do |dir|
+      path = File.join(dir, "main.mt")
+      content = <<~MT
+        function identity[span](value: span) -> span:
+            return value
+      MT
+      File.write(path, content)
+
+      workspace = MilkTea::LSP::Workspace.new
+      uri = path_to_uri(path)
+      workspace.open_document(uri, content)
+
+      diagnostics = workspace.collect_diagnostics(uri)
+      expected_start = content.lines.first.index("span")
+      expected_end = expected_start + "span".length
+
+      sema = diagnostics.find { |diagnostic| diagnostic.dig(:data, :stage) == "sema" }
+      lint = diagnostics.find { |diagnostic| diagnostic[:code] == "reserved-primitive-name" }
+
+      refute_nil sema
+      refute_nil lint
+      assert_equal 0, sema.dig(:range, :start, :line)
+      assert_equal expected_start, sema.dig(:range, :start, :character)
+      assert_equal expected_end, sema.dig(:range, :end, :character)
+      assert_equal expected_start, lint.dig(:range, :start, :character)
+      assert_equal expected_end, lint.dig(:range, :end, :character)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_collect_diagnostics_keeps_resolved_imports_and_skips_unused_warning_for_missing_imports
     Dir.mktmpdir("lsp_workspace_partial_import_resolution") do |dir|
       path = File.join(dir, "main.mt")
