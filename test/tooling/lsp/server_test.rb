@@ -5778,6 +5778,50 @@ function main(value: int) -> int:
     end
   end
 
+  def test_semantic_tokens_classify_imported_type_static_method_as_method
+    Dir.mktmpdir("mt_lsp_semantic_tokens_static_method") do |dir|
+      demo_dir = File.join(dir, "demo")
+      FileUtils.mkdir_p(demo_dir)
+
+      File.write(File.join(demo_dir, "dep.mt"), <<~MT)
+        public struct Box[T]:
+            value: T
+
+        extending Box[T]:
+            public static function create(value: T) -> Box[T]:
+                return Box[T](value = value)
+      MT
+
+      source_path = File.join(dir, "main.mt")
+      source = <<~MT
+        import demo.dep as dep
+
+        function main() -> dep.Box[int]:
+            return dep.Box[int].create(1)
+      MT
+      File.write(source_path, source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        uri = path_to_uri(source_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        create_entry = semantic_entry_for_lexeme(source, entries, "create")
+
+        assert_equal "method", create_entry.fetch("tokenType")
+      end
+    end
+  end
+
   def test_semantic_tokens_classify_loose_workspace_imported_module_function_reference_as_function
     Dir.mktmpdir("mt_lsp_semantic_tokens_loose_root") do |dir|
       demo_dir = File.join(dir, "demo")

@@ -2180,6 +2180,21 @@ class MilkTeaLinterRedundantCastTest < Minitest::Test
 
     assert_equal source, fixed
   end
+
+  def test_redundant_cast_scan_ignores_heredoc_openers
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      const QUERY: cstr = c<<-SQL
+      SELECT 1
+      SQL
+
+      function is_ascii_space(ch: ubyte) -> bool:
+          return ch == ubyte<-32
+    MT
+
+    redundant_casts = warnings.select { |warning| warning.code == "redundant-cast" }
+    assert_equal 1, redundant_casts.length
+    assert_equal 6, redundant_casts.first.line
+  end
 end
 
 # ── redundant-read-release-temp ─────────────────────────────────────────
