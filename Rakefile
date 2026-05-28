@@ -23,8 +23,10 @@ task verify: [:test, *RAW_BINDINGS.check_task_names, *IMPORTED_BINDINGS.check_ta
 
 desc 'Run all tests'
 Rake::TestTask.new do |t|
+  t.libs << '.'
   t.libs << 'test'
-  t.pattern = ALL_TEST_PATTERN
+  t.loader = :direct
+  t.test_files = FileList[ALL_TEST_PATTERN].sort.map { |path| File.expand_path(path) }
 end
 
 namespace :test do
