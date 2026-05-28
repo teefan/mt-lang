@@ -1302,7 +1302,7 @@ module MilkTea
                 stmt_line = statement.respond_to?(:line) ? statement.line : nil
                 raise e if stmt_line.nil?
 
-                raise SemaError.new(e.message, line: stmt_line)
+                raise_sema_error(e.message, statement)
               end
             end
           end
@@ -4743,10 +4743,16 @@ module MilkTea
       def source_length(node)
         return nil unless node
         return node.length if node.respond_to?(:length) && node.length
+        return node.name.to_s.length if node.respond_to?(:name) && node.name
 
         case node
         when AST::Identifier then node.name.to_s.length
         when AST::MemberAccess then node.member.to_s.length
+        when AST::Assignment then source_length(node.target) || source_length(node.value)
+        when AST::ExpressionStmt then source_length(node.expression)
+        when AST::StaticAssert then source_length(node.condition)
+        when AST::IfStmt
+          node.branches.filter_map { |branch| branch.length || source_length(branch.condition) }.first
         else
           nil
         end
@@ -4768,6 +4774,10 @@ module MilkTea
         when AST::MatchExpr then source_column(node.expression) || node.arms.filter_map { |arm| source_column(arm.pattern) || source_column(arm.value) }.first
         when AST::AwaitExpr then source_column(node.expression)
         when AST::FormatExprPart then source_column(node.expression)
+        when AST::Assignment then source_column(node.target) || source_column(node.value)
+        when AST::ExpressionStmt then source_column(node.expression)
+        when AST::StaticAssert then source_column(node.condition)
+        when AST::IfStmt then node.branches.filter_map { |branch| branch.column || source_column(branch.condition) }.first || node.else_column
         else nil
         end
       end
