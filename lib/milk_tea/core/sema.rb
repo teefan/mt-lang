@@ -3188,15 +3188,6 @@ module MilkTea
       end
 
       def infer_call(expression, scopes:, expected_type: nil)
-        if expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
-          case expression.callee.callee.name
-          when "zero"
-            raise_sema_error("zero[T]() is no longer supported; use zero[T]")
-          when "default"
-            raise_sema_error("default[T]() is no longer supported; use default[T]")
-          end
-        end
-
         callable_kind, callable, receiver = resolve_callable(expression.callee, scopes:)
 
         case callable_kind
@@ -3246,10 +3237,6 @@ module MilkTea
           check_equal_call(callable, expression.arguments, scopes:)
         when :order
           check_order_call(callable, expression.arguments, scopes:)
-        when :zero
-          raise_sema_error("zero[T]() is no longer supported; use zero[T]")
-        when :default
-          raise_sema_error("default[T]() is no longer supported; use default[T]")
         when :fatal
           check_fatal_call(expression.arguments, scopes:)
         when :ref_of

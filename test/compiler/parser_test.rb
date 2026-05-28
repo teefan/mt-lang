@@ -231,49 +231,24 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "span".length, type_param.length
   end
 
-  def test_rejects_removed_defaults_constraint_with_explicit_diagnostic
+  def test_parses_former_constraint_words_as_ordinary_names
     source = <<~MT
-      interface ScreenState:
-          function draw() -> void
+      interface hashes:
+          function hash() -> uint
 
-      function make_default[T defaults and implements ScreenState]() -> T:
-          return default[T]
+      interface equates:
+          function equal() -> bool
+
+      function defaults() -> int:
+          return 0
+
+      function combine[T implements hashes and equates]() -> int:
+          return defaults()
     MT
 
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
+    ast = MilkTea::Parser.parse(source)
 
-    assert_match(/defaults constraint has been removed/, error.message)
-    assert_match(/default\[T\]/, error.message)
-  end
-
-  def test_rejects_removed_hashes_constraint_with_explicit_diagnostic
-    source = <<~MT
-      function same_key[T implements Named and hashes](left: T, right: T) -> uint:
-          return hash[T](left)
-    MT
-
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
-
-    assert_match(/hashes constraint has been removed/, error.message)
-    assert_match(/hash\[T\]/, error.message)
-  end
-
-  def test_rejects_removed_equates_constraint_with_explicit_diagnostic
-    source = <<~MT
-      function same_key[T implements Named and equates](left: T, right: T) -> bool:
-          return equal[T](left, right)
-    MT
-
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
-
-    assert_match(/equates constraint has been removed/, error.message)
-    assert_match(/equal\[T\]/, error.message)
+    assert_equal %w[hashes equates defaults combine], ast.declarations.map(&:name)
   end
 
   def test_parses_module_scope_vars_with_and_without_initializer
@@ -1249,17 +1224,22 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 0, call.callee.index.value
   end
 
-  def test_rejects_explicit_cast_call_form
+  def test_parses_explicit_cast_call_form_as_ordinary_indexed_call
     source = <<~MT
       function main(value: int) -> long:
           return cast[long](value)
     MT
 
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    call = main_fn.body.first.value
 
-    assert_match(/cast\[T\]\(value\) is no longer supported; use T<-value/, error.message)
+    assert_instance_of MilkTea::AST::Call, call
+    assert_instance_of MilkTea::AST::IndexAccess, call.callee
+    assert_instance_of MilkTea::AST::Identifier, call.callee.receiver
+    assert_equal "cast", call.callee.receiver.name
+    assert_instance_of MilkTea::AST::Identifier, call.callee.index
+    assert_equal "long", call.callee.index.name
   end
 
   def test_reports_hint_for_spaced_prefix_cast_tokens
@@ -1636,6 +1616,32 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal :plain, methods.methods[0].kind
     assert_equal true, methods.methods[1].async
     assert_equal :mutable, methods.methods[1].kind
+  end
+
+  def test_rejects_public_interface_methods
+    source = <<~MT
+      interface Damageable:
+          public function take_damage(amount: int) -> void
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/public is not allowed on interface methods/, error.message)
+  end
+
+  def test_rejects_generic_interface_methods
+    source = <<~MT
+      interface Factory:
+          function create[T]() -> T
+    MT
+
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(source)
+    end
+
+    assert_match(/interface method create cannot be generic/, error.message)
   end
 
   def test_parses_generic_methods_block_targets

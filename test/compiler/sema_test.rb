@@ -655,8 +655,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/defaults constraint has been removed/, error.message)
-    assert_match(/default\[T\]/, error.message)
+    assert_match(/expected '\]' after type parameters/, error.message)
   end
 
   def test_rejects_removed_defaults_constraint_on_generic_function
@@ -678,8 +677,7 @@ class MilkTeaSemaTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/defaults constraint has been removed/, error.message)
-    assert_match(/default\[T\]/, error.message)
+    assert_match(/expected '\]' after type parameters/, error.message)
   end
 
   def test_type_checks_imported_public_interface_constraints
@@ -6049,7 +6047,22 @@ extending Counter:
       check_source(source)
     end
 
-    assert_match(/default\[T\]\(\) is no longer supported; use default\[T\]/, error.message)
+    assert_match(/unknown name default/, error.message)
+  end
+
+  def test_rejects_cast_call_form
+    source = <<~MT
+      # module demo.cast_call_form
+
+      function main(value: int) -> long:
+          return cast[long](value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown name cast/, error.message)
   end
 
   def test_rejects_default_override_with_parameters
