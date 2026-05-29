@@ -1034,9 +1034,22 @@ function main(value: int) -> int:
         "position" => { "line" => line, "character" => character },
       })
 
+      zero_line = source.lines.index { |text| text.include?("zero[Box]") }
+      zero_character = source.lines.fetch(zero_line).rindex("zero")
+
+      zero_hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => zero_line, "character" => zero_character },
+      })
+
+      zero_hover_value = zero_hover_response.dig("result", "contents", "value")
+      assert_includes zero_hover_value, "builtin zero[Box] -> Box"
+      assert_includes zero_hover_value, "value form, not a callable"
+
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "builtin default[Box] -> Box"
       assert_includes hover_value, "requires an accessible zero-argument associated function `T.default()` that returns `T`"
+      assert_includes hover_value, "value form, not a callable"
       refute_includes hover_value, "local default"
     end
   end
@@ -1141,6 +1154,58 @@ function main(value: int) -> int:
       })
       order_hover_value = order_hover.dig("result", "contents", "value")
       assert_includes order_hover_value, "builtin order[Key](left, right) -> int"
+    end
+  end
+
+  def test_builtin_hover_info_describes_attribute_reflection_helpers
+    source = <<~MT
+      public attribute[field, callable] trace(name: str)
+
+      struct Packet:
+          @[trace("payload_len")]
+          payload_len: uint
+
+      @[trace("parse_packet")]
+      function parse_packet() -> int:
+          return 0
+
+      function main() -> ptr_uint:
+          let field_present = has_attribute(field_of(Packet, payload_len), trace)
+          let callable_present = has_attribute(callable_of(parse_packet), trace)
+          if field_present and callable_present:
+              return attribute_arg[str](attribute_of(field_of(Packet, payload_len), trace), name).len
+          return 0
+    MT
+
+    tokens = MilkTea::Lexer.lex(source, path: "/tmp/lsp_builtin_attribute_reflection_hover.mt")
+    server = MilkTea::LSP::Server.new(protocol: RecordingProtocol.new)
+    begin
+      fetch_builtin_hover = lambda do |lexeme, occurrence = 0|
+        token_index = tokens.each_index.select { |index| tokens[index].lexeme == lexeme }.fetch(occurrence)
+        server.send(:builtin_hover_info, lexeme, tokens, token_index)
+      end
+
+      field_hover = fetch_builtin_hover.call("field_of")
+      assert_includes field_hover.fetch(:signature), "builtin field_of(Type, field_name) -> field_handle"
+      assert_includes field_hover.fetch(:docs), "compile-time handle for the named field"
+
+      callable_hover = fetch_builtin_hover.call("callable_of")
+      assert_includes callable_hover.fetch(:signature), "builtin callable_of(name) -> callable_handle"
+      assert_includes callable_hover.fetch(:docs), "compile-time handle for a callable declaration name"
+
+      has_attribute_hover = fetch_builtin_hover.call("has_attribute")
+      assert_includes has_attribute_hover.fetch(:signature), "builtin has_attribute(target, attribute_name) -> bool"
+      assert_includes has_attribute_hover.fetch(:docs), "checks at compile time whether the resolved attribute is applied"
+
+      attribute_of_hover = fetch_builtin_hover.call("attribute_of")
+      assert_includes attribute_of_hover.fetch(:signature), "builtin attribute_of(target, attribute_name) -> attribute_handle"
+      assert_includes attribute_of_hover.fetch(:docs), "use `has_attribute(...)` when absence is expected"
+
+      attribute_arg_hover = fetch_builtin_hover.call("attribute_arg")
+      assert_includes attribute_arg_hover.fetch(:signature), "builtin attribute_arg[str](attribute, param_name) -> str"
+      assert_includes attribute_arg_hover.fetch(:docs), "`T` must exactly match the declared parameter type"
+    ensure
+      server&.send(:stop_diagnostics_workers)
     end
   end
 
