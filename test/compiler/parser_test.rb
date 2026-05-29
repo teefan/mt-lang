@@ -1509,7 +1509,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil local_decl.value
   end
 
-  def test_parses_zero_constructor_calls
+  def test_parses_zero_value_specializations
     source = <<~MT
       function main() -> int:
           let palette = zero[array[uint, 4]]
@@ -1531,7 +1531,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 4, array_type.arguments[1].value.value
   end
 
-  def test_parses_array_char_zero_constructor_calls
+  def test_parses_array_char_zero_value_specializations
     source = <<~MT
       function main() -> int:
           let buffer = zero[array[char, 64]]

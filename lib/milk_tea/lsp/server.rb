@@ -5136,14 +5136,30 @@ module MilkTea
           signature: 'builtin read(value) -> T',
           docs: '`read(value)` projects a `ref[T]` or pointer-like value to its referent.'
         },
+        'field_of' => {
+          signature: 'builtin field_of(Type, field_name) -> field_handle',
+          docs: '`field_of(Type, field_name)` returns a compile-time handle for the named field on a struct type.'
+        },
+        'callable_of' => {
+          signature: 'builtin callable_of(name) -> callable_handle',
+          docs: '`callable_of(name)` returns a compile-time handle for a callable declaration name.'
+        },
+        'has_attribute' => {
+          signature: 'builtin has_attribute(target, attribute_name) -> bool',
+          docs: '`has_attribute(target, attribute_name)` checks at compile time whether the resolved attribute is applied to the target.'
+        },
+        'attribute_of' => {
+          signature: 'builtin attribute_of(target, attribute_name) -> attribute_handle',
+          docs: '`attribute_of(target, attribute_name)` returns the applied attribute handle for the resolved target-and-attribute pair; use `has_attribute(...)` when absence is expected.'
+        },
       }.freeze
 
       def builtin_hover_info(name, tokens, token_index)
         specialization_info = builtin_value_specialization_info(name, tokens, token_index)
         return specialization_info if specialization_info
 
-        associated_hook_info = builtin_associated_hook_hover_info(name, tokens, token_index)
-        return associated_hook_info if associated_hook_info
+        specialized_call_info = builtin_specialized_call_hover_info(name, tokens, token_index)
+        return specialized_call_info if specialized_call_info
 
         type_constructor_info = builtin_type_constructor_hover_info(name, tokens, token_index)
         return type_constructor_info if type_constructor_info
@@ -5166,9 +5182,9 @@ module MilkTea
 
         docs = case name
                when 'zero'
-                 '`zero[T]` returns the raw zero-initialized value for `T`.'
+                 '`zero[T]` returns the raw zero-initialized value for `T`. It is a value form, not a callable.'
                when 'default'
-                 '`default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.'
+                 '`default[T]` returns the semantic default value for `T` and requires an accessible zero-argument associated function `T.default()` that returns `T`. It is a value form, not a callable.'
                when 'reinterpret'
                  '`reinterpret[T](value)` bit-casts a value to `T`; it requires `unsafe` and compatible concrete sized types.'
                end
@@ -5229,8 +5245,8 @@ module MilkTea
         }
       end
 
-      def builtin_associated_hook_hover_info(name, tokens, token_index)
-        return nil unless BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name)
+      def builtin_specialized_call_hover_info(name, tokens, token_index)
+        return nil unless BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name) || name == 'attribute_arg'
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -5242,6 +5258,16 @@ module MilkTea
         return nil unless after_bracket_index && tokens[after_bracket_index].type == :lparen
 
         specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        if name == 'attribute_arg'
+          target_type = render_builtin_specialization(tokens[(lbracket_index + 1)...rbracket_index])
+          return nil if target_type.empty?
+
+          return {
+            signature: "builtin #{specialization}(attribute, param_name) -> #{target_type}",
+            docs: '`attribute_arg[T](attribute, param_name)` returns the compile-time argument value for the named attribute parameter; `T` must exactly match the declared parameter type.'
+          }
+        end
+
         docs = case name
                when 'hash'
                  '`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers.'

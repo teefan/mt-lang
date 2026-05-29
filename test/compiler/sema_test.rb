@@ -6150,6 +6150,22 @@ extending Counter:
     assert_match(/unknown name default/, error.message)
   end
 
+  def test_rejects_zero_call_form
+    source = <<~MT
+      # module demo.zero_call_form
+
+      function main() -> int:
+          let value = zero[int]()
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown name zero/, error.message)
+  end
+
   def test_rejects_cast_call_form
     source = <<~MT
       # module demo.cast_call_form
