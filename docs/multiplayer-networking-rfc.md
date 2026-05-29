@@ -224,11 +224,12 @@ Reading `RpcContext` or payload values is ordinary safe code; `unsafe:` is only 
 
 ### Descriptor hook functions
 
-The compiler must support these narrow library hooks in `std.multiplayer`:
+The compiler must support these narrow library hooks in `std.multiplayer`.
+The relevant user-facing surface is the call shape, not a general runtime reflection API:
 
 ```mt
-state_descriptor[T]() -> StateDescriptor
-rpc_descriptor(target: callable_handle) -> RpcDescriptor
+state_descriptor[T]()
+rpc_descriptor(callable_of(...))
 ```
 
 Rules:

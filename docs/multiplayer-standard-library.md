@@ -144,16 +144,26 @@ Primary types:
 Primary functions and methods:
 
 - `World.create(registry: Registry, config: Config, role: WorldRole) -> Result[World, Error]`
-- `World.spawn[T](state: T, owner: ConnectionId?) -> Result[EntityId, Error]`
+- `World.spawn[T](state: T, owner: Option[ConnectionId]) -> Result[EntityId, Error]`
 - `World.despawn(entity: EntityId) -> Result[bool, Error]`
-- `World.transfer_ownership(entity: EntityId, owner: ConnectionId?) -> Result[bool, Error]`
-- `World.state_ref[T](entity: EntityId) -> ref[T]?`
+- `World.transfer_ownership(entity: EntityId, owner: Option[ConnectionId]) -> Result[bool, Error]`
+- `World.state_ptr[T](entity: EntityId) -> ptr[T]?`
 - `World.state_copy[T](entity: EntityId) -> Option[T]`
 
 Notes:
 
+- `Registry.freeze()` must be called before `World.create(...)`; `World.create(...)` fails if the registry is still mutable.
+- `World.create(...)` snapshots the frozen registry contract for that world instance; it does not reopen registration.
+- `World.spawn[T](...)` fails when `state_descriptor[T]()` is not already registered in the frozen registry.
+- `owner` is `Option[ConnectionId]`, not a nullable integer ID. `Option.some(...)` is only meaningful for owner-authoritative replicated types.
+- `World.despawn(...)` returns `Result.success(value = false)` when the entity is already absent.
+- `World.transfer_ownership(...)` returns `Result.success(value = false)` when the entity is absent or already has the requested owner. It fails only for invalid world state or unsupported authority mode.
+- `World.state_ptr[T](...)` returns `null` when the entity is absent or when the entity exists but is registered under a different replicated type.
+- `World.state_copy[T](...)` returns `Option.none` for that same absent-or-type-mismatch path.
+- The pointer form is explicit because Milk Tea does not have a nullable `ref[T]` type.
+- V1 keeps authority enforcement in the world/session runtime rather than in capability-typed references. `World` owns data; backend code decides which mutations are allowed to become network-visible.
 - V1 should compute state deltas by comparing current state to the last acknowledged baseline instead of relying on hidden dirty-bit mutation tracking.
-- `state_ref[T](...)` is acceptable in this model because runtime diffing happens later at snapshot time.
+- `state_ptr[T](...)` is acceptable in this model because runtime diffing happens later at snapshot time.
 - Client worlds own interpolation buffers and last-authoritative copies internally.
 
 ### `std.multiplayer.rpc`
