@@ -98,7 +98,8 @@ function main() -> int:
 
 import std.mem.stack as stack
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 
 function main() -> int:

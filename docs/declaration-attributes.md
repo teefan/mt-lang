@@ -97,9 +97,9 @@ Attribute references use attribute-name parsing, not ordinary value/type name pa
 Rules:
 
 1. User-declared attribute names must be ordinary identifiers.
-2. Compiler-built-in attribute references may use reserved keyword spellings such as `packed` and `align`.
+2. Compiler-built-in attribute references use the built-in spellings `packed` and `align`.
 3. Module-qualified attribute references such as `serde.rename` are allowed for imported user-defined attributes.
-4. Built-in keyword spellings are reserved for compiler-provided attributes and are not valid user-defined attribute declaration names.
+4. Built-in attribute spellings are reserved in the attribute namespace and are not valid user-defined attribute declaration names.
 
 Examples:
 
@@ -235,7 +235,7 @@ Rules:
 6. Attribute declarations are allowed only in ordinary files, not raw `external` files.
 7. Attribute declarations are passive metadata declarations. They do not have bodies, do not declare methods, and cannot participate in `extending` blocks.
 8. Attribute declarations do not produce runtime values and cannot be used as ordinary value or type expressions.
-9. User-declared attribute names must be ordinary identifiers; reserved keyword spellings such as `packed` and `align` are reserved for compiler-built-in attributes.
+9. User-declared attribute names must be ordinary identifiers; built-in spellings such as `packed` and `align` are reserved for compiler-built-in attributes in the attribute namespace.
 
 ### Do attributes have implementation or methods?
 
@@ -263,7 +263,7 @@ The compiler provides these built-in attributes:
 
 These are ordinary attributes in application syntax, but they have compiler-defined semantics.
 
-Their spellings are reserved keywords and are referenced through attribute-name parsing; they are not user-declarable source-level attribute names.
+Their spellings are reserved built-in names in the attribute namespace and are referenced through attribute-name parsing; they are not global language keywords or user-declarable source-level attribute names.
 
 ### `packed`
 
@@ -586,7 +586,7 @@ public function parse_packet(data: str) -> Packet:
 ## Implementation outline
 
 1. Add `@` as a lexer token and add `attribute` as a top-level declaration keyword.
-2. Add attribute-name parsing for attribute applications and reflection queries. That parser must accept ordinary identifier names for user-defined attributes and reserved keyword spellings for compiler-built-in attributes such as `packed` and `align`.
+2. Add attribute-name parsing for attribute applications and reflection queries. That parser must accept ordinary identifier names for user-defined attributes and the built-in attribute spellings `packed` and `align`.
 3. Remove legacy `packed struct` and `align(...) struct` declaration grammar and parse those only through `@[packed]` and `@[align(...)]` applications.
 4. Parse reusable attribute application lists before supported declarations and fields, preserving source order across stacked `@[...]` blocks.
 5. Preserve documentation-comment attachment across intervening attribute blocks so docs continue to attach to the following declaration rather than to the attribute applications.

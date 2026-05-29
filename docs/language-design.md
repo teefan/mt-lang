@@ -1299,18 +1299,21 @@ Capturing closures should not be lowered to hidden heap objects. If user state i
 The language must expose a small set of layout controls for interop and SIMD-friendly code.
 
 ```mt
-packed struct FileHeader:
+@[packed]
+struct FileHeader:
 	magic: array[ubyte, 4]
 	version: ushort
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
 	m: array[float, 16]
 ```
 
 Required controls:
 
-- `packed struct`
-- `align(n)`
+- `@[packed]`
+- `@[align(n)]`
+- `attribute[target, ...]`
 - `size_of(T)`
 - `align_of(T)`
 - `offset_of(T, field)`

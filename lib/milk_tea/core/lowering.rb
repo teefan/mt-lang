@@ -4633,7 +4633,8 @@ module MilkTea
       def prepare_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true, allow_void_propagation: false)
         return [[], expression] unless expression
 
-        if expression.is_a?(AST::Call) && (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
+        if expression.is_a?(AST::Call) &&
+            (foreign_call = foreign_call_info(expression, env)) && !allow_root_statement_foreign &&
             foreign_call_requires_statement_lowering?(expression, foreign_call[:binding], env:)
           type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_foreign_call_statement(foreign_call, env:, expected_type: type, statement_position: false)
@@ -5938,6 +5939,10 @@ module MilkTea
       end
 
       def lower_call(expression, env:, type:)
+        if (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), type))
+          return literal
+        end
+
         kind, callee_name, receiver, callee_type, callee_binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
         case kind
@@ -7947,6 +7952,10 @@ module MilkTea
           return IR::ZeroInit.new(type:)
         end
 
+        if (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), type))
+          return literal
+        end
+
         if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
           callable_kind, function_binding, = callable_resolution
           raise LoweringError, "specialized method must be called" if callable_kind == :method
@@ -7996,6 +8005,14 @@ module MilkTea
             [:read, nil, nil, nil]
           elsif callee.name == "ptr_of"
             [:ptr_of, nil, nil, nil]
+          elsif callee.name == "field_of"
+            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("field_of", arguments, env)]
+          elsif callee.name == "callable_of"
+            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("callable_of", arguments, env)]
+          elsif callee.name == "has_attribute"
+            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("has_attribute", arguments, env)]
+          elsif callee.name == "attribute_of"
+            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
             [ :struct_literal, nil, nil, type ]
           else
@@ -8123,6 +8140,10 @@ module MilkTea
               Types::Parameter.new("right", resolution.target_type),
             ]
             return [:order, resolution.callee_name, nil, Types::Function.new("order", params:, return_type: @types.fetch("int")), resolution.binding]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
+            return [:compile_time_builtin, nil, nil, compile_time_builtin_specialization_function_type(callee)]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
@@ -8293,7 +8314,7 @@ module MilkTea
           case kind
           when :function, :method, :associated_method, :callable_value,
             :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
-            :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
+            :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr, :compile_time_builtin,
             :cast, :reinterpret, :zero, :hash, :equal, :order
             callee_type.return_type
           when :struct_literal, :array, :variant_arm_ctor
@@ -8871,7 +8892,262 @@ module MilkTea
           resolve_type_ref: lambda do |type_ref|
             resolve_type_ref(type_ref)
           end,
+          resolve_call: lambda do |call_expression|
+            evaluate_compile_time_call(call_expression, env:)
+          end,
         )
+      end
+
+      def evaluate_compile_time_call(expression, env:)
+        case expression.callee
+        when AST::Identifier
+          case expression.callee.name
+          when "field_of"
+            evaluate_field_of_call(expression.arguments, env:)
+          when "callable_of"
+            evaluate_callable_of_call(expression.arguments)
+          when "has_attribute"
+            evaluate_has_attribute_call(expression.arguments, env:)
+          when "attribute_of"
+            evaluate_attribute_of_call(expression.arguments, env:)
+          else
+            nil
+          end
+        when AST::Specialization
+          if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
+            evaluate_attribute_arg_call(expression.arguments, env:)
+          end
+        else
+          nil
+        end
+      end
+
+      def evaluate_field_of_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 2)
+
+        struct_handle = resolve_struct_handle_argument(arguments.first.value, env:)
+        return nil unless struct_handle
+
+        field_name = reflection_identifier_name(arguments[1].value)
+        return nil unless field_name
+
+        field_declaration = struct_handle.declaration.fields.find { |field| field.name == field_name }
+        return nil unless field_declaration
+
+        Types::FieldHandle.new(struct_handle, field_name, field_declaration)
+      end
+
+      def evaluate_callable_of_call(arguments)
+        return nil unless reflection_positional_arguments?(arguments, 1)
+
+        resolve_callable_handle_argument(arguments.first.value)
+      end
+
+      def evaluate_has_attribute_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 2)
+
+        target = evaluate_reflection_target_argument(arguments.first.value, env:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        return nil unless attribute_binding_supports_target?(binding, target)
+
+        !find_attribute_application(target, binding).nil?
+      end
+
+      def evaluate_attribute_of_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 2)
+
+        target = evaluate_reflection_target_argument(arguments.first.value, env:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        return nil unless attribute_binding_supports_target?(binding, target)
+
+        application = find_attribute_application(target, binding)
+        return nil unless application
+
+        Types::AttributeHandle.new(
+          binding.name,
+          binding.module_name,
+          target,
+          binding.params,
+          attribute_argument_values(binding, application, env:),
+        )
+      end
+
+      def evaluate_attribute_arg_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 2)
+
+        attribute_handle = compile_time_const_value(arguments.first.value, env:)
+        return nil unless attribute_handle.is_a?(Types::AttributeHandle)
+
+        param_name = reflection_identifier_name(arguments[1].value)
+        return nil unless param_name && attribute_handle.argument_values
+
+        attribute_handle.argument_values[param_name]
+      end
+
+      def evaluate_reflection_target_argument(expression, env:)
+        struct_handle = resolve_struct_handle_argument(expression, env:)
+        return struct_handle if struct_handle
+
+        value = compile_time_const_value(expression, env:)
+        return value if value.is_a?(Types::FieldHandle) || value.is_a?(Types::CallableHandle)
+
+        nil
+      end
+
+      def reflection_positional_arguments?(arguments, expected_length)
+        arguments.length == expected_length && arguments.none?(&:name)
+      end
+
+      def resolve_struct_handle_argument(expression, env:)
+        type = reflection_type_from_expression(expression, env:)
+        return nil unless type
+
+        struct_handle_for_type(type)
+      end
+
+      def reflection_type_from_expression(expression, env:)
+        case expression
+        when AST::Identifier
+          return nil if env && lookup_value(expression.name, env)
+
+          @types[expression.name]
+        when AST::MemberAccess
+          return nil unless expression.receiver.is_a?(AST::Identifier)
+
+          imported_module = @imports[expression.receiver.name]
+          return nil unless imported_module
+          return nil if imported_module.private_type?(expression.member)
+
+          imported_module.types[expression.member]
+        else
+          nil
+        end
+      end
+
+      def struct_handle_for_type(type)
+        base_type = type.is_a?(Types::StructInstance) ? type.definition : type
+        return nil unless base_type.is_a?(Types::Struct) || base_type.is_a?(Types::GenericStructDefinition)
+        return nil unless base_type.respond_to?(:module_name)
+
+        analysis = analysis_for_module(base_type.module_name)
+        declaration = analysis.ast.declarations.find do |decl|
+          decl.is_a?(AST::StructDecl) && decl.name == base_type.name
+        end
+        return nil unless declaration
+
+        Types::StructHandle.new(base_type, declaration)
+      end
+
+      def resolve_callable_handle_argument(expression)
+        case expression
+        when AST::Identifier
+          binding = @functions[expression.name]
+          return nil unless binding&.ast
+
+          Types::CallableHandle.new(expression.name, binding.ast)
+        when AST::MemberAccess
+          return nil unless expression.receiver.is_a?(AST::Identifier)
+
+          imported_module = @imports[expression.receiver.name]
+          return nil unless imported_module
+          return nil if imported_module.private_function?(expression.member)
+
+          binding = imported_module.functions[expression.member]
+          return nil unless binding&.ast
+
+          Types::CallableHandle.new("#{expression.receiver.name}.#{expression.member}", binding.ast)
+        else
+          nil
+        end
+      end
+
+      def resolve_attribute_name_argument(expression)
+        case expression
+        when AST::Identifier
+          @analysis.attributes[expression.name] || builtin_attribute_binding(expression.name)
+        when AST::MemberAccess
+          return nil unless expression.receiver.is_a?(AST::Identifier)
+
+          imported_module = @imports[expression.receiver.name]
+          return nil unless imported_module
+          return nil if imported_module.private_attribute?(expression.member)
+
+          imported_module.attributes[expression.member]
+        else
+          nil
+        end
+      end
+
+      def reflection_identifier_name(expression)
+        expression.is_a?(AST::Identifier) ? expression.name : nil
+      end
+
+      def attribute_binding_supports_target?(binding, target)
+        binding && target && binding.targets.include?(attribute_target_kind(target))
+      end
+
+      def attribute_target_kind(target)
+        case target
+        when Types::StructHandle then :struct
+        when Types::FieldHandle then :field
+        when Types::CallableHandle then :callable
+        end
+      end
+
+      def target_attribute_applications(target)
+        case target
+        when Types::StructHandle then target.declaration.attributes
+        when Types::FieldHandle then target.field_declaration.attributes
+        when Types::CallableHandle then target.declaration.attributes
+        else []
+        end
+      end
+
+      def find_attribute_application(target, binding)
+        target_attribute_applications(target).find do |application|
+          application_binding = resolve_attribute_binding_for_name(application.name)
+          application_binding && same_attribute_binding?(application_binding, binding)
+        end
+      end
+
+      def resolve_attribute_binding_for_name(name)
+        case name.parts.length
+        when 1
+          @analysis.attributes[name.parts.first] || builtin_attribute_binding(name.parts.first)
+        when 2
+          imported_module = @imports[name.parts.first]
+          return nil unless imported_module
+          return nil if imported_module.private_attribute?(name.parts.last)
+
+          imported_module.attributes[name.parts.last]
+        else
+          nil
+        end
+      end
+
+      def same_attribute_binding?(left, right)
+        left.name == right.name && left.module_name == right.module_name
+      end
+
+      def builtin_attribute_binding(name)
+        Sema.builtin_attribute_binding(name, @types)
+      end
+
+      def attribute_argument_values(binding, application, env:)
+        positional_index = 0
+
+        application.arguments.each_with_object({}) do |argument, values|
+          param_name = if argument.name
+            argument.name
+          else
+            parameter = binding.params[positional_index]
+            positional_index += 1
+            parameter&.name
+          end
+          next unless param_name
+
+          values[param_name] = compile_time_const_value(argument.value, env:)
+        end
       end
 
       def specialize_function_binding(binding, arguments, env, receiver_type: nil)
@@ -9900,6 +10176,29 @@ module MilkTea
 
         nil
       end
+
+      def compile_time_builtin_function_type(name, arguments, env)
+        return_type = case name
+        when "field_of"
+          evaluate_field_of_call(arguments || [], env:)
+        when "callable_of"
+          evaluate_callable_of_call(arguments || [])
+        when "has_attribute"
+          @types.fetch("bool")
+        when "attribute_of"
+          evaluate_attribute_of_call(arguments || [], env:)
+        else
+          nil
+        end
+        raise LoweringError, "unsupported compile-time builtin #{name}" unless return_type
+
+        Types::Function.new(name, params: [], return_type: return_type)
+      end
+
+      def compile_time_builtin_specialization_function_type(callee)
+        Types::Function.new("attribute_arg", params: [], return_type: resolve_type_ref(callee.arguments.fetch(0).value))
+      end
+
 
       def rewrite_static_storage_initializer(expression)
         case expression

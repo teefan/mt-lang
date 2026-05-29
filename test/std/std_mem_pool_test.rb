@@ -119,7 +119,8 @@ function main() -> int:
 
 import std.mem.pool as pool
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 
 function main() -> int:

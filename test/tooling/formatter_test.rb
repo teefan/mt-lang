@@ -96,6 +96,19 @@ class MilkTeaFormatterTest < Minitest::Test
     end
   end
 
+  def test_tidy_mode_wraps_long_static_assert_attribute_reflection_call
+    source = <<~MT
+      static_assert(has_attribute(PacketBuffer, align) and attribute_arg[ptr_uint](attribute_of(PacketBuffer, align), bytes) == 16, "PacketBuffer should stay 16-byte aligned")
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 120)
+
+    assert_includes formatted, "static_assert(\n"
+    formatted.lines.each do |line|
+      assert_operator line.delete_suffix("\n").length, :<=, 120
+    end
+  end
+
   def test_tidy_mode_wraps_long_tuple_literal_without_trailing_comma
     source = <<~MT
       function main() -> int:
@@ -390,6 +403,36 @@ class MilkTeaFormatterTest < Minitest::Test
 
     assert_includes formatted, "const text: cstr = c\"いろはにほへと　ちりぬるを\\nわかよたれそ\""
     assert_includes formatted, "\nconst path: cstr = c\"../resources/DotGothic16-Regular.ttf\""
+  end
+
+  def test_tidy_mode_formats_attribute_declarations_and_applications
+    source = <<~MT
+      public  attribute[field, callable]  trace(name: str)
+
+      @[packed, align(16)]
+      struct Packet:
+          @[trace("payload_len")]
+          payload_len : uint
+
+      @[trace(name = "parse_packet")]
+      function parse_packet() -> int:
+          return 0
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_equal <<~MT, formatted
+      public attribute[field, callable] trace(name: str)
+
+      @[packed, align(16)]
+      struct Packet:
+          @[trace("payload_len")]
+          payload_len : uint
+
+      @[trace(name = "parse_packet")]
+      function parse_packet() -> int:
+          return 0
+    MT
   end
 
   def test_canonical_groups_raw_module_simple_declarations_by_kind

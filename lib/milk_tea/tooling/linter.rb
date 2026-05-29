@@ -1363,9 +1363,12 @@ module MilkTea
     end
 
     def render_struct_surface(declaration)
-      prefix = declaration.packed ? "packed struct" : "struct"
-      suffix = declaration.alignment ? " align(#{declaration.alignment})" : ""
-      "#{prefix} #{declaration.name}#{render_type_params_surface(declaration.type_params)}#{render_implements_surface(declaration.implements)}#{suffix} { #{render_fields_surface(declaration.fields)} }"
+      prefix = render_attribute_applications_surface(declaration.attributes)
+      text = +""
+      text << "#{prefix} " unless prefix.empty?
+      text << "struct #{declaration.name}#{render_type_params_surface(declaration.type_params)}#{render_implements_surface(declaration.implements)}"
+      text << " { #{render_fields_surface(declaration.fields)} }"
+      text
     end
 
     def render_union_surface(declaration)
@@ -1421,6 +1424,34 @@ module MilkTea
 
     def render_fields_surface(fields)
       fields.map { |field| "#{field.name}: #{render_type_surface(field.type)}" }.join(", ")
+    end
+
+    def render_attribute_applications_surface(attributes)
+      attributes.map { |attribute| render_attribute_application_surface(attribute) }.join(' ')
+    end
+
+    def render_attribute_application_surface(attribute)
+      text = +"@[#{attribute.name}"
+      unless attribute.arguments.empty?
+        rendered_arguments = attribute.arguments.map do |argument|
+          value = case argument.value
+                  when AST::IntegerLiteral, AST::FloatLiteral
+                    argument.value.lexeme
+                  when AST::StringLiteral
+                    argument.value.lexeme
+                  when AST::Identifier
+                    argument.value.name
+                  when AST::MemberAccess
+                    "#{argument.value.receiver.name}.#{argument.value.member}"
+                  else
+                    "..."
+                  end
+          argument.name ? "#{argument.name} = #{value}" : value
+        end
+        text << "(#{rendered_arguments.join(', ')})"
+      end
+      text << "]"
+      text
     end
 
     def render_param_surface(param)

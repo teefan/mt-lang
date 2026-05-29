@@ -122,6 +122,24 @@ class MilkTeaLexerTest < Minitest::Test
     assert_includes types, :ellipsis
   end
 
+  def test_lexes_attribute_tokens
+    types = MilkTea::Lexer.lex("@[packed]\npublic attribute[field] rename(name: str)\n").map(&:type)
+
+    assert_includes types, :at
+    assert_includes types, :attribute
+  end
+
+  def test_lexes_builtin_attribute_names_as_identifiers
+    tokens = MilkTea::Lexer.lex("@[packed]\n@[align(16)]\n")
+    packed_token = tokens.find { |token| token.lexeme == "packed" }
+    align_token = tokens.find { |token| token.lexeme == "align" }
+
+    refute_nil packed_token
+    refute_nil align_token
+    assert_equal :identifier, packed_token.type
+    assert_equal :identifier, align_token.type
+  end
+
   def test_lexes_pass_as_keyword
     types = MilkTea::Lexer.lex("function main() -> void:\n    pass\n").map(&:type)
 

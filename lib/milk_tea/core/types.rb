@@ -234,6 +234,110 @@ module MilkTea
       end
     end
 
+    class StructHandle < Base
+      attr_reader :struct_type, :declaration
+
+      def initialize(struct_type, declaration)
+        @struct_type = struct_type
+        @declaration = declaration
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(StructHandle) && other.struct_type == struct_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, struct_type].hash
+      end
+
+      def to_s
+        "field target #{struct_type}"
+      end
+    end
+
+    class FieldHandle < Base
+      attr_reader :struct_handle, :field_name, :field_declaration
+
+      def initialize(struct_handle, field_name, field_declaration)
+        @struct_handle = struct_handle
+        @field_name = field_name
+        @field_declaration = field_declaration
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(FieldHandle) && other.struct_handle == struct_handle && other.field_name == field_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, struct_handle, field_name].hash
+      end
+
+      def to_s
+        "field_of(#{struct_handle.struct_type}, #{field_name})"
+      end
+    end
+
+    class CallableHandle < Base
+      attr_reader :display_name, :declaration
+
+      def initialize(display_name, declaration)
+        @display_name = display_name
+        @declaration = declaration
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(CallableHandle) && other.display_name == display_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, display_name].hash
+      end
+
+      def to_s
+        "callable_of(#{display_name})"
+      end
+    end
+
+    class AttributeHandle < Base
+      attr_reader :attribute_name, :attribute_module_name, :target, :params, :argument_values
+
+      def initialize(attribute_name, attribute_module_name, target, params, argument_values)
+        @attribute_name = attribute_name
+        @attribute_module_name = attribute_module_name
+        @target = target
+        @params = params.freeze
+        @argument_values = argument_values&.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(AttributeHandle) &&
+          other.attribute_name == attribute_name &&
+          other.attribute_module_name == attribute_module_name &&
+          other.target == target
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, attribute_module_name, attribute_name, target].hash
+      end
+
+      def to_s
+        qualifier = attribute_module_name ? "#{attribute_module_name}." : ""
+        "attribute_of(#{target}, #{qualifier}#{attribute_name})"
+      end
+    end
+
     class Nullable < Base
       attr_reader :base
 
@@ -500,6 +604,13 @@ module MilkTea
         self
       end
 
+      def set_layout(packed:, alignment:)
+        @packed = packed
+        @alignment = alignment
+        @instances.each_value { |instance| instance.set_layout(packed:, alignment:) }
+        self
+      end
+
       def fields
         @fields
       end
@@ -566,6 +677,12 @@ module MilkTea
 
       def define_fields(fields)
         @fields = fields.freeze
+        self
+      end
+
+      def set_layout(packed:, alignment:)
+        @packed = packed
+        @alignment = alignment
         self
       end
 

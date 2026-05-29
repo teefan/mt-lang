@@ -56,6 +56,7 @@ module MilkTea
 
     ONE_CHAR_TOKENS = {
       "&" => :amp,
+      "@" => :at,
       ":" => :colon,
       "," => :comma,
       "^" => :caret,

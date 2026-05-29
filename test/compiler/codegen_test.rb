@@ -4,6 +4,55 @@ require "fileutils"
 require_relative "../test_helper"
 
 class MilkTeaCodegenTest < Minitest::Test
+  def test_generate_c_for_attribute_reflection_static_asserts
+    source = <<~MT
+      # module demo.attribute_reflection_codegen
+
+      public attribute[field] rename(name: str)
+      public attribute[callable] traced(name: str)
+
+      @[packed]
+      struct PacketHeader:
+          @[rename("payload_len")]
+          payload_len: uint
+          flag_bits: ubyte
+
+      @[align(16)]
+      struct PacketBuffer:
+          data: array[ubyte, 16]
+
+      @[traced("parse_packet")]
+      function parse_packet() -> int:
+          return 7
+
+      static_assert(has_attribute(PacketHeader, packed), "PacketHeader should stay packed")
+      static_assert(
+          has_attribute(PacketBuffer, align) and attribute_arg[ptr_uint](attribute_of(PacketBuffer, align), bytes) == 16,
+          "PacketBuffer should stay 16-byte aligned"
+      )
+      static_assert(has_attribute(field_of(PacketHeader, payload_len), rename), "payload_len rename missing")
+      static_assert(has_attribute(callable_of(parse_packet), traced), "parse_packet trace missing")
+
+      function aligned_bytes() -> ptr_uint:
+          if has_attribute(PacketBuffer, align):
+              return attribute_arg[ptr_uint](attribute_of(PacketBuffer, align), bytes)
+          return 0
+
+      function main() -> int:
+          return parse_packet() + int<-aligned_bytes()
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/packed/, generated)
+    assert_match(/aligned\(16\)/, generated)
+    assert_match(/PacketHeader should stay packed/, generated)
+    assert_match(/PacketBuffer should stay 16-byte aligned/, generated)
+    assert_match(/payload_len rename missing/, generated)
+    assert_match(/parse_packet trace missing/, generated)
+    assert_match(/return 16;/, generated)
+  end
+
   def test_generate_c_for_external_struct_with_explicit_c_name
     source = <<~MT
       # module demo.timespec_codegen
@@ -4023,14 +4072,18 @@ function main() -> int:
 
 # module demo.layout_modifiers_surface
 
-packed struct Header:
+@[packed]
+struct Header:
     tag: ubyte
     value: uint
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 
-packed align(16) struct Packet:
+@[packed]
+@[align(16)]
+struct Packet:
     tag: ubyte
     value: uint
 
