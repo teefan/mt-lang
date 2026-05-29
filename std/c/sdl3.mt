@@ -2357,10 +2357,10 @@ external function SDL_HasEvent(type_: uint) -> bool
 external function SDL_HasEvents(minType: uint, maxType: uint) -> bool
 external function SDL_FlushEvent(type_: uint) -> void
 external function SDL_FlushEvents(minType: uint, maxType: uint) -> void
-external function SDL_PollEvent(event: ptr[SDL_Event]?) -> bool
-external function SDL_WaitEvent(event: ptr[SDL_Event]?) -> bool
-external function SDL_WaitEventTimeout(event: ptr[SDL_Event]?, timeoutMS: int) -> bool
-external function SDL_PushEvent(event: ptr[SDL_Event]) -> bool
+external function SDL_PollEvent(event_: ptr[SDL_Event]?) -> bool
+external function SDL_WaitEvent(event_: ptr[SDL_Event]?) -> bool
+external function SDL_WaitEventTimeout(event_: ptr[SDL_Event]?, timeoutMS: int) -> bool
+external function SDL_PushEvent(event_: ptr[SDL_Event]) -> bool
 type SDL_EventFilter = fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool
 external function SDL_SetEventFilter(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
 external function SDL_GetEventFilter(filter: ptr[SDL_EventFilter], userdata: ptr[ptr[void]]) -> bool
@@ -2370,8 +2370,8 @@ external function SDL_FilterEvents(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Eve
 external function SDL_SetEventEnabled(type_: uint, enabled: bool) -> void
 external function SDL_EventEnabled(type_: uint) -> bool
 external function SDL_RegisterEvents(numevents: int) -> Uint32
-external function SDL_GetWindowFromEvent(event: const_ptr[SDL_Event]) -> ptr[SDL_Window]?
-external function SDL_GetEventDescription(event: const_ptr[SDL_Event], buf: ptr[char], buflen: int) -> int
+external function SDL_GetWindowFromEvent(event_: const_ptr[SDL_Event]) -> ptr[SDL_Window]?
+external function SDL_GetEventDescription(event_: const_ptr[SDL_Event], buf: ptr[char], buflen: int) -> int
 external function SDL_GetBasePath() -> cstr?
 external function SDL_GetPrefPath(org: cstr, app: cstr) -> ptr[char]
 enum SDL_Folder: int
@@ -3428,7 +3428,7 @@ external function SDL_GetRenderLogicalPresentation(renderer: ptr[SDL_Renderer], 
 external function SDL_GetRenderLogicalPresentationRect(renderer: ptr[SDL_Renderer], rect: ptr[SDL_FRect]?) -> bool
 external function SDL_RenderCoordinatesFromWindow(renderer: ptr[SDL_Renderer], window_x: float, window_y: float, x: ptr[float], y: ptr[float]) -> bool
 external function SDL_RenderCoordinatesToWindow(renderer: ptr[SDL_Renderer], x: float, y: float, window_x: ptr[float], window_y: ptr[float]) -> bool
-external function SDL_ConvertEventToRenderCoordinates(renderer: ptr[SDL_Renderer], event: ptr[SDL_Event]) -> bool
+external function SDL_ConvertEventToRenderCoordinates(renderer: ptr[SDL_Renderer], event_: ptr[SDL_Event]) -> bool
 external function SDL_SetRenderViewport(renderer: ptr[SDL_Renderer], rect: const_ptr[SDL_Rect]?) -> bool
 external function SDL_GetRenderViewport(renderer: ptr[SDL_Renderer], rect: ptr[SDL_Rect]) -> bool
 external function SDL_RenderViewportSet(renderer: ptr[SDL_Renderer]) -> bool

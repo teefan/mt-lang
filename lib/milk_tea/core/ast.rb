@@ -46,6 +46,9 @@ module MilkTea
     VarDecl = Data.define(:name, :type, :value, :visibility, :line) do
       def initialize(name:, type:, value:, visibility:, line: nil) = super
     end
+    EventDecl = Data.define(:name, :capacity, :payload_type, :visibility, :line, :column) do
+      def initialize(name:, capacity:, payload_type: nil, visibility:, line: nil, column: nil) = super
+    end
     TypeAliasDecl = Data.define(:name, :target, :visibility, :line) do
       def initialize(name:, target:, visibility:, line: nil) = super
     end
@@ -55,8 +58,8 @@ module MilkTea
     AttributeApplication = Data.define(:name, :arguments, :line, :column) do
       def initialize(name:, arguments:, line: nil, column: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :attributes, :packed, :alignment, :visibility, :line) do
-      def initialize(name:, type_params:, implements:, c_name:, fields:, attributes: [], packed:, alignment:, visibility:, line: nil) = super
+    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :attributes, :packed, :alignment, :visibility, :line) do
+      def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], attributes: [], packed:, alignment:, visibility:, line: nil) = super
     end
     UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
       def initialize(name:, c_name:, fields:, visibility:, line: nil) = super

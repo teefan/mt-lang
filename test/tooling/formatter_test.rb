@@ -70,6 +70,51 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_equal source, formatted
   end
 
+  def test_canonical_mode_formats_event_declarations
+    source = <<~MT
+      public event reloaded[4]
+
+      struct Resize:
+          width: int
+          height: int
+
+      struct Window:
+          title: str
+          public event closed[4]
+          public event resized[8](Resize)
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal source, formatted
+  end
+
+  def test_canonical_mode_formats_await_expressions
+    source = <<~MT
+      async function main() -> int:
+          return await compute()
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal source, formatted
+  end
+
+  def test_canonical_mode_formats_async_method_signatures
+    source = <<~MT
+      struct Worker:
+          value: int
+
+      extending Worker:
+          public async mutable function tick() -> int:
+              return await next()
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :canonical)
+
+    assert_equal source, formatted
+  end
+
   def test_tidy_mode_wraps_long_call_arguments_using_project_max_line_length
     Dir.mktmpdir("milk-tea-formatter-wrap-long-call") do |dir|
       path = File.join(dir, "sample.mt")

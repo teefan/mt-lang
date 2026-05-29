@@ -469,24 +469,24 @@ function parse_mouse_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
 
 
 function parse_csi_letter(buffer: ref[vec.Vec[ubyte]], final_byte: ubyte, modifier: int) -> Event:
-    var event = key_event(KeyCode.unknown, 0, false, false, false, false)
+    var event_ = key_event(KeyCode.unknown, 0, false, false, false, false)
     if final_byte == 65:
-        event = key_event(KeyCode.up, 0, false, false, false, false)
+        event_ = key_event(KeyCode.up, 0, false, false, false, false)
     else if final_byte == 66:
-        event = key_event(KeyCode.down, 0, false, false, false, false)
+        event_ = key_event(KeyCode.down, 0, false, false, false, false)
     else if final_byte == 67:
-        event = key_event(KeyCode.right, 0, false, false, false, false)
+        event_ = key_event(KeyCode.right, 0, false, false, false, false)
     else if final_byte == 68:
-        event = key_event(KeyCode.left, 0, false, false, false, false)
+        event_ = key_event(KeyCode.left, 0, false, false, false, false)
     else if final_byte == 72:
-        event = key_event(KeyCode.home, 0, false, false, false, false)
+        event_ = key_event(KeyCode.home, 0, false, false, false, false)
     else if final_byte == 70:
-        event = key_event(KeyCode.end, 0, false, false, false, false)
+        event_ = key_event(KeyCode.end, 0, false, false, false, false)
     else if final_byte == 90:
-        event = key_event(KeyCode.shift_tab, 0, false, false, false, true)
+        event_ = key_event(KeyCode.shift_tab, 0, false, false, false, true)
 
-    apply_modifier(ref_of(event.key), modifier)
-    return event
+    apply_modifier(ref_of(event_.key), modifier)
+    return event_
 
 
 function parse_csi_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
@@ -526,22 +526,22 @@ function parse_csi_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
                             let final_byte = final_payload.value
                             consume_bytes(buffer, next_index + 1)
                             if final_byte == 126:
-                                var event = key_event(KeyCode.unknown, 0, false, false, false, false)
+                                var event_ = key_event(KeyCode.unknown, 0, false, false, false, false)
                                 if first_param == 1:
-                                    event = key_event(KeyCode.home, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.home, 0, false, false, false, false)
                                 else if first_param == 2:
-                                    event = key_event(KeyCode.insert, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.insert, 0, false, false, false, false)
                                 else if first_param == 3:
-                                    event = key_event(KeyCode.delete, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.delete, 0, false, false, false, false)
                                 else if first_param == 4:
-                                    event = key_event(KeyCode.end, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.end, 0, false, false, false, false)
                                 else if first_param == 5:
-                                    event = key_event(KeyCode.page_up, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.page_up, 0, false, false, false, false)
                                 else if first_param == 6:
-                                    event = key_event(KeyCode.page_down, 0, false, false, false, false)
+                                    event_ = key_event(KeyCode.page_down, 0, false, false, false, false)
 
-                                apply_modifier(ref_of(event.key), modifier)
-                                return Option[Event].some(value = event)
+                                apply_modifier(ref_of(event_.key), modifier)
+                                return Option[Event].some(value = event_)
 
                             if final_byte == 65 or final_byte == 66 or final_byte == 67 or final_byte == 68 or final_byte == 72 or final_byte == 70:
                                 return Option[Event].some(value = parse_csi_letter(buffer, final_byte, modifier))

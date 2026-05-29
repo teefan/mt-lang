@@ -364,7 +364,7 @@ async function main() -> int:
     yield "http://127.0.0.1:#{server.local_address.ip_port}"
   ensure
     server&.close
-    thread&.join(1)
+    stop_thread(thread)
     raise errors.pop unless errors.nil? || errors.empty?
   end
 
@@ -402,7 +402,7 @@ async function main() -> int:
       end
     ensure
       server&.close
-      thread&.join(1)
+      stop_thread(thread)
       raise errors.pop unless errors.nil? || errors.empty?
     end
   end

@@ -973,7 +973,7 @@ class DAPServerTest < Minitest::Test
   ensure
     stdin_write&.close
     stdout_read&.close
-    thread&.join(1)
+    stop_thread(thread)
   end
 
   def test_lldb_backend_bridge_is_deterministic_with_injected_backend
@@ -2174,7 +2174,7 @@ class DAPServerTest < Minitest::Test
   ensure
     stdin_write&.close
     stdout_read&.close
-    thread&.join(1)
+    stop_thread(thread)
   end
 
   def test_lldb_backend_bridges_requests_and_events

@@ -3,6 +3,29 @@
 require_relative "../../test_helper"
 
 class LSPWorkspaceTest < Minitest::Test
+  def teardown
+    ObjectSpace.each_object(MilkTea::LSP::Workspace) do |workspace|
+      workspace.shutdown
+    rescue StandardError
+      nil
+    end
+
+    super
+  end
+
+  def test_shutdown_stops_definition_warmup_thread
+    workspace = MilkTea::LSP::Workspace.new
+
+    workspace.send(:enqueue_definition_warmup, "file:///tmp/lsp_workspace_shutdown.mt")
+    thread = workspace.instance_variable_get(:@definition_warmup_thread)
+
+    refute_nil thread
+
+    workspace.shutdown
+
+    assert_equal false, thread.alive?
+  end
+
   def test_open_document_reports_eager_facts_stats_for_small_documents
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_open_stats.mt"
@@ -378,8 +401,8 @@ class LSPWorkspaceTest < Minitest::Test
       refute_nil result.pop
     ensure
       release_state_lock << true if release_state_lock
-      holder&.join(1)
-      reader&.join(1)
+      stop_thread(holder)
+      stop_thread(reader)
       workspace&.shutdown
     end
   end
@@ -458,8 +481,8 @@ class LSPWorkspaceTest < Minitest::Test
       refute_nil result.pop
     ensure
       release_state_lock << true if release_state_lock
-      holder&.join(1)
-      reader&.join(1)
+      stop_thread(holder)
+      stop_thread(reader)
       workspace&.shutdown
     end
   end
@@ -517,8 +540,8 @@ class LSPWorkspaceTest < Minitest::Test
       refute_nil result.pop
     ensure
       release_state_lock << true if release_state_lock
-      holder&.join(1)
-      reader&.join(1)
+      stop_thread(holder)
+      stop_thread(reader)
       workspace&.shutdown
     end
   end
@@ -621,8 +644,8 @@ class LSPWorkspaceTest < Minitest::Test
     assert_equal :background_document, stats[:skip_reason]
   ensure
     release_state_lock << true if release_state_lock
-    holder&.join(1)
-    opener&.join(1)
+    stop_thread(holder)
+    stop_thread(opener)
     workspace&.shutdown
   end
 

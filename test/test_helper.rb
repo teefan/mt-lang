@@ -5,6 +5,20 @@ require "minitest/autorun"
 require "socket"
 require_relative "../lib/milk_tea"
 
+module MilkTeaThreadTestHelper
+	def stop_thread(thread, timeout: 1)
+		return unless thread
+
+		thread.join(timeout)
+		return unless thread.alive?
+
+		thread.kill
+		thread.join
+	end
+end
+
+Minitest::Test.include(MilkTeaThreadTestHelper)
+
 if defined?(Minitest::CoverageRunner) && !Minitest::CoverageRunner.method_defined?(:find_path_and_lines_without_milk_tea_mapping)
 	module Minitest
 		module CoverageRunner
@@ -84,7 +98,7 @@ module MilkTeaStaticHttpServerHelper
 		yield "http://127.0.0.1:#{server.local_address.ip_port}"
 	ensure
 		server&.close
-		thread&.join(1)
+		stop_thread(thread)
 		raise errors.pop unless errors.nil? || errors.empty?
 	end
 

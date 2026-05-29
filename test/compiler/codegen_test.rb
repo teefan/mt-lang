@@ -186,8 +186,8 @@ function main() -> int:
 
       import std.c.sample as c
 
-      function is_quit(event: c.Event) -> bool:
-          return event.type_ == uint<-(int<-c.EventType.QUIT)
+      function is_quit(event_: c.Event) -> bool:
+          return event_.type_ == uint<-(int<-c.EventType.QUIT)
     MT
 
     imported = {
@@ -460,6 +460,54 @@ function main() -> int:
     assert_match(/demo_async_methods_codegen_Counter_read__frame/, generated)
     assert_match(/demo_async_methods_codegen_Counter_bump\(&__mt_frame->local_counter\)/, generated)
     assert_match(/demo_async_methods_codegen_Counter_read\(__mt_frame->local_counter\)/, generated)
+  end
+
+  def test_generate_c_for_event_declarations_and_runtime_helpers
+    source = <<~MT
+      # module demo.event_codegen
+
+      struct Resize:
+          width: int
+          height: int
+
+      event reloaded[4]
+
+      struct Window:
+          public event closed[4]
+          public event resized[8](Resize)
+          title: str
+
+      function on_close() -> void:
+          return
+
+      function on_resize(value: Resize) -> void:
+          return
+
+      function attach(window: ref[Window]) -> Result[Subscription, EventError]:
+          let sub = window.closed.subscribe(on_close)?
+          let resized_sub = window.resized.subscribe(on_resize)?
+          window.resized.unsubscribe(resized_sub)
+          return window.closed.subscribe(on_close)
+
+      function trigger(window: ref[Window]) -> Result[Subscription, EventError]:
+          reloaded.subscribe(on_close)?
+          reloaded.emit()
+          window.closed.emit()
+          window.resized.emit(Resize(width = 1, height = 2))
+          return window.closed.subscribe(on_close)
+
+      async function wait_for_resize(window: ref[Window]) -> Result[Resize, EventError]:
+          return await window.resized.wait()
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/mt_subscription/, generated)
+    assert_match(/mt_event_demo_event_codegen_reloaded_4__subscribe/, generated)
+    assert_match(/mt_event_demo_event_codegen_reloaded_4__emit/, generated)
+    assert_match(/__event_closed/, generated)
+    assert_match(/mt_event_demo_event_codegen_Window_resized.*__wait/, generated)
+    assert_match(/mt_async_alloc/, generated)
   end
 
   def test_generate_c_for_generic_methods
@@ -6014,6 +6062,45 @@ async function main() -> int:
 
     assert_equal "", result.stderr
     assert_equal 55, result.exit_status
+  end
+
+  def test_run_program_for_event_runtime_helpers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.event_runtime_codegen
+
+      event reloaded[4](int)
+
+      var seen: int = 0
+
+      function on_reload(value: int) -> void:
+          seen += value
+
+      async function main() -> int:
+          match reloaded.subscribe(on_reload):
+              Result.success as payload:
+                  let sub = payload.value
+                  let waited = reloaded.wait()
+                  reloaded.emit(3)
+                  reloaded.unsubscribe(sub)
+                  reloaded.emit(4)
+                  match await waited:
+                      Result.success as waited_payload:
+                          return seen + waited_payload.value
+                      Result.failure as wait_error:
+                          return 100
+              Result.failure as subscribe_error:
+                  return 101
+          return 102
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 6, result.exit_status
   end
 
   def test_run_program_for_boolean_operators

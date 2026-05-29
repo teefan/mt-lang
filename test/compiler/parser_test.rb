@@ -272,6 +272,35 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil ast.declarations[1].value
   end
 
+  def test_parses_top_level_and_struct_event_declarations
+    source = <<~MT
+      public event reload_requested[4]
+
+      struct Window:
+          title: str
+          event closed[4]
+          public event resized[8](ResizeEvent)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    top_level_event = ast.declarations[0]
+    struct_decl = ast.declarations[1]
+
+    assert_instance_of MilkTea::AST::EventDecl, top_level_event
+    assert_equal "reload_requested", top_level_event.name
+    assert_equal 4, top_level_event.capacity
+    assert_nil top_level_event.payload_type
+    assert_equal :public, top_level_event.visibility
+
+    assert_instance_of MilkTea::AST::StructDecl, struct_decl
+    assert_equal ["title"], struct_decl.fields.map(&:name)
+    assert_equal %w[closed resized], struct_decl.events.map(&:name)
+    assert_equal [4, 8], struct_decl.events.map(&:capacity)
+    assert_nil struct_decl.events[0].payload_type
+    assert_equal "ResizeEvent", struct_decl.events[1].payload_type.name.to_s
+    assert_equal [:private, :public], struct_decl.events.map(&:visibility)
+  end
+
   def test_parses_extern_opaque_with_explicit_c_name
     source = <<~MT
       external
@@ -2000,6 +2029,7 @@ class MilkTeaParserTest < Minitest::Test
 
   def test_rejects_ordinary_only_declarations_in_raw_modules
     cases = {
+      "event ready[1]\n" => /event is not allowed in external files/,
       "var counter: int = 0\n" => /var is not allowed in external files/,
       "variant Token:\n    eof\n" => /variant is not allowed in external files/,
       "interface Damageable:\n    function hit() -> void\n" => /interface is not allowed in external files/,

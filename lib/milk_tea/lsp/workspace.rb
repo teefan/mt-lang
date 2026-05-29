@@ -13,10 +13,10 @@ module MilkTea
       PERF_LOG_THRESHOLD_MS = 1000
 
       # Token types that introduce a named definition, in order of precedence
-      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface].freeze
+      DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface event].freeze
       DOC_COMMENT_PREFIX = '##'
-      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface)\s+/m
-      DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
+      DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+/m
+      DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
       def initialize(error_output: nil)
         @error_output = error_output
@@ -1085,6 +1085,7 @@ module MilkTea
                  when :type    then 'type_alias'
                  when :const   then 'constant'
                  when :var     then 'variable'
+                 when :event   then 'variable'
                  when :extending then 'struct'
                  when :opaque  then 'struct'
                when :interface then 'interface'
@@ -1284,7 +1285,11 @@ module MilkTea
         return unless worker
 
         @definition_warmup_queue << :__stop__
-        worker.join(0.25)
+        worker.join(1.0)
+        if worker.alive?
+          worker.kill
+          worker.join
+        end
         @definition_warmup_thread = nil
       rescue StandardError => e
         warn "LSP definition warmup shutdown error: #{e.message}"

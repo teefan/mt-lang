@@ -262,7 +262,7 @@ public foreign function set_automation_event_list(list: ptr[AutomationEventList]
 public foreign function set_automation_event_base_frame(frame: int) -> void = c.SetAutomationEventBaseFrame
 public foreign function start_automation_event_recording() -> void = c.StartAutomationEventRecording
 public foreign function stop_automation_event_recording() -> void = c.StopAutomationEventRecording
-public foreign function play_automation_event(event: AutomationEvent) -> void = c.PlayAutomationEvent
+public foreign function play_automation_event(event_: AutomationEvent) -> void = c.PlayAutomationEvent
 public foreign function is_key_pressed(key: KeyboardKey) -> bool = c.IsKeyPressed
 public foreign function is_key_pressed_repeat(key: KeyboardKey) -> bool = c.IsKeyPressedRepeat
 public foreign function is_key_down(key: KeyboardKey) -> bool = c.IsKeyDown

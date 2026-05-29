@@ -3215,7 +3215,7 @@ module MilkTea
       when Types::GenericInstance
         base = generic_c_type(type)
         pointer ? "#{base}*" : base
-      when Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::VariantInstance, Types::VariantArmPayload
+      when Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::VariantInstance, Types::VariantArmPayload, Types::Event, Types::Subscription
         base = named_type_c_name(type)
         pointer ? "#{base}*" : base
       when Types::Opaque
@@ -4397,7 +4397,7 @@ module MilkTea
         end
       when Types::Function
         []
-      when Types::Struct, Types::StructInstance, Types::Union, Types::Variant, Types::VariantInstance
+      when Types::Struct, Types::StructInstance, Types::Union, Types::Variant, Types::VariantInstance, Types::Event, Types::Subscription
         [named_type_c_name(type)]
       when Types::VariantArmPayload
         [named_type_c_name(type.variant_type)]
