@@ -510,6 +510,24 @@ function main() -> int:
     assert_match(/mt_async_alloc/, generated)
   end
 
+  def test_generate_c_for_full_event_wait_without_failure_allocation
+    source = <<~MT
+      # module demo.event_wait_full_codegen
+
+      event ready[1]
+
+      async function wait_for_ready() -> Result[void, EventError]:
+          return await ready.wait()
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/if \(frame == NULL\) \{\s*return true;/m, generated)
+    assert_match(/if \(frame == NULL\) \{\s*waiter\(waiter_frame\);\s*return;/m, generated)
+    assert_match(/if \(frame == NULL\) \{\s*return \(Result_void_EventError\)\{.*EventError_full.*\};\s*\}/m, generated)
+    assert_match(/\.frame = NULL, \.ready = mt_event_demo_event_wait_full_codegen_ready_1__wait__ready/m, generated)
+  end
+
   def test_generate_c_for_generic_methods
     source = <<~MT
       # module demo.generic_methods_codegen
@@ -6101,6 +6119,40 @@ async function main() -> int:
     assert_equal "", result.stdout
     assert_equal "", result.stderr
     assert_equal 6, result.exit_status
+  end
+
+  def test_run_program_for_event_wait_full_failure
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.event_wait_full_runtime
+
+      event reloaded[1](int)
+
+      function on_reload(value: int) -> void:
+          return
+
+      async function main() -> int:
+          match reloaded.subscribe(on_reload):
+              Result.success as _:
+                  match await reloaded.wait():
+                      Result.success as _:
+                          return 100
+                      Result.failure as payload:
+                          if payload.error != EventError.full:
+                              return 101
+                          return 0
+              Result.failure as _:
+                  return 102
+          return 103
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
   end
 
   def test_run_program_for_boolean_operators
