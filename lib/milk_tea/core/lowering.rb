@@ -697,33 +697,22 @@ module MilkTea
             ),
             post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             body: [
-              IR::LocalDecl.new(
-                name: "__mt_slot",
-                c_name: "__mt_slot",
-                type: runtime.fetch(:slot_pointer_type),
-                value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
-              ),
-              IR::IfStmt.new(
-                condition: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")),
-                then_body: [IR::ContinueStmt.new],
-                else_body: nil,
-              ),
+              event_slot_local_decl(event_expr, slot_index_expr, runtime),
+              active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
                 c_name: "__mt_generation",
                 type: @types.fetch("ptr_uint"),
-                value: IR::Binary.new(
-                  operator: "+",
-                  left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
-                  right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
-                  type: @types.fetch("ptr_uint"),
-                ),
+                value: event_next_generation_expression(slot_pointer_expr),
               ),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @types.fetch("bool"))),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type)), operator: "=", value: listener_expr),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+              *event_slot_activate_statements(
+                slot_pointer_expr,
+                runtime,
+                generation_expr: generation_expr,
+                once: once,
+                wait_frame_expr: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                listener_expr: listener_expr,
+              ),
               IR::ReturnStmt.new(value: event_subscription_success_literal(runtime.fetch(:subscription_result_type), slot_index_expr, generation_expr)),
             ],
           ),
@@ -767,7 +756,7 @@ module MilkTea
             value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
           ),
           IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), type: @types.fetch("bool")),
+            condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @types.fetch("bool")),
             then_body: [IR::ReturnStmt.new(value: nil)],
             else_body: nil,
           ),
@@ -781,9 +770,7 @@ module MilkTea
             then_body: [IR::ReturnStmt.new(value: nil)],
             else_body: nil,
           ),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+          *event_slot_clear_statements(slot_pointer_expr, runtime),
           IR::ReturnStmt.new(value: nil),
         ]
 
@@ -811,17 +798,8 @@ module MilkTea
         frame_pointer_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
 
         collect_body = [
-          IR::LocalDecl.new(
-            name: "__mt_slot",
-            c_name: "__mt_slot",
-            type: runtime.fetch(:slot_pointer_type),
-            value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
-          ),
-          IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), type: @types.fetch("bool")),
-            then_body: [IR::ContinueStmt.new],
-            else_body: nil,
-          ),
+          event_slot_local_decl(event_expr, slot_index_expr, runtime),
+          inactive_event_slot_continue_guard(slot_pointer_expr),
           IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "slot", @types.fetch("ptr_uint")), operator: "=", value: slot_index_expr),
           IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "generation", @types.fetch("ptr_uint")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))),
           IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "once", @types.fetch("bool")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool"))),
@@ -830,7 +808,7 @@ module MilkTea
             operator: "=",
             value: IR::Binary.new(
               operator: "!=",
-              left: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)),
+              left: event_slot_wait_frame_expression(slot_pointer_expr, runtime),
               right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
               type: @types.fetch("bool"),
             ),
@@ -843,9 +821,9 @@ module MilkTea
           snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @types.fetch("ptr_uint")),
           snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @types.fetch("ptr_uint")),
         )
-        current_slot_active = event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool"))
+        current_slot_active = event_slot_active_expression(slot_pointer_expr)
         current_slot_generation = event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))
-        current_wait_frame = event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr))
+        current_wait_frame = event_slot_wait_frame_expression(slot_pointer_expr, runtime)
         wait_slot_condition = IR::Binary.new(
           operator: "and",
           left: current_slot_active,
@@ -965,6 +943,7 @@ module MilkTea
 
       def build_event_wait_ready_function(runtime)
         frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
 
         IR::Function.new(
           name: "#{runtime.fetch(:wait_ready_c_name)}_fn",
@@ -972,6 +951,16 @@ module MilkTea
           params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: @types.fetch("bool"),
           body: [
+            IR::IfStmt.new(
+              condition: IR::Binary.new(
+                operator: "==",
+                left: raw_frame_expr,
+                right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                type: @types.fetch("bool"),
+              ),
+              then_body: [IR::ReturnStmt.new(value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")))],
+              else_body: nil,
+            ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
               c_name: "__mt_wait_frame",
@@ -990,6 +979,7 @@ module MilkTea
 
       def build_event_wait_set_waiter_function(runtime)
         frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
         waiter_frame_expr = IR::Name.new(name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false)
         waiter_expr = IR::Name.new(name: "waiter", type: runtime.fetch(:wake_type), pointer: false)
 
@@ -1003,6 +993,19 @@ module MilkTea
           ],
           return_type: @types.fetch("void"),
           body: [
+            IR::IfStmt.new(
+              condition: IR::Binary.new(
+                operator: "==",
+                left: raw_frame_expr,
+                right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                type: @types.fetch("bool"),
+              ),
+              then_body: [
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ReturnStmt.new(value: nil),
+              ],
+              else_body: nil,
+            ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
               c_name: "__mt_wait_frame",
@@ -1035,6 +1038,16 @@ module MilkTea
           params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: @types.fetch("void"),
           body: [
+            IR::IfStmt.new(
+              condition: IR::Binary.new(
+                operator: "==",
+                left: raw_frame_expr,
+                right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                type: @types.fetch("bool"),
+              ),
+              then_body: [IR::ReturnStmt.new(value: nil)],
+              else_body: nil,
+            ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
               c_name: "__mt_wait_frame",
@@ -1063,6 +1076,7 @@ module MilkTea
 
       def build_event_wait_take_result_function(runtime)
         frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
 
         IR::Function.new(
           name: "#{runtime.fetch(:wait_take_result_c_name)}_fn",
@@ -1070,6 +1084,16 @@ module MilkTea
           params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
           return_type: runtime.fetch(:wait_result_type),
           body: [
+            IR::IfStmt.new(
+              condition: IR::Binary.new(
+                operator: "==",
+                left: raw_frame_expr,
+                right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                type: @types.fetch("bool"),
+              ),
+              then_body: [IR::ReturnStmt.new(value: event_failure_literal(runtime.fetch(:wait_result_type)))],
+              else_body: nil,
+            ),
             IR::LocalDecl.new(
               name: "__mt_wait_frame",
               c_name: "__mt_wait_frame",
@@ -1091,50 +1115,47 @@ module MilkTea
         slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
 
         body = [
-          IR::LocalDecl.new(
-            name: "__mt_wait_frame",
-            c_name: "__mt_wait_frame",
-            type: runtime.fetch(:wait_frame_pointer_type),
-            value: IR::Cast.new(
-              target_type: runtime.fetch(:wait_frame_pointer_type),
-              expression: IR::Call.new(callee: "mt_async_alloc", arguments: [IR::SizeofExpr.new(target_type: runtime.fetch(:wait_frame_type), type: @types.fetch("ptr_uint"))], type: runtime.fetch(:void_ptr)),
-              type: runtime.fetch(:wait_frame_pointer_type),
-            ),
-          ),
-          IR::Assignment.new(
-            target: IR::Unary.new(operator: "*", operand: frame_expr, type: runtime.fetch(:wait_frame_type)),
-            operator: "=",
-            value: IR::ZeroInit.new(type: runtime.fetch(:wait_frame_type)),
-          ),
-          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "event", runtime.fetch(:void_ptr)), operator: "=", value: IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: event_expr, type: runtime.fetch(:void_ptr))),
           IR::ForStmt.new(
             init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
             condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
             post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             body: [
               IR::LocalDecl.new(name: "__mt_slot", c_name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime)),
-              IR::IfStmt.new(
-                condition: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")),
-                then_body: [IR::ContinueStmt.new],
-                else_body: nil,
-              ),
+              active_event_slot_continue_guard(slot_pointer_expr),
               IR::LocalDecl.new(
                 name: "__mt_generation",
                 c_name: "__mt_generation",
                 type: @types.fetch("ptr_uint"),
-                value: IR::Binary.new(operator: "+", left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")), type: @types.fetch("ptr_uint")),
+                value: event_next_generation_expression(slot_pointer_expr),
               ),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
-              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: raw_frame_expr),
+              IR::LocalDecl.new(
+                name: "__mt_wait_frame",
+                c_name: "__mt_wait_frame",
+                type: runtime.fetch(:wait_frame_pointer_type),
+                value: IR::Cast.new(
+                  target_type: runtime.fetch(:wait_frame_pointer_type),
+                  expression: IR::Call.new(callee: "mt_async_alloc", arguments: [IR::SizeofExpr.new(target_type: runtime.fetch(:wait_frame_type), type: @types.fetch("ptr_uint"))], type: runtime.fetch(:void_ptr)),
+                  type: runtime.fetch(:wait_frame_pointer_type),
+                ),
+              ),
+              IR::Assignment.new(
+                target: IR::Unary.new(operator: "*", operand: frame_expr, type: runtime.fetch(:wait_frame_type)),
+                operator: "=",
+                value: IR::ZeroInit.new(type: runtime.fetch(:wait_frame_type)),
+              ),
+              IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "event", runtime.fetch(:void_ptr)), operator: "=", value: IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: event_expr, type: runtime.fetch(:void_ptr))),
+              *event_slot_activate_statements(
+                slot_pointer_expr,
+                runtime,
+                generation_expr: generation_expr,
+                once: true,
+                wait_frame_expr: raw_frame_expr,
+              ),
               IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "subscription", @types.fetch("Subscription")), operator: "=", value: event_subscription_literal(slot_index_expr, generation_expr)),
               IR::ReturnStmt.new(value: event_task_literal(runtime, frame_expr)),
             ],
           ),
-          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
-          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "result", runtime.fetch(:wait_result_type)), operator: "=", value: event_failure_literal(runtime.fetch(:wait_result_type))),
-          IR::ReturnStmt.new(value: event_task_literal(runtime, frame_expr)),
+          IR::ReturnStmt.new(value: event_immediate_failure_task_literal(runtime)),
         ]
 
         IR::Function.new(
@@ -1156,6 +1177,67 @@ module MilkTea
           ),
           type: runtime.fetch(:slot_pointer_type),
         )
+      end
+
+      def event_slot_local_decl(event_expr, slot_index_expr, runtime, local_name: "__mt_slot")
+        IR::LocalDecl.new(
+          name: local_name,
+          c_name: local_name,
+          type: runtime.fetch(:slot_pointer_type),
+          value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
+        )
+      end
+
+      def event_slot_active_expression(slot_pointer_expr)
+        event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool"))
+      end
+
+      def event_slot_wait_frame_expression(slot_pointer_expr, runtime)
+        event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr))
+      end
+
+      def active_event_slot_continue_guard(slot_pointer_expr)
+        IR::IfStmt.new(
+          condition: event_slot_active_expression(slot_pointer_expr),
+          then_body: [IR::ContinueStmt.new],
+          else_body: nil,
+        )
+      end
+
+      def inactive_event_slot_continue_guard(slot_pointer_expr)
+        IR::IfStmt.new(
+          condition: IR::Unary.new(operator: "not", operand: event_slot_active_expression(slot_pointer_expr), type: @types.fetch("bool")),
+          then_body: [IR::ContinueStmt.new],
+          else_body: nil,
+        )
+      end
+
+      def event_next_generation_expression(slot_pointer_expr)
+        IR::Binary.new(
+          operator: "+",
+          left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
+          right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+          type: @types.fetch("ptr_uint"),
+        )
+      end
+
+      def event_slot_activate_statements(slot_pointer_expr, runtime, generation_expr:, once:, wait_frame_expr:, listener_expr: nil)
+        statements = [
+          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
+        ]
+        statements << IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type)), operator: "=", value: listener_expr) if listener_expr
+        statements << IR::Assignment.new(target: event_slot_wait_frame_expression(slot_pointer_expr, runtime), operator: "=", value: wait_frame_expr)
+        statements
+      end
+
+      def event_slot_clear_statements(slot_pointer_expr, runtime)
+        [
+          IR::Assignment.new(target: event_slot_active_expression(slot_pointer_expr), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_wait_frame_expression(slot_pointer_expr, runtime), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+        ]
       end
 
       def event_slot_field_expression(slot_pointer_expr, field_name, field_type)
@@ -1245,6 +1327,14 @@ module MilkTea
 
       def event_task_literal(runtime, frame_expr)
         raw_frame_expr = IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: frame_expr, type: runtime.fetch(:void_ptr))
+        event_task_literal_from_raw_frame(runtime, raw_frame_expr)
+      end
+
+      def event_immediate_failure_task_literal(runtime)
+        event_task_literal_from_raw_frame(runtime, IR::NullLiteral.new(type: runtime.fetch(:void_ptr)))
+      end
+
+      def event_task_literal_from_raw_frame(runtime, raw_frame_expr)
         IR::AggregateLiteral.new(
           type: runtime.fetch(:task_type),
           fields: [

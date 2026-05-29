@@ -13,6 +13,7 @@ module MilkTea
       constant-condition
       dead-assignment
       directional-ffi-arg
+      event-capacity
       line-too-long
       loop-single-iteration
       missing-return
@@ -71,6 +72,7 @@ module MilkTea
       "prefer-let-else" => "Rewrite as let-else",
       "directional-ffi-arg" => "Pass lvalue directly",
     }.freeze
+    EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128
     FIX_ALL_TITLE = "Apply all auto-fixes".freeze
     INTEGER_SURFACE_INFO = {
       "byte" => { width: 8, signed: true },
@@ -957,6 +959,7 @@ module MilkTea
     def lint(ast)
       @source_ast ||= ast
       visit_source_file(ast)
+      profile_phase("rule.event_capacity") { emit_event_capacity_warnings(ast) }
       profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
       profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings } if expensive_lint_rules_enabled?
       @warnings
@@ -988,6 +991,25 @@ module MilkTea
           message:,
           severity: :warning,
         )
+      end
+    end
+
+    def emit_event_capacity_warnings(source_file)
+      each_event_declaration(source_file) do |event_decl, owner_name|
+        next unless event_decl.capacity >= EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD
+
+        warn_large_event_capacity(event_decl, owner_name:)
+      end
+    end
+
+    def each_event_declaration(source_file)
+      source_file.declarations.each do |declaration|
+        case declaration
+        when AST::EventDecl
+          yield declaration, nil
+        when AST::StructDecl
+          declaration.events.each { |event_decl| yield event_decl, declaration.name }
+        end
       end
     end
 
@@ -2366,6 +2388,21 @@ module MilkTea
         message: "#{kind_label} '#{name}' uses reserved built-in type name '#{name}'; rename it before this becomes a hard error",
         severity: :warning,
         symbol_name: name,
+      )
+    end
+
+    def warn_large_event_capacity(event_decl, owner_name:)
+      label = owner_name ? "#{owner_name}.#{event_decl.name}" : event_decl.name
+
+      @warnings << Warning.new(
+        path: @path,
+        line: event_decl.line,
+        column: event_decl.column,
+        length: event_decl.name.length,
+        code: "event-capacity",
+        message: "event '#{label}' capacity #{event_decl.capacity} makes emit() copy up to #{event_decl.capacity} listeners onto the stack; prefer a smaller fixed capacity or a managed queue abstraction",
+        severity: :warning,
+        symbol_name: event_decl.name,
       )
     end
 
