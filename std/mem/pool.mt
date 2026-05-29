@@ -29,7 +29,7 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
     if normalized_alignment == 0:
         fatal(c"pool.create_aligned requires a power-of-two alignment")
 
-    if slot_size_bytes == 0 or slot_count == 0:
+    if slot_count == 0:
         return Pool(
             memory = null,
             occupancy = null,
@@ -38,6 +38,9 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
             slot_count = 0,
             used_count = 0,
         )
+
+    if slot_size_bytes == 0:
+        fatal(c"pool.create_aligned requires slot size > 0 when slot count > 0")
 
     if heap.mul_overflows(slot_size_bytes, slot_count):
         fatal(c"pool.create size overflow")

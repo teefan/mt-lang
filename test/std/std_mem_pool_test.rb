@@ -153,6 +153,57 @@ function main() -> int:
     assert_equal [], result.link_flags
   end
 
+    def test_host_runtime_allows_empty_pool_without_backing_storage
+        compiler = ENV.fetch("CC", "cc")
+        skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+        source = <<~MT
+
+import std.mem.pool as pool
+
+function main() -> int:
+    var empty = pool.create(8, 0)
+    defer empty.release()
+
+    if empty.remaining_slots() != 0:
+        return 1
+    if empty.alloc_bytes() != null:
+        return 2
+
+    return 0
+
+        MT
+
+        result = run_program(source, compiler:)
+
+        assert_equal "", result.stdout
+        assert_equal "", result.stderr
+        assert_equal 0, result.exit_status
+        assert_equal [], result.link_flags
+    end
+
+    def test_host_runtime_rejects_zero_sized_non_empty_pool
+        compiler = ENV.fetch("CC", "cc")
+        skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+        source = <<~MT
+
+import std.mem.pool as pool
+
+function main() -> int:
+    let _ = pool.create(0, 2)
+    return 0
+
+        MT
+
+        result = run_program(source, compiler:)
+
+        assert_equal "", result.stdout
+        assert_equal 134, result.exit_status
+        assert_match(/pool\.create_aligned requires slot size > 0 when slot count > 0/, result.stderr)
+        assert_equal [], result.link_flags
+    end
+
   private
 
   def run_program(source, compiler:)
