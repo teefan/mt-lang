@@ -5,11 +5,11 @@ module MilkTea
 
   class Token < Data.define(:type, :lexeme, :literal, :line, :column, :start_offset, :end_offset, :leading_trivia, :trailing_trivia)
     KEYWORDS = {
-      "align" => :align,
       "and" => :and,
       "align_of" => :align_of,
       "as" => :as,
       "async" => :async,
+      "attribute" => :attribute,
       "await" => :await,
       "break" => :break,
       "const" => :const,
@@ -46,7 +46,6 @@ module MilkTea
       "or" => :or,
       "out" => :out,
       "pass" => :pass,
-      "packed" => :packed,
       "proc" => :proc,
       "public" => :public,
       "return" => :return,

@@ -145,6 +145,7 @@ Top-level declarations:
 - `const`
 - `var`
 - `type`
+- `attribute`
 - `interface`
 - `struct`
 - `union`
@@ -162,7 +163,7 @@ Top-level declarations:
 File-kind note:
 
 - Ordinary files may use the full declaration surface above.
-- External files use a restricted declaration surface: `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`, plus `packed` / `align(...)` struct forms.
+- External files use a restricted declaration surface: `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`. External files cannot declare new attributes, but supported attribute applications such as `@[packed]` and `@[align(...)]` may still appear on declarations that accept them.
 
 ### 3.1 Visibility
 
@@ -288,19 +289,23 @@ Arm constructors:
 - Payload arm: `Token.ident(text = "hello")` — field names with `=`.
 - No-payload arm: `Token.eof` — accessed as a bare member expression.
 
-Layout modifiers for structs:
+Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes:
 
 ```mt
-packed struct Header:
+@[packed]
+struct Header:
     tag: ubyte
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 ```
 
 `align(...)` must be a positive power of two.
 
-The current C backend lowers `packed` / `align(...)` with GNU-style `__attribute__((...))`, so these layout modifiers currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these modifiers today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
+Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.
+
+The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
 ### 3.5 Interfaces
 

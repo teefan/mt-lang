@@ -49,14 +49,20 @@ module MilkTea
     TypeAliasDecl = Data.define(:name, :target, :visibility, :line) do
       def initialize(name:, target:, visibility:, line: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :packed, :alignment, :visibility, :line) do
-      def initialize(name:, type_params:, implements:, c_name:, fields:, packed:, alignment:, visibility:, line: nil) = super
+    AttributeDecl = Data.define(:name, :targets, :params, :visibility, :line, :column) do
+      def initialize(name:, targets:, params:, visibility:, line: nil, column: nil) = super
+    end
+    AttributeApplication = Data.define(:name, :arguments, :line, :column) do
+      def initialize(name:, arguments:, line: nil, column: nil) = super
+    end
+    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :attributes, :packed, :alignment, :visibility, :line) do
+      def initialize(name:, type_params:, implements:, c_name:, fields:, attributes: [], packed:, alignment:, visibility:, line: nil) = super
     end
     UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
       def initialize(name:, c_name:, fields:, visibility:, line: nil) = super
     end
-    Field = Data.define(:name, :type) do
-      def initialize(name:, type:) = super
+    Field = Data.define(:name, :type, :attributes, :line, :column) do
+      def initialize(name:, type:, attributes: [], line: nil, column: nil) = super
     end
     EnumDecl = Data.define(:name, :backing_type, :members, :visibility, :line) do
       def initialize(name:, backing_type:, members:, visibility:, line: nil) = super
@@ -74,20 +80,20 @@ module MilkTea
     ExtendingBlock = Data.define(:type_name, :methods, :line) do
       def initialize(type_name:, methods:, line: nil) = super
     end
-    InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :line, :column) do
-      def initialize(name:, params:, return_type:, kind:, async:, line: nil, column: nil) = super
+    InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :attributes, :line, :column) do
+      def initialize(name:, params:, return_type:, kind:, async:, attributes: [], line: nil, column: nil) = super
     end
-    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :line, :column) do
-      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, line: nil, column: nil) = super
+    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :attributes, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, attributes: [], line: nil, column: nil) = super
     end
-    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :line, :column) do
-      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line: nil, column: nil) = super
+    MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :attributes, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes: [], line: nil, column: nil) = super
     end
-    ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :line) do
-      def initialize(name:, type_params:, params:, return_type:, variadic:, line: nil) = super
+    ExternFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :attributes, :line) do
+      def initialize(name:, type_params:, params:, return_type:, variadic:, attributes: [], line: nil) = super
     end
-    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :line) do
-      def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, line: nil) = super
+    ForeignFunctionDecl = Data.define(:name, :type_params, :params, :return_type, :variadic, :mapping, :visibility, :attributes, :line) do
+      def initialize(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, attributes: [], line: nil) = super
     end
     Param = Data.define(:name, :type, :line, :column) do
       def initialize(name:, type:, line: nil, column: nil) = super

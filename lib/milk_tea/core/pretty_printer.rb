@@ -246,13 +246,17 @@ module MilkTea
           end
         when AST::TypeAliasDecl
           line("#{visibility_prefix(declaration)}type #{declaration.name} = #{render_type(declaration.target)}")
+        when AST::AttributeDecl
+          text = "#{visibility_prefix(declaration)}attribute[#{declaration.targets.join(', ')}] #{declaration.name}"
+          text += "(#{declaration.params.map { |param| render_param(param) }.join(', ')})" unless declaration.params.empty?
+          line(text)
+        when AST::StaticAssert
+          line("static_assert(#{render_expression(declaration.condition)}, #{render_expression(declaration.message)})")
         when AST::StructDecl
-          prefixes = []
-          prefixes << "packed" if declaration.packed
-          prefixes << "align(#{declaration.alignment})" if declaration.alignment
+          emit_attribute_applications(declaration.attributes)
+          header_idx = @lines.length
           header = +""
           header << visibility_prefix(declaration)
-          header << "#{prefixes.join(' ')} " unless prefixes.empty?
           header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}"
           header << render_implements_clause(declaration.implements)
           header << " = c#{declaration.c_name.inspect}" if declaration.c_name
@@ -260,6 +264,7 @@ module MilkTea
           line(header)
           with_indent do
             declaration.fields.each do |field|
+              emit_attribute_applications(field.attributes)
               line("#{field.name}: #{render_type(field.type)}")
             end
           end
@@ -285,6 +290,7 @@ module MilkTea
           line("#{visibility_prefix(declaration)}interface #{declaration.name}:")
           with_indent do
             declaration.methods.each do |method|
+              emit_attribute_applications(method.attributes)
               line(render_interface_method_signature(method))
             end
           end
@@ -299,8 +305,12 @@ module MilkTea
         when AST::FunctionDef
           emit_function(declaration)
         when AST::ExternFunctionDecl
+          emit_attribute_applications(declaration.attributes)
+          header_idx = @lines.length
           line("#{render_function_signature(declaration, prefix: 'external ')}")
         when AST::ForeignFunctionDecl
+          emit_attribute_applications(declaration.attributes)
+          header_idx = @lines.length
           line("#{render_function_signature(declaration)} = #{render_expression(declaration.mapping)}")
         else
           raise ArgumentError, "unsupported AST declaration #{declaration.class.name}"
@@ -324,6 +334,7 @@ module MilkTea
       end
 
       def emit_function(function)
+        emit_attribute_applications(function.attributes)
         line("#{render_function_signature(function)}:")
         with_indent do
           function.body.each do |statement|
@@ -406,6 +417,28 @@ module MilkTea
         return "" if implements.empty?
 
         " implements #{implements.map(&:to_s).join(', ')}"
+      end
+
+      def emit_attribute_applications(attributes)
+        attributes.each do |attribute|
+          line(render_attribute_application(attribute))
+        end
+      end
+
+      def render_attribute_application(attribute)
+        text = +"@[#{attribute.name}"
+        unless attribute.arguments.empty?
+          rendered_arguments = attribute.arguments.map do |argument|
+            if argument.name
+              "#{argument.name} = #{render_expression(argument.value)}"
+            else
+              render_expression(argument.value)
+            end
+          end
+          text << "(#{rendered_arguments.join(', ')})"
+        end
+        text << "]"
+        text
       end
 
       def render_interface_method_signature(method)

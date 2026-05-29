@@ -4,11 +4,12 @@ module MilkTea
   module CompileTime
     module_function
 
-    def evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil)
+    def evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
       Evaluator.new(
         resolve_identifier:,
         resolve_member_access:,
         resolve_type_ref:,
+        resolve_call:,
       ).evaluate(expression)
     end
 
@@ -25,10 +26,11 @@ module MilkTea
     end
 
     class Evaluator
-      def initialize(resolve_identifier:, resolve_member_access:, resolve_type_ref: nil)
+      def initialize(resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
         @resolve_identifier = resolve_identifier
         @resolve_member_access = resolve_member_access
         @resolve_type_ref = resolve_type_ref
+        @resolve_call = resolve_call
       end
 
       def evaluate(expression)
@@ -43,6 +45,8 @@ module MilkTea
           @resolve_identifier&.call(expression)
         when AST::MemberAccess
           @resolve_member_access&.call(expression)
+        when AST::Call
+          @resolve_call&.call(expression)
         when AST::SizeofExpr
           type = resolve_layout_type(expression.type)
           type && Layout.size_of(type)

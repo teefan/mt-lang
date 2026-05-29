@@ -480,8 +480,10 @@ module MilkTea
     def module_binding(analysis)
       types = {}
       interfaces = {}
+      attributes = {}
       private_types = {}
       private_interfaces = {}
+      private_attributes = {}
       values = {}
       private_values = {}
       functions = {}
@@ -495,6 +497,9 @@ module MilkTea
         when AST::InterfaceDecl
           target = exported_declaration?(analysis, declaration) ? interfaces : private_interfaces
           target[declaration.name] = analysis.interfaces.fetch(declaration.name)
+        when AST::AttributeDecl
+          target = exported_declaration?(analysis, declaration) ? attributes : private_attributes
+          target[declaration.name] = analysis.attributes.fetch(declaration.name)
         when AST::ConstDecl, AST::VarDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
           target[declaration.name] = analysis.values.fetch(declaration.name)
@@ -511,6 +516,7 @@ module MilkTea
         name: analysis.module_name,
         types:,
         interfaces:,
+        attributes:,
         values:,
         functions:,
         methods:,
@@ -518,6 +524,7 @@ module MilkTea
         imports: analysis.imports,
         private_types:,
         private_interfaces:,
+        private_attributes:,
         private_values:,
         private_functions:,
         private_methods:,

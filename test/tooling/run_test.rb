@@ -1343,14 +1343,18 @@ function main() -> int:
 
       File.write(source_path, <<~MT
 
-packed struct Header:
+@[packed]
+struct Header:
     tag: ubyte
     value: uint
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 
-packed align(16) struct Packet:
+@[packed]
+@[align(16)]
+struct Packet:
     tag: ubyte
     value: uint
 

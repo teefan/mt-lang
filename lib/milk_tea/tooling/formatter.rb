@@ -113,7 +113,7 @@ module MilkTea
 
       unless candidates.empty?
         candidates
-          .sort_by { |entry| [-entry[:depth], -(entry[:end_char] - entry[:start_char])] }
+          .sort_by { |entry| [-(entry[:end_char] - entry[:start_char]), entry[:depth]] }
           .each do |candidate|
             [true, false].each do |trailing_commas|
               new_text = build_wrapped_delimited_group_text(
@@ -223,7 +223,9 @@ module MilkTea
           blank_run += 1
         else
           if emitted_content
-            needed = if extending_block_header_line?(line)
+            needed = if previous_content_line && attribute_application_line?(previous_content_line)
+              0
+            elsif extending_block_header_line?(line)
               2 # exactly 2 blank lines before extending blocks
             elsif function_line?(line)
               if bodyless_function_line?(line)
@@ -315,6 +317,10 @@ module MilkTea
       return false unless stripped.end_with?(":")
 
       stripped.start_with?("interface ")
+    end
+
+    def self.attribute_application_line?(line)
+      line.strip.start_with?("@[")
     end
 
     def self.long_line_wrap_candidates(tokens, target_line_number, line)

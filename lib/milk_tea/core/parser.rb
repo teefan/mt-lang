@@ -62,9 +62,11 @@ module MilkTea
     private
 
     TOP_LEVEL_RECOVERY_START_TYPES = %i[
-      module import public packed align const var type struct union enum flags variant interface
+      module import at public attribute const var type struct union enum flags variant interface
       opaque extending foreign async function external static_assert link include compiler_flag
     ].freeze
+
+    BUILTIN_ATTRIBUTE_NAME_LEXEMES = %w[packed align].freeze
 
     def parse_source_file(errors: nil)
       skip_newlines
@@ -136,48 +138,64 @@ module MilkTea
     end
 
     def parse_declaration
+      attributes = parse_attribute_applications
       visibility, visibility_token = parse_visibility
 
-      if check(:packed) || check(:align)
-        parse_struct_decl_with_layout(visibility:)
+      if legacy_layout_modifier_start?(peek)
+        raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
+      elsif match(:attribute)
+        reject_attributes!(attributes)
+        parse_attribute_decl(visibility:)
       elsif match(:const)
+        reject_attributes!(attributes)
         parse_const_decl(visibility:)
       elsif match(:var)
+        reject_attributes!(attributes)
         parse_var_decl(visibility:)
       elsif match(:type)
+        reject_attributes!(attributes)
         parse_type_alias_decl(visibility:)
       elsif match(:struct)
-        parse_struct_decl(visibility:)
+        parse_struct_decl(visibility:, attributes:)
       elsif match(:union)
+        reject_attributes!(attributes)
         parse_union_decl(visibility:)
       elsif match(:enum)
+        reject_attributes!(attributes)
         parse_enum_decl(AST::EnumDecl, visibility:)
       elsif match(:flags)
+        reject_attributes!(attributes)
         parse_enum_decl(AST::FlagsDecl, visibility:)
       elsif match(:variant)
+        reject_attributes!(attributes)
         parse_variant_decl(visibility:)
       elsif match(:interface)
+        reject_attributes!(attributes)
         parse_interface_decl(visibility:)
       elsif match(:opaque)
+        reject_attributes!(attributes)
         parse_opaque_decl(visibility:)
       elsif match(:extending)
+        reject_attributes!(attributes)
         raise error(visibility_token, "public is not allowed on extending blocks") if visibility == :public
 
         parse_extending_block
       elsif check(:mutable) || check(:static)
+        reject_attributes!(attributes)
         raise error(peek, "#{peek.lexeme} function is only allowed inside extending blocks")
       elsif match(:foreign)
-        parse_foreign_decl(visibility:)
+        parse_foreign_decl(visibility:, attributes:)
       elsif match(:async)
         consume(:function, "expected function after async")
-        parse_function_def(visibility:, async: true)
+        parse_function_def(visibility:, async: true, attributes:)
       elsif match(:function)
-        parse_function_def(visibility:)
+        parse_function_def(visibility:, attributes:)
       elsif match(:external)
         raise error(visibility_token, "public is not allowed on external declarations") if visibility == :public
 
-        parse_extern_decl
+        parse_extern_decl(attributes:)
       elsif match(:static_assert)
+        reject_attributes!(attributes)
         raise error(visibility_token, "public is not allowed on static_assert") if visibility == :public
 
         parse_static_assert
@@ -272,26 +290,39 @@ module MilkTea
     end
 
     def parse_raw_module_declaration
+      attributes = parse_attribute_applications
+
       if match(:public)
+        reject_attributes!(attributes)
         raise error(previous, "public is not allowed in external files")
-      elsif check(:packed) || check(:align)
-        parse_struct_decl_with_layout(visibility: nil)
+      elsif legacy_layout_modifier_start?(peek)
+        raise error(peek, "layout modifiers must use attributes like @[packed] or @[align(...)]")
+      elsif match(:attribute)
+        reject_attributes!(attributes)
+        raise error(previous, "attribute is not allowed in external files")
       elsif match(:const)
+        reject_attributes!(attributes)
         parse_const_decl(visibility: nil)
       elsif match(:type)
+        reject_attributes!(attributes)
         parse_type_alias_decl(visibility: nil)
       elsif match(:struct)
-        parse_struct_decl(visibility: nil)
+        parse_struct_decl(visibility: nil, attributes:)
       elsif match(:union)
+        reject_attributes!(attributes)
         parse_union_decl(visibility: nil)
       elsif match(:enum)
+        reject_attributes!(attributes)
         parse_enum_decl(AST::EnumDecl, visibility: nil)
       elsif match(:flags)
+        reject_attributes!(attributes)
         parse_enum_decl(AST::FlagsDecl, visibility: nil)
       elsif match(:opaque)
+        reject_attributes!(attributes)
         parse_opaque_decl(visibility: nil)
       elsif match(:external)
-        parse_extern_decl
+        reject_attributes!(attributes)
+        parse_extern_decl(attributes:)
       else
         raise error(peek, raw_module_declaration_error_message(peek))
       end
@@ -303,7 +334,7 @@ module MilkTea
         "imports must appear before external directives and declarations"
       when :link, :include, :compiler_flag
         "#{token.lexeme} directives must appear before external declarations"
-      when :var, :variant, :interface, :extending, :foreign, :function, :static_assert
+      when :attribute, :var, :variant, :interface, :extending, :foreign, :function, :static_assert
         "#{token.lexeme} is not allowed in external files"
       when :async
         "async function is not allowed in external files"
@@ -365,44 +396,46 @@ module MilkTea
       AST::TypeAliasDecl.new(name:, target:, visibility:, line:)
     end
 
-    def parse_struct_decl(packed: false, alignment: nil, visibility: :private)
+    def parse_attribute_decl(visibility: :private)
+      line = previous.line
+      consume(:lbracket, "expected '[' after attribute")
+      targets = parse_comma_separated_until(:rbracket) do
+        target_token = consume_path_component("expected attribute target")
+        case target_token.lexeme
+        when "struct"
+          :struct
+        when "field"
+          :field
+        when "callable"
+          :callable
+        else
+          raise error(target_token, "unknown attribute target #{target_token.lexeme}")
+        end
+      end
+      consume(:rbracket, "expected ']' after attribute targets")
+      name_token = consume_name("expected attribute name")
+      params = check(:lparen) ? parse_signature_params : []
+      consume_end_of_statement
+      AST::AttributeDecl.new(name: name_token.lexeme, targets:, params:, visibility:, line:, column: name_token.column)
+    end
+
+    def parse_struct_decl(packed: false, alignment: nil, visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected struct name").lexeme
       type_params = parse_declaration_type_params
       implements = parse_implements_clause
       c_name = parse_optional_explicit_c_name
+      packed, alignment = parse_struct_layout_attributes(attributes) if attributes.any?
       fields = parse_named_block do
-        field_name = consume_name("expected field name").lexeme
+        field_attributes = parse_attribute_applications
+        field_token = consume_name("expected field name")
+        field_name = field_token.lexeme
         consume(:colon, "expected ':' after field name")
         field_type = parse_type_ref
         consume_end_of_statement
-        AST::Field.new(name: field_name, type: field_type)
+        AST::Field.new(name: field_name, type: field_type, attributes: field_attributes, line: field_token.line, column: field_token.column)
       end
-      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, packed:, alignment:, visibility:, line:)
-    end
-
-    def parse_struct_decl_with_layout(visibility: :private)
-      packed = false
-      alignment = nil
-
-      loop do
-        if match(:packed)
-          raise error(previous, "duplicate packed modifier") if packed
-
-          packed = true
-        elsif match(:align)
-          raise error(previous, "duplicate align modifier") if alignment
-
-          consume(:lparen, "expected '(' after align")
-          alignment = consume(:integer, "expected integer alignment value").literal
-          consume(:rparen, "expected ')' after alignment value")
-        else
-          break
-        end
-      end
-
-      consume(:struct, "expected struct after layout modifiers")
-      parse_struct_decl(packed:, alignment:, visibility:)
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, attributes:, packed:, alignment:, visibility:, line:)
     end
 
     def parse_union_decl(visibility: :private)
@@ -488,7 +521,8 @@ module MilkTea
       line = previous.line
       name = consume_name("expected interface name").lexeme
       methods = parse_named_block do
-        parse_interface_method_decl
+        method_attributes = parse_attribute_applications
+        parse_interface_method_decl(attributes: method_attributes)
       end
       AST::InterfaceDecl.new(name:, methods:, visibility:, line:)
     end
@@ -499,7 +533,8 @@ module MilkTea
       receiver_type_param_names = extending_target_type_param_names(type_name)
       methods = with_type_param_names(receiver_type_param_names) do
         parse_named_block do
-          parse_method_def
+          method_attributes = parse_attribute_applications
+          parse_method_def(attributes: method_attributes)
         end
       end
       AST::ExtendingBlock.new(type_name:, methods:, line:)
@@ -530,22 +565,22 @@ module MilkTea
       end
     end
 
-    def parse_function_def(visibility: :private, async: false)
+    def parse_function_def(visibility: :private, async: false, attributes: [])
       line = previous.line
       name_token = consume_name("expected function name")
       name = name_token.lexeme
       type_params, params, return_type, body = parse_callable_signature
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, line:, column: name_token.column)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, attributes:, line:, column: name_token.column)
     end
 
-    def parse_method_def
+    def parse_method_def(attributes: [])
       visibility, _visibility_token, async, kind, line, name_token = parse_method_like_decl_head
       name = name_token.lexeme
       type_params, params, return_type, body = parse_callable_signature
-      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, line:, column: name_token.column)
+      AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
     end
 
-    def parse_interface_method_decl
+    def parse_interface_method_decl(attributes: [])
       visibility, visibility_token, async, kind, line, name_token = parse_method_like_decl_head
       raise error(visibility_token, "public is not allowed on interface methods") if visibility == :public
 
@@ -556,7 +591,7 @@ module MilkTea
         generic_error_message: "interface method #{name} cannot be generic",
         allow_body: false
       )
-      AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, line:, column: name_token.column)
+      AST::InterfaceMethodDecl.new(name:, params:, return_type:, kind:, async:, attributes:, line:, column: name_token.column)
     end
 
     def parse_method_like_decl_head
@@ -605,17 +640,17 @@ module MilkTea
       [:private, nil]
     end
 
-    def parse_extern_decl
+    def parse_extern_decl(attributes: [])
       consume(:function, "expected function after external")
-      parse_extern_function_decl
+      parse_extern_function_decl(attributes:)
     end
 
-    def parse_foreign_decl(visibility: :private)
+    def parse_foreign_decl(visibility: :private, attributes: [])
       consume(:function, "expected function after foreign")
-      parse_foreign_function_decl(visibility:)
+      parse_foreign_function_decl(visibility:, attributes:)
     end
 
-    def parse_extern_function_decl
+    def parse_extern_function_decl(attributes: [])
       line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
@@ -628,10 +663,10 @@ module MilkTea
         return_type = parse_type_ref
       end
       consume_end_of_statement
-      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, line:)
+      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, attributes:, line:)
     end
 
-    def parse_foreign_function_decl(visibility: :private)
+    def parse_foreign_function_decl(visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected function name").lexeme
       type_params = parse_declaration_type_params
@@ -647,11 +682,15 @@ module MilkTea
         mapping = parse_expression
       end
       consume_end_of_statement
-      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, line:)
+      AST::ForeignFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, mapping:, visibility:, attributes:, line:)
     end
 
     def parse_params(allow_variadic: false)
       parse_parameter_list(allow_variadic:) { parse_param }
+    end
+
+    def parse_signature_params
+      parse_parameter_list { parse_param }
     end
 
     def parse_foreign_params(allow_variadic: false)
@@ -689,6 +728,67 @@ module MilkTea
       param_type = parse_type_ref
 
       AST::Param.new(name: name_token.lexeme, type: param_type, line: name_token.line, column: name_token.column)
+    end
+
+    def parse_attribute_applications
+      attributes = []
+
+      while match(:at)
+        consume(:lbracket, "expected '[' after '@'")
+        raise error(peek, "expected attribute in attribute list") if check(:rbracket)
+
+        attributes.concat(parse_comma_separated_until(:rbracket) { parse_attribute_application })
+        consume(:rbracket, "expected ']' after attributes")
+        skip_newlines
+      end
+
+      attributes
+    end
+
+    def parse_attribute_application
+      start_token = peek
+      name = parse_attribute_name
+      arguments = match(:lparen) ? parse_call_arguments : []
+      AST::AttributeApplication.new(name:, arguments:, line: start_token.line, column: start_token.column)
+    end
+
+    def parse_attribute_name
+      parts = [consume_attribute_name_component("expected attribute name").lexeme]
+      while match(:dot)
+        parts << consume_attribute_name_component("expected attribute name after '.'").lexeme
+      end
+      AST::QualifiedName.new(parts:)
+    end
+
+    def consume_attribute_name_component(message)
+      consume_name(message)
+    end
+
+    def parse_struct_layout_attributes(attributes)
+      packed = false
+      alignment = nil
+
+      attributes.each do |attribute|
+        next unless attribute.name.parts.length == 1
+
+        case attribute.name.parts.first
+        when "packed"
+          packed = true
+        when "align"
+          first_argument = attribute.arguments.first
+          next unless first_argument && first_argument.name.nil? && first_argument.value.is_a?(AST::IntegerLiteral)
+
+          alignment = first_argument.value.value
+        end
+      end
+
+      [packed, alignment]
+    end
+
+    def reject_attributes!(attributes)
+      return if attributes.empty?
+
+      raise error(peek, "attributes are only allowed on structs, struct fields, and callable declarations")
     end
 
     def parse_foreign_param
@@ -1842,7 +1942,11 @@ module MilkTea
     end
 
     def top_level_recovery_start?(token)
-      token.column.to_i <= 1 && TOP_LEVEL_RECOVERY_START_TYPES.include?(token.type)
+      token.column.to_i <= 1 && (TOP_LEVEL_RECOVERY_START_TYPES.include?(token.type) || legacy_layout_modifier_start?(token))
+    end
+
+    def legacy_layout_modifier_start?(token)
+      token&.type == :identifier && BUILTIN_ATTRIBUTE_NAME_LEXEMES.include?(token.lexeme)
     end
 
     def skip_newlines

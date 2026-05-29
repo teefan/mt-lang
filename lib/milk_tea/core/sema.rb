@@ -25,7 +25,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     Facts = Analysis
     ToolingSnapshot = Data.define(:facts, :diagnostics) do
       def analysis
@@ -67,6 +67,8 @@ module MilkTea
     end
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
+    AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
+    AttributePresenceKey = Data.define(:target, :attribute_module_name, :attribute_name)
     FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :specialization_owner, :type_substitutions, :declared_receiver_type)
     TypeParamConstraintBinding = Data.define(:interfaces) do
       def initialize(interfaces: []) = super
@@ -75,13 +77,17 @@ module MilkTea
     HashResolution = Data.define(:target_type, :binding)
     EqualResolution = Data.define(:target_type, :binding)
     OrderResolution = Data.define(:target_type, :binding)
-    ModuleBinding = Data.define(:name, :types, :interfaces, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
+    ModuleBinding = Data.define(:name, :types, :interfaces, :attributes, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_attributes, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
       end
 
       def private_interface?(name)
         private_interfaces.key?(name)
+      end
+
+      def private_attribute?(name)
+        private_attributes.key?(name)
       end
 
       def private_value?(name)
@@ -126,6 +132,31 @@ module MilkTea
       end
     end
 
+    BUILTIN_ATTRIBUTE_NAMES = %w[packed align].freeze
+
+    def self.builtin_attribute_binding(name, types)
+      case name
+      when "packed"
+        AttributeBinding.new(
+          name: "packed",
+          targets: [:struct].freeze,
+          params: [].freeze,
+          module_name: nil,
+          builtin: true,
+          ast: nil,
+        )
+      when "align"
+        AttributeBinding.new(
+          name: "align",
+          targets: [:struct].freeze,
+          params: [Types::Parameter.new("bytes", types.fetch("ptr_uint"))].freeze,
+          module_name: nil,
+          builtin: true,
+          ast: nil,
+        )
+      end
+    end
+
     BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[Option Result]).freeze
 
     def self.check(ast, imported_modules: {}, allow_missing_imports: false)
@@ -164,6 +195,7 @@ module MilkTea
         @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }
         @types = {}
         @interfaces = {}
+        @attributes = {}
         @top_level_values = {}
         @top_level_functions = {}
         @imports = {}
@@ -198,18 +230,23 @@ module MilkTea
         @required_unsafe_lines = []
         @current_specialization_owner = nil
         @return_context_stack = []
+        @validated_attribute_arguments = {}
+        @attribute_application_bindings = {}
       end
 
       def check
         install_builtin_types
+        install_builtin_attributes
         install_imports
         declare_named_types
         resolve_generic_type_param_constraints
         resolve_type_aliases
+        declare_attributes
         resolve_aggregate_fields
         resolve_enum_members
         resolve_variant_arms
         declare_top_level_values
+        validate_attribute_applications
         declare_functions
         check_interface_conformances
         check_top_level_values
@@ -225,6 +262,7 @@ module MilkTea
           imports: @imports,
           types: @types,
           interfaces: @interfaces,
+          attributes: snapshot_attributes,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
@@ -243,14 +281,17 @@ module MilkTea
       # Returns { analysis: Analysis, errors: [SemaError] }.
       def check_collecting_errors
         install_builtin_types
+        install_builtin_attributes
         install_imports
         declare_named_types
         resolve_generic_type_param_constraints
         resolve_type_aliases
+        declare_attributes
         resolve_aggregate_fields
         resolve_enum_members
         resolve_variant_arms
         declare_top_level_values
+        validate_attribute_applications
         declare_functions
         check_interface_conformances
 
@@ -284,6 +325,7 @@ module MilkTea
           imports: @imports,
           types: @types,
           interfaces: @interfaces,
+          attributes: snapshot_attributes,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
@@ -321,6 +363,20 @@ module MilkTea
 
       def builtin_result_type
         Types::BUILTIN_RESULT_TYPE
+      end
+
+      def install_builtin_attributes
+        BUILTIN_ATTRIBUTE_NAMES.each do |name|
+          @attributes[name] = Sema.builtin_attribute_binding(name, @types)
+        end
+      end
+
+      def snapshot_attributes
+        @attributes.each_with_object({}) do |(name, binding), attributes|
+          next if binding.builtin
+
+          attributes[name] = binding
+        end.freeze
       end
 
       def snapshot_methods
@@ -431,6 +487,32 @@ module MilkTea
         @ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
           ensure_available_type_name!(decl.name)
           @types[decl.name] = resolve_type_ref(decl.target)
+        end
+      end
+
+      def declare_attributes
+        @ast.declarations.grep(AST::AttributeDecl).each do |decl|
+          with_error_node(decl) do
+            raise_sema_error("duplicate attribute #{decl.name}") if @attributes.key?(decl.name)
+
+            params = []
+            seen = {}
+            decl.params.each do |param|
+              raise_sema_error("duplicate attribute parameter #{decl.name}.#{param.name}") if seen.key?(param.name)
+
+              seen[param.name] = true
+              params << Types::Parameter.new(param.name, resolve_type_ref(param.type))
+            end
+
+            @attributes[decl.name] = AttributeBinding.new(
+              name: decl.name,
+              targets: decl.targets.freeze,
+              params: params.freeze,
+              module_name: @module_name,
+              builtin: false,
+              ast: decl,
+            )
+          end
         end
       end
 
@@ -678,6 +760,164 @@ module MilkTea
             end
           end
         end
+      end
+
+      def validate_attribute_applications
+        @ast.declarations.each do |decl|
+          with_error_node(decl) do
+            case decl
+            when AST::StructDecl
+              packed, alignment = validate_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}")
+              @types.fetch(decl.name).set_layout(packed:, alignment:)
+
+              decl.fields.each do |field|
+                with_error_node(field) do
+                  if raw_module? && field.attributes.any?
+                    raise_sema_error("attributes are not allowed on fields in external files")
+                  end
+
+                  validate_decl_attribute_applications!(field.attributes, target_kind: :field, target_label: "field #{decl.name}.#{field.name}")
+                end
+              end
+            when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :callable, target_label: "callable #{decl.name}")
+            when AST::InterfaceDecl
+              decl.methods.each do |method|
+                with_error_node(method) do
+                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.name}.#{method.name}")
+                end
+              end
+            when AST::ExtendingBlock
+              decl.methods.each do |method|
+                with_error_node(method) do
+                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}")
+                end
+              end
+            end
+          end
+        end
+      end
+
+      def validate_decl_attribute_applications!(applications, target_kind:, target_label:)
+        seen = {}
+        packed = false
+        alignment = nil
+
+        applications.each do |application|
+          with_error_node(application) do
+            binding = resolve_attribute_binding(application.name)
+
+            if raw_module?
+              raise_sema_error("only built-in struct attributes are allowed in external files") unless binding.builtin && target_kind == :struct
+            end
+
+            unless binding.targets.include?(target_kind)
+              raise_sema_error("attribute #{binding.name} cannot target #{target_kind}")
+            end
+
+            binding_key = [binding.module_name, binding.name]
+            raise_sema_error("duplicate attribute #{binding.name} on #{target_label}") if seen.key?(binding_key)
+
+            seen[binding_key] = true
+            argument_values = validate_attribute_arguments!(binding, application)
+            @attribute_application_bindings[application.object_id] = binding
+            @validated_attribute_arguments[application.object_id] = argument_values
+
+            case binding.name
+            when "packed"
+              packed = true
+            when "align"
+              bytes = argument_values.fetch("bytes")
+              raise_sema_error("align(...) requires a positive alignment") unless bytes.is_a?(Integer) && bytes.positive?
+              raise_sema_error("align(...) requires a power-of-two alignment, got #{bytes}") unless power_of_two?(bytes)
+
+              alignment = bytes
+            end
+          end
+        end
+
+        [packed, alignment]
+      end
+
+      def validate_attribute_arguments!(binding, application)
+        params = binding.params
+        arguments = application.arguments
+
+        if params.empty?
+          raise_sema_error("attribute #{binding.name} does not take arguments") if arguments.any?
+
+          return {}
+        end
+
+        bound_arguments = {}
+        next_position = 0
+
+        arguments.each do |argument|
+          param = if argument.name
+                    params.find { |candidate| candidate.name == argument.name }.tap do |candidate|
+                      raise_sema_error("unknown attribute argument #{binding.name}.#{argument.name}") unless candidate
+                    end
+                  else
+                    while next_position < params.length && bound_arguments.key?(params[next_position].name)
+                      next_position += 1
+                    end
+
+                    raise_sema_error("attribute #{binding.name} expects #{params.length} arguments, got #{arguments.length}") if next_position >= params.length
+
+                    param = params[next_position]
+                    next_position += 1
+                    param
+                  end
+
+          raise_sema_error("duplicate attribute argument #{binding.name}.#{param.name}") if bound_arguments.key?(param.name)
+
+          bound_arguments[param.name] = argument.value
+        end
+
+        missing = params.reject { |param| bound_arguments.key?(param.name) }
+        unless missing.empty?
+          names = missing.map(&:name).join(", ")
+          raise_sema_error("attribute #{binding.name} is missing required arguments: #{names}")
+        end
+
+        params.each_with_object({}) do |param, values|
+          argument_expression = bound_arguments.fetch(param.name)
+          actual_type = infer_expression(argument_expression, scopes: [], expected_type: param.type)
+          ensure_assignable!(
+            actual_type,
+            param.type,
+            "attribute #{binding.name} argument #{param.name} expects #{param.type}, got #{actual_type}",
+            expression: argument_expression,
+          )
+
+          const_value = evaluate_compile_time_const_value(argument_expression)
+          raise_sema_error("attribute #{binding.name} argument #{param.name} must be a compile-time constant") if const_value.nil?
+
+          values[param.name] = const_value
+        end
+      end
+
+      def resolve_attribute_binding(name)
+        parts = name.parts
+
+        if parts.length == 1
+          binding = @attributes[parts.first]
+          raise_sema_error("unknown attribute #{name}") unless binding
+
+          return binding
+        end
+
+        if parts.length == 2 && @imports.key?(parts.first)
+          imported_module = @imports.fetch(parts.first)
+          raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}") if imported_module.private_attribute?(parts.last)
+
+          binding = imported_module.attributes[parts.last]
+          raise_sema_error("unknown attribute #{name}") unless binding
+
+          return binding
+        end
+
+        raise_sema_error("unknown attribute #{name}")
       end
 
       def declare_functions
@@ -1087,7 +1327,80 @@ module MilkTea
           resolve_type_ref: lambda do |type_ref|
             resolve_type_ref(type_ref)
           end,
+          resolve_call: lambda do |call_expression|
+            evaluate_compile_time_call(call_expression, scopes:)
+          end,
         )
+      end
+
+      def evaluate_compile_time_call(expression, scopes: nil)
+        case expression.callee
+        when AST::Identifier
+          case expression.callee.name
+          when "field_of"
+            check_field_of_call(expression.arguments, scopes: scopes || [])
+          when "callable_of"
+            check_callable_of_call(expression.arguments, scopes: scopes || [])
+          when "has_attribute"
+            evaluate_has_attribute_call(expression.arguments, scopes: scopes || [])
+          when "attribute_of"
+            evaluate_attribute_of_call(expression.arguments, scopes: scopes || [])
+          else
+            nil
+          end
+        when AST::Specialization
+          if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
+            evaluate_attribute_arg_call(expression.arguments, scopes: scopes || [])
+          end
+        else
+          nil
+        end
+      end
+
+      def evaluate_has_attribute_call(arguments, scopes:)
+        target = evaluate_reflection_target_argument(arguments.first.value, scopes:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        validate_attribute_target_compatibility!(target, binding)
+        !find_attribute_application(target, binding).nil?
+      end
+
+      def evaluate_attribute_of_call(arguments, scopes:)
+        target = evaluate_reflection_target_argument(arguments.first.value, scopes:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        validate_attribute_target_compatibility!(target, binding)
+
+        application = find_attribute_application(target, binding)
+        return nil unless application
+
+        Types::AttributeHandle.new(
+          binding.name,
+          binding.module_name,
+          target,
+          binding.params,
+          @validated_attribute_arguments[application.object_id],
+        )
+      end
+
+      def evaluate_attribute_arg_call(arguments, scopes:)
+        attribute_handle = evaluate_compile_time_const_value(arguments.first.value, scopes:)
+        return nil unless attribute_handle.is_a?(Types::AttributeHandle)
+
+        param_name = reflection_identifier_name(arguments[1].value, context: "attribute_arg")
+        return nil unless attribute_handle.argument_values
+
+        attribute_handle.argument_values[param_name]
+      end
+
+      def evaluate_reflection_target_argument(expression, scopes:)
+        if (type_expr = resolve_type_expression(expression))
+          handle = local_struct_handle_for_type(type_expr)
+          return handle if handle
+        end
+
+        value = evaluate_compile_time_const_value(expression, scopes:)
+        return value if value.is_a?(Types::FieldHandle) || value.is_a?(Types::CallableHandle)
+
+        nil
       end
 
       def evaluate_enum_member_const_value(expression, enum_type:, member_values:)
@@ -3247,6 +3560,16 @@ module MilkTea
           check_read_call(expression.arguments, scopes:)
         when :ptr_of
           check_ptr_of_call(expression.arguments, scopes:)
+        when :field_of
+          check_field_of_call(expression.arguments, scopes:)
+        when :callable_of
+          check_callable_of_call(expression.arguments, scopes:)
+        when :attribute_of
+          check_attribute_of_call(expression.arguments, scopes:)
+        when :has_attribute
+          check_has_attribute_call(expression.arguments, scopes:)
+        when :attribute_arg
+          check_attribute_arg_call(callable, expression.arguments, scopes:)
         else
           raise_sema_error("#{describe_expression(expression.callee)} is not callable")
         end
@@ -3488,6 +3811,10 @@ module MilkTea
           return [:const_ptr_of, nil, nil] if callee.name == "const_ptr_of"
           return [:read, nil, nil] if callee.name == "read"
           return [:ptr_of, nil, nil] if callee.name == "ptr_of"
+          return [:field_of, nil, nil] if callee.name == "field_of"
+          return [:callable_of, nil, nil] if callee.name == "callable_of"
+          return [:attribute_of, nil, nil] if callee.name == "attribute_of"
+          return [:has_attribute, nil, nil] if callee.name == "has_attribute"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
@@ -3614,6 +3941,15 @@ module MilkTea
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "order"
             return [:order, resolve_order_specialization(callee), nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
+            raise_sema_error("attribute_arg requires exactly one type argument") unless callee.arguments.length == 1
+
+            type_arg = callee.arguments.first.value
+            raise_sema_error("attribute_arg type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+            return [:attribute_arg, resolve_type_ref(type_arg), nil]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
@@ -3814,6 +4150,182 @@ module MilkTea
         return pointer_to(referenced_type(source_type)) if ref_type?(source_type)
 
         pointer_to(infer_addr_source_type(source_expression, scopes:))
+      end
+
+      def check_field_of_call(arguments, scopes:)
+        raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("field_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        struct_handle = resolve_struct_handle_argument(arguments.first.value, scopes:)
+        field_name = reflection_identifier_name(arguments[1].value, context: "field_of")
+        field_decl = struct_handle.declaration.fields.find { |field| field.name == field_name }
+        raise_sema_error("unknown field #{struct_handle.struct_type}.#{field_name}") unless field_decl
+
+        Types::FieldHandle.new(struct_handle, field_name, field_decl)
+      end
+
+      def check_callable_of_call(arguments, scopes:)
+        raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("callable_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        resolve_callable_handle_argument(arguments.first.value, scopes:)
+      end
+
+      def check_has_attribute_call(arguments, scopes:)
+        raise_sema_error("has_attribute does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("has_attribute expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        target = resolve_reflection_target_argument(arguments.first.value, scopes:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        validate_attribute_target_compatibility!(target, binding)
+
+        @types.fetch("bool")
+      end
+
+      def check_attribute_of_call(arguments, scopes:)
+        raise_sema_error("attribute_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("attribute_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        target = resolve_reflection_target_argument(arguments.first.value, scopes:)
+        binding = resolve_attribute_name_argument(arguments[1].value)
+        validate_attribute_target_compatibility!(target, binding)
+
+        application = find_attribute_application(target, binding)
+        unless application || attribute_presence_guard_active?(scopes, attribute_presence_refinement_key(target, binding))
+          raise_sema_error("attribute #{qualified_attribute_name(binding)} is not applied to #{target}")
+        end
+
+        Types::AttributeHandle.new(
+          binding.name,
+          binding.module_name,
+          target,
+          binding.params,
+          application ? @validated_attribute_arguments[application.object_id] : nil,
+        )
+      end
+
+      def check_attribute_arg_call(expected_type, arguments, scopes:)
+        raise_sema_error("attribute_arg does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("attribute_arg expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        handle_type = infer_expression(arguments.first.value, scopes:)
+        raise_sema_error("attribute_arg expects an attribute handle") unless handle_type.is_a?(Types::AttributeHandle)
+
+        param_name = reflection_identifier_name(arguments[1].value, context: "attribute_arg")
+        parameter = handle_type.params.find { |candidate| candidate.name == param_name }
+        raise_sema_error("attribute #{handle_type.attribute_name} has no parameter #{param_name}") unless parameter
+        raise_sema_error("attribute_arg[#{expected_type}] does not match declared type #{parameter.type} for #{handle_type.attribute_name}.#{param_name}") unless parameter.type == expected_type
+
+        expected_type
+      end
+
+      def resolve_struct_handle_argument(expression, scopes:)
+        if (type_expr = resolve_type_expression(expression))
+          handle = local_struct_handle_for_type(type_expr)
+          return handle if handle
+        end
+
+        raise_sema_error("field_of expects a struct type expression")
+      end
+
+      def resolve_reflection_target_argument(expression, scopes:)
+        if (type_expr = resolve_type_expression(expression))
+          handle = local_struct_handle_for_type(type_expr)
+          return handle if handle
+        end
+
+        handle = infer_expression(expression, scopes:)
+        return handle if handle.is_a?(Types::FieldHandle) || handle.is_a?(Types::CallableHandle)
+
+        raise_sema_error("attribute reflection expects a struct type, field handle, or callable handle")
+      end
+
+      def resolve_callable_handle_argument(expression, scopes:)
+        callable_kind, callable, _receiver = resolve_callable(expression, scopes:)
+        raise_sema_error("callable_of expects a callable declaration name") unless callable_kind == :function
+
+        Types::CallableHandle.new(describe_expression(expression), callable.ast)
+      end
+
+      def resolve_attribute_name_argument(expression)
+        case expression
+        when AST::Identifier
+          resolve_attribute_binding(AST::QualifiedName.new(parts: [expression.name]))
+        when AST::MemberAccess
+          raise_sema_error("attribute name must use a module qualifier") unless expression.receiver.is_a?(AST::Identifier)
+
+          resolve_attribute_binding(AST::QualifiedName.new(parts: [expression.receiver.name, expression.member]))
+        else
+          raise_sema_error("attribute name must be an identifier or module-qualified attribute name")
+        end
+      end
+
+      def reflection_identifier_name(expression, context:)
+        raise_sema_error("#{context} expects an identifier argument") unless expression.is_a?(AST::Identifier)
+
+        expression.name
+      end
+
+      def local_struct_handle_for_type(type)
+        base_type = type.is_a?(Types::StructInstance) ? type.definition : type
+        return nil unless base_type.is_a?(Types::Struct) || base_type.is_a?(Types::GenericStructDefinition)
+
+        declaration = local_struct_declaration_for_type(base_type)
+        return nil unless declaration
+
+        Types::StructHandle.new(base_type, declaration)
+      end
+
+      def local_struct_declaration_for_type(type)
+        return nil unless type.respond_to?(:module_name)
+        return nil unless type.module_name == @module_name
+
+        @ast.declarations.find do |decl|
+          decl.is_a?(AST::StructDecl) && decl.name == type.name
+        end
+      end
+
+      def validate_attribute_target_compatibility!(target, binding)
+        target_kind = attribute_target_kind(target)
+        raise_sema_error("attribute #{qualified_attribute_name(binding)} cannot target #{target_kind}") unless binding.targets.include?(target_kind)
+      end
+
+      def attribute_target_kind(target)
+        case target
+        when Types::StructHandle then :struct
+        when Types::FieldHandle then :field
+        when Types::CallableHandle then :callable
+        else
+          raise_sema_error("unsupported attribute reflection target #{target}")
+        end
+      end
+
+      def target_attribute_applications(target)
+        case target
+        when Types::StructHandle then target.declaration.attributes
+        when Types::FieldHandle then target.field_declaration.attributes
+        when Types::CallableHandle then target.declaration.attributes
+        else []
+        end
+      end
+
+      def find_attribute_application(target, binding)
+        target_attribute_applications(target).find do |application|
+          application_binding = @attribute_application_bindings[application.object_id]
+          application_binding && application_binding.name == binding.name && application_binding.module_name == binding.module_name
+        end
+      end
+
+      def qualified_attribute_name(binding)
+        binding.module_name ? "#{binding.module_name}.#{binding.name}" : binding.name
+      end
+
+      def attribute_presence_refinement_key(target, binding)
+        AttributePresenceKey.new(target, binding.module_name, binding.name)
+      end
+
+      def attribute_presence_guard_active?(scopes, key)
+        scopes.any? { |scope| scope.key?(key) }
       end
 
       def check_aggregate_construction(struct_type, arguments, scopes:)
@@ -6708,11 +7220,26 @@ module MilkTea
         return scopes if refinements.nil? || refinements.empty?
 
         base_scopes = scopes.last.is_a?(FlowScope) ? scopes[0...-1] : scopes
-        merged_refinements = scopes.last.is_a?(FlowScope) ? scopes.last.each_with_object({}) { |(name, binding), result| result[name] = binding.type } : {}
+        merged_refinements = if scopes.last.is_a?(FlowScope)
+                               scopes.last.each_with_object({}) do |(name, binding), result|
+                                 result[name] = if name.is_a?(String) && binding.respond_to?(:type)
+                                                  binding.type
+                                                else
+                                                  binding
+                                                end
+                               end
+                             else
+                               {}
+                             end
         merged_refinements = merge_refinements(merged_refinements, refinements)
         flow_scope = FlowScope.new
 
         merged_refinements.each do |name, refined_type|
+          unless name.is_a?(String)
+            flow_scope[name] = refined_type
+            next
+          end
+
           binding = lookup_value(name, base_scopes)
           next unless binding
 
@@ -6739,6 +7266,11 @@ module MilkTea
 
       def flow_refinements(expression, truthy:, scopes:)
         case expression
+        when AST::Call
+          if truthy && has_attribute_refinement_call?(expression)
+            key = attribute_presence_key_from_call(expression, scopes:)
+            return key ? { key => true } : {}
+          end
         when AST::UnaryOp
           return flow_refinements(expression.operand, truthy: !truthy, scopes:) if expression.operator == "not"
         when AST::BinaryOp
@@ -6818,9 +7350,24 @@ module MilkTea
       def merged_scope_bindings(scopes)
         scopes.each_with_object({}) do |scope, bindings|
           scope.each do |name, binding|
+            next unless name.is_a?(String)
+
             bindings[name] = binding
           end
         end
+      end
+
+      def has_attribute_refinement_call?(expression)
+        expression.callee.is_a?(AST::Identifier) && expression.callee.name == "has_attribute" && expression.arguments.length == 2 && expression.arguments.none?(&:name)
+      end
+
+      def attribute_presence_key_from_call(expression, scopes:)
+        target = resolve_reflection_target_argument(expression.arguments.first.value, scopes:)
+        binding = resolve_attribute_name_argument(expression.arguments[1].value)
+        validate_attribute_target_compatibility!(target, binding)
+        attribute_presence_refinement_key(target, binding)
+      rescue SemaError
+        nil
       end
 
       def statement_end_line(statement)

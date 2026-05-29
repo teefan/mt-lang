@@ -5673,6 +5673,33 @@ function main(value: int) -> int:
     end
   end
 
+  def test_document_diagnostic_reports_attribute_target_errors_at_attribute_name
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_attribute_target_error_test.mt"
+      source = <<~MT
+        public attribute[field] rename(name: str)
+
+        @[rename("packet")]
+        struct Packet:
+            payload_len: uint
+      MT
+
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/diagnostic", { "textDocument" => { "uri" => uri } })
+      items = response.fetch("result").fetch("items")
+      diagnostic = items.find { |item| item.fetch("message").include?("attribute rename cannot target struct") }
+
+      refute_nil diagnostic, "expected attribute target diagnostic, got #{items.map { |item| item['message'] }.inspect}"
+      assert_equal 2, diagnostic.dig("range", "start", "line")
+      assert_equal 2, diagnostic.dig("range", "start", "character")
+      assert_equal 8, diagnostic.dig("range", "end", "character")
+    end
+  end
+
   def test_document_diagnostic_reports_ambiguous_imported_extension_method_at_member_token
     Dir.mktmpdir("milk-tea-lsp-ambiguous-extension") do |dir|
       Dir.mkdir(File.join(dir, "std"))
@@ -6708,6 +6735,86 @@ function main(value: int) -> int:
         assert_includes hash_call.fetch("modifierNames"), "defaultLibrary"
         assert_includes equal_call.fetch("modifierNames"), "defaultLibrary"
         assert_includes order_call.fetch("modifierNames"), "defaultLibrary"
+      end
+    end
+
+    def test_semantic_tokens_mark_attribute_reflection_builtins_as_default_library
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_attribute_reflection_test.mt"
+        source = <<~MT
+          public attribute[field, callable] trace(name: str)
+
+          @[packed]
+          @[align(16)]
+          struct Packet:
+              @[trace("payload_len")]
+              payload_len: uint
+
+          @[trace("parse_packet")]
+          function parse_packet() -> int:
+              return 0
+
+          static_assert(has_attribute(field_of(Packet, payload_len), trace), "field attribute missing")
+          static_assert(has_attribute(callable_of(parse_packet), trace), "callable attribute missing")
+          static_assert(
+              has_attribute(Packet, packed) and
+              attribute_arg[ptr_uint](attribute_of(Packet, align), bytes) == 16 and
+              attribute_arg[str](attribute_of(field_of(Packet, payload_len), trace), name) == "payload_len",
+              "attribute reflection changed"
+          )
+
+          function main() -> int:
+              return 0
+        MT
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        has_attribute_field_line = source.lines.index { |text| text.include?("has_attribute(field_of(Packet, payload_len), trace)") }
+        has_attribute_callable_line = source.lines.index { |text| text.include?("has_attribute(callable_of(parse_packet), trace)") }
+        packed_attribute_line = source.lines.index { |text| text.include?("@[packed]") }
+        align_attribute_line = source.lines.index { |text| text.include?("@[align(16)]") }
+        trace_attribute_line = source.lines.index { |text| text.include?("@[trace(\"payload_len\")]") }
+        packed_reflection_line = source.lines.index { |text| text.include?("has_attribute(Packet, packed) and") }
+        align_reflection_line = source.lines.index { |text| text.include?("attribute_arg[ptr_uint](attribute_of(Packet, align), bytes) == 16") }
+        attribute_arg_line = source.lines.index { |text| text.include?("attribute_arg[str](attribute_of(field_of(Packet, payload_len), trace), name)") }
+
+        attribute_keyword = semantic_entry_for_lexeme_on_line(source, entries, "attribute", 0)
+        attribute_decl_name = semantic_entry_for_lexeme_on_line(source, entries, "trace", 0)
+        packed_attribute = semantic_entry_for_lexeme_on_line(source, entries, "packed", packed_attribute_line)
+        align_attribute = semantic_entry_for_lexeme_on_line(source, entries, "align", align_attribute_line)
+        trace_attribute = semantic_entry_for_lexeme_on_line(source, entries, "trace", trace_attribute_line)
+        has_attribute_call = semantic_entry_for_lexeme_on_line(source, entries, "has_attribute", has_attribute_field_line)
+        field_of_call = semantic_entry_for_lexeme_on_line(source, entries, "field_of", has_attribute_field_line)
+        callable_of_call = semantic_entry_for_lexeme_on_line(source, entries, "callable_of", has_attribute_callable_line)
+        attribute_arg_call = semantic_entry_for_lexeme_on_line(source, entries, "attribute_arg", attribute_arg_line)
+        attribute_of_call = semantic_entry_for_lexeme_on_line(source, entries, "attribute_of", attribute_arg_line)
+        trace_reflection_name = semantic_entry_for_lexeme_on_line(source, entries, "trace", has_attribute_field_line)
+        packed_reflection_name = semantic_entry_for_lexeme_on_line(source, entries, "packed", packed_reflection_line)
+        align_reflection_name = semantic_entry_for_lexeme_on_line(source, entries, "align", align_reflection_line)
+
+        assert_equal "keyword", attribute_keyword.fetch("tokenType")
+        assert_equal "decorator", attribute_decl_name.fetch("tokenType")
+        assert_includes attribute_decl_name.fetch("modifierNames"), "declaration"
+
+        [packed_attribute, align_attribute, trace_attribute, trace_reflection_name, packed_reflection_name, align_reflection_name].each do |entry|
+          assert_equal "decorator", entry.fetch("tokenType")
+          assert_empty entry.fetch("modifierNames")
+        end
+
+        [has_attribute_call, field_of_call, callable_of_call, attribute_arg_call, attribute_of_call].each do |entry|
+          assert_equal "function", entry.fetch("tokenType")
+          assert_includes entry.fetch("modifierNames"), "defaultLibrary"
+        end
       end
     end
 

@@ -28,7 +28,10 @@ module MilkTea
 
       KEYWORD_TOKEN_TYPES = Token::KEYWORDS.values.to_set.freeze
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
-      BUILTIN_FUNCTION_NAMES = %w[ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default].to_set.freeze
+      BUILTIN_FUNCTION_NAMES = %w[
+        ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default
+        field_of callable_of has_attribute attribute_of attribute_arg
+      ].to_set.freeze
       BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       OPERATOR_TOKEN_TYPES = %i[
         amp colon comma caret dot lparen rparen pipe lbracket rbracket question
@@ -3084,6 +3087,7 @@ module MilkTea
         trivia_types = Set[:newline, :indent, :dedent, :eof]
         @tokens_by_line_cache = Hash.new { |h, k| h[k] = [] }
         tokens.each { |t| @tokens_by_line_cache[t.line] << t unless trivia_types.include?(t.type) }
+        @attribute_name_semantic_overrides = build_attribute_name_semantic_overrides(tokens, facts)
 
         entries = []
 
@@ -3104,6 +3108,7 @@ module MilkTea
         entries.sort_by { |entry| [entry[:line], entry[:start_char]] }
       ensure
         @tokens_by_line_cache = nil
+        @attribute_name_semantic_overrides = nil
       end
 
       # Decomposes an fstring token into non-overlapping semantic token entries.
@@ -3264,6 +3269,10 @@ module MilkTea
         next_tok = next_non_trivia_token(tokens, index + 1)
         parameter_declaration = parameter_declaration_token?(tokens, index)
         user_defined_function = facts ? facts.functions.key?(name) : lexically_declared_free_function_name?(tokens, name)
+
+        if @attribute_name_semantic_overrides && (override = @attribute_name_semantic_overrides[[tok.line, tok.column]])
+          return override
+        end
 
         if (import_info = import_path_info_at(tokens, index, allow_keywords: true))
           modifiers = []
@@ -4258,6 +4267,113 @@ module MilkTea
 
         tokens.select do |tok|
           tok.line == line && ![:newline, :indent, :dedent, :eof].include?(tok.type)
+        end
+      end
+
+      def build_attribute_name_semantic_overrides(tokens, facts)
+        return {} unless facts&.respond_to?(:ast) && facts.ast
+
+        token_indices_by_position = tokens.each_with_index.each_with_object({}) do |(token, index), positions|
+          positions[[token.line, token.column]] = index
+        end
+        overrides = {}
+
+        walk_ast_nodes(facts.ast) do |node|
+          case node
+          when AST::AttributeDecl
+            mark_attribute_name_override(
+              overrides,
+              token_indices_by_position,
+              tokens,
+              [node.name],
+              line: node.line,
+              column: node.column,
+              declaration: true,
+            )
+          when AST::AttributeApplication
+            mark_attribute_name_override(
+              overrides,
+              token_indices_by_position,
+              tokens,
+              node.name.parts,
+              line: node.line,
+              column: node.column,
+            )
+          when AST::Call
+            mark_attribute_reflection_name_overrides(overrides, token_indices_by_position, tokens, node)
+          end
+        end
+
+        overrides
+      end
+
+      def walk_ast_nodes(node, &block)
+        case node
+        when Array
+          node.each { |entry| walk_ast_nodes(entry, &block) }
+        when String, Symbol, Numeric, TrueClass, FalseClass, NilClass
+          nil
+        else
+          return unless node.class.name&.start_with?("MilkTea::AST::")
+
+          yield node
+          node.to_h.each_value { |value| walk_ast_nodes(value, &block) }
+        end
+      end
+
+      def mark_attribute_reflection_name_overrides(overrides, token_indices_by_position, tokens, call_expression)
+        callee = call_expression.callee
+        return unless callee.is_a?(AST::Identifier)
+        return unless %w[has_attribute attribute_of].include?(callee.name)
+        return unless call_expression.arguments.length >= 2
+
+        attribute_name_expression = call_expression.arguments[1].value
+
+        case attribute_name_expression
+        when AST::Identifier
+          mark_attribute_name_override(
+            overrides,
+            token_indices_by_position,
+            tokens,
+            [attribute_name_expression.name],
+            line: attribute_name_expression.line,
+            column: attribute_name_expression.column,
+          )
+        when AST::MemberAccess
+          return unless attribute_name_expression.receiver.is_a?(AST::Identifier)
+
+          mark_attribute_name_override(
+            overrides,
+            token_indices_by_position,
+            tokens,
+            [attribute_name_expression.receiver.name, attribute_name_expression.member],
+            line: attribute_name_expression.receiver.line,
+            column: attribute_name_expression.receiver.column,
+          )
+        end
+      end
+
+      def mark_attribute_name_override(overrides, token_indices_by_position, tokens, parts, line:, column:, declaration: false)
+        current_index = token_indices_by_position[[line, column]]
+        return unless current_index
+
+        parts.each_with_index do |part, part_index|
+          token = tokens[current_index]
+          return unless token&.lexeme == part
+
+          if part_index == parts.length - 1
+            modifiers = []
+            modifiers << 'declaration' if declaration
+            overrides[[token.line, token.column]] = [:decorator, modifiers]
+            return
+          end
+
+          overrides[[token.line, token.column]] = [:namespace, []]
+          dot_index = next_non_trivia_token_index(tokens, current_index + 1)
+          return unless dot_index && tokens[dot_index].type == :dot
+
+          current_index = next_non_trivia_token_index(tokens, dot_index + 1)
+          return unless current_index
         end
       end
 

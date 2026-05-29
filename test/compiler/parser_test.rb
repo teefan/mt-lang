@@ -695,24 +695,51 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::AlignofExpr, return_stmt.value.right
   end
 
-  def test_parses_packed_and_aligned_struct_declarations
+  def test_parses_attribute_declarations_and_supported_attribute_targets
     source = <<~MT
-      packed struct Header:
-          tag: ubyte
+      public attribute[field] rename(name: str)
+      public attribute[callable] inline
+
+      @[packed]
+      @[align(16)]
+      public struct Header:
+          @[rename("payload_len")]
           value: uint
 
-      align(16) struct Mat4:
-          data: array[float, 16]
+      @[inline]
+      public function parse() -> int:
+          return 0
     MT
 
     ast = MilkTea::Parser.parse(source)
-    header = ast.declarations[0]
-    mat4 = ast.declarations[1]
+    rename_attr = ast.declarations[0]
+    inline_attr = ast.declarations[1]
+    header = ast.declarations[2]
+    parse_fn = ast.declarations[3]
 
+    assert_instance_of MilkTea::AST::AttributeDecl, rename_attr
+    assert_equal "rename", rename_attr.name
+    assert_equal [:field], rename_attr.targets
+    assert_instance_of MilkTea::AST::AttributeDecl, inline_attr
+    assert_equal [:callable], inline_attr.targets
     assert_equal true, header.packed
-    assert_nil header.alignment
-    assert_equal false, mat4.packed
-    assert_equal 16, mat4.alignment
+    assert_equal 16, header.alignment
+    assert_equal %w[packed align], header.attributes.map { |attribute| attribute.name.to_s }
+    assert_equal ["rename"], header.fields.first.attributes.map { |attribute| attribute.name.to_s }
+    assert_equal ["inline"], parse_fn.attributes.map { |attribute| attribute.name.to_s }
+  end
+
+  def test_rejects_legacy_layout_syntax
+    error = assert_raises(MilkTea::ParseError) do
+      MilkTea::Parser.parse(
+        <<~MT,
+          packed struct Header:
+              tag: ubyte
+        MT
+      )
+    end
+
+    assert_match(/layout modifiers must use attributes/, error.message)
   end
 
   def test_parses_unsafe_reinterpret_specialization_call

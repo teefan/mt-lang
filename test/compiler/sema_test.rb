@@ -4553,23 +4553,104 @@ function main() -> int:
     assert_equal true, result.functions.key?("main")
   end
 
-  def test_type_checks_packed_and_aligned_struct_layout
+  def test_type_checks_attributes_for_struct_field_and_callable_targets
     source = <<~MT
       # module demo.layout
 
-      packed struct Header:
+      public attribute[field] rename(name: str)
+      public attribute[callable] inline
+
+      @[packed]
+      struct Header:
           tag: ubyte
           value: uint
 
-      align(16) struct Mat4:
+      @[align(16)]
+      struct Mat4:
+          @[rename("payload")]
           data: array[float, 16]
 
       static_assert(size_of(Header) == 5, "Header should stay packed")
       static_assert(offset_of(Header, value) == 1, "Header.value offset drifted")
       static_assert(align_of(Mat4) == 16, "Mat4 alignment drifted")
 
+      @[inline]
       function main() -> int:
           return 0
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_public_imported_attributes
+    program = check_program_source(
+      <<~MT,
+        # module demo.main
+
+        import demo.attrs as attrs
+
+        @[attrs.traced("main")]
+        function main() -> int:
+            return 0
+      MT
+      {
+        "demo/attrs.mt" => <<~MT,
+          # module demo.attrs
+
+          public attribute[callable] traced(name: str)
+        MT
+      },
+    )
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_attribute_reflection_queries
+    source = <<~MT
+    # module demo.attr_queries
+
+    public attribute[field] rename(name: str)
+    public attribute[callable] inline
+
+    @[packed]
+    struct Packet:
+        @[rename("payload_len")]
+        payload_len: uint
+
+    @[align(16)]
+    struct Mat4:
+        data: array[float, 16]
+
+    @[inline]
+    function parse_packet() -> int:
+        return 0
+
+    static_assert(has_attribute(field_of(Packet, payload_len), rename), "field attribute missing")
+    static_assert(
+      has_attribute(field_of(Packet, payload_len), rename) and
+      attribute_arg[str](attribute_of(field_of(Packet, payload_len), rename), name) == "payload_len",
+      "field rename changed"
+    )
+    static_assert(has_attribute(callable_of(parse_packet), inline), "callable attribute missing")
+    static_assert(
+      has_attribute(Mat4, align) and
+      attribute_arg[ptr_uint](attribute_of(Mat4, align), bytes) == 16,
+      "Mat4 alignment changed"
+    )
+    static_assert(
+      not (has_attribute(Packet, align) and attribute_arg[ptr_uint](attribute_of(Packet, align), bytes) == 16),
+      "Packet should not have align metadata"
+    )
+
+    function aligned_bytes() -> ptr_uint:
+        if has_attribute(Mat4, align):
+            return attribute_arg[ptr_uint](attribute_of(Mat4, align), bytes)
+        return 0
+
+    function main() -> int:
+        return parse_packet()
     MT
 
     result = check_source(source)
@@ -5411,7 +5492,8 @@ extending Counter:
     source = <<~MT
       # module demo.layout
 
-      align(3) struct Mat4:
+      @[align(3)]
+      struct Mat4:
           data: array[float, 16]
     MT
 
@@ -5420,6 +5502,24 @@ extending Counter:
     end
 
     assert_match(/align\(\.\.\.\) requires a power-of-two alignment, got 3/, error.message)
+  end
+
+  def test_rejects_attribute_on_wrong_target
+    source = <<~MT
+      # module demo.bad
+
+      public attribute[field] rename(name: str)
+
+      @[rename("packet")]
+      struct Packet:
+          value: uint
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/attribute rename cannot target struct/, error.message)
   end
 
   def test_rejects_break_and_continue_outside_loops

@@ -96,6 +96,7 @@ Supported top-level declarations:
 - `const`
 - `var`
 - `type`
+- `attribute`
 - `interface`
 - `struct`
 - `union`
@@ -113,7 +114,7 @@ Supported top-level declarations:
 File-kind note:
 
 - Ordinary files may use the full declaration surface above.
-- External files are intentionally narrower: after optional imports and directives, they allow only `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`, plus `packed` / `align(...)` struct forms.
+- External files are intentionally narrower: after optional imports and directives, they allow only `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`. External files cannot declare new attributes, but supported attribute applications such as `@[packed]` and `@[align(...)]` may still appear on declarations that accept them.
 
 Visibility:
 
@@ -183,10 +184,12 @@ struct Vec2:
     x: float
     y: float
 
-packed struct Header:
+@[packed]
+struct Header:
     tag: ubyte
 
-align(16) struct Mat4:
+@[align(16)]
+struct Mat4:
     data: array[float, 16]
 
 union Number:
@@ -212,6 +215,8 @@ variant Token:
 Rules:
 
 - `struct` and `opaque` may declare nominal interface conformance with `implements`.
+- `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, and `callable` targets.
+- Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed` and `align(bytes)` are predefined struct attributes.
 - `variant` arms may carry named payload fields.
 - Payload arm construction uses named fields: `Token.ident(text = "hello")`.
 - No-payload arms are bare member expressions: `Token.eof`.
@@ -219,7 +224,8 @@ Rules:
 - `enum` and `flags` members must be compile-time integer constants.
 - `flags` members may reference earlier members to spell composite aliases such as `read_write = Permission.read | Permission.write`.
 - `align(...)` must be a positive power of two.
-- The current C backend lowers `packed` / `align(...)` with GNU-style `__attribute__((...))`, so these layout modifiers currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these modifiers today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
+- Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.
+- The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
 Generic variants and structs are supported, for example `Option[int]`.
 
