@@ -4657,7 +4657,7 @@ module MilkTea
                       env_pointer_type = pointer_to(env_struct_type)
                       env_name = fresh_c_temp_name(env, "#{local_name}_env")
                       raw_allocation = IR::Call.new(
-                        callee: "malloc",
+                        callee: "mt_async_alloc",
                         arguments: [IR::SizeofExpr.new(target_type: env_struct_type, type: @types.fetch("ptr_uint"))],
                         type: proc_env_pointer_type,
                       )
@@ -4781,7 +4781,7 @@ module MilkTea
               then_body: [
                 IR::ExpressionStmt.new(
                   expression: IR::Call.new(
-                    callee: "free",
+                    callee: "mt_async_free",
                     arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
                     type: @types.fetch("void"),
                   ),

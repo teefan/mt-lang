@@ -5427,7 +5427,8 @@ function main() -> int:
 
     assert_match(/typedef struct mt_proc_proc_int_int/, generated)
     assert_match(/typedef struct demo_proc_codegen__proc_1__env/, generated)
-    assert_match(/malloc\(sizeof\(demo_proc_codegen__proc_1__env\)\)/, generated)
+    assert_match(/mt_async_alloc\(sizeof\(demo_proc_codegen__proc_1__env\)\)/, generated)
+    assert_match(/mt_async_free\(__mt_proc_env\);/, generated)
     assert_match(/\.invoke = demo_proc_codegen__proc_1__invoke/, generated)
     assert_match(/\.release = demo_proc_codegen__proc_1__release/, generated)
     assert_match(/\.retain = demo_proc_codegen__proc_1__retain/, generated)
