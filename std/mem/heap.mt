@@ -153,8 +153,15 @@ public function alloc[T](count: ptr_uint) -> ptr[T]?:
 
 
 public function must_alloc[T](count: ptr_uint) -> ptr[T]:
+    if count == 0:
+        fatal(c"heap.must_alloc requires count > 0")
+
     if ptr_uint<-align_of(T) > minimum_alignment():
         fatal(c"heap.must_alloc does not support over-aligned types")
+
+    let element_size = ptr_uint<-size_of(T)
+    if mul_overflows(count, element_size):
+        fatal(c"heap.must_alloc size overflow")
 
     let memory = alloc[T](count) else:
         fatal(c"heap.must_alloc out of memory")
@@ -174,6 +181,13 @@ public function alloc_aligned[T](count: ptr_uint) -> ptr[T]?:
 
 
 public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
+    if count == 0:
+        fatal(c"heap.must_alloc_aligned requires count > 0")
+
+    let element_size = ptr_uint<-size_of(T)
+    if mul_overflows(count, element_size):
+        fatal(c"heap.must_alloc_aligned size overflow")
+
     let memory = alloc_aligned[T](count) else:
         fatal(c"heap.must_alloc_aligned out of memory")
 
@@ -192,8 +206,15 @@ public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
 
 
 public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
+    if count == 0:
+        fatal(c"heap.must_alloc_zeroed requires count > 0")
+
     if ptr_uint<-align_of(T) > minimum_alignment():
         fatal(c"heap.must_alloc_zeroed does not support over-aligned types")
+
+    let element_size = ptr_uint<-size_of(T)
+    if mul_overflows(count, element_size):
+        fatal(c"heap.must_alloc_zeroed size overflow")
 
     let memory = alloc_zeroed[T](count) else:
         fatal(c"heap.must_alloc_zeroed out of memory")
@@ -224,8 +245,15 @@ public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
 
 
 public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
+    if count == 0:
+        fatal(c"heap.must_resize requires count > 0")
+
     if ptr_uint<-align_of(T) > minimum_alignment():
         fatal(c"heap.must_resize does not support over-aligned types")
+
+    let element_size = ptr_uint<-size_of(T)
+    if mul_overflows(count, element_size):
+        fatal(c"heap.must_resize size overflow")
 
     let resized = resize[T](memory, count) else:
         fatal(c"heap.must_resize out of memory")

@@ -91,7 +91,93 @@ function main() -> int:
     assert_equal [], result.link_flags
   end
 
+  def test_host_runtime_rejects_heap_generic_must_alloc_zero_count
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    assert_contract_failure(<<~MT, /heap\.must_alloc requires count > 0/, compiler:)
+
+      import std.mem.heap as heap
+
+      function main() -> int:
+          let _ = heap.must_alloc[int](0)
+          return 0
+
+    MT
+  end
+
+  def test_host_runtime_rejects_heap_generic_must_alloc_aligned_zero_count
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    assert_contract_failure(<<~MT, /heap\.must_alloc_aligned requires count > 0/, compiler:)
+
+      import std.mem.heap as heap
+
+      function main() -> int:
+          let _ = heap.must_alloc_aligned[int](0)
+          return 0
+
+    MT
+  end
+
+  def test_host_runtime_rejects_heap_generic_must_alloc_zeroed_zero_count
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    assert_contract_failure(<<~MT, /heap\.must_alloc_zeroed requires count > 0/, compiler:)
+
+      import std.mem.heap as heap
+
+      function main() -> int:
+          let _ = heap.must_alloc_zeroed[int](0)
+          return 0
+
+    MT
+  end
+
+  def test_host_runtime_rejects_heap_generic_must_resize_zero_count
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    assert_contract_failure(<<~MT, /heap\.must_resize requires count > 0/, compiler:)
+
+      import std.mem.heap as heap
+
+      function main() -> int:
+          let bytes = heap.must_alloc[int](1)
+          defer heap.release(bytes)
+          let _ = heap.must_resize(bytes, 0)
+          return 0
+
+    MT
+  end
+
+  def test_host_runtime_rejects_heap_generic_must_alloc_size_overflow
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    assert_contract_failure(<<~MT, /heap\.must_alloc size overflow/, compiler:)
+
+      import std.mem.heap as heap
+
+      function main() -> int:
+          let _ = heap.must_alloc[long](heap.ptr_uint_max())
+          return 0
+
+    MT
+  end
+
   private
+
+  def assert_contract_failure(source, stderr_pattern, compiler:)
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal 134, result.exit_status
+    assert_match(stderr_pattern, result.stderr)
+    assert_equal [], result.link_flags
+  end
 
   def run_program(source, compiler:)
     Dir.mktmpdir("milk-tea-std-mem-heap") do |dir|
