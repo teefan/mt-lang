@@ -157,7 +157,7 @@ module MilkTea
       end
     end
 
-    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[Option Result]).freeze
+    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[Option Result Subscription EventError]).freeze
 
     def self.check(ast, imported_modules: {}, allow_missing_imports: false)
       Checker.new(ast, imported_modules:, allow_missing_imports:).check
@@ -351,6 +351,10 @@ module MilkTea
                            builtin_option_type
                          when "Result"
                            builtin_result_type
+                         when "Subscription"
+                           builtin_subscription_type
+                         when "EventError"
+                           builtin_event_error_type
                          else
                            Types::Primitive.new(name)
                          end
@@ -363,6 +367,14 @@ module MilkTea
 
       def builtin_result_type
         Types::BUILTIN_RESULT_TYPE
+      end
+
+      def builtin_subscription_type
+        Types::Subscription.new
+      end
+
+      def builtin_event_error_type
+        Types::Enum.new("EventError").define_members(@types.fetch("int"), ["full"]).define_member_values("full" => 0)
       end
 
       def install_builtin_attributes
@@ -581,6 +593,26 @@ module MilkTea
         raise_sema_error("explicit C names are not supported on generic external structs")
       end
 
+      def resolve_event_decl_type(decl, type_params: {}, type_param_constraints: {}, owner_type_name: nil)
+        raise_sema_error("event #{decl.name} capacity must be positive") unless decl.capacity.is_a?(Integer) && decl.capacity.positive?
+
+        payload_type = decl.payload_type ? resolve_type_ref(decl.payload_type, type_params:, type_param_constraints:) : nil
+        if payload_type
+          validate_stored_ref_type!(payload_type, "event #{decl.name} payload")
+          raise_sema_error("event #{decl.name} payload uses unsupported proc nesting") unless proc_storage_supported_type?(payload_type)
+          raise_sema_error("event #{decl.name} payload cannot use event storage type #{payload_type}") if noncopyable_event_storage_type?(payload_type)
+        end
+
+        Types::Event.new(
+          decl.name,
+          capacity: decl.capacity,
+          payload_type: payload_type,
+          module_name: @module_name,
+          visibility: decl.visibility,
+          owner_type_name: owner_type_name,
+        )
+      end
+
       def resolve_aggregate_fields
         @ast.declarations.each do |decl|
           with_error_node(decl) do
@@ -600,9 +632,11 @@ module MilkTea
                           end
             type_param_constraints = struct_type.is_a?(Types::GenericStructDefinition) ? struct_type.type_param_constraints : {}
             fields = {}
+            events = {}
 
             decl.fields.each do |field|
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
+              raise_sema_error("duplicate member #{decl.name}.#{field.name}") if events.key?(field.name)
               unless raw_module?
                 ensure_non_reserved_type_binding_name!(
                   field.name,
@@ -620,7 +654,30 @@ module MilkTea
               fields[field.name] = field_type
             end
 
+            if decl.is_a?(AST::StructDecl)
+              decl.events.each do |event_decl|
+                raise_sema_error("duplicate event #{decl.name}.#{event_decl.name}") if events.key?(event_decl.name)
+                raise_sema_error("duplicate member #{decl.name}.#{event_decl.name}") if fields.key?(event_decl.name)
+                unless raw_module?
+                  ensure_non_reserved_type_binding_name!(
+                    event_decl.name,
+                    kind_label: "event #{decl.name}",
+                    line: event_decl.line,
+                    column: event_decl.column,
+                  )
+                end
+
+                events[event_decl.name] = resolve_event_decl_type(
+                  event_decl,
+                  type_params:,
+                  type_param_constraints:,
+                  owner_type_name: decl.name,
+                )
+              end
+            end
+
             struct_type.define_fields(fields)
+            struct_type.define_events(events) if struct_type.respond_to?(:define_events)
           end
         end
       end
@@ -756,6 +813,14 @@ module MilkTea
                 type: type,
                 mutable: true,
                 kind: :var,
+              )
+            when AST::EventDecl
+              ensure_available_value_name!(decl.name, kind_label: "event", line: decl.line, column: decl.column)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: resolve_event_decl_type(decl),
+                mutable: false,
+                kind: :event,
               )
             end
           end
@@ -992,6 +1057,7 @@ module MilkTea
           type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
           validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
           validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
+          raise_sema_error("parameter #{param.name} of #{decl.name} must pass event storage through ref[...] or pointers, got #{type}") if noncopyable_event_storage_type?(type)
 
           if external && array_type?(type)
             raise_sema_error("external function #{decl.name} cannot take array parameters")
@@ -1052,6 +1118,7 @@ module MilkTea
         body_return_type = decl.return_type ? resolve_type_ref(decl.return_type, type_params:, type_param_constraints:) : @types.fetch("void")
         validate_return_ref_type!(body_return_type, function_name: decl.name)
         validate_return_proc_type!(body_return_type, function_name: decl.name)
+        raise_sema_error("function #{decl.name} cannot return event storage type #{body_return_type}") if noncopyable_event_storage_type?(body_return_type)
         if decl.name == "main" && async_function && body_return_type != @types.fetch("int") && body_return_type != @types.fetch("void")
           raise_sema_error("async main must return int or void")
         end
@@ -2289,6 +2356,10 @@ module MilkTea
           const_value = statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil
         end
 
+        if noncopyable_event_storage_type?(final_type) && !fresh_noncopyable_event_initializer?(statement.value, final_type, scopes:)
+          raise_sema_error("local #{statement.name} cannot copy event storage type #{final_type}")
+        end
+
         unless discard_binding
           current_scope[statement.name] = value_binding(
             name: statement.name,
@@ -2311,6 +2382,7 @@ module MilkTea
         end
 
         target_type = infer_lvalue(statement.target, scopes:)
+        raise_sema_error("cannot assign to non-copyable event storage type #{target_type}") if noncopyable_event_storage_type?(target_type)
 
         validate_consuming_foreign_expression!(statement.value, scopes:, root_allowed: false)
         value_type = infer_expression(statement.value, scopes:, expected_type: target_type)
@@ -3044,6 +3116,9 @@ module MilkTea
         if str_buffer_type?(method_receiver_type) && str_buffer_method_kind(method_receiver_type, expression.member)
           raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
         end
+        if event_type?(method_receiver_type) && event_method_kind(method_receiver_type, expression.member)
+          raise_sema_error("method #{method_receiver_type}.#{expression.member} must be called")
+        end
 
         unless aggregate_type?(field_receiver_type)
           raise_sema_error("cannot access member #{expression.member} of #{field_receiver_type}")
@@ -3051,6 +3126,14 @@ module MilkTea
 
         field_type = field_receiver_type.field(expression.member)
         return field_type if field_type
+
+        if (event_type = event_member_type(field_receiver_type, expression.member))
+          unless event_visible_from_current_module?(event_type)
+            raise_sema_error("event #{field_receiver_type}.#{expression.member} is private to module #{event_type.module_name}")
+          end
+
+          return event_type
+        end
 
         if lookup_method(method_receiver_type, expression.member)
           raise_sema_error("method #{method_receiver_type.name}.#{expression.member} must be called")
@@ -3534,6 +3617,8 @@ module MilkTea
         when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
           :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
           check_str_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
+          check_event_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
         when :variant_arm_ctor
@@ -3871,6 +3956,10 @@ module MilkTea
 
           if (str_buffer_method = str_buffer_method_kind(method_receiver_type, callee.member))
             return [str_buffer_method, method_receiver_type, callee.receiver]
+          end
+
+          if (event_method = event_method_kind(method_receiver_type, callee.member))
+            return [event_method, method_receiver_type, callee.receiver]
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
@@ -4765,6 +4854,186 @@ module MilkTea
         else
           raise_sema_error("unsupported str_buffer method #{kind}")
         end
+      end
+
+      def check_event_method_call(kind, receiver, arguments, scopes:)
+        method_name = event_method_name(kind)
+        receiver_type = infer_expression(receiver, scopes:)
+        raise_sema_error("unknown method #{receiver_type}.#{method_name}") unless event_type?(receiver_type)
+
+        raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless event_receiver_mutable?(receiver, scopes:)
+        if kind == :event_emit
+          raise_sema_error("#{receiver_type}.emit is only available inside module #{receiver_type.module_name}") unless receiver_type.module_name == @module_name
+        end
+
+        case kind
+        when :event_subscribe, :event_subscribe_once
+          raise_sema_error("#{method_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+          listener_type = event_listener_type(receiver_type)
+          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: listener_type)
+          ensure_argument_assignable!(
+            actual_type,
+            listener_type,
+            external: false,
+            message: "argument listener to #{receiver_type}.#{method_name} expects #{listener_type}, got #{actual_type}",
+            expression: arguments.first.value,
+          )
+
+          event_subscription_result_type
+        when :event_unsubscribe
+          raise_sema_error("unsubscribe expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("Subscription"))
+          ensure_argument_assignable!(
+            actual_type,
+            @types.fetch("Subscription"),
+            external: false,
+            message: "argument subscription to #{receiver_type}.unsubscribe expects Subscription, got #{actual_type}",
+            expression: arguments.first.value,
+          )
+
+          @types.fetch("bool")
+        when :event_emit
+          if receiver_type.payload_type.nil?
+            raise_sema_error("emit expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+          else
+            raise_sema_error("emit expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+            actual_type = infer_expression(arguments.first.value, scopes:, expected_type: receiver_type.payload_type)
+            ensure_argument_assignable!(
+              actual_type,
+              receiver_type.payload_type,
+              external: false,
+              message: "argument value to #{receiver_type}.emit expects #{receiver_type.payload_type}, got #{actual_type}",
+              expression: arguments.first.value,
+            )
+          end
+
+          @types.fetch("void")
+        when :event_wait
+          raise_sema_error("wait expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+
+          Types::Task.new(event_wait_result_type(receiver_type))
+        else
+          raise_sema_error("unsupported event method #{kind}")
+        end
+      end
+
+      def event_listener_type(event_type)
+        params = []
+        params << Types::Parameter.new("value", event_type.payload_type) if event_type.payload_type
+
+        Types::Function.new(
+          nil,
+          params:,
+          return_type: @types.fetch("void"),
+          external: false,
+        )
+      end
+
+      def event_subscription_result_type
+        @types.fetch("Result").instantiate([@types.fetch("Subscription"), @types.fetch("EventError")])
+      end
+
+      def event_wait_result_type(event_type)
+        payload_type = event_type.payload_type || @types.fetch("void")
+        @types.fetch("Result").instantiate([payload_type, @types.fetch("EventError")])
+      end
+
+      def event_method_kind(receiver_type, name)
+        return unless event_type?(receiver_type)
+
+        case name
+        when "subscribe"
+          :event_subscribe
+        when "subscribe_once"
+          :event_subscribe_once
+        when "unsubscribe"
+          :event_unsubscribe
+        when "emit"
+          :event_emit
+        when "wait"
+          :event_wait
+        end
+      end
+
+      def event_method_name(kind)
+        {
+          event_subscribe: "subscribe",
+          event_subscribe_once: "subscribe_once",
+          event_unsubscribe: "unsubscribe",
+          event_emit: "emit",
+          event_wait: "wait",
+        }.fetch(kind)
+      end
+
+      def event_visible_from_current_module?(event_type)
+        event_type.module_name == @module_name || event_type.visibility == :public
+      end
+
+      def event_receiver_mutable?(receiver_expression, scopes:)
+        return true if top_level_event_receiver?(receiver_expression, scopes:)
+        return false unless receiver_expression.is_a?(AST::MemberAccess)
+
+        receiver_type = infer_lvalue_receiver(
+          receiver_expression.receiver,
+          scopes:,
+          allow_ref_identifier: true,
+          allow_pointer_identifier: true,
+          require_mutable_pointer: true,
+          allow_span_param_identifier: true,
+        )
+        receiver_type = project_field_receiver_type(receiver_type, require_mutable_pointer: true)
+        !event_member_type(receiver_type, receiver_expression.member).nil?
+      rescue SemaError
+        false
+      end
+
+      def top_level_event_receiver?(receiver_expression, scopes:)
+        case receiver_expression
+        when AST::Identifier
+          binding = lookup_value(receiver_expression.name, scopes)
+          binding&.kind == :event
+        when AST::MemberAccess
+          return false unless receiver_expression.receiver.is_a?(AST::Identifier) && @imports.key?(receiver_expression.receiver.name)
+
+          imported_module = @imports.fetch(receiver_expression.receiver.name)
+          binding = imported_module.values[receiver_expression.member]
+          binding && binding.kind == :event
+        else
+          false
+        end
+      end
+
+      def event_member_type(receiver_type, name)
+        owner_type = receiver_type
+        owner_type = owner_type.definition if owner_type.is_a?(Types::StructInstance)
+        return unless owner_type.respond_to?(:event)
+
+        owner_type.event(name)
+      end
+
+      def fresh_noncopyable_event_initializer?(expression, target_type, scopes:)
+        return true unless expression
+
+        case expression
+        when AST::Call
+          callable_kind, callable, _receiver = resolve_callable(expression.callee, scopes:)
+          callable_kind == :struct && callable == target_type
+        when AST::Specialization
+          return false unless expression.callee.is_a?(AST::Identifier)
+          return false unless %w[zero default].include?(expression.callee.name)
+          return false unless expression.arguments.length == 1
+
+          type_arg = expression.arguments.first.value
+          type_arg.is_a?(AST::TypeRef) && resolve_type_ref(type_arg) == target_type
+        else
+          false
+        end
+      rescue SemaError
+        false
       end
 
       def lookup_value(name, scopes)
@@ -5779,7 +6048,7 @@ module MilkTea
 
       def sized_layout_type?(type)
         case type
-        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Task
+        when Types::Primitive, Types::Struct, Types::StructInstance, Types::Union, Types::Enum, Types::Flags, Types::Variant, Types::Span, Types::StringView, Types::Task, Types::Event, Types::Subscription
           true
         when Types::Nullable
           true
@@ -5804,6 +6073,8 @@ module MilkTea
         return true if span_type?(type)
         return true if string_view_type?(type)
         return true if task_type?(type)
+        return true if event_type?(type)
+        return true if subscription_type?(type)
         return true if type.is_a?(Types::Struct)
         return true if type.is_a?(Types::Variant)
         return true if pointer_type?(type)
@@ -5850,6 +6121,29 @@ module MilkTea
       def str_buffer_type?(type)
         type.is_a?(Types::GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1 &&
           generic_integer_type_argument?(type.arguments.first)
+      end
+
+      def event_type?(type)
+        type.is_a?(Types::Event)
+      end
+
+      def subscription_type?(type)
+        type.is_a?(Types::Subscription)
+      end
+
+      def event_carrier_type?(type)
+        case type
+        when Types::StructInstance
+          type.definition.respond_to?(:has_events?) && type.definition.has_events?
+        when Types::Struct
+          type.respond_to?(:has_events?) && type.has_events?
+        else
+          false
+        end
+      end
+
+      def noncopyable_event_storage_type?(type)
+        event_type?(type) || event_carrier_type?(type)
       end
 
       def str_buffer_capacity(type)

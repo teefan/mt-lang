@@ -27,7 +27,7 @@ class DAPLLDBDAPTest < Minitest::Test
     assert backend.running?
   ensure
     blocker&.push(true)
-    wait_thread&.join(0.2)
+    stop_thread(wait_thread, timeout: 0.2)
   end
 
   def test_request_times_out_and_cleans_pending_entry
@@ -46,7 +46,7 @@ class DAPLLDBDAPTest < Minitest::Test
     assert_empty backend.instance_variable_get(:@pending)
   ensure
     blocker&.push(true)
-    wait_thread&.join(0.2)
+    stop_thread(wait_thread, timeout: 0.2)
   end
 
   def test_read_loop_routes_response_event_and_reverse_request

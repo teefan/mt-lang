@@ -1047,6 +1047,8 @@ module MilkTea
                        "constant"
                      when AST::VarDecl
                        "module variable"
+                     when AST::EventDecl
+                       "event"
                      else
                        nil
                      end
@@ -1123,7 +1125,7 @@ module MilkTea
       source_file.declarations.each_with_object(Set.new) do |declaration, names|
         case declaration
         when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl,
-             AST::ConstDecl, AST::VarDecl
+             AST::ConstDecl, AST::VarDecl, AST::EventDecl
           names << declaration.name
         end
       end
@@ -1221,6 +1223,8 @@ module MilkTea
           sites[render_value_surface("const", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
         when AST::VarDecl
           sites[render_value_surface("var", declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
+        when AST::EventDecl
+          sites[render_event_surface(declaration)] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
         when AST::TypeAliasDecl
           sites["type #{declaration.name} = #{render_type_surface(declaration.target)}"] = declaration_anchor(declaration) if exported_declaration?(source_file, declaration)
         when AST::StructDecl
@@ -1303,6 +1307,8 @@ module MilkTea
           surface << render_value_surface("const", declaration) if exported_declaration?(source_file, declaration)
         when AST::VarDecl
           surface << render_value_surface("var", declaration) if exported_declaration?(source_file, declaration)
+        when AST::EventDecl
+          surface << render_event_surface(declaration) if exported_declaration?(source_file, declaration)
         when AST::TypeAliasDecl
           surface << "type #{declaration.name} = #{render_type_surface(declaration.target)}" if exported_declaration?(source_file, declaration)
         when AST::StructDecl
@@ -1362,12 +1368,21 @@ module MilkTea
       "#{kind} #{declaration.name}: #{render_type_surface(declaration.type)}"
     end
 
+    def render_event_surface(declaration)
+      text = +"event #{declaration.name}[#{declaration.capacity}]"
+      text << "(#{render_type_surface(declaration.payload_type)})" if declaration.payload_type
+      text
+    end
+
     def render_struct_surface(declaration)
       prefix = render_attribute_applications_surface(declaration.attributes)
       text = +""
       text << "#{prefix} " unless prefix.empty?
       text << "struct #{declaration.name}#{render_type_params_surface(declaration.type_params)}#{render_implements_surface(declaration.implements)}"
-      text << " { #{render_fields_surface(declaration.fields)} }"
+      members = []
+      members.concat(declaration.fields.map { |field| "#{field.name}: #{render_type_surface(field.type)}" })
+      members.concat(declaration.events.map { |event| render_event_surface(event) })
+      text << " { #{members.join(', ')} }"
       text
     end
 
@@ -1581,10 +1596,13 @@ module MilkTea
         decl.methods.each { |m| collect_names_from_declaration(m, used) }
       when AST::StructDecl
         decl.fields.each { |f| collect_names_from_type(f.type, used) }
+        decl.events.each { |event| collect_names_from_type(event.payload_type, used) if event.payload_type }
       when AST::UnionDecl
         decl.fields.each { |f| collect_names_from_type(f.type, used) }
       when AST::TypeAliasDecl
         collect_names_from_type(decl.target, used)
+      when AST::EventDecl
+        collect_names_from_type(decl.payload_type, used) if decl.payload_type
       when AST::ConstDecl, AST::VarDecl
         collect_names_from_type(decl.type, used) if decl.type
         collect_names_from_expr(decl.value, used) if decl.value

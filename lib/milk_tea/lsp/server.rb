@@ -2486,7 +2486,13 @@ module MilkTea
         return if workers.empty?
 
         workers.length.times { @diagnostics_queue << :__stop__ }
-        workers.each { |worker| worker.join(0.25) }
+        workers.each do |worker|
+          worker.join(1.0)
+          next unless worker.alive?
+
+          worker.kill
+          worker.join
+        end
         @diagnostics_workers = []
       rescue StandardError => e
         warn "LSP diagnostics worker shutdown error: #{e.message}"
@@ -3290,6 +3296,10 @@ module MilkTea
           return [:type, ['declaration']]
         end
 
+        if prev_tok&.type == :event
+          return struct_event_declaration_token?(tokens, index) ? [:property, ['declaration']] : [:variable, ['declaration']]
+        end
+
         if prev_tok&.type == :const
           return [:variable, ['declaration', 'readonly']]
         end
@@ -3449,6 +3459,32 @@ module MilkTea
 
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :colon
+      end
+
+      def struct_event_declaration_token?(tokens, index)
+        tok = tokens[index]
+        return false unless tok&.type == :identifier
+
+        prev_tok = previous_non_trivia_token(tokens, index)
+        return false unless prev_tok&.type == :event
+
+        line_tokens = non_trivia_tokens_on_line(tokens, tok.line)
+        line_start = line_tokens.first
+        return false unless line_start && line_start.column > 1
+
+        i = index - 1
+        while i >= 0
+          current = tokens[i]
+          i -= 1
+          next if [:newline, :indent, :dedent, :eof].include?(current.type)
+          next if current.line == tok.line
+          next if current.column >= line_start.column
+
+          header_line_toks = non_trivia_tokens_on_line(tokens, current.line)
+          return header_line_toks.first&.type == :struct
+        end
+
+        false
       end
 
       def variant_payload_field_declaration_token?(tokens, index)

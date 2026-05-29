@@ -515,7 +515,7 @@ struct ecs_event_record_t:
     wildcard: ptr[ecs_event_id_record_t]
     wildcard_pair: ptr[ecs_event_id_record_t]
     event_ids: ecs_map_t
-    event: ptr_uint
+    event_: ptr_uint
 struct ecs_observable_t:
     on_add: ecs_event_record_t
     on_remove: ecs_event_record_t
@@ -682,7 +682,7 @@ struct ecs_iter_t:
     row_fields: uint
     up_fields: uint
     system: ptr_uint
-    event: ptr_uint
+    event_: ptr_uint
     event_id: ptr_uint
     event_cur: int
     field_count: byte
@@ -742,7 +742,7 @@ struct ecs_observer_desc_t:
     term_index_: byte
     flags_: uint
 struct ecs_event_desc_t:
-    event: ptr_uint
+    event_: ptr_uint
     ids: const_ptr[ecs_type_t]
     table: ptr[ecs_table_t]
     other_table: ptr[ecs_table_t]

@@ -180,10 +180,10 @@ function main() -> int:
                 Option.none:
                     return 11
                 Option.some as event_payload:
-                    let event = event_payload.value
-                    if event.kind != terminal.EventKind.key:
+                    let event_ = event_payload.value
+                    if event_.kind != terminal.EventKind.key:
                         return 12
-                    if event.key.code != terminal.KeyCode.up:
+                    if event_.key.code != terminal.KeyCode.up:
                         return 13
                     return 0
     MT

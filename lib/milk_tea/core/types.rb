@@ -60,6 +60,15 @@ module MilkTea
           receiver_mutable: type.receiver_mutable,
           external: type.external,
         )
+      when Event
+        Event.new(
+          type.name,
+          capacity: type.capacity,
+          payload_type: type.payload_type ? substitute_type_variables(type.payload_type, substitutions) : nil,
+          module_name: type.module_name,
+          visibility: type.visibility,
+          owner_type_name: type.owner_type_name,
+        )
       when StructInstance
         type.definition.instantiate(type.arguments.map { |argument| substitute_type_variables(argument, substitutions) })
       when VariantInstance
@@ -578,6 +587,97 @@ module MilkTea
       end
     end
 
+    class Subscription < Base
+      def field(name)
+        {
+          "slot" => Primitive.new("ptr_uint"),
+          "generation" => Primitive.new("ptr_uint"),
+        }.fetch(name)
+      end
+
+      def fields
+        {
+          "slot" => Primitive.new("ptr_uint"),
+          "generation" => Primitive.new("ptr_uint"),
+        }.freeze
+      end
+
+      def name
+        "Subscription"
+      end
+
+      def module_name
+        nil
+      end
+
+      def c_name
+        "mt_subscription"
+      end
+
+      def eql?(other)
+        other.is_a?(Subscription)
+      end
+
+      alias == eql?
+
+      def hash
+        self.class.hash
+      end
+
+      def to_s
+        "Subscription"
+      end
+    end
+
+    class Event < Base
+      attr_reader :name, :capacity, :payload_type, :module_name, :visibility, :owner_type_name, :c_name
+
+      def initialize(name, capacity:, payload_type: nil, module_name: nil, visibility: :private, owner_type_name: nil)
+        @name = name
+        @capacity = capacity
+        @payload_type = payload_type
+        @module_name = module_name
+        @visibility = visibility
+        @owner_type_name = owner_type_name
+        @c_name = begin
+          parts = ["mt_event"]
+          parts << module_name&.gsub(/[^A-Za-z0-9_]+/, "_")
+          parts << owner_type_name&.gsub(/[^A-Za-z0-9_]+/, "_")
+          parts << name.gsub(/[^A-Za-z0-9_]+/, "_")
+          parts << payload_type.to_s.gsub(/[^A-Za-z0-9_]+/, "_") if payload_type
+          parts << capacity.to_s
+          parts.compact.reject(&:empty?).join("_")
+        end
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Event) &&
+          other.name == name &&
+          other.capacity == capacity &&
+          other.payload_type == payload_type &&
+          other.module_name == module_name &&
+          other.visibility == visibility &&
+          other.owner_type_name == owner_type_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, capacity, payload_type, module_name, visibility, owner_type_name].hash
+      end
+
+      def hidden_field_name
+        "__event_#{name}"
+      end
+
+      def to_s
+        label = owner_type_name ? "#{owner_type_name}.#{name}" : name
+        payload = payload_type ? "(#{payload_type})" : ""
+        "event #{label}[#{capacity}]#{payload}"
+      end
+    end
+
     class GenericStructDefinition < Base
       attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name
 
@@ -591,11 +691,17 @@ module MilkTea
         @alignment = alignment
         @c_name = c_name
         @fields = {}
+        @events = {}
         @instances = {}
       end
 
       def define_fields(fields)
         @fields = fields.freeze
+        self
+      end
+
+      def define_events(events)
+        @events = events.freeze
         self
       end
 
@@ -617,6 +723,18 @@ module MilkTea
 
       def field(name)
         @fields[name]
+      end
+
+      def events
+        @events
+      end
+
+      def event(name)
+        @events[name]
+      end
+
+      def has_events?
+        !@events.empty?
       end
 
       def field_c_name(name)
@@ -654,6 +772,8 @@ module MilkTea
         @instances[key] = instance
         instance.define_fields(
           @fields.transform_values { |type| Types.substitute_type_variables(type, substitutions) },
+        ).define_events(
+          @events.transform_values { |type| Types.substitute_type_variables(type, substitutions) },
         )
       end
 
@@ -673,10 +793,16 @@ module MilkTea
         @alignment = alignment
         @c_name = c_name
         @fields = {}
+        @events = {}
       end
 
       def define_fields(fields)
         @fields = fields.freeze
+        self
+      end
+
+      def define_events(events)
+        @events = events.freeze
         self
       end
 
@@ -692,6 +818,18 @@ module MilkTea
 
       def field(name)
         @fields[name]
+      end
+
+      def events
+        @events
+      end
+
+      def event(name)
+        @events[name]
+      end
+
+      def has_events?
+        !@events.empty?
       end
 
       def field_c_name(name)

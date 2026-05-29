@@ -691,7 +691,7 @@ external function SetAutomationEventList(list: ptr[AutomationEventList]) -> void
 external function SetAutomationEventBaseFrame(frame: int) -> void
 external function StartAutomationEventRecording() -> void
 external function StopAutomationEventRecording() -> void
-external function PlayAutomationEvent(event: AutomationEvent) -> void
+external function PlayAutomationEvent(event_: AutomationEvent) -> void
 external function GetKeyPressed() -> int
 external function GetCharPressed() -> int
 external function GetKeyName(key: int) -> cstr

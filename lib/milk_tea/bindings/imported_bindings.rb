@@ -1035,7 +1035,11 @@ module MilkTea
 
       def override_param_specs(entry, raw_declaration)
         if entry.key?("params")
-          Array(entry["params"])
+          Array(entry["params"]).map do |param|
+            param = param.dup
+            param["name"] = generated_foreign_param_name(param.fetch("name"))
+            param
+          end
         else
           raw_declaration.params.map do |param|
             {

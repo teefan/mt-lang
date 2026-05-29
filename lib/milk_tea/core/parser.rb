@@ -152,6 +152,9 @@ module MilkTea
       elsif match(:var)
         reject_attributes!(attributes)
         parse_var_decl(visibility:)
+      elsif match(:event)
+        reject_attributes!(attributes)
+        parse_event_decl(visibility:)
       elsif match(:type)
         reject_attributes!(attributes)
         parse_type_alias_decl(visibility:)
@@ -303,6 +306,9 @@ module MilkTea
       elsif match(:const)
         reject_attributes!(attributes)
         parse_const_decl(visibility: nil)
+      elsif match(:event)
+        reject_attributes!(attributes)
+        raise error(previous, "event is not allowed in external files")
       elsif match(:type)
         reject_attributes!(attributes)
         parse_type_alias_decl(visibility: nil)
@@ -334,7 +340,7 @@ module MilkTea
         "imports must appear before external directives and declarations"
       when :link, :include, :compiler_flag
         "#{token.lexeme} directives must appear before external declarations"
-      when :attribute, :var, :variant, :interface, :extending, :foreign, :function, :static_assert
+      when :attribute, :event, :var, :variant, :interface, :extending, :foreign, :function, :static_assert
         "#{token.lexeme} is not allowed in external files"
       when :async
         "async function is not allowed in external files"
@@ -387,6 +393,21 @@ module MilkTea
       AST::VarDecl.new(name:, type: var_type, value: recovery_error_expr(e), visibility:, line:)
     end
 
+    def parse_event_decl(visibility: :private)
+      line = previous.line
+      name_token = consume_name("expected event name")
+      consume(:lbracket, "expected '[' after event name")
+      capacity = consume(:integer, "expected positive integer capacity").literal
+      consume(:rbracket, "expected ']' after event capacity")
+      payload_type = nil
+      if match(:lparen)
+        payload_type = parse_type_ref
+        consume(:rparen, "expected ')' after event payload type")
+      end
+      consume_end_of_statement
+      AST::EventDecl.new(name: name_token.lexeme, capacity:, payload_type:, visibility:, line:, column: name_token.column)
+    end
+
     def parse_type_alias_decl(visibility: :private)
       line = previous.line
       name = consume_name("expected type alias name").lexeme
@@ -426,16 +447,31 @@ module MilkTea
       implements = parse_implements_clause
       c_name = parse_optional_explicit_c_name
       packed, alignment = parse_struct_layout_attributes(attributes) if attributes.any?
-      fields = parse_named_block do
-        field_attributes = parse_attribute_applications
-        field_token = consume_name("expected field name")
-        field_name = field_token.lexeme
-        consume(:colon, "expected ':' after field name")
-        field_type = parse_type_ref
-        consume_end_of_statement
-        AST::Field.new(name: field_name, type: field_type, attributes: field_attributes, line: field_token.line, column: field_token.column)
+      members = parse_named_block do
+        parse_struct_member
       end
-      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, attributes:, packed:, alignment:, visibility:, line:)
+      fields = members.filter_map { |kind, member| member if kind == :field }
+      events = members.filter_map { |kind, member| member if kind == :event }
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, attributes:, packed:, alignment:, visibility:, line:)
+    end
+
+    def parse_struct_member
+      field_attributes = parse_attribute_applications
+      visibility, visibility_token = parse_visibility
+
+      if match(:event)
+        reject_attributes!(field_attributes)
+        return [:event, parse_event_decl(visibility:)]
+      end
+
+      raise error(visibility_token, "public is only allowed on struct events") if visibility == :public
+
+      field_token = consume_name("expected field name")
+      field_name = field_token.lexeme
+      consume(:colon, "expected ':' after field name")
+      field_type = parse_type_ref
+      consume_end_of_statement
+      [:field, AST::Field.new(name: field_name, type: field_type, attributes: field_attributes, line: field_token.line, column: field_token.column)]
     end
 
     def parse_union_decl(visibility: :private)

@@ -5737,8 +5737,8 @@ extending Counter:
       struct Event:
           kind: int
 
-      function main(event: Event) -> int:
-          let copy = Event(kind = event.kind)
+      function main(event_: Event) -> int:
+          let copy = Event(kind = event_.kind)
           return copy.kind
     MT
 
@@ -8254,6 +8254,92 @@ extending Counter:
   result = check_program_source(source)
 
     assert_equal true, result.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_event_declarations_and_methods
+    source = <<~MT
+      # module demo.events
+
+      struct Resize:
+          width: int
+          height: int
+
+      public event reloaded[4]
+
+      struct Window:
+          public event closed[4]
+          public event resized[8](Resize)
+          title: str
+
+      function on_close() -> void:
+          return
+
+      function on_resize(value: Resize) -> void:
+          return
+
+      function attach(window: ref[Window]) -> Result[Subscription, EventError]:
+          let sub = window.closed.subscribe(on_close)?
+          let resized_sub = window.resized.subscribe(on_resize)?
+          window.resized.unsubscribe(resized_sub)
+          return window.closed.subscribe(on_close)
+
+      function trigger(window: ref[Window]) -> Result[Subscription, EventError]:
+          reloaded.subscribe(on_close)?
+          reloaded.emit()
+          window.closed.emit()
+          window.resized.emit(Resize(width = 1, height = 2))
+          return window.closed.subscribe(on_close)
+
+      async function wait_for_resize(window: ref[Window]) -> Result[Resize, EventError]:
+          return await window.resized.wait()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("attach")
+    assert_equal true, result.functions.key?("trigger")
+    assert_equal true, result.functions.key?("wait_for_resize")
+  end
+
+  def test_rejects_event_storage_parameter_by_value
+    source = <<~MT
+      # module demo.event_param
+
+      struct Window:
+          public event closed[4]
+
+      function bad(window: Window) -> void:
+          return
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/must pass event storage through ref\[\.\.\.\] or pointers/, error.message)
+  end
+
+  def test_rejects_cross_module_event_emit
+    source = <<~MT
+      # module demo.consumer
+
+      import demo.publisher as publisher
+
+      function main() -> void:
+          publisher.ready.emit()
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source, {
+        File.join("demo", "publisher.mt") => <<~PUBLISHER,
+          # module demo.publisher
+
+          public event ready[4]
+        PUBLISHER
+      })
+    end
+
+    assert_match(/emit is only available inside module demo\.publisher/, error.message)
   end
 
   private

@@ -34,8 +34,12 @@ module MilkTea
         @struct_types = {}
         @union_types = {}
         @synthetic_structs = []
+        @synthetic_enums = []
         @synthetic_functions = []
         @synthetic_proc_counter = 0
+        @event_runtime_infos = {}
+        @subscription_runtime_emitted = false
+        @event_error_enum_emitted = false
         @lowered_function_c_names = {}
         @method_definitions = build_method_definitions
       end
@@ -90,6 +94,7 @@ module MilkTea
 
         opaques.concat(lower_imported_external_opaques)
         structs.concat(@synthetic_structs)
+        enums.concat(@synthetic_enums)
         functions.concat(@synthetic_functions)
 
         IR::Program.new(
@@ -314,9 +319,12 @@ module MilkTea
       end
 
       def lower_globals
-        @analysis.ast.declarations.grep(AST::VarDecl).map do |decl|
+        @analysis.ast.declarations.filter_map do |decl|
+          next unless decl.is_a?(AST::VarDecl) || decl.is_a?(AST::EventDecl)
+
           type = @values.fetch(decl.name).type
-          value = if decl.value
+          ensure_event_runtime(type) if type.is_a?(Types::Event)
+          value = if decl.is_a?(AST::VarDecl) && decl.value
                     lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
                   else
                     IR::ZeroInit.new(type: type)
@@ -373,6 +381,11 @@ module MilkTea
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: struct_type.field(field.name))
           end
+          decl.events.each do |event_decl|
+            event_type = struct_type.event(event_decl.name)
+            ensure_event_runtime(event_type)
+            fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
+          end
           IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment)
         end
       end
@@ -407,6 +420,841 @@ module MilkTea
             )
           end
         end
+      end
+
+      def event_method_kind(receiver_type, member_name)
+        return unless receiver_type.is_a?(Types::Event)
+
+        case member_name
+        when "subscribe"
+          :event_subscribe
+        when "subscribe_once"
+          :event_subscribe_once
+        when "unsubscribe"
+          :event_unsubscribe
+        when "emit"
+          :event_emit
+        when "wait"
+          :event_wait
+        end
+      end
+
+      def event_method_type(kind, event_type)
+        case kind
+        when :event_subscribe, :event_subscribe_once
+          Types::Function.new(
+            kind.to_s,
+            params: [Types::Parameter.new("listener", event_listener_function_type(event_type))],
+            return_type: event_subscription_result_type,
+          )
+        when :event_unsubscribe
+          Types::Function.new(
+            kind.to_s,
+            params: [Types::Parameter.new("subscription", @types.fetch("Subscription"))],
+            return_type: @types.fetch("void"),
+          )
+        when :event_emit
+          params = []
+          params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
+          Types::Function.new(kind.to_s, params:, return_type: @types.fetch("void"))
+        when :event_wait
+          Types::Function.new(kind.to_s, params: [], return_type: Types::Task.new(event_wait_result_type(event_type)))
+        else
+          raise LoweringError, "unsupported event method #{kind}"
+        end
+      end
+
+      def event_member_from_owner_type(receiver_type, member_name)
+        owner_type = receiver_type
+        loop do
+          case owner_type
+          when Types::Nullable
+            owner_type = owner_type.base
+          when Types::GenericInstance
+            if %w[ptr const_ptr ref].include?(owner_type.name) && owner_type.arguments.length == 1
+              owner_type = owner_type.arguments.first
+            else
+              break
+            end
+          else
+            break
+          end
+        end
+
+        return unless owner_type.respond_to?(:event)
+
+        owner_type.event(member_name)
+      end
+
+      def lower_event_storage_pointer(expression, env:)
+        event_type = infer_expression_type(expression, env:)
+        IR::AddressOf.new(
+          expression: lower_expression(expression, env:, expected_type: event_type),
+          type: pointer_to(event_type),
+        )
+      end
+
+      def event_listener_function_type(event_type)
+        params = []
+        params << Types::Parameter.new("payload", event_type.payload_type) if event_type.payload_type
+        Types::Function.new("#{event_type.name}__listener", params:, return_type: @types.fetch("void"))
+      end
+
+      def event_subscription_result_type
+        @types.fetch("Result").instantiate([@types.fetch("Subscription"), @types.fetch("EventError")])
+      end
+
+      def event_wait_result_type(event_type)
+        @types.fetch("Result").instantiate([event_type.payload_type || @types.fetch("void"), @types.fetch("EventError")])
+      end
+
+      def array_of(type, length)
+        Types::GenericInstance.new("array", [type, Types::LiteralTypeArg.new(length)])
+      end
+
+      def ensure_subscription_runtime
+        return if @subscription_runtime_emitted
+
+        subscription_type = @types.fetch("Subscription")
+        @synthetic_structs << IR::StructDecl.new(
+          name: subscription_type.name,
+          c_name: subscription_type.c_name,
+          fields: [
+            IR::Field.new(name: "slot", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+        @subscription_runtime_emitted = true
+      end
+
+      def ensure_event_error_enum
+        return if @event_error_enum_emitted
+
+        event_error_type = @types.fetch("EventError")
+        @synthetic_enums << IR::EnumDecl.new(
+          name: event_error_type.name,
+          c_name: c_type_name(event_error_type),
+          backing_type: event_error_type.backing_type,
+          members: [
+            IR::EnumMember.new(
+              name: "full",
+              c_name: enum_member_c_name(event_error_type, "full"),
+              value: IR::IntegerLiteral.new(value: 0, type: event_error_type.backing_type),
+            ),
+          ],
+          flags: false,
+        )
+        @event_error_enum_emitted = true
+      end
+
+      def ensure_event_runtime(event_type)
+        return @event_runtime_infos.fetch(event_type) if @event_runtime_infos.key?(event_type)
+
+        ensure_subscription_runtime
+        ensure_event_error_enum
+
+        void_ptr = pointer_to(@types.fetch("void"))
+        listener_type = event_listener_function_type(event_type)
+        subscription_result_type = event_subscription_result_type
+        wait_result_type = event_wait_result_type(event_type)
+        task_type = Types::Task.new(wait_result_type)
+        wake_type = task_type.field("ready").params.fetch(0).type == void_ptr ? task_type.field("set_waiter").params.fetch(2).type : Types::Function.new(nil, params: [Types::Parameter.new("frame", void_ptr)], return_type: @types.fetch("void"))
+        slot_type = Types::Struct.new("#{event_type.c_name}__slot").define_fields(
+          "active" => @types.fetch("bool"),
+          "once" => @types.fetch("bool"),
+          "generation" => @types.fetch("ptr_uint"),
+          "listener" => listener_type,
+          "wait_frame" => void_ptr,
+        )
+        snapshot_type = Types::Struct.new("#{event_type.c_name}__snapshot").define_fields(
+          "slot" => @types.fetch("ptr_uint"),
+          "generation" => @types.fetch("ptr_uint"),
+          "once" => @types.fetch("bool"),
+          "wait_slot" => @types.fetch("bool"),
+          "listener" => listener_type,
+        )
+        wait_frame_type = Types::Struct.new("#{event_type.c_name}__wait_frame").define_fields(
+          "ready" => @types.fetch("bool"),
+          "waiter_frame" => void_ptr,
+          "waiter" => wake_type,
+          "event" => void_ptr,
+          "subscription" => @types.fetch("Subscription"),
+          "result" => wait_result_type,
+        )
+        slots_type = array_of(slot_type, event_type.capacity)
+        snapshots_type = array_of(snapshot_type, event_type.capacity)
+
+        @synthetic_structs << IR::StructDecl.new(
+          name: slot_type.name,
+          c_name: slot_type.name,
+          fields: [
+            IR::Field.new(name: "active", type: @types.fetch("bool")),
+            IR::Field.new(name: "once", type: @types.fetch("bool")),
+            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "listener", type: listener_type),
+            IR::Field.new(name: "wait_frame", type: void_ptr),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+        @synthetic_structs << IR::StructDecl.new(
+          name: snapshot_type.name,
+          c_name: snapshot_type.name,
+          fields: [
+            IR::Field.new(name: "slot", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "generation", type: @types.fetch("ptr_uint")),
+            IR::Field.new(name: "once", type: @types.fetch("bool")),
+            IR::Field.new(name: "wait_slot", type: @types.fetch("bool")),
+            IR::Field.new(name: "listener", type: listener_type),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+        @synthetic_structs << IR::StructDecl.new(
+          name: wait_frame_type.name,
+          c_name: wait_frame_type.name,
+          fields: [
+            IR::Field.new(name: "ready", type: @types.fetch("bool")),
+            IR::Field.new(name: "waiter_frame", type: void_ptr),
+            IR::Field.new(name: "waiter", type: wake_type),
+            IR::Field.new(name: "event", type: void_ptr),
+            IR::Field.new(name: "subscription", type: @types.fetch("Subscription")),
+            IR::Field.new(name: "result", type: wait_result_type),
+          ],
+          packed: false,
+          alignment: nil,
+        )
+        @synthetic_structs << IR::StructDecl.new(
+          name: event_type.name,
+          c_name: event_type.c_name,
+          fields: [IR::Field.new(name: "slots", type: slots_type)],
+          packed: false,
+          alignment: nil,
+        )
+
+        runtime = {
+          event_type:,
+          event_pointer_type: pointer_to(event_type),
+          listener_type:,
+          slot_type:,
+          slot_pointer_type: pointer_to(slot_type),
+          slots_type:,
+          snapshot_type:,
+          snapshots_type:,
+          wait_frame_type:,
+          wait_frame_pointer_type: pointer_to(wait_frame_type),
+          void_ptr:,
+          wake_type:,
+          subscription_result_type:,
+          wait_result_type:,
+          task_type:,
+          subscribe_c_name: "#{event_type.c_name}__subscribe",
+          subscribe_once_c_name: "#{event_type.c_name}__subscribe_once",
+          unsubscribe_c_name: "#{event_type.c_name}__unsubscribe",
+          emit_c_name: "#{event_type.c_name}__emit",
+          wait_c_name: "#{event_type.c_name}__wait",
+          wait_ready_c_name: "#{event_type.c_name}__wait__ready",
+          wait_set_waiter_c_name: "#{event_type.c_name}__wait__set_waiter",
+          wait_release_c_name: "#{event_type.c_name}__wait__release",
+          wait_take_result_c_name: "#{event_type.c_name}__wait__take_result",
+        }
+
+        @synthetic_functions << build_event_subscribe_function(runtime, once: false)
+        @synthetic_functions << build_event_subscribe_function(runtime, once: true)
+        @synthetic_functions << build_event_unsubscribe_function(runtime)
+        @synthetic_functions << build_event_emit_function(runtime)
+        @synthetic_functions << build_event_wait_ready_function(runtime)
+        @synthetic_functions << build_event_wait_set_waiter_function(runtime)
+        @synthetic_functions << build_event_wait_release_function(runtime)
+        @synthetic_functions << build_event_wait_take_result_function(runtime)
+        @synthetic_functions << build_event_wait_function(runtime)
+
+        @event_runtime_infos[event_type] = runtime
+      end
+
+      def build_event_subscribe_function(runtime, once:)
+        event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
+        listener_expr = IR::Name.new(name: "listener", type: runtime.fetch(:listener_type), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
+        generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
+
+        body = [
+          IR::ForStmt.new(
+            init: IR::LocalDecl.new(
+              name: "__mt_slot_index",
+              c_name: "__mt_slot_index",
+              type: @types.fetch("ptr_uint"),
+              value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
+            ),
+            condition: IR::Binary.new(
+              operator: "<",
+              left: slot_index_expr,
+              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")),
+              type: @types.fetch("bool"),
+            ),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            body: [
+              IR::LocalDecl.new(
+                name: "__mt_slot",
+                c_name: "__mt_slot",
+                type: runtime.fetch(:slot_pointer_type),
+                value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
+              ),
+              IR::IfStmt.new(
+                condition: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")),
+                then_body: [IR::ContinueStmt.new],
+                else_body: nil,
+              ),
+              IR::LocalDecl.new(
+                name: "__mt_generation",
+                c_name: "__mt_generation",
+                type: @types.fetch("ptr_uint"),
+                value: IR::Binary.new(
+                  operator: "+",
+                  left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
+                  right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")),
+                  type: @types.fetch("ptr_uint"),
+                ),
+              ),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: once, type: @types.fetch("bool"))),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type)), operator: "=", value: listener_expr),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+              IR::ReturnStmt.new(value: event_subscription_success_literal(runtime.fetch(:subscription_result_type), slot_index_expr, generation_expr)),
+            ],
+          ),
+          IR::ReturnStmt.new(value: event_failure_literal(runtime.fetch(:subscription_result_type))),
+        ]
+
+        IR::Function.new(
+          name: once ? "#{runtime.fetch(:subscribe_once_c_name)}_fn" : "#{runtime.fetch(:subscribe_c_name)}_fn",
+          c_name: once ? runtime.fetch(:subscribe_once_c_name) : runtime.fetch(:subscribe_c_name),
+          params: [
+            IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
+            IR::Param.new(name: "listener", c_name: "listener", type: runtime.fetch(:listener_type), pointer: false),
+          ],
+          return_type: runtime.fetch(:subscription_result_type),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_event_unsubscribe_function(runtime)
+        event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
+        subscription_expr = IR::Name.new(name: "subscription", type: @types.fetch("Subscription"), pointer: false)
+        slot_index_expr = subscription_field_expression(subscription_expr, "slot", @types.fetch("ptr_uint"))
+        slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
+
+        body = [
+          IR::IfStmt.new(
+            condition: IR::Binary.new(
+              operator: ">=",
+              left: slot_index_expr,
+              right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")),
+              type: @types.fetch("bool"),
+            ),
+            then_body: [IR::ReturnStmt.new(value: nil)],
+            else_body: nil,
+          ),
+          IR::LocalDecl.new(
+            name: "__mt_slot",
+            c_name: "__mt_slot",
+            type: runtime.fetch(:slot_pointer_type),
+            value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
+          ),
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), type: @types.fetch("bool")),
+            then_body: [IR::ReturnStmt.new(value: nil)],
+            else_body: nil,
+          ),
+          IR::IfStmt.new(
+            condition: IR::Binary.new(
+              operator: "!=",
+              left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")),
+              right: subscription_field_expression(subscription_expr, "generation", @types.fetch("ptr_uint")),
+              type: @types.fetch("bool"),
+            ),
+            then_body: [IR::ReturnStmt.new(value: nil)],
+            else_body: nil,
+          ),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: false, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+          IR::ReturnStmt.new(value: nil),
+        ]
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:unsubscribe_c_name)}_fn",
+          c_name: runtime.fetch(:unsubscribe_c_name),
+          params: [
+            IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
+            IR::Param.new(name: "subscription", c_name: "subscription", type: @types.fetch("Subscription"), pointer: false),
+          ],
+          return_type: @types.fetch("void"),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_event_emit_function(runtime)
+        event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
+        payload_expr = runtime.fetch(:event_type).payload_type ? IR::Name.new(name: "payload", type: runtime.fetch(:event_type).payload_type, pointer: false) : nil
+        snapshots_expr = IR::Name.new(name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), pointer: false)
+        snapshot_count_expr = IR::Name.new(name: "__mt_snapshot_count", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
+        dispatch_index_expr = IR::Name.new(name: "__mt_dispatch_index", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
+        frame_pointer_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+
+        collect_body = [
+          IR::LocalDecl.new(
+            name: "__mt_slot",
+            c_name: "__mt_slot",
+            type: runtime.fetch(:slot_pointer_type),
+            value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime),
+          ),
+          IR::IfStmt.new(
+            condition: IR::Unary.new(operator: "not", operand: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), type: @types.fetch("bool")),
+            then_body: [IR::ContinueStmt.new],
+            else_body: nil,
+          ),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "slot", @types.fetch("ptr_uint")), operator: "=", value: slot_index_expr),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "generation", @types.fetch("ptr_uint")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "once", @types.fetch("bool")), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool"))),
+          IR::Assignment.new(
+            target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "wait_slot", @types.fetch("bool")),
+            operator: "=",
+            value: IR::Binary.new(
+              operator: "!=",
+              left: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)),
+              right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+              type: @types.fetch("bool"),
+            ),
+          ),
+          IR::Assignment.new(target: snapshot_field_expression(snapshots_expr, snapshot_count_expr, runtime, "listener", runtime.fetch(:listener_type)), operator: "=", value: event_slot_field_expression(slot_pointer_expr, "listener", runtime.fetch(:listener_type))),
+          IR::Assignment.new(target: snapshot_count_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+        ]
+
+        snapshot_subscription_expr = event_subscription_literal(
+          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @types.fetch("ptr_uint")),
+          snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @types.fetch("ptr_uint")),
+        )
+        current_slot_active = event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool"))
+        current_slot_generation = event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint"))
+        current_wait_frame = event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr))
+        wait_slot_condition = IR::Binary.new(
+          operator: "and",
+          left: current_slot_active,
+          right: IR::Binary.new(
+            operator: "and",
+            left: IR::Binary.new(
+              operator: "==",
+              left: current_slot_generation,
+              right: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "generation", @types.fetch("ptr_uint")),
+              type: @types.fetch("bool"),
+            ),
+            right: IR::Binary.new(
+              operator: "!=",
+              left: current_wait_frame,
+              right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+              type: @types.fetch("bool"),
+            ),
+            type: @types.fetch("bool"),
+          ),
+          type: @types.fetch("bool"),
+        )
+
+        wait_result_value = event_wait_success_literal(runtime.fetch(:wait_result_type), payload_expr)
+        waiter_frame_expr = wait_frame_field_expression(frame_pointer_expr, "waiter_frame", runtime.fetch(:void_ptr))
+
+        dispatch_body = [
+          IR::IfStmt.new(
+            condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "wait_slot", @types.fetch("bool")),
+            then_body: [
+              IR::LocalDecl.new(
+                name: "__mt_slot",
+                c_name: "__mt_slot",
+                type: runtime.fetch(:slot_pointer_type),
+                value: event_slot_pointer_expression(
+                  event_expr,
+                  snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "slot", @types.fetch("ptr_uint")),
+                  runtime,
+                ),
+              ),
+              IR::IfStmt.new(
+                condition: wait_slot_condition,
+                then_body: [
+                  IR::LocalDecl.new(
+                    name: "__mt_wait_frame",
+                    c_name: "__mt_wait_frame",
+                    type: runtime.fetch(:wait_frame_pointer_type),
+                    value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: current_wait_frame, type: runtime.fetch(:wait_frame_pointer_type)),
+                  ),
+                  IR::ExpressionStmt.new(expression: event_unsubscribe_call(runtime, event_expr, snapshot_subscription_expr)),
+                  IR::Assignment.new(target: wait_frame_field_expression(frame_pointer_expr, "result", runtime.fetch(:wait_result_type)), operator: "=", value: wait_result_value),
+                  IR::Assignment.new(target: wait_frame_field_expression(frame_pointer_expr, "ready", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+                  IR::IfStmt.new(
+                    condition: IR::Binary.new(
+                      operator: "!=",
+                      left: waiter_frame_expr,
+                      right: IR::NullLiteral.new(type: runtime.fetch(:void_ptr)),
+                      type: @types.fetch("bool"),
+                    ),
+                    then_body: [
+                      IR::LocalDecl.new(name: "__mt_waiter_frame", c_name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), value: waiter_frame_expr),
+                      IR::Assignment.new(target: waiter_frame_expr, operator: "=", value: IR::NullLiteral.new(type: runtime.fetch(:void_ptr))),
+                      IR::ExpressionStmt.new(
+                        expression: IR::Call.new(
+                          callee: wait_frame_field_expression(frame_pointer_expr, "waiter", runtime.fetch(:wake_type)),
+                          arguments: [IR::Name.new(name: "__mt_waiter_frame", type: runtime.fetch(:void_ptr), pointer: false)],
+                          type: @types.fetch("void"),
+                        ),
+                      ),
+                    ],
+                    else_body: nil,
+                  ),
+                ],
+                else_body: nil,
+              ),
+            ],
+            else_body: [
+              IR::IfStmt.new(
+                condition: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "once", @types.fetch("bool")),
+                then_body: [IR::ExpressionStmt.new(expression: event_unsubscribe_call(runtime, event_expr, snapshot_subscription_expr))],
+                else_body: nil,
+              ),
+              IR::ExpressionStmt.new(expression: event_listener_call_expression(runtime, snapshots_expr, dispatch_index_expr, payload_expr)),
+            ],
+          ),
+        ]
+
+        body = [
+          IR::LocalDecl.new(name: "__mt_snapshots", c_name: "__mt_snapshots", type: runtime.fetch(:snapshots_type), value: IR::ZeroInit.new(type: runtime.fetch(:snapshots_type))),
+          IR::LocalDecl.new(name: "__mt_snapshot_count", c_name: "__mt_snapshot_count", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+          IR::ForStmt.new(
+            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            body: collect_body,
+          ),
+          IR::ForStmt.new(
+            init: IR::LocalDecl.new(name: "__mt_dispatch_index", c_name: "__mt_dispatch_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: dispatch_index_expr, right: snapshot_count_expr, type: @types.fetch("bool")),
+            post: IR::Assignment.new(target: dispatch_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            body: dispatch_body,
+          ),
+          IR::ReturnStmt.new(value: nil),
+        ]
+
+        params = [IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)]
+        params << IR::Param.new(name: "payload", c_name: "payload", type: runtime.fetch(:event_type).payload_type, pointer: false) if runtime.fetch(:event_type).payload_type
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:emit_c_name)}_fn",
+          c_name: runtime.fetch(:emit_c_name),
+          params:,
+          return_type: @types.fetch("void"),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def build_event_wait_ready_function(runtime)
+        frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:wait_ready_c_name)}_fn",
+          c_name: runtime.fetch(:wait_ready_c_name),
+          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          return_type: @types.fetch("bool"),
+          body: [
+            IR::LocalDecl.new(
+              name: "__mt_wait_frame",
+              c_name: "__mt_wait_frame",
+              type: runtime.fetch(:wait_frame_pointer_type),
+              value: IR::Cast.new(
+                target_type: runtime.fetch(:wait_frame_pointer_type),
+                expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false),
+                type: runtime.fetch(:wait_frame_pointer_type),
+              ),
+            ),
+            IR::ReturnStmt.new(value: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool"))),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_event_wait_set_waiter_function(runtime)
+        frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        waiter_frame_expr = IR::Name.new(name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false)
+        waiter_expr = IR::Name.new(name: "waiter", type: runtime.fetch(:wake_type), pointer: false)
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:wait_set_waiter_c_name)}_fn",
+          c_name: runtime.fetch(:wait_set_waiter_c_name),
+          params: [
+            IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "waiter_frame", c_name: "waiter_frame", type: runtime.fetch(:void_ptr), pointer: false),
+            IR::Param.new(name: "waiter", c_name: "waiter", type: runtime.fetch(:wake_type), pointer: false),
+          ],
+          return_type: @types.fetch("void"),
+          body: [
+            IR::LocalDecl.new(
+              name: "__mt_wait_frame",
+              c_name: "__mt_wait_frame",
+              type: runtime.fetch(:wait_frame_pointer_type),
+              value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false), type: runtime.fetch(:wait_frame_pointer_type)),
+            ),
+            IR::IfStmt.new(
+              condition: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")),
+              then_body: [
+                IR::ExpressionStmt.new(expression: IR::Call.new(callee: waiter_expr, arguments: [waiter_frame_expr], type: @types.fetch("void"))),
+                IR::ReturnStmt.new(value: nil),
+              ],
+              else_body: nil,
+            ),
+            IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "waiter_frame", runtime.fetch(:void_ptr)), operator: "=", value: waiter_frame_expr),
+            IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "waiter", runtime.fetch(:wake_type)), operator: "=", value: waiter_expr),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_event_wait_release_function(runtime)
+        frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        raw_frame_expr = IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false)
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:wait_release_c_name)}_fn",
+          c_name: runtime.fetch(:wait_release_c_name),
+          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [
+            IR::LocalDecl.new(
+              name: "__mt_wait_frame",
+              c_name: "__mt_wait_frame",
+              type: runtime.fetch(:wait_frame_pointer_type),
+              value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: raw_frame_expr, type: runtime.fetch(:wait_frame_pointer_type)),
+            ),
+            IR::IfStmt.new(
+              condition: IR::Unary.new(operator: "not", operand: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
+              then_body: [
+                IR::ExpressionStmt.new(
+                  expression: event_unsubscribe_call(
+                    runtime,
+                    IR::Cast.new(target_type: runtime.fetch(:event_pointer_type), expression: wait_frame_field_expression(frame_expr, "event", runtime.fetch(:void_ptr)), type: runtime.fetch(:event_pointer_type)),
+                    wait_frame_field_expression(frame_expr, "subscription", @types.fetch("Subscription")),
+                  ),
+                ),
+              ],
+              else_body: nil,
+            ),
+            IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void"))),
+            IR::ReturnStmt.new(value: nil),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_event_wait_take_result_function(runtime)
+        frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:wait_take_result_c_name)}_fn",
+          c_name: runtime.fetch(:wait_take_result_c_name),
+          params: [IR::Param.new(name: "frame", c_name: "frame", type: runtime.fetch(:void_ptr), pointer: false)],
+          return_type: runtime.fetch(:wait_result_type),
+          body: [
+            IR::LocalDecl.new(
+              name: "__mt_wait_frame",
+              c_name: "__mt_wait_frame",
+              type: runtime.fetch(:wait_frame_pointer_type),
+              value: IR::Cast.new(target_type: runtime.fetch(:wait_frame_pointer_type), expression: IR::Name.new(name: "frame", type: runtime.fetch(:void_ptr), pointer: false), type: runtime.fetch(:wait_frame_pointer_type)),
+            ),
+            IR::ReturnStmt.new(value: wait_frame_field_expression(frame_expr, "result", runtime.fetch(:wait_result_type))),
+          ],
+          entry_point: false,
+        )
+      end
+
+      def build_event_wait_function(runtime)
+        event_expr = IR::Name.new(name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)
+        frame_expr = IR::Name.new(name: "__mt_wait_frame", type: runtime.fetch(:wait_frame_pointer_type), pointer: false)
+        raw_frame_expr = IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: frame_expr, type: runtime.fetch(:void_ptr))
+        slot_index_expr = IR::Name.new(name: "__mt_slot_index", type: @types.fetch("ptr_uint"), pointer: false)
+        generation_expr = IR::Name.new(name: "__mt_generation", type: @types.fetch("ptr_uint"), pointer: false)
+        slot_pointer_expr = IR::Name.new(name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), pointer: false)
+
+        body = [
+          IR::LocalDecl.new(
+            name: "__mt_wait_frame",
+            c_name: "__mt_wait_frame",
+            type: runtime.fetch(:wait_frame_pointer_type),
+            value: IR::Cast.new(
+              target_type: runtime.fetch(:wait_frame_pointer_type),
+              expression: IR::Call.new(callee: "mt_async_alloc", arguments: [IR::SizeofExpr.new(target_type: runtime.fetch(:wait_frame_type), type: @types.fetch("ptr_uint"))], type: runtime.fetch(:void_ptr)),
+              type: runtime.fetch(:wait_frame_pointer_type),
+            ),
+          ),
+          IR::Assignment.new(
+            target: IR::Unary.new(operator: "*", operand: frame_expr, type: runtime.fetch(:wait_frame_type)),
+            operator: "=",
+            value: IR::ZeroInit.new(type: runtime.fetch(:wait_frame_type)),
+          ),
+          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "event", runtime.fetch(:void_ptr)), operator: "=", value: IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: event_expr, type: runtime.fetch(:void_ptr))),
+          IR::ForStmt.new(
+            init: IR::LocalDecl.new(name: "__mt_slot_index", c_name: "__mt_slot_index", type: @types.fetch("ptr_uint"), value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint"))),
+            condition: IR::Binary.new(operator: "<", left: slot_index_expr, right: IR::IntegerLiteral.new(value: runtime.fetch(:event_type).capacity, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
+            post: IR::Assignment.new(target: slot_index_expr, operator: "+=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
+            body: [
+              IR::LocalDecl.new(name: "__mt_slot", c_name: "__mt_slot", type: runtime.fetch(:slot_pointer_type), value: event_slot_pointer_expression(event_expr, slot_index_expr, runtime)),
+              IR::IfStmt.new(
+                condition: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")),
+                then_body: [IR::ContinueStmt.new],
+                else_body: nil,
+              ),
+              IR::LocalDecl.new(
+                name: "__mt_generation",
+                c_name: "__mt_generation",
+                type: @types.fetch("ptr_uint"),
+                value: IR::Binary.new(operator: "+", left: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), right: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint")), type: @types.fetch("ptr_uint")),
+              ),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "active", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "once", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "generation", @types.fetch("ptr_uint")), operator: "=", value: generation_expr),
+              IR::Assignment.new(target: event_slot_field_expression(slot_pointer_expr, "wait_frame", runtime.fetch(:void_ptr)), operator: "=", value: raw_frame_expr),
+              IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "subscription", @types.fetch("Subscription")), operator: "=", value: event_subscription_literal(slot_index_expr, generation_expr)),
+              IR::ReturnStmt.new(value: event_task_literal(runtime, frame_expr)),
+            ],
+          ),
+          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), operator: "=", value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool"))),
+          IR::Assignment.new(target: wait_frame_field_expression(frame_expr, "result", runtime.fetch(:wait_result_type)), operator: "=", value: event_failure_literal(runtime.fetch(:wait_result_type))),
+          IR::ReturnStmt.new(value: event_task_literal(runtime, frame_expr)),
+        ]
+
+        IR::Function.new(
+          name: "#{runtime.fetch(:wait_c_name)}_fn",
+          c_name: runtime.fetch(:wait_c_name),
+          params: [IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false)],
+          return_type: runtime.fetch(:task_type),
+          body:,
+          entry_point: false,
+        )
+      end
+
+      def event_slot_pointer_expression(event_expr, slot_index_expr, runtime)
+        IR::AddressOf.new(
+          expression: IR::Index.new(
+            receiver: IR::Member.new(receiver: event_expr, member: "slots", type: runtime.fetch(:slots_type)),
+            index: slot_index_expr,
+            type: runtime.fetch(:slot_type),
+          ),
+          type: runtime.fetch(:slot_pointer_type),
+        )
+      end
+
+      def event_slot_field_expression(slot_pointer_expr, field_name, field_type)
+        IR::Member.new(receiver: slot_pointer_expr, member: field_name, type: field_type)
+      end
+
+      def snapshot_field_expression(snapshots_expr, index_expr, runtime, field_name, field_type)
+        IR::Member.new(
+          receiver: IR::Index.new(receiver: snapshots_expr, index: index_expr, type: runtime.fetch(:snapshot_type)),
+          member: field_name,
+          type: field_type,
+        )
+      end
+
+      def subscription_field_expression(subscription_expr, field_name, field_type)
+        IR::Member.new(receiver: subscription_expr, member: field_name, type: field_type)
+      end
+
+      def wait_frame_field_expression(frame_expr, field_name, field_type)
+        IR::Member.new(receiver: frame_expr, member: field_name, type: field_type)
+      end
+
+      def event_subscription_literal(slot_expr, generation_expr)
+        IR::AggregateLiteral.new(
+          type: @types.fetch("Subscription"),
+          fields: [
+            IR::AggregateField.new(name: "slot", value: slot_expr),
+            IR::AggregateField.new(name: "generation", value: generation_expr),
+          ],
+        )
+      end
+
+      def event_subscription_success_literal(result_type, slot_expr, generation_expr)
+        IR::VariantLiteral.new(
+          type: result_type,
+          arm_name: "success",
+          fields: [IR::AggregateField.new(name: "value", value: event_subscription_literal(slot_expr, generation_expr))],
+        )
+      end
+
+      def event_wait_success_literal(result_type, payload_expr)
+        IR::VariantLiteral.new(
+          type: result_type,
+          arm_name: "success",
+          fields: [IR::AggregateField.new(name: "value", value: payload_expr || void_value_expression)],
+        )
+      end
+
+      def event_failure_literal(result_type)
+        IR::VariantLiteral.new(
+          type: result_type,
+          arm_name: "failure",
+          fields: [
+            IR::AggregateField.new(
+              name: "error",
+              value: IR::Name.new(name: enum_member_c_name(@types.fetch("EventError"), "full"), type: @types.fetch("EventError"), pointer: false),
+            ),
+          ],
+        )
+      end
+
+      def void_value_expression
+        IR::Cast.new(
+          target_type: @types.fetch("void"),
+          expression: IR::IntegerLiteral.new(value: 0, type: @types.fetch("int")),
+          type: @types.fetch("void"),
+        )
+      end
+
+      def event_unsubscribe_call(runtime, event_expr, subscription_expr)
+        IR::Call.new(
+          callee: runtime.fetch(:unsubscribe_c_name),
+          arguments: [event_expr, subscription_expr],
+          type: @types.fetch("void"),
+        )
+      end
+
+      def event_listener_call_expression(runtime, snapshots_expr, dispatch_index_expr, payload_expr)
+        arguments = []
+        arguments << payload_expr if runtime.fetch(:event_type).payload_type
+        IR::Call.new(
+          callee: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "listener", runtime.fetch(:listener_type)),
+          arguments:,
+          type: @types.fetch("void"),
+        )
+      end
+
+      def event_task_literal(runtime, frame_expr)
+        raw_frame_expr = IR::Cast.new(target_type: runtime.fetch(:void_ptr), expression: frame_expr, type: runtime.fetch(:void_ptr))
+        IR::AggregateLiteral.new(
+          type: runtime.fetch(:task_type),
+          fields: [
+            IR::AggregateField.new(name: "frame", value: raw_frame_expr),
+            IR::AggregateField.new(name: "ready", value: IR::Name.new(name: runtime.fetch(:wait_ready_c_name), type: runtime.fetch(:task_type).field("ready"), pointer: false)),
+            IR::AggregateField.new(name: "set_waiter", value: IR::Name.new(name: runtime.fetch(:wait_set_waiter_c_name), type: runtime.fetch(:task_type).field("set_waiter"), pointer: false)),
+            IR::AggregateField.new(name: "release", value: IR::Name.new(name: runtime.fetch(:wait_release_c_name), type: runtime.fetch(:task_type).field("release"), pointer: false)),
+            IR::AggregateField.new(name: "take_result", value: IR::Name.new(name: runtime.fetch(:wait_take_result_c_name), type: runtime.fetch(:task_type).field("take_result"), pointer: false)),
+          ],
+        )
       end
 
       def lower_variants
@@ -5935,6 +6783,10 @@ module MilkTea
           end
         end
 
+        if (event_type = event_member_from_owner_type(owner_type, member))
+          return event_type.hidden_field_name
+        end
+
         owner_type.field_c_name(member)
       end
 
@@ -6062,6 +6914,48 @@ module MilkTea
             ],
             type:,
           )
+        when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
+          event_type = infer_expression_type(receiver, env:)
+          runtime = ensure_event_runtime(event_type)
+          event_pointer = lower_event_storage_pointer(receiver, env:)
+
+          case kind
+          when :event_subscribe
+            IR::Call.new(
+              callee: runtime.fetch(:subscribe_c_name),
+              arguments: [
+                event_pointer,
+                lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
+              ],
+              type:,
+            )
+          when :event_subscribe_once
+            IR::Call.new(
+              callee: runtime.fetch(:subscribe_once_c_name),
+              arguments: [
+                event_pointer,
+                lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: runtime.fetch(:listener_type)),
+              ],
+              type:,
+            )
+          when :event_unsubscribe
+            IR::Call.new(
+              callee: runtime.fetch(:unsubscribe_c_name),
+              arguments: [
+                event_pointer,
+                lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: @types.fetch("Subscription")),
+              ],
+              type:,
+            )
+          when :event_emit
+            arguments = [event_pointer]
+            if event_type.payload_type
+              arguments << lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: event_type.payload_type)
+            end
+            IR::Call.new(callee: runtime.fetch(:emit_c_name), arguments:, type:)
+          when :event_wait
+            IR::Call.new(callee: runtime.fetch(:wait_c_name), arguments: [event_pointer], type:)
+          end
         when :associated_method
           arguments = lower_call_arguments(expression.arguments, callee_type, env:)
           IR::Call.new(callee: callee_name, arguments:, type:)
@@ -8088,6 +8982,11 @@ module MilkTea
             return [str_buffer_method, nil, callee.receiver, str_buffer_method_type(str_buffer_method, resolved_receiver_type)]
           end
 
+          if (event_method = event_method_kind(resolved_receiver_type, callee.member))
+            event_type = infer_expression_type(callee.receiver, env:)
+            return [event_method, nil, callee.receiver, event_method_type(event_method, event_type)]
+          end
+
           field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
           member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
           return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
@@ -8238,6 +9137,9 @@ module MilkTea
             return imported_module.functions.fetch(expression.member).type if imported_module.functions.key?(expression.member)
           end
           receiver_type = infer_field_receiver_type(expression.receiver, env:)
+          if (event_type = event_member_from_owner_type(receiver_type, expression.member))
+            return event_type
+          end
           return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
           raise LoweringError, "unknown member #{expression.member}"
@@ -8314,7 +9216,9 @@ module MilkTea
           case kind
           when :function, :method, :associated_method, :callable_value,
             :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
-            :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr, :compile_time_builtin,
+            :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
+            :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait,
+            :compile_time_builtin,
             :cast, :reinterpret, :zero, :hash, :equal, :order
             callee_type.return_type
           when :struct_literal, :array, :variant_arm_ctor

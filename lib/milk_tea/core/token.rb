@@ -20,6 +20,7 @@ module MilkTea
       "mutable" => :mutable,
       "enum" => :enum,
       "else" => :else,
+      "event" => :event,
       "external" => :external,
       "false" => :false,
       "flags" => :flags,

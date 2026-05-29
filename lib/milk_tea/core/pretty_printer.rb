@@ -244,6 +244,8 @@ module MilkTea
           else
             line(header)
           end
+        when AST::EventDecl
+          line(render_event_declaration(declaration))
         when AST::TypeAliasDecl
           line("#{visibility_prefix(declaration)}type #{declaration.name} = #{render_type(declaration.target)}")
         when AST::AttributeDecl
@@ -266,6 +268,9 @@ module MilkTea
             declaration.fields.each do |field|
               emit_attribute_applications(field.attributes)
               line("#{field.name}: #{render_type(field.type)}")
+            end
+            declaration.events.each do |event|
+              line(render_event_declaration(event))
             end
           end
         when AST::UnionDecl
@@ -333,6 +338,12 @@ module MilkTea
         end
       end
 
+      def render_event_declaration(declaration)
+        text = +"#{visibility_prefix(declaration)}event #{declaration.name}[#{declaration.capacity}]"
+        text << "(#{render_type(declaration.payload_type)})" if declaration.payload_type
+        text
+      end
+
       def emit_function(function)
         emit_attribute_applications(function.attributes)
         line("#{render_function_signature(function)}:")
@@ -358,7 +369,8 @@ module MilkTea
                            else
                              "function "
                            end
-        text = +"#{prefix}#{visibility_prefix(function)}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
+        async_prefix = function.respond_to?(:async) && function.async ? "async " : ""
+        text = +"#{prefix}#{visibility_prefix(function)}#{async_prefix}#{signature_prefix}#{function.name}#{render_type_params(function.type_params)}(#{render_signature_params(function)})"
         text << " -> #{render_type(function.return_type)}" if function.return_type
         text
       end
@@ -737,6 +749,8 @@ module MilkTea
             end.join("\n#{INDENT}")
             "proc(#{params}) -> #{render_type(expression.return_type)}:\n#{INDENT}#{rendered_body}"
           end
+        when AST::AwaitExpr
+          wrap("await #{render_expression(expression.expression, UNARY_PRECEDENCE)}", parent_precedence, UNARY_PRECEDENCE)
         when AST::SizeofExpr
           "size_of(#{render_type(expression.type)})"
         when AST::AlignofExpr

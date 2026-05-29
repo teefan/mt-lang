@@ -500,7 +500,7 @@ module MilkTea
         when AST::AttributeDecl
           target = exported_declaration?(analysis, declaration) ? attributes : private_attributes
           target[declaration.name] = analysis.attributes.fetch(declaration.name)
-        when AST::ConstDecl, AST::VarDecl
+        when AST::ConstDecl, AST::VarDecl, AST::EventDecl
           target = exported_declaration?(analysis, declaration) ? values : private_values
           target[declaration.name] = analysis.values.fetch(declaration.name)
         when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl

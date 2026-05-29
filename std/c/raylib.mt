@@ -713,7 +713,7 @@ external function SetAutomationEventList(list: ptr[AutomationEventList]) -> void
 external function SetAutomationEventBaseFrame(frame: int) -> void
 external function StartAutomationEventRecording() -> void
 external function StopAutomationEventRecording() -> void
-external function PlayAutomationEvent(event: AutomationEvent) -> void
+external function PlayAutomationEvent(event_: AutomationEvent) -> void
 external function IsKeyPressed(key: int) -> bool
 external function IsKeyPressedRepeat(key: int) -> bool
 external function IsKeyDown(key: int) -> bool

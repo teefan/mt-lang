@@ -10,6 +10,16 @@ class LSPServerTest < Minitest::Test
   HOVER_LATENCY_BUDGET_MS = 250.0
   SEMANTIC_TOKENS_LATENCY_BUDGET_MS = 450.0
 
+  def teardown
+    ObjectSpace.each_object(MilkTea::LSP::Server) do |server|
+      server.send(:handle_shutdown, nil)
+    rescue StandardError
+      nil
+    end
+
+    super
+  end
+
   class RecordingProtocol
     attr_reader :notifications
 
@@ -589,6 +599,17 @@ function main(value: int) -> int:
     SQL
   MT
 
+  def test_shutdown_stops_background_diagnostics_workers
+    server = MilkTea::LSP::Server.new(protocol: RecordingProtocol.new)
+    workers = server.instance_variable_get(:@diagnostics_workers).dup
+
+    refute_empty workers
+
+    server.send(:stop_diagnostics_workers)
+
+    assert workers.none?(&:alive?)
+  end
+
   def test_initialize_advertises_expected_capabilities
     with_server do |client|
       response = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -642,6 +663,36 @@ function main(value: int) -> int:
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "add"
       assert_includes hover_value, "-> int"
+    end
+  end
+
+  def test_document_symbol_includes_event_declarations
+    source = <<~MT
+      event reloaded[4]
+
+      struct Window:
+          public event closed[4]
+          title: str
+
+      function main() -> void:
+          reloaded.emit()
+    MT
+
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_event_symbols_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/documentSymbol", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      names = response.fetch("result").map { |symbol| symbol["name"] }
+      assert_includes names, "reloaded"
+      assert_includes names, "closed"
+      assert_includes names, "main"
     end
   end
 
@@ -6253,6 +6304,42 @@ function main(value: int) -> int:
         assert_equal "namespace", alias_entry.fetch("tokenType")
         assert_equal "type", interface_entry.fetch("tokenType")
       end
+    end
+  end
+
+  def test_semantic_tokens_classify_event_declarations
+    source = <<~MT
+      event reloaded[4]
+
+      struct Window:
+          public event closed[4]
+          title: str
+
+      function main() -> void:
+          reloaded.emit()
+    MT
+
+    with_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_semantic_event_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/semanticTokens/full", {
+        "textDocument" => { "uri" => uri }
+      })
+
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+      entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+      top_level_event = semantic_entry_for_lexeme_on_line(source, entries, "reloaded", 0)
+      struct_event = semantic_entry_for_lexeme_on_line(source, entries, "closed", 3)
+
+      assert_equal "variable", top_level_event.fetch("tokenType")
+      assert_includes top_level_event.fetch("modifierNames"), "declaration"
+      assert_equal "property", struct_event.fetch("tokenType")
+      assert_includes struct_event.fetch("modifierNames"), "declaration"
     end
   end
 
