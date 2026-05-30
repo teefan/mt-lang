@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../tooling/formatter"
 require_relative "../core/token"
 require_relative "../core/types"
 
@@ -194,7 +195,8 @@ module MilkTea
           lines.concat(section_lines)
         end
 
-        lines.join("\n") + "\n"
+        source = lines.join("\n") + "\n"
+        Formatter.format_source(source, path: generated_module_path, mode: :tidy)
       end
 
       private
