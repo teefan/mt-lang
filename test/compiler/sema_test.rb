@@ -4607,6 +4607,238 @@ function main() -> int:
     assert_equal true, program.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_multiplayer_surface_scaffold
+    program = check_program_source(<<~MT)
+      # module demo.multiplayer
+
+      import std.multiplayer as mp
+
+      @[mp.replicated(authority = mp.Authority.server)]
+      struct PlayerState:
+          @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+          x: float
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = true)]
+      function submit_input(context: mp.RpcContext, input: int) -> void:
+          return
+
+      function main() -> int:
+          let state_desc = mp.state_descriptor[PlayerState]()
+          let rpc_desc = mp.rpc_descriptor(callable_of(submit_input))
+          var registry = mp.Registry.create()
+          registry.add_state(state_desc)
+          registry.add_rpc(rpc_desc)
+          registry.freeze()
+          let world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.server)
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_multiplayer_rpc_descriptor_for_non_rpc_callable
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_rpc
+
+        import std.multiplayer as mp
+
+        function submit_input() -> void:
+            return
+
+        function main() -> int:
+            let rpc_desc = mp.rpc_descriptor(callable_of(submit_input))
+            return 0
+      MT
+    end
+
+    assert_match(/rpc_descriptor expects callable_of\(name\) where name resolves to a top-level @\[std\.multiplayer\.rpc\(\.\.\.\)\] callable/, error.message)
+  end
+
+  def test_rejects_multiplayer_state_descriptor_for_non_replicated_struct
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_state
+
+        import std.multiplayer as mp
+
+        struct PlayerState:
+            x: float
+
+        function main() -> int:
+            let state_desc = mp.state_descriptor[PlayerState]()
+            return 0
+      MT
+    end
+
+    assert_match(/state_descriptor expects a @\[std\.multiplayer\.replicated\(\.\.\.\)\] struct/, error.message)
+  end
+
+  def test_rejects_multiplayer_state_descriptor_for_non_wire_safe_sync_field
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_state_wire
+
+        import std.multiplayer as mp
+
+        @[mp.replicated(authority = mp.Authority.server)]
+        struct PlayerState:
+            @[mp.sync(mode = mp.TransferMode.reliable, channel = 0, rate_hz = 0, target = mp.SyncTarget.observers)]
+            name: str
+
+        function main() -> int:
+            let state_desc = mp.state_descriptor[PlayerState]()
+            return 0
+      MT
+    end
+
+    assert_match(/sync field .*\.name must use the v1 wire-safe type subset, got str/, error.message)
+  end
+
+  def test_rejects_multiplayer_state_descriptor_for_mixed_sync_runtime_controls
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_state_sync_controls
+
+        import std.multiplayer as mp
+
+        @[mp.replicated(authority = mp.Authority.server)]
+        struct PlayerState:
+            @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+            x: int
+            @[mp.sync(mode = mp.TransferMode.reliable, channel = 1, rate_hz = 10, target = mp.SyncTarget.owner)]
+            y: int
+
+        function main() -> int:
+            let _ = mp.state_descriptor[PlayerState]()
+            return 0
+      MT
+    end
+
+    assert_match(/must match mode\/channel\/rate_hz\/target/, error.message)
+  end
+
+  def test_rejects_multiplayer_rpc_descriptor_for_missing_context_param
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_rpc_context
+
+        import std.multiplayer as mp
+
+        @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = true)]
+        function submit_input(entity: mp.EntityId) -> void:
+            return
+
+        function main() -> int:
+            let rpc_desc = mp.rpc_descriptor(callable_of(submit_input))
+            return 0
+      MT
+    end
+
+    assert_match(/rpc handler submit_input must take std\.multiplayer\.RpcContext as its first parameter/, error.message)
+  end
+
+  def test_rejects_multiplayer_rpc_descriptor_for_non_wire_safe_payload
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_bad_rpc_payload
+
+        import std.multiplayer as mp
+
+        @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = true)]
+        function submit_input(context: mp.RpcContext, name: str) -> void:
+            return
+
+        function main() -> int:
+            let rpc_desc = mp.rpc_descriptor(callable_of(submit_input))
+            return 0
+      MT
+    end
+
+    assert_match(/rpc payload parameter name of submit_input must use the v1 wire-safe type subset, got str/, error.message)
+  end
+
+  def test_type_checks_multiplayer_rpc_typed_dispatch_call
+    program = check_program_source(<<~MT)
+      # module demo.multiplayer_typed_dispatch
+
+      import std.multiplayer as mp
+      import std.multiplayer.rpc as rpc
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = false)]
+      function submit_input(context: mp.RpcContext, input_flags: ubyte, axis: short, aiming: bool) -> void:
+          return
+
+      function main() -> int:
+          var payload = array[ubyte, 4](1, 0, 2, 1)
+          let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 7)
+          let _ = rpc.dispatch_typed_payload(callable_of(submit_input), context, payload)
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_type_checks_multiplayer_rpc_typed_dispatch_struct_payload
+    program = check_program_source(<<~MT)
+      # module demo.multiplayer_typed_dispatch_struct
+
+      import std.multiplayer as mp
+      import std.multiplayer.rpc as rpc
+
+      struct InputFrame:
+          button_flags: ubyte
+          axis_x: short
+          axis_y: short
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = false)]
+      function submit_input(context: mp.RpcContext, frame: InputFrame) -> void:
+          return
+
+      function main() -> int:
+          var payload = array[ubyte, 5](3, 0, 10, 255, 240)
+          let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 7)
+          let _ = rpc.dispatch_typed_payload(callable_of(submit_input), context, payload)
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_multiplayer_rpc_typed_dispatch_for_unsupported_handler_payload
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_typed_dispatch_bad_handler
+
+        import std.multiplayer as mp
+        import std.multiplayer.rpc as rpc
+
+        struct LargePayload:
+            a: ubyte
+            b: ubyte
+            c: ubyte
+            d: ubyte
+            e: ubyte
+            f: ubyte
+            g: ubyte
+            h: ubyte
+            i: ubyte
+
+        @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = false)]
+        function submit_input(context: mp.RpcContext, payload: LargePayload) -> void:
+            return
+
+        function main() -> int:
+            var payload = array[ubyte, 9](1, 2, 3, 4, 5, 6, 7, 8, 9)
+            let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 7)
+            let _ = rpc.dispatch_typed_payload(callable_of(submit_input), context, payload)
+            return 0
+      MT
+    end
+
+    assert_match(/dispatch_typed_payload does not support payload parameter payload of type .*struct payloads are limited to 8 fields/, error.message)
+  end
+
   def test_type_checks_attribute_reflection_queries
     source = <<~MT
     # module demo.attr_queries
@@ -4654,6 +4886,61 @@ function main() -> int:
     MT
 
     result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_imported_attribute_reflection_queries
+    source = <<~MT
+      # module demo.imported_attr_queries
+
+      import demo.net_schema as schema
+
+      static_assert(has_attribute(schema.PlayerState, schema.replicated_rate), "imported struct attribute missing")
+      static_assert(
+        has_attribute(schema.PlayerState, schema.replicated_rate) and
+        attribute_arg[ptr_uint](attribute_of(schema.PlayerState, schema.replicated_rate), rate_hz) == 20,
+        "imported struct attribute arg changed"
+      )
+      static_assert(has_attribute(field_of(schema.PlayerState, hp), schema.rename), "imported field attribute missing")
+      static_assert(
+        has_attribute(field_of(schema.PlayerState, hp), schema.rename) and
+        attribute_arg[str](attribute_of(field_of(schema.PlayerState, hp), schema.rename), name) == "health_points",
+        "imported field attribute arg changed"
+      )
+      static_assert(has_attribute(callable_of(schema.submit_input), schema.traced), "imported callable attribute missing")
+      static_assert(
+        has_attribute(callable_of(schema.submit_input), schema.traced) and
+        attribute_arg[str](attribute_of(callable_of(schema.submit_input), schema.traced), name) == "submit_input",
+        "imported callable attribute arg changed"
+      )
+
+      function main() -> int:
+          return schema.submit_input()
+    MT
+
+    imported_sources = {
+      "demo/net_schema.mt" => <<~MT,
+        # module demo.net_schema
+
+        public const SNAP_RATE: ptr_uint = 20
+
+        public attribute[struct] replicated_rate(rate_hz: ptr_uint)
+        public attribute[field] rename(name: str)
+        public attribute[callable] traced(name: str)
+
+        @[replicated_rate(SNAP_RATE)]
+        public struct PlayerState:
+            @[rename("health_points")]
+            hp: int
+
+        @[traced("submit_input")]
+        public function submit_input() -> int:
+            return 7
+      MT
+    }
+
+    result = check_program_source(source, imported_sources).root_analysis
 
     assert_equal true, result.functions.key?("main")
   end
@@ -6772,6 +7059,61 @@ extending Counter:
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_array_as_span_on_ordinary_call_with_lvalue_source
+    source = <<~MT
+      # module demo.array_span_call
+
+      function consume(items: span[int]) -> ptr_uint:
+          return items.len
+
+      function main() -> int:
+          var values = zero[array[int, 3]]
+          values[0] = 1
+          let used = consume(values)
+          return int<-used
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_array_as_span_on_ordinary_call_with_temporary_source
+    source = <<~MT
+      # module demo.array_span_temporary
+
+      function consume(items: span[int]) -> ptr_uint:
+          return items.len
+
+      function main() -> int:
+          let used = consume(zero[array[int, 3]])
+          return int<-used
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/expects span\[int\], got array\[int, 3\]/, error.message)
+  end
+
+  def test_rejects_implicit_array_to_span_in_local_binding
+    source = <<~MT
+      # module demo.array_span_binding
+
+      function main() -> ptr_uint:
+          var values = zero[array[int, 3]]
+          let view: span[int] = values
+          return view.len
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/cannot assign array\[int, 3\] to view: expected span\[int\]/, error.message)
   end
 
   def test_type_checks_zero_initialized_typed_array_char_locals

@@ -25,7 +25,7 @@ module MilkTea
   end
 
   class Sema
-    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
+    Analysis = Data.define(:ast, :module_name, :module_kind, :directives, :imports, :types, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :local_completion_frames, :binding_resolution, :callable_value_identifier_sites, :callable_value_member_access_sites, :required_unsafe_lines)
     Facts = Analysis
     ToolingSnapshot = Data.define(:facts, :diagnostics) do
       def analysis
@@ -68,6 +68,7 @@ module MilkTea
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
     InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
     AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
+    ResolvedAttributeApplication = Data.define(:binding, :argument_values)
     AttributePresenceKey = Data.define(:target, :attribute_module_name, :attribute_name)
     FunctionBinding = Data.define(:name, :type, :body_params, :body_return_type, :ast, :external, :async, :type_params, :type_param_constraints, :instances, :type_arguments, :owner, :specialization_owner, :type_substitutions, :declared_receiver_type)
     TypeParamConstraintBinding = Data.define(:interfaces) do
@@ -77,7 +78,7 @@ module MilkTea
     HashResolution = Data.define(:target_type, :binding)
     EqualResolution = Data.define(:target_type, :binding)
     OrderResolution = Data.define(:target_type, :binding)
-    ModuleBinding = Data.define(:name, :types, :interfaces, :attributes, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_attributes, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
+    ModuleBinding = Data.define(:name, :types, :type_declarations, :interfaces, :attributes, :attribute_applications, :values, :functions, :methods, :implemented_interfaces, :imports, :private_types, :private_interfaces, :private_attributes, :private_values, :private_functions, :private_methods, :private_implemented_interfaces) do
       def private_type?(name)
         private_types.key?(name)
       end
@@ -157,7 +158,10 @@ module MilkTea
       end
     end
 
-    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[Option Result Subscription EventError]).freeze
+    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
+      Option Result Subscription EventError
+      struct_handle field_handle callable_handle attribute_handle
+    ]).freeze
 
     def self.check(ast, imported_modules: {}, allow_missing_imports: false)
       Checker.new(ast, imported_modules:, allow_missing_imports:).check
@@ -230,6 +234,7 @@ module MilkTea
         @required_unsafe_lines = []
         @current_specialization_owner = nil
         @return_context_stack = []
+        @resolved_attribute_applications = {}
         @validated_attribute_arguments = {}
         @attribute_application_bindings = {}
       end
@@ -263,6 +268,7 @@ module MilkTea
           types: @types,
           interfaces: @interfaces,
           attributes: snapshot_attributes,
+          attribute_applications: snapshot_attribute_applications,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
@@ -326,6 +332,7 @@ module MilkTea
           types: @types,
           interfaces: @interfaces,
           attributes: snapshot_attributes,
+          attribute_applications: snapshot_attribute_applications,
           values: @top_level_values,
           functions: @top_level_functions,
           methods: snapshot_methods,
@@ -355,6 +362,14 @@ module MilkTea
                            builtin_subscription_type
                          when "EventError"
                            builtin_event_error_type
+                         when "struct_handle"
+                           builtin_struct_handle_type
+                         when "field_handle"
+                           builtin_field_handle_type
+                         when "callable_handle"
+                           builtin_callable_handle_type
+                         when "attribute_handle"
+                           builtin_attribute_handle_type
                          else
                            Types::Primitive.new(name)
                          end
@@ -377,6 +392,22 @@ module MilkTea
         Types::Enum.new("EventError").define_members(@types.fetch("int"), ["full"]).define_member_values("full" => 0)
       end
 
+      def builtin_struct_handle_type
+        Types::BUILTIN_STRUCT_HANDLE_TYPE
+      end
+
+      def builtin_field_handle_type
+        Types::BUILTIN_FIELD_HANDLE_TYPE
+      end
+
+      def builtin_callable_handle_type
+        Types::BUILTIN_CALLABLE_HANDLE_TYPE
+      end
+
+      def builtin_attribute_handle_type
+        Types::BUILTIN_ATTRIBUTE_HANDLE_TYPE
+      end
+
       def install_builtin_attributes
         BUILTIN_ATTRIBUTE_NAMES.each do |name|
           @attributes[name] = Sema.builtin_attribute_binding(name, @types)
@@ -388,6 +419,12 @@ module MilkTea
           next if binding.builtin
 
           attributes[name] = binding
+        end.freeze
+      end
+
+      def snapshot_attribute_applications
+        @resolved_attribute_applications.each_with_object({}) do |(target_id, applications), snapshot|
+          snapshot[target_id] = applications
         end.freeze
       end
 
@@ -832,7 +869,7 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::StructDecl
-              packed, alignment = validate_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}")
+              packed, alignment = validate_decl_attribute_applications!(decl.attributes, target_kind: :struct, target_label: "struct #{decl.name}", target_node: decl)
               @types.fetch(decl.name).set_layout(packed:, alignment:)
 
               decl.fields.each do |field|
@@ -841,21 +878,21 @@ module MilkTea
                     raise_sema_error("attributes are not allowed on fields in external files")
                   end
 
-                  validate_decl_attribute_applications!(field.attributes, target_kind: :field, target_label: "field #{decl.name}.#{field.name}")
+                  validate_decl_attribute_applications!(field.attributes, target_kind: :field, target_label: "field #{decl.name}.#{field.name}", target_node: field)
                 end
               end
             when AST::FunctionDef, AST::ExternFunctionDecl, AST::ForeignFunctionDecl
-              validate_decl_attribute_applications!(decl.attributes, target_kind: :callable, target_label: "callable #{decl.name}")
+              validate_decl_attribute_applications!(decl.attributes, target_kind: :callable, target_label: "callable #{decl.name}", target_node: decl)
             when AST::InterfaceDecl
               decl.methods.each do |method|
                 with_error_node(method) do
-                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.name}.#{method.name}")
+                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.name}.#{method.name}", target_node: method)
                 end
               end
             when AST::ExtendingBlock
               decl.methods.each do |method|
                 with_error_node(method) do
-                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}")
+                  validate_decl_attribute_applications!(method.attributes, target_kind: :callable, target_label: "callable #{decl.type_name}.#{method.name}", target_node: method)
                 end
               end
             end
@@ -863,10 +900,11 @@ module MilkTea
         end
       end
 
-      def validate_decl_attribute_applications!(applications, target_kind:, target_label:)
+      def validate_decl_attribute_applications!(applications, target_kind:, target_label:, target_node:)
         seen = {}
         packed = false
         alignment = nil
+        resolved_applications = []
 
         applications.each do |application|
           with_error_node(application) do
@@ -885,8 +923,10 @@ module MilkTea
 
             seen[binding_key] = true
             argument_values = validate_attribute_arguments!(binding, application)
+            argument_values = argument_values.freeze
             @attribute_application_bindings[application.object_id] = binding
             @validated_attribute_arguments[application.object_id] = argument_values
+            resolved_applications << ResolvedAttributeApplication.new(binding:, argument_values:)
 
             case binding.name
             when "packed"
@@ -900,6 +940,8 @@ module MilkTea
             end
           end
         end
+
+        @resolved_attribute_applications[target_node.object_id] = resolved_applications.freeze
 
         [packed, alignment]
       end
@@ -1002,13 +1044,15 @@ module MilkTea
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
               decl.methods.each do |method|
-                binding = declare_function_binding(
-                  method,
-                  receiver_type:,
-                  declared_receiver_type: receiver_type,
-                  receiver_type_param_names:,
-                  receiver_type_param_constraints:,
-                )
+                binding = with_error_node(method) do
+                  declare_function_binding(
+                    method,
+                    receiver_type:,
+                    declared_receiver_type: receiver_type,
+                    receiver_type_param_names:,
+                    receiver_type_param_constraints:,
+                  )
+                end
                 raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
 
                 @methods[dispatch_receiver_type][binding.name] = binding
@@ -1405,9 +1449,9 @@ module MilkTea
         when AST::Identifier
           case expression.callee.name
           when "field_of"
-            check_field_of_call(expression.arguments, scopes: scopes || [])
+            evaluate_field_of_call(expression.arguments, scopes: scopes || [])
           when "callable_of"
-            check_callable_of_call(expression.arguments, scopes: scopes || [])
+            evaluate_callable_of_call(expression.arguments, scopes: scopes || [])
           when "has_attribute"
             evaluate_has_attribute_call(expression.arguments, scopes: scopes || [])
           when "attribute_of"
@@ -1444,7 +1488,7 @@ module MilkTea
           binding.module_name,
           target,
           binding.params,
-          @validated_attribute_arguments[application.object_id],
+          application.argument_values,
         )
       end
 
@@ -1460,7 +1504,7 @@ module MilkTea
 
       def evaluate_reflection_target_argument(expression, scopes:)
         if (type_expr = resolve_type_expression(expression))
-          handle = local_struct_handle_for_type(type_expr)
+          handle = struct_handle_for_type(type_expr)
           return handle if handle
         end
 
@@ -3588,12 +3632,17 @@ module MilkTea
 
         case callable_kind
         when :function
+          return check_multiplayer_rpc_descriptor_call(callable, expression.arguments, scopes:) if multiplayer_rpc_descriptor_call?(expression.callee, callable)
+          return check_multiplayer_rpc_typed_dispatch_call(callable, expression.arguments, scopes:) if multiplayer_rpc_typed_dispatch_call?(expression.callee, callable)
+
           callable = specialize_function_binding(
             callable,
             expression.arguments,
             scopes:,
             receiver_type: callable_receiver_type_for_specialization(expression.callee, scopes:),
           )
+
+          return check_multiplayer_state_descriptor_call(callable, expression.arguments, scopes:) if multiplayer_state_descriptor_call?(expression.callee, callable)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -4078,8 +4127,7 @@ module MilkTea
               raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
             end
           else
-            unless array_to_span_call_argument_compatible?(actual_type, parameter.type, expression: foreign_argument_expression(argument), scopes:) ||
-                   call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
+            unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
               raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
             end
           end
@@ -4245,6 +4293,14 @@ module MilkTea
         raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("field_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
 
+        evaluate_field_of_call(arguments, scopes:)
+        builtin_field_handle_type
+      end
+
+      def evaluate_field_of_call(arguments, scopes:)
+        raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("field_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
         struct_handle = resolve_struct_handle_argument(arguments.first.value, scopes:)
         field_name = reflection_identifier_name(arguments[1].value, context: "field_of")
         field_decl = struct_handle.declaration.fields.find { |field| field.name == field_name }
@@ -4257,7 +4313,147 @@ module MilkTea
         raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("callable_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
+        evaluate_callable_of_call(arguments, scopes:)
+        builtin_callable_handle_type
+      end
+
+      def evaluate_callable_of_call(arguments, scopes:)
+        raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("callable_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
         resolve_callable_handle_argument(arguments.first.value, scopes:)
+      end
+
+      def check_multiplayer_state_descriptor_call(binding, arguments, scopes:)
+        raise_sema_error("state_descriptor does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("state_descriptor expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+        raise_sema_error("state_descriptor requires exactly one type argument") unless binding.type_arguments.length == 1
+
+        state_type = binding.type_arguments.first
+        raise_sema_error("state_descriptor expects a concrete struct type") if state_type.is_a?(Types::StructInstance) || state_type.is_a?(Types::GenericStructDefinition)
+
+        struct_handle = struct_handle_for_type(state_type)
+        raise_sema_error("state_descriptor expects a concrete struct type") unless struct_handle
+        unless multiplayer_attribute_applied?(struct_handle, attribute_name: "replicated")
+          raise_sema_error("state_descriptor expects a @[std.multiplayer.replicated(...)] struct")
+        end
+
+        validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+
+        binding.type.return_type
+      end
+
+      def check_multiplayer_rpc_descriptor_call(binding, arguments, scopes:)
+        raise_sema_error("rpc_descriptor does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("rpc_descriptor expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        target_expression = arguments.first.value
+        unless direct_callable_of_expression?(target_expression)
+          raise_sema_error("rpc_descriptor expects callable_of(name) as a direct argument")
+        end
+
+        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
+        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
+          raise_sema_error("rpc_descriptor expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
+        raise_sema_error("rpc_descriptor expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable") unless callable_kind == :function
+
+        validate_multiplayer_rpc_callable!(callable_binding)
+
+        binding.type.return_type
+      end
+
+      def check_multiplayer_rpc_typed_dispatch_call(binding, arguments, scopes:)
+        raise_sema_error("dispatch_typed_payload does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("dispatch_typed_payload expects 3 arguments, got #{arguments.length}") unless arguments.length == 3
+
+        target_expression = arguments.first.value
+        unless direct_callable_of_expression?(target_expression)
+          raise_sema_error("dispatch_typed_payload expects callable_of(name) as first argument")
+        end
+
+        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
+        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
+          raise_sema_error("dispatch_typed_payload expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
+        unless callable_kind == :function
+          raise_sema_error("dispatch_typed_payload expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        validate_multiplayer_rpc_callable!(callable_binding)
+
+        payload_params = callable_binding.type.params.drop(1)
+        unsupported = payload_params.find do |param|
+          multiplayer_typed_rpc_payload_type_error(param.type)
+        end
+        if unsupported
+          reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
+          raise_sema_error("dispatch_typed_payload does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}")
+        end
+
+        context_type = multiplayer_rpc_context_type
+        raise_sema_error("dispatch_typed_payload requires std.multiplayer.RpcContext support") unless context_type
+
+        context_argument_type = infer_expression(arguments[1].value, scopes:, expected_type: context_type)
+        unless call_argument_compatible?(context_argument_type, context_type, scopes:, external: false, expression: arguments[1].value)
+          raise_sema_error("dispatch_typed_payload context argument expects #{context_type}, got #{context_argument_type}")
+        end
+
+        expected_payload_type = binding.type.params.fetch(2).type
+        payload_argument_type = infer_expression(arguments[2].value, scopes:, expected_type: expected_payload_type)
+        unless call_argument_compatible?(payload_argument_type, expected_payload_type, scopes:, external: false, expression: arguments[2].value)
+          raise_sema_error("dispatch_typed_payload payload argument expects #{expected_payload_type}, got #{payload_argument_type}")
+        end
+
+        binding.type.return_type
+      end
+
+      def multiplayer_typed_rpc_payload_type_error(type, visited = {})
+        return nil if multiplayer_typed_rpc_scalar_payload_type?(type)
+
+        if type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+          return "external structs are not supported" if type.external
+          return "event-carrying structs are not supported" if type.has_events?
+          return "recursive struct payloads are not supported" if visited[type]
+
+          added = false
+          begin
+            visited[type] = true
+            added = true
+            field_names = type.fields.keys
+            return "struct payloads are limited to 8 fields" if field_names.length > 8
+
+            field_names.each do |field_name|
+              field_type = type.field(field_name)
+              nested_reason = multiplayer_typed_rpc_payload_type_error(field_type, visited)
+              next unless nested_reason
+
+              return "field #{field_name} (#{field_type}) is not supported: #{nested_reason}"
+            end
+
+            return nil
+          ensure
+            visited.delete(type) if added
+          end
+        end
+
+        "only primitives, integer-backed enums/flags, and small wire-safe structs are supported"
+      end
+
+      def multiplayer_typed_rpc_scalar_payload_type?(type)
+        return multiplayer_typed_rpc_primitive_payload_type?(type) if type.is_a?(Types::Primitive)
+
+        type.is_a?(Types::EnumBase) && multiplayer_typed_rpc_primitive_payload_type?(type.backing_type)
+      end
+
+      def multiplayer_typed_rpc_primitive_payload_type?(type)
+        return false unless type.is_a?(Types::Primitive)
+
+        %w[bool byte ubyte char short ushort int uint long ulong float double].include?(type.name)
       end
 
       def check_has_attribute_call(arguments, scopes:)
@@ -4284,33 +4480,46 @@ module MilkTea
           raise_sema_error("attribute #{qualified_attribute_name(binding)} is not applied to #{target}")
         end
 
-        Types::AttributeHandle.new(
-          binding.name,
-          binding.module_name,
-          target,
-          binding.params,
-          application ? @validated_attribute_arguments[application.object_id] : nil,
-        )
+        builtin_attribute_handle_type
       end
 
       def check_attribute_arg_call(expected_type, arguments, scopes:)
         raise_sema_error("attribute_arg does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("attribute_arg expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
 
-        handle_type = infer_expression(arguments.first.value, scopes:)
-        raise_sema_error("attribute_arg expects an attribute handle") unless handle_type.is_a?(Types::AttributeHandle)
+        handle_value = evaluate_compile_time_const_value(arguments.first.value, scopes:)
+        parameter_source = if handle_value.is_a?(Types::AttributeHandle)
+          [handle_value.attribute_name, handle_value.params]
+        else
+          handle_type = infer_expression(arguments.first.value, scopes:)
+          raise_sema_error("attribute_arg expects an attribute handle") unless handle_type == builtin_attribute_handle_type
+
+          binding = attribute_binding_for_handle_expression(arguments.first.value)
+          raise_sema_error("attribute_arg expects an attribute handle") unless binding
+
+          [binding.name, binding.params]
+        end
 
         param_name = reflection_identifier_name(arguments[1].value, context: "attribute_arg")
-        parameter = handle_type.params.find { |candidate| candidate.name == param_name }
-        raise_sema_error("attribute #{handle_type.attribute_name} has no parameter #{param_name}") unless parameter
-        raise_sema_error("attribute_arg[#{expected_type}] does not match declared type #{parameter.type} for #{handle_type.attribute_name}.#{param_name}") unless parameter.type == expected_type
+        attribute_name, params = parameter_source
+        parameter = params.find { |candidate| candidate.name == param_name }
+        raise_sema_error("attribute #{attribute_name} has no parameter #{param_name}") unless parameter
+        raise_sema_error("attribute_arg[#{expected_type}] does not match declared type #{parameter.type} for #{attribute_name}.#{param_name}") unless parameter.type == expected_type
 
         expected_type
       end
 
+      def attribute_binding_for_handle_expression(expression)
+        return unless expression.is_a?(AST::Call)
+        return unless expression.callee.is_a?(AST::Identifier) && expression.callee.name == "attribute_of"
+        return unless expression.arguments.length == 2 && expression.arguments.none?(&:name)
+
+        resolve_attribute_name_argument(expression.arguments[1].value)
+      end
+
       def resolve_struct_handle_argument(expression, scopes:)
         if (type_expr = resolve_type_expression(expression))
-          handle = local_struct_handle_for_type(type_expr)
+          handle = struct_handle_for_type(type_expr)
           return handle if handle
         end
 
@@ -4319,11 +4528,11 @@ module MilkTea
 
       def resolve_reflection_target_argument(expression, scopes:)
         if (type_expr = resolve_type_expression(expression))
-          handle = local_struct_handle_for_type(type_expr)
+          handle = struct_handle_for_type(type_expr)
           return handle if handle
         end
 
-        handle = infer_expression(expression, scopes:)
+        handle = evaluate_compile_time_const_value(expression, scopes:)
         return handle if handle.is_a?(Types::FieldHandle) || handle.is_a?(Types::CallableHandle)
 
         raise_sema_error("attribute reflection expects a struct type, field handle, or callable handle")
@@ -4355,23 +4564,33 @@ module MilkTea
         expression.name
       end
 
-      def local_struct_handle_for_type(type)
+      def struct_handle_for_type(type)
         base_type = type.is_a?(Types::StructInstance) ? type.definition : type
         return nil unless base_type.is_a?(Types::Struct) || base_type.is_a?(Types::GenericStructDefinition)
 
-        declaration = local_struct_declaration_for_type(base_type)
+        declaration = struct_declaration_for_type(base_type)
         return nil unless declaration
 
         Types::StructHandle.new(base_type, declaration)
       end
 
-      def local_struct_declaration_for_type(type)
+      def struct_declaration_for_type(type)
         return nil unless type.respond_to?(:module_name)
-        return nil unless type.module_name == @module_name
-
-        @ast.declarations.find do |decl|
-          decl.is_a?(AST::StructDecl) && decl.name == type.name
+        if type.module_name == @module_name
+          return @ast.declarations.find do |decl|
+            decl.is_a?(AST::StructDecl) && decl.name == type.name
+          end
         end
+
+        imported_module = imported_module_binding_for_name(type.module_name)
+        return nil unless imported_module
+
+        declaration = imported_module.type_declarations[type.name]
+        declaration if declaration.is_a?(AST::StructDecl)
+      end
+
+      def imported_module_binding_for_name(module_name)
+        @imports.each_value.find { |binding| binding.name == module_name }
       end
 
       def validate_attribute_target_compatibility!(target, binding)
@@ -4389,19 +4608,168 @@ module MilkTea
         end
       end
 
-      def target_attribute_applications(target)
-        case target
-        when Types::StructHandle then target.declaration.attributes
-        when Types::FieldHandle then target.field_declaration.attributes
-        when Types::CallableHandle then target.declaration.attributes
-        else []
+      def resolved_attribute_applications_for_target(target)
+        target_id = case target
+        when Types::StructHandle then target.declaration.object_id
+        when Types::FieldHandle then target.field_declaration.object_id
+        when Types::CallableHandle then target.declaration.object_id
         end
+        return [] unless target_id
+
+        applications = @resolved_attribute_applications[target_id]
+        return applications if applications
+
+        @imports.each_value do |imported_module|
+          applications = imported_module.attribute_applications[target_id]
+          return applications if applications
+        end
+
+        []
       end
 
       def find_attribute_application(target, binding)
-        target_attribute_applications(target).find do |application|
-          application_binding = @attribute_application_bindings[application.object_id]
-          application_binding && application_binding.name == binding.name && application_binding.module_name == binding.module_name
+        resolved_attribute_applications_for_target(target).find do |application|
+          same_attribute_binding?(application.binding, binding)
+        end
+      end
+
+      def multiplayer_attribute_applied?(target, attribute_name:)
+        resolved_attribute_applications_for_target(target).any? do |application|
+          application.binding.name == attribute_name && application.binding.module_name == "std.multiplayer"
+        end
+      end
+
+      def same_attribute_binding?(left, right)
+        left.name == right.name && left.module_name == right.module_name
+      end
+
+      def multiplayer_state_descriptor_function?(binding)
+        binding.name == "state_descriptor" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
+      def multiplayer_rpc_descriptor_function?(binding)
+        binding.name == "rpc_descriptor" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
+      def multiplayer_rpc_typed_dispatch_function?(binding)
+        binding.name == "dispatch_typed_payload" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer.rpc"
+      end
+
+      def multiplayer_state_descriptor_call?(callee, binding)
+        return true if multiplayer_state_descriptor_function?(binding)
+
+        return false unless callee.is_a?(AST::Specialization)
+
+        multiplayer_root_import_call?(callee.callee, "state_descriptor")
+      end
+
+      def multiplayer_rpc_descriptor_call?(callee, binding)
+        return true if multiplayer_rpc_descriptor_function?(binding)
+
+        multiplayer_root_import_call?(callee, "rpc_descriptor")
+      end
+
+      def multiplayer_rpc_typed_dispatch_call?(callee, binding)
+        return true if multiplayer_rpc_typed_dispatch_function?(binding)
+        return false unless callee.is_a?(AST::MemberAccess)
+        return false unless callee.receiver.is_a?(AST::Identifier)
+        return false unless @imports.key?(callee.receiver.name)
+
+        imported_module = @imports.fetch(callee.receiver.name)
+        imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
+      end
+
+      def multiplayer_root_import_call?(callee, function_name)
+        return false unless callee.is_a?(AST::MemberAccess)
+        return false unless callee.receiver.is_a?(AST::Identifier)
+        return false unless @imports.key?(callee.receiver.name)
+
+        imported_module = @imports.fetch(callee.receiver.name)
+        imported_module.name == "std.multiplayer" && callee.member == function_name
+      end
+
+      def direct_callable_of_expression?(expression)
+        expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier) && expression.callee.name == "callable_of"
+      end
+
+      def validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+        normalized_sync = nil
+
+        struct_handle.declaration.fields.each do |field_declaration|
+          field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
+          sync_application = resolved_attribute_applications_for_target(field_handle).find do |application|
+            application.binding.name == "sync" && application.binding.module_name == "std.multiplayer"
+          end
+          next unless sync_application
+
+          sync_arguments = sync_application.argument_values
+          current_sync = {
+            mode: sync_arguments.fetch("mode"),
+            channel: sync_arguments.fetch("channel"),
+            rate_hz: sync_arguments.fetch("rate_hz"),
+            target: sync_arguments.fetch("target"),
+          }
+          normalized_sync ||= current_sync
+          if normalized_sync != current_sync
+            raise_sema_error(
+              "sync field #{state_type}.#{field_declaration.name} must match mode/channel/rate_hz/target of other @[std.multiplayer.sync(...)] fields in v1",
+            )
+          end
+
+          field_type = state_type.field(field_declaration.name)
+          next if multiplayer_wire_safe_type?(field_type)
+
+          raise_sema_error("sync field #{state_type}.#{field_declaration.name} must use the v1 wire-safe type subset, got #{field_type}")
+        end
+      end
+
+      def validate_multiplayer_rpc_callable!(binding)
+        unless binding.ast.is_a?(AST::FunctionDef) && !binding.async && !binding.external
+          raise_sema_error("rpc handlers must be top-level ordinary functions in v1")
+        end
+
+        raise_sema_error("rpc handlers must be non-generic in v1") if binding.type_params.any?
+        raise_sema_error("rpc handler #{binding.name} must return void") unless binding.body_return_type == @types.fetch("void")
+
+        params = binding.type.params
+        context_type = multiplayer_rpc_context_type
+        unless context_type && !params.empty? && params.first.type == context_type
+          raise_sema_error("rpc handler #{binding.name} must take std.multiplayer.RpcContext as its first parameter")
+        end
+
+        params.drop(1).each do |param|
+          next if multiplayer_wire_safe_type?(param.type)
+
+          raise_sema_error("rpc payload parameter #{param.name} of #{binding.name} must use the v1 wire-safe type subset, got #{param.type}")
+        end
+      end
+
+      def multiplayer_rpc_context_type
+        return @types["RpcContext"] if @module_name == "std.multiplayer"
+
+        imported_module = @imports.values.find { |module_analysis| module_analysis.name == "std.multiplayer" }
+        imported_module&.types&.fetch("RpcContext", nil)
+      end
+
+      def multiplayer_wire_safe_type?(type, visited = {})
+        return true if visited[type]
+
+        case type
+        when Types::Primitive
+          %w[bool byte ubyte char short ushort int uint long ulong float double].include?(type.name)
+        when Types::EnumBase
+          multiplayer_wire_safe_type?(type.backing_type, visited)
+        when Types::Struct
+          return false if type.external || type.has_events?
+
+          visited[type] = true
+          type.fields.each_value.all? { |field_type| multiplayer_wire_safe_type?(field_type, visited) }
+        when Types::StructInstance
+          false
+        when Types::GenericInstance
+          array_type?(type) && multiplayer_wire_safe_type?(array_element_type(type), visited)
+        else
+          false
         end
       end
 
@@ -5551,6 +5919,7 @@ module MilkTea
       end
 
       def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
+        return true if array_to_span_call_argument_compatible?(actual_type, expected_type, expression:, scopes:)
         return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:, contextual_int_to_float: !external)
         return true if implicit_ref_argument_compatible?(actual_type, expected_type, expression, scopes)
         return true if direct_task_to_proc_argument_compatible?(actual_type, expected_type)

@@ -225,6 +225,7 @@ Rules:
 - `flags` members may reference earlier members to spell composite aliases such as `read_write = Permission.read | Permission.write`.
 - `align(...)` must be a positive power of two.
 - Compile-time reflection over validated attributes uses `has_attribute`, `attribute_of`, `attribute_arg[T]`, `field_of`, and `callable_of`.
+- `field_of(...)`, `callable_of(...)`, and `attribute_of(...)` produce compile-time handle values with source-visible handle types `field_handle`, `callable_handle`, and `attribute_handle`.
 - The current C backend lowers `packed` / `align(...)` attributes with GNU-style `__attribute__((...))`, so these layout controls currently require a Clang/GCC-family compiler. On Windows that means Clang or GCC-family toolchains such as MinGW; `cl.exe` is not a supported backend for these attributes today. On wasm/browser targets the same feature works through Emscripten `emcc`, which is Clang-based.
 
 Generic variants and structs are supported, for example `Option[int]`.

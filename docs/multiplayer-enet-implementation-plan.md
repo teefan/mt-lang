@@ -333,9 +333,9 @@ First runtime scenarios:
 2. Protocol mismatch rejects the connection.
 3. Server spawn reaches client.
 4. Server state delta updates reach client.
-5. Client `to_server` RPC reaches server with the correct sender ID.
-6. Server `to_owner` RPC reaches only the owning client.
-7. Server `to_all` RPC reaches all connected clients.
+5. Client `client_to_server` RPC reaches server with the correct sender ID.
+6. Server `server_to_owner` RPC reaches only the owning client.
+7. Server `server_to_all` RPC reaches all connected clients.
 8. Ownership transfer changes allowed `require_owner` behavior.
 
 ### Phase 10: Example and docs cleanup

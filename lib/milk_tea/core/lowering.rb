@@ -38,6 +38,7 @@ module MilkTea
         @synthetic_functions = []
         @synthetic_proc_counter = 0
         @event_runtime_infos = {}
+        @multiplayer_typed_rpc_dispatch_helpers = {}
         @subscription_runtime_emitted = false
         @event_error_enum_emitted = false
         @lowered_function_c_names = {}
@@ -6913,6 +6914,8 @@ module MilkTea
             arguments = lower_call_arguments(expression.arguments, callee_type, env:)
             IR::Call.new(callee: callee_expression, arguments:, type:)
           end
+        when :compile_time_builtin
+          lower_compile_time_builtin_call(expression, builtin_name: callee_name, env:, type:)
         when :method
           receiver_arg = lower_method_receiver_argument(receiver, callee_type, callee_binding, env:)
           arguments = [receiver_arg, *lower_call_arguments(expression.arguments, callee_type, env:)]
@@ -8990,13 +8993,13 @@ module MilkTea
           elsif callee.name == "ptr_of"
             [:ptr_of, nil, nil, nil]
           elsif callee.name == "field_of"
-            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("field_of", arguments, env)]
+            [:compile_time_builtin, "field_of", nil, compile_time_builtin_function_type("field_of", arguments, env)]
           elsif callee.name == "callable_of"
-            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("callable_of", arguments, env)]
+            [:compile_time_builtin, "callable_of", nil, compile_time_builtin_function_type("callable_of", arguments, env)]
           elsif callee.name == "has_attribute"
-            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("has_attribute", arguments, env)]
+            [:compile_time_builtin, "has_attribute", nil, compile_time_builtin_function_type("has_attribute", arguments, env)]
           elsif callee.name == "attribute_of"
-            [:compile_time_builtin, nil, nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
+            [:compile_time_builtin, "attribute_of", nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
             [ :struct_literal, nil, nil, type ]
           else
@@ -9005,6 +9008,14 @@ module MilkTea
         when AST::MemberAccess
           if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
             imported_module = @imports.fetch(callee.receiver.name)
+            if multiplayer_root_import_call?(callee, "rpc_descriptor")
+              return [:compile_time_builtin, "rpc_descriptor", nil, multiplayer_rpc_descriptor_function_type]
+            end
+
+            if imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
+              return [:compile_time_builtin, "rpc_dispatch_typed_payload", nil, multiplayer_rpc_typed_dispatch_function_type]
+            end
+
             if imported_module.functions.key?(callee.member)
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
               return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
@@ -9132,7 +9143,11 @@ module MilkTea
           end
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
-            return [:compile_time_builtin, nil, nil, compile_time_builtin_specialization_function_type(callee)]
+            return [:compile_time_builtin, "attribute_arg", nil, compile_time_builtin_specialization_function_type(callee)]
+          end
+
+          if multiplayer_root_specialization_call?(callee, "state_descriptor")
+            return [:compile_time_builtin, "state_descriptor", nil, multiplayer_state_descriptor_function_type]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
@@ -9862,6 +9877,13 @@ module MilkTea
         binding.const_value
       end
 
+      def resolve_type_member_const_value(expression)
+        type = resolve_type_expression(expression.receiver)
+        return unless type.is_a?(Types::EnumBase)
+
+        type.member_value(expression.member)
+      end
+
       def compile_time_numeric_const_expression?(expression, env: nil)
         value = compile_time_const_value(expression, env:)
         value.is_a?(Integer) || value.is_a?(Float)
@@ -9879,9 +9901,12 @@ module MilkTea
             resolve_current_module_const_value(identifier_expression.name)
           end,
           resolve_member_access: lambda do |member_access_expression|
-            next unless member_access_expression.receiver.is_a?(AST::Identifier)
+            value = if member_access_expression.receiver.is_a?(AST::Identifier)
+                      resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
+                    end
+            next value unless value.nil?
 
-            resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
+            resolve_type_member_const_value(member_access_expression)
           end,
           resolve_type_ref: lambda do |type_ref|
             resolve_type_ref(type_ref)
@@ -9962,7 +9987,7 @@ module MilkTea
           binding.module_name,
           target,
           binding.params,
-          attribute_argument_values(binding, application, env:),
+          application.argument_values,
         )
       end
 
@@ -9976,6 +10001,608 @@ module MilkTea
         return nil unless param_name && attribute_handle.argument_values
 
         attribute_handle.argument_values[param_name]
+      end
+
+      def lower_compile_time_builtin_call(expression, builtin_name:, env:, type:)
+        case builtin_name
+        when "state_descriptor"
+          lower_multiplayer_state_descriptor_call(expression, type:)
+        when "rpc_descriptor"
+          lower_multiplayer_rpc_descriptor_call(expression, type:)
+        when "rpc_dispatch_typed_payload"
+          lower_multiplayer_rpc_typed_payload_call(expression, env:, type:)
+        else
+          raise LoweringError, "compile-time builtin #{builtin_name} cannot be lowered as a runtime value"
+        end
+      end
+
+      def lower_multiplayer_state_descriptor_call(expression, type:)
+        callee = expression.callee
+        raise LoweringError, "state_descriptor requires a specialized call" unless callee.is_a?(AST::Specialization)
+
+        struct_type = resolve_type_ref(callee.arguments.fetch(0).value)
+        struct_handle = struct_handle_for_type(struct_type) || raise(LoweringError, "state_descriptor requires a struct type")
+        analysis = analysis_for_module(struct_handle.struct_type.module_name)
+
+        with_analysis_context(analysis) do
+          replicated_binding = multiplayer_attribute_binding("replicated")
+          sync_binding = multiplayer_attribute_binding("sync")
+          replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_descriptor requires a @[std.multiplayer.replicated(...)] struct")
+          replicated_arguments = replicated_application.argument_values
+
+          sync_fields = struct_handle.declaration.fields.filter_map do |field_declaration|
+            field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
+            sync_application = find_attribute_application(field_handle, sync_binding)
+            next unless sync_application
+
+            {
+              name: field_declaration.name,
+              type: struct_handle.struct_type.field(field_declaration.name),
+              arguments: sync_application.argument_values,
+            }
+          end
+
+          normalized_sync = nil
+          sync_fields.each do |field_info|
+            current_sync = {
+              mode: field_info.fetch(:arguments).fetch("mode"),
+              channel: field_info.fetch(:arguments).fetch("channel"),
+              rate_hz: field_info.fetch(:arguments).fetch("rate_hz"),
+              target: field_info.fetch(:arguments).fetch("target"),
+            }
+            normalized_sync ||= current_sync
+            next if normalized_sync == current_sync
+
+            raise LoweringError,
+                  "state_descriptor requires sync fields to share mode/channel/rate_hz/target in v1"
+          end
+
+          normalized_sync ||= {
+            mode: 1,
+            channel: 0,
+            rate_hz: 0,
+            target: 0,
+          }
+
+          schema_hash = multiplayer_descriptor_hash(
+            "state",
+            struct_handle.struct_type.to_s,
+            "authority=#{replicated_arguments.fetch("authority")}",
+            *sync_fields.flat_map do |field_info|
+              [
+                "field=#{field_info.fetch(:name)}",
+                "type=#{multiplayer_schema_type_name(field_info.fetch(:type))}",
+                "mode=#{field_info.fetch(:arguments).fetch("mode")}",
+                "channel=#{field_info.fetch(:arguments).fetch("channel")}",
+                "rate_hz=#{field_info.fetch(:arguments).fetch("rate_hz")}",
+                "target=#{field_info.fetch(:arguments).fetch("target")}",
+              ]
+            end,
+          )
+
+          return IR::AggregateLiteral.new(
+            type:,
+            fields: [
+              IR::AggregateField.new(name: "name", value: lower_multiplayer_descriptor_value(struct_handle.struct_type.to_s, type.field("name"))),
+              IR::AggregateField.new(name: "authority", value: lower_multiplayer_descriptor_value(replicated_arguments.fetch("authority"), type.field("authority"))),
+              IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
+              IR::AggregateField.new(name: "sync_field_count", value: lower_multiplayer_descriptor_value(sync_fields.length, type.field("sync_field_count"))),
+              IR::AggregateField.new(name: "sync_mode", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:mode), type.field("sync_mode"))),
+              IR::AggregateField.new(name: "sync_channel", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:channel), type.field("sync_channel"))),
+              IR::AggregateField.new(name: "sync_rate_hz", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:rate_hz), type.field("sync_rate_hz"))),
+              IR::AggregateField.new(name: "sync_target", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:target), type.field("sync_target"))),
+            ],
+          )
+        end
+      end
+
+      def lower_multiplayer_rpc_descriptor_call(expression, type:)
+        target_expression = expression.arguments.fetch(0).value
+        raise LoweringError, "rpc_descriptor expects callable_of(name)" unless target_expression.is_a?(AST::Call)
+
+        callable_expression = target_expression.arguments.fetch(0).value
+        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "rpc_descriptor expects a top-level callable")
+        analysis = analysis_for_module(rpc_target.fetch(:module_name))
+
+        with_analysis_context(analysis) do
+          rpc_binding = multiplayer_attribute_binding("rpc")
+          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), rpc_target.fetch(:binding).ast)
+          rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "rpc_descriptor expects a @[std.multiplayer.rpc(...)] callable")
+          rpc_arguments = rpc_application.argument_values
+          payload_params = rpc_target.fetch(:binding).type.params.drop(1)
+
+          schema_hash = multiplayer_descriptor_hash(
+            "rpc",
+            rpc_target.fetch(:qualified_name),
+            "direction=#{rpc_arguments.fetch("direction")}",
+            "mode=#{rpc_arguments.fetch("mode")}",
+            "channel=#{rpc_arguments.fetch("channel")}",
+            "require_owner=#{rpc_arguments.fetch("require_owner")}",
+            *payload_params.flat_map do |param|
+              ["param=#{param.name}", "type=#{multiplayer_schema_type_name(param.type)}"]
+            end,
+          )
+
+          return IR::AggregateLiteral.new(
+            type:,
+            fields: [
+              IR::AggregateField.new(name: "name", value: lower_multiplayer_descriptor_value(rpc_target.fetch(:qualified_name), type.field("name"))),
+              IR::AggregateField.new(name: "direction", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("direction"), type.field("direction"))),
+              IR::AggregateField.new(name: "mode", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("mode"), type.field("mode"))),
+              IR::AggregateField.new(name: "channel", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("channel"), type.field("channel"))),
+              IR::AggregateField.new(name: "require_owner", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("require_owner"), type.field("require_owner"))),
+              IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
+            ],
+          )
+        end
+      end
+
+      def lower_multiplayer_rpc_typed_payload_call(expression, env:, type:)
+        unless expression.arguments.length == 3 && expression.arguments.none?(&:name)
+          raise LoweringError, "dispatch_typed_payload expects positional arguments: callable_of(name), context, payload"
+        end
+
+        target_expression = expression.arguments.fetch(0).value
+        raise LoweringError, "dispatch_typed_payload expects callable_of(name) as first argument" unless target_expression.is_a?(AST::Call)
+
+        callable_expression = target_expression.arguments.fetch(0).value
+        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "dispatch_typed_payload expects a top-level callable")
+
+        helper_c_name = ensure_multiplayer_rpc_typed_dispatch_helper(rpc_target)
+        helper_type = multiplayer_rpc_typed_dispatch_function_type
+        context_expression = lower_contextual_expression(expression.arguments.fetch(1).value, env:, expected_type: helper_type.params.fetch(1).type)
+        payload_expression = lower_contextual_expression(expression.arguments.fetch(2).value, env:, expected_type: helper_type.params.fetch(2).type)
+
+        IR::Call.new(
+          callee: helper_c_name,
+          arguments: [context_expression, payload_expression],
+          type:,
+        )
+      end
+
+      def ensure_multiplayer_rpc_typed_dispatch_helper(rpc_target)
+        cache_key = rpc_target.fetch(:qualified_name)
+        return @multiplayer_typed_rpc_dispatch_helpers.fetch(cache_key) if @multiplayer_typed_rpc_dispatch_helpers.key?(cache_key)
+
+        rpc_analysis = analysis_for_module(rpc_target.fetch(:module_name))
+
+        helper_c_name = with_analysis_context(rpc_analysis) do
+          function_binding = rpc_target.fetch(:binding)
+          rpc_binding = multiplayer_attribute_binding("rpc")
+          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), function_binding.ast)
+          rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "dispatch_typed_payload expects a @[std.multiplayer.rpc(...)] callable")
+          rpc_arguments = rpc_application.argument_values
+          payload_params = function_binding.type.params.drop(1)
+          unsupported = payload_params.find do |param|
+            multiplayer_typed_rpc_payload_type_error(param.type)
+          end
+          if unsupported
+            reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
+            raise LoweringError,
+                  "dispatch_typed_payload does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}"
+          end
+
+          payload_size = payload_params.sum { |param| multiplayer_typed_rpc_encoded_size(param.type) }
+
+          helper_type = multiplayer_rpc_typed_dispatch_function_type
+          result_type = helper_type.return_type
+          context_type = helper_type.params.fetch(1).type
+          payload_type = helper_type.params.fetch(2).type
+          payload_len_expr = IR::Member.new(
+            receiver: IR::Name.new(name: "payload", type: payload_type, pointer: false),
+            member: "len",
+            type: @types.fetch("ptr_uint"),
+          )
+
+          dispatch_error_type = analysis_for_module("std.multiplayer.rpc").types.fetch("DispatchError")
+          error_code_type = analysis_for_module("std.multiplayer.protocol").types.fetch("ErrorCode")
+          rpc_runtime_analysis = analysis_for_module("std.multiplayer.rpc")
+          owner_check_binding = rpc_runtime_analysis.functions.fetch("context_satisfies_owner_requirement")
+          owner_check_c_name = function_binding_c_name(owner_check_binding, module_name: "std.multiplayer.rpc")
+
+          failure_literal = IR::VariantLiteral.new(
+            type: result_type,
+            arm_name: "failure",
+            fields: [
+              IR::AggregateField.new(
+                name: "error",
+                value: IR::AggregateLiteral.new(
+                  type: dispatch_error_type,
+                  fields: [
+                    IR::AggregateField.new(
+                      name: "code",
+                      value: IR::Name.new(
+                        name: enum_member_c_name(error_code_type, "invalid_argument"),
+                        type: error_code_type,
+                        pointer: false,
+                      ),
+                    ),
+                    IR::AggregateField.new(
+                      name: "message",
+                      value: IR::StringLiteral.new(
+                        value: "typed rpc payload size mismatch",
+                        type: @types.fetch("str"),
+                        cstring: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+
+          success_literal = IR::VariantLiteral.new(
+            type: result_type,
+            arm_name: "success",
+            fields: [
+              IR::AggregateField.new(
+                name: "value",
+                value: IR::BooleanLiteral.new(value: true, type: @types.fetch("bool")),
+              ),
+            ],
+          )
+
+          payload_data_expr = IR::Member.new(
+            receiver: IR::Name.new(name: "payload", type: payload_type, pointer: false),
+            member: "data",
+            type: pointer_to(@types.fetch("ubyte")),
+          )
+          owner_requirement_expr = IR::Call.new(
+            callee: owner_check_c_name,
+            arguments: [
+              IR::BooleanLiteral.new(value: rpc_arguments.fetch("require_owner"), type: @types.fetch("bool")),
+              IR::Name.new(name: "context", type: context_type, pointer: false),
+            ],
+            type: @types.fetch("bool"),
+          )
+          owner_requirement_failure = IR::VariantLiteral.new(
+            type: result_type,
+            arm_name: "failure",
+            fields: [
+              IR::AggregateField.new(
+                name: "error",
+                value: IR::AggregateLiteral.new(
+                  type: dispatch_error_type,
+                  fields: [
+                    IR::AggregateField.new(
+                      name: "code",
+                      value: IR::Name.new(
+                        name: enum_member_c_name(error_code_type, "invalid_argument"),
+                        type: error_code_type,
+                        pointer: false,
+                      ),
+                    ),
+                    IR::AggregateField.new(
+                      name: "message",
+                      value: IR::StringLiteral.new(
+                        value: "rpc dispatch requires a sender when descriptor requires owner",
+                        type: @types.fetch("str"),
+                        cstring: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+          decoded_arguments = payload_params.each_with_index.map do |param, index|
+            value, _size = decode_multiplayer_typed_rpc_payload_value(param.type, payload_data_expr, multiplayer_typed_rpc_param_offset(payload_params, index))
+            value
+          end
+
+          helper_c_name = "#{module_c_prefix(rpc_target.fetch(:module_name))}_#{function_binding.name}_typed_dispatch_#{@multiplayer_typed_rpc_dispatch_helpers.length}"
+          @synthetic_functions << IR::Function.new(
+            name: helper_c_name,
+            c_name: helper_c_name,
+            params: [
+              IR::Param.new(name: "context", c_name: "context", type: context_type, pointer: false),
+              IR::Param.new(name: "payload", c_name: "payload", type: payload_type, pointer: false),
+            ],
+            return_type: result_type,
+            body: [
+              IR::IfStmt.new(
+                condition: IR::Unary.new(
+                  operator: "!",
+                  operand: owner_requirement_expr,
+                  type: @types.fetch("bool"),
+                ),
+                then_body: [IR::ReturnStmt.new(value: owner_requirement_failure)],
+                else_body: nil,
+              ),
+              IR::IfStmt.new(
+                condition: IR::Binary.new(
+                  operator: "!=",
+                  left: payload_len_expr,
+                  right: IR::IntegerLiteral.new(value: payload_size, type: @types.fetch("ptr_uint")),
+                  type: @types.fetch("bool"),
+                ),
+                then_body: [IR::ReturnStmt.new(value: failure_literal)],
+                else_body: nil,
+              ),
+              IR::ExpressionStmt.new(
+                expression: IR::Call.new(
+                  callee: function_binding_c_name(function_binding, module_name: rpc_target.fetch(:module_name)),
+                  arguments: [
+                    IR::Name.new(name: "context", type: context_type, pointer: false),
+                    *decoded_arguments,
+                  ],
+                  type: @types.fetch("void"),
+                ),
+              ),
+              IR::ReturnStmt.new(value: success_literal),
+            ],
+            entry_point: false,
+          )
+
+          helper_c_name
+        end
+
+        @multiplayer_typed_rpc_dispatch_helpers[cache_key] = helper_c_name
+        helper_c_name
+      end
+
+      def multiplayer_typed_rpc_param_offset(payload_params, index)
+        return 0 if index.zero?
+
+        payload_params.take(index).sum { |param| multiplayer_typed_rpc_encoded_size(param.type) }
+      end
+
+      def multiplayer_typed_rpc_payload_type_error(type, visited = {})
+        return nil if multiplayer_typed_rpc_scalar_payload_type?(type)
+
+        if type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+          return "external structs are not supported" if type.external
+          return "event-carrying structs are not supported" if type.has_events?
+          return "recursive struct payloads are not supported" if visited[type]
+
+          added = false
+          begin
+            visited[type] = true
+            added = true
+            field_names = type.fields.keys
+            return "struct payloads are limited to 8 fields" if field_names.length > 8
+
+            field_names.each do |field_name|
+              field_type = type.field(field_name)
+              nested_reason = multiplayer_typed_rpc_payload_type_error(field_type, visited)
+              next unless nested_reason
+
+              return "field #{field_name} (#{field_type}) is not supported: #{nested_reason}"
+            end
+
+            return nil
+          ensure
+            visited.delete(type) if added
+          end
+        end
+
+        "only primitives, integer-backed enums/flags, and small wire-safe structs are supported"
+      end
+
+      def multiplayer_typed_rpc_scalar_payload_type?(type)
+        return multiplayer_typed_rpc_primitive_payload_type?(type) if type.is_a?(Types::Primitive)
+
+        type.is_a?(Types::EnumBase) && multiplayer_typed_rpc_primitive_payload_type?(type.backing_type)
+      end
+
+      def multiplayer_typed_rpc_primitive_payload_type?(type)
+        return false unless type.is_a?(Types::Primitive)
+
+        %w[bool byte ubyte char short ushort int uint long ulong float double].include?(type.name)
+      end
+
+      def multiplayer_typed_rpc_encoded_size(type)
+        if type.is_a?(Types::EnumBase)
+          return multiplayer_typed_rpc_encoded_size(type.backing_type)
+        end
+
+        if type.is_a?(Types::Primitive)
+          return 1 if %w[bool byte ubyte char].include?(type.name)
+          return 2 if %w[short ushort].include?(type.name)
+          return 4 if %w[int uint float].include?(type.name)
+          return 8 if %w[long ulong double].include?(type.name)
+
+          raise LoweringError, "unsupported primitive payload type #{type}"
+        end
+
+        if type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+          return type.fields.keys.sum { |field_name| multiplayer_typed_rpc_encoded_size(type.field(field_name)) }
+        end
+
+        raise LoweringError, "unsupported typed rpc payload type #{type}"
+      end
+
+      def decode_multiplayer_typed_rpc_payload_value(type, payload_data_expr, offset)
+        if type.is_a?(Types::EnumBase)
+          backing_expr, size = decode_multiplayer_typed_rpc_payload_value(type.backing_type, payload_data_expr, offset)
+          return [IR::Cast.new(target_type: type, expression: backing_expr, type: type), size]
+        end
+
+        if type.is_a?(Types::Primitive)
+          case type.name
+          when "bool"
+            byte_expr = typed_rpc_payload_byte_expression(payload_data_expr, offset)
+            return [
+              IR::Binary.new(
+                operator: "!=",
+                left: byte_expr,
+                right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ubyte")),
+                type: @types.fetch("bool"),
+              ),
+              1,
+            ]
+          when "ubyte"
+            return [typed_rpc_payload_byte_expression(payload_data_expr, offset), 1]
+          when "byte", "char"
+            byte_expr = typed_rpc_payload_byte_expression(payload_data_expr, offset)
+            return [IR::Cast.new(target_type: type, expression: byte_expr, type: type), 1]
+          when "ushort"
+            return [typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("ushort"), 2), 2]
+          when "short"
+            decoded = typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("ushort"), 2)
+            return [IR::Cast.new(target_type: type, expression: decoded, type: type), 2]
+          when "uint"
+            return [typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("uint"), 4), 4]
+          when "int"
+            decoded = typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("uint"), 4)
+            return [IR::Cast.new(target_type: type, expression: decoded, type: type), 4]
+          when "ulong"
+            return [typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("ulong"), 8), 8]
+          when "long"
+            decoded = typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("ulong"), 8)
+            return [IR::Cast.new(target_type: type, expression: decoded, type: type), 8]
+          when "float"
+            bits = typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("uint"), 4)
+            return [IR::ReinterpretExpr.new(target_type: type, source_type: @types.fetch("uint"), expression: bits, type: type), 4]
+          when "double"
+            bits = typed_rpc_decode_unsigned_be(payload_data_expr, offset, @types.fetch("ulong"), 8)
+            return [IR::ReinterpretExpr.new(target_type: type, source_type: @types.fetch("ulong"), expression: bits, type: type), 8]
+          else
+            raise LoweringError, "unsupported primitive payload type #{type}"
+          end
+        end
+
+        if type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)
+          cursor = offset
+          fields = type.fields.keys.map do |field_name|
+            field_type = type.field(field_name)
+            field_expr, field_size = decode_multiplayer_typed_rpc_payload_value(field_type, payload_data_expr, cursor)
+            cursor += field_size
+            IR::AggregateField.new(name: field_name, value: field_expr)
+          end
+
+          return [IR::AggregateLiteral.new(type: type, fields: fields), cursor - offset]
+        end
+
+        raise LoweringError, "unsupported typed rpc payload type #{type}"
+      end
+
+      def typed_rpc_payload_byte_expression(payload_data_expr, index)
+        IR::Index.new(
+          receiver: payload_data_expr,
+          index: IR::IntegerLiteral.new(value: index, type: @types.fetch("ptr_uint")),
+          type: @types.fetch("ubyte"),
+        )
+      end
+
+      def typed_rpc_decode_unsigned_be(payload_data_expr, offset, target_type, byte_count)
+        parts = (0...byte_count).map do |index|
+          byte = IR::Cast.new(
+            target_type: target_type,
+            expression: typed_rpc_payload_byte_expression(payload_data_expr, offset + index),
+            type: target_type,
+          )
+          shift = (byte_count - index - 1) * 8
+          next byte if shift.zero?
+
+          IR::Binary.new(
+            operator: "<<",
+            left: byte,
+            right: IR::IntegerLiteral.new(value: shift, type: @types.fetch("int")),
+            type: target_type,
+          )
+        end
+
+        parts.reduce do |accumulator, part|
+          IR::Binary.new(operator: "|", left: accumulator, right: part, type: target_type)
+        end
+      end
+
+      def lower_multiplayer_descriptor_value(value, type)
+        literal = lower_compile_time_literal(value, type)
+        return literal if literal
+
+        if type.is_a?(Types::EnumBase) && value.is_a?(Integer)
+          return IR::Cast.new(
+            target_type: type,
+            expression: IR::IntegerLiteral.new(value:, type: type.backing_type),
+            type:,
+          )
+        end
+
+        raise LoweringError, "unsupported multiplayer descriptor literal #{value.inspect} for #{type}"
+      end
+
+      def resolve_multiplayer_rpc_target(expression)
+        case expression
+        when AST::Identifier
+          binding = @functions[expression.name]
+          return nil unless binding&.ast
+
+          {
+            binding:,
+            module_name: @module_name,
+            qualified_name: "#{@module_name}.#{binding.name}",
+          }
+        when AST::MemberAccess
+          return nil unless expression.receiver.is_a?(AST::Identifier)
+          return nil unless @imports.key?(expression.receiver.name)
+
+          imported_module = @imports.fetch(expression.receiver.name)
+          return nil if imported_module.private_function?(expression.member)
+
+          binding = imported_module.functions[expression.member]
+          return nil unless binding&.ast
+
+          {
+            binding:,
+            module_name: imported_module.name,
+            qualified_name: "#{imported_module.name}.#{binding.name}",
+          }
+        else
+          nil
+        end
+      end
+
+      def multiplayer_attribute_binding(name)
+        analysis_for_module("std.multiplayer").attributes.fetch(name)
+      end
+
+      def multiplayer_state_descriptor_function_type
+        descriptor_type = analysis_for_module("std.multiplayer.registry").types.fetch("StateDescriptor")
+        Types::Function.new("state_descriptor", params: [], return_type: descriptor_type)
+      end
+
+      def multiplayer_rpc_descriptor_function_type
+        descriptor_type = analysis_for_module("std.multiplayer.registry").types.fetch("RpcDescriptor")
+        Types::Function.new("rpc_descriptor", params: [], return_type: descriptor_type)
+      end
+
+      def multiplayer_rpc_typed_dispatch_function_type
+        analysis_for_module("std.multiplayer.rpc").functions.fetch("dispatch_typed_payload").type
+      end
+
+      def multiplayer_root_import_call?(callee, function_name)
+        return false unless callee.receiver.is_a?(AST::Identifier)
+        return false unless @imports.key?(callee.receiver.name)
+
+        @imports.fetch(callee.receiver.name).name == "std.multiplayer" && callee.member == function_name
+      end
+
+      def multiplayer_root_specialization_call?(callee, function_name)
+        callee.callee.is_a?(AST::MemberAccess) && multiplayer_root_import_call?(callee.callee, function_name)
+      end
+
+      def multiplayer_schema_type_name(type)
+        type.to_s
+      end
+
+      def multiplayer_descriptor_hash(*components)
+        hash = 14_695_981_039_346_656_037
+        prime = 1_099_511_628_211
+        mask = 0xffff_ffff_ffff_ffff
+
+        components.each do |component|
+          component.to_s.each_byte do |byte|
+            hash ^= byte
+            hash = (hash * prime) & mask
+          end
+
+          hash ^= 0xff
+          hash = (hash * prime) & mask
+        end
+
+        hash.zero? ? 1 : hash
       end
 
       def evaluate_reflection_target_argument(expression, env:)
@@ -10088,19 +10715,28 @@ module MilkTea
         end
       end
 
-      def target_attribute_applications(target)
-        case target
-        when Types::StructHandle then target.declaration.attributes
-        when Types::FieldHandle then target.field_declaration.attributes
-        when Types::CallableHandle then target.declaration.attributes
-        else []
+      def resolved_attribute_applications_for_target(target)
+        target_id = case target
+        when Types::StructHandle then target.declaration.object_id
+        when Types::FieldHandle then target.field_declaration.object_id
+        when Types::CallableHandle then target.declaration.object_id
         end
+        return [] unless target_id
+
+        applications = @analysis.attribute_applications[target_id]
+        return applications if applications
+
+        @imports.each_value do |imported_module|
+          applications = imported_module.attribute_applications[target_id]
+          return applications if applications
+        end
+
+        []
       end
 
       def find_attribute_application(target, binding)
-        target_attribute_applications(target).find do |application|
-          application_binding = resolve_attribute_binding_for_name(application.name)
-          application_binding && same_attribute_binding?(application_binding, binding)
+        resolved_attribute_applications_for_target(target).find do |application|
+          same_attribute_binding?(application.binding, binding)
         end
       end
 
@@ -11174,13 +11810,13 @@ module MilkTea
       def compile_time_builtin_function_type(name, arguments, env)
         return_type = case name
         when "field_of"
-          evaluate_field_of_call(arguments || [], env:)
+          @types.fetch("field_handle")
         when "callable_of"
-          evaluate_callable_of_call(arguments || [])
+          @types.fetch("callable_handle")
         when "has_attribute"
           @types.fetch("bool")
         when "attribute_of"
-          evaluate_attribute_of_call(arguments || [], env:)
+          @types.fetch("attribute_handle")
         else
           nil
         end

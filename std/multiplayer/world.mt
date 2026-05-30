@@ -1,0 +1,296 @@
+import std.multiplayer.protocol as protocol
+import std.multiplayer.registry as registry
+import std.mem.heap as heap
+import std.str as text
+import std.vec as vec
+
+
+public type Error = protocol.Error
+public type ErrorCode = protocol.ErrorCode
+public type ConnectionId = protocol.ConnectionId
+public type EntityId = protocol.EntityId
+
+
+public enum WorldRole: ubyte
+    server = 0
+    client = 1
+
+
+public struct Ownership:
+    owner: Option[ConnectionId]
+
+
+public struct EntityRecord:
+    entity: EntityId
+    descriptor: registry.StateDescriptor
+    owner: Option[ConnectionId]
+    state_size: ptr_uint
+    state_storage: ptr[void]?
+
+
+public struct World:
+    role: WorldRole
+    config: protocol.Config
+    protocol_hash_value: ulong
+    registered_states: vec.Vec[registry.StateDescriptor]
+    registered_rpcs: vec.Vec[registry.RpcDescriptor]
+    entities: vec.Vec[EntityRecord]
+    next_entity_id: EntityId
+
+
+extending World:
+    public static function create(
+        source_registry: registry.Registry,
+        config: protocol.Config,
+        role: WorldRole,
+    ) -> Result[World, Error]:
+        if not source_registry.frozen:
+            return Result[World, Error].failure(
+                error = protocol.error(ErrorCode.registry_not_frozen, "world creation requires a frozen registry"),
+            )
+
+        var result = World(
+            role = role,
+            config = config,
+            protocol_hash_value = source_registry.protocol_hash_value,
+            registered_states = vec.Vec[registry.StateDescriptor].create(),
+            registered_rpcs = vec.Vec[registry.RpcDescriptor].create(),
+            entities = vec.Vec[EntityRecord].create(),
+            next_entity_id = 1,
+        )
+        result.registered_states.append_span(source_registry.states.as_span())
+        result.registered_rpcs.append_span(source_registry.rpcs.as_span())
+        return Result[World, Error].success(value = result)
+
+
+    public function protocol_hash() -> ulong:
+        return this.protocol_hash_value
+
+
+    public function entity_count() -> ptr_uint:
+        return this.entities.len()
+
+
+    public mutable function release() -> void:
+        release_entity_storage(ref_of(this.entities))
+        this.entities.release()
+        this.registered_states.release()
+        this.registered_rpcs.release()
+        this.next_entity_id = 0
+        this.protocol_hash_value = 0
+        return
+
+
+    public mutable function spawn[T](state: T, owner: Option[ConnectionId]) -> Result[EntityId, Error]:
+        let descriptor = resolve_spawn_descriptor(this.registered_states.as_span()) else:
+            return Result[EntityId, Error].failure(
+                error = protocol.error(ErrorCode.not_registered, "spawn requires one registered state descriptor"),
+            )
+
+        return this.spawn_with_descriptor(descriptor, state, owner)
+
+
+    public mutable function spawn_with_descriptor[T](
+        descriptor: registry.StateDescriptor,
+        state: T,
+        owner: Option[ConnectionId],
+    ) -> Result[EntityId, Error]:
+        if not has_registered_state_descriptor(this.registered_states.as_span(), descriptor):
+            return Result[EntityId, Error].failure(
+                error = protocol.error(ErrorCode.not_registered, "state descriptor is not registered"),
+            )
+
+        match owner:
+            Option.some as _:
+                if descriptor.authority == protocol.Authority.server:
+                    return Result[EntityId, Error].failure(
+                        error = protocol.error(ErrorCode.unsupported, "server-authoritative state cannot use an owner"),
+                    )
+            Option.none:
+                pass
+
+        if this.entities.len() >= this.config.max_entities:
+            return Result[EntityId, Error].failure(
+                error = protocol.error(ErrorCode.invalid_argument, "world has reached max_entities capacity"),
+            )
+
+        let entity = this.next_entity_id
+        if entity == 0:
+            return Result[EntityId, Error].failure(
+                error = protocol.error(ErrorCode.unsupported, "entity id space is exhausted"),
+            )
+
+        let size = ptr_uint<-size_of(T)
+        let state_storage = heap.must_alloc_aligned[T](1)
+        unsafe:
+            read(state_storage) = state
+
+        this.next_entity_id += 1
+        this.entities.push(EntityRecord(
+            entity = entity,
+            descriptor = descriptor,
+            owner = owner,
+            state_size = size,
+            state_storage = unsafe: ptr[void]<-state_storage,
+        ))
+        return Result[EntityId, Error].success(value = entity)
+
+
+    public mutable function despawn(entity: EntityId) -> Result[bool, Error]:
+        match this.entities.find_index(proc(candidate: ptr[EntityRecord]) -> bool:
+            unsafe: read(candidate).entity == entity
+        ):
+            Option.some as payload:
+                release_entity_record(ptr_of(this.entities), payload.value)
+                this.entities.remove(payload.value)
+                return Result[bool, Error].success(value = true)
+            Option.none:
+                return Result[bool, Error].success(value = false)
+
+
+    public mutable function transfer_ownership(entity: EntityId, owner: Option[ConnectionId]) -> Result[bool, Error]:
+        let record = this.entities.find(proc(candidate: ptr[EntityRecord]) -> bool:
+            unsafe: read(candidate).entity == entity
+        ) else:
+            return Result[bool, Error].success(value = false)
+
+        unsafe:
+            let current = read(record)
+            if current.descriptor.authority != protocol.Authority.owner:
+                return Result[bool, Error].failure(
+                    error = protocol.error(ErrorCode.unsupported, "ownership transfer requires owner authority"),
+                )
+
+            if same_owner(current.owner, owner):
+                return Result[bool, Error].success(value = false)
+
+            read(record).owner = owner
+            return Result[bool, Error].success(value = true)
+
+
+    public function state_ptr[T](entity: EntityId) -> ptr[T]?:
+        let descriptor = resolve_spawn_descriptor(this.registered_states.as_span()) else:
+            return null
+
+        return this.state_ptr_with_descriptor[T](entity, descriptor)
+
+
+    public function state_ptr_with_descriptor[T](
+        entity: EntityId,
+        descriptor: registry.StateDescriptor,
+    ) -> ptr[T]?:
+        let record = find_entity_record(this.entities.as_span(), entity) else:
+            return null
+
+        unsafe:
+            let current = read(record)
+            if not state_descriptor_matches(current.descriptor, descriptor):
+                return null
+
+            if current.state_size != ptr_uint<-size_of(T):
+                return null
+
+            return ptr[T]<-current.state_storage
+
+
+    public function state_copy[T](entity: EntityId) -> Option[T]:
+        let descriptor = resolve_spawn_descriptor(this.registered_states.as_span()) else:
+            return Option[T].none
+
+        return this.state_copy_with_descriptor[T](entity, descriptor)
+
+
+    public function state_copy_with_descriptor[T](
+        entity: EntityId,
+        descriptor: registry.StateDescriptor,
+    ) -> Option[T]:
+        let state = this.state_ptr_with_descriptor[T](entity, descriptor) else:
+            return Option[T].none
+
+        unsafe:
+            return Option[T].some(value = read(state))
+
+
+function resolve_spawn_descriptor(
+    registered_states: span[registry.StateDescriptor],
+) -> Option[registry.StateDescriptor]:
+    if registered_states.len != 1:
+        return Option[registry.StateDescriptor].none
+
+    unsafe:
+        return Option[registry.StateDescriptor].some(value = read(registered_states.data))
+
+
+function has_registered_state_descriptor(
+    registered_states: span[registry.StateDescriptor],
+    descriptor: registry.StateDescriptor,
+) -> bool:
+    var index: ptr_uint = 0
+    while index < registered_states.len:
+        unsafe:
+            if state_descriptor_matches(read(registered_states.data + index), descriptor):
+                return true
+        index += 1
+
+    return false
+
+
+function state_descriptor_matches(
+    left: registry.StateDescriptor,
+    right: registry.StateDescriptor,
+) -> bool:
+    return left.schema_hash == right.schema_hash and left.name.equal(right.name)
+
+
+function find_entity_record(
+    entities: span[EntityRecord],
+    entity: EntityId,
+) -> ptr[EntityRecord]?:
+    var index: ptr_uint = 0
+    while index < entities.len:
+        unsafe:
+            let record = entities.data + index
+            if read(record).entity == entity:
+                return record
+        index += 1
+
+    return null
+
+
+function release_entity_record(entities: ptr[vec.Vec[EntityRecord]], index: ptr_uint) -> void:
+    unsafe:
+        let data = read(entities).data else:
+            return
+
+        let record_ptr = ptr[EntityRecord]<-data + index
+        let storage = read(record_ptr).state_storage
+        if storage != null:
+            heap.release_bytes(storage)
+            read(record_ptr).state_storage = null
+
+    return
+
+
+function release_entity_storage(entities: ref[vec.Vec[EntityRecord]]) -> void:
+    var index: ptr_uint = 0
+    while index < entities.len():
+        release_entity_record(ptr_of(entities), index)
+        index += 1
+
+    return
+
+
+function same_owner(left: Option[ConnectionId], right: Option[ConnectionId]) -> bool:
+    match left:
+        Option.some as left_payload:
+            match right:
+                Option.some as right_payload:
+                    return left_payload.value == right_payload.value
+                Option.none:
+                    return false
+        Option.none:
+            match right:
+                Option.some as _:
+                    return false
+                Option.none:
+                    return true

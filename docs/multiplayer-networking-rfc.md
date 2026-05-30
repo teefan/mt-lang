@@ -43,7 +43,7 @@ public struct PlayerState:
 
 
 @[mp.rpc(
-    direction = mp.RpcDirection.to_server,
+    direction = mp.RpcDirection.client_to_server,
     mode = mp.TransferMode.unreliable_ordered,
     channel = 1,
     require_owner = true,
@@ -52,7 +52,7 @@ public function submit_input(context: mp.RpcContext, entity: mp.EntityId, input:
     ...
 
 
-@[mp.rpc(direction = mp.RpcDirection.to_owner, mode = mp.TransferMode.reliable, channel = 0, require_owner = false)]
+@[mp.rpc(direction = mp.RpcDirection.server_to_owner, mode = mp.TransferMode.reliable, channel = 0, require_owner = false)]
 public function respawn(context: mp.RpcContext, entity: mp.EntityId, at: math.Vec3) -> void:
     ...
 
@@ -178,11 +178,11 @@ public enum SyncTarget: ubyte
     owner = 1
 
 public enum RpcDirection: ubyte
-    to_server = 0
-    to_owner = 1
-    to_connection = 2
-    to_observers = 3
-    to_all = 4
+    client_to_server = 0
+    server_to_owner = 1
+    server_to_connection = 2
+    server_to_observers = 3
+    server_to_all = 4
 ```
 
 ## Syntax
@@ -212,7 +212,7 @@ Unannotated fields remain local-only state.
 An RPC declaration is an ordinary top-level function with an `@[rpc(...)]` attribute:
 
 ```mt
-@[mp.rpc(direction = mp.RpcDirection.to_server, mode = mp.TransferMode.unreliable_ordered, channel = 1, require_owner = true)]
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.unreliable_ordered, channel = 1, require_owner = true)]
 public function submit_input(context: mp.RpcContext, entity: mp.EntityId, input: PlayerInput) -> void:
     ...
 ```
@@ -225,17 +225,17 @@ Reading `RpcContext` or payload values is ordinary safe code; `unsafe:` is only 
 ### Descriptor hook functions
 
 The compiler must support these narrow library hooks in `std.multiplayer`.
-The relevant user-facing surface is the call shape, not a general runtime reflection API:
+The relevant user-facing surface is a narrow typed hook plus one required call shape, not a general runtime reflection API:
 
 ```mt
 state_descriptor[T]()
-rpc_descriptor(callable_of(...))
+rpc_descriptor(target: callable_handle)
 ```
 
 Rules:
 
 1. `state_descriptor[T]()` is valid only when `T` resolves to a `@[replicated(...)]` struct.
-2. `rpc_descriptor(target)` is valid only when `target` is written directly as `callable_of(name)` and `name` resolves to a top-level `@[rpc(...)]` callable.
+2. `rpc_descriptor(target: callable_handle)` is valid only when `target` is written directly as `callable_of(name)` and `name` resolves to a top-level `@[rpc(...)]` callable.
 3. These hooks lower directly to generated static descriptor objects. They are not general runtime reflection.
 4. No additional send-side multiplayer compiler hook is part of v1.
 
@@ -279,7 +279,7 @@ Rules:
 4. The return type must be `void`.
 5. The first parameter must be `std.multiplayer.RpcContext`.
 6. All remaining parameters must be wire-safe types.
-7. `require_owner` is only meaningful for `direction = to_server`; other directions must use `require_owner = false`.
+7. `require_owner` is only meaningful for `direction = client_to_server`; other directions must use `require_owner = false`.
 8. Applying `@[rpc(...)]` does not change ordinary local call semantics. Local calls remain local-only.
 9. Accessing `RpcContext` and other RPC parameters is ordinary safe code. `unsafe:` is required only if the handler itself performs unsafe raw-pointer operations.
 10. Duplicate `rpc` applications on one callable are rejected.
