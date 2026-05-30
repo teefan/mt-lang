@@ -21,10 +21,12 @@ class LSPServerTest < Minitest::Test
   end
 
   class RecordingProtocol
-    attr_reader :notifications
+    attr_reader :notifications, :responses, :errors
 
     def initialize
       @notifications = Queue.new
+      @responses = []
+      @errors = []
     end
 
     def read_message = nil
@@ -33,10 +35,37 @@ class LSPServerTest < Minitest::Test
       @notifications << { "method" => method, "params" => params }
     end
 
-    def write_response(_id, _result)
+    def write_response(id, result)
+      @responses << { "id" => id, "result" => result }
     end
 
-    def write_error(_id, _code, _message)
+    def write_error(id, code, message)
+      @errors << { "id" => id, "code" => code, "message" => message }
+    end
+  end
+
+  class ScriptedProtocol
+    attr_reader :responses, :errors
+
+    def initialize(messages)
+      @messages = messages.dup
+      @responses = []
+      @errors = []
+    end
+
+    def read_message
+      @messages.shift
+    end
+
+    def write_notification(_method, _params)
+    end
+
+    def write_response(id, result)
+      @responses << { "id" => id, "result" => result }
+    end
+
+    def write_error(id, code, message)
+      @errors << { "id" => id, "code" => code, "message" => message }
     end
   end
 
@@ -631,6 +660,93 @@ function main(value: int) -> int:
       assert_kind_of Hash, capabilities["signatureHelpProvider"]
       assert_kind_of Hash, capabilities["completionProvider"]
       assert_equal true, capabilities["workspaceSymbolProvider"]
+      workspace_folders = capabilities.dig("workspace", "workspaceFolders")
+      assert_equal true, workspace_folders["supported"]
+      assert_equal true, workspace_folders["changeNotifications"]
+    end
+  end
+
+  def test_cancel_request_replies_with_request_cancelled_error
+    protocol = RecordingProtocol.new
+    server = MilkTea::LSP::Server.new(protocol: protocol)
+
+    server.send(:process_message, {
+      "jsonrpc" => "2.0",
+      "method" => "$/cancelRequest",
+      "params" => { "id" => 99 }
+    })
+    server.send(:process_message, {
+      "jsonrpc" => "2.0",
+      "id" => 99,
+      "method" => "initialize",
+      "params" => { "rootUri" => nil, "capabilities" => {} }
+    })
+
+    assert_equal [], protocol.responses
+    error = protocol.errors.find { |entry| entry["id"] == 99 }
+    refute_nil error
+    assert_equal(-32_800, error["code"])
+    assert_equal("Request cancelled", error["message"])
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
+  def test_run_skips_invalid_messages_and_processes_following_requests
+    protocol = ScriptedProtocol.new([
+      MilkTea::LSP::Protocol::INVALID_MESSAGE,
+      {
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "initialize",
+        "params" => { "rootUri" => nil, "capabilities" => {} }
+      },
+      nil,
+    ])
+
+    server = MilkTea::LSP::Server.new(protocol: protocol)
+    server.run
+
+    response = protocol.responses.find { |entry| entry["id"] == 1 }
+    refute_nil response
+    capabilities = response.fetch("result")[:capabilities] || response.fetch("result")["capabilities"]
+    assert_kind_of Hash, capabilities
+    assert_equal [], protocol.errors
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
+  def test_workspace_folder_change_updates_workspace_root_and_reindexes
+    Dir.mktmpdir("milk-tea-lsp-workspace-folder-change") do |dir|
+      first_root = File.join(dir, "first")
+      second_root = File.join(dir, "second")
+      FileUtils.mkdir_p(first_root)
+      FileUtils.mkdir_p(second_root)
+      File.write(File.join(second_root, "new_symbol.mt"), <<~MT)
+        function folder_changed_symbol() -> int:
+            return 1
+      MT
+
+      first_root_uri = path_to_uri(first_root)
+      second_root_uri = path_to_uri(second_root)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => first_root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        before = client.send_request("workspace/symbol", { "query" => "folder_changed_symbol" })
+        assert_equal [], before.fetch("result")
+
+        client.send_notification("workspace/didChangeWorkspaceFolders", {
+          "event" => {
+            "added" => [{ "uri" => second_root_uri, "name" => "second" }],
+            "removed" => [{ "uri" => first_root_uri, "name" => "first" }],
+          }
+        })
+
+        after = client.send_request("workspace/symbol", { "query" => "folder_changed_symbol" })
+        names = after.fetch("result").map { |symbol| symbol["name"] }
+        assert_includes names, "folder_changed_symbol"
+      end
     end
   end
 
@@ -3359,6 +3475,127 @@ function main(value: int) -> int:
         assert_equal "full", second_result["kind"]
         refute_equal first_result["resultId"], second_result["resultId"]
         assert_operator second_result.fetch("items").length, :>=, 1
+      end
+    end
+  end
+
+  def test_document_diagnostic_refreshes_after_imported_module_watched_create
+    Dir.mktmpdir("milk-tea-lsp-watch-create-diagnostics") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+
+      lib_path = File.join(dir, "mathx.mt")
+      main_path = File.join(dir, "main.mt")
+
+      main_source = <<~MT
+        import mathx as mx
+
+        function main() -> int:
+            return mx.greet()
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_result = first.fetch("result")
+        first_messages = first_result.fetch("items").map { |item| item["message"] }
+        assert first_messages.any? { |message| message.include?("module not found") }
+
+        File.write(lib_path, <<~MT)
+          public function greet() -> int:
+              return 1
+        MT
+
+        client.send_notification("workspace/didChangeWatchedFiles", {
+          "changes" => [{ "uri" => lib_uri, "type" => 1 }]
+        })
+
+        second = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+          "previousResultId" => first_result["resultId"]
+        })
+        second_result = second.fetch("result")
+
+        assert_equal "full", second_result["kind"]
+        refute_equal first_result["resultId"], second_result["resultId"]
+        assert_equal [], second_result.fetch("items")
+      end
+    end
+  end
+
+  def test_document_diagnostic_refreshes_after_imported_module_watched_delete
+    Dir.mktmpdir("milk-tea-lsp-watch-delete-diagnostics") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+
+      lib_path = File.join(dir, "mathx.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(lib_path, <<~MT)
+        public function greet() -> int:
+            return 1
+      MT
+      main_source = <<~MT
+        import mathx as mx
+
+        function main() -> int:
+            return mx.greet()
+      MT
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      lib_uri = path_to_uri(lib_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_result = first.fetch("result")
+        assert_equal [], first_result.fetch("items")
+
+        File.delete(lib_path)
+
+        client.send_notification("workspace/didChangeWatchedFiles", {
+          "changes" => [{ "uri" => lib_uri, "type" => 3 }]
+        })
+
+        second = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+          "previousResultId" => first_result["resultId"]
+        })
+        second_result = second.fetch("result")
+        second_messages = second_result.fetch("items").map { |item| item["message"] }
+
+        assert_equal "full", second_result["kind"]
+        refute_equal first_result["resultId"], second_result["resultId"]
+        assert second_messages.any? { |message| message.include?("module not found") }
       end
     end
   end

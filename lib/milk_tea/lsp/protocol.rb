@@ -7,6 +7,7 @@ module MilkTea
   module LSP
     # Handles JSON-RPC 2.0 protocol encoding/decoding over stdin/stdout
     class Protocol
+      INVALID_MESSAGE = Object.new.freeze
       @write_mutex = Mutex.new
 
       def self.read_message
@@ -23,13 +24,13 @@ module MilkTea
         end
 
         content_length = headers['Content-Length']&.to_i
-        return nil if content_length.nil? || content_length <= 0
+        return INVALID_MESSAGE if content_length.nil? || content_length <= 0
 
         content = $stdin.read(content_length)
         JSON.parse(content)
       rescue StandardError => e
         warn "Protocol error reading message: #{e.message}"
-        nil
+        INVALID_MESSAGE
       end
 
       def self.write_message(message)

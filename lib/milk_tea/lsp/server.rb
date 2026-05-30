@@ -112,6 +112,8 @@ module MilkTea
         @diagnostics_last_scheduled_hash = {}
         @diagnostics_queue = Queue.new
         @diagnostics_workers = []
+        @cancelled_requests_mutex = Mutex.new
+        @cancelled_request_ids = Set.new
         register_handlers
         start_diagnostics_workers
       end
@@ -125,6 +127,7 @@ module MilkTea
         loop do
           message = @protocol.read_message
           break if message.nil?
+          next if message.equal?(Protocol::INVALID_MESSAGE)
 
           process_message(message)
         end
@@ -143,6 +146,7 @@ module MilkTea
         @handlers['initialized'] = method(:handle_initialized)
         @handlers['shutdown']    = method(:handle_shutdown)
         @handlers['exit']        = method(:handle_exit)
+        @handlers['$/cancelRequest'] = method(:handle_cancel_request)
 
         # Text document sync
         @handlers['milkTea/documentContext'] = method(:handle_document_context)
@@ -174,6 +178,7 @@ module MilkTea
 
         # Workspace
         @handlers['workspace/symbol'] = method(:handle_workspace_symbol)
+        @handlers['workspace/didChangeWorkspaceFolders'] = method(:handle_did_change_workspace_folders)
         @handlers['workspace/didChangeConfiguration'] = method(:handle_did_change_configuration)
         @handlers['workspace/didChangeWatchedFiles'] = method(:handle_did_change_watched_files)
       end
@@ -196,6 +201,12 @@ module MilkTea
       end
 
       def handle_request(method_name, params, id)
+        if request_cancelled?(id)
+          clear_cancelled_request(id)
+          @protocol.write_error(id, -32_800, 'Request cancelled')
+          return
+        end
+
         handler = @handlers[method_name]
         if handler.nil?
           @protocol.write_error(id, -32_601, 'Method not found')
@@ -211,12 +222,18 @@ module MilkTea
             detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
           end
-          @protocol.write_response(id, result)
+          if request_cancelled?(id)
+            clear_cancelled_request(id)
+            @protocol.write_error(id, -32_800, 'Request cancelled')
+          else
+            @protocol.write_response(id, result)
+          end
         rescue StandardError => e
           warn "Error in handler for #{method_name}: #{e.message}"
           warn e.backtrace.first(3).join("\n")
           @protocol.write_error(id, -32_603, "Internal error: #{e.message}")
         ensure
+          clear_cancelled_request(id)
           @current_request_id = nil
         end
       end
@@ -466,7 +483,13 @@ module MilkTea
               resolveProvider: false
             },
             renameProvider: { prepareProvider: true },
-            workspaceSymbolProvider: true
+            workspaceSymbolProvider: true,
+            workspace: {
+              workspaceFolders: {
+                supported: true,
+                changeNotifications: true,
+              }
+            }
           }
         }
       end
@@ -478,6 +501,39 @@ module MilkTea
 
       def handle_did_change_configuration(params)
         apply_configuration_settings(params['settings'])
+        nil
+      end
+
+      def handle_cancel_request(params)
+        request_id = params.is_a?(Hash) ? (params['id'] || params[:id]) : nil
+        return nil if request_id.nil?
+
+        @cancelled_requests_mutex.synchronize do
+          @cancelled_request_ids << request_id
+        end
+        nil
+      end
+
+      def handle_did_change_workspace_folders(params)
+        event = params['event'] || {}
+        added = event['added'] || []
+        removed = event['removed'] || []
+
+        removed_uris = removed.filter_map { |folder| folder.is_a?(Hash) ? folder['uri'] : nil }
+        added_uris = added.filter_map { |folder| folder.is_a?(Hash) ? folder['uri'] : nil }
+
+        if removed_uris.include?(@root_uri)
+          @root_uri = added_uris.first
+        elsif @root_uri.nil?
+          @root_uri = added_uris.first
+        end
+
+        @workspace.workspace_root_path = uri_to_path(@root_uri)
+        @workspace.index_workspace(@root_uri) if @root_uri
+
+        @workspace.open_document_uris.each do |uri|
+          schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+        end
         nil
       end
 
@@ -2412,6 +2468,22 @@ module MilkTea
           schedule_diagnostics(affected_uri, force: true, mode: :fast) unless @workspace.background_document?(affected_uri)
         end
         affected_uris
+      end
+
+      def request_cancelled?(id)
+        return false if id.nil?
+
+        @cancelled_requests_mutex.synchronize do
+          @cancelled_request_ids.include?(id)
+        end
+      end
+
+      def clear_cancelled_request(id)
+        return if id.nil?
+
+        @cancelled_requests_mutex.synchronize do
+          @cancelled_request_ids.delete(id)
+        end
       end
 
       # ── Diagnostics ──────────────────────────────────────────────────────────

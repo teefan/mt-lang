@@ -614,6 +614,71 @@ class LSPWorkspaceTest < Minitest::Test
     end
   end
 
+  def test_apply_watched_file_change_created_module_refreshes_open_importers
+    Dir.mktmpdir("lsp_workspace_created_dependency_refresh") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      File.write(main_path, main_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(main_uri, main_source)
+
+      refute_nil workspace.collect_diagnostics(main_uri)
+
+      File.write(dependency_path, <<~MT)
+        public function answer() -> int:
+            return 42
+      MT
+
+      assert_equal [main_uri], workspace.apply_watched_file_change(dependency_uri, 1)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
+  def test_apply_watched_file_change_deleted_module_refreshes_open_importers_without_cached_dependency_entry
+    Dir.mktmpdir("lsp_workspace_deleted_dependency_refresh") do |dir|
+      FileUtils.mkdir_p(File.join(dir, "std"))
+      dependency_path = File.join(dir, "dep.mt")
+      main_path = File.join(dir, "main.mt")
+
+      File.write(dependency_path, <<~MT)
+        public function answer() -> int:
+            return 42
+      MT
+      main_source = <<~MT
+        import dep as dep
+
+        function main() -> int:
+            return dep.answer()
+      MT
+      File.write(main_path, main_source)
+
+      workspace = MilkTea::LSP::Workspace.new
+      dependency_uri = path_to_uri(dependency_path)
+      main_uri = path_to_uri(main_path)
+      workspace.open_document(main_uri, main_source)
+
+      refute_nil workspace.get_facts(main_uri)
+
+      File.delete(dependency_path)
+
+      assert_equal [main_uri], workspace.apply_watched_file_change(dependency_uri, 3)
+    ensure
+      workspace&.shutdown
+    end
+  end
+
   def test_open_background_document_does_not_wait_for_facts_state_mutex
     workspace = MilkTea::LSP::Workspace.new
     uri = "file:///tmp/lsp_workspace_background_lock.mt"
