@@ -99,6 +99,8 @@ module MilkTea
 
       lines = source.lines
       return nil unless line_index >= 0 && line_index < lines.length
+      return nil if line_inside_external_function_header?(lines, line_index)
+      return nil if line_inside_fn_type_signature?(lines, line_index)
 
       original_line = lines[line_index]
       line = original_line.delete_suffix("\n")
@@ -215,12 +217,14 @@ module MilkTea
       emitted_content = false
       previous_content_line = nil
       previous_content_index = nil
+      previous_top_level_declaration_group = nil
 
       lines.each_with_index do |line, line_index|
         if blank_line?(line)
           blank_run += 1
         else
           if emitted_content
+            current_top_level_group = top_level_declaration_group(line)
             needed = if previous_content_line && attribute_application_line?(previous_content_line)
               0
             elsif extending_block_header_line?(line)
@@ -240,6 +244,18 @@ module MilkTea
               else
                 2 # exactly 2 blank lines before function definitions
               end
+            elsif current_top_level_group
+              if current_top_level_group == :struct && previous_top_level_declaration_group == :struct
+                1
+              elsif current_top_level_group == :enum && previous_top_level_declaration_group == :enum
+                1
+              elsif current_top_level_group == :union && previous_top_level_declaration_group == :union
+                1
+              elsif previous_top_level_declaration_group && current_top_level_group != previous_top_level_declaration_group
+                1
+              else
+                [blank_run, 1].min
+              end
             else
               [blank_run, 1].min  # max 1 blank line elsewhere
             end
@@ -250,6 +266,8 @@ module MilkTea
           emitted_content = true
           previous_content_line = line
           previous_content_index = line_index
+          current_top_level_group = top_level_declaration_group(line)
+          previous_top_level_declaration_group = current_top_level_group if current_top_level_group
         end
       end
 
@@ -391,6 +409,45 @@ module MilkTea
       target_index <= header_end
     end
 
+    def self.line_inside_external_function_header?(lines, line_index)
+      start_index = line_index
+      while start_index >= 0
+        if external_function_header_line?(lines[start_index])
+          return line_in_function_header_span?(lines, start_index, line_index)
+        end
+
+        break if function_line?(lines[start_index])
+        start_index -= 1
+      end
+
+      false
+    end
+
+    def self.external_function_header_line?(line)
+      line.strip.match?(/\A(?:[A-Za-z_]\w*\s+)*external\s+function\b/)
+    end
+
+    def self.line_inside_fn_type_signature?(lines, line_index)
+      start_index = line_index
+      while start_index >= 0
+        if fn_type_signature_start_line?(lines[start_index])
+          return line_in_function_header_span?(lines, start_index, line_index)
+        end
+
+        break if function_line?(lines[start_index]) || external_function_header_line?(lines[start_index])
+        start_index -= 1
+      end
+
+      false
+    end
+
+    def self.fn_type_signature_start_line?(line)
+      stripped = line.strip
+      return true if stripped.match?(/\Atype\s+[A-Za-z_]\w*\s*=\s*fn\s*\(/)
+
+      stripped.match?(/\A[A-Za-z_]\w*\s*:\s*fn\s*\(/)
+    end
+
     def self.extending_block_header_line?(line)
       stripped = line.strip
       return false unless stripped.end_with?(":")
@@ -407,6 +464,42 @@ module MilkTea
 
     def self.attribute_application_line?(line)
       line.strip.start_with?("@[")
+    end
+
+    def self.top_level_declaration_group(line)
+      stripped = line.strip
+      return nil if stripped.empty?
+      return nil unless leading_indent_width(line).zero?
+
+      first_token = stripped[/\A[A-Za-z_][A-Za-z0-9_]*/]
+      return nil unless first_token
+
+      case first_token
+      when "link", "include", "compiler_flag"
+        :directive
+      when "opaque"
+        :opaque
+      when "type"
+        :type
+      when "struct"
+        :struct
+      when "union"
+        :union
+      when "variant"
+        :variant
+      when "enum"
+        :enum
+      when "flags"
+        :flags
+      when "const"
+        :const
+      when "var"
+        :var
+      when "external"
+        stripped.match?(/\Aexternal\s+function\b/) ? :external_function : :external
+      else
+        nil
+      end
     end
 
     def self.long_line_wrap_candidates(tokens, target_line_number, line)
