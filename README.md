@@ -137,6 +137,9 @@ Guard form:
 let value = maybe_value else:
     return 1
 
+var runtime = maybe_runtime else:
+    return 1
+
 let parsed = parse(input) else as error:
     return error
 
@@ -144,9 +147,9 @@ let _ = initialize() else:
     return 1
 ```
 
-Rules for `let ... else:`:
+Rules for `let ... else:` and `var ... else:`:
 
-- Only `let` supports an `else` block.
+- Both `let` and `var` support an `else` block.
 - The initializer must have type `T?`, `Option[T]`, or `Result[T, E]`.
 - For `T?`, the bound name has type `T`.
 - For `Option[T]`, the bound name is `some.value`.

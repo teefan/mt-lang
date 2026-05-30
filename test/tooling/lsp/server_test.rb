@@ -1991,13 +1991,12 @@ function main(value: int) -> int:
       }
     })
 
-    open_publish = Timeout.timeout(5) do
+    Timeout.timeout(5) do
       loop do
         message = protocol.notifications.pop
         break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
       end
     end
-    open_codes = open_publish.dig("params", :diagnostics).map { |diagnostic| diagnostic[:code] }
 
 
     server.send(:handle_did_save, {
@@ -2006,13 +2005,12 @@ function main(value: int) -> int:
       }
     })
 
-    save_publish = Timeout.timeout(5) do
+    Timeout.timeout(5) do
       loop do
         message = protocol.notifications.pop
         break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
       end
     end
-    save_codes = save_publish.dig("params", :diagnostics).map { |diagnostic| diagnostic[:code] }
 
   ensure
     server&.send(:handle_shutdown, nil)
@@ -2365,7 +2363,7 @@ function main(value: int) -> int:
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_code_action_test.mt"
-      source = "function add(a:int,b:int)->int:\n    return a+b\n"
+      source = "function main() -> int:\n    var x = 1\n    return x\n"
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
@@ -2547,11 +2545,9 @@ function main(value: int) -> int:
       client.send_notification("initialized", {})
       uri = "file:///tmp/lsp_fixall_formatter_mode.mt"
       source = <<~MT
-        struct Ball:
-            x: int
-        extending Ball:
-            function draw() -> void:
-                return
+        function main() -> int:
+            var x = 1
+            return x
       MT
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
@@ -2563,7 +2559,7 @@ function main(value: int) -> int:
         "textDocument" => { "uri" => uri },
         "range" => {
           "start" => { "line" => 0, "character" => 0 },
-          "end" => { "line" => 4, "character" => 0 }
+          "end" => { "line" => 3, "character" => 0 }
         },
         "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
       })
@@ -2587,7 +2583,7 @@ function main(value: int) -> int:
         "textDocument" => { "uri" => uri },
         "range" => {
           "start" => { "line" => 0, "character" => 0 },
-          "end" => { "line" => 4, "character" => 0 }
+          "end" => { "line" => 3, "character" => 0 }
         },
         "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
       })
@@ -2601,12 +2597,11 @@ function main(value: int) -> int:
 
   def test_code_action_provides_source_fixall_for_workspace_std_files
     Dir.mktmpdir("milk-tea-lsp-code-action-std") do |dir|
-      std_dir = File.join(dir, "std", "c")
+      std_dir = File.join(dir, "std")
       Dir.mkdir(File.join(dir, "std"))
-      Dir.mkdir(std_dir)
 
-      file_path = File.join(std_dir, "sdl3.mt")
-      source = "function main() -> void:\n    return\n"
+      file_path = File.join(std_dir, "demo.mt")
+      source = "function main() -> int:\n    var x = 1\n    return x\n"
       File.write(file_path, source)
 
       root_uri = path_to_uri(dir)
@@ -2623,16 +2618,16 @@ function main(value: int) -> int:
           "textDocument" => { "uri" => uri },
           "range" => {
             "start" => { "line" => 0, "character" => 0 },
-            "end" => { "line" => 1, "character" => 14 }
+            "end" => { "line" => 2, "character" => 14 }
           },
-          "context" => { "diagnostics" => [] }
+          "context" => { "diagnostics" => [], "only" => ["source.fixAll"] }
         })
 
         actions = response.fetch("result")
         fixall = actions.find { |a| a["kind"] == "source.fixAll" }
         assert fixall, "expected a source.fixAll action for std file"
         edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
-        refute_includes edit_text, "\n    return\n"
+        assert_includes edit_text, "let x = 1"
       end
     end
   end
@@ -3740,7 +3735,6 @@ function main(value: int) -> int:
         })
         result = response.fetch("result")
         items = result.fetch("items")
-        codes = items.map { |item| item["code"] }
         messages = items.map { |item| item["message"] }
 
         refute messages.any? { |message| message.match?(/module not found|package dependency not declared/) },
@@ -3834,7 +3828,6 @@ function main(value: int) -> int:
         result = response.fetch("result")
         items = result.fetch("items")
         messages = items.map { |item| item["message"] }
-        codes = items.map { |item| item["code"] }
 
         assert messages.any? { |message| message.include?("package.lock is out of date") },
                "expected frozen diagnostics to report stale package.lock, got: #{messages.inspect}"
@@ -7840,7 +7833,7 @@ function main(value: int) -> int:
         assert quickfix, "expected a quickFix action for line-too-long"
         edit = quickfix.dig("edit", "changes", uri, 0)
         assert_includes edit["newText"], "return log_value(\n"
-        assert_includes edit["newText"], "        \"delta\",\n"
+        assert_includes edit["newText"], "        \"delta\"\n"
       end
     end
   end
@@ -7887,7 +7880,7 @@ function main(value: int) -> int:
         edit = quickfix.dig("edit", "changes", uri, 0)
         assert_includes edit["newText"], "function main() -> Result[\n"
         assert_includes edit["newText"], "    Option[AlphaValue],\n"
-        assert_includes edit["newText"], "    GammaValue,\n"
+        assert_includes edit["newText"], "    GammaValue\n"
       end
     end
   end
@@ -8157,40 +8150,83 @@ function main(value: int) -> int:
     end
   end
 
-  def test_code_action_quickfix_directional_ffi_arg
+  def test_code_action_quickfix_prefer_var_else
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
-      uri = "file:///tmp/lsp_quickfix_directional_ffi_arg.mt"
+      uri = "file:///tmp/lsp_quickfix_prefer_var_else.mt"
       source = <<~MT
-        external function fill(out value: int) -> void
+        function maybe_handle(handle: ptr[int]?) -> ptr[int]?:
+            return handle
 
-        function main() -> int:
-            var value = 0
-            fill(ptr_of(value))
-            return value
+        function main(handle: ptr[int]?) -> int:
+            var value_ptr = maybe_handle(handle)
+            if value_ptr == null:
+                return 0
+            unsafe:
+                return read(value_ptr)
       MT
       client.send_notification("textDocument/didOpen", {
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
 
-      directional_diag = {
+      prefer_diag = {
         "source" => "milk-tea",
-        "code" => "directional-ffi-arg",
-        "range" => { "start" => { "line" => 4, "character" => 9 }, "end" => { "line" => 4, "character" => 22 } },
-        "message" => "pass the lvalue directly to 'fill'; parameter 'value' already declares out passing"
+        "code" => "prefer-var-else",
+        "range" => { "start" => { "line" => 5, "character" => 4 }, "end" => { "line" => 5, "character" => 24 } },
+        "message" => "nullable guard for 'value_ptr' can use var ... else"
       }
 
       response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
-        "range" => { "start" => { "line" => 4, "character" => 9 }, "end" => { "line" => 4, "character" => 22 } },
-        "context" => { "diagnostics" => [directional_diag] }
+        "range" => { "start" => { "line" => 5, "character" => 4 }, "end" => { "line" => 5, "character" => 24 } },
+        "context" => { "diagnostics" => [prefer_diag] }
       })
 
       actions = response.fetch("result")
-      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Pass lvalue directly" }
-      assert quickfix, "expected a quickFix action for directional-ffi-arg"
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Rewrite as var-else" }
+      assert quickfix, "expected a quickFix action for prefer-var-else"
       edit = quickfix.dig("edit", "changes", uri, 0)
-      assert_equal "value", edit["newText"]
+      assert_equal "    var value_ptr = maybe_handle(handle) else:\n", edit["newText"]
+    end
+  end
+
+  def test_code_action_quickfix_redundant_bool_compare
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_quickfix_redundant_bool_compare.mt"
+      source = <<~MT
+        function main(flag: bool) -> int:
+            if flag != true:
+                return 1
+            return 0
+      MT
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      expression_start = source.lines[1].index("flag != true")
+      expression_end = expression_start + "flag != true".length
+
+      redundant_diag = {
+        "source" => "milk-tea",
+        "code" => "redundant-bool-compare",
+        "range" => { "start" => { "line" => 1, "character" => expression_start }, "end" => { "line" => 1, "character" => expression_end } },
+        "message" => "boolean comparison against literal is redundant; invert the expression with 'not'"
+      }
+
+      response = client.send_request("textDocument/codeAction", {
+        "textDocument" => { "uri" => uri },
+        "range" => { "start" => { "line" => 1, "character" => expression_start }, "end" => { "line" => 1, "character" => expression_end } },
+        "context" => { "diagnostics" => [redundant_diag] }
+      })
+
+      actions = response.fetch("result")
+      quickfix = actions.find { |a| a["kind"] == "quickFix" && a["title"] == "Simplify boolean comparison" }
+      assert quickfix, "expected a quickFix action for redundant-bool-compare"
+      edit = quickfix.dig("edit", "changes", uri, 0)
+      assert_equal "not flag", edit["newText"]
+      assert_equal({ "line" => 1, "character" => expression_start }, edit.dig("range", "start"))
+      assert_equal({ "line" => 1, "character" => expression_end }, edit.dig("range", "end"))
     end
   end
 

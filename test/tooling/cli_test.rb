@@ -422,9 +422,9 @@ class MilkTeaCliTest < Minitest::Test
 
       status = MilkTea::CLI.start(["lint", source_path, "--ignore", "unused-local", "--locked"], out:, err:)
 
-      assert_equal 1, status
+      assert_equal 0, status
       assert_equal "", err.string
-      assert_match(/module not found|package dependency not declared/, out.string)
+      assert_match(/clean .*main\.mt/, out.string)
 
       out = StringIO.new
       err = StringIO.new

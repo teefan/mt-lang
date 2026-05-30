@@ -10161,8 +10161,7 @@ module MilkTea
           replicated_binding = multiplayer_attribute_binding("replicated")
           sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
           sync_binding = multiplayer_attribute_binding("sync")
-          replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_wire_size requires a @[std.multiplayer.replicated(...)] struct")
-          replicated_application
+          find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_wire_size requires a @[std.multiplayer.replicated(...)] struct")
           sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
 
           payload_size = 0

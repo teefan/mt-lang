@@ -2501,10 +2501,13 @@ class MilkTeaSemaTest < Minitest::Test
 
     checker_class = MilkTea::Sema::Checker
     original = checker_class.instance_method(:check_local_decl)
+    verbose = $VERBOSE
+    $VERBOSE = nil
     checker_class.send(:define_method, :check_local_decl) do |_statement, scopes:, return_type:, allow_return:|
       raise MilkTea::SemaError.new("forced missing location")
     end
     checker_class.send(:private, :check_local_decl)
+    $VERBOSE = verbose
 
     error = assert_raises(MilkTea::SemaError) do
       check_source(source)
@@ -2514,8 +2517,10 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal source.lines[3].index("value") + 1, error.column
     assert_equal "value".length, error.length
   ensure
+    $VERBOSE = nil
     checker_class.send(:define_method, :check_local_decl, original)
     checker_class.send(:private, :check_local_decl)
+    $VERBOSE = verbose
   end
 
   def test_rejects_type_declaration_named_after_reserved_builtin_type

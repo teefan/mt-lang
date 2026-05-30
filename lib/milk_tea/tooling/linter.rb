@@ -12,14 +12,18 @@ module MilkTea
       borrow-and-mutate
       constant-condition
       dead-assignment
+      duplicate-if-condition
       directional-ffi-arg
       event-capacity
       line-too-long
       loop-single-iteration
       missing-return
+      noop-compound-assignment
       platform-api-drift
       prefer-let
       prefer-let-else
+      prefer-var-else
+      redundant-bool-compare
       redundant-else
       redundant-ignored-match-binding
       redundant-null-check
@@ -46,11 +50,11 @@ module MilkTea
       redundant-read-cast
       redundant-read-release-temp
       prefer-let-else
-      directional-ffi-arg
+      prefer-var-else
+      redundant-bool-compare
       redundant-else
       redundant-return
       unused-import
-      dead-assignment
       reserved-primitive-name
       trailing-list-comma
     ].freeze
@@ -64,7 +68,8 @@ module MilkTea
       "redundant-read-cast" => "Remove redundant read cast",
       "redundant-read-release-temp" => "Inline read(...).release()",
       "prefer-let-else" => "Rewrite as let-else",
-      "directional-ffi-arg" => "Pass lvalue directly",
+      "prefer-var-else" => "Rewrite as var-else",
+      "redundant-bool-compare" => "Simplify boolean comparison",
       "trailing-list-comma" => "Remove trailing list comma",
     }.freeze
     EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128
@@ -273,8 +278,9 @@ module MilkTea
 
     # Apply auto-fixable rules to source text.
     # Handles: prefer-let, redundant-ignored-match-binding,
-    # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
-    # directional-ffi-arg, redundant-else,
+    # redundant-read-cast, redundant-read-release-temp,
+    # prefer-let-else, prefer-var-else, redundant-bool-compare,
+    # redundant-else,
     # redundant-return, reserved-primitive-name,
     # trailing-list-comma.
     # Returns the fixed source (may be identical if nothing was fixable).
@@ -410,14 +416,35 @@ module MilkTea
         lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
       end
 
-      # directional-ffi-arg: strip legacy wrappers where the callee already
-      # declares in/out/inout passing.
-      directional_ffi_arg_fixes = warnings.select { |w| w.code == "directional-ffi-arg" && w.line }
-      directional_ffi_arg_fixes.sort_by(&:line).each do |w|
+      # prefer-var-else: rewrite adjacent nullable guard clauses into
+      # `var value = expr else:`.
+      prefer_var_else_fixes = warnings.select { |w| w.code == "prefer-var-else" && w.line }
+      prefer_var_else_fixes.sort_by(&:line).reverse_each do |w|
+        fix = build_prefer_let_else_fix(lines, w.line - 1, symbol_name: w.symbol_name)
+        next unless fix
+
+        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
+      end
+
+      # redundant-bool-compare: simplify `x == true`, `x == false`,
+      # `x != true`, `x != false`.
+      redundant_bool_compare_fixes = warnings.select do |w|
+        w.code == "redundant-bool-compare" && w.line && w.column && w.length
+      end
+      redundant_bool_compare_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
         idx = w.line - 1
         next unless lines[idx]
 
-        lines[idx] = rewrite_directional_ffi_argument(lines[idx])
+        start_char = w.column - 1
+        end_char = start_char + w.length
+        next if start_char.negative? || end_char > lines[idx].length
+
+        expr_text = lines[idx][start_char...end_char]
+        replacement = redundant_bool_compare_replacement(expr_text)
+        next unless replacement
+
+        lines[idx] = lines[idx].dup
+        lines[idx][start_char...end_char] = replacement
       end
 
       # redundant-else: for each warning, find the `else:` line above, delete it,
@@ -467,18 +494,6 @@ module MilkTea
       import_fixes.sort_by(&:line).reverse_each do |w|
         idx = w.line - 1
         lines.delete_at(idx) if lines[idx]&.match?(/\A\s*import\b/)
-      end
-
-      # dead-assignment: delete dead plain assignment statements.
-      # Declaration initializers are intentionally not auto-fixed.
-      dead_fixes = warnings.select { |w| w.code == "dead-assignment" && w.line }
-      dead_fixes.sort_by(&:line).reverse_each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
-        # Only delete if it looks like a plain assignment (not let/var declaration)
-        next if lines[idx].match?(/\A\s*(let|var)\b/)
-
-        lines.delete_at(idx)
       end
 
       # trailing-list-comma: delete trailing comma in call argument lists.
@@ -575,16 +590,6 @@ module MilkTea
       offsets
     end
 
-    def self.rewrite_directional_ffi_argument(line)
-      updated = line.sub(/\b(ptr_of|ref_of)\(([^()]+)\)/, "\\2")
-      return updated if updated != line
-
-      updated = line.sub(/\b(?:out|inout|in)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]]+\])*)/, "\\1")
-      return updated if updated != line
-
-      line.sub(/\b(?:ptr|const_ptr|ref)\[[^\)]*\]<-\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\]]+\])*)/, "\\1")
-    end
-
     def self.build_read_release_temp_fix(lines, decl_idx)
       return nil if decl_idx.nil? || decl_idx.negative? || decl_idx + 1 >= lines.length
 
@@ -615,7 +620,8 @@ module MilkTea
 
       declaration_comment = declaration[/\s+#.*\z/] || ""
       declaration_base = declaration.sub(/\s+#.*\z/, "").rstrip
-      return nil unless declaration_base.match?(/\A\s*let\s+#{Regexp.escape(name)}\s*=\s*.+\z/)
+      declaration_match = declaration_base.match(/\A(\s*)(let|var)\s+#{Regexp.escape(name)}\s*=\s*.+\z/)
+      return nil unless declaration_match
       return nil if declaration_base.end_with?(" else:")
       return nil unless guard.match?(/\A\s*if\s+(?:#{Regexp.escape(name)}\s*==\s*null|null\s*==\s*#{Regexp.escape(name)})\s*:\s*(?:#.*)?\z/)
 
@@ -696,6 +702,43 @@ module MilkTea
         start_char:,
         end_char:,
       }
+    end
+
+    def self.redundant_bool_compare_replacement(expression_text)
+      match = expression_text.match(/\A\s*(.+?)\s*(==|!=)\s*(.+?)\s*\z/m)
+      return nil unless match
+
+      left_text = match[1].strip
+      operator = match[2]
+      right_text = match[3].strip
+      left_bool = bool_literal_value(left_text)
+      right_bool = bool_literal_value(right_text)
+      return nil if left_bool.nil? == right_bool.nil?
+
+      literal_value = left_bool.nil? ? right_bool : left_bool
+      compared_text = left_bool.nil? ? left_text : right_text
+      negate = if operator == "=="
+                 literal_value == false
+               else
+                 literal_value == true
+               end
+
+      negate ? negate_expression_text(compared_text) : compared_text
+    end
+
+    def self.bool_literal_value(text)
+      case text
+      when "true" then true
+      when "false" then false
+      else nil
+      end
+    end
+
+    def self.negate_expression_text(text)
+      stripped = text.strip
+      return "not #{stripped}" if stripped.match?(/\A[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\z/)
+
+      "not (#{stripped})"
     end
 
     def self.load_lint_package_graph(path)
@@ -1788,6 +1831,7 @@ module MilkTea
         profile_phase("rule.constant_condition") { emit_constant_condition_warnings(function.body) }
         profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
         profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
+        profile_phase("rule.prefer_var_else") { emit_prefer_var_else_warnings(function.body) }
         profile_phase("rule.redundant_read_cast") { emit_redundant_read_cast_warnings(function.body) }
         profile_phase("rule.redundant_read_release_temp") { emit_redundant_read_release_temp_warnings(function.body) }
         profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
@@ -2004,6 +2048,7 @@ module MilkTea
         visit_assignment_target(statement.target)  # non-identifier sub-expressions in target
         mark_mutated(statement.target)
         check_self_assignment(statement)
+        check_noop_compound_assignment(statement)
       when AST::IfStmt
         statement.branches.each do |branch|
           visit_expression(branch.condition)
@@ -2011,6 +2056,7 @@ module MilkTea
         end
         with_scope { visit_statement_list(statement.else_body) } if statement.else_body
         check_redundant_else(statement)
+        check_duplicate_if_conditions(statement)
       when AST::MatchStmt
         visit_expression(statement.expression)
         statement.arms.each do |arm|
@@ -2079,6 +2125,7 @@ module MilkTea
         visit_expression(expression.left)
         visit_expression(expression.right)
         check_self_comparison(expression)
+        check_redundant_bool_compare(expression)
       when AST::RangeExpr
         visit_expression(expression.start_expr)
         visit_expression(expression.end_expr)
@@ -2118,6 +2165,7 @@ module MilkTea
           emit_constant_condition_warnings(expression.body)
           emit_redundant_null_check_warnings(expression.body)
           emit_prefer_let_else_warnings(expression.body)
+          emit_prefer_var_else_warnings(expression.body)
           emit_redundant_read_cast_warnings(expression.body)
           emit_redundant_read_release_temp_warnings(expression.body)
           emit_loop_single_iteration_warnings(expression.body)
@@ -2938,6 +2986,150 @@ module MilkTea
       )
     end
 
+    def check_redundant_bool_compare(expr)
+      return unless %w[== !=].include?(expr.operator)
+
+      left_bool = expr.left.is_a?(AST::BooleanLiteral)
+      right_bool = expr.right.is_a?(AST::BooleanLiteral)
+      return unless left_bool ^ right_bool
+
+      literal = left_bool ? expr.left : expr.right
+      compared = left_bool ? expr.right : expr.left
+      return if compared.is_a?(AST::BooleanLiteral)
+
+      suggestion = if expr.operator == "=="
+                     literal.value ? "use the expression directly" : "invert the expression with 'not'"
+                   else
+                     literal.value ? "invert the expression with 'not'" : "use the expression directly"
+                   end
+
+      @warnings << Warning.new(
+        path: @path,
+        line: expression_line(expr),
+        column: expression_column(expr),
+        length: redundant_bool_compare_length(expr),
+        code: "redundant-bool-compare",
+        message: "boolean comparison against literal is redundant; #{suggestion}",
+        severity: :hint,
+      )
+    end
+
+    def redundant_bool_compare_length(expr)
+      length = expression_length(expr)
+      return length if length
+
+      line = expression_line(expr)
+      column = expression_column(expr)
+      return nil unless line && column
+
+      text = source_code_line(line)
+      return nil unless text
+
+      snippet = text[(column - 1)..]
+      return nil unless snippet
+
+      right_literal = snippet.match(/\A\s*(.+?)\s*(==|!=)\s*(true|false)\b/)
+      return right_literal[0].rstrip.length if right_literal
+
+      left_literal = snippet.match(/\A\s*(true|false)\s*(==|!=)\s*(.+?)(?=\s*(?::|\)|,|and\b|or\b|$))/)
+      return left_literal[0].rstrip.length if left_literal
+
+      nil
+    end
+
+    def check_duplicate_if_conditions(statement)
+      return unless statement.is_a?(AST::IfStmt)
+
+      seen_signatures = {}
+      statement.branches.each do |branch|
+        signature = expression_signature(branch.condition)
+        next unless signature
+
+        existing = seen_signatures[signature]
+        if existing
+          @warnings << Warning.new(
+            path: @path,
+            line: expression_line(branch.condition) || branch.line,
+            column: expression_column(branch.condition),
+            length: expression_length(branch.condition),
+            code: "duplicate-if-condition",
+            message: "duplicate condition matches an earlier if/else-if branch and is unreachable",
+            severity: :warning,
+          )
+          next
+        end
+
+        seen_signatures[signature] = branch
+      end
+    end
+
+    def expression_signature(expression)
+      case expression
+      when AST::Identifier
+        "id:#{expression.name}"
+      when AST::BooleanLiteral
+        "bool:#{expression.value}"
+      when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral
+        "lit:#{expression.lexeme}"
+      when AST::NullLiteral
+        "null"
+      when AST::MemberAccess
+        receiver = expression_signature(expression.receiver)
+        receiver ? "member:(#{receiver}).#{expression.member}" : nil
+      when AST::UnaryOp
+        operand = expression_signature(expression.operand)
+        operand ? "unary:#{expression.operator}(#{operand})" : nil
+      when AST::BinaryOp
+        left = expression_signature(expression.left)
+        right = expression_signature(expression.right)
+        return nil unless left && right
+
+        "binary:(#{left})#{expression.operator}(#{right})"
+      else
+        nil
+      end
+    end
+
+    def check_noop_compound_assignment(statement)
+      return unless statement.is_a?(AST::Assignment)
+      return unless %w[+= -= *= /= |= ^= <<= >>=].include?(statement.operator)
+
+      identity = noop_compound_identity_value(statement.operator, statement.value)
+      return unless identity
+
+      @warnings << Warning.new(
+        path: @path,
+        line: statement.line,
+        column: expression_column(statement.target),
+        length: statement.target.respond_to?(:name) ? statement.target.name.length : expression_length(statement.target),
+        code: "noop-compound-assignment",
+        message: "compound assignment with identity value has no effect",
+        severity: :hint,
+      )
+    end
+
+    def noop_compound_identity_value(operator, value)
+      case operator
+      when "+=", "-=", "|=", "^=", "<<=", ">>="
+        integer_literal_zero?(value)
+      when "*=", "/="
+        numeric_literal_one?(value)
+      else
+        false
+      end
+    end
+
+    def integer_literal_zero?(value)
+      value.is_a?(AST::IntegerLiteral) && value.lexeme.gsub("_", "") == "0"
+    end
+
+    def numeric_literal_one?(value)
+      return true if value.is_a?(AST::IntegerLiteral) && value.lexeme.gsub("_", "") == "1"
+      return true if value.is_a?(AST::FloatLiteral) && %w[1.0 1.].include?(value.lexeme.gsub("_", ""))
+
+      false
+    end
+
     # ── constant-condition ─────────────────────────────────────────────────
     # Uses ConstantPropagation to detect conditions that are always true/false.
     # Skips `while true` — it is an idiomatic infinite loop.
@@ -3105,14 +3297,22 @@ module MilkTea
       end
     end
 
-    # ── prefer-let-else ────────────────────────────────────────────────
+    # ── prefer-let-else / prefer-var-else ──────────────────────────────
 
     def emit_prefer_let_else_warnings(stmts)
+      emit_prefer_else_warnings(stmts, expected_kind: :let, code: "prefer-let-else")
+    end
+
+    def emit_prefer_var_else_warnings(stmts)
+      emit_prefer_else_warnings(stmts, expected_kind: :var, code: "prefer-var-else")
+    end
+
+    def emit_prefer_else_warnings(stmts, expected_kind:, code:)
       return if stmts.nil? || stmts.empty?
 
       walk_statement_lists(stmts) do |statement_list|
         statement_list.each_with_index do |_statement, index|
-          candidate = prefer_let_else_candidate(statement_list, index)
+          candidate = prefer_else_candidate(statement_list, index, expected_kind:)
           next unless candidate
 
           branch = candidate[:branch]
@@ -3123,8 +3323,8 @@ module MilkTea
             line:,
             column:,
             length:,
-            code: "prefer-let-else",
-            message: "nullable guard for '#{candidate[:declaration].name}' can use let ... else",
+            code:,
+            message: "nullable guard for '#{candidate[:declaration].name}' can use #{expected_kind} ... else",
             severity: :hint,
             symbol_name: candidate[:declaration].name
           )
@@ -3132,11 +3332,11 @@ module MilkTea
       end
     end
 
-    def prefer_let_else_candidate(stmts, index)
+    def prefer_else_candidate(stmts, index, expected_kind:)
       declaration = stmts[index]
       if_stmt = stmts[index + 1]
       return unless declaration.is_a?(AST::LocalDecl)
-      return unless declaration.kind == :let
+      return unless declaration.kind == expected_kind
       return if declaration.type || declaration.else_binding || declaration.else_body || declaration.recovered_else
       return unless declaration.value && declaration.name
       return if ignored_binding_name?(declaration.name)
@@ -3147,9 +3347,15 @@ module MilkTea
       identifier = null_equality_identifier(branch.condition)
       return unless identifier&.name == declaration.name
       return unless nullable_binding_declaration?(declaration)
+      return if expected_kind == :var && !prefer_var_else_binding_mutated?(declaration)
       return unless CFG::Termination.block_always_terminates?(branch.body, ignore_name: method(:ignored_binding_name?), binding_resolution: cfg_binding_resolution)
 
       { declaration:, if_stmt:, branch: }
+    end
+
+    def prefer_var_else_binding_mutated?(declaration)
+      binding = @scopes.last[declaration.name]
+      binding&.mutated == true
     end
 
     def null_equality_identifier(cond)
