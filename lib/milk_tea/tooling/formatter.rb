@@ -214,8 +214,9 @@ module MilkTea
       blank_run = 0
       emitted_content = false
       previous_content_line = nil
+      previous_content_index = nil
 
-      lines.each do |line|
+      lines.each_with_index do |line, line_index|
         if blank_line?(line)
           blank_run += 1
         else
@@ -225,8 +226,9 @@ module MilkTea
             elsif extending_block_header_line?(line)
               2 # exactly 2 blank lines before extending blocks
             elsif function_line?(line)
-              if bodyless_function_line?(line)
-                if previous_content_line && function_line?(previous_content_line) && bodyless_function_line?(previous_content_line)
+              current_bodyless_function_header = bodyless_function_header_at?(lines, line_index)
+              if current_bodyless_function_header
+                if previous_content_index && line_inside_bodyless_function_header?(lines, previous_content_index)
                   0 # Keep consecutive declaration-style functions tightly packed.
                 elsif previous_content_line && interface_block_header_line?(previous_content_line)
                   0 # First interface method should not have leading blank lines.
@@ -247,6 +249,7 @@ module MilkTea
           blank_run = 0
           emitted_content = true
           previous_content_line = line
+          previous_content_index = line_index
         end
       end
 
@@ -300,6 +303,92 @@ module MilkTea
       return false if i < 0
 
       bytes[i] != 58 # ':'
+    end
+
+    def self.bodyless_function_header_at?(lines, line_index)
+      line = lines[line_index]
+      return false unless function_line?(line)
+
+      return false unless bodyless_function_line?(line)
+
+      function_indent = leading_indent_width(line)
+      cursor = line_index + 1
+
+      while cursor < lines.length
+        candidate = lines[cursor]
+        if blank_line?(candidate)
+          cursor += 1
+          next
+        end
+
+        candidate_indent = leading_indent_width(candidate)
+        if candidate_indent < function_indent
+          break
+        elsif candidate_indent == function_indent && !function_header_continuation_line?(candidate)
+          break
+        end
+
+        return false unless bodyless_function_line?(candidate)
+
+        cursor += 1
+      end
+
+      true
+    end
+
+    def self.leading_indent_width(line)
+      bytes = line.bytes
+      i = 0
+      i += 1 while i < bytes.length && (bytes[i] == 32 || bytes[i] == 9)
+      i
+    end
+
+    def self.function_header_continuation_line?(line)
+      stripped = line.strip
+      return false if stripped.empty?
+
+      stripped.start_with?(")", "]", ",", "->")
+    end
+
+    def self.line_inside_bodyless_function_header?(lines, line_index)
+      start_index = line_index
+      while start_index >= 0
+        if function_line?(lines[start_index])
+          return bodyless_function_header_at?(lines, start_index) && line_in_function_header_span?(lines, start_index, line_index)
+        end
+
+        start_index -= 1
+      end
+
+      false
+    end
+
+    def self.line_in_function_header_span?(lines, start_index, target_index)
+      return false if target_index < start_index
+
+      function_indent = leading_indent_width(lines[start_index])
+      header_end = start_index
+      cursor = start_index + 1
+
+      while cursor < lines.length
+        candidate = lines[cursor]
+        if blank_line?(candidate)
+          cursor += 1
+          next
+        end
+
+        candidate_indent = leading_indent_width(candidate)
+        if candidate_indent < function_indent
+          break
+        elsif candidate_indent == function_indent && !function_header_continuation_line?(candidate)
+          break
+        end
+
+        header_end = cursor
+        cursor += 1
+      end
+
+      target_index <= header_end
     end
 
     def self.extending_block_header_line?(line)
