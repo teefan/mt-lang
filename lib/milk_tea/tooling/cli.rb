@@ -91,40 +91,64 @@ module MilkTea
     end
 
     def parse_command
-      path = @argv.shift
-      unless path
+      unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
       resolution = extract_resolution_flags!
-      return 1 unless ensure_no_extra_arguments!("parse")
+      input_paths = @argv.dup
+      return 1 unless ensure_known_source_operands!("parse", input_paths)
 
-      ensure_current_lockfile!(path) if resolution[:frozen]
+      paths = expand_source_paths(input_paths)
+      return 0 if print_no_source_files_if_empty(paths, input_paths)
 
-      ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
-      @out.write(PrettyPrinter.format_ast(ast))
+      ensure_current_lockfiles!(paths) if resolution[:frozen]
+
+      multiple = paths.length > 1
+      paths.each_with_index do |path, index|
+        ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
+        if multiple
+          @out.puts("# --- #{path} ---")
+        end
+        @out.write(PrettyPrinter.format_ast(ast))
+        @out.puts if multiple && index < paths.length - 1
+      end
       0
     end
 
     def format_command
-      path = @argv.shift
-      unless path
+      parsed = parse_format_options
+      return 1 unless parsed
+
+      options = parsed[:options]
+      input_paths = parsed[:input_paths]
+
+      if input_paths.empty?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
-      options = parse_format_options
-      return 1 unless options
+      paths = expand_source_paths(input_paths)
+      return 0 if print_no_source_files_if_empty(paths, input_paths)
 
-      if File.directory?(path)
-        return format_directory(path, options)
+      multiple_sources = input_paths.length > 1 || input_paths.any? { |path| File.directory?(path) }
+      if multiple_sources
+        unless options[:check] || options[:write]
+          @err.puts("format on multiple sources requires --check or --write")
+          print_usage(@err)
+          return 1
+        end
+
+        return format_paths(paths, options)
       end
 
+      path = paths.first
+
       source = read_source_file(path)
-      result = Formatter.check_source(source, path: path, mode: options[:mode])
+      result = Formatter.check_source(source, path: path, mode: options[:mode], max_line_length: options[:max_line_length])
 
       if options[:check]
         if result.changed
@@ -150,23 +174,11 @@ module MilkTea
       0
     end
 
-    def format_directory(dir, options)
-      paths = Dir.glob(File.join(dir, "**/*.mt")).sort
-      if paths.empty?
-        @out.puts("no .mt files found in #{dir}")
-        return 0
-      end
-
-      unless options[:check] || options[:write]
-        @err.puts("format on a directory requires --check or --write")
-        print_usage(@err)
-        return 1
-      end
-
+    def format_paths(paths, options)
       if options[:check]
         needs_fmt = []
         paths.each do |p|
-          result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode])
+          result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
           needs_fmt << p if result.changed
         end
         if needs_fmt.empty?
@@ -181,7 +193,7 @@ module MilkTea
       # --write
       changed = 0
       paths.each do |p|
-        result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode])
+        result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
         if result.changed
           File.write(p, result.formatted_source)
           @out.puts("formatted #{p}")
@@ -348,57 +360,82 @@ module MilkTea
     end
 
     def check_command
-      path = @argv.shift
-      unless path
+      unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
       resolution = extract_resolution_flags!
-      return 1 unless ensure_no_extra_arguments!("check")
+      input_paths = @argv.dup
+      return 1 unless ensure_known_source_operands!("check", input_paths)
 
-      ensure_current_lockfile!(path) if resolution[:frozen]
+      paths = expand_source_paths(input_paths)
+      return 0 if print_no_source_files_if_empty(paths, input_paths)
 
-      result = make_module_loader(path, locked: resolution[:locked]).check_file(path)
-      module_name = result.module_name || "(anonymous)"
-      @out.puts("checked #{path} as #{module_name}")
+      ensure_current_lockfiles!(paths) if resolution[:frozen]
+
+      paths.each do |path|
+        result = make_module_loader(path, locked: resolution[:locked]).check_file(path)
+        module_name = result.module_name || "(anonymous)"
+        @out.puts("checked #{path} as #{module_name}")
+      end
       0
     end
 
     def lower_command
-      path = @argv.shift
-      unless path
+      unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
       resolution = extract_resolution_flags!
-      return 1 unless ensure_no_extra_arguments!("lower")
+      input_paths = @argv.dup
+      return 1 unless ensure_known_source_operands!("lower", input_paths)
 
-      ensure_current_lockfile!(path) if resolution[:frozen]
+      paths = expand_source_paths(input_paths)
+      return 0 if print_no_source_files_if_empty(paths, input_paths)
 
-      program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
-      @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
+      ensure_current_lockfiles!(paths) if resolution[:frozen]
+
+      multiple = paths.length > 1
+      paths.each_with_index do |path, index|
+        program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
+        if multiple
+          @out.puts("# --- #{path} ---")
+        end
+        @out.write(PrettyPrinter.format_ir(Lowering.lower(program)))
+        @out.puts if multiple && index < paths.length - 1
+      end
       0
     end
 
     def emit_c_command
-      path = @argv.shift
-      unless path
+      unless @argv.any?
         @err.puts("missing source file path")
         print_usage(@err)
         return 1
       end
 
       resolution = extract_resolution_flags!
-      return 1 unless ensure_no_extra_arguments!("emit-c")
+      input_paths = @argv.dup
+      return 1 unless ensure_known_source_operands!("emit-c", input_paths)
 
-      ensure_current_lockfile!(path) if resolution[:frozen]
+      paths = expand_source_paths(input_paths)
+      return 0 if print_no_source_files_if_empty(paths, input_paths)
 
-      program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
-      @out.write(Codegen.generate_c(program, emit_line_directives: false))
+      ensure_current_lockfiles!(paths) if resolution[:frozen]
+
+      multiple = paths.length > 1
+      paths.each_with_index do |path, index|
+        program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
+        if multiple
+          @out.puts("/* --- #{path} --- */")
+        end
+        @out.write(Codegen.generate_c(program, emit_line_directives: false))
+        @out.puts if multiple && index < paths.length - 1
+      end
       0
     end
 
@@ -609,25 +646,45 @@ module MilkTea
         check: false,
         write: false,
         mode: :safe,
+        max_line_length: nil,
       }
+      input_paths = []
 
       until @argv.empty?
         option = @argv.shift
-        case option
-        when "--check"
-          options[:check] = true
-        when "--write", "-w"
-          options[:write] = true
-        when "--preserve"
-          options[:mode] = :preserve
-        when "--canonical"
-          options[:mode] = :canonical
-        when "--safe"
-          options[:mode] = :safe
+        if option.start_with?("-")
+          case option
+          when "--check"
+            options[:check] = true
+          when "--write", "-w"
+            options[:write] = true
+          when "--preserve"
+            options[:mode] = :preserve
+          when "--canonical"
+            options[:mode] = :canonical
+          when "--safe"
+            options[:mode] = :safe
+          when "--tidy"
+            options[:mode] = :tidy
+          when "--max-line-length"
+            value = @argv.shift
+            return missing_option_value(option) unless value
+
+            line_length = Integer(value, exception: false)
+            unless line_length && line_length.positive?
+              @err.puts("--max-line-length must be a positive integer")
+              print_usage(@err)
+              return nil
+            end
+
+            options[:max_line_length] = line_length
+          else
+            @err.puts("unknown format option #{option}")
+            print_usage(@err)
+            return nil
+          end
         else
-          @err.puts("unknown format option #{option}")
-          print_usage(@err)
-          return nil
+          input_paths << option
         end
       end
 
@@ -637,7 +694,33 @@ module MilkTea
         return nil
       end
 
-      options
+      { options:, input_paths: }
+    end
+
+    def ensure_known_source_operands!(command, operands)
+      return true unless operands.any? { |arg| arg.start_with?("-") }
+
+      @err.puts("unexpected argument(s) for #{command}: #{operands.join(' ')}")
+      print_command_help(command, @err)
+      false
+    end
+
+    def expand_source_paths(input_paths)
+      input_paths.flat_map do |path|
+        if File.directory?(path)
+          Dir.glob(File.join(path, "**/*.mt")).sort
+        else
+          [path]
+        end
+      end.uniq
+    end
+
+    def print_no_source_files_if_empty(paths, input_paths)
+      return false unless paths.empty?
+
+      label = input_paths.length == 1 ? input_paths.first : input_paths.join(", ")
+      @out.puts("no .mt files found in #{label}")
+      true
     end
 
     def missing_option_value(option)
@@ -800,9 +883,9 @@ module MilkTea
 
     COMMAND_HELP = {
       "lex"             => "Usage: mtc lex PATH\n\n  Tokenize a source file and print the token stream.",
-      "parse"           => "Usage: mtc parse PATH [--locked] [--frozen] [-I PATH]\n\n  Parse a source file and print the AST.",
+      "parse"           => "Usage: mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Parse one or more source files and print the AST.",
       "format"          => <<~HELP,
-        Usage: mtc format PATH|DIR [OPTIONS]
+        Usage: mtc format PATH|DIR [PATH|DIR ...] [OPTIONS]
 
           Format Milk Tea source files.
 
@@ -812,8 +895,11 @@ module MilkTea
             --safe           Format only unambiguous style changes (default).
             --canonical      Apply all canonical style normalisations.
             --preserve       Preserve existing formatting where possible.
+            --tidy           Apply tidy formatting with line wrapping and blank-line normalization.
+            --max-line-length N
+                             Override the line length used by tidy mode.
 
-          When PATH is a directory, --check or --write is required.
+          When formatting directories or multiple files, --check or --write is required.
         HELP
       "lint"            => <<~HELP,
         Usage: mtc lint PATH|DIR [OPTIONS]
@@ -833,9 +919,9 @@ module MilkTea
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
-      "check"           => "Usage: mtc check PATH [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on a source file and report errors.",
-      "lower"           => "Usage: mtc lower PATH [--locked] [--frozen] [-I PATH]\n\n  Lower a source file to IR and print it.",
-      "emit-c"          => "Usage: mtc emit-c PATH [--locked] [--frozen] [-I PATH]\n\n  Compile a source file to C and print the output.",
+      "check"           => "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on one or more source files and report errors.",
+      "lower"           => "Usage: mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Lower one or more source files to IR and print it.",
+      "emit-c"          => "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Compile one or more source files to C and print the output.",
       "build"           => <<~HELP,
         Usage: mtc build [PATH_OR_PACKAGE] [OPTIONS]
 
@@ -943,13 +1029,13 @@ module MilkTea
 
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
-      io.puts("       mtc parse PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc format PATH|DIR [--check|--write] [--safe|--canonical|--preserve]")
+      io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
-      io.puts("       mtc check PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc lower PATH [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc emit-c PATH [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
