@@ -301,7 +301,30 @@ module MilkTea
     # directional-ffi-arg, redundant-else, redundant-unsafe,
     # redundant-return, redundant-cast, reserved-primitive-name.
     # Returns the fixed source (may be identical if nothing was fixable).
-    def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
+    def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5)
+      pass_limit = [max_passes.to_i, 1].max
+      current_source = source
+      current_sema_facts = sema_facts
+
+      pass_limit.times do
+        updated_source = fix_source_single_pass(
+          current_source,
+          path:,
+          sema_facts: current_sema_facts,
+          select:,
+          ignore:,
+        )
+        return current_source if updated_source == current_source
+
+        current_source = updated_source
+        # Facts passed by callers are only valid for the first source snapshot.
+        current_sema_facts = nil
+      end
+
+      current_source
+    end
+
+    def self.fix_source_single_pass(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
       cfg = load_config(path)
       effective_select = select || cfg&.fetch(:select, nil)
       effective_ignore = ignore || cfg&.fetch(:ignore, nil)
