@@ -20,6 +20,14 @@ import std.vec as vec
 
 var dispatch_invocation_count: int = 0
 
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 1, require_owner = true)]
+function submit_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> void:
+    return
+
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 1, require_owner = true)]
+function unknown_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> void:
+    return
+
 function handle_submit_input(message: rpc.IncomingRpc) -> Result[bool, rpc.DispatchError]:
     if message.payload_size != 3:
         return Result[bool, rpc.DispatchError].failure(
@@ -162,14 +170,7 @@ function expect_rpc_invalid_direction_is_rejected() -> int:
 
 
 function expect_rpc_runtime_validation() -> int:
-    let descriptor = mp.RpcDescriptor(
-        name = "SubmitInput",
-        direction = protocol.RpcDirection.client_to_server,
-        mode = protocol.TransferMode.reliable,
-        channel = 1,
-        require_owner = true,
-        schema_hash = 0x3001,
-    )
+    let descriptor = mp.rpc_descriptor(callable_of(submit_input))
 
     let outgoing = rpc.OutgoingRpc(
         descriptor = descriptor,
@@ -240,14 +241,7 @@ function expect_rpc_runtime_validation() -> int:
     if dispatch_invocation_count != 2:
         return 61
 
-    let unknown_descriptor = mp.RpcDescriptor(
-        name = "UnknownRpc",
-        direction = protocol.RpcDirection.client_to_server,
-        mode = protocol.TransferMode.reliable,
-        channel = 1,
-        require_owner = true,
-        schema_hash = 0x3002,
-    )
+    let unknown_descriptor = mp.rpc_descriptor(callable_of(unknown_input))
     let unknown_message = rpc.IncomingRpc(
         descriptor = unknown_descriptor,
         context = protocol.RpcContext(sender = Option[protocol.ConnectionId].some(value = 7), tick = 14),
@@ -763,22 +757,19 @@ function expect_loopback_send_receive() -> int:
                         return 0
 
 
+@[mp.replicated(authority = mp.Authority.server)]
+struct MismatchState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    value: int
+
+
 function expect_protocol_mismatch_rejected() -> int:
     var server_registry = mp.Registry.create()
     server_registry.freeze()
     defer server_registry.release()
 
     var client_registry = mp.Registry.create()
-    let _ = client_registry.add_state(mp.StateDescriptor(
-        name = "MismatchState",
-        authority = protocol.Authority.server,
-        schema_hash = 1,
-        sync_field_count = 1,
-        sync_mode = protocol.TransferMode.unreliable_ordered,
-        sync_channel = 0,
-        sync_rate_hz = 20,
-        sync_target = protocol.SyncTarget.observers,
-    )) else:
+    let _ = client_registry.add_state(mp.state_descriptor[MismatchState]()) else:
         return 110
     client_registry.freeze()
     defer client_registry.release()

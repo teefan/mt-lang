@@ -118,12 +118,20 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source)
 
     assert_includes generated, '"demo.multiplayer_descriptor_codegen.PlayerState"'
+    assert_match(/\.wire_size = 4/, generated)
+    assert_match(/\.encode_full_binding = [1-9][0-9]*/, generated)
+    assert_match(/\.decode_full_binding = [1-9][0-9]*/, generated)
+    assert_match(/\.encode_delta_binding = [1-9][0-9]*/, generated)
+    assert_match(/\.apply_delta_binding = [1-9][0-9]*/, generated)
     assert_match(/\.sync_field_count = 1/, generated)
     assert_match(/\.sync_mode =/, generated)
     assert_match(/\.sync_channel =/, generated)
     assert_match(/\.sync_rate_hz =/, generated)
     assert_match(/\.sync_target =/, generated)
     assert_includes generated, '"demo.multiplayer_descriptor_codegen.submit_input"'
+    assert_match(/\.payload_size = 12/, generated)
+    assert_match(/\.decode_payload_binding = [1-9][0-9]*/, generated)
+    assert_match(/\.dispatch_typed_binding = [1-9][0-9]*/, generated)
     assert_match(/\.channel = 2/, generated)
   end
 
@@ -152,6 +160,8 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source)
 
     assert_includes generated, '"demo.multiplayer_descriptor_defaults_codegen.PlayerState"'
+    assert_match(/\.wire_size = 4/, generated)
+    assert_match(/\.encode_full_binding = [1-9][0-9]*/, generated)
     assert_match(/\.sync_field_count = 1/, generated)
     assert_match(/\.sync_mode =/, generated)
     assert_match(/\.sync_channel =/, generated)
@@ -201,12 +211,16 @@ class MilkTeaCodegenTest < Minitest::Test
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_includes generated, '"demo.game_schema.PlayerState"'
+    assert_match(/\.wire_size = 4/, generated)
+    assert_match(/\.encode_full_binding = [1-9][0-9]*/, generated)
     assert_match(/\.sync_field_count = 1/, generated)
     assert_match(/\.sync_mode =/, generated)
     assert_match(/\.sync_channel =/, generated)
     assert_match(/\.sync_rate_hz =/, generated)
     assert_match(/\.sync_target =/, generated)
     assert_includes generated, '"demo.game_schema.submit_input"'
+    assert_match(/\.payload_size = 4/, generated)
+    assert_match(/\.dispatch_typed_binding = [1-9][0-9]*/, generated)
     assert_match(/\.channel = 2/, generated)
   end
 
@@ -286,6 +300,99 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/submit_input\(context,/, generated)
     assert_match(/axis_x/, generated)
   end
+
+  def test_generate_c_for_multiplayer_world_snapshot_payload_parser_errors
+    source = <<~MT
+      # module demo.multiplayer_world_payload_parser_codegen
+
+      import std.multiplayer as mp
+
+      function main() -> int:
+          var registry = mp.Registry.create()
+          registry.freeze()
+          defer registry.release()
+
+          let world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.client)
+          match world_result:
+              Result.failure as _:
+                  return 1
+              Result.success as payload:
+                  var world = payload.value
+                  defer world.release()
+
+                  var payload_too_small = array[ubyte, 3](0, 0, 0)
+                  match world.apply_snapshot_payload(payload_too_small):
+                      Result.success as _:
+                          pass
+                      Result.failure as _:
+                          pass
+
+                  var trailing_payload = array[ubyte, 5](0, 0, 0, 0, 9)
+                  match world.apply_snapshot_payload(trailing_payload):
+                      Result.success as _:
+                          pass
+                      Result.failure as _:
+                          pass
+                  return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/snapshot payload is too small/, generated)
+    assert_match(/snapshot payload entry header is truncated/, generated)
+    assert_match(/snapshot payload entry body is truncated/, generated)
+    assert_match(/snapshot payload has trailing bytes/, generated)
+  end
+
+    def test_generate_c_for_multiplayer_enet_incoming_processing_helpers
+    source = <<~MT
+      # module demo.multiplayer_enet_incoming_processing_codegen
+
+      import std.multiplayer as mp
+      import std.multiplayer.enet as mp_enet
+      import std.multiplayer.rpc as rpc
+
+      var applied: ubyte = 0
+
+      @[mp.rpc(direction = mp.RpcDirection.server_to_connection, mode = mp.TransferMode.reliable, channel = 1, require_owner = false)]
+      function receive_marker(context: mp.RpcContext, marker: ubyte) -> void:
+          applied = marker
+
+      function dispatch_receive_marker(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc.DispatchError]:
+          let dispatched = rpc.dispatch_typed_payload(callable_of(receive_marker), context, payload) else as dispatch_error:
+              return Result[bool, rpc.DispatchError].failure(
+                  error = rpc.DispatchError(code = dispatch_error.code, message = dispatch_error.message),
+              )
+
+          return Result[bool, rpc.DispatchError].success(value = dispatched)
+
+      function drain(client: ref[mp_enet.Client], routes: ref[mp_enet.TypedRpcDispatchTable]) -> int:
+          let snapshots_processed = read(client).process_incoming_snapshots() else:
+              return 1
+          let rpcs_processed = read(client).process_incoming_rpcs_typed(routes) else:
+              return 2
+          if snapshots_processed + rpcs_processed > 1000000:
+              return 3
+          return 0
+
+      function main() -> int:
+          var routes = mp_enet.TypedRpcDispatchTable.create()
+          defer routes.release()
+
+          let descriptor = mp.rpc_descriptor(callable_of(receive_marker))
+          let added = routes.register_route(descriptor, dispatch_receive_marker) else:
+              return 4
+          if not added:
+              return 5
+
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/TypedRpcDispatchTable/, generated)
+    assert_match(/dispatch_receive_marker/, generated)
+    end
 
     def test_generate_c_for_local_enums_flags_and_unions
       source = <<~MT

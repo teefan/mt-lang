@@ -10103,6 +10103,15 @@ module MilkTea
             target: 0,
           }
 
+          wire_size = sync_fields.sum do |field_info|
+            multiplayer_typed_rpc_encoded_size(field_info.fetch(:type))
+          end
+
+          encode_full_binding = multiplayer_descriptor_hash("state_encode_full", struct_handle.struct_type.to_s)
+          decode_full_binding = multiplayer_descriptor_hash("state_decode_full", struct_handle.struct_type.to_s)
+          encode_delta_binding = multiplayer_descriptor_hash("state_encode_delta", struct_handle.struct_type.to_s)
+          apply_delta_binding = multiplayer_descriptor_hash("state_apply_delta", struct_handle.struct_type.to_s)
+
           schema_hash = multiplayer_descriptor_hash(
             "state",
             struct_handle.struct_type.to_s,
@@ -10125,6 +10134,11 @@ module MilkTea
               IR::AggregateField.new(name: "name", value: lower_multiplayer_descriptor_value(struct_handle.struct_type.to_s, type.field("name"))),
               IR::AggregateField.new(name: "authority", value: lower_multiplayer_descriptor_value(replicated_arguments.fetch("authority"), type.field("authority"))),
               IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
+              IR::AggregateField.new(name: "wire_size", value: lower_multiplayer_descriptor_value(wire_size, type.field("wire_size"))),
+              IR::AggregateField.new(name: "encode_full_binding", value: lower_multiplayer_descriptor_value(encode_full_binding, type.field("encode_full_binding"))),
+              IR::AggregateField.new(name: "decode_full_binding", value: lower_multiplayer_descriptor_value(decode_full_binding, type.field("decode_full_binding"))),
+              IR::AggregateField.new(name: "encode_delta_binding", value: lower_multiplayer_descriptor_value(encode_delta_binding, type.field("encode_delta_binding"))),
+              IR::AggregateField.new(name: "apply_delta_binding", value: lower_multiplayer_descriptor_value(apply_delta_binding, type.field("apply_delta_binding"))),
               IR::AggregateField.new(name: "sync_field_count", value: lower_multiplayer_descriptor_value(sync_fields.length, type.field("sync_field_count"))),
               IR::AggregateField.new(name: "sync_mode", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:mode), type.field("sync_mode"))),
               IR::AggregateField.new(name: "sync_channel", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:channel), type.field("sync_channel"))),
@@ -10182,6 +10196,11 @@ module MilkTea
           rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "rpc_descriptor expects a @[std.multiplayer.rpc(...)] callable")
           rpc_arguments = rpc_application.argument_values
           payload_params = rpc_target.fetch(:binding).type.params.drop(1)
+          payload_size = payload_params.sum do |param|
+            multiplayer_typed_rpc_encoded_size(param.type)
+          end
+          decode_payload_binding = multiplayer_descriptor_hash("rpc_decode_payload", rpc_target.fetch(:qualified_name))
+          dispatch_typed_binding = multiplayer_descriptor_hash("rpc_dispatch_typed", rpc_target.fetch(:qualified_name))
 
           schema_hash = multiplayer_descriptor_hash(
             "rpc",
@@ -10204,6 +10223,9 @@ module MilkTea
               IR::AggregateField.new(name: "channel", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("channel"), type.field("channel"))),
               IR::AggregateField.new(name: "require_owner", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("require_owner"), type.field("require_owner"))),
               IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
+              IR::AggregateField.new(name: "payload_size", value: lower_multiplayer_descriptor_value(payload_size, type.field("payload_size"))),
+              IR::AggregateField.new(name: "decode_payload_binding", value: lower_multiplayer_descriptor_value(decode_payload_binding, type.field("decode_payload_binding"))),
+              IR::AggregateField.new(name: "dispatch_typed_binding", value: lower_multiplayer_descriptor_value(dispatch_typed_binding, type.field("dispatch_typed_binding"))),
             ],
           )
         end

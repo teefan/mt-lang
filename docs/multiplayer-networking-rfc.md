@@ -1,6 +1,6 @@
 # Multiplayer Networking Attributes And Compiler Hooks
 
-Status: draft RFC
+Status: locked (Phase D)
 
 This document proposes a compiler-assisted multiplayer surface for Milk Tea.
 It does not add new declaration keywords.
@@ -222,6 +222,11 @@ The runtime dispatches the RPC handler on receipt.
 Outbound sending stays a library concern and is described in [Multiplayer Standard Library Design](multiplayer-standard-library.md).
 Applying `@[rpc(...)]` does not change the semantics of an ordinary local call to `submit_input(...)`.
 Reading `RpcContext` or payload values is ordinary safe code; `unsafe:` is only relevant for Milk Tea's raw-pointer operations.
+
+For gameplay-loop ergonomics, ENet exposes one-call inbound processing in addition to low-level queue pop APIs:
+
+- `process_incoming_snapshots()` applies queued snapshot payloads to `World`
+- `process_incoming_rpcs_typed(table)` dispatches queued RPC payloads through typed handlers
 
 ### Descriptor hook functions
 

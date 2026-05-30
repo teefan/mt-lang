@@ -1,6 +1,6 @@
 # Multiplayer Standard Library Design
 
-Status: draft design
+Status: locked (Phase D)
 
 This document sketches the module layout and public API story for Milk Tea's multiplayer stack.
 It assumes the language support described in [Multiplayer Networking Attributes And Compiler Hooks](multiplayer-networking-rfc.md).
@@ -368,11 +368,16 @@ Primary types:
 - `Client`
 - `SessionEvent`
 - `WeightedConnection`
+- `TypedRpcRoute`
+- `TypedRpcDispatchTable`
 
 Primary functions:
 
 - `listen(address: enet.Address, peer_count: ptr_uint, channel_limit: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Server, mp.Error]`
 - `connect(address: enet.Address, channel_count: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Client, mp.Error]`
+- `listen_localhost(peer_count: ptr_uint, channel_limit: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Server, mp.Error]`
+- `connect_localhost(port: ushort, channel_count: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Client, mp.Error]`
+- `localhost_address(port: ushort) -> Result[enet.Address, mp.Error]`
 
 Primary methods:
 
@@ -384,8 +389,11 @@ Primary methods:
 - `connection_id() -> Option[mp.ConnectionId]` on `Client`
 - `pending_session_event_count() -> ptr_uint`
 - `pop_session_event() -> Option[SessionEventRecord]`
+- `process_incoming_snapshots() -> Result[ptr_uint, mp.Error]` on `Server` and `Client`
+- `process_incoming_rpcs_typed(table: ref[TypedRpcDispatchTable]) -> Result[ptr_uint, mp.Error]` on `Server` and `Client`
 - `connected_peer_count() -> ptr_uint` on `Server`
 - `verified_peer_count() -> ptr_uint` on `Server`
+- `listening_port() -> Result[ushort, mp.Error]` on `Server`
 - `has_verified_connection(connection: mp.ConnectionId) -> bool` on `Server`
 - `first_verified_connection() -> Option[mp.ConnectionId]` on `Server`
 - `is_connected() -> bool` on `Client`
@@ -409,6 +417,9 @@ Primary methods:
 - `Server.inbound_snapshot_baseline_state() -> snapshot.BaselineSet`
 - `Client.outbound_snapshot_baseline_state() -> snapshot.BaselineSet`
 - `Client.inbound_snapshot_baseline_state() -> snapshot.BaselineSet`
+- `TypedRpcDispatchTable.create() -> TypedRpcDispatchTable`
+- `TypedRpcDispatchTable.register_route(descriptor, handler) -> Result[bool, mp.Error]`
+- `TypedRpcDispatchTable.dispatch_packet(context, header, payload) -> Result[bool, mp.Error]`
 
 Notes:
 
@@ -421,6 +432,9 @@ Notes:
 - `Server.send_rpc_to(...)` requires a verified target connection and returns `not_found` when the connection is absent or not yet verified.
 - Connection setup must verify protocol-hash handshake packets before accepting snapshot or RPC traffic.
 - Session lifecycle visibility should be first-class through queued events (`connected`, `disconnected`, `snapshot_received`, `rpc_received`) so gameplay code does not need transport-specific polling hacks.
+- Low-level `pop_snapshot()` and `pop_rpc()` are intentionally preserved for projects that want manual queue control.
+- The one-call incoming API is `process_incoming_snapshots()` and `process_incoming_rpcs_typed(...)`; this is the recommended gameplay-loop path.
+- For local iteration, prefer `listen_localhost(...)`, `listening_port()`, and `connect_localhost(...)` to avoid manual ENet address setup.
 - When game code wants one call per frame for outbound traffic, use `create_tick_budget_plan(...)` and `Server.dispatch_tick_fair(...)`; use weighted APIs when one-shot priority ordering is needed, and fair APIs when starvation resistance is the primary goal.
 - `Server.dispatch_world_tick_fair(...)` is the higher-level orchestration entry point when snapshot send/skip decisions should follow `World.snapshot_state_signature(...)` deltas automatically.
 

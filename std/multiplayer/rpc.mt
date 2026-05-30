@@ -308,6 +308,30 @@ function validate_incoming(message: IncomingRpc) -> Result[bool, protocol.Error]
     let _ = validate_payload_size(message.payload_size) else as payload_error:
         return Result[bool, protocol.Error].failure(error = payload_error)
 
+    if message.payload_size != message.descriptor.payload_size:
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "rpc payload size does not match descriptor payload_size",
+            ),
+        )
+
+    if message.descriptor.decode_payload_binding != registry.expected_rpc_decode_payload_binding(message.descriptor):
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "rpc descriptor decode_payload binding mismatch",
+            ),
+        )
+
+    if message.descriptor.dispatch_typed_binding != registry.expected_rpc_dispatch_typed_binding(message.descriptor):
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "rpc descriptor dispatch_typed binding mismatch",
+            ),
+        )
+
     if message.descriptor.direction == protocol.RpcDirection.client_to_server and
        not sender_present(message.context.sender):
         return Result[bool, protocol.Error].failure(
