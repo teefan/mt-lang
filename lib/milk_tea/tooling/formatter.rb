@@ -115,29 +115,26 @@ module MilkTea
         candidates
           .sort_by { |entry| [-(entry[:end_char] - entry[:start_char]), entry[:depth]] }
           .each do |candidate|
-            [true, false].each do |trailing_commas|
-              new_text = build_wrapped_delimited_group_text(
-                line,
-                candidate,
-                indent:,
-                item_indent: arg_indent,
-                line_terminator:,
-                trailing_commas:,
-              )
-              next if new_text == original_line
+            new_text = build_wrapped_delimited_group_text(
+              line,
+              candidate,
+              indent:,
+              item_indent: arg_indent,
+              line_terminator:,
+            )
+            next if new_text == original_line
 
-              updated_lines = lines.dup
-              updated_lines[line_index..line_index] = [new_text]
-              Parser.parse(updated_lines.join, path:)
+            updated_lines = lines.dup
+            updated_lines[line_index..line_index] = [new_text]
+            Parser.parse(updated_lines.join, path:)
 
-              return {
-                start_line_idx: line_index,
-                end_line_idx: line_index,
-                new_text:,
-              }
-            rescue StandardError
-              next
-            end
+            return {
+              start_line_idx: line_index,
+              end_line_idx: line_index,
+              new_text:,
+            }
+          rescue StandardError
+            next
           end
       end
 
@@ -156,10 +153,10 @@ module MilkTea
       nil
     end
 
-    def self.build_wrapped_delimited_group_text(line, candidate, indent:, item_indent:, line_terminator:, trailing_commas:)
+    def self.build_wrapped_delimited_group_text(line, candidate, indent:, item_indent:, line_terminator:)
       new_text = +"#{line[0...candidate[:start_char]]}#{candidate[:opening_delimiter]}\n"
       candidate[:arguments].each_with_index do |argument, index|
-        suffix = trailing_commas || index < candidate[:arguments].length - 1 ? "," : ""
+        suffix = index < candidate[:arguments].length - 1 ? "," : ""
         new_text << "#{item_indent}#{argument}#{suffix}\n"
       end
       new_text << "#{indent}#{candidate[:closing_delimiter]}#{line[candidate[:end_char]..].to_s}#{line_terminator}"
