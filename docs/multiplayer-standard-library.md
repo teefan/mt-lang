@@ -351,6 +351,9 @@ Primary methods:
 - `first_verified_connection() -> Option[mp.ConnectionId]` on `Server`
 - `is_connected() -> bool` on `Client`
 - `Client.send_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Server.send_snapshot_to(connection, channel, transfer_mode, header, payload) -> Result[bool, mp.Error]`
+- `Server.send_snapshots_budgeted(prioritized_connections, channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
+- `Server.broadcast_snapshot_budgeted(channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
 - `Server.send_rpc_to(connection, channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 - `Server.broadcast_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 

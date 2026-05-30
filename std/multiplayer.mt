@@ -4,6 +4,7 @@ import std.multiplayer.world as world
 import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.snapshot as snapshot
 import std.multiplayer.relevancy as relevancy
+import std.multiplayer.spatial as spatial
 
 
 public type ConnectionId = protocol.ConnectionId
@@ -23,6 +24,9 @@ public type HandshakeWelcome = protocol.HandshakeWelcome
 public type HandshakeReject = protocol.HandshakeReject
 public type SnapshotPacketHeader = protocol.SnapshotPacketHeader
 public type RpcPacketHeader = protocol.RpcPacketHeader
+public type TickBudget = protocol.TickBudget
+public type TickReservation = protocol.TickReservation
+public type TickScheduler = protocol.TickScheduler
 public type StateDescriptor = registry.StateDescriptor
 public type RpcDescriptor = registry.RpcDescriptor
 public type Registry = registry.Registry
@@ -42,6 +46,9 @@ public type BaselineSet = snapshot.BaselineSet
 public type IncomingSnapshotPacket = snapshot.IncomingSnapshotPacket
 public type Policy = relevancy.Policy
 public type PolicyKind = relevancy.PolicyKind
+public type CellCoord = relevancy.CellCoord
+public type GridCell = spatial.GridCell
+public type GridIndex = spatial.GridIndex
 
 
 public attribute[struct] replicated(authority: Authority)
@@ -56,6 +63,10 @@ public function error(code: ErrorCode, message: str) -> Error:
 
 public function default_config() -> Config:
     return protocol.default_config()
+
+
+public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickScheduler:
+    return protocol.create_tick_scheduler(max_bytes_per_tick)
 
 
 public function state_descriptor[T]() -> StateDescriptor:
