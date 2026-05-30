@@ -1667,9 +1667,9 @@ module MilkTea
       elsif match(:float)
         AST::FloatLiteral.new(lexeme: previous.lexeme, value: previous.literal)
       elsif match(:string)
-        AST::StringLiteral.new(lexeme: previous.lexeme, value: previous.literal, cstring: false)
+        parse_adjacent_string_literal(previous, cstring: false)
       elsif match(:cstring)
-        AST::StringLiteral.new(lexeme: previous.lexeme, value: previous.literal, cstring: true)
+        parse_adjacent_string_literal(previous, cstring: true)
       elsif match(:fstring)
         parse_format_string_literal(previous.literal)
       elsif match(:true)
@@ -1702,6 +1702,21 @@ module MilkTea
       else
         raise error(peek, "expected expression")
       end
+    end
+
+    def parse_adjacent_string_literal(first_token, cstring:)
+      lexeme = +first_token.lexeme
+      value = +first_token.literal
+      all_cstring = cstring
+
+      while match(:string, :cstring)
+        token = previous
+        lexeme << token.lexeme
+        value << token.literal
+        all_cstring &&= token.type == :cstring
+      end
+
+      AST::StringLiteral.new(lexeme:, value:, cstring: all_cstring)
     end
 
     def parse_proc_expr

@@ -993,6 +993,38 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "Milk Tea keeps this text readable while storing a single logical line.", declaration.value.value
   end
 
+  def test_parses_whitespace_adjacent_string_literals_on_same_line
+    source = <<~MT
+      const title: str = "Milk" " Tea" " language"
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    declaration = ast.declarations[0]
+
+    assert_instance_of MilkTea::AST::StringLiteral, declaration.value
+    assert_equal false, declaration.value.cstring
+    assert_equal "Milk Tea language", declaration.value.value
+  end
+
+  def test_parses_mixed_adjacent_cstring_and_string_literals_in_call_arguments
+    source = <<~MT
+      function main() -> void:
+          fatal(
+              c"async runtime requires an active runtime; use async.wait or async.run, "
+              "or call the explicit *_on helpers")
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    call = ast.declarations[0].body[0].expression
+
+    assert_instance_of MilkTea::AST::Call, call
+    assert_equal 1, call.arguments.length
+    literal = call.arguments[0].value
+    assert_instance_of MilkTea::AST::StringLiteral, literal
+    assert_equal false, literal.cstring
+    assert_equal "async runtime requires an active runtime; use async.wait or async.run, or call the explicit *_on helpers", literal.value
+  end
+
   def test_parses_parenthesized_multiline_binary_expression
     source = <<~MT
       function main() -> int:
