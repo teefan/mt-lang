@@ -134,7 +134,7 @@ class MilkTeaFormatterTest < Minitest::Test
 
       assert_includes formatted, "return log_value(\n"
       assert_includes formatted, "        \"alpha\",\n"
-      assert_includes formatted, "        \"delta\",\n"
+      assert_includes formatted, "        \"delta\"\n"
       formatted.lines.each do |line|
         assert_operator line.delete_suffix("\n").length, :<=, 40
       end
@@ -179,7 +179,7 @@ class MilkTeaFormatterTest < Minitest::Test
 
     assert_includes formatted, "function main() -> Result[\n"
     assert_includes formatted, "    Option[AlphaValue],\n"
-    assert_includes formatted, "    GammaValue,\n"
+    assert_includes formatted, "    GammaValue\n"
     assert_includes formatted, "]:\n"
   end
 
