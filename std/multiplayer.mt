@@ -81,3 +81,11 @@ public function state_descriptor[T]() -> StateDescriptor:
 
 public function rpc_descriptor(target: callable_handle) -> RpcDescriptor:
     fatal(c"std.multiplayer.rpc_descriptor is compiler-lowered and must be called with callable_of(name) where name has @[std.multiplayer.rpc(...)]")
+
+
+public function state_wire_size[T]() -> ptr_uint:
+    fatal(c"std.multiplayer.state_wire_size is compiler-lowered and must be called with a @[std.multiplayer.replicated(...)] struct")
+
+
+public function rpc_payload_size(target: callable_handle) -> ptr_uint:
+    fatal(c"std.multiplayer.rpc_payload_size is compiler-lowered and must be called with callable_of(name) where name has @[std.multiplayer.rpc(...)]")

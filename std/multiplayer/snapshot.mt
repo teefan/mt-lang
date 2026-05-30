@@ -10,16 +10,22 @@ const snapshot_header_bytes: ptr_uint = 20
 public struct Snapshot:
     tick: protocol.Tick
     entity_count: ptr_uint
+    payload_bytes: ptr_uint
+    payload_hash: ulong
 
 
 public struct DeltaFrame:
     tick: protocol.Tick
     baseline_tick: protocol.Tick
     changed_entity_count: ptr_uint
+    payload_changed: bool
 
 
 public struct BaselineSet:
     last_applied_tick: protocol.Tick
+    last_applied_entity_count: ptr_uint
+    last_applied_payload_bytes: ptr_uint
+    last_applied_payload_hash: ulong
 
 
 public struct IncomingSnapshotPacket:
@@ -30,25 +36,103 @@ public struct IncomingSnapshotPacket:
 
 
 public function capture(tick: protocol.Tick, entity_count: ptr_uint) -> Snapshot:
-    return Snapshot(tick = tick, entity_count = entity_count)
+    return Snapshot(
+        tick = tick,
+        entity_count = entity_count,
+        payload_bytes = 0,
+        payload_hash = 0,
+    )
+
+
+public function capture_payload(tick: protocol.Tick, entity_count: ptr_uint, payload: span[ubyte]) -> Snapshot:
+    return Snapshot(
+        tick = tick,
+        entity_count = entity_count,
+        payload_bytes = payload.len,
+        payload_hash = payload_fingerprint(payload),
+    )
 
 
 public function diff(current: Snapshot, baseline: Snapshot) -> DeltaFrame:
     var changed_entity_count: ptr_uint = 0
-    if current.entity_count >= baseline.entity_count:
-        changed_entity_count = current.entity_count - baseline.entity_count
+    let payload_changed = current.payload_bytes != baseline.payload_bytes or current.payload_hash != baseline.payload_hash
+
+    if payload_changed and current.entity_count > 0:
+        changed_entity_count = current.entity_count
     else:
-        changed_entity_count = baseline.entity_count - current.entity_count
+        if current.entity_count >= baseline.entity_count:
+            changed_entity_count = current.entity_count - baseline.entity_count
+        else:
+            changed_entity_count = baseline.entity_count - current.entity_count
 
     return DeltaFrame(
         tick = current.tick,
         baseline_tick = baseline.tick,
         changed_entity_count = changed_entity_count,
+        payload_changed = payload_changed,
     )
+
+
+public function diff_payload(
+    current_tick: protocol.Tick,
+    current_entity_count: ptr_uint,
+    current_payload: span[ubyte],
+    baseline_tick: protocol.Tick,
+    baseline_entity_count: ptr_uint,
+    baseline_payload: span[ubyte],
+) -> DeltaFrame:
+    let current = capture_payload(current_tick, current_entity_count, current_payload)
+    let baseline = capture_payload(baseline_tick, baseline_entity_count, baseline_payload)
+    return diff(current, baseline)
 
 
 public function apply(snapshot: Snapshot, baselines: ref[BaselineSet]) -> void:
     baselines.last_applied_tick = snapshot.tick
+    baselines.last_applied_entity_count = snapshot.entity_count
+    baselines.last_applied_payload_bytes = snapshot.payload_bytes
+    baselines.last_applied_payload_hash = snapshot.payload_hash
+
+
+public function snapshot_from_baseline(baselines: BaselineSet) -> Snapshot:
+    return Snapshot(
+        tick = baselines.last_applied_tick,
+        entity_count = baselines.last_applied_entity_count,
+        payload_bytes = baselines.last_applied_payload_bytes,
+        payload_hash = baselines.last_applied_payload_hash,
+    )
+
+
+public function should_send_against_baseline(current: Snapshot, baselines: BaselineSet) -> bool:
+    if baselines.last_applied_tick == 0:
+        return true
+
+    let baseline_snapshot = snapshot_from_baseline(baselines)
+    let delta = diff(current, baseline_snapshot)
+    return delta.payload_changed or delta.changed_entity_count > 0
+
+
+public function apply_payload(
+    tick: protocol.Tick,
+    entity_count: ptr_uint,
+    payload: span[ubyte],
+    baselines: ref[BaselineSet],
+) -> void:
+    let snapshot = capture_payload(tick, entity_count, payload)
+    apply(snapshot, baselines)
+
+
+public function apply_from_packet(payload: span[ubyte], baselines: ref[BaselineSet]) -> Result[bool, protocol.Error]:
+    let header = decode_header(payload) else as header_error:
+        return Result[bool, protocol.Error].failure(error = header_error)
+
+    unsafe:
+        let body = span[ubyte](
+            data = payload.data + snapshot_header_bytes,
+            len = payload.len - snapshot_header_bytes,
+        )
+        apply_payload(header.tick, header.entity_count, body, baselines)
+
+    return Result[bool, protocol.Error].success(value = true)
 
 
 public function encode_header(header: protocol.SnapshotPacketHeader) -> array[ubyte, 20]:
@@ -155,3 +239,14 @@ public function release_queue(queue: ref[vec.Vec[IncomingSnapshotPacket]]) -> vo
 extending IncomingSnapshotPacket:
     public mutable function release() -> void:
         this.payload.release()
+
+
+function payload_fingerprint(payload: span[ubyte]) -> ulong:
+    var hash: ulong = 1469598103934665603
+    var index: ptr_uint = 0
+    while index < payload.len:
+        hash = hash ^ ulong<-payload[index]
+        hash = hash * 1099511628211
+        index += 1
+
+    return hash

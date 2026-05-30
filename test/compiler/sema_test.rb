@@ -4743,6 +4743,63 @@ function main() -> int:
     assert_match(/rpc_descriptor expects callable_of\(name\) where name resolves to a top-level @\[std\.multiplayer\.rpc\(\.\.\.\)\] callable/, error.message)
   end
 
+  def test_type_checks_multiplayer_wire_size_hooks
+    program = check_program_source(<<~MT)
+      # module demo.multiplayer_wire_size
+
+      import std.multiplayer as mp
+
+      @[mp.replicated(authority = mp.Authority.server)]
+      struct PlayerState:
+          @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+          x: float
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = true)]
+      function submit_input(context: mp.RpcContext, input: int) -> void:
+          return
+
+      function main() -> int:
+          let state_bytes = mp.state_wire_size[PlayerState]()
+          let rpc_bytes = mp.rpc_payload_size(callable_of(submit_input))
+          if state_bytes == 0 and rpc_bytes == 0:
+              return 1
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_multiplayer_rpc_payload_size_for_unsupported_payload
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_rpc_payload_size_bad
+
+        import std.multiplayer as mp
+
+        struct LargePayload:
+            a: ubyte
+            b: ubyte
+            c: ubyte
+            d: ubyte
+            e: ubyte
+            f: ubyte
+            g: ubyte
+            h: ubyte
+            i: ubyte
+
+        @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 0, require_owner = true)]
+        function submit_input(context: mp.RpcContext, payload: LargePayload) -> void:
+            return
+
+        function main() -> int:
+            let _ = mp.rpc_payload_size(callable_of(submit_input))
+            return 0
+      MT
+    end
+
+    assert_match(/rpc_payload_size does not support payload parameter payload/, error.message)
+  end
+
   def test_rejects_multiplayer_state_descriptor_for_non_replicated_struct
     error = assert_raises(MilkTea::SemaError) do
       check_program_source(<<~MT)
