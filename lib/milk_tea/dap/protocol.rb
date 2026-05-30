@@ -6,6 +6,8 @@ module MilkTea
   module DAP
     # Handles DAP framing over stdin/stdout using Content-Length headers.
     class Protocol
+      INVALID_MESSAGE = Object.new.freeze
+
       def initialize(input: $stdin, output: $stdout, error_output: nil)
         @input = input
         @output = output
@@ -26,13 +28,13 @@ module MilkTea
         end
 
         content_length = headers["Content-Length"]&.to_i
-        return nil if content_length.nil? || content_length <= 0
+        return INVALID_MESSAGE if content_length.nil? || content_length <= 0
 
         body = @input.read(content_length)
         JSON.parse(body)
       rescue StandardError => e
         log_error("DAP protocol read error: #{e.message}")
-        nil
+        INVALID_MESSAGE
       end
 
       def write_message(message)

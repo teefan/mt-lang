@@ -295,10 +295,9 @@ extending Server:
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
-            let snapshot_packet = this.pop_snapshot() else:
+            var packet = this.pop_snapshot() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            var packet = snapshot_packet
             match this.world.apply_snapshot_payload(packet.payload.as_span()):
                 Result.success as _:
                     snapshot_runtime.apply_payload(
@@ -320,10 +319,9 @@ extending Server:
     ) -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
-            let rpc_packet = this.pop_rpc() else:
+            var packet = this.pop_rpc() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            var packet = rpc_packet
             let dispatched = table.dispatch_packet(packet.context, packet.header, packet.payload.as_span()) else as dispatch_error:
                 packet.release()
                 return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
@@ -1079,10 +1077,9 @@ extending Client:
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
-            let snapshot_packet = this.pop_snapshot() else:
+            var packet = this.pop_snapshot() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            var packet = snapshot_packet
             match this.world.apply_snapshot_payload(packet.payload.as_span()):
                 Result.success as _:
                     snapshot_runtime.apply_payload(
@@ -1104,10 +1101,9 @@ extending Client:
     ) -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
-            let rpc_packet = this.pop_rpc() else:
+            var packet = this.pop_rpc() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            var packet = rpc_packet
             let dispatched = table.dispatch_packet(packet.context, packet.header, packet.payload.as_span()) else as dispatch_error:
                 packet.release()
                 return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
