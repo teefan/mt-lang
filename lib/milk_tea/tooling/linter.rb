@@ -302,7 +302,17 @@ module MilkTea
     # directional-ffi-arg, redundant-else, redundant-unsafe,
     # redundant-return, redundant-cast, line-too-long.
     # Returns the fixed source (may be identical if nothing was fixable).
-    def self.fix_source(source, path: nil, sema_facts: nil)
+    def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
+      cfg = load_config(path)
+      effective_select = select || cfg&.fetch(:select, nil)
+      effective_ignore = ignore || cfg&.fetch(:ignore, nil)
+      rule_enabled = lambda do |code|
+        next false if effective_select && !effective_select.include?(code)
+        next false if effective_ignore && effective_ignore.include?(code)
+
+        true
+      end
+
       working_context = best_effort_lint_context(source, path:)
       working_sema_facts = sema_facts || working_context[:facts]
       warnings = lint_source(
@@ -310,6 +320,8 @@ module MilkTea
         path:,
         sema_facts: working_sema_facts,
         unresolved_import_paths: working_context[:unresolved_import_paths],
+        select:,
+        ignore:,
       )
       lines = source.lines
 
@@ -477,48 +489,53 @@ module MilkTea
       end
 
       fixed_source = lines.join
-      fixed_source = Formatter.wrap_long_argument_lists(
-        fixed_source,
-        max_line_length: effective_max_line_length(path),
-        path:,
-      )
-      redundant_cast_warnings = lint_source(fixed_source, path:).select do |w|
-        w.code == "redundant-cast" && w.line && w.column && w.length
+      if rule_enabled.call("line-too-long")
+        fixed_source = Formatter.wrap_long_argument_lists(
+          fixed_source,
+          max_line_length: effective_max_line_length(path),
+          path:,
+        )
       end
-      unless redundant_cast_warnings.empty?
-        fixed_lines = fixed_source.lines
-        redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-          idx = w.line - 1
-          next unless fixed_lines[idx]
 
-          start_char = w.column - 1
-          cast_text = fixed_lines[idx][start_char, w.length]
-          replacement = extract_prefix_cast_source_text(cast_text)
-          next unless replacement
-
-          fixed_lines[idx] = fixed_lines[idx].dup
-          fixed_lines[idx][start_char, w.length] = replacement
+      if rule_enabled.call("redundant-cast")
+        redundant_cast_warnings = lint_source(fixed_source, path:, select: Set["redundant-cast"]).select do |w|
+          w.code == "redundant-cast" && w.line && w.column && w.length
         end
+        unless redundant_cast_warnings.empty?
+          fixed_lines = fixed_source.lines
+          redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
+            idx = w.line - 1
+            next unless fixed_lines[idx]
 
-        fixed_source = fixed_lines.join
+            start_char = w.column - 1
+            cast_text = fixed_lines[idx][start_char, w.length]
+            replacement = extract_prefix_cast_source_text(cast_text)
+            next unless replacement
+
+            fixed_lines[idx] = fixed_lines[idx].dup
+            fixed_lines[idx][start_char, w.length] = replacement
+          end
+
+          fixed_source = fixed_lines.join
+        end
       end
 
-      reserved_warnings = lint_source(fixed_source, path:).select do |w|
-        w.code == "reserved-primitive-name" && w.line && w.column && w.symbol_name
-      end
-      if reserved_warnings.empty?
-        return validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context[:errors])
-      end
+      if rule_enabled.call("reserved-primitive-name")
+        reserved_warnings = lint_source(fixed_source, path:, select: Set["reserved-primitive-name"]).select do |w|
+          w.code == "reserved-primitive-name" && w.line && w.column && w.symbol_name
+        end
+        unless reserved_warnings.empty?
+          warning_sites = reserved_warnings.each_with_object(Set.new) do |warning, sites|
+            sites << [warning.line, warning.column, warning.symbol_name]
+          end
+          reserved_fixes = collect_reserved_primitive_name_fixes(fixed_source, path:).select do |fix|
+            declaration_site = fix.sites.first
+            warning_sites.include?([declaration_site.line, declaration_site.column, fix.original_name])
+          end
 
-      warning_sites = reserved_warnings.each_with_object(Set.new) do |warning, sites|
-        sites << [warning.line, warning.column, warning.symbol_name]
+          fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
+        end
       end
-      reserved_fixes = collect_reserved_primitive_name_fixes(fixed_source, path:).select do |fix|
-        declaration_site = fix.sites.first
-        warning_sites.include?([declaration_site.line, declaration_site.column, fix.original_name])
-      end
-
-      fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
       validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context[:errors])
     end
 
@@ -3808,6 +3825,7 @@ module MilkTea
 
     def redundant_unsafe_expression?(expression)
       return false unless expression.line && expression.column
+      return false if expression_contains_builtin_unsafe_syntax?(expression.expression)
 
       modified_source = source_without_inline_unsafe(expression.line, expression.column)
       return false unless modified_source

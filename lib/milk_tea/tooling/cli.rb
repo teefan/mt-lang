@@ -285,7 +285,13 @@ module MilkTea
       if fix
         paths.each do |p|
           source = read_source_file(p)
-          fixed = Linter.fix_source(source, path: p, sema_facts: lint_sema_facts_for(source, p, locked: resolution[:locked]))
+          fixed = Linter.fix_source(
+            source,
+            path: p,
+            sema_facts: lint_sema_facts_for(source, p, locked: resolution[:locked]),
+            select:,
+            ignore:,
+          )
           if fixed != source
             File.write(p, fixed)
             @out.puts("fixed #{p}")
