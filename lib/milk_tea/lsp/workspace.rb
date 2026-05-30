@@ -521,7 +521,12 @@ module MilkTea
         end
         invalidate_cache(uri)
         enqueue_definition_warmup(uri)
-        refresh_import_dependent_caches(changed_uri: uri)
+        affected_uris = refresh_import_dependent_caches(changed_uri: uri)
+        if affected_uris.empty? && change_type.to_i == 1 # Created
+          affected_uris = refresh_import_dependent_caches
+          affected_uris.delete(uri)
+        end
+        affected_uris
       rescue StandardError => e
         warn "LSP watched-file update error #{uri}: #{e.message}"
         []
@@ -529,7 +534,7 @@ module MilkTea
 
       def refresh_open_document_dependency_caches(changed_uri)
         path = uri_to_path(changed_uri)
-        return [] unless path && File.file?(path)
+        return [] unless path
 
         refresh_import_dependent_caches(changed_uri: changed_uri)
       end
@@ -781,7 +786,7 @@ module MilkTea
 
       def infer_module_name_for_uri(uri)
         path = uri_to_path(uri)
-        return nil unless path && File.file?(path)
+        return nil unless path
 
         resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
         return nil if resolution.error_message

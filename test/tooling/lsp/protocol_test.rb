@@ -64,7 +64,7 @@ class LSPProtocolTest < Minitest::Test
     end
   end
 
-  def test_read_message_returns_nil_and_warns_on_invalid_json
+  def test_read_message_returns_invalid_message_and_warns_on_invalid_json
     body = "{broken"
     wire = "Content-Length: #{body.bytesize}\r\n\r\n#{body}"
     input = StringIO.new(wire)
@@ -76,11 +76,25 @@ class LSPProtocolTest < Minitest::Test
       $stdin = input
       $stderr = err
 
-      assert_nil MilkTea::LSP::Protocol.read_message
+      assert_same MilkTea::LSP::Protocol::INVALID_MESSAGE, MilkTea::LSP::Protocol.read_message
       assert_match(/Protocol error reading message:/, err.string)
     ensure
       $stdin = old_stdin
       $stderr = old_stderr
+    end
+  end
+
+  def test_read_message_returns_invalid_message_when_content_length_missing
+    wire = "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}"
+    input = StringIO.new(wire)
+
+    begin
+      old_stdin = $stdin
+      $stdin = input
+
+      assert_same MilkTea::LSP::Protocol::INVALID_MESSAGE, MilkTea::LSP::Protocol.read_message
+    ensure
+      $stdin = old_stdin
     end
   end
 

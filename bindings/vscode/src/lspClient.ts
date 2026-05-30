@@ -79,7 +79,11 @@ export class MilkTeaLspClient {
       revealOutputChannelOn: RevealOutputChannelOn.Error,
       middleware: this.createDocumentContextMiddleware(),
       synchronize: {
-        fileEvents: vscode.workspace.createFileSystemWatcher('**/*.mt'),
+        fileEvents: [
+          vscode.workspace.createFileSystemWatcher('**/*.mt'),
+          vscode.workspace.createFileSystemWatcher('**/package.toml'),
+          vscode.workspace.createFileSystemWatcher('**/package.lock'),
+        ],
       },
       initializationOptions: {
         milkTea: {
