@@ -88,6 +88,23 @@ public struct RpcPacketHeader:
     payload_size: ptr_uint
 
 
+public struct TickBudget:
+    max_bytes_per_tick: ptr_uint
+    used_bytes_this_tick: ptr_uint
+
+
+public struct TickReservation:
+    tick: Tick
+    sequence: ulong
+    reserved_bytes: ptr_uint
+
+
+public struct TickScheduler:
+    current_tick: Tick
+    next_sequence: ulong
+    budget: TickBudget
+
+
 public function error(code: ErrorCode, message: str) -> Error:
     return Error(code = code, message = message)
 
@@ -98,3 +115,50 @@ public function default_config() -> Config:
         max_entities = 4096,
         max_rpcs_per_tick = 1024,
     )
+
+
+public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickScheduler:
+    return TickScheduler(
+        current_tick = 0,
+        next_sequence = 0,
+        budget = TickBudget(
+            max_bytes_per_tick = max_bytes_per_tick,
+            used_bytes_this_tick = 0,
+        ),
+    )
+
+
+extending TickScheduler:
+    public mutable function begin_tick(tick: Tick) -> void:
+        this.current_tick = tick
+        this.next_sequence = 0
+        this.budget.used_bytes_this_tick = 0
+        return
+
+
+    public function consumed_bytes() -> ptr_uint:
+        return this.budget.used_bytes_this_tick
+
+
+    public function remaining_bytes() -> ptr_uint:
+        if this.budget.used_bytes_this_tick >= this.budget.max_bytes_per_tick:
+            return 0
+        return this.budget.max_bytes_per_tick - this.budget.used_bytes_this_tick
+
+
+    public mutable function reserve(bytes: ptr_uint) -> Option[TickReservation]:
+        if this.budget.used_bytes_this_tick >= this.budget.max_bytes_per_tick:
+            return Option[TickReservation].none
+
+        let remaining = this.budget.max_bytes_per_tick - this.budget.used_bytes_this_tick
+        if bytes > remaining:
+            return Option[TickReservation].none
+
+        let reservation = TickReservation(
+            tick = this.current_tick,
+            sequence = this.next_sequence,
+            reserved_bytes = bytes,
+        )
+        this.next_sequence += 1
+        this.budget.used_bytes_this_tick += bytes
+        return Option[TickReservation].some(value = reservation)

@@ -290,6 +290,9 @@ Primary files:
 
 Possible public surface once the descriptor-driven path is proven:
 
+- `Server.send_snapshot_to(...)`
+- `Server.send_snapshots_budgeted(...)`
+- `Server.broadcast_snapshot_budgeted(...)`
 - `Client.send_rpc(...)`
 - `Server.send_rpc_to(...)`
 - `Server.broadcast_rpc(...)`

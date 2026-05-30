@@ -431,6 +431,53 @@ function expect_loopback_send_receive() -> int:
                         let verified_connection = server.first_verified_connection() else:
                             return 134
 
+                        let targeted_snapshot_header = protocol.SnapshotPacketHeader(tick = 102, baseline_tick = 101, entity_count = 3)
+                        let targeted_snapshot_send = server.send_snapshot_to(verified_connection, 3, protocol.TransferMode.reliable, targeted_snapshot_header, snapshot_payload) else:
+                            return 158
+                        if not targeted_snapshot_send:
+                            return 159
+
+                        var prioritized_connections = vec.Vec[protocol.ConnectionId].create()
+                        defer prioritized_connections.release()
+                        prioritized_connections.push(verified_connection)
+                        prioritized_connections.push(protocol.ConnectionId<-999999)
+                        let budgeted_header = protocol.SnapshotPacketHeader(tick = 103, baseline_tick = 102, entity_count = 4)
+                        let budgeted_sent = server.send_snapshots_budgeted(
+                            prioritized_connections.as_span(),
+                            1,
+                            protocol.TransferMode.reliable,
+                            budgeted_header,
+                            snapshot_payload,
+                            24,
+                        ) else:
+                            return 167
+                        if budgeted_sent != 1:
+                            return 168
+
+                        let budgeted_skipped = server.send_snapshots_budgeted(
+                            prioritized_connections.as_span(),
+                            1,
+                            protocol.TransferMode.reliable,
+                            budgeted_header,
+                            snapshot_payload,
+                            0,
+                        ) else:
+                            return 169
+                        if budgeted_skipped != 0:
+                            return 170
+
+                        let budgeted_broadcast_header = protocol.SnapshotPacketHeader(tick = 104, baseline_tick = 103, entity_count = 5)
+                        let budgeted_broadcast_sent = server.broadcast_snapshot_budgeted(
+                            0,
+                            protocol.TransferMode.reliable,
+                            budgeted_broadcast_header,
+                            snapshot_payload,
+                            24,
+                        ) else:
+                            return 171
+                        if budgeted_broadcast_sent != 1:
+                            return 172
+
                         let targeted_rpc_send = server.send_rpc_to(verified_connection, 3, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_connection, snapshot_payload) else:
                             return 135
                         if not targeted_rpc_send:
@@ -453,6 +500,57 @@ function expect_loopback_send_receive() -> int:
                                 if send_error.error.code != protocol.ErrorCode.not_found:
                                     return 138
 
+                        match server.send_snapshot_to(999999, 3, protocol.TransferMode.reliable, targeted_snapshot_header, snapshot_payload):
+                            Result.success as _:
+                                return 160
+                            Result.failure as send_error:
+                                if send_error.error.code != protocol.ErrorCode.not_found:
+                                    return 161
+
+                        let scheduled_snapshot_header = protocol.SnapshotPacketHeader(tick = 105, baseline_tick = 104, entity_count = 6)
+                        let scheduled_snapshot_bytes = server.estimate_snapshot_wire_bytes(scheduled_snapshot_header, snapshot_payload)
+                        let scheduled_rpc_bytes = server.estimate_rpc_wire_bytes(1, protocol.RpcDirection.server_to_connection, snapshot_payload)
+                        var tick_scheduler = mp.create_tick_scheduler(scheduled_snapshot_bytes + scheduled_rpc_bytes)
+                        tick_scheduler.begin_tick(105)
+
+                        let scheduled_snapshot_sent = server.send_snapshot_to_scheduled(
+                            ref_of(tick_scheduler),
+                            verified_connection,
+                            1,
+                            protocol.TransferMode.reliable,
+                            scheduled_snapshot_header,
+                            snapshot_payload,
+                        ) else:
+                            return 183
+                        if not scheduled_snapshot_sent:
+                            return 184
+
+                        let scheduled_rpc_sent = server.send_rpc_to_scheduled(
+                            ref_of(tick_scheduler),
+                            verified_connection,
+                            1,
+                            protocol.TransferMode.reliable,
+                            protocol.RpcDirection.server_to_connection,
+                            snapshot_payload,
+                        ) else:
+                            return 185
+                        if not scheduled_rpc_sent:
+                            return 186
+
+                        let scheduled_over_budget = server.broadcast_snapshot_scheduled(
+                            ref_of(tick_scheduler),
+                            0,
+                            protocol.TransferMode.reliable,
+                            scheduled_snapshot_header,
+                            snapshot_payload,
+                        ) else:
+                            return 187
+                        if scheduled_over_budget:
+                            return 188
+
+                        if tick_scheduler.consumed_bytes() != scheduled_snapshot_bytes + scheduled_rpc_bytes:
+                            return 189
+
                         server.flush()
 
                         var broadcast_rounds: ptr_uint = 0
@@ -461,13 +559,13 @@ function expect_loopback_send_receive() -> int:
                                 return 86
                             let _ = client.pump(1) else:
                                 return 87
-                            if client.pending_snapshot_count() > 0 and client.pending_rpc_count() > 3:
+                            if client.pending_snapshot_count() > 3 and client.pending_rpc_count() > 3:
                                 break
                             broadcast_rounds += 1
 
-                        if client.pending_snapshot_count() != 1:
+                        if client.pending_snapshot_count() != 5:
                             return 88
-                        if client.pending_rpc_count() != 4:
+                        if client.pending_rpc_count() != 5:
                             return 89
                         if client.pending_unknown_count() != 0:
                             return 90
@@ -486,6 +584,66 @@ function expect_loopback_send_receive() -> int:
                             return 94
                         if client_snapshot_payload[0] != 5 or client_snapshot_payload[1] != 4 or client_snapshot_payload[2] != 3:
                             return 95
+
+                        let client_targeted_snapshot_packet = client.pop_snapshot() else:
+                            return 162
+                        var client_targeted_snapshot = client_targeted_snapshot_packet
+                        defer client_targeted_snapshot.release()
+                        if client_targeted_snapshot.header.tick != 102:
+                            return 163
+                        if client_targeted_snapshot.channel != 3:
+                            return 164
+
+                        let client_targeted_snapshot_payload = client_targeted_snapshot.payload.as_span()
+                        if client_targeted_snapshot_payload.len != 3:
+                            return 165
+                        if client_targeted_snapshot_payload[0] != 5 or client_targeted_snapshot_payload[1] != 4 or client_targeted_snapshot_payload[2] != 3:
+                            return 166
+
+                        let client_budgeted_snapshot_packet = client.pop_snapshot() else:
+                            return 173
+                        var client_budgeted_snapshot = client_budgeted_snapshot_packet
+                        defer client_budgeted_snapshot.release()
+                        if client_budgeted_snapshot.header.tick != 103:
+                            return 174
+                        if client_budgeted_snapshot.channel != 1:
+                            return 175
+
+                        let client_budgeted_snapshot_payload = client_budgeted_snapshot.payload.as_span()
+                        if client_budgeted_snapshot_payload.len != 3:
+                            return 176
+                        if client_budgeted_snapshot_payload[0] != 5 or client_budgeted_snapshot_payload[1] != 4 or client_budgeted_snapshot_payload[2] != 3:
+                            return 177
+
+                        let client_budgeted_broadcast_snapshot_packet = client.pop_snapshot() else:
+                            return 178
+                        var client_budgeted_broadcast_snapshot = client_budgeted_broadcast_snapshot_packet
+                        defer client_budgeted_broadcast_snapshot.release()
+                        if client_budgeted_broadcast_snapshot.header.tick != 104:
+                            return 179
+                        if client_budgeted_broadcast_snapshot.channel != 0:
+                            return 180
+
+                        let client_budgeted_broadcast_snapshot_payload = client_budgeted_broadcast_snapshot.payload.as_span()
+                        if client_budgeted_broadcast_snapshot_payload.len != 3:
+                            return 181
+                        if client_budgeted_broadcast_snapshot_payload[0] != 5 or client_budgeted_broadcast_snapshot_payload[1] != 4 or client_budgeted_broadcast_snapshot_payload[2] != 3:
+                            return 182
+
+                        let client_scheduled_snapshot_packet = client.pop_snapshot() else:
+                            return 190
+                        var client_scheduled_snapshot = client_scheduled_snapshot_packet
+                        defer client_scheduled_snapshot.release()
+                        if client_scheduled_snapshot.header.tick != 105:
+                            return 191
+                        if client_scheduled_snapshot.channel != 1:
+                            return 192
+
+                        let client_scheduled_snapshot_payload = client_scheduled_snapshot.payload.as_span()
+                        if client_scheduled_snapshot_payload.len != 3:
+                            return 193
+                        if client_scheduled_snapshot_payload[0] != 5 or client_scheduled_snapshot_payload[1] != 4 or client_scheduled_snapshot_payload[2] != 3:
+                            return 194
 
                         let client_rpc_packet = client.pop_rpc() else:
                             return 96
@@ -546,6 +704,21 @@ function expect_loopback_send_receive() -> int:
                             return 156
                         if client_all_rpc_payload[0] != 5 or client_all_rpc_payload[1] != 4 or client_all_rpc_payload[2] != 3:
                             return 157
+
+                        let client_scheduled_rpc_packet = client.pop_rpc() else:
+                            return 195
+                        var client_scheduled_rpc = client_scheduled_rpc_packet
+                        defer client_scheduled_rpc.release()
+                        if client_scheduled_rpc.header.channel != 1:
+                            return 196
+                        if client_scheduled_rpc.header.direction != protocol.RpcDirection.server_to_connection:
+                            return 197
+
+                        let client_scheduled_rpc_payload = client_scheduled_rpc.payload.as_span()
+                        if client_scheduled_rpc_payload.len != 3:
+                            return 198
+                        if client_scheduled_rpc_payload[0] != 5 or client_scheduled_rpc_payload[1] != 4 or client_scheduled_rpc_payload[2] != 3:
+                            return 199
 
                         let client_peer = client.peer else:
                             return 101
