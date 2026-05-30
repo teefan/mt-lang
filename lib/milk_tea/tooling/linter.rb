@@ -1008,6 +1008,7 @@ module MilkTea
 
       @source_lines.each_with_index do |line, index|
         next if line.empty?
+        next if external_or_foreign_function_header_line?(line)
         next unless line.length > @max_line_length
 
         fix = Formatter.build_long_line_wrap_fix(@source, index, max_line_length: @max_line_length, path: @path)
@@ -1023,6 +1024,10 @@ module MilkTea
           severity: :warning,
         )
       end
+    end
+
+    def external_or_foreign_function_header_line?(line)
+      line.strip.match?(/\A(?:[A-Za-z_]\w*\s+)*(?:external|foreign)\s+function\b/)
     end
 
     def emit_event_capacity_warnings(source_file)

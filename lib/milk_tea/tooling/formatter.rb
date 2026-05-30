@@ -99,7 +99,7 @@ module MilkTea
 
       lines = source.lines
       return nil unless line_index >= 0 && line_index < lines.length
-      return nil if line_inside_external_function_header?(lines, line_index)
+      return nil if line_inside_external_or_foreign_function_header?(lines, line_index)
       return nil if line_inside_fn_type_signature?(lines, line_index)
 
       original_line = lines[line_index]
@@ -409,10 +409,10 @@ module MilkTea
       target_index <= header_end
     end
 
-    def self.line_inside_external_function_header?(lines, line_index)
+    def self.line_inside_external_or_foreign_function_header?(lines, line_index)
       start_index = line_index
       while start_index >= 0
-        if external_function_header_line?(lines[start_index])
+        if external_or_foreign_function_header_line?(lines[start_index])
           return line_in_function_header_span?(lines, start_index, line_index)
         end
 
@@ -423,8 +423,8 @@ module MilkTea
       false
     end
 
-    def self.external_function_header_line?(line)
-      line.strip.match?(/\A(?:[A-Za-z_]\w*\s+)*external\s+function\b/)
+    def self.external_or_foreign_function_header_line?(line)
+      line.strip.match?(/\A(?:[A-Za-z_]\w*\s+)*(?:external|foreign)\s+function\b/)
     end
 
     def self.line_inside_fn_type_signature?(lines, line_index)
@@ -434,7 +434,7 @@ module MilkTea
           return line_in_function_header_span?(lines, start_index, line_index)
         end
 
-        break if function_line?(lines[start_index]) || external_function_header_line?(lines[start_index])
+        break if function_line?(lines[start_index]) || external_or_foreign_function_header_line?(lines[start_index])
         start_index -= 1
       end
 
