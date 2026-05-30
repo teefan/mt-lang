@@ -40,7 +40,7 @@ module MilkTea
         @facts_cache_mutex = Mutex.new
         @facts_generation = Hash.new(0)
         @facts_state_mutex = Mutex.new
-        # Diagnostics cache: uri -> { fast: { content_hash:, diagnostics: }, full: { ... } }
+        # Diagnostics cache: uri -> { content_hash:, diagnostics: }
         @diagnostics_cache = {}
         @dependency_module_name_by_uri = {}
         @dependency_imports_by_uri = {}
@@ -154,11 +154,10 @@ module MilkTea
       end
 
       # Return cached diagnostics for +uri+, re-collecting only when content changes.
-      def collect_diagnostics(uri, mode: :full)
+      def collect_diagnostics(uri)
         total_start = perf_logging? ? monotonic_time : nil
         content = get_content(uri)
         hash = content.hash
-        normalized_mode = normalize_diagnostics_mode(mode)
         cache_state = 'miss'
         lock_wait_ms = 0.0
         collect_ms = 0.0
@@ -168,7 +167,7 @@ module MilkTea
         @facts_cache_mutex.synchronize do
           generation = @facts_generation[uri]
           cached_snapshot = @tooling_snapshot_cache[uri]
-          entry = @diagnostics_cache.dig(uri, normalized_mode)
+          entry = @diagnostics_cache[uri]
           if entry && entry[:content_hash] == hash
             cache_state = 'hit'
             diagnostics = entry[:diagnostics]
@@ -182,7 +181,7 @@ module MilkTea
           @facts_cache_mutex.synchronize do
             generation = @facts_generation[uri]
             cached_snapshot = @tooling_snapshot_cache[uri]
-            entry = @diagnostics_cache.dig(uri, normalized_mode)
+            entry = @diagnostics_cache[uri]
             if entry && entry[:content_hash] == hash
               cache_state = 'hit'
               diagnostics = entry[:diagnostics]
@@ -201,7 +200,7 @@ module MilkTea
               platform_override: @platform_override,
               sema_snapshot: cached_snapshot,
               strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
-              lint_tier: normalized_mode == :fast ? :fast : :full,
+              lint_tier: :full,
             )
             collect_ms = elapsed_ms(collect_start) if collect_start
             diagnostics = result[:diagnostics]
@@ -214,8 +213,7 @@ module MilkTea
                 @facts_cache[uri] = facts if facts
                 @last_good_facts_cache[uri] = facts if facts
                 update_dependency_index(uri, facts)
-                @diagnostics_cache[uri] ||= {}
-                @diagnostics_cache[uri][normalized_mode] = { content_hash: hash, diagnostics: diagnostics }
+                @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
               else
                 cache_state = 'stale'
               end
@@ -233,7 +231,7 @@ module MilkTea
           log_perf_breakdown(
             'workspace/collect_diagnostics',
             elapsed_ms(total_start),
-            "uri=#{uri} mode=#{normalized_mode} cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
+            "uri=#{uri} mode=full cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
           )
         end
       end
@@ -714,10 +712,6 @@ module MilkTea
           remove_definition_name_candidates_for_uri(uri)
           @definition_miss_cache.clear
         end
-      end
-
-      def normalize_diagnostics_mode(mode)
-        mode.to_s == 'fast' ? :fast : :full
       end
 
       def clear_dependency_index

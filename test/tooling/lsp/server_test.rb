@@ -1973,7 +1973,7 @@ function main(value: int) -> int:
     end
   end
 
-  def test_publish_diagnostics_uses_fast_lane_until_save
+  def test_publish_diagnostics_uses_full_mode_on_open_and_save
     protocol = RecordingProtocol.new
     server = MilkTea::LSP::Server.new(protocol: protocol)
     uri = "file:///tmp/lsp_fast_publish_diagnostics.mt"
@@ -1999,8 +1999,8 @@ function main(value: int) -> int:
     end
     open_codes = open_publish.dig("params", :diagnostics).map { |diagnostic| diagnostic[:code] }
 
-    refute_includes open_codes, "redundant-unsafe"
-    refute_includes open_codes, "redundant-cast"
+    assert_includes open_codes, "redundant-unsafe"
+    assert_includes open_codes, "redundant-cast"
 
     server.send(:handle_did_save, {
       "textDocument" => {
