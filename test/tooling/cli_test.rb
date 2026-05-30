@@ -184,6 +184,55 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_format_command_tidy_mode_supports_max_line_length
+    Dir.mktmpdir("milk-tea-cli-fmt-tidy") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        function main() -> int:
+            return log_value("alpha", "beta", "gamma", "delta")
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["format", path, "--tidy", "--max-line-length", "40"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_includes out.string, "return log_value(\n"
+      out.string.lines.each do |line|
+        assert_operator line.delete_suffix("\n").length, :<=, 40
+      end
+    end
+  end
+
+  def test_format_command_supports_multiple_file_operands
+    Dir.mktmpdir("milk-tea-cli-fmt-multi") do |dir|
+      first_path = File.join(dir, "first.mt")
+      second_path = File.join(dir, "second.mt")
+      File.write(first_path, "function  first()->int:\n    return 1\n")
+      File.write(second_path, "function second() -> int:\n    return 2\n")
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["format", first_path, second_path, "--check"], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/needs formatting .*first\.mt/, out.string)
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["format", first_path, second_path, "--write"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/formatted .*first\.mt/, out.string)
+      assert_equal "function first() -> int:\n    return 1\n", File.read(first_path)
+    end
+  end
+
   def test_lint_command_reports_unused_local
     Dir.mktmpdir("milk-tea-cli-lint-unused") do |dir|
       path = File.join(dir, "sample.mt")
@@ -3333,8 +3382,8 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal "", out.string
     assert_match(/missing source file path/, err.string)
     assert_match(/Usage: mtc lex PATH/, err.string)
-    assert_match(/mtc parse PATH/, err.string)
-    assert_match(/mtc format PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
+    assert_match(/mtc parse PATH\|DIR \[PATH\|DIR \.\.\.\]/, err.string)
+    assert_match(/mtc format PATH\|DIR \[PATH\|DIR \.\.\.\] \[--check\|--write\] \[--safe\|--canonical\|--preserve\|--tidy\]/, err.string)
   end
 
   def test_invalid_commands_print_usage
@@ -3346,12 +3395,12 @@ class MilkTeaCliTest < Minitest::Test
     assert_equal 1, status
     assert_equal "", out.string
     assert_match(/Usage: mtc lex PATH/, err.string)
-    assert_match(/mtc parse PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
-    assert_match(/mtc format PATH\|DIR \[--check\|--write\] \[--safe\|--canonical\|--preserve\]/, err.string)
+    assert_match(/mtc parse PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc format PATH\|DIR \[PATH\|DIR \.\.\.\] \[--check\|--write\] \[--safe\|--canonical\|--preserve\|--tidy\] \[--max-line-length N\]/, err.string)
     assert_match(/mtc lint PATH\|DIR .*\[-I PATH\]/, err.string)
-    assert_match(/mtc check PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
-    assert_match(/mtc lower PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
-    assert_match(/mtc emit-c PATH \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc check PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc lower PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc emit-c PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc new NAME/, err.string)
     assert_match(/mtc run \[PATH_OR_PACKAGE\]/, err.string)
@@ -3512,9 +3561,9 @@ class MilkTeaCliTest < Minitest::Test
 
     status = MilkTea::CLI.start(["parse", __dir__], out:, err:)
 
-    assert_equal 1, status
-    assert_equal "", out.string
-    assert_match(/expected a source file, got a directory/, err.string)
+    assert_equal 0, status
+    assert_equal "", err.string
+    assert_match(/no \.mt files found in/, out.string)
   end
 
   def test_lint_command_select_flag_limits_rules
@@ -3760,7 +3809,7 @@ class MilkTeaCliTest < Minitest::Test
       status = MilkTea::CLI.start(["format", dir], out:, err:)
 
       assert_equal 1, status
-      assert_match(/--check or --write/, err.string)
+      assert_match(/multiple sources requires --check or --write/, err.string)
     end
   end
 
@@ -4041,6 +4090,7 @@ class MilkTeaCliTest < Minitest::Test
       [["run", dummy_path, "--clean"], /unknown build option --clean/],
       [["format", dummy_path, "--bogus"], /unknown format option --bogus/],
       [["format", dummy_path, "--check", "--write"], /format options --check and --write cannot be combined/],
+      [["format", dummy_path, "--max-line-length", "0"], /--max-line-length must be a positive integer/],
     ].each do |argv, pattern|
       out = StringIO.new
       err = StringIO.new
@@ -4069,10 +4119,10 @@ class MilkTeaCliTest < Minitest::Test
     dummy_path = File.join(Dir.tmpdir, "virtual-cli-source.mt")
 
     {
-      ["parse", dummy_path, "extra.mt"] => /unexpected argument\(s\) for parse: extra\.mt/,
-      ["check", dummy_path, "extra.mt"] => /unexpected argument\(s\) for check: extra\.mt/,
-      ["lower", dummy_path, "extra.mt"] => /unexpected argument\(s\) for lower: extra\.mt/,
-      ["emit-c", dummy_path, "extra.mt"] => /unexpected argument\(s\) for emit-c: extra\.mt/,
+      ["parse", dummy_path, "--bogus"] => /unexpected argument\(s\) for parse: #{Regexp.escape(dummy_path)} --bogus/,
+      ["check", dummy_path, "--bogus"] => /unexpected argument\(s\) for check: #{Regexp.escape(dummy_path)} --bogus/,
+      ["lower", dummy_path, "--bogus"] => /unexpected argument\(s\) for lower: #{Regexp.escape(dummy_path)} --bogus/,
+      ["emit-c", dummy_path, "--bogus"] => /unexpected argument\(s\) for emit-c: #{Regexp.escape(dummy_path)} --bogus/,
     }.each do |argv, pattern|
       out = StringIO.new
       err = StringIO.new
@@ -4082,6 +4132,33 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 1, status
       assert_equal "", out.string
       assert_match(pattern, err.string)
+    end
+  end
+
+  def test_check_command_supports_multiple_operands_and_directories
+    Dir.mktmpdir("milk-tea-cli-check-multi") do |dir|
+      first_path = File.join(dir, "first.mt")
+      nested_dir = File.join(dir, "nested")
+      second_path = File.join(nested_dir, "second.mt")
+      FileUtils.mkdir_p(nested_dir)
+      File.write(first_path, <<~MT)
+        function main() -> int:
+            return 0
+      MT
+      File.write(second_path, <<~MT)
+        function helper() -> int:
+            return 1
+      MT
+
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["check", first_path, nested_dir], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/checked .*first\.mt as first/, out.string)
+      assert_match(/checked .*second\.mt as second/, out.string)
     end
   end
 
