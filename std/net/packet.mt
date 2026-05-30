@@ -39,7 +39,7 @@ function encode_packet_length(length: ptr_uint) -> array[ubyte, 4]:
         ubyte<-((raw >> 24) & 255),
         ubyte<-((raw >> 16) & 255),
         ubyte<-((raw >> 8) & 255),
-        ubyte<-(raw & 255),
+        ubyte<-(raw & 255)
     )
 
 
@@ -117,7 +117,6 @@ public function wrap(stream: net.TcpStream, max_packet_bytes: ptr_uint) -> Strea
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Stream:

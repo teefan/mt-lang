@@ -771,7 +771,7 @@ extending Terminal:
                 raw_mode = false,
                 alternate_screen = false,
                 cursor_hidden = false,
-                mouse_enabled = false,
+                mouse_enabled = false
             )
 
 

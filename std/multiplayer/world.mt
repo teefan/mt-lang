@@ -49,7 +49,7 @@ extending World:
     ) -> Result[World, Error]:
         if not source_registry.frozen:
             return Result[World, Error].failure(
-                error = protocol.error(ErrorCode.registry_not_frozen, "world creation requires a frozen registry"),
+                error = protocol.error(ErrorCode.registry_not_frozen, "world creation requires a frozen registry")
             )
 
         var result = World(
@@ -59,7 +59,7 @@ extending World:
             registered_states = vec.Vec[registry.StateDescriptor].create(),
             registered_rpcs = vec.Vec[registry.RpcDescriptor].create(),
             entities = vec.Vec[EntityRecord].create(),
-            next_entity_id = 1,
+            next_entity_id = 1
         )
         result.registered_states.append_span(source_registry.states.as_span())
         result.registered_rpcs.append_span(source_registry.rpcs.as_span())
@@ -102,7 +102,7 @@ extending World:
             tick = tick,
             entity_count = this.entities.len(),
             payload_bytes = payload_bytes,
-            payload_hash = payload_hash,
+            payload_hash = payload_hash
         )
 
 
@@ -135,7 +135,7 @@ extending World:
                     let record = read(entity)
                     if record.descriptor.encode_full_binding != registry.expected_state_encode_full_binding(record.descriptor):
                         return Result[bytes.Bytes, Error].failure(
-                            error = protocol.error(ErrorCode.invalid_argument, "state descriptor encode_full binding mismatch"),
+                            error = protocol.error(ErrorCode.invalid_argument, "state descriptor encode_full binding mismatch")
                         )
 
                     output.append_array(wire.encode_u32_be(uint<-record.entity))
@@ -144,7 +144,7 @@ extending World:
                     if record.state_storage != null and record.state_size > 0:
                         let state_bytes = span[ubyte](
                             data = ptr[ubyte]<-record.state_storage,
-                            len = record.state_size,
+                            len = record.state_size
                         )
                         output.append_span(state_bytes)
             index += 1
@@ -155,7 +155,7 @@ extending World:
     public mutable function apply_snapshot_payload(payload: span[ubyte]) -> Result[ptr_uint, Error]:
         if payload.len < 4:
             return Result[ptr_uint, Error].failure(
-                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload is too small"),
+                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload is too small")
             )
 
         var applied: ptr_uint = 0
@@ -167,7 +167,7 @@ extending World:
         while index < entity_count:
             if payload.len - offset < 16:
                 return Result[ptr_uint, Error].failure(
-                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry header is truncated"),
+                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry header is truncated")
                 )
 
             let entity = protocol.EntityId<-wire.decode_u32_be(payload, offset)
@@ -179,7 +179,7 @@ extending World:
 
             if payload.len - offset < state_size:
                 return Result[ptr_uint, Error].failure(
-                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry body is truncated"),
+                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry body is truncated")
                 )
 
             let record = find_entity_record(this.entities.as_span(), entity)
@@ -189,18 +189,18 @@ extending World:
                     if current.descriptor.schema_hash == schema_hash and current.state_size == state_size and current.state_storage != null:
                         if current.descriptor.decode_full_binding != registry.expected_state_decode_full_binding(current.descriptor):
                             return Result[ptr_uint, Error].failure(
-                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor decode_full binding mismatch"),
+                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor decode_full binding mismatch")
                             )
 
                         if current.descriptor.apply_delta_binding != registry.expected_state_apply_delta_binding(current.descriptor):
                             return Result[ptr_uint, Error].failure(
-                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor apply_delta binding mismatch"),
+                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor apply_delta binding mismatch")
                             )
 
                         copy_state_bytes(
                             ptr[ubyte]<-current.state_storage,
                             payload.data + offset,
-                            state_size,
+                            state_size
                         )
                         applied += 1
 
@@ -209,7 +209,7 @@ extending World:
 
         if offset != payload.len:
             return Result[ptr_uint, Error].failure(
-                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload has trailing bytes"),
+                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload has trailing bytes")
             )
 
         return Result[ptr_uint, Error].success(value = applied)
@@ -240,27 +240,27 @@ extending World:
     ) -> Result[EntityId, Error]:
         if not has_registered_state_descriptor(this.registered_states.as_span(), descriptor):
             return Result[EntityId, Error].failure(
-                error = protocol.error(ErrorCode.not_registered, "state descriptor is not registered"),
+                error = protocol.error(ErrorCode.not_registered, "state descriptor is not registered")
             )
 
         match owner:
             Option.some:
                 if descriptor.authority == protocol.Authority.server:
                     return Result[EntityId, Error].failure(
-                        error = protocol.error(ErrorCode.unsupported, "server-authoritative state cannot use an owner"),
+                        error = protocol.error(ErrorCode.unsupported, "server-authoritative state cannot use an owner")
                     )
             Option.none:
                 pass
 
         if this.entities.len() >= this.config.max_entities:
             return Result[EntityId, Error].failure(
-                error = protocol.error(ErrorCode.invalid_argument, "world has reached max_entities capacity"),
+                error = protocol.error(ErrorCode.invalid_argument, "world has reached max_entities capacity")
             )
 
         let entity = this.next_entity_id
         if entity == 0:
             return Result[EntityId, Error].failure(
-                error = protocol.error(ErrorCode.unsupported, "entity id space is exhausted"),
+                error = protocol.error(ErrorCode.unsupported, "entity id space is exhausted")
             )
 
         let size = ptr_uint<-size_of(T)
@@ -274,7 +274,7 @@ extending World:
             descriptor = descriptor,
             owner = owner,
             state_size = size,
-            state_storage = unsafe: ptr[void]<-state_storage,
+            state_storage = unsafe: ptr[void]<-state_storage
         ))
         return Result[EntityId, Error].success(value = entity)
 
@@ -301,7 +301,7 @@ extending World:
             let current = read(record)
             if current.descriptor.authority != protocol.Authority.owner:
                 return Result[bool, Error].failure(
-                    error = protocol.error(ErrorCode.unsupported, "ownership transfer requires owner authority"),
+                    error = protocol.error(ErrorCode.unsupported, "ownership transfer requires owner authority")
                 )
 
             if same_owner(current.owner, owner):

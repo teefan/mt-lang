@@ -29,7 +29,7 @@ public function all() -> Policy:
         filter = allow_everything,
         connection_cell = zero_connection_cell,
         entity_cell = zero_entity_cell,
-        cell_radius = 0,
+        cell_radius = 0
     )
 
 
@@ -39,7 +39,7 @@ public function owner() -> Policy:
         filter = allow_everything,
         connection_cell = zero_connection_cell,
         entity_cell = zero_entity_cell,
-        cell_radius = 0,
+        cell_radius = 0
     )
 
 
@@ -49,7 +49,7 @@ public function callback(filter: fn(connection: protocol.ConnectionId, entity: p
         filter = filter,
         connection_cell = zero_connection_cell,
         entity_cell = zero_entity_cell,
-        cell_radius = 0,
+        cell_radius = 0
     )
 
 
@@ -63,7 +63,7 @@ public function grid(
         filter = allow_everything,
         connection_cell = connection_cell,
         entity_cell = entity_cell,
-        cell_radius = cell_radius,
+        cell_radius = cell_radius
     )
 
 
@@ -77,7 +77,7 @@ public function owner_or_grid(
         filter = allow_everything,
         connection_cell = connection_cell,
         entity_cell = entity_cell,
-        cell_radius = cell_radius,
+        cell_radius = cell_radius
     )
 
 
@@ -156,5 +156,5 @@ function within_cell_radius(
         connection_cell.y,
         entity_cell.x,
         entity_cell.y,
-        policy.cell_radius,
+        policy.cell_radius
     )

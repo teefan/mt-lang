@@ -76,7 +76,7 @@ function create_option_match(spec: OptionSpec) -> OptionMatch:
         name = string.String.from_str(spec.long_name),
         present = false,
         value = value,
-        has_value = has_value,
+        has_value = has_value
     )
 
 
@@ -86,7 +86,7 @@ function create_match() -> Match:
         has_command = false,
         options = vec.Vec[OptionMatch].create(),
         positionals = vec.Vec[string.String].create(),
-        show_help = false,
+        show_help = false
     )
 
 
@@ -290,17 +290,17 @@ function set_option_value(result: ptr[Match], spec: OptionSpec, value: str) -> R
 
 
 function require_value_arg(option_name: str) -> Error:
-    var message = fmt.format(f"missing value for #{option_name}")
+    let message = fmt.format(f"missing value for #{option_name}")
     return Error(message = message)
 
 
 function unknown_option_error(option_name: str) -> Error:
-    var message = fmt.format(f"unknown option #{option_name}")
+    let message = fmt.format(f"unknown option #{option_name}")
     return Error(message = message)
 
 
 function unknown_command_error(command_name: str) -> Error:
-    var message = fmt.format(f"unknown command #{command_name}")
+    let message = fmt.format(f"unknown command #{command_name}")
     return Error(message = message)
 
 
@@ -386,7 +386,7 @@ public function flag_option(long_name: str, short_name: Option[str], help: str) 
         help = help,
         value_name = Option[str].none,
         default_value = Option[str].none,
-        required = false,
+        required = false
     )
 
 
@@ -398,7 +398,7 @@ public function value_option(long_name: str, short_name: Option[str], value_name
         help = help,
         value_name = Option[str].some(value= value_name),
         default_value = default_value,
-        required = required,
+        required = required
     )
 
 
@@ -417,7 +417,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
         Result.failure as append_error_payload:
             result.release()
             return Result[Match, Error].failure(error= append_error_payload.error)
-        Result.success as _:
+        Result.success:
             pass
 
     var command_options: span[OptionSpec] = zero[span[OptionSpec]]
@@ -461,7 +461,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                     Option.none:
                         if index + 1 >= args.len:
                             result.release()
-                            var missing = fmt.format(f"--#{spec.long_name}")
+                            let missing = fmt.format(f"--#{spec.long_name}")
                             return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
                         value = unsafe: read(args.data + index + 1)
                         consumed_next = true
@@ -470,7 +470,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                     Result.failure as value_error_payload:
                         result.release()
                         return Result[Match, Error].failure(error= value_error_payload.error)
-                    Result.success as _:
+                    Result.success:
                         pass
 
                 index += 1
@@ -479,7 +479,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                 continue
 
             match inline_value:
-                Option.some as _:
+                Option.some:
                     result.release()
                     return Result[Match, Error].failure(error= create_error("flag options do not accept inline values"))
                 Option.none:
@@ -489,7 +489,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                 Result.failure as flag_error_payload:
                     result.release()
                     return Result[Match, Error].failure(error= flag_error_payload.error)
-                Result.success as _:
+                Result.success:
                     pass
 
             index += 1
@@ -516,7 +516,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                     else:
                         if index + 1 >= args.len:
                             result.release()
-                            var missing = fmt.format(f"-#{short_name}")
+                            let missing = fmt.format(f"-#{short_name}")
                             return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
                         value = unsafe: read(args.data + index + 1)
                         consumed_next = true
@@ -525,7 +525,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                         Result.failure as value_error_payload:
                             result.release()
                             return Result[Match, Error].failure(error= value_error_payload.error)
-                        Result.success as _:
+                        Result.success:
                             pass
 
                     short_index = arg.len
@@ -534,7 +534,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                         Result.failure as flag_error_payload:
                             result.release()
                             return Result[Match, Error].failure(error= flag_error_payload.error)
-                        Result.success as _:
+                        Result.success:
                             pass
                     short_index += 1
 
@@ -544,8 +544,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
             continue
 
         if not result.has_command and app.commands.len != 0:
-            let command_ptr = find_command(app.commands, arg)
-            if command_ptr == null:
+            let command_ptr = find_command(app.commands, arg) else:
                 result.release()
                 return Result[Match, Error].failure(error= unknown_command_error(arg))
 
@@ -557,7 +556,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
                 Result.failure as append_error_payload:
                     result.release()
                     return Result[Match, Error].failure(error= append_error_payload.error)
-                Result.success as _:
+                Result.success:
                     pass
             index += 1
             continue
@@ -569,7 +568,7 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
         Result.failure as validate_payload:
             result.release()
             return Result[Match, Error].failure(error= validate_payload.error)
-        Result.success as _:
+        Result.success:
             pass
 
     return Result[Match, Error].success(value= result)
@@ -664,8 +663,7 @@ extending Match:
                 break
 
             unsafe:
-                var owned = read(ptr[OptionMatch]<-value)
-                owned.release()
+                read(ptr[OptionMatch]<-value).release()
 
             option_index += 1
 
@@ -678,8 +676,7 @@ extending Match:
                 break
 
             unsafe:
-                var owned = read(ptr[string.String]<-value)
-                owned.release()
+                read(ptr[string.String]<-value).release()
 
             positional_index += 1
 

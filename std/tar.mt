@@ -197,7 +197,7 @@ function split_ustar_path(path: str) -> Result[UstarPath, Error]:
                     prefix_start = 0,
                     prefix_len = prefix_len,
                     name_start = name_start,
-                    name_len = name_len,
+                    name_len = name_len
                 ))
 
     return Result[UstarPath, Error].failure(error = error_message("tar entry path cannot be represented in ustar format"))
@@ -551,7 +551,7 @@ function parse_entry(input: span[ubyte], offset: ptr_uint) -> Result[ParsedEntry
                                         kind = kind,
                                         mode = int<-mode_payload.value,
                                         size = size_payload.value,
-                                        data_offset = data_offset,
+                                        data_offset = data_offset
                                     ))
 
 

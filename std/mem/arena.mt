@@ -33,7 +33,7 @@ public function create_aligned(capacity_bytes: ptr_uint, alignment: ptr_uint) ->
             memory = ptr[ubyte]<-memory,
             capacity = capacity_bytes,
             alignment = normalized_alignment,
-            offset = 0,
+            offset = 0
         )
 
 

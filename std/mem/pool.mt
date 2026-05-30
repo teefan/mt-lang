@@ -36,7 +36,7 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
             slot_size = slot_size_bytes,
             slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
             slot_count = 0,
-            used_count = 0,
+            used_count = 0
         )
 
     if slot_size_bytes == 0:
@@ -59,7 +59,7 @@ public function create_aligned(slot_size_bytes: ptr_uint, slot_count: ptr_uint, 
             slot_size = slot_size_bytes,
             slot_alignment = slot_alignment(slot_size_bytes, normalized_alignment),
             slot_count = slot_count,
-            used_count = 0,
+            used_count = 0
         )
 
 
@@ -92,7 +92,7 @@ extending Pool:
         while index < this.slot_count:
             unsafe:
                 let state_ptr = ptr[bool]<-occupancy + index
-                if read(state_ptr) == false:
+                if not (read(state_ptr)):
                     read(state_ptr) = true
                     this.used_count = this.used_count + 1
                     return ptr[ubyte]<-memory + (index * this.slot_size)
@@ -135,7 +135,7 @@ extending Pool:
                 let candidate = ptr[ubyte]<-memory + (index * this.slot_size)
                 if candidate == ptr[ubyte]<-slot:
                     let state_ptr = ptr[bool]<-occupancy + index
-                    if read(state_ptr) == false:
+                    if not (read(state_ptr)):
                         return false
 
                     read(state_ptr) = false

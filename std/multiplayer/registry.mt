@@ -80,7 +80,7 @@ extending Registry:
             states = vec.Vec[StateDescriptor].create(),
             rpcs = vec.Vec[RpcDescriptor].create(),
             frozen = false,
-            protocol_hash_value = 0,
+            protocol_hash_value = 0
         )
 
 

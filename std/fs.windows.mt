@@ -243,7 +243,7 @@ public function metadata(path: str) -> Result[Metadata, Error]:
         mode = raw_metadata.mode,
         size = raw_metadata.size,
         modified_seconds = raw_metadata.modified_seconds,
-        modified_nanoseconds = raw_metadata.modified_nanoseconds,
+        modified_nanoseconds = raw_metadata.modified_nanoseconds
     ))
 
 

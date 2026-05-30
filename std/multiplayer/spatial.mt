@@ -26,7 +26,7 @@ extending GridIndex:
     public static function create() -> GridIndex:
         return GridIndex(
             connection_cells = vec.Vec[ConnectionCellEntry].create(),
-            entity_cells = vec.Vec[EntityCellEntry].create(),
+            entity_cells = vec.Vec[EntityCellEntry].create()
         )
 
 
@@ -106,7 +106,7 @@ public function world_to_cell(position_x: int, position_y: int, cell_size: uint)
     let size = int<-cell_size
     return GridCell(
         x = floor_div(position_x, size),
-        y = floor_div(position_y, size),
+        y = floor_div(position_y, size)
     )
 
 

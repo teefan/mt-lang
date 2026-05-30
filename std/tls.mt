@@ -129,7 +129,7 @@ function poll_task(state: ptr[PollState]) -> Task[Result[int, Error]]:
             ready = poll_ready,
             set_waiter = poll_set_waiter,
             release = poll_release,
-            take_result = poll_take_result,
+            take_result = poll_take_result
         )
 
 
