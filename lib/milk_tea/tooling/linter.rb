@@ -178,8 +178,11 @@ module MilkTea
       end
       imported_modules = context&.fetch(:imported_modules, nil)
       imported_modules ||= imported_modules_from_facts(ast, sema_facts)
-      trivia = profile_phase(profile, "lex_trivia") { Lexer.lex_with_trivia(source, path:).trivia }
-      suppressions = profile_phase(profile, "parse_suppressions") { parse_suppressions(trivia) }
+      suppressions = {}
+      if source.match?(/#\s*lint:\s*ignore(?:\(|\b)/)
+        trivia = profile_phase(profile, "lex_trivia") { Lexer.lex_with_trivia(source, path:).trivia }
+        suppressions = profile_phase(profile, "parse_suppressions") { parse_suppressions(trivia) }
+      end
       warnings = new(
         path:,
         sema_facts:,
@@ -357,7 +360,11 @@ module MilkTea
       )
       return current_source if preflight_warnings.empty?
 
-      enabled_rules.each do |rule_code|
+      preflight_codes = preflight_warnings.map(&:code).to_set
+      active_rules = enabled_rules.select { |rule_code| preflight_codes.include?(rule_code) }
+      return current_source if active_rules.empty?
+
+      active_rules.each do |rule_code|
         updated_source = fix_source_single_pass(
           current_source,
           path:,
@@ -794,6 +801,11 @@ module MilkTea
       @token_index_by_location = @tokens.each_with_index.each_with_object({}) do |(token, index), locations|
         locations[[token.line, token.column]] ||= index
       end
+      @tokens_by_line = @tokens.each_with_object(Hash.new { |hash, line| hash[line] = [] }) do |token, by_line|
+        next if %i[newline indent dedent eof].include?(token.type)
+
+        by_line[token.line] << token
+      end
       @source_ast = source_ast
       @profile = profile
       @warnings = []
@@ -835,8 +847,16 @@ module MilkTea
         next if line.empty?
         next if external_or_foreign_function_header_line?(line)
         next unless line.length > @max_line_length
+        next unless Formatter.wrappable_long_line_candidate_text?(line)
 
-        fix = Formatter.build_long_line_wrap_fix(@source, index, max_line_length: @max_line_length, path: @path)
+        fix = Formatter.build_long_line_wrap_fix(
+          @source,
+          index,
+          max_line_length: @max_line_length,
+          path: @path,
+          tokens: @tokens,
+          tokens_by_line: @tokens_by_line,
+        )
         message = "line exceeds max length of #{@max_line_length} columns (#{line.length})"
         message << "; wrap the expression" if fix
         @warnings << Warning.new(

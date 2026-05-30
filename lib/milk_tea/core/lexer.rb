@@ -298,14 +298,13 @@ module MilkTea
         start_offset: line_offset,
         end_offset: line_offset + text.bytesize,
       )
-      @trivia << trivia
       push_pending_leading_trivia(trivia)
     end
 
     def push_pending_leading_trivia(trivia)
       return unless with_trivia?
 
-      @trivia << trivia unless @trivia.include?(trivia)
+      @trivia << trivia
       @pending_leading_trivia << trivia
     end
 
