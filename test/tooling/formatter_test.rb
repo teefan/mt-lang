@@ -438,6 +438,45 @@ class MilkTeaFormatterTest < Minitest::Test
     refute_includes formatted, "    return\n\nextending Ball:"
   end
 
+  def test_tidy_mode_keeps_two_blank_lines_before_multiline_function_definition
+    source = <<~MT
+      const VERSION: int = 1
+
+      public function broadcast_snapshot(
+          channel: uint,
+          payload: span[ubyte]
+      ) -> Result[bool, Error]:
+          return Result[bool, Error].success(value = true)
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "const VERSION: int = 1\n\n\npublic function broadcast_snapshot("
+  end
+
+  def test_tidy_mode_keeps_multiline_bodyless_function_declarations_compact
+    source = <<~MT
+      interface RpcTable:
+
+
+          function dispatch(
+              context: RpcContext,
+              payload: span[ubyte]
+          ) -> Result[bool, Error]
+
+
+          function estimate(
+              payload: span[ubyte]
+          ) -> ptr_uint
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "interface RpcTable:\n    function dispatch("
+    assert_includes formatted, "    ) -> Result[bool, Error]\n    function estimate("
+    refute_includes formatted, "    ) -> Result[bool, Error]\n\n    function estimate("
+  end
+
   def test_tidy_mode_preserves_utf8_string_literals
     source = <<~MT
       const text: cstr = c"いろはにほへと　ちりぬるを\\nわかよたれそ"
