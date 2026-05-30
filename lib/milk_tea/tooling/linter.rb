@@ -20,14 +20,12 @@ module MilkTea
       platform-api-drift
       prefer-let
       prefer-let-else
-      redundant-cast
       redundant-else
       redundant-ignored-match-binding
       redundant-null-check
       redundant-read-cast
       redundant-read-release-temp
       redundant-return
-      redundant-unsafe
       reserved-primitive-name
       self-assignment
       self-comparison
@@ -50,25 +48,20 @@ module MilkTea
       prefer-let-else
       directional-ffi-arg
       redundant-else
-      redundant-unsafe
       redundant-return
       unused-import
       dead-assignment
-      redundant-cast
       reserved-primitive-name
       trailing-list-comma
     ].freeze
     LINT_TIERS = %i[fast full].freeze
-    EXPENSIVE_LINT_RULE_CODES = %w[redundant-unsafe redundant-cast].to_set.freeze
     STATIC_QUICK_FIX_TITLES = {
       "line-too-long" => "Wrap long line",
       "prefer-let" => "Replace 'var' with 'let'",
       "redundant-ignored-match-binding" => "Remove redundant as _",
       "redundant-else" => "Remove redundant else",
-      "redundant-unsafe" => "Remove redundant unsafe",
       "redundant-return" => "Remove redundant return",
       "redundant-read-cast" => "Remove redundant read cast",
-      "redundant-cast" => "Remove redundant cast",
       "redundant-read-release-temp" => "Inline read(...).release()",
       "prefer-let-else" => "Rewrite as let-else",
       "directional-ffi-arg" => "Pass lvalue directly",
@@ -76,22 +69,6 @@ module MilkTea
     }.freeze
     EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128
     FIX_ALL_TITLE = "Apply all auto-fixes".freeze
-    INTEGER_SURFACE_INFO = {
-      "byte" => { width: 8, signed: true },
-      "ubyte" => { width: 8, signed: false },
-      "short" => { width: 16, signed: true },
-      "ushort" => { width: 16, signed: false },
-      "int" => { width: 32, signed: true },
-      "uint" => { width: 32, signed: false },
-      "long" => { width: 64, signed: true },
-      "ulong" => { width: 64, signed: false },
-      "ptr_int" => { width: 64, signed: true },
-      "ptr_uint" => { width: 64, signed: false },
-    }.freeze
-    FLOAT_SURFACE_WIDTHS = {
-      "float" => 32,
-      "double" => 64,
-    }.freeze
 
     # severity: :error | :warning | :hint
     Warning = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do
@@ -108,10 +85,6 @@ module MilkTea
       :name, :line, :column, :used, :binding_kind, :allow_prefer_let, :mutated,
       :replacement_name, :replacement_base_name, :fix_index,
       keyword_init: true
-    )
-    PrefixCastSite = Data.define(
-      :line, :column, :length, :target_text, :replacement_text,
-      :start_offset, :end_offset, :pointer_like, :literal_source
     )
     ReservedPrimitiveNameSite = Data.define(:line, :column, :length)
     ReservedPrimitiveNameFix = Data.define(:kind, :original_name, :replacement_name, :sites)
@@ -301,8 +274,8 @@ module MilkTea
     # Apply auto-fixable rules to source text.
     # Handles: prefer-let, redundant-ignored-match-binding,
     # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
-    # directional-ffi-arg, redundant-else, redundant-unsafe,
-    # redundant-return, redundant-cast, reserved-primitive-name,
+    # directional-ffi-arg, redundant-else,
+    # redundant-return, reserved-primitive-name,
     # trailing-list-comma.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5)
@@ -479,44 +452,6 @@ module MilkTea
         lines.delete_at(else_idx)
       end
 
-      # redundant-unsafe: delete the `unsafe:` line and dedent the block body,
-      # or strip an inline `unsafe:` expression prefix.
-      redundant_unsafe_fixes = warnings.select { |w| w.code == "redundant-unsafe" && w.line }
-      redundant_unsafe_fixes.sort_by(&:line).reverse_each do |w|
-        unsafe_idx = w.line - 1
-        next unless lines[unsafe_idx]
-
-        unless lines[unsafe_idx].match?(/\A\s*unsafe:\s*\z/)
-          next unless w.column
-
-          lines[unsafe_idx] = remove_inline_unsafe_prefix(lines[unsafe_idx], column: w.column)
-          next
-        end
-
-        unsafe_indent = lines[unsafe_idx].match(/\A(\s*)/)[1]
-        body_indent = unsafe_indent + "    "
-        first_body_idx = unsafe_idx + 1
-        next if first_body_idx >= lines.length
-
-        body_end_idx = first_body_idx - 1
-        (first_body_idx...lines.length).each do |i|
-          line = lines[i]
-          if line.chomp.empty? || line.start_with?(body_indent)
-            body_end_idx = i
-          else
-            break
-          end
-        end
-
-        next if body_end_idx < first_body_idx
-
-        (first_body_idx..body_end_idx).each do |i|
-          lines[i] = lines[i].sub(/\A    /, "") if lines[i]
-        end
-
-        lines.delete_at(unsafe_idx)
-      end
-
       # redundant-return: delete a final bare `return` in a void function.
       redundant_return_fixes = warnings.select { |w| w.code == "redundant-return" && w.line }
       redundant_return_fixes.sort_by(&:line).reverse_each do |w|
@@ -561,28 +496,6 @@ module MilkTea
       end
 
       fixed_source = lines.join
-      if rule_enabled.call("redundant-cast")
-        redundant_cast_warnings = lint_source(fixed_source, path:, select: Set["redundant-cast"]).select do |w|
-          w.code == "redundant-cast" && w.line && w.column && w.length
-        end
-        unless redundant_cast_warnings.empty?
-          fixed_lines = fixed_source.lines
-          redundant_cast_warnings.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-            idx = w.line - 1
-            next unless fixed_lines[idx]
-
-            start_char = w.column - 1
-            cast_text = fixed_lines[idx][start_char, w.length]
-            replacement = extract_prefix_cast_source_text(cast_text)
-            next unless replacement
-
-            fixed_lines[idx] = fixed_lines[idx].dup
-            fixed_lines[idx][start_char, w.length] = replacement
-          end
-
-          fixed_source = fixed_lines.join
-        end
-      end
 
       if rule_enabled.call("reserved-primitive-name")
         reserved_warnings = lint_source(fixed_source, path:, select: Set["reserved-primitive-name"]).select do |w|
@@ -625,17 +538,6 @@ module MilkTea
       modified_counts.any? do |signature, count|
         count > baseline_counts.fetch(signature, 0)
       end
-    end
-
-    def self.extract_prefix_cast_source_text(text)
-      return nil unless text&.include?("<-")
-
-      separator = text.index("<-")
-      return nil unless separator
-
-      replacement = text[(separator + 2)..]
-      replacement = replacement.sub(/\A\s+/, "")
-      replacement unless replacement.nil? || replacement.empty?
     end
 
     def self.apply_reserved_primitive_name_fixes(source, fixes)
@@ -778,17 +680,6 @@ module MilkTea
       nil
     end
 
-    def self.remove_inline_unsafe_prefix(line, column:)
-      start_idx = column - 1
-      return line unless start_idx >= 0 && start_idx < line.length
-
-      prefix = line[0...start_idx]
-      suffix = line[start_idx..]
-      return line unless suffix&.start_with?("unsafe:")
-
-      prefix + suffix.sub(/\Aunsafe:\s*/, "")
-    end
-
     def self.redundant_ignored_match_binding_span(line, column:)
       anchor_idx = column - 1
       return nil unless anchor_idx >= 0 && anchor_idx < line.length
@@ -811,166 +702,6 @@ module MilkTea
       PackageGraph.load(path)
     rescue PackageManifestError, PackageLockError
       nil
-    end
-
-    def self.prefix_cast_sites(source, facts: nil)
-      byte_offset = 0
-      sites = []
-
-      source.each_line.with_index(1) do |raw_line, line_number|
-        line = raw_line.delete_suffix("\n")
-        line_prefix_cast_sites(line, line_number, facts:).each do |site|
-          sites << PrefixCastSite.new(
-            line: site.line,
-            column: site.column,
-            length: site.length,
-            target_text: site.target_text,
-            replacement_text: site.replacement_text,
-            start_offset: byte_offset + site.start_offset,
-            end_offset: byte_offset + site.end_offset,
-            pointer_like: site.pointer_like,
-            literal_source: site.literal_source,
-          )
-        end
-        byte_offset += raw_line.bytesize
-      end
-
-      sites
-    end
-
-    def self.line_prefix_cast_sites(line, line_number, facts: nil)
-      return [] unless line.include?("<-")
-
-      indent_width = line[/\A\s*/].length
-      lexed_line = line[indent_width..] || ""
-      tokens = Lexer.lex(lexed_line)
-      less_indices = tokens.each_index.select do |index|
-        token = tokens[index]
-        minus = tokens[index + 1]
-        token.type == :less && minus&.type == :minus && contiguous_tokens?(token, minus)
-      end
-      return [] if less_indices.empty?
-
-      seen = Set.new
-      less_indices.each_with_object([]) do |less_index, sites|
-        matching_site = nil
-        tokens[0...less_index].each_index.select { |index| tokens[index].type == :identifier }.each do |start_index|
-          site = parse_prefix_cast_site(lexed_line, line_number, tokens[start_index].start_offset, facts:)
-          next unless site
-          next unless site.start_offset <= tokens[less_index].start_offset && tokens[less_index].start_offset < site.end_offset
-
-          matching_site = PrefixCastSite.new(
-            line: site.line,
-            column: site.column + indent_width,
-            length: site.length,
-            target_text: site.target_text,
-            replacement_text: site.replacement_text,
-            start_offset: site.start_offset + indent_width,
-            end_offset: site.end_offset + indent_width,
-            pointer_like: site.pointer_like,
-            literal_source: site.literal_source,
-          )
-          break
-        end
-        next unless matching_site
-
-        key = [matching_site.start_offset, matching_site.end_offset]
-        next if seen.include?(key)
-
-        seen << key
-        sites << matching_site
-      end
-    rescue LexError
-      # Best-effort single-line scanning cannot lex heredoc opener lines such as
-      # `<<-TAG`, which also contain `<-`. Skip those lines instead of aborting
-      # redundant-cast analysis for the whole file.
-      []
-    end
-
-    def self.parse_prefix_cast_site(line, line_number, start_offset, facts: nil)
-      snippet = line.byteslice(start_offset, line.bytesize - start_offset)
-      return nil unless snippet&.include?("<-")
-
-      snippet_for_parse = snippet
-      tokens = nil
-      loop do
-        tokens = Lexer.lex(snippet_for_parse)
-        break
-      rescue LexError => e
-        match = e.message.match(/unexpected closing delimiter at \d+:(\d+)/)
-        raise e unless match
-
-        closer_index = match[1].to_i - 1
-        raise e if closer_index <= 0
-
-        snippet_for_parse = snippet_for_parse.byteslice(0, closer_index).rstrip
-        raise e if snippet_for_parse.nil? || snippet_for_parse.empty?
-      end
-
-      parser = Parser.new(tokens)
-      seed_prefix_cast_parser!(parser, facts)
-      expression = parser.send(:parse_unary)
-      return nil unless prefix_cast_expression?(expression)
-
-      current = parser.instance_variable_get(:@current)
-      consumed_tokens = tokens[0...current].reject(&:eof?)
-      return nil if consumed_tokens.empty?
-
-      less_index = consumed_tokens.each_index.find do |index|
-        token = consumed_tokens[index]
-        minus = consumed_tokens[index + 1]
-        token.type == :less && minus&.type == :minus && contiguous_tokens?(token, minus)
-      end
-      return nil unless less_index
-
-      source_token = consumed_tokens[(less_index + 2)..]&.first
-      return nil unless source_token
-
-      target_type = expression.callee.arguments.first.value
-      end_offset = consumed_tokens.last.end_offset
-      target_text = snippet_for_parse.byteslice(0, consumed_tokens[less_index].start_offset).rstrip
-      replacement_text = snippet_for_parse.byteslice(source_token.start_offset, end_offset - source_token.start_offset)
-      return nil if target_text.empty? || replacement_text.nil? || replacement_text.empty?
-
-      PrefixCastSite.new(
-        line: line_number,
-        column: start_offset + 1,
-        length: end_offset,
-        target_text: target_text,
-        replacement_text: replacement_text,
-        start_offset: start_offset,
-        end_offset: start_offset + end_offset,
-        pointer_like: target_type.is_a?(AST::TypeRef) && !target_type.nullable && %w[ptr const_ptr ref].include?(target_type.name.to_s),
-        literal_source: expression.arguments.first.value.is_a?(AST::IntegerLiteral) || expression.arguments.first.value.is_a?(AST::FloatLiteral),
-      )
-    rescue ParseError
-      nil
-    end
-
-    def self.seed_prefix_cast_parser!(parser, facts)
-      return unless facts
-
-      known_type_names = parser.instance_variable_get(:@known_type_names)
-      facts.types.each_key { |name| known_type_names[name] = true }
-      facts.interfaces.each_key { |name| known_type_names[name] = true }
-
-      known_import_aliases = parser.instance_variable_get(:@known_import_aliases)
-      facts.imports.each_key { |name| known_import_aliases[name] = true }
-    end
-
-    def self.prefix_cast_expression?(expression)
-      return false unless expression.is_a?(AST::Call)
-
-      callee = expression.callee
-      return false unless callee.is_a?(AST::Specialization)
-      return false unless callee.callee.is_a?(AST::Identifier) && callee.callee.name == "cast"
-      return false unless callee.arguments.length == 1 && expression.arguments.length == 1
-
-      callee.arguments.first.value.is_a?(AST::TypeRef)
-    end
-
-    def self.contiguous_tokens?(left, right)
-      left.line == right.line && right.column == (left.column + left.lexeme.length)
     end
 
     # Parse `# lint: ignore` / `# lint: ignore(rule1, rule2)` comments.
@@ -1032,10 +763,6 @@ module MilkTea
       @declared_directional_functions = {}
       @generic_function_depth = 0
       @current_function_stack = []
-      @prefix_cast_sites = nil
-      @redundant_cast_context_site_keys = Set.new
-      @contextual_redundant_cast_details = {}
-      @recheck_context_cache = {}
       @reserved_primitive_name_fixes = []
       @lint_tier = self.class.normalize_lint_tier(lint_tier)
       @max_line_length = max_line_length&.to_i&.positive? ? max_line_length.to_i : Formatter::DEFAULT_MAX_LINE_LENGTH
@@ -1051,7 +778,6 @@ module MilkTea
       profile_phase("rule.event_capacity") { emit_event_capacity_warnings(ast) }
       profile_phase("rule.trailing_list_comma") { emit_trailing_list_comma_warnings(ast) }
       profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
-      profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings } if expensive_lint_rules_enabled?
       @warnings
     end
 
@@ -2064,7 +1790,6 @@ module MilkTea
         profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
         profile_phase("rule.redundant_read_cast") { emit_redundant_read_cast_warnings(function.body) }
         profile_phase("rule.redundant_read_release_temp") { emit_redundant_read_release_temp_warnings(function.body) }
-        profile_phase("rule.redundant_unsafe") { emit_redundant_unsafe_warnings(function.body) } if expensive_lint_rules_enabled?
         profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
         profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
       end
@@ -2266,13 +1991,6 @@ module MilkTea
     def visit_statement(statement)
       case statement
       when AST::LocalDecl
-        if statement.type && statement.value
-          remember_contextual_redundant_cast_site(
-            statement.value,
-            expected_type_text: render_type_surface(statement.type),
-            preferred_lines: [statement.line],
-          )
-        end
         visit_expression(statement.value) if statement.value
         declare_local(
           statement.name,
@@ -2316,13 +2034,6 @@ module MilkTea
         visit_expression(statement.condition)
         with_scope { visit_statement_list(statement.body) }
       when AST::ReturnStmt
-        if statement.value && current_function&.return_type
-          remember_contextual_redundant_cast_site(
-            statement.value,
-            expected_type_text: render_type_surface(current_function.return_type),
-            preferred_lines: [statement.line],
-          )
-        end
         visit_expression(statement.value) if statement.value
       when AST::DeferStmt
         visit_expression(statement.expression) if statement.expression
@@ -2354,7 +2065,6 @@ module MilkTea
         visit_expression(expression.callee)
         expression.arguments.each { |argument| visit_type_argument(argument) }
       when AST::Call
-        remember_contextual_call_argument_cast_sites(expression)
         visit_expression(expression.callee)
         expression.arguments.each do |argument|
           visit_expression(argument.value)
@@ -2410,7 +2120,6 @@ module MilkTea
           emit_prefer_let_else_warnings(expression.body)
           emit_redundant_read_cast_warnings(expression.body)
           emit_redundant_read_release_temp_warnings(expression.body)
-          emit_redundant_unsafe_warnings(expression.body) if expensive_lint_rules_enabled?
           emit_loop_single_iteration_warnings(expression.body)
         end
       when AST::AwaitExpr
@@ -3189,10 +2898,6 @@ module MilkTea
       name == "_" || name.start_with?("_")
     end
 
-    def expensive_lint_rules_enabled?
-      @lint_tier == :full
-    end
-
     # ── self-assignment ────────────────────────────────────────────────────
 
     def check_self_assignment(stmt)
@@ -3578,162 +3283,6 @@ module MilkTea
       { target_type:, source: expression.arguments.first.value }
     end
 
-    # ── redundant-cast ───────────────────────────────────────────────────
-
-    def current_function
-      @current_function_stack.last
-    end
-
-    def remember_contextual_redundant_cast_site(expression, expected_type_text:, preferred_lines:, used_site_keys: nil)
-      return unless expected_type_text
-
-      site = contextual_redundant_cast_site(
-        expression,
-        expected_type_text:,
-        preferred_lines:,
-        used_site_keys: used_site_keys || Set.new,
-      )
-      return unless site
-
-      @redundant_cast_context_site_keys << prefix_cast_site_key(site)
-      @contextual_redundant_cast_details[prefix_cast_site_key(site)] = {
-        source_expression: expression.arguments.first.value,
-        expected_type_text: expected_type_text,
-      }
-    end
-
-    def remember_contextual_call_argument_cast_sites(expression)
-      params = callable_params_for_expression(expression.callee)
-      return if params.nil? || params.empty?
-
-      positional_index = 0
-      used_site_keys = Set.new
-      expression.arguments.each do |argument|
-        parameter = if argument.name
-                      params.find { |param| parameter_name(param) == argument.name }
-                    else
-                      params[positional_index].tap { positional_index += 1 }
-                    end
-        next unless parameter
-
-        expected_type_text = render_parameter_type_surface(parameter)
-        next unless expected_type_text
-
-        remember_contextual_redundant_cast_site(
-          argument.value,
-          expected_type_text:,
-          preferred_lines: [expression_line(argument.value), expression_line(expression)],
-          used_site_keys:,
-        )
-      end
-    end
-
-    def contextual_redundant_cast_site(expression, expected_type_text:, preferred_lines:, used_site_keys:)
-      return unless prefix_cast_expression?(expression)
-
-      target_type = expression.callee.arguments.first.value
-      return unless render_type_surface(target_type) == expected_type_text
-
-      lines = Array(preferred_lines).compact.uniq
-      return if lines.empty?
-
-      prefix_cast_sites.find do |site|
-        next false if used_site_keys.include?(prefix_cast_site_key(site))
-        next false unless site.target_text == expected_type_text
-        next false unless lines.include?(site.line)
-
-        used_site_keys << prefix_cast_site_key(site)
-        true
-      end
-    end
-
-    def callable_params_for_expression(callee)
-      return unless @sema_facts
-
-      case callee
-      when AST::Specialization
-        callable_params_for_expression(callee.callee)
-      when AST::Identifier
-        if (binding = @sema_facts.functions[callee.name])
-          return binding.type.params
-        end
-
-        if (binding = @sema_facts.values[callee.name]) && binding.type.respond_to?(:params)
-          return binding.type.params
-        end
-
-        nil
-      when AST::MemberAccess
-        return nil unless callee.receiver.is_a?(AST::Identifier)
-
-        imported_module = @sema_facts.imports[callee.receiver.name]
-        return nil unless imported_module
-
-        binding = imported_module.functions[callee.member]
-        binding&.type&.params
-      else
-        nil
-      end
-    end
-
-    def render_parameter_type_surface(parameter)
-      return nil unless parameter.respond_to?(:type) && parameter.type
-
-      render_type_surface(parameter.type)
-    end
-
-    def prefix_cast_expression?(expression)
-      self.class.prefix_cast_expression?(expression)
-    end
-
-    def prefix_cast_site_key(site)
-      [site.start_offset, site.end_offset]
-    end
-
-    def contextual_redundant_cast_site?(site)
-      @redundant_cast_context_site_keys.include?(prefix_cast_site_key(site))
-    end
-
-    def emit_redundant_cast_warnings
-      return unless @sema_facts
-      return if @source.empty?
-
-      prefix_cast_sites.each do |site|
-        next if site.pointer_like
-        next unless site.literal_source || contextual_redundant_cast_site?(site)
-        next unless redundant_cast_site?(site)
-
-        @warnings << Warning.new(
-          path: @path,
-          line: site.line,
-          column: site.column,
-          length: site.length,
-          code: "redundant-cast",
-          message: "cast to #{site.target_text} is redundant here; remove the cast",
-          severity: :hint,
-        )
-      end
-    end
-
-    def prefix_cast_sites
-      @prefix_cast_sites ||= profile_phase("rule.redundant_cast.scan_candidates") do
-        self.class.prefix_cast_sites(@source, facts: @sema_facts)
-      end
-    end
-
-    def redundant_cast_site?(site)
-      modified_source = @source.dup
-      modified_source[site.start_offset...site.end_offset] = site.replacement_text
-      context = recheck_context(modified_source, label: "redundant_cast_recheck")
-      return false unless context[:facts]
-
-      modified_counts = error_signature_counts(context[:errors])
-      baseline_counts = current_error_signature_counts
-      return true unless introduces_new_errors?(modified_counts, baseline_counts)
-
-      contextual_redundant_cast_site?(site) && contextual_cast_source_implicitly_compatible?(site)
-    end
-
     def pointer_like_type_ref?(type_ref)
       return false if type_ref.nullable
 
@@ -3978,319 +3527,6 @@ module MilkTea
 
     def lvalue_expression?(expression)
       expression.is_a?(AST::Identifier) || expression.is_a?(AST::MemberAccess) || expression.is_a?(AST::IndexAccess)
-    end
-
-    # ── redundant-unsafe ───────────────────────────────────────────────
-
-    def emit_redundant_unsafe_warnings(stmts)
-      return if stmts.nil? || stmts.empty?
-
-      required_unsafe_lines = @sema_facts&.required_unsafe_lines
-      return unless required_unsafe_lines
-
-      walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
-    end
-
-    def walk_stmts_for_redundant_unsafe(stmts, required_unsafe_lines)
-      stmts.each do |stmt|
-        each_statement_expression(stmt) do |expression|
-          next unless expression.is_a?(AST::UnsafeExpr)
-          next unless redundant_unsafe_expression?(expression)
-
-          @warnings << Warning.new(
-            path: @path,
-            line: expression.line,
-            column: expression.column,
-            length: expression.length || "unsafe".length,
-            code: "redundant-unsafe",
-            message: "unsafe expression does not contain any operation that requires unsafe",
-            severity: :hint,
-          )
-        end
-
-        case stmt
-        when AST::UnsafeStmt
-          if stmt.line && !required_unsafe_lines.include?(stmt.line) && !unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
-            @warnings << Warning.new(
-              path: @path,
-              line: stmt.line,
-              column: stmt.column,
-              length: stmt.length || "unsafe".length,
-              code: "redundant-unsafe",
-              message: "unsafe block does not contain any operation that requires unsafe",
-              severity: :hint
-            )
-          end
-          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
-        when AST::IfStmt
-          stmt.branches.each { |branch| walk_stmts_for_redundant_unsafe(branch.body, required_unsafe_lines) }
-          walk_stmts_for_redundant_unsafe(stmt.else_body, required_unsafe_lines) if stmt.else_body
-        when AST::MatchStmt
-          stmt.arms.each { |arm| walk_stmts_for_redundant_unsafe(arm.body, required_unsafe_lines) }
-        when AST::ForStmt, AST::WhileStmt
-          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines)
-        when AST::DeferStmt
-          walk_stmts_for_redundant_unsafe(stmt.body, required_unsafe_lines) if stmt.body
-        end
-      end
-    end
-
-    def redundant_unsafe_expression?(expression)
-      return false unless expression.line && expression.column
-      return false if expression_contains_builtin_unsafe_syntax?(expression.expression)
-
-      modified_source = source_without_inline_unsafe(expression.line, expression.column)
-      return false unless modified_source
-
-      context = recheck_context(modified_source, label: "redundant_unsafe_recheck")
-      return false unless context[:facts]
-
-      !introduces_new_errors?(error_signature_counts(context[:errors]), current_error_signature_counts)
-    end
-
-    def source_without_inline_unsafe(line, column)
-      lines = @source.lines
-      idx = line - 1
-      return nil unless lines[idx]
-
-      modified_line = self.class.remove_inline_unsafe_prefix(lines[idx], column:)
-      return nil if modified_line == lines[idx]
-
-      modified_lines = lines.dup
-      modified_lines[idx] = modified_line
-      modified_lines.join
-    end
-
-    def current_error_signature_counts
-      @current_error_signature_counts ||= begin
-        context = recheck_context(@source, label: "redundant_unsafe_baseline")
-        error_signature_counts(context[:errors])
-      end
-    end
-
-    # Recheck helpers are only used for small expression-local rewrites, so the
-    # import graph and inferred module identity are unchanged. Reusing the
-    # current file's imported module bindings avoids routing every candidate back
-    # through ModuleLoader/import resolution.
-    def recheck_context(source, label:)
-      @recheck_context_cache[source] ||= begin
-        ast = profile_phase("#{label}.parse") { Parser.parse(source, path: @path) }
-        ast = with_recheck_module_identity(ast)
-        sema_snapshot = profile_phase("#{label}.sema") do
-          Sema.tooling_snapshot(ast, imported_modules: @imported_modules, path: @path)
-        end
-        {
-          ast: ast,
-          facts: sema_snapshot.facts,
-          sema_snapshot: sema_snapshot,
-          errors: sema_snapshot.diagnostics,
-          imported_modules: @imported_modules,
-          unresolved_import_paths: @unresolved_import_paths,
-        }
-      rescue StandardError
-        {
-          ast: nil,
-          facts: nil,
-          sema_snapshot: nil,
-          errors: nil,
-          imported_modules: @imported_modules,
-          unresolved_import_paths: @unresolved_import_paths,
-        }
-      end
-    end
-
-    def with_recheck_module_identity(ast)
-      return ast unless @source_ast&.module_name
-      return ast if ast.module_name&.to_s == @source_ast.module_name.to_s
-
-      AST::SourceFile.new(
-        module_name: @source_ast.module_name,
-        module_kind: ast.module_kind,
-        imports: ast.imports,
-        directives: ast.directives,
-        declarations: ast.declarations,
-        line: ast.line,
-      )
-    end
-
-    def error_signature_counts(errors)
-      Array(errors).each_with_object(Hash.new(0)) do |error, counts|
-        counts[[error.line, error.column, error.message]] += 1
-      end
-    end
-
-    def contextual_cast_source_implicitly_compatible?(site)
-      detail = @contextual_redundant_cast_details[prefix_cast_site_key(site)]
-      return false unless detail
-
-      actual_type_text = expression_type_surface(detail[:source_expression])
-      return false unless actual_type_text
-
-      lossless_contextual_type_surface_compatibility?(actual_type_text, detail[:expected_type_text])
-    end
-
-    def expression_type_surface(expression)
-      return nil unless @sema_facts
-
-      case expression
-      when AST::Identifier
-        binding_id = @sema_facts.binding_resolution&.identifier_binding_ids&.[](expression.object_id)
-        @sema_facts.binding_resolution&.binding_types&.[](binding_id)&.to_s
-      else
-        nil
-      end
-    end
-
-    def lossless_contextual_type_surface_compatibility?(actual_type_text, expected_type_text)
-      return true if actual_type_text == expected_type_text
-      return true if lossless_integer_surface_compatibility?(actual_type_text, expected_type_text)
-      return true if lossless_float_surface_compatibility?(actual_type_text, expected_type_text)
-
-      false
-    end
-
-    def lossless_integer_surface_compatibility?(actual_type_text, expected_type_text)
-      actual = integer_surface_info(actual_type_text)
-      expected = integer_surface_info(expected_type_text)
-      return false unless actual && expected
-
-      if actual[:signed] == expected[:signed]
-        return expected[:width] >= actual[:width]
-      end
-
-      return false if actual[:signed]
-
-      expected[:signed] && expected[:width] > actual[:width]
-    end
-
-    def lossless_float_surface_compatibility?(actual_type_text, expected_type_text)
-      actual_width = FLOAT_SURFACE_WIDTHS[actual_type_text]
-      expected_width = FLOAT_SURFACE_WIDTHS[expected_type_text]
-      actual_width && expected_width && expected_width >= actual_width
-    end
-
-    def integer_surface_info(type_text)
-      INTEGER_SURFACE_INFO[type_text]
-    end
-
-    def introduces_new_errors?(modified_counts, baseline_counts)
-      modified_counts.any? do |signature, count|
-        count > baseline_counts.fetch(signature, 0)
-      end
-    end
-
-    def unsafe_block_contains_builtin_unsafe_syntax?(stmts)
-      stmts.any? { |stmt| statement_contains_builtin_unsafe_syntax?(stmt) }
-    end
-
-    def statement_contains_builtin_unsafe_syntax?(stmt)
-      case stmt
-      when AST::LocalDecl
-        expression_contains_builtin_unsafe_syntax?(stmt.value)
-      when AST::Assignment
-        expression_contains_builtin_unsafe_syntax?(stmt.target) || expression_contains_builtin_unsafe_syntax?(stmt.value)
-      when AST::IfStmt
-        stmt.branches.any? do |branch|
-          expression_contains_builtin_unsafe_syntax?(branch.condition) || unsafe_block_contains_builtin_unsafe_syntax?(branch.body)
-        end || (stmt.else_body && unsafe_block_contains_builtin_unsafe_syntax?(stmt.else_body))
-      when AST::MatchStmt
-        expression_contains_builtin_unsafe_syntax?(stmt.expression) || stmt.arms.any? { |arm| unsafe_block_contains_builtin_unsafe_syntax?(arm.body) }
-      when AST::ForStmt
-        stmt.iterables.any? { |iterable| expression_contains_builtin_unsafe_syntax?(iterable) } || unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
-      when AST::WhileStmt
-        expression_contains_builtin_unsafe_syntax?(stmt.condition) || unsafe_block_contains_builtin_unsafe_syntax?(stmt.body)
-      when AST::DeferStmt
-        (stmt.expression && expression_contains_builtin_unsafe_syntax?(stmt.expression)) ||
-          (stmt.body && unsafe_block_contains_builtin_unsafe_syntax?(stmt.body))
-      when AST::ReturnStmt
-        stmt.value && expression_contains_builtin_unsafe_syntax?(stmt.value)
-      when AST::ExpressionStmt
-        expression_contains_builtin_unsafe_syntax?(stmt.expression)
-      when AST::StaticAssert
-        expression_contains_builtin_unsafe_syntax?(stmt.condition)
-      when AST::UnsafeStmt
-        false
-      else
-        false
-      end
-    end
-
-    def expression_contains_builtin_unsafe_syntax?(expression)
-      case expression
-      when nil
-        false
-      when AST::MemberAccess
-        expression_contains_builtin_unsafe_syntax?(expression.receiver)
-      when AST::IndexAccess
-        expression_contains_builtin_unsafe_syntax?(expression.receiver) || expression_contains_builtin_unsafe_syntax?(expression.index)
-      when AST::Specialization
-        expression_contains_builtin_unsafe_syntax?(expression.callee)
-      when AST::Call
-        builtin_unsafe_call_syntax?(expression) ||
-          expression_contains_builtin_unsafe_syntax?(expression.callee) ||
-          expression.arguments.any? { |argument| expression_contains_builtin_unsafe_syntax?(argument.value) }
-      when AST::UnaryOp
-        expression_contains_builtin_unsafe_syntax?(expression.operand)
-      when AST::BinaryOp
-        expression_contains_builtin_unsafe_syntax?(expression.left) || expression_contains_builtin_unsafe_syntax?(expression.right)
-      when AST::RangeExpr
-        expression_contains_builtin_unsafe_syntax?(expression.start_expr) || expression_contains_builtin_unsafe_syntax?(expression.end_expr)
-      when AST::ExpressionList
-        expression.elements.any? { |element| expression_contains_builtin_unsafe_syntax?(element) }
-      when AST::IfExpr
-        expression_contains_builtin_unsafe_syntax?(expression.condition) ||
-          expression_contains_builtin_unsafe_syntax?(expression.then_expression) ||
-          expression_contains_builtin_unsafe_syntax?(expression.else_expression)
-      when AST::UnsafeExpr, AST::ProcExpr
-        false
-      when AST::AwaitExpr
-        expression_contains_builtin_unsafe_syntax?(expression.expression)
-      when AST::FormatString
-        expression.parts.any? do |part|
-          part.is_a?(AST::FormatExprPart) && expression_contains_builtin_unsafe_syntax?(part.expression)
-        end
-      else
-        false
-      end
-    end
-
-    def builtin_unsafe_call_syntax?(expression)
-      builtin_read_call_syntax?(expression) ||
-        builtin_reinterpret_call_syntax?(expression) ||
-        builtin_pointer_cast_call_syntax?(expression)
-    end
-
-    def builtin_read_call_syntax?(expression)
-      return false unless expression.callee.is_a?(AST::Identifier)
-      return false unless expression.callee.name == "read"
-
-      !unsafe_builtin_name_shadowed?("read")
-    end
-
-    def builtin_reinterpret_call_syntax?(expression)
-      return false unless expression.callee.is_a?(AST::Specialization)
-      return false unless expression.callee.callee.is_a?(AST::Identifier)
-      return false unless expression.callee.callee.name == "reinterpret"
-
-      true
-    end
-
-    def builtin_pointer_cast_call_syntax?(expression)
-      return false unless expression.callee.is_a?(AST::Specialization)
-      return false unless expression.callee.callee.is_a?(AST::Identifier)
-      return false unless expression.callee.callee.name == "cast"
-
-      target_argument = expression.callee.arguments.first
-      target_type = target_argument&.value
-      target_type.is_a?(AST::TypeRef) && %w[ptr const_ptr].include?(target_type.name.to_s)
-    end
-
-    def unsafe_builtin_name_shadowed?(name)
-      @scopes.reverse_each do |scope|
-        return true if scope.key?(name)
-      end
-
-      @declared_callable_names.include?(name)
     end
 
     # ── loop-single-iteration ──────────────────────────────────────────────

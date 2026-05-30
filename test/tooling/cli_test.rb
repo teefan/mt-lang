@@ -416,7 +416,6 @@ class MilkTeaCliTest < Minitest::Test
       assert_equal 0, status
       assert_equal "", err.string
       assert_match(/clean .*main\.mt/, out.string)
-      refute_match(/redundant-unsafe/, out.string)
 
       out = StringIO.new
       err = StringIO.new
@@ -425,7 +424,7 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 1, status
       assert_equal "", err.string
-      assert_match(/redundant-unsafe/, out.string)
+      assert_match(/module not found|package dependency not declared/, out.string)
 
       out = StringIO.new
       err = StringIO.new

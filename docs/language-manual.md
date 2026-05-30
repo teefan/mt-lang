@@ -883,13 +883,11 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `platform-api-drift` | warning | — | Public API differs across sibling platform-specific variants of the same module |
 | `prefer-let` | hint | yes | `var` binding is never mutated; use `let` instead |
 | `prefer-let-else` | hint | yes | Nullable guard can be rewritten as `let ... else:` |
-| `redundant-cast` | hint | yes | Prefix cast is unnecessary in its current type context |
 | `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
 | `redundant-null-check` | hint | — | Null check on a value already known to be non-null by flow analysis |
 | `redundant-read-cast` | hint | yes | Pointer-like cast inside `read(...)` is unnecessary |
 | `redundant-read-release-temp` | hint | yes | Temporary that only stores `read(...)` to call `.release()` can be inlined |
 | `redundant-return` | hint | yes | Final bare `return` in a `void` function is unnecessary |
-| `redundant-unsafe` | hint | yes | `unsafe` block or inline `unsafe:` expression is unnecessary |
 | `reserved-primitive-name` | warning | yes | Binding uses a reserved built-in type name in its active namespace |
 | `self-assignment` | warning | — | Variable is assigned to itself |
 | `self-comparison` | warning | — | Value is compared to itself, making the condition constant |

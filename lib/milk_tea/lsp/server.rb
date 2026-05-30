@@ -1551,67 +1551,6 @@ module MilkTea
               }
             }
 
-          when 'redundant-unsafe'
-            next if source_line.empty?
-            if source_line.match?(/\A\s*unsafe:\s*\z/)
-              lines = content.lines
-              unsafe_idx = diag_line - 1
-              first_body_idx = unsafe_idx + 1
-              next if first_body_idx >= lines.length
-
-              unsafe_indent = lines[unsafe_idx].match(/\A(\s*)/)[1]
-              body_indent = unsafe_indent + '    '
-
-              body_end_idx = first_body_idx - 1
-              (first_body_idx...lines.length).each do |i|
-                line = lines[i]
-                if line.chomp.empty? || line.start_with?(body_indent)
-                  body_end_idx = i
-                else
-                  break
-                end
-              end
-              next if body_end_idx < first_body_idx
-
-              new_body = lines[first_body_idx..body_end_idx].map { |line| line.sub(/\A    /, '') }.join
-              actions << {
-                title: Linter.quick_fix_title('redundant-unsafe'),
-                kind: 'quickFix',
-                diagnostics: [diag],
-                edit: {
-                  changes: {
-                    uri => [{
-                      range: {
-                        start: { line: unsafe_idx,       character: 0 },
-                        end:   { line: body_end_idx + 1, character: 0 }
-                      },
-                      newText: new_body
-                    }]
-                  }
-                }
-              }
-            else
-              new_line = Linter.remove_inline_unsafe_prefix(source_line, column: diag_start_char + 1)
-              next if new_line == source_line
-
-              actions << {
-                title: Linter.quick_fix_title('redundant-unsafe'),
-                kind: 'quickFix',
-                diagnostics: [diag],
-                edit: {
-                  changes: {
-                    uri => [{
-                      range: {
-                        start: { line: diag_line - 1, character: 0 },
-                        end:   { line: diag_line,     character: 0 }
-                      },
-                      newText: new_line
-                    }]
-                  }
-                }
-              }
-            end
-
           when 'redundant-return'
             next unless source_line.match?(/\A\s*return\s*\z/)
 
@@ -1669,32 +1608,6 @@ module MilkTea
 
             actions << {
               title: Linter.quick_fix_title('redundant-read-cast'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: diag_line - 1, character: diag_start_char },
-                      end:   { line: diag_line - 1, character: diag_end_char }
-                    },
-                    newText: replacement
-                  }]
-                }
-              }
-            }
-
-          when 'redundant-cast'
-            next if source_line.empty?
-
-            cast_text = source_line[diag_start_char...diag_end_char].to_s
-            next if cast_text.empty?
-
-            replacement = Linter.extract_prefix_cast_source_text(cast_text)
-            next unless replacement
-
-            actions << {
-              title: Linter.quick_fix_title('redundant-cast'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {
