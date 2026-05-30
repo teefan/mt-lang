@@ -2,15 +2,12 @@ import std.linked_map as linked_map
 import std.linked_map_view as linked_map_view
 import std.mem.heap as heap
 
-
 public struct Entry[T]:
     key: const_ptr[T]
     count: ptr_uint
 
-
 public struct Entries[T]:
     values: linked_map_view.SnapshotEntries[T, ptr_uint]
-
 
 public struct Counter[T]:
     values: linked_map.LinkedMap[T, ptr_uint]

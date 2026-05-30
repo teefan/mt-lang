@@ -1,21 +1,17 @@
 import std.multiplayer.protocol as protocol
 import std.vec as vec
 
-
 public struct GridCell:
     x: int
     y: int
-
 
 public struct ConnectionCellEntry:
     connection: protocol.ConnectionId
     cell: GridCell
 
-
 public struct EntityCellEntry:
     entity: protocol.EntityId
     cell: GridCell
-
 
 public struct GridIndex:
     connection_cells: vec.Vec[ConnectionCellEntry]
@@ -79,7 +75,12 @@ extending GridIndex:
             return Option[GridCell].some(value = read(found).cell)
 
 
-public function allows_by_grid(index: GridIndex, connection: protocol.ConnectionId, entity: protocol.EntityId, cell_radius: uint) -> bool:
+public function allows_by_grid(
+    index: GridIndex,
+    connection: protocol.ConnectionId,
+    entity: protocol.EntityId,
+    cell_radius: uint
+) -> bool:
     let connection_cell = index.connection_cell(connection) else:
         return false
     let entity_cell = index.entity_cell(entity) else:

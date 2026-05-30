@@ -1,6 +1,5 @@
 import std.mem.heap as heap
 
-
 struct Node[K, V]:
     key: K
     value: V
@@ -9,36 +8,29 @@ struct Node[K, V]:
     parent: ptr[Node[K, V]]?
     height: int
 
-
 struct SearchResult[K, V]:
     node: ptr[Node[K, V]]?
     parent: ptr[Node[K, V]]?
     compare: int
     found: bool
 
-
 public struct Entry[K, V]:
     key: const_ptr[K]
     value: ptr[V]
-
 
 public struct RemovedEntry[K, V]:
     key: K
     value: V
 
-
 public struct Keys[K, V]:
     node: ptr[Node[K, V]]?
-
 
 public struct Values[K, V]:
     node: ptr[Node[K, V]]?
 
-
 public struct Entries[K, V]:
     node: ptr[Node[K, V]]?
     started: bool
-
 
 public struct OrderedMap[K, V]:
     root: ptr[Node[K, V]]?
@@ -69,13 +61,15 @@ extending OrderedMap[K, V]:
             read(node).height = next_height + 1
 
 
-
     static function balance_factor(node: ptr[Node[K, V]]?) -> int:
         if node == null:
             return 0
 
         unsafe:
-            return OrderedMap[K, V].height(read(ptr[Node[K, V]]<-node).left) - OrderedMap[K, V].height(read(ptr[Node[K, V]]<-node).right)
+            return OrderedMap[
+                K,
+                V
+            ].height(read(ptr[Node[K, V]]<-node).left) - OrderedMap[K, V].height(read(ptr[Node[K, V]]<-node).right)
 
 
     static function minimum(node: ptr[Node[K, V]]?) -> ptr[Node[K, V]]?:
@@ -111,7 +105,12 @@ extending OrderedMap[K, V]:
         return null
 
 
-    static function replace_child(current: ref[OrderedMap[K, V]], parent: ptr[Node[K, V]]?, previous: ptr[Node[K, V]], replacement: ptr[Node[K, V]]?) -> void:
+    static function replace_child(
+        current: ref[OrderedMap[K, V]],
+        parent: ptr[Node[K, V]]?,
+        previous: ptr[Node[K, V]],
+        replacement: ptr[Node[K, V]]?
+    ) -> void:
         if parent == null:
             current.root = replacement
         else:
@@ -127,7 +126,6 @@ extending OrderedMap[K, V]:
         if replacement != null:
             unsafe:
                 read(ptr[Node[K, V]]<-replacement).parent = parent
-
 
 
     static function rotate_left(current: ref[OrderedMap[K, V]], node: ptr[Node[K, V]]) -> ptr[Node[K, V]]:
@@ -207,7 +205,6 @@ extending OrderedMap[K, V]:
                 cursor = unsafe: read(rotated).parent
             else:
                 cursor = unsafe: read(cursor_ptr).parent
-
 
 
     static function locate(current: OrderedMap[K, V], key: K) -> SearchResult[K, V]:
@@ -348,7 +345,14 @@ extending OrderedMap[K, V]:
 
         let node = heap.must_alloc[Node[K, V]](1)
         unsafe:
-            read(node) = Node[K, V](key = key, value = value, left = null, right = null, parent = location.parent, height = 1)
+            read(node) = Node[K, V](
+                key = key,
+                value = value,
+                left = null,
+                right = null,
+                parent = location.parent,
+                height = 1
+            )
 
         let parent = location.parent
         if parent == null:
@@ -377,7 +381,14 @@ extending OrderedMap[K, V]:
 
         let node = heap.must_alloc[Node[K, V]](1)
         unsafe:
-            read(node) = Node[K, V](key = key, value = value, left = null, right = null, parent = location.parent, height = 1)
+            read(node) = Node[K, V](
+                key = key,
+                value = value,
+                left = null,
+                right = null,
+                parent = location.parent,
+                height = 1
+            )
 
         let parent = location.parent
         if parent == null:

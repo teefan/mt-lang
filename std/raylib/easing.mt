@@ -1,6 +1,5 @@
 import std.math as math
 
-
 public const PI: float = 3.14159265358979323846
 
 public const EASE_LINEAR_NONE: int = 0

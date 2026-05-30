@@ -2,7 +2,6 @@ import std.str as text_ops
 import std.string as string
 import std.vec as vec
 
-
 struct Segment:
     start: ptr_uint
     len: ptr_uint

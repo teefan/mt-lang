@@ -19,22 +19,18 @@ const tls_io_want_read: int = 1
 const tls_io_want_write: int = 2
 const tls_io_eof: int = 3
 
-
 public struct Error:
     code: int
     message: string.String
 
-
 public struct Stream:
     state: ptr[StreamState]?
-
 
 struct StreamState:
     client: ptr[c.mt_tls_client]?
     tcp: net.TcpStream
     fd: int
     pending_operation: bool
-
 
 struct PollState:
     ready: bool
@@ -327,7 +323,10 @@ function begin_stream_operation(state_raw: ptr[StreamState]?) -> Result[ptr[Stre
             return Result[ptr[StreamState], Error].failure(error = tls_error("tls stream is released"))
 
         if state.pending_operation:
-            return Result[ptr[StreamState], Error].failure(error = tls_error("tls stream already has a pending operation"))
+            return Result[
+                ptr[StreamState],
+                Error
+            ].failure(error = tls_error("tls stream already has a pending operation"))
 
         state.pending_operation = true
 
@@ -371,7 +370,11 @@ async function handshake_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) 
                 return Result[bool, Error].failure(error = take_error(raw_error, "tls connect failed"))
 
 
-async function write_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, content: span[ubyte]) -> Result[ptr_uint, Error]:
+async function write_on(
+    runtime: aio.Runtime,
+    state_raw: ptr[StreamState]?,
+    content: span[ubyte]
+) -> Result[ptr_uint, Error]:
     if content.len == 0:
         return Result[ptr_uint, Error].success(value = 0)
 
@@ -390,7 +393,13 @@ async function write_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, cont
 
                 var transferred: ptr_uint = 0
                 var raw_error = zero[c.mt_tls_error]
-                let status_code = c.mt_tls_client_write(client, unsafe: content.data + offset, content.len - offset, transferred, raw_error)
+                let status_code = c.mt_tls_client_write(
+                    client,
+                    unsafe: content.data + offset,
+                    content.len - offset,
+                    transferred,
+                    raw_error
+                )
                 if status_code == tls_io_ready:
                     if transferred == 0:
                         return Result[ptr_uint, Error].failure(error = tls_error("tls write made no progress"))
@@ -415,7 +424,11 @@ async function write_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, cont
             return Result[ptr_uint, Error].success(value = offset)
 
 
-async function read_once_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, max_bytes: ptr_uint) -> Result[bytes.Bytes, Error]:
+async function read_once_on(
+    runtime: aio.Runtime,
+    state_raw: ptr[StreamState]?,
+    max_bytes: ptr_uint
+) -> Result[bytes.Bytes, Error]:
     if max_bytes == 0:
         return Result[bytes.Bytes, Error].failure(error = tls_error("tls read requires max_bytes > 0"))
 
@@ -625,7 +638,14 @@ public function exchange(host: str, port: int, request: span[ubyte]) -> Result[b
 
     var raw_response = zero[c.mt_tls_bytes]
     var raw_error = zero[c.mt_tls_error]
-    let status_code = c.mt_tls_exchange(host_storage.to_cstr(host), port, request.data, request.len, raw_response, raw_error)
+    let status_code = c.mt_tls_exchange(
+        host_storage.to_cstr(host),
+        port,
+        request.data,
+        request.len,
+        raw_response,
+        raw_error
+    )
     if status_code != 0:
         return Result[bytes.Bytes, Error].failure(error = take_error(raw_error, "tls exchange failed"))
 

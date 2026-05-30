@@ -2,7 +2,6 @@ import std.bytes as bytes
 import std.mem.heap as heap
 import std.stdio as stdio
 
-
 const MAGIC_M: ubyte = 77
 const MAGIC_T: ubyte = 84
 const MAGIC_A: ubyte = 65
@@ -12,7 +11,6 @@ const HEADER_FLAGS: uint = 0
 const ENTRY_FLAGS_RAW: uint = 0
 const HEADER_SIZE_BYTES: ptr_uint = 28
 const ENTRY_PREFIX_SIZE_BYTES: ptr_uint = 32
-
 
 public enum Error: int
     open_failed = 1
@@ -26,11 +24,9 @@ public enum Error: int
     entry_not_found = 9
     io = 10
 
-
 public struct Reader:
     file: stdio.File?
     entry_count: uint
-
 
 struct EntryMetadata:
     path_length: ptr_uint
@@ -234,10 +230,7 @@ function decode_u16_le(bytes: ptr[ubyte]) -> uint:
 
 function decode_u32_le(bytes: ptr[ubyte]) -> uint:
     unsafe:
-        return uint<-read(bytes + 0) |
-            (uint<-read(bytes + 1) << 8) |
-            (uint<-read(bytes + 2) << 16) |
-            (uint<-read(bytes + 3) << 24)
+        return uint<-read(bytes + 0) |            (uint<-read(bytes + 1) << 8) |            (uint<-read(bytes + 2) << 16) |            (uint<-read(bytes + 3) << 24)
 
 
 function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:

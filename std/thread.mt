@@ -3,23 +3,18 @@ import std.mem.heap as heap
 import std.str as text
 import std.string as string
 
-
 public type NativeThreadHandle = libuv.uv_thread_t
-
 
 public struct Error:
     code: int
     message: string.String
 
-
 public struct Thread:
     handle: ptr[NativeThreadHandle]?
-
 
 struct RawStartState:
     entry: fn(arg: ptr[void]) -> void
     arg: ptr[void]
-
 
 struct VoidStartState:
     run: fn() -> void
@@ -105,7 +100,10 @@ extending Thread:
 
     public mutable function join() -> Result[bool, Error]:
         let handle = this.handle else:
-            return Result[bool, Error].failure(error = Error(code = -1, message = string.String.from_str("thread handle is released")))
+            return Result[bool, Error].failure(error = Error(
+                code = -1,
+                message = string.String.from_str("thread handle is released")
+            ))
 
         let status_code = libuv.thread_join(handle)
         if status_code != 0:
@@ -118,7 +116,10 @@ extending Thread:
 
     public mutable function detach() -> Result[bool, Error]:
         let handle = this.handle else:
-            return Result[bool, Error].failure(error = Error(code = -1, message = string.String.from_str("thread handle is released")))
+            return Result[bool, Error].failure(error = Error(
+                code = -1,
+                message = string.String.from_str("thread handle is released")
+            ))
 
         let status_code = libuv.thread_detach(handle)
         if status_code != 0:

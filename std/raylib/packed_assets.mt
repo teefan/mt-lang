@@ -4,7 +4,6 @@ import std.raylib as rl
 import std.string as string
 import std.str as text
 
-
 public enum Error: int
     open_failed = 1
     closed = 2
@@ -23,9 +22,7 @@ public enum Error: int
     invalid_sound = 105
     invalid_music = 106
 
-
 public type Reader = pack.Reader
-
 
 public struct PackedMusic:
     music: rl.Music
@@ -202,7 +199,10 @@ public function load_music(reader: pack.Reader, logical_path: str) -> Result[Pac
                     let span = data.as_span()
                     let music = rl.load_music_stream_from_memory(file_type_payload.value, span.data, int<-span.len)
                     if rl.is_music_valid(music):
-                        return Result[PackedMusic, Error].success(value= PackedMusic(music = music, backing_data = data))
+                        return Result[PackedMusic, Error].success(value= PackedMusic(
+                            music = music,
+                            backing_data = data
+                        ))
 
                     data.release()
                     return Result[PackedMusic, Error].failure(error= Error.invalid_music)

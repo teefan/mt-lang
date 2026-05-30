@@ -1,7 +1,6 @@
 import std.multiplayer.protocol as protocol
 import std.multiplayer.spatial as spatial
 
-
 public enum PolicyKind: ubyte
     all = 0
     owner = 1
@@ -9,11 +8,9 @@ public enum PolicyKind: ubyte
     grid = 3
     owner_or_grid = 4
 
-
 public struct CellCoord:
     x: int
     y: int
-
 
 public struct Policy:
     kind: PolicyKind

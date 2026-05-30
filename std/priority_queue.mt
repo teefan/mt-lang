@@ -1,6 +1,5 @@
 import std.binary_heap as binary_heap
 
-
 public struct PriorityQueue[T]:
     values: binary_heap.BinaryHeap[T]
 

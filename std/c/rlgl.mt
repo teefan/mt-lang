@@ -3,6 +3,7 @@ external
 
 link "raylib"
 include "rlgl.h"
+
 struct Matrix:
     m0: float
     m4: float
@@ -20,6 +21,7 @@ struct Matrix:
     m7: float
     m11: float
     m15: float
+
 struct rlVertexBuffer:
     elementCount: int
     vertices: ptr[float]
@@ -29,11 +31,13 @@ struct rlVertexBuffer:
     indices: ptr[uint]
     vaoId: uint
     vboId: array[uint, 5]
+
 struct rlDrawCall:
     mode: int
     vertexCount: int
     vertexAlignment: int
     textureId: uint
+
 struct rlRenderBatch:
     bufferCount: int
     currentBuffer: int
@@ -41,6 +45,7 @@ struct rlRenderBatch:
     draws: ptr[rlDrawCall]
     drawCounter: int
     currentDepth: float
+
 enum rlGlVersion: int
     RL_OPENGL_SOFTWARE = 0
     RL_OPENGL_11 = 1
@@ -49,6 +54,7 @@ enum rlGlVersion: int
     RL_OPENGL_43 = 4
     RL_OPENGL_ES_20 = 5
     RL_OPENGL_ES_30 = 6
+
 enum rlTraceLogLevel: int
     RL_LOG_ALL = 0
     RL_LOG_TRACE = 1
@@ -58,6 +64,7 @@ enum rlTraceLogLevel: int
     RL_LOG_ERROR = 5
     RL_LOG_FATAL = 6
     RL_LOG_NONE = 7
+
 enum rlPixelFormat: int
     RL_PIXELFORMAT_UNCOMPRESSED_GRAYSCALE = 1
     RL_PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA = 2
@@ -83,6 +90,7 @@ enum rlPixelFormat: int
     RL_PIXELFORMAT_COMPRESSED_PVRT_RGBA = 22
     RL_PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA = 23
     RL_PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA = 24
+
 enum rlTextureFilter: int
     RL_TEXTURE_FILTER_POINT = 0
     RL_TEXTURE_FILTER_BILINEAR = 1
@@ -90,6 +98,7 @@ enum rlTextureFilter: int
     RL_TEXTURE_FILTER_ANISOTROPIC_4X = 3
     RL_TEXTURE_FILTER_ANISOTROPIC_8X = 4
     RL_TEXTURE_FILTER_ANISOTROPIC_16X = 5
+
 enum rlBlendMode: int
     RL_BLEND_ALPHA = 0
     RL_BLEND_ADDITIVE = 1
@@ -99,6 +108,7 @@ enum rlBlendMode: int
     RL_BLEND_ALPHA_PREMULTIPLY = 5
     RL_BLEND_CUSTOM = 6
     RL_BLEND_CUSTOM_SEPARATE = 7
+
 enum rlShaderLocationIndex: int
     RL_SHADER_LOC_VERTEX_POSITION = 0
     RL_SHADER_LOC_VERTEX_TEXCOORD01 = 1
@@ -126,6 +136,7 @@ enum rlShaderLocationIndex: int
     RL_SHADER_LOC_MAP_IRRADIANCE = 23
     RL_SHADER_LOC_MAP_PREFILTER = 24
     RL_SHADER_LOC_MAP_BRDF = 25
+
 enum rlShaderUniformDataType: int
     RL_SHADER_UNIFORM_FLOAT = 0
     RL_SHADER_UNIFORM_VEC2 = 1
@@ -140,11 +151,13 @@ enum rlShaderUniformDataType: int
     RL_SHADER_UNIFORM_UIVEC3 = 10
     RL_SHADER_UNIFORM_UIVEC4 = 11
     RL_SHADER_UNIFORM_SAMPLER2D = 12
+
 enum rlShaderAttributeDataType: int
     RL_SHADER_ATTRIB_FLOAT = 0
     RL_SHADER_ATTRIB_VEC2 = 1
     RL_SHADER_ATTRIB_VEC3 = 2
     RL_SHADER_ATTRIB_VEC4 = 3
+
 enum rlFramebufferAttachType: int
     RL_ATTACHMENT_COLOR_CHANNEL0 = 0
     RL_ATTACHMENT_COLOR_CHANNEL1 = 1
@@ -156,6 +169,7 @@ enum rlFramebufferAttachType: int
     RL_ATTACHMENT_COLOR_CHANNEL7 = 7
     RL_ATTACHMENT_DEPTH = 100
     RL_ATTACHMENT_STENCIL = 200
+
 enum rlFramebufferAttachTextureType: int
     RL_ATTACHMENT_CUBEMAP_POSITIVE_X = 0
     RL_ATTACHMENT_CUBEMAP_NEGATIVE_X = 1
@@ -165,9 +179,11 @@ enum rlFramebufferAttachTextureType: int
     RL_ATTACHMENT_CUBEMAP_NEGATIVE_Z = 5
     RL_ATTACHMENT_TEXTURE2D = 100
     RL_ATTACHMENT_RENDERBUFFER = 200
+
 flags rlCullMode: int
     RL_CULL_FACE_FRONT = 0
     RL_CULL_FACE_BACK = 1
+
 external function rlMatrixMode(mode: int) -> void
 external function rlPushMatrix() -> void
 external function rlPopMatrix() -> void
@@ -331,6 +347,7 @@ external function rlSetMatrixProjectionStereo(right: Matrix, left: Matrix) -> vo
 external function rlSetMatrixViewOffsetStereo(right: Matrix, left: Matrix) -> void
 external function rlLoadDrawCube() -> void
 external function rlLoadDrawQuad() -> void
+
 const RL_DEFAULT_BATCH_BUFFER_ELEMENTS: int = 8192
 const RL_DEFAULT_BATCH_BUFFERS: int = 1
 const RL_DEFAULT_BATCH_DRAWCALLS: int = 256

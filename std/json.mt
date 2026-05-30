@@ -6,10 +6,8 @@ import std.string as string
 import std.vec as vec
 import std.mem.heap as heap
 
-
 public struct Error:
     message: string.String
-
 
 public enum ValueKind: int
     null_ = 0
@@ -19,7 +17,6 @@ public enum ValueKind: int
     array_ = 4
     object_ = 5
 
-
 public struct Value:
     kind: ValueKind
     boolean_value: bool
@@ -28,15 +25,12 @@ public struct Value:
     array_value: ptr[Array]?
     object_value: ptr[Object]?
 
-
 public struct Entry:
     key: string.String
     value: Value
 
-
 public struct Object:
     entries: vec.Vec[Entry]
-
 
 public struct Array:
     values: vec.Vec[Value]
@@ -47,19 +41,47 @@ function error_message(message: str) -> Error:
 
 
 public function null_value() -> Value:
-    return Value(kind = ValueKind.null_, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.null_,
+        boolean_value = false,
+        number_value = 0.0,
+        string_value = string.String.create(),
+        array_value = null,
+        object_value = null
+    )
 
 
 public function boolean_value(value: bool) -> Value:
-    return Value(kind = ValueKind.boolean, boolean_value = value, number_value = 0.0, string_value = string.String.create(), array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.boolean,
+        boolean_value = value,
+        number_value = 0.0,
+        string_value = string.String.create(),
+        array_value = null,
+        object_value = null
+    )
 
 
 public function number_value(value: double) -> Value:
-    return Value(kind = ValueKind.number, boolean_value = false, number_value = value, string_value = string.String.create(), array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.number,
+        boolean_value = false,
+        number_value = value,
+        string_value = string.String.create(),
+        array_value = null,
+        object_value = null
+    )
 
 
 public function string_value(value: string.String) -> Value:
-    return Value(kind = ValueKind.string_, boolean_value = false, number_value = 0.0, string_value = value, array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.string_,
+        boolean_value = false,
+        number_value = 0.0,
+        string_value = value,
+        array_value = null,
+        object_value = null
+    )
 
 
 public function string_from_str(value: str) -> Value:
@@ -67,11 +89,25 @@ public function string_from_str(value: str) -> Value:
 
 
 public function array_value(value: ptr[Array]?) -> Value:
-    return Value(kind = ValueKind.array_, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = value, object_value = null)
+    return Value(
+        kind = ValueKind.array_,
+        boolean_value = false,
+        number_value = 0.0,
+        string_value = string.String.create(),
+        array_value = value,
+        object_value = null
+    )
 
 
 public function object_value(value: ptr[Object]?) -> Value:
-    return Value(kind = ValueKind.object_, boolean_value = false, number_value = 0.0, string_value = string.String.create(), array_value = null, object_value = value)
+    return Value(
+        kind = ValueKind.object_,
+        boolean_value = false,
+        number_value = 0.0,
+        string_value = string.String.create(),
+        array_value = null,
+        object_value = value
+    )
 
 
 public function create_array_value() -> Value:
@@ -197,7 +233,10 @@ function convert_raw_object(item: ptr[cjson.JSON]) -> Result[Value, Error]:
                 return Result[Value, Error].failure(error = payload.error)
             Result.success as payload:
                 unsafe:
-                    read(object_ptr).entries.push(Entry(key = string.String.from_str(text.chars_as_str(key_ptr)), value = payload.value))
+                    read(object_ptr).entries.push(Entry(
+                        key = string.String.from_str(text.chars_as_str(key_ptr)),
+                        value = payload.value
+                    ))
 
         child = unsafe: ptr[cjson.JSON]?<-read(ptr[raw.cJSON]<-current).next
 
@@ -256,7 +295,10 @@ function build_raw_array(array_ptr: ptr[Array]?) -> Result[ptr[cjson.JSON], Erro
                     if cjson.add_item_to_array(array_item, payload.value) == 0:
                         cjson.delete(payload.value)
                         cjson.delete(array_item)
-                        return Result[ptr[cjson.JSON], Error].failure(error = error_message("json add array item failed"))
+                        return Result[
+                            ptr[cjson.JSON],
+                            Error
+                        ].failure(error = error_message("json add array item failed"))
 
             index += 1
 
@@ -286,7 +328,10 @@ function build_raw_object(object_ptr: ptr[Object]?) -> Result[ptr[cjson.JSON], E
                     if cjson.add_item_to_object(object_item, entry.key.as_str(), payload.value) == 0:
                         cjson.delete(payload.value)
                         cjson.delete(object_item)
-                        return Result[ptr[cjson.JSON], Error].failure(error = error_message("json add object entry failed"))
+                        return Result[
+                            ptr[cjson.JSON],
+                            Error
+                        ].failure(error = error_message("json add object entry failed"))
 
             index += 1
 
@@ -340,7 +385,10 @@ function render_with_mode(value: Value, pretty: bool) -> Result[string.String, E
                 let rendered_ptr = cjson.print(raw_value) else:
                     return Result[string.String, Error].failure(error = error_message("json print failed"))
                 defer raw.cJSON_free(unsafe: ptr[void]<-rendered_ptr)
-                return Result[string.String, Error].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
+                return Result[
+                    string.String,
+                    Error
+                ].success(value = string.String.from_str(text.chars_as_str(rendered_ptr)))
 
             let rendered_ptr = cjson.print_unformatted(raw_value) else:
                 return Result[string.String, Error].failure(error = error_message("json print failed"))

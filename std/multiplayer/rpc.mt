@@ -4,35 +4,28 @@ import std.multiplayer.wire as wire
 import std.bytes as bytes
 import std.vec as vec
 
-
 const rpc_header_bytes: ptr_uint = 9
-
 
 public struct OutgoingRpc:
     descriptor: registry.RpcDescriptor
     context: protocol.RpcContext
     payload_size: ptr_uint
 
-
 public struct IncomingRpc:
     descriptor: registry.RpcDescriptor
     context: protocol.RpcContext
     payload_size: ptr_uint
 
-
 public struct DispatchError:
     code: protocol.ErrorCode
     message: str
-
 
 public struct RpcDispatchRoute:
     descriptor: registry.RpcDescriptor
     handler: fn(message: IncomingRpc) -> Result[bool, DispatchError]
 
-
 public struct RpcDispatchTable:
     routes: vec.Vec[RpcDispatchRoute]
-
 
 public struct IncomingRpcPacket:
     header: protocol.RpcPacketHeader
@@ -332,8 +325,10 @@ function validate_incoming(message: IncomingRpc) -> Result[bool, protocol.Error]
             )
         )
 
-    if message.descriptor.direction == protocol.RpcDirection.client_to_server and
-       not sender_present(message.context.sender):
+    if (
+        message.descriptor.direction == protocol.RpcDirection.client_to_server
+        and not sender_present(message.context.sender)
+    ):
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,

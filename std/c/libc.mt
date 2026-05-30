@@ -2,16 +2,21 @@
 external
 
 include "stdlib.h"
+
 opaque __fsid_t = c"struct __fsid_t"
+
 struct div_t:
     quot: int
     rem: int
+
 struct ldiv_t:
     quot: ptr_int
     rem: ptr_int
+
 struct lldiv_t:
     quot: long
     rem: long
+
 external function __ctype_get_mb_cur_max() -> ptr_uint
 external function atof(__nptr: cstr) -> double
 external function atoi(__nptr: cstr) -> int
@@ -27,6 +32,7 @@ external function strtoll(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: int) 
 external function strtoull(__nptr: cstr, __endptr: ptr[ptr[char]]?, __base: int) -> ulong
 external function l64a(__n: ptr_int) -> ptr[char]
 external function a64l(__s: cstr) -> ptr_int
+
 type u_short = ushort
 type u_int = uint
 type u_long = ptr_uint
@@ -54,10 +60,12 @@ type register_t = ptr_int
 type blkcnt_t = ptr_int
 type fsblkcnt_t = ptr_uint
 type fsfilcnt_t = ptr_uint
+
 external function random() -> ptr_int
 external function srandom(__seed: uint) -> void
 external function initstate(__seed: uint, __statebuf: ptr[char], __statelen: ptr_uint) -> ptr[char]
 external function setstate(__statebuf: ptr[char]) -> ptr[char]
+
 struct random_data = c"struct random_data":
     fptr: ptr[int]
     rptr: ptr[int]
@@ -66,6 +74,7 @@ struct random_data = c"struct random_data":
     rand_deg: int
     rand_sep: int
     end_ptr: ptr[int]
+
 external function random_r(__buf: ptr[random_data], __result: ptr[int]) -> int
 external function srandom_r(__seed: uint, __buf: ptr[random_data]) -> int
 external function initstate_r(__seed: uint, __statebuf: ptr[char], __statelen: ptr_uint, __buf: ptr[random_data]) -> int
@@ -82,12 +91,14 @@ external function jrand48(__xsubi: ptr[ushort]) -> ptr_int
 external function srand48(__seedval: ptr_int) -> void
 external function seed48(__seed16v: ptr[ushort]) -> ptr[ushort]
 external function lcong48(__param: ptr[ushort]) -> void
+
 struct drand48_data = c"struct drand48_data":
     __x: array[ushort, 3]
     __old_x: array[ushort, 3]
     __c: ushort
     __init: ushort
     __a: ulong
+
 external function drand48_r(__buffer: ptr[drand48_data], __result: ptr[double]) -> int
 external function erand48_r(__xsubi: ptr[ushort], __buffer: ptr[drand48_data], __result: ptr[double]) -> int
 external function lrand48_r(__buffer: ptr[drand48_data], __result: ptr[ptr_int]) -> int
@@ -126,7 +137,9 @@ external function mkstemps(__template: ptr[char], __suffixlen: int) -> int
 external function mkdtemp(__template: ptr[char]) -> ptr[char]
 external function system(__command: cstr) -> int
 external function realpath(__name: cstr, __resolved: ptr[char]) -> ptr[char]
+
 type __compar_fn_t = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int
+
 external function bsearch(__key: const_ptr[void], __base: const_ptr[void], __nmemb: ptr_uint, __size: ptr_uint, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int) -> ptr[void]
 external function qsort(__base: ptr[void], __nmemb: ptr_uint, __size: ptr_uint, __compar: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int) -> void
 external function abs(__x: int) -> int
@@ -148,6 +161,7 @@ external function wcstombs(__s: ptr[char], __pwcs: const_ptr[int], __n: ptr_uint
 external function rpmatch(__response: cstr) -> int
 external function getsubopt(__optionp: ptr[ptr[char]], __tokens: const_ptr[ptr[char]], __valuep: ptr[ptr[char]]) -> int
 external function getloadavg(__loadavg: ptr[double], __nelem: int) -> int
+
 const RAND_MAX: int = 2147483647
 const EXIT_FAILURE: int = 1
 const EXIT_SUCCESS: int = 0

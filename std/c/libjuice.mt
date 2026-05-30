@@ -4,7 +4,9 @@ external
 link "juice"
 link "pthread"
 include "juice/juice.h"
+
 opaque juice_agent_t = c"juice_agent_t"
+
 enum juice_state_t: int
     JUICE_STATE_DISCONNECTED = 0
     JUICE_STATE_GATHERING = 1
@@ -12,21 +14,26 @@ enum juice_state_t: int
     JUICE_STATE_CONNECTED = 3
     JUICE_STATE_COMPLETED = 4
     JUICE_STATE_FAILED = 5
+
 type juice_cb_state_changed_t = fn(arg0: ptr[juice_agent_t], arg1: juice_state_t, arg2: ptr[void]) -> void
 type juice_cb_candidate_t = fn(arg0: ptr[juice_agent_t], arg1: cstr, arg2: ptr[void]) -> void
 type juice_cb_gathering_done_t = fn(arg0: ptr[juice_agent_t], arg1: ptr[void]) -> void
 type juice_cb_recv_t = fn(arg0: ptr[juice_agent_t], arg1: cstr, arg2: ptr_uint, arg3: ptr[void]) -> void
+
 struct juice_mux_binding_request_t:
     local_ufrag: cstr
     remote_ufrag: cstr
     address: cstr
     port: ushort
+
 type juice_cb_mux_incoming_t = fn(arg0: const_ptr[juice_mux_binding_request_t], arg1: ptr[void]) -> void
+
 struct juice_turn_server_t:
     host: cstr
     username: cstr
     password: cstr
     port: ushort
+
 flags juice_concurrency_mode_t: int
     JUICE_CONCURRENCY_MODE_POLL = 0
     JUICE_CONCURRENCY_MODE_MUX = 1
@@ -34,6 +41,7 @@ flags juice_concurrency_mode_t: int
 flags juice_ice_tcp_mode_t: int
     JUICE_ICE_TCP_MODE_NONE = 0
     JUICE_ICE_TCP_MODE_ACTIVE = 1
+
 struct juice_config_t:
     concurrency_mode: juice_concurrency_mode_t
     stun_server_host: cstr
@@ -48,6 +56,7 @@ struct juice_config_t:
     cb_gathering_done: fn(arg0: ptr[juice_agent_t], arg1: ptr[void]) -> void
     cb_recv: fn(arg0: ptr[juice_agent_t], arg1: cstr, arg2: ptr_uint, arg3: ptr[void]) -> void
     user_ptr: ptr[void]
+
 external function juice_create(config: const_ptr[juice_config_t]) -> ptr[juice_agent_t]
 external function juice_destroy(agent: ptr[juice_agent_t]) -> void
 external function juice_gather_candidates(agent: ptr[juice_agent_t]) -> int
@@ -65,11 +74,14 @@ external function juice_set_local_ice_attributes(agent: ptr[juice_agent_t], ufra
 external function juice_state_to_string(state: juice_state_t) -> cstr
 external function juice_mux_listen(bind_address: cstr, local_port: int, cb: fn(arg0: const_ptr[juice_mux_binding_request_t], arg1: ptr[void]) -> void, user_ptr: ptr[void]) -> int
 external function juice_set_ice_tcp_mode(agent: ptr[juice_agent_t], ice_tcp_mode: juice_ice_tcp_mode_t) -> int
+
 opaque juice_server_t = c"juice_server_t"
+
 struct juice_server_credentials_t:
     username: cstr
     password: cstr
     allocations_quota: int
+
 struct juice_server_config_t:
     credentials: ptr[juice_server_credentials_t]
     credentials_count: int
@@ -81,10 +93,12 @@ struct juice_server_config_t:
     relay_port_range_begin: ushort
     relay_port_range_end: ushort
     realm: cstr
+
 external function juice_server_create(config: const_ptr[juice_server_config_t]) -> ptr[juice_server_t]
 external function juice_server_destroy(server: ptr[juice_server_t]) -> void
 external function juice_server_get_port(server: ptr[juice_server_t]) -> ushort
 external function juice_server_add_credentials(server: ptr[juice_server_t], credentials: const_ptr[juice_server_credentials_t], lifetime_ms: ptr_uint) -> int
+
 enum juice_log_level_t: int
     JUICE_LOG_LEVEL_VERBOSE = 0
     JUICE_LOG_LEVEL_DEBUG = 1
@@ -93,9 +107,12 @@ enum juice_log_level_t: int
     JUICE_LOG_LEVEL_ERROR = 4
     JUICE_LOG_LEVEL_FATAL = 5
     JUICE_LOG_LEVEL_NONE = 6
+
 type juice_log_cb_t = fn(arg0: juice_log_level_t, arg1: cstr) -> void
+
 external function juice_set_log_level(level: juice_log_level_t) -> void
 external function juice_set_log_handler(cb: fn(arg0: juice_log_level_t, arg1: cstr) -> void) -> void
+
 const JUICE_ERR_SUCCESS: int = 0
 const JUICE_ERR_INVALID: int = -1
 const JUICE_ERR_FAILED: int = -2

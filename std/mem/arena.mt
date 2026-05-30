@@ -44,6 +44,7 @@ public function create_for[T](count: ptr_uint) -> Arena:
 
     return create_aligned(count * element_size, align_of(T))
 
+
 extending Arena:
     public function mark() -> Mark:
         return this.offset

@@ -2,15 +2,12 @@ import std.counter as counter
 import std.linked_map as linked_map
 import std.linked_map_view as linked_map_view
 
-
 public struct Entry[T]:
     value: const_ptr[T]
     count: ptr_uint
 
-
 public struct Entries[T]:
     values: linked_map_view.SnapshotEntries[T, ptr_uint]
-
 
 public struct MultiSet[T]:
     values: counter.Counter[T]

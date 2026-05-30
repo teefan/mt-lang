@@ -8,15 +8,12 @@ type NativeTimerHandle = libuv.uv_timer_t
 type NativeRequest = libuv.uv_req_t
 type NativeWorkRequest = libuv.uv_work_t
 
-
 public struct Runtime:
     loop: ptr[NativeLoopHandle]?
     active: bool
 
-
 var current_runtime: Runtime = zero[Runtime]
 var current_runtime_active: bool = false
-
 
 struct SleepState:
     ready: bool
@@ -28,7 +25,6 @@ struct SleepState:
     closing: bool
     closed: bool
     released: bool
-
 
 struct WorkState[T]:
     ready: bool
@@ -42,7 +38,6 @@ struct WorkState[T]:
     execute: fn(state_frame: ptr[void]) -> void
     run_work: fn() -> T
     result: T
-
 
 struct WorkStateBase:
     ready: bool
@@ -211,7 +206,11 @@ public function sleep_ready(frame: ptr[void]) -> bool:
     return unsafe: sleep_state(frame).ready
 
 
-public function sleep_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+public function sleep_set_waiter(
+    frame: ptr[void],
+    waiter_frame: ptr[void],
+    waiter: fn(frame: ptr[void]) -> void
+) -> void:
     let state = sleep_state(frame)
     unsafe:
         if state.ready:
@@ -286,7 +285,11 @@ function work_execute_state[T](state_frame: ptr[void]) -> void:
         state.result = state.run_work()
 
 
-public function work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+public function work_set_waiter[T](
+    frame: ptr[void],
+    waiter_frame: ptr[void],
+    waiter: fn(frame: ptr[void]) -> void
+) -> void:
     let state = work_state[T](frame)
     unsafe:
         if state.ready:

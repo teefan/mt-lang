@@ -1,7 +1,6 @@
 import std.pcre2 as re
 import std.str as text
 
-
 public struct CompileResult:
     code: ptr[re.Code]?
     error_code: int
@@ -15,7 +14,14 @@ public function compile_str(pattern: str, options: uint, compile_context: ptr[re
     return CompileResult(code = code, error_code = error_code, error_offset = error_offset)
 
 
-public function match_str(code: const_ptr[re.Code], subject: str, start_offset: ptr_uint, options: uint, match_data: ptr[re.MatchData], match_context: ptr[re.MatchContext]) -> int:
+public function match_str(
+    code: const_ptr[re.Code],
+    subject: str,
+    start_offset: ptr_uint,
+    options: uint,
+    match_data: ptr[re.MatchData],
+    match_context: ptr[re.MatchContext]
+) -> int:
     return re.match_bytes(code, text.as_byte_span(subject), start_offset, options, match_data, match_context)
 
 

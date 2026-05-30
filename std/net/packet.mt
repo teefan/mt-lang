@@ -4,21 +4,17 @@ import std.net as net
 import std.string as string
 import std.vec as vec
 
-
 const frame_header_bytes: ptr_uint = 4
 const discard_chunk_bytes: ptr_uint = 4096
 const max_frame_payload_bytes: ptr_uint = 4294967295
-
 
 public struct Error:
     code: int
     message: string.String
 
-
 public struct Stream:
     stream: net.TcpStream
     max_packet_bytes: ptr_uint
-
 
 public struct Listener:
     listener: net.TcpListener
@@ -48,10 +44,7 @@ function decode_packet_length(header: bytes.Bytes) -> ptr_uint:
         fatal(c"packet frame header length mismatch")
 
     let header_span = header.as_span()
-    let length = ((uint<-header_span[0]) << 24) |
-        ((uint<-header_span[1]) << 16) |
-        ((uint<-header_span[2]) << 8) |
-        (uint<-header_span[3])
+    let length = ((uint<-header_span[0]) << 24) |        ((uint<-header_span[1]) << 16) |        ((uint<-header_span[2]) << 8) |        (uint<-header_span[3])
     return ptr_uint<-length
 
 
@@ -84,7 +77,11 @@ async function discard_exactly(stream: net.TcpStream, byte_count: ptr_uint) -> R
     return Result[bool, Error].success(value = true)
 
 
-public async function connect_on(runtime: aio.Runtime, address: net.SocketAddress, max_packet_bytes: ptr_uint) -> Result[Stream, Error]:
+public async function connect_on(
+    runtime: aio.Runtime,
+    address: net.SocketAddress,
+    max_packet_bytes: ptr_uint
+) -> Result[Stream, Error]:
     let connect_result = await net.connect_on(runtime, address)
     match connect_result:
         Result.failure as payload:
@@ -97,13 +94,21 @@ public async function connect(address: net.SocketAddress, max_packet_bytes: ptr_
     return await connect_on(aio.current_runtime(), address, max_packet_bytes)
 
 
-public function listen_on(runtime: aio.Runtime, address: net.SocketAddress, backlog: int, max_packet_bytes: ptr_uint) -> Result[Listener, Error]:
+public function listen_on(
+    runtime: aio.Runtime,
+    address: net.SocketAddress,
+    backlog: int,
+    max_packet_bytes: ptr_uint
+) -> Result[Listener, Error]:
     let listen_result = net.listen_on(runtime, address, backlog)
     match listen_result:
         Result.failure as payload:
             return Result[Listener, Error].failure(error = error_from_net(payload.error))
         Result.success as payload:
-            return Result[Listener, Error].success(value = Listener(listener = payload.value, max_packet_bytes = max_packet_bytes))
+            return Result[Listener, Error].success(value = Listener(
+                listener = payload.value,
+                max_packet_bytes = max_packet_bytes
+            ))
 
 
 public function listen(address: net.SocketAddress, backlog: int, max_packet_bytes: ptr_uint) -> Result[Listener, Error]:
@@ -179,7 +184,10 @@ extending Stream:
                             return Result[bytes.Bytes, Error].failure(error = discard_payload.error)
                         Result.success as discard_payload:
                             unsafe: discard_payload.value
-                            return Result[bytes.Bytes, Error].failure(error = packet_error(-2, "packet exceeds configured maximum"))
+                            return Result[bytes.Bytes, Error].failure(error = packet_error(
+                                -2,
+                                "packet exceeds configured maximum"
+                            ))
 
                 let payload_result = await this.stream.read_exactly(packet_length)
                 match payload_result:

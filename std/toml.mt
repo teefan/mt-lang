@@ -83,23 +83,58 @@ struct Cursor:
 
 
 function string_value(value: string.String) -> Value:
-    return Value(kind = ValueKind.string_, string_value = value, integer_value = 0, boolean_value = false, array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.string_,
+        string_value = value,
+        integer_value = 0,
+        boolean_value = false,
+        array_value = null,
+        object_value = null
+    )
 
 
 function integer_value(value: long) -> Value:
-    return Value(kind = ValueKind.integer, string_value = string.String.create(), integer_value = value, boolean_value = false, array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.integer,
+        string_value = string.String.create(),
+        integer_value = value,
+        boolean_value = false,
+        array_value = null,
+        object_value = null
+    )
 
 
 function boolean_value(value: bool) -> Value:
-    return Value(kind = ValueKind.boolean, string_value = string.String.create(), integer_value = 0, boolean_value = value, array_value = null, object_value = null)
+    return Value(
+        kind = ValueKind.boolean,
+        string_value = string.String.create(),
+        integer_value = 0,
+        boolean_value = value,
+        array_value = null,
+        object_value = null
+    )
 
 
 function array_value(value: ptr[Array]?) -> Value:
-    return Value(kind = ValueKind.array_, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = value, object_value = null)
+    return Value(
+        kind = ValueKind.array_,
+        string_value = string.String.create(),
+        integer_value = 0,
+        boolean_value = false,
+        array_value = value,
+        object_value = null
+    )
 
 
 function object_value(value: ptr[Object]?) -> Value:
-    return Value(kind = ValueKind.object_, string_value = string.String.create(), integer_value = 0, boolean_value = false, array_value = null, object_value = value)
+    return Value(
+        kind = ValueKind.object_,
+        string_value = string.String.create(),
+        integer_value = 0,
+        boolean_value = false,
+        array_value = null,
+        object_value = value
+    )
 
 
 public function release_value(value: Value) -> void:
@@ -117,7 +152,6 @@ public function release_value(value: Value) -> void:
         unsafe:
             read(nested_object).release()
             heap.release(nested_object)
-
 
 
 function value_as_string(value: Value) -> Option[str]:
@@ -349,7 +383,11 @@ extending ArrayTable:
 
 extending Document:
     public static function create() -> Document:
-        return Document(root = Object.create(), tables = vec.Vec[Table].create(), array_tables = vec.Vec[ArrayTable].create())
+        return Document(
+            root = Object.create(),
+            tables = vec.Vec[Table].create(),
+            array_tables = vec.Vec[ArrayTable].create()
+        )
 
 
     public function get_string(key: str) -> Option[str]:
@@ -634,7 +672,10 @@ function parse_string(parser: ref[Parser]) -> Result[string.String, ParseError]:
                     result.push_byte(byte_backslash)
                 else:
                     result.release()
-                    return Result[string.String, ParseError].failure(error= parse_error(parser, "unsupported string escape"))
+                    return Result[string.String, ParseError].failure(error= parse_error(
+                        parser,
+                        "unsupported string escape"
+                    ))
 
 
 function parse_key(parser: ref[Parser]) -> Result[string.String, ParseError]:
@@ -1000,7 +1041,10 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
             parser_skip_inline_space(parser)
 
             if array_table:
-                if not parser_consume_byte(parser, byte_right_bracket) or not parser_consume_byte(parser, byte_right_bracket):
+                if not parser_consume_byte(
+                    parser,
+                    byte_right_bracket
+                ) or not parser_consume_byte(parser, byte_right_bracket):
                     name.release()
                     return Result[bool, ParseError].failure(error= parse_error(parser, "expected ']]'"))
 
@@ -1206,7 +1250,6 @@ function append_table_entries(output: ref[string.String], object_entries: Object
         append_value(output, current.value)
         output.append("\n")
         index += 1
-
 
 
 public function render(document: Document) -> string.String:

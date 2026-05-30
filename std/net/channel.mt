@@ -4,7 +4,6 @@ import std.net as net
 import std.string as string
 import std.vec as vec
 
-
 const header_magic: uint = 1297374001
 const header_bytes: ptr_uint = 17
 const reliable_flag: ubyte = 1
@@ -13,23 +12,19 @@ const ack_window_size: ptr_uint = 32
 const max_uint_value: ulong = 4294967295
 const half_sequence_range: uint = 2147483648
 
-
 public struct Error:
     code: int
     message: string.String
-
 
 public struct Config:
     max_payload_bytes: ptr_uint
     max_pending_reliable: ptr_uint
     resend_after_frames: uint
 
-
 public struct Message:
     sequence: uint
     reliable: bool
     payload: bytes.Bytes
-
 
 public struct HostMessage:
     source: net.SocketAddress
@@ -37,18 +32,15 @@ public struct HostMessage:
     reliable: bool
     payload: bytes.Bytes
 
-
 public struct Channel:
     socket: net.UdpSocket
     config: Config
     protocol: ProtocolState
 
-
 public struct Host:
     socket: net.UdpSocket
     config: Config
     peers: vec.Vec[PeerState]
-
 
 struct PacketHeader:
     sequence: uint
@@ -56,12 +48,10 @@ struct PacketHeader:
     ack_bits: uint
     packet_flags: ubyte
 
-
 struct PendingReliable:
     sequence: uint
     payload: bytes.Bytes
     last_sent_frame: uint
-
 
 struct ProtocolState:
     next_sequence: uint
@@ -69,7 +59,6 @@ struct ProtocolState:
     received_sequence: uint
     received_mask: uint
     pending_reliable: vec.Vec[PendingReliable]
-
 
 struct PeerState:
     address: net.SocketAddress
@@ -171,7 +160,13 @@ function pending_window_limit(config: Config) -> ptr_uint:
     return ack_window_size
 
 
-function build_packet(sequence: uint, ack: uint, ack_bits: uint, packet_flags: ubyte, content: span[ubyte]) -> bytes.Bytes:
+function build_packet(
+    sequence: uint,
+    ack: uint,
+    ack_bits: uint,
+    packet_flags: ubyte,
+    content: span[ubyte]
+) -> bytes.Bytes:
     var buffer = vec.Vec[ubyte].with_capacity(header_bytes + content.len)
     defer buffer.release()
 
@@ -191,7 +186,10 @@ function decode_header(packet: bytes.Bytes) -> Result[PacketHeader, Error]:
     let packet_span = packet.as_span()
     let magic = decode_uint(packet_span, 0)
     if magic != header_magic:
-        return Result[PacketHeader, Error].failure(error = channel_error(-1, "udp channel packet has an invalid header"))
+        return Result[PacketHeader, Error].failure(error = channel_error(
+            -1,
+            "udp channel packet has an invalid header"
+        ))
 
     return Result[PacketHeader, Error].success(value = PacketHeader(
             sequence = decode_uint(packet_span, 4),
@@ -207,7 +205,10 @@ function copy_payload(packet: bytes.Bytes) -> bytes.Bytes:
 
     let packet_span = packet.as_span()
     unsafe:
-        return bytes.Bytes.copy(span[ubyte](data = packet_span.data + header_bytes, len = packet_span.len - header_bytes))
+        return bytes.Bytes.copy(span[ubyte](
+            data = packet_span.data + header_bytes,
+            len = packet_span.len - header_bytes
+        ))
 
 
 function remove_acked_pending(protocol: ptr[ProtocolState], ack: uint, ack_bits: uint) -> void:
@@ -274,7 +275,13 @@ function mark_received(protocol: ptr[ProtocolState], sequence: uint) -> bool:
     return true
 
 
-async function send_connected_packet(socket: net.UdpSocket, protocol: ptr[ProtocolState], sequence: uint, packet_flags: ubyte, content: span[ubyte]) -> Result[bool, Error]:
+async function send_connected_packet(
+    socket: net.UdpSocket,
+    protocol: ptr[ProtocolState],
+    sequence: uint,
+    packet_flags: ubyte,
+    content: span[ubyte]
+) -> Result[bool, Error]:
     var ack: uint = 0
     var ack_bits: uint = 0
     let received_initialized = unsafe: read(protocol).received_initialized
@@ -294,7 +301,14 @@ async function send_connected_packet(socket: net.UdpSocket, protocol: ptr[Protoc
             return Result[bool, Error].success(value = true)
 
 
-async function send_packet_to(socket: net.UdpSocket, destination: net.SocketAddress, protocol: ptr[ProtocolState], sequence: uint, packet_flags: ubyte, content: span[ubyte]) -> Result[bool, Error]:
+async function send_packet_to(
+    socket: net.UdpSocket,
+    destination: net.SocketAddress,
+    protocol: ptr[ProtocolState],
+    sequence: uint,
+    packet_flags: ubyte,
+    content: span[ubyte]
+) -> Result[bool, Error]:
     var ack: uint = 0
     var ack_bits: uint = 0
     let received_initialized = unsafe: read(protocol).received_initialized
@@ -319,7 +333,11 @@ async function send_connected_ack_only(socket: net.UdpSocket, protocol: ptr[Prot
     return await send_connected_packet(socket, protocol, sequence, ack_only_flag, bytes.Bytes.empty().as_span())
 
 
-async function send_ack_only_to(socket: net.UdpSocket, destination: net.SocketAddress, protocol: ptr[ProtocolState]) -> Result[bool, Error]:
+async function send_ack_only_to(
+    socket: net.UdpSocket,
+    destination: net.SocketAddress,
+    protocol: ptr[ProtocolState]
+) -> Result[bool, Error]:
     let sequence = allocate_sequence(protocol)
     return await send_packet_to(socket, destination, protocol, sequence, ack_only_flag, bytes.Bytes.empty().as_span())
 
@@ -361,7 +379,12 @@ public function wrap_connected(socket: net.UdpSocket, config: Config) -> Channel
     return Channel(socket = socket, config = config, protocol = create_protocol_state())
 
 
-public function bind_connect_on(runtime: aio.Runtime, local_address: net.SocketAddress, remote_address: net.SocketAddress, config: Config) -> Result[Channel, Error]:
+public function bind_connect_on(
+    runtime: aio.Runtime,
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    config: Config
+) -> Result[Channel, Error]:
     let bind_result = net.udp_bind_on(runtime, local_address)
     match bind_result:
         Result.failure as error_payload:
@@ -380,17 +403,29 @@ public function bind_connect_on(runtime: aio.Runtime, local_address: net.SocketA
                     return Result[Channel, Error].success(value = wrap_connected(socket, config))
 
 
-public function bind_connect(local_address: net.SocketAddress, remote_address: net.SocketAddress, config: Config) -> Result[Channel, Error]:
+public function bind_connect(
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    config: Config
+) -> Result[Channel, Error]:
     return bind_connect_on(aio.current_runtime(), local_address, remote_address, config)
 
 
-public function listen_on(runtime: aio.Runtime, local_address: net.SocketAddress, config: Config) -> Result[Host, Error]:
+public function listen_on(
+    runtime: aio.Runtime,
+    local_address: net.SocketAddress,
+    config: Config
+) -> Result[Host, Error]:
     let bind_result = net.udp_bind_on(runtime, local_address)
     match bind_result:
         Result.failure as error_payload:
             return Result[Host, Error].failure(error = error_from_net(error_payload.error))
         Result.success as bind_payload:
-            return Result[Host, Error].success(value = Host(socket = bind_payload.value, config = config, peers = vec.Vec[PeerState].create()))
+            return Result[Host, Error].success(value = Host(
+                socket = bind_payload.value,
+                config = config,
+                peers = vec.Vec[PeerState].create()
+            ))
 
 
 public function listen(local_address: net.SocketAddress, config: Config) -> Result[Host, Error]:
@@ -404,7 +439,11 @@ extending Error:
 
 extending Config:
     public static function default(max_payload_bytes: ptr_uint) -> Config:
-        return Config(max_payload_bytes = max_payload_bytes, max_pending_reliable = ack_window_size, resend_after_frames = 5)
+        return Config(
+            max_payload_bytes = max_payload_bytes,
+            max_pending_reliable = ack_window_size,
+            resend_after_frames = 5
+        )
 
 
 extending Message:
@@ -439,7 +478,10 @@ extending Channel:
 
     public async mutable function send(content: span[ubyte]) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
-            return Result[uint, Error].failure(error = channel_error(-2, "udp channel payload exceeds configured maximum"))
+            return Result[uint, Error].failure(error = channel_error(
+                -2,
+                "udp channel payload exceeds configured maximum"
+            ))
 
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         let sequence = allocate_sequence(protocol)
@@ -454,7 +496,10 @@ extending Channel:
 
     public async mutable function send_reliable(content: span[ubyte], frame: uint) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
-            return Result[uint, Error].failure(error = channel_error(-2, "udp channel payload exceeds configured maximum"))
+            return Result[uint, Error].failure(error = channel_error(
+                -2,
+                "udp channel payload exceeds configured maximum"
+            ))
 
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         let pending_len = unsafe: read(protocol).pending_reliable.len()
@@ -468,7 +513,11 @@ extending Channel:
                 return Result[uint, Error].failure(error = error_payload.error)
             Result.success as send_payload:
                 send_payload.value
-                unsafe: read(protocol).pending_reliable.push(PendingReliable(sequence = sequence, payload = bytes.Bytes.copy(content), last_sent_frame = frame))
+                unsafe: read(protocol).pending_reliable.push(PendingReliable(
+                    sequence = sequence,
+                    payload = bytes.Bytes.copy(content),
+                    last_sent_frame = frame
+                ))
                 return Result[uint, Error].success(value = sequence)
 
 
@@ -529,7 +578,13 @@ extending Channel:
                 index += 1
                 continue
 
-            let resend_result = await send_connected_packet(this.socket, protocol, unsafe: read(entry_ptr).sequence, reliable_flag, unsafe: read(entry_ptr).payload.as_span())
+            let resend_result = await send_connected_packet(
+                this.socket,
+                protocol,
+                unsafe: read(entry_ptr).sequence,
+                reliable_flag,
+                unsafe: read(entry_ptr).payload.as_span()
+            )
             match resend_result:
                 Result.failure as error_payload:
                     return Result[ptr_uint, Error].failure(error = error_payload.error)
@@ -583,7 +638,10 @@ extending Host:
 
     public async mutable function send(destination: net.SocketAddress, content: span[ubyte]) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
-            return Result[uint, Error].failure(error = channel_error(-2, "udp channel payload exceeds configured maximum"))
+            return Result[uint, Error].failure(error = channel_error(
+                -2,
+                "udp channel payload exceeds configured maximum"
+            ))
 
         let peer_result = get_or_create_peer(ref_of(this), destination)
         match peer_result:
@@ -593,7 +651,14 @@ extending Host:
                 let peer_ptr = peer_payload.value
                 let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
                 let sequence = allocate_sequence(protocol)
-                let send_result = await send_packet_to(this.socket, unsafe: read(peer_ptr).address, protocol, sequence, 0, content)
+                let send_result = await send_packet_to(
+                    this.socket,
+                    unsafe: read(peer_ptr).address,
+                    protocol,
+                    sequence,
+                    0,
+                    content
+                )
                 match send_result:
                     Result.failure as error_payload:
                         return Result[uint, Error].failure(error = error_payload.error)
@@ -602,9 +667,16 @@ extending Host:
                         return Result[uint, Error].success(value = sequence)
 
 
-    public async mutable function send_reliable(destination: net.SocketAddress, content: span[ubyte], frame: uint) -> Result[uint, Error]:
+    public async mutable function send_reliable(
+        destination: net.SocketAddress,
+        content: span[ubyte],
+        frame: uint
+    ) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
-            return Result[uint, Error].failure(error = channel_error(-2, "udp channel payload exceeds configured maximum"))
+            return Result[uint, Error].failure(error = channel_error(
+                -2,
+                "udp channel payload exceeds configured maximum"
+            ))
 
         let peer_result = get_or_create_peer(ref_of(this), destination)
         match peer_result:
@@ -618,13 +690,24 @@ extending Host:
                     return Result[uint, Error].failure(error = channel_error(-3, "udp channel reliable window is full"))
 
                 let sequence = allocate_sequence(protocol)
-                let send_result = await send_packet_to(this.socket, unsafe: read(peer_ptr).address, protocol, sequence, reliable_flag, content)
+                let send_result = await send_packet_to(
+                    this.socket,
+                    unsafe: read(peer_ptr).address,
+                    protocol,
+                    sequence,
+                    reliable_flag,
+                    content
+                )
                 match send_result:
                     Result.failure as error_payload:
                         return Result[uint, Error].failure(error = error_payload.error)
                     Result.success as send_payload:
                         send_payload.value
-                        unsafe: read(protocol).pending_reliable.push(PendingReliable(sequence = sequence, payload = bytes.Bytes.copy(content), last_sent_frame = frame))
+                        unsafe: read(protocol).pending_reliable.push(PendingReliable(
+                            sequence = sequence,
+                            payload = bytes.Bytes.copy(content),
+                            last_sent_frame = frame
+                        ))
                         return Result[uint, Error].success(value = sequence)
 
 
@@ -673,7 +756,10 @@ extending Host:
 
                                 let payload = copy_payload(datagram.data)
                                 datagram.data.release()
-                                return Result[Option[HostMessage], Error].success(value = Option[HostMessage].some(value = HostMessage(
+                                return Result[
+                                    Option[HostMessage],
+                                    Error
+                                ].success(value = Option[HostMessage].some(value = HostMessage(
                                         source = datagram.source,
                                         sequence = header.sequence,
                                         reliable = is_reliable,
@@ -703,7 +789,14 @@ extending Host:
                     index += 1
                     continue
 
-                let resend_result = await send_packet_to(this.socket, unsafe: read(peer_ptr).address, protocol, unsafe: read(entry_ptr).sequence, reliable_flag, unsafe: read(entry_ptr).payload.as_span())
+                let resend_result = await send_packet_to(
+                    this.socket,
+                    unsafe: read(peer_ptr).address,
+                    protocol,
+                    unsafe: read(entry_ptr).sequence,
+                    reliable_flag,
+                    unsafe: read(entry_ptr).payload.as_span()
+                )
                 match resend_result:
                     Result.failure as error_payload:
                         return Result[ptr_uint, Error].failure(error = error_payload.error)

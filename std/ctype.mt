@@ -48,6 +48,5 @@ public function is_upper(value: int) -> bool:
 public function is_xdigit(value: int) -> bool:
     return c.mt_ctype_isxdigit(value) != 0
 
-
 public foreign function to_lower(value: int) -> int = c.mt_ctype_tolower
 public foreign function to_upper(value: int) -> int = c.mt_ctype_toupper

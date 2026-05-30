@@ -2,6 +2,7 @@
 external
 
 include "errno_bindgen.h"
+
 enum MT_ERRNO_CODES: int
     MT_ERRNO_NONE = 0
     MT_ERRNO_E2BIG = 7
@@ -34,6 +35,7 @@ enum MT_ERRNO_CODES: int
     MT_ERRNO_ESRCH = 3
     MT_ERRNO_ETIMEDOUT = 110
     MT_ERRNO_EXDEV = 18
+
 external function mt_errno_get() -> int
 external function mt_errno_set(value: int) -> void
 external function mt_errno_strerror(value: int) -> cstr?

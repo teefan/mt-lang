@@ -3,15 +3,20 @@ external
 
 link "enet"
 include "enet/enet.h"
+
 opaque fd_set = c"struct fd_set"
+
 type ENetSocket = int
+
 struct ENetBuffer:
     data: ptr[void]
     dataLength: ptr_uint
+
 type ENetSocketSet = fd_set
 type enet_uint8 = ubyte
 type enet_uint16 = ushort
 type enet_uint32 = uint
+
 enum ENetProtocolCommand: int
     ENET_PROTOCOL_COMMAND_NONE = 0
     ENET_PROTOCOL_COMMAND_ACKNOWLEDGE = 1
@@ -28,6 +33,7 @@ enum ENetProtocolCommand: int
     ENET_PROTOCOL_COMMAND_SEND_UNRELIABLE_FRAGMENT = 12
     ENET_PROTOCOL_COMMAND_COUNT = 13
     ENET_PROTOCOL_COMMAND_MASK = 15
+
 enum ENetProtocolFlag: int
     ENET_PROTOCOL_COMMAND_FLAG_ACKNOWLEDGE = 128
     ENET_PROTOCOL_COMMAND_FLAG_UNSEQUENCED = 64
@@ -36,17 +42,21 @@ enum ENetProtocolFlag: int
     ENET_PROTOCOL_HEADER_FLAG_MASK = 49152
     ENET_PROTOCOL_HEADER_SESSION_MASK = 12288
     ENET_PROTOCOL_HEADER_SESSION_SHIFT = 12
+
 struct ENetProtocolHeader:
     peerID: ushort
     sentTime: ushort
+
 struct ENetProtocolCommandHeader:
     command: ubyte
     channelID: ubyte
     reliableSequenceNumber: ushort
+
 struct ENetProtocolAcknowledge:
     header: ENetProtocolCommandHeader
     receivedReliableSequenceNumber: ushort
     receivedSentTime: ushort
+
 struct ENetProtocolConnect:
     header: ENetProtocolCommandHeader
     outgoingPeerID: ushort
@@ -62,6 +72,7 @@ struct ENetProtocolConnect:
     packetThrottleDeceleration: uint
     connectID: uint
     data: uint
+
 struct ENetProtocolVerifyConnect:
     header: ENetProtocolCommandHeader
     outgoingPeerID: ushort
@@ -76,31 +87,39 @@ struct ENetProtocolVerifyConnect:
     packetThrottleAcceleration: uint
     packetThrottleDeceleration: uint
     connectID: uint
+
 struct ENetProtocolBandwidthLimit:
     header: ENetProtocolCommandHeader
     incomingBandwidth: uint
     outgoingBandwidth: uint
+
 struct ENetProtocolThrottleConfigure:
     header: ENetProtocolCommandHeader
     packetThrottleInterval: uint
     packetThrottleAcceleration: uint
     packetThrottleDeceleration: uint
+
 struct ENetProtocolDisconnect:
     header: ENetProtocolCommandHeader
     data: uint
+
 struct ENetProtocolPing:
     header: ENetProtocolCommandHeader
+
 struct ENetProtocolSendReliable:
     header: ENetProtocolCommandHeader
     dataLength: ushort
+
 struct ENetProtocolSendUnreliable:
     header: ENetProtocolCommandHeader
     unreliableSequenceNumber: ushort
     dataLength: ushort
+
 struct ENetProtocolSendUnsequenced:
     header: ENetProtocolCommandHeader
     unsequencedGroup: ushort
     dataLength: ushort
+
 struct ENetProtocolSendFragment:
     header: ENetProtocolCommandHeader
     startSequenceNumber: ushort
@@ -109,6 +128,7 @@ struct ENetProtocolSendFragment:
     fragmentNumber: uint
     totalLength: uint
     fragmentOffset: uint
+
 union ENetProtocol:
     header: ENetProtocolCommandHeader
     acknowledge: ENetProtocolAcknowledge
@@ -122,27 +142,36 @@ union ENetProtocol:
     sendFragment: ENetProtocolSendFragment
     bandwidthLimit: ENetProtocolBandwidthLimit
     throttleConfigure: ENetProtocolThrottleConfigure
+
 struct ENetListNode:
     next: ptr[ENetListNode]
     previous: ptr[ENetListNode]
+
 type ENetListIterator = ptr[ENetListNode]
+
 struct ENetList:
     sentinel: ENetListNode
+
 external function enet_list_clear(arg0: ptr[ENetList]) -> void
 external function enet_list_insert(arg0: ptr[ENetListNode], arg1: ptr[void]) -> ENetListIterator
 external function enet_list_remove(arg0: ptr[ENetListNode]) -> ptr[void]
 external function enet_list_move(arg0: ptr[ENetListNode], arg1: ptr[void], arg2: ptr[void]) -> ENetListIterator
 external function enet_list_size(arg0: ptr[ENetList]) -> ptr_uint
+
 struct ENetCallbacks:
     malloc: fn(arg0: ptr_uint) -> ptr[void]
     free: fn(arg0: ptr[void]) -> void
     no_memory: fn() -> void
+
 external function enet_malloc(arg0: ptr_uint) -> ptr[void]
 external function enet_free(arg0: ptr[void]) -> void
+
 type ENetVersion = uint
+
 opaque _ENetHost = c"ENetHost"
 opaque _ENetEvent = c"ENetEvent"
 opaque _ENetPacket = c"ENetPacket"
+
 flags ENetSocketType: int
     ENET_SOCKET_TYPE_STREAM = 1
     ENET_SOCKET_TYPE_DATAGRAM = 2
@@ -151,6 +180,7 @@ flags ENetSocketWait: int
     ENET_SOCKET_WAIT_SEND = 1
     ENET_SOCKET_WAIT_RECEIVE = 2
     ENET_SOCKET_WAIT_INTERRUPT = 4
+
 enum ENetSocketOption: int
     ENET_SOCKOPT_NONBLOCK = 1
     ENET_SOCKOPT_BROADCAST = 2
@@ -162,20 +192,25 @@ enum ENetSocketOption: int
     ENET_SOCKOPT_ERROR = 8
     ENET_SOCKOPT_NODELAY = 9
     ENET_SOCKOPT_TTL = 10
+
 flags ENetSocketShutdown: int
     ENET_SOCKET_SHUTDOWN_READ = 0
     ENET_SOCKET_SHUTDOWN_WRITE = 1
     ENET_SOCKET_SHUTDOWN_READ_WRITE = 2
+
 struct ENetAddress:
     host: uint
     port: ushort
+
 flags ENetPacketFlag: int
     ENET_PACKET_FLAG_RELIABLE = 1
     ENET_PACKET_FLAG_UNSEQUENCED = 2
     ENET_PACKET_FLAG_NO_ALLOCATE = 4
     ENET_PACKET_FLAG_UNRELIABLE_FRAGMENT = 8
     ENET_PACKET_FLAG_SENT = 256
+
 type ENetPacketFreeCallback = fn(arg0: ptr[ENetPacket]) -> void
+
 struct ENetPacket:
     referenceCount: ptr_uint
     flags_: uint
@@ -183,10 +218,12 @@ struct ENetPacket:
     dataLength: ptr_uint
     freeCallback: fn(arg0: ptr[ENetPacket]) -> void
     userData: ptr[void]
+
 struct ENetAcknowledgement:
     acknowledgementList: ENetListNode
     sentTime: uint
     command: ENetProtocol
+
 struct ENetOutgoingCommand:
     outgoingCommandList: ENetListNode
     reliableSequenceNumber: ushort
@@ -199,6 +236,7 @@ struct ENetOutgoingCommand:
     sendAttempts: ushort
     command: ENetProtocol
     packet: ptr[ENetPacket]
+
 struct ENetIncomingCommand:
     incomingCommandList: ENetListNode
     reliableSequenceNumber: ushort
@@ -208,6 +246,7 @@ struct ENetIncomingCommand:
     fragmentsRemaining: uint
     fragments: ptr[enet_uint32]
     packet: ptr[ENetPacket]
+
 enum ENetPeerState: int
     ENET_PEER_STATE_DISCONNECTED = 0
     ENET_PEER_STATE_CONNECTING = 1
@@ -219,6 +258,7 @@ enum ENetPeerState: int
     ENET_PEER_STATE_DISCONNECTING = 7
     ENET_PEER_STATE_ACKNOWLEDGING_DISCONNECT = 8
     ENET_PEER_STATE_ZOMBIE = 9
+
 struct ENetChannel:
     outgoingReliableSequenceNumber: ushort
     outgoingUnreliableSequenceNumber: ushort
@@ -228,9 +268,11 @@ struct ENetChannel:
     incomingUnreliableSequenceNumber: ushort
     incomingReliableCommands: ENetList
     incomingUnreliableCommands: ENetList
+
 flags ENetPeerFlag: int
     ENET_PEER_FLAG_NEEDS_DISPATCH = 1
     ENET_PEER_FLAG_CONTINUE_SENDING = 2
+
 struct ENetPeer:
     dispatchList: ENetListNode
     host: ptr[ENetHost]
@@ -292,13 +334,16 @@ struct ENetPeer:
     unsequencedWindow: array[enet_uint32, 32]
     eventData: uint
     totalWaitingData: ptr_uint
+
 struct ENetCompressor:
     context: ptr[void]
     compress: fn(arg0: ptr[void], arg1: const_ptr[ENetBuffer], arg2: ptr_uint, arg3: ptr_uint, arg4: ptr[enet_uint8], arg5: ptr_uint) -> ptr_uint
     decompress: fn(arg0: ptr[void], arg1: const_ptr[enet_uint8], arg2: ptr_uint, arg3: ptr[enet_uint8], arg4: ptr_uint) -> ptr_uint
     destroy: fn(arg0: ptr[void]) -> void
+
 type ENetChecksumCallback = fn(arg0: const_ptr[ENetBuffer], arg1: ptr_uint) -> enet_uint32
 type ENetInterceptCallback = fn(arg0: ptr[ENetHost], arg1: ptr[ENetEvent]) -> int
+
 struct ENetHost:
     socket: int
     address: ENetAddress
@@ -336,17 +381,20 @@ struct ENetHost:
     duplicatePeers: ptr_uint
     maximumPacketSize: ptr_uint
     maximumWaitingData: ptr_uint
+
 enum ENetEventType: int
     ENET_EVENT_TYPE_NONE = 0
     ENET_EVENT_TYPE_CONNECT = 1
     ENET_EVENT_TYPE_DISCONNECT = 2
     ENET_EVENT_TYPE_RECEIVE = 3
+
 struct ENetEvent:
     type_: ENetEventType
     peer: ptr[ENetPeer]
     channelID: ubyte
     data: uint
     packet: ptr[ENetPacket]
+
 external function enet_initialize() -> int
 external function enet_initialize_with_callbacks(version: uint, inits: const_ptr[ENetCallbacks]) -> int
 external function enet_deinitialize() -> void
@@ -415,6 +463,7 @@ external function enet_range_coder_destroy(arg0: ptr[void]) -> void
 external function enet_range_coder_compress(arg0: ptr[void], arg1: const_ptr[ENetBuffer], arg2: ptr_uint, arg3: ptr_uint, arg4: ptr[enet_uint8], arg5: ptr_uint) -> ptr_uint
 external function enet_range_coder_decompress(arg0: ptr[void], arg1: const_ptr[enet_uint8], arg2: ptr_uint, arg3: ptr[enet_uint8], arg4: ptr_uint) -> ptr_uint
 external function enet_protocol_command_size(arg0: ubyte) -> ptr_uint
+
 const ENET_SOCKET_NULL: int = -1
 const ENET_VERSION_MAJOR: int = 1
 const ENET_VERSION_MINOR: int = 3

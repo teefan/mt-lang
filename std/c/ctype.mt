@@ -2,6 +2,7 @@
 external
 
 include "ctype_bindgen.h"
+
 external function mt_ctype_isalnum(value: int) -> int
 external function mt_ctype_isalpha(value: int) -> int
 external function mt_ctype_isblank(value: int) -> int

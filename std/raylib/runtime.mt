@@ -1,6 +1,7 @@
 import std.raylib as rl
 import std.libc as libc
 
+
 public function env_flag(name: str) -> bool:
     return libc.get_environment_variable(name) != null
 

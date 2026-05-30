@@ -7,20 +7,16 @@ import std.string as string
 import std.tls as tls
 import std.vec as vec
 
-
 public struct Error:
     message: string.String
-
 
 public struct Header:
     name: string.String
     value: string.String
 
-
 public struct RequestHeader:
     name: str
     value: str
-
 
 public struct Response:
     status_code: int
@@ -28,11 +24,9 @@ public struct Response:
     headers: vec.Vec[Header]
     body: bytes.Bytes
 
-
 enum UrlScheme: int
     http = 1
     https = 2
-
 
 struct ParsedUrl:
     scheme: UrlScheme
@@ -40,7 +34,6 @@ struct ParsedUrl:
     authority: string.String
     target: string.String
     port: int
-
 
 struct ResponseHead:
     status_code: int
@@ -339,7 +332,12 @@ function valid_http_header_value(value: str) -> bool:
     return true
 
 
-function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader], body: Option[span[ubyte]]) -> Result[vec.Vec[ubyte], Error]:
+function build_request(
+    url: ParsedUrl,
+    method: str,
+    headers: span[RequestHeader],
+    body: Option[span[ubyte]]
+) -> Result[vec.Vec[ubyte], Error]:
     if not valid_http_token(method):
         return Result[vec.Vec[ubyte], Error].failure(error = status_error("invalid http method"))
 
@@ -377,15 +375,24 @@ function build_request(url: ParsedUrl, method: str, headers: span[RequestHeader]
         else if ascii_case_equal(header.name, "Content-Length"):
             if content_length_seen:
                 request.release()
-                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length must not be repeated"))
+                return Result[
+                    vec.Vec[ubyte],
+                    Error
+                ].failure(error = status_error("request Content-Length must not be repeated"))
 
             let content_length = parse_decimal(header.value.trim_ascii_whitespace()) else:
                 request.release()
-                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length must be a decimal integer"))
+                return Result[
+                    vec.Vec[ubyte],
+                    Error
+                ].failure(error = status_error("request Content-Length must be a decimal integer"))
 
             if content_length != body_length:
                 request.release()
-                return Result[vec.Vec[ubyte], Error].failure(error = status_error("request Content-Length does not match body length"))
+                return Result[
+                    vec.Vec[ubyte],
+                    Error
+                ].failure(error = status_error("request Content-Length does not match body length"))
 
             content_length_seen = true
 
@@ -446,7 +453,12 @@ function find_header_terminator(data: span[ubyte]) -> Option[ptr_uint]:
 
     var index: ptr_uint = 0
     while index + 3 < data.len:
-        if unsafe: read(data.data + index) == 13 and read(data.data + index + 1) == 10 and read(data.data + index + 2) == 13 and read(data.data + index + 3) == 10:
+        if (
+            unsafe: read(data.data + index) == 13
+            and read(data.data + index + 1) == 10
+            and read(data.data + index + 2) == 13
+            and read(data.data + index + 3) == 10
+        ):
             return Option[ptr_uint].some(value = index)
         index += 1
 
@@ -578,7 +590,10 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
     var reason = string.String.create()
     if first_space + 4 < status_line.len:
         if status_line.byte_at(first_space + 4) != 32:
-            return Result[ResponseHead, Error].failure(error = response_error("status line must separate code and reason with a space"))
+            return Result[
+                ResponseHead,
+                Error
+            ].failure(error = response_error("status line must separate code and reason with a space"))
 
         let reason_start = first_space + 5
         reason = string.String.from_str(status_line.slice(reason_start, status_line.len - reason_start))
@@ -627,7 +642,10 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
             match parse_decimal(value_text):
                 Option.none:
                     head.release()
-                    return Result[ResponseHead, Error].failure(error = response_error("Content-Length must be a decimal integer"))
+                    return Result[
+                        ResponseHead,
+                        Error
+                    ].failure(error = response_error("Content-Length must be a decimal integer"))
                 Option.some as payload:
                     head.content_length = Option[ptr_uint].some(value = payload.value)
 
@@ -656,7 +674,10 @@ function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Byte
     var cursor: ptr_uint = 0
     while true:
         let line_end = find_crlf_bytes(encoded, cursor) else:
-            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk size"))
+            return Result[
+                bytes.Bytes,
+                Error
+            ].failure(error = response_error("chunked response ended before chunk size"))
 
         let line_bytes = unsafe: span[ubyte](data = encoded.data + cursor, len = line_end - cursor)
         let line_text = text.utf8_byte_span_as_str(line_bytes) else:
@@ -670,22 +691,34 @@ function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Byte
         if chunk_size == 0:
             while true:
                 let trailer_end = find_crlf_bytes(encoded, cursor) else:
-                    return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before trailers were complete"))
+                    return Result[
+                        bytes.Bytes,
+                        Error
+                    ].failure(error = response_error("chunked response ended before trailers were complete"))
 
                 if trailer_end == cursor:
                     if trailer_end + 2 != encoded.len:
-                        return Result[bytes.Bytes, Error].failure(error = response_error("unexpected bytes after chunked body"))
+                        return Result[
+                            bytes.Bytes,
+                            Error
+                        ].failure(error = response_error("unexpected bytes after chunked body"))
 
                     return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body.as_span()))
 
                 cursor = trailer_end + 2
 
         if encoded.len < cursor or encoded.len - cursor < chunk_size:
-            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk data"))
+            return Result[
+                bytes.Bytes,
+                Error
+            ].failure(error = response_error("chunked response ended before chunk data"))
 
         let remaining = encoded.len - cursor - chunk_size
         if remaining < 2:
-            return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk terminator"))
+            return Result[
+                bytes.Bytes,
+                Error
+            ].failure(error = response_error("chunked response ended before chunk terminator"))
 
         let chunk_bytes = unsafe: span[ubyte](data = encoded.data + cursor, len = chunk_size)
         body.append_span(chunk_bytes)
@@ -697,7 +730,11 @@ function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Byte
         cursor += 2
 
 
-function parse_buffered_body(body_bytes: span[ubyte], content_length: Option[ptr_uint], chunked: bool) -> Result[bytes.Bytes, Error]:
+function parse_buffered_body(
+    body_bytes: span[ubyte],
+    content_length: Option[ptr_uint],
+    chunked: bool
+) -> Result[bytes.Bytes, Error]:
     if chunked:
         return decode_buffered_chunked_body(body_bytes)
 
@@ -706,7 +743,10 @@ function parse_buffered_body(body_bytes: span[ubyte], content_length: Option[ptr
             return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body_bytes))
         Option.some as payload:
             if body_bytes.len != payload.value:
-                return Result[bytes.Bytes, Error].failure(error = response_error("body length did not match Content-Length"))
+                return Result[
+                    bytes.Bytes,
+                    Error
+                ].failure(error = response_error("body length did not match Content-Length"))
 
             return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(body_bytes))
 
@@ -726,7 +766,10 @@ function parse_buffered_response(raw_response: span[ubyte]) -> Result[Response, 
         Result.success as payload:
             var head = payload.value
             let body_start = header_length + 4
-            let body_bytes = unsafe: span[ubyte](data = raw_response.data + body_start, len = raw_response.len - body_start)
+            let body_bytes = unsafe: span[ubyte](
+                data = raw_response.data + body_start,
+                len = raw_response.len - body_start
+            )
 
             let body_result = parse_buffered_body(body_bytes, head.content_length, head.chunked)
             match body_result:
@@ -771,7 +814,10 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                             var chunk = ok_payload.value
                             if chunk.len == 0:
                                 chunk.release()
-                                return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk size"))
+                                return Result[
+                                    bytes.Bytes,
+                                    Error
+                                ].failure(error = response_error("chunked response ended before chunk size"))
 
                             buffer.append_span(chunk.as_span())
                             chunk.release()
@@ -802,12 +848,18 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                             let chunk_result = await stream.read_once(4096)
                             match chunk_result:
                                 Result.failure as error_payload:
-                                    return Result[bytes.Bytes, Error].failure(error = status_net_error(error_payload.error))
+                                    return Result[
+                                        bytes.Bytes,
+                                        Error
+                                    ].failure(error = status_net_error(error_payload.error))
                                 Result.success as ok_payload:
                                     var chunk = ok_payload.value
                                     if chunk.len == 0:
                                         chunk.release()
-                                        return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before trailers were complete"))
+                                        return Result[
+                                            bytes.Bytes,
+                                            Error
+                                        ].failure(error = response_error("chunked response ended before trailers were complete"))
 
                                     buffer.append_span(chunk.as_span())
                                     chunk.release()
@@ -834,7 +886,10 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
                     var chunk = ok_payload.value
                     if chunk.len == 0:
                         chunk.release()
-                        return Result[bytes.Bytes, Error].failure(error = response_error("chunked response ended before chunk data"))
+                        return Result[
+                            bytes.Bytes,
+                            Error
+                        ].failure(error = response_error("chunked response ended before chunk data"))
 
                     buffer.append_span(chunk.as_span())
                     chunk.release()
@@ -850,7 +905,12 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
         cursor += 2
 
 
-async function read_body(stream: net.TcpStream, prefix: span[ubyte], content_length: Option[ptr_uint], chunked: bool) -> Result[bytes.Bytes, Error]:
+async function read_body(
+    stream: net.TcpStream,
+    prefix: span[ubyte],
+    content_length: Option[ptr_uint],
+    chunked: bool
+) -> Result[bytes.Bytes, Error]:
     if chunked:
         return await read_chunked_body(stream, prefix)
 
@@ -915,7 +975,10 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
                 var chunk = ok_payload.value
                 if chunk.len == 0:
                     chunk.release()
-                    return Result[Response, Error].failure(error = response_error("response ended before headers were complete"))
+                    return Result[
+                        Response,
+                        Error
+                    ].failure(error = response_error("response ended before headers were complete"))
 
                 received.append_span(chunk.as_span())
                 chunk.release()
@@ -984,7 +1047,10 @@ async function request_http(parsed: ParsedUrl, request_bytes: span[ubyte]) -> Re
                             return Result[Response, Error].failure(error = status_net_error(write_error_payload.error))
                         Result.success as write_payload:
                             if write_payload.value != request_bytes.len:
-                                return Result[Response, Error].failure(error = status_error("http request write did not send the full request"))
+                                return Result[
+                                    Response,
+                                    Error
+                                ].failure(error = status_error("http request write did not send the full request"))
 
                     return await read_response(stream)
 
@@ -1025,7 +1091,10 @@ async function request_https(parsed: ParsedUrl, request_bytes: span[ubyte]) -> R
                     return Result[Response, Error].failure(error = status_tls_error(write_error_payload.error))
                 Result.success as write_payload:
                     if write_payload.value != request_bytes.len:
-                        return Result[Response, Error].failure(error = status_error("https request write did not send the full request"))
+                        return Result[
+                            Response,
+                            Error
+                        ].failure(error = status_error("https request write did not send the full request"))
 
             return await read_buffered_tls_response(stream)
 
@@ -1108,7 +1177,12 @@ public async function get(url: str) -> Result[Response, Error]:
     return await request(url, "GET", zero[span[RequestHeader]], Option[span[ubyte]].none)
 
 
-public async function request(url: str, method: str, headers: span[RequestHeader], body: Option[span[ubyte]]) -> Result[Response, Error]:
+public async function request(
+    url: str,
+    method: str,
+    headers: span[RequestHeader],
+    body: Option[span[ubyte]]
+) -> Result[Response, Error]:
     let parsed_result = parse_url(url)
     match parsed_result:
         Result.failure as payload:

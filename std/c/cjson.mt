@@ -3,6 +3,7 @@ external
 
 link "cjson"
 include "cJSON.h"
+
 struct cJSON:
     next: ptr[cJSON]
     prev: ptr[cJSON]
@@ -12,10 +13,13 @@ struct cJSON:
     valueint: int
     valuedouble: double
     string: ptr[char]
+
 struct cJSON_Hooks:
     malloc_fn: fn(arg0: ptr_uint) -> ptr[void]
     free_fn: fn(arg0: ptr[void]) -> void
+
 type cJSON_bool = int
+
 external function cJSON_Version() -> cstr
 external function cJSON_InitHooks(hooks: ptr[cJSON_Hooks]) -> void
 external function cJSON_Parse(value: cstr) -> ptr[cJSON]?
@@ -94,6 +98,7 @@ external function cJSON_SetNumberHelper(object: ptr[cJSON], number: double) -> d
 external function cJSON_SetValuestring(object: ptr[cJSON], valuestring: cstr) -> ptr[char]
 external function cJSON_malloc(size: ptr_uint) -> ptr[void]
 external function cJSON_free(object: ptr[void]) -> void
+
 const CJSON_VERSION_MAJOR: int = 1
 const CJSON_VERSION_MINOR: int = 7
 const CJSON_VERSION_PATCH: int = 19

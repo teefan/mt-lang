@@ -1,14 +1,11 @@
 import std.linked_map as linked_map
 
-
 public struct SnapshotEntry[K, V]:
     key: const_ptr[K]
     value: V
 
-
 public struct SnapshotValues[K, V]:
     values: linked_map.Entries[K, V]
-
 
 public struct SnapshotEntries[K, V]:
     values: linked_map.Entries[K, V]

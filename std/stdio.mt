@@ -1,15 +1,12 @@
 import std.c.stdio as c
 
-
 public type File = c.FILE
 public type VaList = c.va_list
-
 
 public const EOF: int = c.EOF
 public const SEEK_SET: int = c.SEEK_SET
 public const SEEK_CUR: int = c.SEEK_CUR
 public const SEEK_END: int = c.SEEK_END
-
 
 public foreign function print(format: str as cstr, ...) -> int = c.printf
 public foreign function print_to(stream: File?, format: str as cstr, ...) -> int = c.fprintf

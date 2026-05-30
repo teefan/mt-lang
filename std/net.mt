@@ -10,9 +10,7 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const address_name_capacity: ptr_uint = 128
-
 
 public type NativeSocketStorage = libuv.sockaddr_storage
 public type NativeTcpHandle = libuv.uv_tcp_t
@@ -33,39 +31,31 @@ type NativeBuffer = libuv.uv_buf_t
 type NativeAddrInfo = libuv.addrinfo
 type NativeOsFd = libuv.uv_os_fd_t
 
-
 public struct TcpStream:
     handle: ptr[NativeTcpHandle]?
-
 
 public struct TcpListener:
     handle: ptr[NativeTcpHandle]?
 
-
 public struct UdpSocket:
     handle: ptr[NativeUdpHandle]?
-
 
 public struct UdpDatagram:
     data: bytes.Bytes
     source: SocketAddress
 
-
 public struct Error:
     code: int
     message: string.String
-
 
 public enum AddressKind: int
     ipv4 = 4
     ipv6 = 6
 
-
 public struct SocketAddress:
     storage: ptr[NativeSocketStorage]?
     len: ptr_uint
     kind: AddressKind
-
 
 struct ResolveState:
     ready: bool
@@ -81,7 +71,6 @@ struct ResolveState:
     service: cstr?
     released: bool
 
-
 struct ResolveAllState:
     ready: bool
     status_code: int
@@ -95,7 +84,6 @@ struct ResolveAllState:
     node: cstr?
     service: cstr?
     released: bool
-
 
 struct ConnectState:
     ready: bool
@@ -111,13 +99,11 @@ struct ConnectState:
     destination_owned: bool
     released: bool
 
-
 struct ListenerState:
     handle: ptr[NativeTcpHandle]?
     pending_connections: int
     pending_error_code: int
     accept_state: ptr[AcceptState]?
-
 
 struct AcceptState:
     ready: bool
@@ -129,11 +115,9 @@ struct AcceptState:
     waiter_registered: bool
     listener: ptr[ListenerState]?
 
-
 struct TcpStreamState:
     handle: ptr[NativeTcpHandle]?
     read_state: ptr[ReadState]?
-
 
 struct WriteState:
     ready: bool
@@ -147,7 +131,6 @@ struct WriteState:
     buffers: ptr[NativeBuffer]?
     data: bytes.Bytes
     released: bool
-
 
 struct ReadState:
     ready: bool
@@ -164,7 +147,6 @@ struct ReadState:
     exact: bool
     released: bool
 
-
 struct ShutdownState:
     ready: bool
     status_code: int
@@ -176,11 +158,9 @@ struct ShutdownState:
     req: ptr[NativeShutdownRequest]?
     released: bool
 
-
 struct UdpSocketState:
     handle: ptr[NativeUdpHandle]?
     receive_state: ptr[UdpReceiveState]?
-
 
 struct UdpSendState:
     ready: bool
@@ -196,7 +176,6 @@ struct UdpSendState:
     destination: SocketAddress
     destination_owned: bool
     released: bool
-
 
 struct UdpReceiveState:
     ready: bool
@@ -500,7 +479,10 @@ function tcp_socket_address_from_getsockname(handle: ptr[NativeTcpHandle]?) -> R
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        ptr_uint<-name_length
+    )
 
 
 function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> Result[SocketAddress, Error]:
@@ -517,7 +499,10 @@ function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> R
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        ptr_uint<-name_length
+    )
 
 
 function tcp_socket_fd(handle: ptr[NativeTcpHandle]?) -> Result[int, Error]:
@@ -546,7 +531,10 @@ function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> R
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        ptr_uint<-name_length
+    )
 
 
 function udp_socket_address_from_getpeername(handle: ptr[NativeUdpHandle]?) -> Result[SocketAddress, Error]:
@@ -563,7 +551,10 @@ function udp_socket_address_from_getpeername(handle: ptr[NativeUdpHandle]?) -> R
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-name_length)
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        ptr_uint<-name_length
+    )
 
 
 function udp_connect_impl(handle: ptr[NativeUdpHandle]?, destination: SocketAddress) -> Result[bool, Error]:
@@ -654,7 +645,11 @@ function resolve_all_ready(frame: ptr[void]) -> bool:
     return unsafe: read(resolve_all_state(frame)).ready
 
 
-function resolve_all_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+function resolve_all_set_waiter(
+    frame: ptr[void],
+    waiter_frame: ptr[void],
+    waiter: fn(frame: ptr[void]) -> void
+) -> void:
     let state = resolve_all_state(frame)
     unsafe:
         read(state).waiter_frame = waiter_frame
@@ -819,7 +814,11 @@ function connect_callback(req: ptr[NativeConnectRequest], status_code: int) -> v
         return
 
     let handle = unsafe: read(state).handle else:
-        finish_connect(state, Result[TcpStream, Error].failure(error= net_error("tcp connect completed without a handle")), -1)
+        finish_connect(
+            state,
+            Result[TcpStream, Error].failure(error= net_error("tcp connect completed without a handle")),
+            -1
+        )
         return
 
     unsafe: read(state).handle = null
@@ -921,7 +920,11 @@ function listener_close_callback(handle: ptr[NativeHandle]) -> void:
     let pending_accept = unsafe: read(listener).accept_state
     if pending_accept != null[ptr[AcceptState]]:
         unsafe: read(listener).accept_state = null
-        finish_accept(unsafe: ptr[AcceptState]<-pending_accept, Result[TcpStream, Error].failure(error= net_error("listener closed")), -1)
+        finish_accept(
+            unsafe: ptr[AcceptState]<-pending_accept,
+            Result[TcpStream, Error].failure(error= net_error("listener closed")),
+            -1
+        )
 
     unsafe:
         heap.release_bytes(ptr[void]<-handle_as_tcp(handle))
@@ -959,7 +962,11 @@ function listener_connection_callback(server: ptr[NativeStreamHandle], status_co
     if status_code != 0:
         if pending_accept != null[ptr[AcceptState]]:
             unsafe: read(listener).accept_state = null
-            finish_accept(unsafe: ptr[AcceptState]<-pending_accept, Result[TcpStream, Error].failure(error= libuv_error(status_code)), status_code)
+            finish_accept(
+                unsafe: ptr[AcceptState]<-pending_accept,
+                Result[TcpStream, Error].failure(error= libuv_error(status_code)),
+                status_code
+            )
         else:
             unsafe: read(listener).pending_error_code = status_code
         return
@@ -1004,12 +1011,20 @@ function accept_impl(handle: ptr[NativeTcpHandle]?) -> Task[Result[TcpStream, Er
         unsafe:
             read(listener).pending_error_code = 0
             read(state).listener = null
-        finish_accept(state, Result[TcpStream, Error].failure(error= libuv_error(pending_error_code)), pending_error_code)
+        finish_accept(
+            state,
+            Result[TcpStream, Error].failure(error= libuv_error(pending_error_code)),
+            pending_error_code
+        )
         return accept_task(state)
 
     if unsafe: read(listener).accept_state != null[ptr[AcceptState]]:
         unsafe: read(state).listener = null
-        finish_accept(state, Result[TcpStream, Error].failure(error= net_error("listener already has a pending accept")), -1)
+        finish_accept(
+            state,
+            Result[TcpStream, Error].failure(error= net_error("listener already has a pending accept")),
+            -1
+        )
         return accept_task(state)
 
     if unsafe: read(listener).pending_connections > 0:
@@ -1032,7 +1047,11 @@ function tcp_stream_close_callback(handle: ptr[NativeHandle]) -> void:
         unsafe:
             read(stream).read_state = null
             read(pending_read).stream = null
-        finish_stream_read(unsafe: ptr[ReadState]<-pending_read, Result[bytes.Bytes, Error].failure(error= net_error("tcp stream closed")), -1)
+        finish_stream_read(
+            unsafe: ptr[ReadState]<-pending_read,
+            Result[bytes.Bytes, Error].failure(error= net_error("tcp stream closed")),
+            -1
+        )
 
     unsafe:
         heap.release_bytes(ptr[void]<-handle_as_tcp(handle))
@@ -1121,7 +1140,12 @@ function write_task(state: ptr[WriteState]) -> Task[Result[ptr_uint, Error]]:
         )
 
 
-function finish_write(state: ptr[WriteState], result_value: Result[ptr_uint, Error], status_code: int, owns_error: bool) -> void:
+function finish_write(
+    state: ptr[WriteState],
+    result_value: Result[ptr_uint, Error],
+    status_code: int,
+    owns_error: bool
+) -> void:
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
@@ -1232,7 +1256,11 @@ function stream_read_ready(frame: ptr[void]) -> bool:
     return unsafe: read(stream_read_state(frame)).ready
 
 
-function stream_read_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+function stream_read_set_waiter(
+    frame: ptr[void],
+    waiter_frame: ptr[void],
+    waiter: fn(frame: ptr[void]) -> void
+) -> void:
     let state = stream_read_state(frame)
     unsafe:
         if read(state).ready:
@@ -1269,7 +1297,11 @@ function stream_read_take_payload(state: ptr[ReadState]) -> bytes.Bytes:
     return bytes.Bytes(data = buffer, len = received_bytes)
 
 
-function stop_stream_read(stream: ptr[TcpStreamState], state: ptr[ReadState], stream_handle: ptr[NativeStreamHandle]) -> void:
+function stop_stream_read(
+    stream: ptr[TcpStreamState],
+    state: ptr[ReadState],
+    stream_handle: ptr[NativeStreamHandle]
+) -> void:
     unsafe:
         if read(stream).read_state == state:
             read(stream).read_state = null
@@ -1363,7 +1395,11 @@ function finish_stream_read(state: ptr[ReadState], result_value: Result[bytes.By
         stream_read_cleanup_and_release(state)
 
 
-function stream_read_alloc_callback(handle: ptr[NativeHandle], suggested_size: ptr_uint, buf: ptr[NativeBuffer]) -> void:
+function stream_read_alloc_callback(
+    handle: ptr[NativeHandle],
+    suggested_size: ptr_uint,
+    buf: ptr[NativeBuffer]
+) -> void:
     let state_raw = libuv.handle_get_data(handle) else:
         let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
         unsafe: read(buf) = libuv.buf_init(storage, 0)
@@ -1389,7 +1425,11 @@ function stream_read_alloc_callback(handle: ptr[NativeHandle], suggested_size: p
     unsafe: read(buf) = libuv.buf_init(storage, uint<-capacity)
 
 
-function stream_read_callback(stream_handle: ptr[NativeStreamHandle], nread: ptr_int, buf: const_ptr[NativeBuffer]) -> void:
+function stream_read_callback(
+    stream_handle: ptr[NativeStreamHandle],
+    nread: ptr_int,
+    buf: const_ptr[NativeBuffer]
+) -> void:
     let raw_buffer = unsafe: read(buf)
 
     let state_raw = libuv.handle_get_data(stream_as_handle(stream_handle)) else:
@@ -1416,7 +1456,14 @@ function stream_read_callback(stream_handle: ptr[NativeStreamHandle], nread: ptr
             let max_bytes = unsafe: read(state).max_bytes
             if exact and total_received < max_bytes:
                 stream_read_reset_buffer(state)
-                finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp stream ended before requested bytes were read")), int<-nread)
+                finish_stream_read(
+                    state,
+                    Result[
+                        bytes.Bytes,
+                        Error
+                    ].failure(error= net_error("tcp stream ended before requested bytes were read")),
+                    int<-nread
+                )
                 return
 
             finish_stream_read(state, Result[bytes.Bytes, Error].success(value= stream_read_take_payload(state)), 0)
@@ -1429,7 +1476,11 @@ function stream_read_callback(stream_handle: ptr[NativeStreamHandle], nread: ptr
     let destination = unsafe: read(state).buffer else:
         release_uv_buffer(raw_buffer)
         stop_stream_read(stream, state, stream_handle)
-        finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp read buffer missing storage")), -1)
+        finish_stream_read(
+            state,
+            Result[bytes.Bytes, Error].failure(error= net_error("tcp read buffer missing storage")),
+            -1
+        )
         return
 
     let chunk_len = ptr_uint<-nread
@@ -1466,7 +1517,11 @@ function read_impl(handle: ptr[NativeTcpHandle]?, max_bytes: ptr_uint, exact: bo
         read(state).released = false
 
     if max_bytes == 0:
-        finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp read requires max_bytes > 0")), -1)
+        finish_stream_read(
+            state,
+            Result[bytes.Bytes, Error].failure(error= net_error("tcp read requires max_bytes > 0")),
+            -1
+        )
         return stream_read_task(state)
 
     let live_handle = handle else:
@@ -1478,12 +1533,20 @@ function read_impl(handle: ptr[NativeTcpHandle]?, max_bytes: ptr_uint, exact: bo
         return stream_read_task(state)
 
     let stream_raw = libuv.handle_get_data(tcp_as_handle(live_handle)) else:
-        finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp stream state is unavailable")), -1)
+        finish_stream_read(
+            state,
+            Result[bytes.Bytes, Error].failure(error= net_error("tcp stream state is unavailable")),
+            -1
+        )
         return stream_read_task(state)
 
     let stream = unsafe: ptr[TcpStreamState]<-stream_raw
     if unsafe: read(stream).read_state != null[ptr[ReadState]]:
-        finish_stream_read(state, Result[bytes.Bytes, Error].failure(error= net_error("tcp stream already has a pending read")), -1)
+        finish_stream_read(
+            state,
+            Result[bytes.Bytes, Error].failure(error= net_error("tcp stream already has a pending read")),
+            -1
+        )
         return stream_read_task(state)
 
     let buffer = heap.must_alloc[ubyte](max_bytes)
@@ -1572,7 +1635,12 @@ function shutdown_task(state: ptr[ShutdownState]) -> Task[Result[bool, Error]]:
         )
 
 
-function finish_shutdown(state: ptr[ShutdownState], result_value: Result[bool, Error], status_code: int, owns_error: bool) -> void:
+function finish_shutdown(
+    state: ptr[ShutdownState],
+    result_value: Result[bool, Error],
+    status_code: int,
+    owns_error: bool
+) -> void:
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
@@ -1661,7 +1729,11 @@ function udp_socket_close_callback(handle: ptr[NativeHandle]) -> void:
         unsafe:
             read(socket).receive_state = null
             read(pending_receive).socket = null
-        finish_udp_receive(unsafe: ptr[UdpReceiveState]<-pending_receive, Result[UdpDatagram, Error].failure(error= net_error("udp socket closed")), -1)
+        finish_udp_receive(
+            unsafe: ptr[UdpReceiveState]<-pending_receive,
+            Result[UdpDatagram, Error].failure(error= net_error("udp socket closed")),
+            -1
+        )
 
     unsafe:
         heap.release_bytes(ptr[void]<-handle_as_udp(handle))
@@ -1755,7 +1827,12 @@ function udp_send_task(state: ptr[UdpSendState]) -> Task[Result[ptr_uint, Error]
         )
 
 
-function finish_udp_send(state: ptr[UdpSendState], result_value: Result[ptr_uint, Error], status_code: int, owns_error: bool) -> void:
+function finish_udp_send(
+    state: ptr[UdpSendState],
+    result_value: Result[ptr_uint, Error],
+    status_code: int,
+    owns_error: bool
+) -> void:
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
@@ -1810,7 +1887,12 @@ function udp_send_callback(req: ptr[NativeUdpSendRequest], status_code: int) -> 
     finish_udp_send(state, Result[ptr_uint, Error].success(value= sent), 0, false)
 
 
-function udp_send_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], destination: SocketAddress, use_destination: bool) -> Task[Result[ptr_uint, Error]]:
+function udp_send_impl(
+    handle: ptr[NativeUdpHandle]?,
+    content: span[ubyte],
+    destination: SocketAddress,
+    use_destination: bool
+) -> Task[Result[ptr_uint, Error]]:
     let state = heap.must_alloc_zeroed[UdpSendState](1)
     unsafe:
         read(state).ready = false
@@ -1860,7 +1942,12 @@ function udp_send_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], dest
         let destination_storage = unsafe: read(state).destination.storage else:
             var payload = copied
             payload.release()
-            finish_udp_send(state, Result[ptr_uint, Error].failure(error= invalid_address_error("socket address is released")), -1, true)
+            finish_udp_send(
+                state,
+                Result[ptr_uint, Error].failure(error= invalid_address_error("socket address is released")),
+                -1,
+                true
+            )
             return udp_send_task(state)
 
         remote_address = sockaddr_storage_as_sockaddr(destination_storage)
@@ -1894,7 +1981,11 @@ function udp_send_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], dest
     return udp_send_task(state)
 
 
-function udp_send_to_impl(handle: ptr[NativeUdpHandle]?, content: span[ubyte], destination: SocketAddress) -> Task[Result[ptr_uint, Error]]:
+function udp_send_to_impl(
+    handle: ptr[NativeUdpHandle]?,
+    content: span[ubyte],
+    destination: SocketAddress
+) -> Task[Result[ptr_uint, Error]]:
     return udp_send_impl(handle, content, destination, true)
 
 
@@ -1906,7 +1997,11 @@ function udp_receive_ready(frame: ptr[void]) -> bool:
     return unsafe: read(udp_receive_state(frame)).ready
 
 
-function udp_receive_set_waiter(frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
+function udp_receive_set_waiter(
+    frame: ptr[void],
+    waiter_frame: ptr[void],
+    waiter: fn(frame: ptr[void]) -> void
+) -> void:
     let state = udp_receive_state(frame)
     unsafe:
         if read(state).ready:
@@ -1975,7 +2070,11 @@ function udp_receive_task(state: ptr[UdpReceiveState]) -> Task[Result[UdpDatagra
         )
 
 
-function finish_udp_receive(state: ptr[UdpReceiveState], result_value: Result[UdpDatagram, Error], status_code: int) -> void:
+function finish_udp_receive(
+    state: ptr[UdpReceiveState],
+    result_value: Result[UdpDatagram, Error],
+    status_code: int
+) -> void:
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
@@ -1999,7 +2098,11 @@ function finish_udp_receive(state: ptr[UdpReceiveState], result_value: Result[Ud
         udp_receive_cleanup_and_release(state)
 
 
-function udp_receive_alloc_callback(handle: ptr[NativeHandle], suggested_size: ptr_uint, buf: ptr[NativeBuffer]) -> void:
+function udp_receive_alloc_callback(
+    handle: ptr[NativeHandle],
+    suggested_size: ptr_uint,
+    buf: ptr[NativeBuffer]
+) -> void:
     let state_raw = libuv.handle_get_data(handle) else:
         let storage = unsafe: ptr[char]<-heap.must_alloc_zeroed_bytes(1, 1)
         unsafe: read(buf) = libuv.buf_init(storage, 0)
@@ -2025,7 +2128,13 @@ function udp_receive_alloc_callback(handle: ptr[NativeHandle], suggested_size: p
     unsafe: read(buf) = libuv.buf_init(storage, uint<-capacity)
 
 
-function udp_receive_callback(handle: ptr[NativeUdpHandle], nread: ptr_int, buf: const_ptr[NativeBuffer], addr: const_ptr[NativeSockAddr], flags_: uint) -> void:
+function udp_receive_callback(
+    handle: ptr[NativeUdpHandle],
+    nread: ptr_int,
+    buf: const_ptr[NativeBuffer],
+    addr: const_ptr[NativeSockAddr],
+    flags_: uint
+) -> void:
     let raw_buffer = unsafe: read(buf)
 
     let state_raw = libuv.handle_get_data(udp_as_handle(handle)) else:
@@ -2070,7 +2179,11 @@ function udp_receive_callback(handle: ptr[NativeUdpHandle], nread: ptr_int, buf:
             finish_udp_receive(state, Result[UdpDatagram, Error].failure(error= error), error.code)
             return
         Result.success as payload_source:
-            finish_udp_receive(state, Result[UdpDatagram, Error].success(value= UdpDatagram(data = payload, source = payload_source.value)), 0)
+            finish_udp_receive(
+                state,
+                Result[UdpDatagram, Error].success(value= UdpDatagram(data = payload, source = payload_source.value)),
+                0
+            )
             return
 
 
@@ -2089,7 +2202,11 @@ function recv_from_impl(handle: ptr[NativeUdpHandle]?, max_bytes: ptr_uint) -> T
         read(state).released = false
 
     if max_bytes == 0:
-        finish_udp_receive(state, Result[UdpDatagram, Error].failure(error= net_error("udp receive requires max_bytes > 0")), -1)
+        finish_udp_receive(
+            state,
+            Result[UdpDatagram, Error].failure(error= net_error("udp receive requires max_bytes > 0")),
+            -1
+        )
         return udp_receive_task(state)
 
     let live_handle = handle else:
@@ -2101,12 +2218,20 @@ function recv_from_impl(handle: ptr[NativeUdpHandle]?, max_bytes: ptr_uint) -> T
         return udp_receive_task(state)
 
     let socket_raw = libuv.handle_get_data(udp_as_handle(live_handle)) else:
-        finish_udp_receive(state, Result[UdpDatagram, Error].failure(error= net_error("udp socket state is unavailable")), -1)
+        finish_udp_receive(
+            state,
+            Result[UdpDatagram, Error].failure(error= net_error("udp socket state is unavailable")),
+            -1
+        )
         return udp_receive_task(state)
 
     let socket = unsafe: ptr[UdpSocketState]<-socket_raw
     if unsafe: read(socket).receive_state != null[ptr[UdpReceiveState]]:
-        finish_udp_receive(state, Result[UdpDatagram, Error].failure(error= net_error("udp socket already has a pending receive")), -1)
+        finish_udp_receive(
+            state,
+            Result[UdpDatagram, Error].failure(error= net_error("udp socket already has a pending receive")),
+            -1
+        )
         return udp_receive_task(state)
 
     unsafe:
@@ -2175,7 +2300,11 @@ function finish_resolve(state: ptr[ResolveState], result_value: Result[SocketAdd
         waiter(unsafe: ptr[void]<-waiter_frame)
 
 
-function finish_resolve_all(state: ptr[ResolveAllState], result_value: Result[vec.Vec[SocketAddress], Error], status_code: int) -> void:
+function finish_resolve_all(
+    state: ptr[ResolveAllState],
+    result_value: Result[vec.Vec[SocketAddress], Error],
+    status_code: int
+) -> void:
     var waiter: fn(frame: ptr[void]) -> void = noop_waiter
     var waiter_frame: ptr[void]? = null
     var notify = false
@@ -2195,7 +2324,11 @@ function finish_resolve_all(state: ptr[ResolveAllState], result_value: Result[ve
         waiter(unsafe: ptr[void]<-waiter_frame)
 
 
-function resolve_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, result_ptr: ptr[NativeAddrInfo]) -> void:
+function resolve_callback(
+    req: ptr[NativeGetAddrInfoRequest],
+    status_code: int,
+    result_ptr: ptr[NativeAddrInfo]
+) -> void:
     let maybe_result = unsafe: ptr[NativeAddrInfo]?<-result_ptr
 
     let state_raw = libuv.req_get_data(req_as_base(req)) else:
@@ -2213,7 +2346,11 @@ function resolve_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, 
         return
 
     if maybe_result == null[ptr[NativeAddrInfo]]:
-        finish_resolve(state, Result[SocketAddress, Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
+        finish_resolve(
+            state,
+            Result[SocketAddress, Error].failure(error= invalid_address_error("resolver returned no addresses")),
+            -1
+        )
         return
 
     let ai = unsafe: read(result_ptr)
@@ -2222,7 +2359,11 @@ function resolve_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, 
     finish_resolve(state, address_result, 0)
 
 
-function resolve_all_callback(req: ptr[NativeGetAddrInfoRequest], status_code: int, result_ptr: ptr[NativeAddrInfo]) -> void:
+function resolve_all_callback(
+    req: ptr[NativeGetAddrInfoRequest],
+    status_code: int,
+    result_ptr: ptr[NativeAddrInfo]
+) -> void:
     let maybe_result = unsafe: ptr[NativeAddrInfo]?<-result_ptr
 
     let state_raw = libuv.req_get_data(req_as_base(req)) else:
@@ -2236,11 +2377,22 @@ function resolve_all_callback(req: ptr[NativeGetAddrInfoRequest], status_code: i
     if status_code != 0:
         if maybe_result != null[ptr[NativeAddrInfo]]:
             libuv.freeaddrinfo(result_ptr)
-        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(status_code)), status_code)
+        finish_resolve_all(
+            state,
+            Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(status_code)),
+            status_code
+        )
         return
 
     if maybe_result == null[ptr[NativeAddrInfo]]:
-        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
+        finish_resolve_all(
+            state,
+            Result[
+                vec.Vec[SocketAddress],
+                Error
+            ].failure(error= invalid_address_error("resolver returned no addresses")),
+            -1
+        )
         return
 
     var addresses = vec.Vec[SocketAddress].create()
@@ -2267,7 +2419,14 @@ function resolve_all_callback(req: ptr[NativeGetAddrInfoRequest], status_code: i
 
     if addresses.len == 0:
         addresses.release()
-        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= invalid_address_error("resolver returned no addresses")), -1)
+        finish_resolve_all(
+            state,
+            Result[
+                vec.Vec[SocketAddress],
+                Error
+            ].failure(error= invalid_address_error("resolver returned no addresses")),
+            -1
+        )
         return
 
     finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].success(value= addresses), 0)
@@ -2298,7 +2457,14 @@ function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[
         read(state).released = false
         libuv.req_set_data(req_as_base(req), ptr[void]<-state)
 
-    let queue_status = libuv.getaddrinfo(loop, req, resolve_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[NativeAddrInfo]])
+    let queue_status = libuv.getaddrinfo(
+        loop,
+        req,
+        resolve_callback,
+        unsafe: read(state).node,
+        unsafe: read(state).service,
+        null[const_ptr[NativeAddrInfo]]
+    )
     if queue_status != 0:
         unsafe:
             heap.release(req)
@@ -2308,7 +2474,11 @@ function resolve_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[
     return resolve_task(state)
 
 
-function resolve_all_on_impl(runtime: aio.Runtime, node: str, service: str) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+function resolve_all_on_impl(
+    runtime: aio.Runtime,
+    node: str,
+    service: str
+) -> Task[Result[vec.Vec[SocketAddress], Error]]:
     let loop = aio_backend.runtime_loop(runtime)
     let state = heap.must_alloc_zeroed[ResolveAllState](1)
 
@@ -2333,12 +2503,23 @@ function resolve_all_on_impl(runtime: aio.Runtime, node: str, service: str) -> T
         read(state).released = false
         libuv.req_set_data(req_as_base(req), ptr[void]<-state)
 
-    let queue_status = libuv.getaddrinfo(loop, req, resolve_all_callback, unsafe: read(state).node, unsafe: read(state).service, null[const_ptr[NativeAddrInfo]])
+    let queue_status = libuv.getaddrinfo(
+        loop,
+        req,
+        resolve_all_callback,
+        unsafe: read(state).node,
+        unsafe: read(state).service,
+        null[const_ptr[NativeAddrInfo]]
+    )
     if queue_status != 0:
         unsafe:
             heap.release(req)
             read(state).req = null
-        finish_resolve_all(state, Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(queue_status)), queue_status)
+        finish_resolve_all(
+            state,
+            Result[vec.Vec[SocketAddress], Error].failure(error= libuv_error(queue_status)),
+            queue_status
+        )
 
     return resolve_all_task(state)
 
@@ -2388,10 +2569,19 @@ function connect_on_impl(runtime: aio.Runtime, address: SocketAddress) -> Task[R
             read(state).req = null
             read(state).handle = null
         close_tcp_handle(handle)
-        finish_connect(state, Result[TcpStream, Error].failure(error= invalid_address_error("socket address is released")), -1)
+        finish_connect(
+            state,
+            Result[TcpStream, Error].failure(error= invalid_address_error("socket address is released")),
+            -1
+        )
         return connect_task(state)
 
-    let queue_status = libuv.tcp_connect(req, handle, sockaddr_storage_as_sockaddr(destination_storage), connect_callback)
+    let queue_status = libuv.tcp_connect(
+        req,
+        handle,
+        sockaddr_storage_as_sockaddr(destination_storage),
+        connect_callback
+    )
     if queue_status != 0:
         unsafe:
             heap.release_bytes(ptr[void]<-req)
@@ -2528,7 +2718,11 @@ extending TcpListener:
             let pending_accept = unsafe: read(listener).accept_state
             if pending_accept != null[ptr[AcceptState]]:
                 unsafe: read(listener).accept_state = null
-                finish_accept(unsafe: ptr[AcceptState]<-pending_accept, Result[TcpStream, Error].failure(error= net_error("listener released")), -1)
+                finish_accept(
+                    unsafe: ptr[AcceptState]<-pending_accept,
+                    Result[TcpStream, Error].failure(error= net_error("listener released")),
+                    -1
+                )
 
         this.handle = null
         if libuv.is_closing(tcp_as_handle(handle)) == 0:
@@ -2586,7 +2780,10 @@ public function ipv4(ip: str, port: int) -> Result[SocketAddress, Error]:
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), size_of(libuv.sockaddr_in))
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        size_of(libuv.sockaddr_in)
+    )
 
 
 public function ipv6(ip: str, port: int) -> Result[SocketAddress, Error]:
@@ -2595,7 +2792,10 @@ public function ipv6(ip: str, port: int) -> Result[SocketAddress, Error]:
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), size_of(libuv.sockaddr_in6))
+    return socket_address_from_sockaddr(
+        sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
+        size_of(libuv.sockaddr_in6)
+    )
 
 
 public function resolve_first_on(runtime: aio.Runtime, node: str, service: str) -> Task[Result[SocketAddress, Error]]:
@@ -2606,7 +2806,11 @@ public function resolve_first(node: str, service: str) -> Task[Result[SocketAddr
     return resolve_first_on(aio.current_runtime(), node, service)
 
 
-public function resolve_all_on(runtime: aio.Runtime, node: str, service: str) -> Task[Result[vec.Vec[SocketAddress], Error]]:
+public function resolve_all_on(
+    runtime: aio.Runtime,
+    node: str,
+    service: str
+) -> Task[Result[vec.Vec[SocketAddress], Error]]:
     return resolve_all_on_impl(runtime, node, service)
 
 
