@@ -85,7 +85,6 @@ public function create_semaphore(initial_value: uint) -> Result[Semaphore, Error
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Mutex:

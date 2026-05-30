@@ -247,7 +247,7 @@ public function sleep_take_result(frame: ptr[void]) -> int:
 
 
 public function work_ready[T](frame: ptr[void]) -> bool:
-    return unsafe: work_state[T](frame).ready
+    return work_state[T](frame).ready
 
 
 function work_execute(req: ptr[NativeWorkRequest]) -> void:
@@ -282,22 +282,18 @@ function work_complete(req: ptr[NativeWorkRequest], status_code: int) -> void:
 
 function work_execute_state[T](state_frame: ptr[void]) -> void:
     let state = work_state[T](state_frame)
-    unsafe:
-        state.result = state.run_work()
-    return
+    state.result = state.run_work()
 
 
 public function work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = work_state[T](frame)
-    unsafe:
-        if state.ready:
-            waiter(waiter_frame)
-            return
+    if state.ready:
+        waiter(waiter_frame)
+        return
 
-        state.waiter_frame = waiter_frame
-        state.waiter = waiter
-        state.waiter_registered = true
-    return
+    state.waiter_frame = waiter_frame
+    state.waiter = waiter
+    state.waiter_registered = true
 
 
 public function work_release[T](frame: ptr[void]) -> void:
@@ -313,15 +309,13 @@ public function work_release[T](frame: ptr[void]) -> void:
         state.released = true
         if state.queued and state.work != null:
             libuv.cancel(work_as_req(unsafe: ptr[NativeWorkRequest]<-state.work))
-    return
 
 
 public function work_take_result[T](frame: ptr[void]) -> T:
     let state = work_state[T](frame)
-    unsafe:
-        if state.status != 0:
-            fatal(c"async work failed")
-        return state.result
+    if state.status != 0:
+        fatal(c"async work failed")
+    return state.result
 
 
 public function sleep_on(runtime: Runtime, timeout: ptr_uint) -> Task[int]:
@@ -427,13 +421,12 @@ public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
         libuv.req_set_data(work_as_req(req), ptr[void]<-state)
 
     let queue_status = libuv.queue_work(loop, req, work_execute, work_complete)
-    unsafe:
-        if queue_status != 0:
-            state.status = queue_status
-            state.ready = true
-            state.queued = false
-        else:
-            state.queued = true
+    if queue_status != 0:
+        state.status = queue_status
+        state.ready = true
+        state.queued = false
+    else:
+        state.queued = true
 
     return work_task[T](state)
 
@@ -445,7 +438,6 @@ public function work[T](run_work: fn() -> T) -> Task[T]:
 public function pump(runtime: Runtime) -> void:
     require_live_runtime(runtime)
     runtime_poll(runtime)
-    return
 
 
 public function completed[T](task: Task[T]) -> bool:
@@ -476,7 +468,6 @@ public function run_on(runtime: Runtime, task: Task[void]) -> void:
 
     task.take_result(task.frame)
     task.release(task.frame)
-    return
 
 
 public function wait[T](root: proc() -> Task[T]) -> T:
@@ -500,7 +491,6 @@ public function run(root: proc() -> Task[void]) -> void:
     defer runtime_release(ref_of(runtime))
     defer runtime_deactivate()
     run_on(runtime, root())
-    return
 
 
 public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
@@ -524,4 +514,3 @@ public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
     defer runtime_release(ref_of(runtime))
     defer runtime_deactivate()
     body(runtime)
-    return

@@ -229,7 +229,7 @@ function application_relative_path(relative_path: str) -> string.String:
 
     if application_dir.len > 0:
         let last = application_dir.byte_at(application_dir.len - 1)
-        if last != ubyte<-47 and last != ubyte<-92:
+        if last != 47 and last != 92:
             result.append("/")
 
     result.append(relative_path)
@@ -282,10 +282,10 @@ function file_type(logical_path: str) -> Option[str]:
         index -= 1
 
         let value = logical_path.byte_at(index)
-        if value == ubyte<-47:
+        if value == 47:
             return Option[str].none
 
-        if value == ubyte<-46:
+        if value == 46:
             if index + 1 == logical_path.len:
                 return Option[str].none
 

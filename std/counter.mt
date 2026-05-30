@@ -97,7 +97,7 @@ extending Counter[T]:
         if this.total > heap.ptr_uint_max() - amount:
             fatal(c"counter.Counter.add total count overflow")
 
-        let current = this.values.get_or_insert(value, ptr_uint<-0)
+        let current = this.values.get_or_insert(value, 0)
         unsafe:
             if read(current) > heap.ptr_uint_max() - amount:
                 fatal(c"counter.Counter.add entry count overflow")
@@ -123,7 +123,7 @@ extending Counter[T]:
                 match removed:
                     Option.none:
                         fatal(c"counter.Counter.remove_one missing value")
-                    Option.some as _:
+                    Option.some:
                         if this.total == 0:
                             fatal(c"counter.Counter.remove_one missing total")
                         this.total -= 1

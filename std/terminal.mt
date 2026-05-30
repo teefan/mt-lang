@@ -187,7 +187,7 @@ function append_csi(output: ref[string.String], suffix: str) -> void:
 function write_stdout_bytes(data: const_ptr[ubyte]?, len: ptr_uint, fallback: str) -> Result[ptr_uint, Error]:
     var written: ptr_uint = 0
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_write_stdout(data, len, written, raw_error)
+    let status = c.mt_terminal_write_stdout(data, len, written, raw_error)
     if status != 0:
         return Result[ptr_uint, Error].failure(error= take_error(raw_error, fallback))
 
@@ -197,7 +197,7 @@ function write_stdout_bytes(data: const_ptr[ubyte]?, len: ptr_uint, fallback: st
 function write_stderr_bytes(data: const_ptr[ubyte]?, len: ptr_uint, fallback: str) -> Result[ptr_uint, Error]:
     var written: ptr_uint = 0
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_write_stderr(data, len, written, raw_error)
+    let status = c.mt_terminal_write_stderr(data, len, written, raw_error)
     if status != 0:
         return Result[ptr_uint, Error].failure(error= take_error(raw_error, fallback))
 
@@ -212,13 +212,13 @@ function write_stdout_sequence(sequence: string.String, fallback: str) -> Result
     match write_stdout_bytes(data, sequence.len, fallback):
         Result.failure as payload:
             return Result[bool, Error].failure(error= payload.error)
-        Result.success as _:
+        Result.success:
             return Result[bool, Error].success(value= true)
 
 
 function flush_stdout_internal() -> Result[bool, Error]:
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_flush_stdout(raw_error)
+    let status = c.mt_terminal_flush_stdout(raw_error)
     if status != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "terminal flush failed"))
 
@@ -227,7 +227,7 @@ function flush_stdout_internal() -> Result[bool, Error]:
 
 function flush_stderr_internal() -> Result[bool, Error]:
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_flush_stderr(raw_error)
+    let status = c.mt_terminal_flush_stderr(raw_error)
     if status != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "terminal flush failed"))
 
@@ -236,7 +236,7 @@ function flush_stderr_internal() -> Result[bool, Error]:
 
 function raw_mode_enter() -> Result[bool, Error]:
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_enter_raw_mode(raw_error)
+    let status = c.mt_terminal_enter_raw_mode(raw_error)
     if status != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "terminal raw mode failed"))
 
@@ -245,7 +245,7 @@ function raw_mode_enter() -> Result[bool, Error]:
 
 function raw_mode_leave() -> Result[bool, Error]:
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_leave_raw_mode(raw_error)
+    let status = c.mt_terminal_leave_raw_mode(raw_error)
     if status != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "terminal raw mode restore failed"))
 
@@ -256,7 +256,7 @@ function read_stdin(timeout_ms: int) -> Result[vec.Vec[ubyte], Error]:
     var buffer = zero[array[ubyte, 128]]
     var read_count: ptr_uint = 0
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_read_stdin(ptr_of(buffer[0]), 128, timeout_ms, read_count, raw_error)
+    let status = c.mt_terminal_read_stdin(ptr_of(buffer[0]), 128, timeout_ms, read_count, raw_error)
     if status != 0:
         return Result[vec.Vec[ubyte], Error].failure(error= take_error(raw_error, "terminal read failed"))
 
@@ -272,7 +272,7 @@ function read_stdin(timeout_ms: int) -> Result[vec.Vec[ubyte], Error]:
 function get_size_internal() -> Result[Size, Error]:
     var raw_size = zero[c.mt_terminal_size]
     var raw_error = zero[c.mt_terminal_error]
-    let status = unsafe: c.mt_terminal_get_size(raw_size, raw_error)
+    let status = c.mt_terminal_get_size(raw_size, raw_error)
     if status != 0:
         return Result[Size, Error].failure(error= take_error(raw_error, "terminal size query failed"))
 
@@ -319,7 +319,7 @@ function consume_bytes(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> void:
     var remaining = count
     while remaining > 0 and not buffer.is_empty():
         match buffer.remove(0):
-            Option.some as _:
+            Option.some:
                 pass
             Option.none:
                 break
@@ -939,7 +939,7 @@ extending Terminal:
                 Result.failure as payload:
                     var error = payload.error
                     error.release()
-                Result.success as _:
+                Result.success:
                     pass
             this.mouse_enabled = false
 
@@ -948,7 +948,7 @@ extending Terminal:
                 Result.failure as payload:
                     var error = payload.error
                     error.release()
-                Result.success as _:
+                Result.success:
                     pass
             this.cursor_hidden = false
 
@@ -957,7 +957,7 @@ extending Terminal:
                 Result.failure as payload:
                     var error = payload.error
                     error.release()
-                Result.success as _:
+                Result.success:
                     pass
             this.alternate_screen = false
 
@@ -966,7 +966,7 @@ extending Terminal:
                 Result.failure as payload:
                     var error = payload.error
                     error.release()
-                Result.success as _:
+                Result.success:
                     pass
             this.raw_mode = false
 

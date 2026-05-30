@@ -4,22 +4,22 @@ import std.string as string
 import std.vec as vec
 import std.mem.heap as heap
 
-const byte_tab: ubyte = ubyte<-9
-const byte_newline: ubyte = ubyte<-10
-const byte_carriage_return: ubyte = ubyte<-13
-const byte_space: ubyte = ubyte<-32
-const byte_quote: ubyte = ubyte<-34
-const byte_hash: ubyte = ubyte<-35
-const byte_plus: ubyte = ubyte<-43
-const byte_comma: ubyte = ubyte<-44
-const byte_minus: ubyte = ubyte<-45
-const byte_equal: ubyte = ubyte<-61
-const byte_left_bracket: ubyte = ubyte<-91
-const byte_backslash: ubyte = ubyte<-92
-const byte_right_bracket: ubyte = ubyte<-93
-const byte_left_brace: ubyte = ubyte<-123
-const byte_right_brace: ubyte = ubyte<-125
-const byte_underscore: ubyte = ubyte<-95
+const byte_tab: ubyte = 9
+const byte_newline: ubyte = 10
+const byte_carriage_return: ubyte = 13
+const byte_space: ubyte = 32
+const byte_quote: ubyte = 34
+const byte_hash: ubyte = 35
+const byte_plus: ubyte = 43
+const byte_comma: ubyte = 44
+const byte_minus: ubyte = 45
+const byte_equal: ubyte = 61
+const byte_left_bracket: ubyte = 91
+const byte_backslash: ubyte = 92
+const byte_right_bracket: ubyte = 93
+const byte_left_brace: ubyte = 123
+const byte_right_brace: ubyte = 125
+const byte_underscore: ubyte = 95
 
 public struct ParseError:
     line: ptr_uint
@@ -434,11 +434,11 @@ function parse_error(parser: ref[Parser], message: str) -> ParseError:
 
 
 function ascii_letter(value: ubyte) -> bool:
-    return (value >= ubyte<-65 and value <= ubyte<-90) or (value >= ubyte<-97 and value <= ubyte<-122)
+    return (value >= 65 and value <= 90) or (value >= 97 and value <= 122)
 
 
 function ascii_digit(value: ubyte) -> bool:
-    return value >= ubyte<-48 and value <= ubyte<-57
+    return value >= 48 and value <= 57
 
 
 function inline_space(value: ubyte) -> bool:
@@ -618,15 +618,15 @@ function parse_string(parser: ref[Parser]) -> Result[string.String, ParseError]:
                 return Result[string.String, ParseError].failure(error= parse_error(parser, "unterminated escape"))
             Option.some as payload:
                 let escaped = payload.value
-                if escaped == ubyte<-98:
-                    result.push_byte(ubyte<-8)
-                else if escaped == ubyte<-102:
-                    result.push_byte(ubyte<-12)
-                else if escaped == ubyte<-110:
+                if escaped == 98:
+                    result.push_byte(8)
+                else if escaped == 102:
+                    result.push_byte(12)
+                else if escaped == 110:
                     result.push_byte(byte_newline)
-                else if escaped == ubyte<-114:
+                else if escaped == 114:
                     result.push_byte(byte_carriage_return)
-                else if escaped == ubyte<-116:
+                else if escaped == 116:
                     result.push_byte(byte_tab)
                 else if escaped == byte_quote:
                     result.push_byte(byte_quote)
@@ -728,7 +728,7 @@ function parse_integer(parser: ref[Parser]) -> Result[long, ParseError]:
                 if not ascii_digit(payload.value):
                     pass
                 else:
-                    result = result * long<-10 + long<-(payload.value - ubyte<-48)
+                    result = result * 10 + long<-(payload.value - ubyte<-48)
                     advance = true
 
         if not advance:
@@ -883,7 +883,7 @@ function parse_value(parser: ref[Parser]) -> Result[Value, ParseError]:
                     Result.success as object_payload:
                         return Result[Value, ParseError].success(value= object_value(object_payload.value))
 
-            if current == ubyte<-116 or current == ubyte<-102:
+            if current == 116 or current == 102:
                 let boolean_result = parse_boolean(parser)
                 match boolean_result:
                     Result.failure as error_payload:
@@ -1005,7 +1005,7 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
                     return Result[bool, ParseError].failure(error= parse_error(parser, "expected ']]'"))
 
                 match document_find_table_index(document, name.as_str()):
-                    Option.some as _:
+                    Option.some:
                         name.release()
                         return Result[bool, ParseError].failure(error= parse_error(parser, "table name already used"))
                     Option.none:
@@ -1038,14 +1038,14 @@ function parse_header(document: ref[Document], cursor: ref[Cursor], parser: ref[
                 return Result[bool, ParseError].failure(error= parse_error(parser, "expected ']'"))
 
             match document_find_table_index(document, name.as_str()):
-                Option.some as _:
+                Option.some:
                     name.release()
                     return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
                 Option.none:
                     pass
 
             match document_find_array_table_index(document, name.as_str()):
-                Option.some as _:
+                Option.some:
                     name.release()
                     return Result[bool, ParseError].failure(error= parse_error(parser, "duplicate table"))
                 Option.none:
@@ -1078,13 +1078,13 @@ public function parse(text_value: str) -> Result[Document, ParseError]:
             Result.failure as payload:
                 document.release()
                 return Result[Document, ParseError].failure(error= payload.error)
-            Result.success as _:
+            Result.success:
                 let line_result = parser_finish_line(ref_of(parser))
                 match line_result:
                     Result.failure as payload:
                         document.release()
                         return Result[Document, ParseError].failure(error= payload.error)
-                    Result.success as _:
+                    Result.success:
                         pass
 
 
@@ -1104,9 +1104,9 @@ function append_quoted_string(output: ref[string.String], text_value: str) -> vo
             output.append("\\r")
         else if value == byte_tab:
             output.append("\\t")
-        else if value == ubyte<-8:
+        else if value == 8:
             output.append("\\b")
-        else if value == ubyte<-12:
+        else if value == 12:
             output.append("\\f")
         else:
             output.push_byte(value)

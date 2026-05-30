@@ -84,7 +84,6 @@ public function spawn(run: fn() -> void) -> Result[Thread, Error]:
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Thread:

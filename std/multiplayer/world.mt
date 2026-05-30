@@ -83,7 +83,7 @@ extending World:
             let entity = this.entities.get(entity_index)
             if entity != null:
                 unsafe:
-                    let record = read(ptr[EntityRecord]<-entity)
+                    let record = read(entity)
                     payload_bytes += record.state_size
                     if record.state_storage != null and record.state_size > 0:
                         let state_bytes = ptr[ubyte]<-record.state_storage
@@ -118,7 +118,7 @@ extending World:
             let entity = this.entities.get(estimate_index)
             if entity != null:
                 unsafe:
-                    let record = read(ptr[EntityRecord]<-entity)
+                    let record = read(entity)
                     estimated_size += 16 + record.state_size
             estimate_index += 1
 
@@ -132,7 +132,7 @@ extending World:
             let entity = this.entities.get(index)
             if entity != null:
                 unsafe:
-                    let record = read(ptr[EntityRecord]<-entity)
+                    let record = read(entity)
                     if record.descriptor.encode_full_binding != registry.expected_state_encode_full_binding(record.descriptor):
                         return Result[bytes.Bytes, Error].failure(
                             error = protocol.error(ErrorCode.invalid_argument, "state descriptor encode_full binding mismatch"),
@@ -222,7 +222,6 @@ extending World:
         this.registered_rpcs.release()
         this.next_entity_id = 0
         this.protocol_hash_value = 0
-        return
 
 
     public mutable function spawn[T](state: T, owner: Option[ConnectionId]) -> Result[EntityId, Error]:
@@ -245,7 +244,7 @@ extending World:
             )
 
         match owner:
-            Option.some as _:
+            Option.some:
                 if descriptor.authority == protocol.Authority.server:
                     return Result[EntityId, Error].failure(
                         error = protocol.error(ErrorCode.unsupported, "server-authoritative state cannot use an owner"),
@@ -412,7 +411,6 @@ function release_entity_record(entities: ptr[vec.Vec[EntityRecord]], index: ptr_
             heap.release_bytes(storage)
             read(record_ptr).state_storage = null
 
-    return
 
 
 function release_entity_storage(entities: ref[vec.Vec[EntityRecord]]) -> void:
@@ -421,7 +419,6 @@ function release_entity_storage(entities: ref[vec.Vec[EntityRecord]]) -> void:
         release_entity_record(ptr_of(entities), index)
         index += 1
 
-    return
 
 
 function same_owner(left: Option[ConnectionId], right: Option[ConnectionId]) -> bool:
@@ -434,7 +431,7 @@ function same_owner(left: Option[ConnectionId], right: Option[ConnectionId]) -> 
                     return false
         Option.none:
             match right:
-                Option.some as _:
+                Option.some:
                     return false
                 Option.none:
                     return true
@@ -447,4 +444,3 @@ function copy_state_bytes(destination: ptr[ubyte], source: ptr[ubyte], size: ptr
             read(destination + index) = read(source + index)
         index += 1
 
-    return

@@ -117,7 +117,6 @@ extending Registry:
         this.rpcs.release()
         this.frozen = false
         this.protocol_hash_value = 0
-        return
 
 
     public mutable function add_state(descriptor: StateDescriptor) -> Result[bool, Error]:
@@ -148,7 +147,6 @@ extending Registry:
 
         this.protocol_hash_value = compute_protocol_hash(this.states.as_span(), this.rpcs.as_span())
         this.frozen = true
-        return
 
 
 function registry_error(code: ErrorCode, message: str) -> Error:
@@ -222,4 +220,3 @@ function hash_descriptor_component(hash: ref[ulong], component: str) -> void:
     unsafe:
         read(hash) = read(hash) ^ 255
         read(hash) = read(hash) * descriptor_hash_prime
-    return

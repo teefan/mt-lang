@@ -33,7 +33,6 @@ extending GridIndex:
     public mutable function release() -> void:
         this.connection_cells.release()
         this.entity_cells.release()
-        return
 
 
     public mutable function set_connection_cell(connection: protocol.ConnectionId, cell: GridCell) -> void:
@@ -47,7 +46,6 @@ extending GridIndex:
                     read(slot) = ConnectionCellEntry(connection = connection, cell = cell)
             Option.none:
                 this.connection_cells.push(ConnectionCellEntry(connection = connection, cell = cell))
-        return
 
 
     public mutable function set_entity_cell(entity: protocol.EntityId, cell: GridCell) -> void:
@@ -61,7 +59,6 @@ extending GridIndex:
                     read(slot) = EntityCellEntry(entity = entity, cell = cell)
             Option.none:
                 this.entity_cells.push(EntityCellEntry(entity = entity, cell = cell))
-        return
 
 
     public function connection_cell(connection: protocol.ConnectionId) -> Option[GridCell]:

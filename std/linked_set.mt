@@ -107,7 +107,7 @@ extending LinkedSet[T]:
         match previous:
             Option.none:
                 return true
-            Option.some as _:
+            Option.some:
                 return false
 
 
@@ -116,5 +116,5 @@ extending LinkedSet[T]:
         match removed:
             Option.none:
                 return false
-            Option.some as _:
+            Option.some:
                 return true

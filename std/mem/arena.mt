@@ -135,4 +135,3 @@ extending Arena:
         this.capacity = 0
         this.alignment = 0
         this.offset = 0
-        return

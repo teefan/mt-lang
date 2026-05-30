@@ -81,8 +81,7 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
             fatal(c"tar.release_string_values missing value")
 
         unsafe:
-            var owned = read(value_ptr)
-            owned.release()
+            read(value_ptr).release()
 
         index += 1
 
@@ -162,7 +161,7 @@ function append_zero_span(output: ref[vec.Vec[ubyte]], count: ptr_uint) -> void:
         return
 
     var zeroes = zero[array[ubyte, 512]]
-    output.append_span(unsafe: span[ubyte](data = ptr_of(zeroes[0]), len = count))
+    output.append_span(span[ubyte](data = ptr_of(zeroes[0]), len = count))
 
 
 function append_padding(output: ref[vec.Vec[ubyte]], size_bytes: ptr_uint) -> void:
@@ -218,16 +217,16 @@ function write_octal_digits(buffer: ptr[ubyte], offset: ptr_uint, digits_len: pt
     var remaining = value
 
     if remaining == 0:
-        digits[0] = ubyte<-48
+        digits[0] = 48
         count = 1
     else:
         while remaining != 0:
-            if count >= ptr_uint<-32:
+            if count >= 32:
                 return false
 
-            let digit = remaining % ptr_uint<-8
+            let digit = remaining % 8
             digits[count] = ubyte<-(ptr_uint<-48 + digit)
-            remaining /= ptr_uint<-8
+            remaining /= 8
             count += 1
 
     if count > digits_len:
@@ -236,7 +235,7 @@ function write_octal_digits(buffer: ptr[ubyte], offset: ptr_uint, digits_len: pt
     var index: ptr_uint = 0
     while index < digits_len:
         unsafe:
-            read(buffer + offset + index) = ubyte<-48
+            read(buffer + offset + index) = 48
         index += 1
 
     index = 0
@@ -319,13 +318,13 @@ function append_header(output: ref[vec.Vec[ubyte]], archive_path: str, kind: Ent
             else:
                 header[156] = file_type_flag
 
-            header[257] = ubyte<-117
-            header[258] = ubyte<-115
-            header[259] = ubyte<-116
-            header[260] = ubyte<-97
-            header[261] = ubyte<-114
-            header[263] = ubyte<-48
-            header[264] = ubyte<-48
+            header[257] = 117
+            header[258] = 115
+            header[259] = 116
+            header[260] = 97
+            header[261] = 114
+            header[263] = 48
+            header[264] = 48
 
             if parts.prefix_len != 0:
                 write_path_field(header_ptr, 345, archive_path, parts.prefix_start, parts.prefix_len)
@@ -346,7 +345,7 @@ function append_file_entry(source_path: str, archive_path: str, output: ref[vec.
             match append_header(output, archive_path, EntryKind.file, metadata.mode, metadata.size):
                 Result.failure as payload:
                     return Result[bool, Error].failure(error = payload.error)
-                Result.success as _:
+                Result.success:
                     pass
 
     match fs.read_bytes(source_path):
@@ -370,7 +369,7 @@ function append_directory_tree(source_path: str, archive_path: str, include_hidd
                 match append_header(output, archive_path, EntryKind.directory, metadata.mode, 0):
                     Result.failure as header_payload:
                         return Result[bool, Error].failure(error = header_payload.error)
-                    Result.success as _:
+                    Result.success:
                         pass
 
     match fs.list_entries(source_path):
@@ -407,7 +406,7 @@ function append_directory_tree(source_path: str, archive_path: str, include_hidd
                                         child_source.release()
                                         child_archive.release()
                                         return Result[bool, Error].failure(error = child_payload.error)
-                                    Result.success as _:
+                                    Result.success:
                                         pass
                             else if fs.is_file(child_source.as_str()):
                                 match append_file_entry(child_source.as_str(), child_archive.as_str(), output):
@@ -415,7 +414,7 @@ function append_directory_tree(source_path: str, archive_path: str, include_hidd
                                         child_source.release()
                                         child_archive.release()
                                         return Result[bool, Error].failure(error = child_payload.error)
-                                    Result.success as _:
+                                    Result.success:
                                         pass
 
                             child_source.release()
@@ -461,12 +460,12 @@ function parse_octal_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_
             let current = read(input.data + offset + index)
             if current == zero_byte or current == space_byte:
                 break
-            if current < ubyte<-48 or current > ubyte<-55:
+            if current < 48 or current > 55:
                 return Result[ptr_uint, Error].failure(error = error_message("tar numeric field contains non-octal digits"))
             let digit = ptr_uint<-(current - ubyte<-48)
-            if value > (heap.ptr_uint_max() - digit) / ptr_uint<-8:
+            if value > (heap.ptr_uint_max() - digit) / 8:
                 return Result[ptr_uint, Error].failure(error = error_message("tar numeric field exceeds ptr_uint range"))
-            value = value * ptr_uint<-8 + digit
+            value = value * 8 + digit
 
         index += 1
 
@@ -489,8 +488,8 @@ function read_text_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_ui
         heap.copy_bytes(copied, input.data + offset, used)
 
     let owned = string.String(data = copied, len = used, capacity = used, owns_storage = true)
-    match text.utf8_byte_span_as_str(unsafe: span[ubyte](data = copied, len = used)):
-        Option.some as _:
+    match text.utf8_byte_span_as_str(span[ubyte](data = copied, len = used)):
+        Option.some:
             return Result[string.String, Error].success(value = owned)
         Option.none:
             var invalid = owned
@@ -571,7 +570,7 @@ function checked_destination_path(destination_root: str, relative_path: str) -> 
             var normalized = payload.value
             defer normalized.release()
             let normalized_path = normalized.as_str()
-            let escapes_parent = normalized_path.len == 2 and normalized_path.byte_at(0) == ubyte<-46 and normalized_path.byte_at(1) == ubyte<-46
+            let escapes_parent = normalized_path.len == 2 and normalized_path.byte_at(0) == 46 and normalized_path.byte_at(1) == 46
             if escapes_parent or normalized_path.starts_with("../"):
                 destination_path.release()
                 return Result[string.String, Error].failure(error = error_message("tar extract path escapes destination root"))
@@ -600,7 +599,7 @@ public function archive_directory(root_path: str, archive_root_name: str, includ
         Result.failure as payload:
             output.release()
             return Result[bytes.Bytes, Error].failure(error = payload.error)
-        Result.success as _:
+        Result.success:
             pass
 
     append_end_blocks(ref_of(output))
@@ -628,7 +627,7 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
     match fs.create_directories(destination_root):
         Result.failure as payload:
             return Result[bool, Error].failure(error = take_fs_error(payload.error))
-        Result.success as _:
+        Result.success:
             pass
 
     var offset: ptr_uint = 0
@@ -654,33 +653,33 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
                             match fs.create_directories(destination_path.as_str()):
                                 Result.failure as create_payload:
                                     return Result[bool, Error].failure(error = take_fs_error(create_payload.error))
-                                Result.success as _:
+                                Result.success:
                                     pass
 
                             match fs.set_permissions(destination_path.as_str(), entry.mode):
                                 Result.failure as permission_payload:
                                     return Result[bool, Error].failure(error = take_fs_error(permission_payload.error))
-                                Result.success as _:
+                                Result.success:
                                     pass
                         else:
                             let parent = path_ops.dirname(destination_path.as_str())
                             match fs.create_directories(parent):
                                 Result.failure as create_payload:
                                     return Result[bool, Error].failure(error = take_fs_error(create_payload.error))
-                                Result.success as _:
+                                Result.success:
                                     pass
 
                             let file_data = unsafe: span[ubyte](data = archive.data + entry.data_offset, len = entry.size)
                             match fs.write_bytes(destination_path.as_str(), file_data):
                                 Result.failure as write_payload:
                                     return Result[bool, Error].failure(error = take_fs_error(write_payload.error))
-                                Result.success as _:
+                                Result.success:
                                     pass
 
                             match fs.set_permissions(destination_path.as_str(), entry.mode):
                                 Result.failure as permission_payload:
                                     return Result[bool, Error].failure(error = take_fs_error(permission_payload.error))
-                                Result.success as _:
+                                Result.success:
                                     pass
 
                 let entry_payload_size = padded_size(entry.size)
