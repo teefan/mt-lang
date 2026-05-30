@@ -1030,11 +1030,7 @@ function run_smoke_test() -> int:
         return 11
     defer server.release()
 
-    var remote = enet.Address(
-        host = uint<-enet.HOST_ANY,
-        port = default_port,
-    )
-    if enet.address_set_host_ip(ptr_of(remote), "127.0.0.1") != 0:
+    let remote = mp_enet.localhost_address(default_port) else:
         return 12
 
     var client = mp_enet.connect(remote, 2, registry, mp.default_config()) else:
