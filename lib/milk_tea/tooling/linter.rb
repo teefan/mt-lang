@@ -32,6 +32,7 @@ module MilkTea
       self-assignment
       self-comparison
       shadow
+      trailing-list-comma
       unreachable-code
       unused-import
       unused-local
@@ -55,6 +56,7 @@ module MilkTea
       dead-assignment
       redundant-cast
       reserved-primitive-name
+      trailing-list-comma
     ].freeze
     LINT_TIERS = %i[fast full].freeze
     EXPENSIVE_LINT_RULE_CODES = %w[redundant-unsafe redundant-cast].to_set.freeze
@@ -70,6 +72,7 @@ module MilkTea
       "redundant-read-release-temp" => "Inline read(...).release()",
       "prefer-let-else" => "Rewrite as let-else",
       "directional-ffi-arg" => "Pass lvalue directly",
+      "trailing-list-comma" => "Remove trailing list comma",
     }.freeze
     EVENT_STACK_SNAPSHOT_WARNING_THRESHOLD = 128
     FIX_ALL_TITLE = "Apply all auto-fixes".freeze
@@ -299,7 +302,8 @@ module MilkTea
     # Handles: prefer-let, redundant-ignored-match-binding,
     # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
     # directional-ffi-arg, redundant-else, redundant-unsafe,
-    # redundant-return, redundant-cast, reserved-primitive-name.
+    # redundant-return, redundant-cast, reserved-primitive-name,
+    # trailing-list-comma.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5)
       pass_limit = [max_passes.to_i, 1].max
@@ -307,7 +311,7 @@ module MilkTea
       current_sema_facts = sema_facts
 
       pass_limit.times do
-        updated_source = fix_source_single_pass(
+        updated_source = fix_source_single_pass_isolating_rules(
           current_source,
           path:,
           sema_facts: current_sema_facts,
@@ -318,6 +322,38 @@ module MilkTea
 
         current_source = updated_source
         # Facts passed by callers are only valid for the first source snapshot.
+        current_sema_facts = nil
+      end
+
+      current_source
+    end
+
+    def self.fix_source_single_pass_isolating_rules(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
+      cfg = load_config(path)
+      effective_select = select || cfg&.fetch(:select, nil)
+      effective_ignore = ignore || cfg&.fetch(:ignore, nil)
+      enabled_rules = AUTO_FIXABLE_RULE_CODES.select do |rule_code|
+        next false if effective_select && !effective_select.include?(rule_code)
+        next false if effective_ignore && effective_ignore.include?(rule_code)
+
+        true
+      end
+      return source if enabled_rules.empty?
+
+      current_source = source
+      current_sema_facts = sema_facts
+
+      enabled_rules.each do |rule_code|
+        updated_source = fix_source_single_pass(
+          current_source,
+          path:,
+          sema_facts: current_sema_facts,
+          select: Set[rule_code],
+          ignore: effective_ignore,
+        )
+        next if updated_source == current_source
+
+        current_source = updated_source
         current_sema_facts = nil
       end
 
@@ -508,6 +544,20 @@ module MilkTea
         next if lines[idx].match?(/\A\s*(let|var)\b/)
 
         lines.delete_at(idx)
+      end
+
+      # trailing-list-comma: delete trailing comma in call argument lists.
+      trailing_list_comma_fixes = warnings.select { |w| w.code == "trailing-list-comma" && w.line && w.column }
+      trailing_list_comma_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
+        idx = w.line - 1
+        next unless lines[idx]
+
+        char_idx = w.column - 1
+        next if char_idx.negative? || char_idx >= lines[idx].length
+        next unless lines[idx][char_idx] == ","
+
+        lines[idx] = lines[idx].dup
+        lines[idx][char_idx] = ""
       end
 
       fixed_source = lines.join
@@ -965,6 +1015,14 @@ module MilkTea
       @imported_modules = (imported_modules || {}).dup
       @source = source.to_s
       @source_lines = source ? source.lines.map { |line| line.delete_suffix("\n") } : []
+      @tokens = begin
+        Lexer.lex(@source, path: @path)
+      rescue StandardError
+        []
+      end
+      @token_index_by_location = @tokens.each_with_index.each_with_object({}) do |(token, index), locations|
+        locations[[token.line, token.column]] ||= index
+      end
       @source_ast = source_ast
       @profile = profile
       @warnings = []
@@ -991,6 +1049,7 @@ module MilkTea
       @source_ast ||= ast
       visit_source_file(ast)
       profile_phase("rule.event_capacity") { emit_event_capacity_warnings(ast) }
+      profile_phase("rule.trailing_list_comma") { emit_trailing_list_comma_warnings(ast) }
       profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
       profile_phase("rule.redundant_cast") { emit_redundant_cast_warnings } if expensive_lint_rules_enabled?
       @warnings
@@ -1028,6 +1087,136 @@ module MilkTea
 
     def external_or_foreign_function_header_line?(line)
       line.strip.match?(/\A(?:[A-Za-z_]\w*\s+)*(?:external|foreign)\s+function\b/)
+    end
+
+    def emit_trailing_list_comma_warnings(source_file)
+      return if @tokens.nil? || @tokens.empty?
+
+      warned_sites = Set.new
+      each_call_argument_list_candidate(source_file) do |call_expression, symbol_name|
+        site = trailing_call_argument_comma_site(call_expression)
+        next unless site
+        next if warned_sites.include?(site)
+
+        warned_sites << site
+        @warnings << Warning.new(
+          path: @path,
+          line: site[0],
+          column: site[1],
+          length: 1,
+          code: "trailing-list-comma",
+          message: "trailing comma in call argument list is redundant",
+          severity: :hint,
+          symbol_name:,
+        )
+      end
+    end
+
+    def each_call_argument_list_candidate(source_file, &block)
+      source_file.declarations.each do |declaration|
+        case declaration
+        when AST::ConstDecl, AST::VarDecl
+          each_call_in_expression(declaration.value, &block)
+        when AST::FunctionDef, AST::MethodDef
+          each_call_in_statement_list(declaration.body, &block)
+        when AST::ExtendingBlock
+          declaration.methods.each { |method| each_call_in_statement_list(method.body, &block) }
+        end
+      end
+    end
+
+    def each_call_in_statement_list(stmts, &block)
+      walk_statement_lists(stmts) do |statement_list|
+        statement_list.each do |statement|
+          each_statement_expression(statement) do |expression|
+            next unless expression.is_a?(AST::Call)
+            next if expression.arguments.nil? || expression.arguments.empty?
+
+            block.call(expression, call_symbol_name(expression.callee))
+          end
+        end
+      end
+    end
+
+    def each_call_in_expression(expression, &block)
+      walk_expression_tree(expression) do |node|
+        next unless node.is_a?(AST::Call)
+        next if node.arguments.nil? || node.arguments.empty?
+
+        block.call(node, call_symbol_name(node.callee))
+      end
+    end
+
+    def call_symbol_name(callee)
+      case callee
+      when AST::Identifier
+        callee.name
+      when AST::MemberAccess
+        callee.member
+      when AST::Specialization
+        call_symbol_name(callee.callee)
+      else
+        nil
+      end
+    end
+
+    def trailing_call_argument_comma_site(call_expression)
+      return nil unless call_expression.is_a?(AST::Call)
+      return nil if call_expression.arguments.nil? || call_expression.arguments.empty?
+
+      callee_line = expression_line(call_expression.callee)
+      callee_column = expression_column(call_expression.callee)
+      return nil unless callee_line && callee_column
+
+      callee_token_idx = @token_index_by_location[[callee_line, callee_column]]
+      return nil unless callee_token_idx
+
+      lparen_idx = nil
+      cursor = callee_token_idx
+      while cursor < @tokens.length
+        token = @tokens[cursor]
+        if token.type == :lparen
+          lparen_idx = cursor
+          break
+        end
+        break if token.type == :newline && token.line > callee_line
+
+        cursor += 1
+      end
+      return nil unless lparen_idx
+
+      paren_depth = 0
+      bracket_depth = 0
+      comma_token = nil
+      cursor = lparen_idx + 1
+
+      while cursor < @tokens.length
+        token = @tokens[cursor]
+        case token.type
+        when :lparen
+          paren_depth += 1
+        when :rparen
+          if paren_depth.zero? && bracket_depth.zero?
+            return [comma_token.line, comma_token.column] if comma_token
+
+            return nil
+          end
+          paren_depth -= 1 if paren_depth.positive?
+        when :lbracket
+          bracket_depth += 1
+        when :rbracket
+          bracket_depth -= 1 if bracket_depth.positive?
+        when :comma
+          comma_token = token if paren_depth.zero? && bracket_depth.zero?
+        else
+          if paren_depth.zero? && bracket_depth.zero? && !%i[newline indent dedent eof].include?(token.type)
+            comma_token = nil
+          end
+        end
+        cursor += 1
+      end
+
+      nil
     end
 
     def emit_event_capacity_warnings(source_file)
@@ -2313,7 +2502,11 @@ module MilkTea
     def mutating_argument_identifier?(expression)
       return false unless expression.is_a?(AST::Identifier)
 
-      @sema_facts&.binding_resolution&.mutating_argument_identifier_ids&.key?(expression.object_id)
+      binding_resolution = @sema_facts&.binding_resolution
+      return false unless binding_resolution
+
+      binding_resolution.mutating_argument_identifier_ids&.key?(expression.object_id) ||
+        binding_resolution.mutable_lvalue_argument_identifier_ids&.key?(expression.object_id)
     end
 
     def mark_call_receiver_mutated(expression)
