@@ -43,6 +43,11 @@ public struct SessionEventRecord:
     connection: Option[mp.ConnectionId]
 
 
+public struct WeightedConnection:
+    connection: mp.ConnectionId
+    weight: uint
+
+
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
         return ptr_of(this.world)
@@ -230,6 +235,46 @@ extending Server:
         return this.broadcast_snapshot(channel, transfer_mode, header, payload)
 
 
+    public mutable function broadcast_snapshot_scheduled_fair(
+        scheduler: ref[mp.TickScheduler],
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte],
+    ) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        var connections = vec.Vec[mp.ConnectionId].create()
+        defer connections.release()
+        append_verified_connections(host, ref_of(connections))
+        if connections.len() == 0:
+            return Result[ptr_uint, mp.Error].success(value = 0)
+
+        let start_index = this.snapshot_budget_cursor % connections.len()
+        var ordered_connections = vec.Vec[mp.ConnectionId].with_capacity(connections.len())
+        defer ordered_connections.release()
+        append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
+
+        let sent = send_snapshots_scheduled_fair_impl(
+            host,
+            scheduler,
+            ordered_connections.as_span(),
+            channel,
+            transfer_mode,
+            header,
+            payload,
+        ) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent == 0:
+            this.snapshot_budget_cursor = (start_index + 1) % connections.len()
+        else:
+            this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
+
+
     public function broadcast_rpc_scheduled(
         scheduler: ref[mp.TickScheduler],
         channel: uint,
@@ -241,6 +286,91 @@ extending Server:
         let _ = scheduler.reserve(required_bytes) else:
             return Result[bool, mp.Error].success(value = false)
         return this.broadcast_rpc(channel, transfer_mode, direction, payload)
+
+
+    public mutable function broadcast_rpc_scheduled_fair(
+        scheduler: ref[mp.TickScheduler],
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        direction: mp.RpcDirection,
+        payload: span[ubyte],
+    ) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+        let _ = validate_server_outbound_direction(direction) else as direction_error:
+            return Result[ptr_uint, mp.Error].failure(error = direction_error)
+
+        var connections = vec.Vec[mp.ConnectionId].create()
+        defer connections.release()
+        append_verified_connections(host, ref_of(connections))
+        if connections.len() == 0:
+            return Result[ptr_uint, mp.Error].success(value = 0)
+
+        let start_index = this.snapshot_budget_cursor % connections.len()
+        var ordered_connections = vec.Vec[mp.ConnectionId].with_capacity(connections.len())
+        defer ordered_connections.release()
+        append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
+
+        let sent = send_rpcs_scheduled_fair_impl(
+            host,
+            scheduler,
+            ordered_connections.as_span(),
+            channel,
+            transfer_mode,
+            direction,
+            payload,
+        ) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent == 0:
+            this.snapshot_budget_cursor = (start_index + 1) % connections.len()
+        else:
+            this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
+
+
+    public mutable function dispatch_tick_fair(
+        tick: mp.Tick,
+        plan: mp.TickBudgetPlan,
+        snapshot_channel: uint,
+        snapshot_transfer_mode: mp.TransferMode,
+        snapshot_header: mp.SnapshotPacketHeader,
+        snapshot_payload: span[ubyte],
+        rpc_channel: uint,
+        rpc_transfer_mode: mp.TransferMode,
+        rpc_direction: mp.RpcDirection,
+        rpc_payload: span[ubyte],
+    ) -> Result[mp.TickDispatchReport, mp.Error]:
+        var snapshot_scheduler = mp.create_tick_scheduler(plan.snapshot_bytes)
+        snapshot_scheduler.begin_tick(tick)
+        let snapshots_sent = this.broadcast_snapshot_scheduled_fair(
+            ref_of(snapshot_scheduler),
+            snapshot_channel,
+            snapshot_transfer_mode,
+            snapshot_header,
+            snapshot_payload,
+        ) else as snapshot_error:
+            return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
+
+        var rpc_scheduler = mp.create_tick_scheduler(plan.rpc_bytes)
+        rpc_scheduler.begin_tick(tick)
+        let rpcs_sent = this.broadcast_rpc_scheduled_fair(
+            ref_of(rpc_scheduler),
+            rpc_channel,
+            rpc_transfer_mode,
+            rpc_direction,
+            rpc_payload,
+        ) else as rpc_error:
+            return Result[mp.TickDispatchReport, mp.Error].failure(error = rpc_error)
+
+        return Result[mp.TickDispatchReport, mp.Error].success(
+            value = mp.TickDispatchReport(
+                snapshots_sent = snapshots_sent,
+                rpcs_sent = rpcs_sent,
+                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes(),
+            ),
+        )
 
 
     public function send_rpc_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
@@ -271,6 +401,17 @@ extending Server:
         direction: mp.RpcDirection,
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        if find_verified_peer(host, connection) == null:
+            return Result[bool, mp.Error].failure(
+                error = mp.error(
+                    mp.ErrorCode.not_found,
+                    "verified target connection was not found",
+                ),
+            )
+
         let required_bytes = rpc_wire_bytes(channel, direction, payload)
         let _ = scheduler.reserve(required_bytes) else:
             return Result[bool, mp.Error].success(value = false)
@@ -302,6 +443,17 @@ extending Server:
         header: mp.SnapshotPacketHeader,
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        if find_verified_peer(host, connection) == null:
+            return Result[bool, mp.Error].failure(
+                error = mp.error(
+                    mp.ErrorCode.not_found,
+                    "verified target connection was not found",
+                ),
+            )
+
         let required_bytes = snapshot_wire_bytes(header, payload)
         let _ = scheduler.reserve(required_bytes) else:
             return Result[bool, mp.Error].success(value = false)
@@ -318,40 +470,7 @@ extending Server:
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
             return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
-
-        if max_bytes == 0:
-            return Result[ptr_uint, mp.Error].success(value = 0)
-
-        var encoded = snapshot_runtime.build_payload(header, payload)
-        defer encoded.release()
-
-        let framed_bytes = encoded.len + 1
-        if framed_bytes > max_bytes:
-            return Result[ptr_uint, mp.Error].success(value = 0)
-
-        var sent_count: ptr_uint = 0
-        var consumed_bytes: ptr_uint = 0
-        var index: ptr_uint = 0
-        while index < prioritized_connections.len:
-            if consumed_bytes + framed_bytes > max_bytes:
-                break
-
-            unsafe:
-                let connection = read(prioritized_connections.data + index)
-                let peer = find_verified_peer(host, connection)
-                if peer == null:
-                    index += 1
-                    continue
-
-                let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
-                    return Result[ptr_uint, mp.Error].failure(error = send_error)
-                if sent:
-                    sent_count += 1
-                    consumed_bytes += framed_bytes
-
-            index += 1
-
-        return Result[ptr_uint, mp.Error].success(value = sent_count)
+        return send_snapshots_budgeted_impl(host, prioritized_connections, channel, transfer_mode, header, payload, max_bytes)
 
 
     public function broadcast_snapshot_budgeted(
@@ -368,6 +487,35 @@ extending Server:
         defer connections.release()
         append_verified_connections(host, ref_of(connections))
         return this.send_snapshots_budgeted(connections.as_span(), channel, transfer_mode, header, payload, max_bytes)
+
+
+    public function send_snapshots_budgeted_weighted(
+        weighted_connections: span[WeightedConnection],
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte],
+        max_bytes: ptr_uint,
+    ) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+        return send_snapshots_budgeted_weighted_impl(host, weighted_connections, channel, transfer_mode, header, payload, max_bytes)
+
+
+    public function broadcast_snapshot_budgeted_weighted(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte],
+        max_bytes: ptr_uint,
+    ) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        var weighted_connections = vec.Vec[WeightedConnection].create()
+        defer weighted_connections.release()
+        append_weighted_verified_connections(host, ref_of(weighted_connections))
+        return send_snapshots_budgeted_weighted_impl(host, weighted_connections.as_span(), channel, transfer_mode, header, payload, max_bytes)
 
 
     public mutable function broadcast_snapshot_budgeted_fair(
@@ -391,7 +539,7 @@ extending Server:
         defer ordered_connections.release()
         append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
 
-        let sent = this.send_snapshots_budgeted(ordered_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
+        let sent = send_snapshots_budgeted_impl(host, ordered_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent == 0:
@@ -1024,6 +1172,19 @@ function append_verified_connections(host: ptr[enet.Host], out_connections: ref[
     return
 
 
+function append_weighted_verified_connections(host: ptr[enet.Host], out_connections: ref[vec.Vec[WeightedConnection]]) -> void:
+    unsafe:
+        let peers = read(host).peers
+        let peer_count = read(host).peerCount
+        var index: ptr_uint = 0
+        while index < peer_count:
+            let peer = peers + index
+            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
+                out_connections.push(WeightedConnection(connection = peer_connection_id(peer), weight = 1))
+            index += 1
+    return
+
+
 function append_rotated_connections(
     source: span[mp.ConnectionId],
     start_index: ptr_uint,
@@ -1045,6 +1206,214 @@ function append_rotated_connections(
         prefix_index += 1
 
     return
+
+
+function send_snapshots_budgeted_impl(
+    host: ptr[enet.Host],
+    prioritized_connections: span[mp.ConnectionId],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    header: mp.SnapshotPacketHeader,
+    payload: span[ubyte],
+    max_bytes: ptr_uint,
+) -> Result[ptr_uint, mp.Error]:
+    if max_bytes == 0:
+        return Result[ptr_uint, mp.Error].success(value = 0)
+
+    var encoded = snapshot_runtime.build_payload(header, payload)
+    defer encoded.release()
+
+    let framed_bytes = encoded.len + 1
+    if framed_bytes > max_bytes:
+        return Result[ptr_uint, mp.Error].success(value = 0)
+
+    var sent_count: ptr_uint = 0
+    var consumed_bytes: ptr_uint = 0
+    var index: ptr_uint = 0
+    while index < prioritized_connections.len:
+        if consumed_bytes + framed_bytes > max_bytes:
+            break
+
+        unsafe:
+            let connection = read(prioritized_connections.data + index)
+            let peer = find_verified_peer(host, connection)
+            if peer == null:
+                index += 1
+                continue
+
+            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+                return Result[ptr_uint, mp.Error].failure(error = send_error)
+            if sent:
+                sent_count += 1
+                consumed_bytes += framed_bytes
+
+        index += 1
+
+    return Result[ptr_uint, mp.Error].success(value = sent_count)
+
+
+function send_snapshots_scheduled_fair_impl(
+    host: ptr[enet.Host],
+    scheduler: ref[mp.TickScheduler],
+    ordered_connections: span[mp.ConnectionId],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    header: mp.SnapshotPacketHeader,
+    payload: span[ubyte],
+) -> Result[ptr_uint, mp.Error]:
+    var encoded = snapshot_runtime.build_payload(header, payload)
+    defer encoded.release()
+
+    let framed_bytes = encoded.len + 1
+    var sent_count: ptr_uint = 0
+    var index: ptr_uint = 0
+    while index < ordered_connections.len:
+        unsafe:
+            let connection = read(ordered_connections.data + index)
+            let peer = find_verified_peer(host, connection)
+            if peer == null:
+                index += 1
+                continue
+
+            match scheduler.reserve(framed_bytes):
+                Option.some as _:
+                    pass
+                Option.none:
+                    break
+
+            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+                return Result[ptr_uint, mp.Error].failure(error = send_error)
+            if sent:
+                sent_count += 1
+
+        index += 1
+
+    return Result[ptr_uint, mp.Error].success(value = sent_count)
+
+
+function send_snapshots_budgeted_weighted_impl(
+    host: ptr[enet.Host],
+    weighted_connections: span[WeightedConnection],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    header: mp.SnapshotPacketHeader,
+    payload: span[ubyte],
+    max_bytes: ptr_uint,
+) -> Result[ptr_uint, mp.Error]:
+    if max_bytes == 0:
+        return Result[ptr_uint, mp.Error].success(value = 0)
+
+    var encoded = snapshot_runtime.build_payload(header, payload)
+    defer encoded.release()
+
+    let framed_bytes = encoded.len + 1
+    if framed_bytes > max_bytes:
+        return Result[ptr_uint, mp.Error].success(value = 0)
+
+    var remaining_budget = max_bytes
+    var sent_count: ptr_uint = 0
+    var sent_mask = vec.Vec[bool].with_capacity(weighted_connections.len)
+    defer sent_mask.release()
+    var init_index: ptr_uint = 0
+    while init_index < weighted_connections.len:
+        sent_mask.push(false)
+        init_index += 1
+
+    while remaining_budget >= framed_bytes:
+        var next_index: ptr_uint = 0
+        match pick_highest_weight_unsent(weighted_connections, sent_mask.as_span()):
+            Option.some as next_payload:
+                next_index = next_payload.value
+            Option.none:
+                break
+
+        let sent_flag_ptr = sent_mask.get(next_index) else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "weighted snapshot sent mask missing slot"))
+        unsafe:
+            read(sent_flag_ptr) = true
+
+        unsafe:
+            let candidate = read(weighted_connections.data + next_index)
+            let peer = find_verified_peer(host, candidate.connection)
+            if peer == null:
+                continue
+
+            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+                return Result[ptr_uint, mp.Error].failure(error = send_error)
+            if sent:
+                sent_count += 1
+                remaining_budget -= framed_bytes
+
+    return Result[ptr_uint, mp.Error].success(value = sent_count)
+
+
+function pick_highest_weight_unsent(
+    weighted_connections: span[WeightedConnection],
+    sent_mask: span[bool],
+) -> Option[ptr_uint]:
+    if weighted_connections.len == 0:
+        return Option[ptr_uint].none
+
+    var best_index: ptr_uint = 0
+    var best_weight: uint = 0
+    var found = false
+    var index: ptr_uint = 0
+    while index < weighted_connections.len:
+        unsafe:
+            if read(sent_mask.data + index):
+                index += 1
+                continue
+
+            let weight = read(weighted_connections.data + index).weight
+            if not found or weight > best_weight:
+                found = true
+                best_index = index
+                best_weight = weight
+        index += 1
+
+    if not found:
+        return Option[ptr_uint].none
+    return Option[ptr_uint].some(value = best_index)
+
+
+function send_rpcs_scheduled_fair_impl(
+    host: ptr[enet.Host],
+    scheduler: ref[mp.TickScheduler],
+    ordered_connections: span[mp.ConnectionId],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    direction: mp.RpcDirection,
+    payload: span[ubyte],
+) -> Result[ptr_uint, mp.Error]:
+    let header = mp.RpcPacketHeader(channel = channel, direction = direction, payload_size = payload.len)
+    var encoded = rpc_runtime.build_payload(header, payload)
+    defer encoded.release()
+
+    let framed_bytes = encoded.len + 1
+    var sent_count: ptr_uint = 0
+    var index: ptr_uint = 0
+    while index < ordered_connections.len:
+        unsafe:
+            let connection = read(ordered_connections.data + index)
+            let peer = find_verified_peer(host, connection)
+            if peer == null:
+                index += 1
+                continue
+
+            match scheduler.reserve(framed_bytes):
+                Option.some as _:
+                    pass
+                Option.none:
+                    break
+
+            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span()) else as send_error:
+                return Result[ptr_uint, mp.Error].failure(error = send_error)
+            if sent:
+                sent_count += 1
+
+        index += 1
+
+    return Result[ptr_uint, mp.Error].success(value = sent_count)
 
 
 function validate_client_outbound_direction(direction: mp.RpcDirection) -> Result[bool, mp.Error]:
