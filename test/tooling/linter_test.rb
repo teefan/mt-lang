@@ -2500,6 +2500,35 @@ class MilkTeaLinterProfileBootstrapTest < Minitest::Test
 
     assert_includes fixed, "let x = 1"
   end
+
+  def test_lint_source_skips_trivia_lex_when_no_lint_ignore_directive
+    source = <<~MT
+      function main() -> int:
+          let unused = 1
+          return 0
+    MT
+
+    profile = MilkTea::Linter::Profile.new
+    MilkTea::Linter.lint_source(source, path: "demo.mt", profile:)
+
+    refute profile.timings_ms.key?("lex_trivia")
+    refute profile.timings_ms.key?("parse_suppressions")
+  end
+
+  def test_lint_source_uses_trivia_lex_when_lint_ignore_directive_exists
+    source = <<~MT
+      function main() -> int:
+          let unused = 1 # lint: ignore(unused-local)
+          return 0
+    MT
+
+    profile = MilkTea::Linter::Profile.new
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", profile:)
+
+    refute warnings.any? { |w| w.code == "unused-local" }
+    assert profile.timings_ms.key?("lex_trivia")
+    assert profile.timings_ms.key?("parse_suppressions")
+  end
 end
 
 class MilkTeaLinterPreferVarElseTest < Minitest::Test

@@ -67,12 +67,14 @@ module MilkTea
       current = source
       100.times do
         lines = current.lines
+        tokens = Lexer.lex(current, path:)
+        tokens_by_line = non_trivia_tokens_by_line(tokens)
         fix = nil
 
         lines.each_index do |line_index|
           next unless lines[line_index].delete_suffix("\n").length > max_line_length
 
-          fix = build_long_line_wrap_fix(current, line_index, max_line_length:, path:)
+          fix = build_long_line_wrap_fix(current, line_index, max_line_length:, path:, tokens:, tokens_by_line:)
           break if fix
         end
 
@@ -94,7 +96,7 @@ module MilkTea
       source
     end
 
-    def self.build_long_line_wrap_fix(source, line_index, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil)
+    def self.build_long_line_wrap_fix(source, line_index, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil, tokens: nil, tokens_by_line: nil)
       return nil unless max_line_length.to_i.positive?
 
       lines = source.lines
@@ -105,9 +107,11 @@ module MilkTea
       original_line = lines[line_index]
       line = original_line.delete_suffix("\n")
       return nil if line.length <= max_line_length
+      return nil unless wrappable_long_line_candidate_text?(line)
 
-      tokens = Lexer.lex(source)
-      candidates = long_line_wrap_candidates(tokens, line_index + 1, line)
+      tokens ||= Lexer.lex(source, path:)
+      line_tokens = tokens_by_line ? tokens_by_line.fetch(line_index + 1, []) : non_trivia_tokens_on_line(tokens, line_index + 1)
+      candidates = long_line_wrap_candidates(line_tokens, line)
 
       indent = line[/\A\s*/] || ""
       arg_indent = indent + "    "
@@ -144,7 +148,7 @@ module MilkTea
         lines,
         line_index,
         line,
-        tokens,
+        line_tokens,
         line_terminator:,
         path:,
       )
@@ -165,8 +169,8 @@ module MilkTea
       new_text
     end
 
-    def self.build_wrapped_logical_chain_fix(lines, line_index, line, tokens, line_terminator:, path:)
-      candidate = logical_chain_wrap_candidate(tokens, line_index + 1, line)
+    def self.build_wrapped_logical_chain_fix(lines, line_index, line, line_tokens, line_terminator:, path:)
+      candidate = logical_chain_wrap_candidate(line_tokens, line)
       return nil unless candidate
 
       indent = line[/\A\s*/] || ""
@@ -502,11 +506,11 @@ module MilkTea
       end
     end
 
-    def self.long_line_wrap_candidates(tokens, target_line_number, line)
+    def self.long_line_wrap_candidates(line_tokens, line)
       stack = []
       candidates = []
 
-      tokens.each_with_index do |token, index|
+      line_tokens.each_with_index do |token, index|
         case token.type
         when :lparen, :lbracket
           stack << { token:, index:, depth: stack.length }
@@ -514,14 +518,11 @@ module MilkTea
           opening = stack.pop
           next unless opening
           next unless matching_delimiter_pair?(opening[:token].type, token.type)
-          next unless opening[:token].line == target_line_number && token.line == target_line_number
 
           candidate = build_long_line_wrap_candidate(
             line,
-            tokens,
-            opening[:token],
+            line_tokens,
             opening[:index],
-            token,
             index,
             opening[:depth],
           )
@@ -532,10 +533,7 @@ module MilkTea
       candidates
     end
 
-    def self.logical_chain_wrap_candidate(tokens, target_line_number, line)
-      line_tokens = tokens.select do |token|
-        token.line == target_line_number && !%i[newline indent dedent eof].include?(token.type)
-      end
+    def self.logical_chain_wrap_candidate(line_tokens, line)
       return nil if line_tokens.length < 4
 
       header_length = case line_tokens.first.type
@@ -599,12 +597,14 @@ module MilkTea
         (opening_type == :lbracket && closing_type == :rbracket)
     end
 
-    def self.build_long_line_wrap_candidate(line, tokens, open_token, open_index, close_token, close_index, depth)
+    def self.build_long_line_wrap_candidate(line, line_tokens, open_index, close_index, depth)
+      open_token = line_tokens[open_index]
+      close_token = line_tokens[close_index]
       nested_group_depth = 0
       comma_tokens = []
 
       (open_index + 1...close_index).each do |index|
-        token = tokens[index]
+        token = line_tokens[index]
         case token.type
         when :lparen, :lbracket
           nested_group_depth += 1
@@ -642,6 +642,25 @@ module MilkTea
         closing_delimiter: close_token.lexeme,
         arguments:,
       }
+    end
+
+    def self.wrappable_long_line_candidate_text?(line)
+      return true if line.include?("(") || line.include?("[")
+      return true if line.include?(" and ") || line.include?(" or ")
+
+      false
+    end
+
+    def self.non_trivia_tokens_on_line(tokens, line_number)
+      tokens.select { |token| token.line == line_number && !%i[newline indent dedent eof].include?(token.type) }
+    end
+
+    def self.non_trivia_tokens_by_line(tokens)
+      tokens.each_with_object(Hash.new { |hash, line| hash[line] = [] }) do |token, by_line|
+        next if %i[newline indent dedent eof].include?(token.type)
+
+        by_line[token.line] << token
+      end
     end
 
     def self.validate_mode!(mode)
