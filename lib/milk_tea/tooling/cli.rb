@@ -153,6 +153,7 @@ module MilkTea
       result = Formatter.check_source(source, path: path, mode: options[:mode], max_line_length: options[:max_line_length])
 
       if options[:check]
+        announce_file_action(path, "format-check")
         if result.changed
           @out.puts("needs formatting #{path}")
           return 1
@@ -163,6 +164,7 @@ module MilkTea
       end
 
       if options[:write]
+        announce_file_action(path, "format-write")
         if result.changed
           File.write(path, result.formatted_source)
           @out.puts("formatted #{path}")
@@ -180,6 +182,7 @@ module MilkTea
       if options[:check]
         needs_fmt = []
         paths.each do |p|
+          announce_file_action(p, "format-check")
           result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
           needs_fmt << p if result.changed
         end
@@ -195,6 +198,7 @@ module MilkTea
       # --write
       changed = 0
       paths.each do |p|
+        announce_file_action(p, "format-write")
         result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
         if result.changed
           File.write(p, result.formatted_source)
@@ -301,6 +305,7 @@ module MilkTea
 
       if fix
         paths.each do |p|
+          announce_file_action(p, "lint-fix")
           source = read_source_file(p)
           if ignore_generated && generated_source?(source)
             @out.puts("ignored generated #{p}")
@@ -323,6 +328,7 @@ module MilkTea
       end
 
       all_warnings = paths.flat_map do |p|
+        announce_file_action(p, "lint") if output_format == :text
         source = read_source_file(p)
         next [] if ignore_generated && generated_source?(source)
 
@@ -763,6 +769,10 @@ module MilkTea
 
     def generated_source?(source)
       source.start_with?(GENERATED_FILE_HEADER_PREFIX)
+    end
+
+    def announce_file_action(path, action)
+      @out.puts("about to #{action} #{path}")
     end
 
     def make_module_loader(path = nil, locked: false)
