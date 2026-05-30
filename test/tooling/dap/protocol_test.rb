@@ -46,12 +46,12 @@ class DAPProtocolTest < Minitest::Test
     assert_nil protocol.read_message
   end
 
-  def test_read_message_returns_nil_on_malformed_json
+  def test_read_message_returns_invalid_message_on_malformed_json
     raw = "Content-Length: 5\r\n\r\nnot{j"
     input = StringIO.new(raw)
     protocol = MilkTea::DAP::Protocol.new(input:, output: StringIO.new)
 
-    assert_nil protocol.read_message
+    assert_same MilkTea::DAP::Protocol::INVALID_MESSAGE, protocol.read_message
   end
 
   def test_write_message_emits_content_length_header
@@ -72,7 +72,7 @@ class DAPProtocolTest < Minitest::Test
     raw = "Content-Length: 7\r\n\r\n{broken"
     protocol = MilkTea::DAP::Protocol.new(input: StringIO.new(raw), output: StringIO.new, error_output:)
 
-    assert_nil protocol.read_message
+    assert_same MilkTea::DAP::Protocol::INVALID_MESSAGE, protocol.read_message
     assert_match(/DAP protocol read error:/, error_output.string)
   end
 
@@ -94,6 +94,13 @@ class DAPProtocolTest < Minitest::Test
     raw = "Content-Length: 8\r\n\r\n{broken}"
     protocol = MilkTea::DAP::Protocol.new(input: StringIO.new(raw), output: StringIO.new, error_output: failing_error_output)
 
-    assert_nil protocol.read_message
+    assert_same MilkTea::DAP::Protocol::INVALID_MESSAGE, protocol.read_message
+  end
+
+  def test_read_message_returns_invalid_message_when_content_length_is_missing
+    raw = "Content-Type: application/vscode-jsonrpc; charset=utf-8\r\n\r\n{}"
+    protocol = MilkTea::DAP::Protocol.new(input: StringIO.new(raw), output: StringIO.new)
+
+    assert_same MilkTea::DAP::Protocol::INVALID_MESSAGE, protocol.read_message
   end
 end

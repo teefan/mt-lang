@@ -46,6 +46,7 @@ module MilkTea
         @debug_map = nil
         @frame_debug_functions = {}
         @variables_reference_debug_functions = {}
+        @reverse_request_timeout = Float(ENV.fetch("MILK_TEA_DAP_REVERSE_REQUEST_TIMEOUT", "15"))
         register_handlers
       end
 
@@ -55,6 +56,7 @@ module MilkTea
         loop do
           message = @incoming_messages.pop
           break if message.nil?
+          next if message.equal?(Protocol::INVALID_MESSAGE)
 
           process_message(message)
           break if @session.should_exit?
@@ -74,6 +76,7 @@ module MilkTea
           loop do
             message = @protocol.read_message
             break if message.nil?
+            next if message.equal?(Protocol::INVALID_MESSAGE)
 
             if message["type"] == "response"
               queue = @client_request_mutex.synchronize do
@@ -833,7 +836,8 @@ module MilkTea
           arguments: message["arguments"] || {}
         })
 
-        client_response = Timeout.timeout(5) { queue.pop }
+        timeout_seconds = reverse_request_timeout
+        client_response = Timeout.timeout(timeout_seconds) { queue.pop }
         build_backend_request_response(message, client_response)
       rescue Timeout::Error
         {
@@ -842,12 +846,19 @@ module MilkTea
           "request_seq" => message["seq"],
           "success" => false,
           "command" => message["command"],
-          "message" => "client request timed out: #{message['command']}"
+          "message" => format("client request timed out after %.1fs: %s", timeout_seconds, message["command"])
         }
       ensure
         @client_request_mutex.synchronize do
           @pending_client_responses.delete(client_seq) if defined?(client_seq)
         end
+      end
+
+      def reverse_request_timeout
+        timeout = @reverse_request_timeout.to_f
+        timeout.positive? ? timeout : 15.0
+      rescue StandardError
+        15.0
       end
 
       def handle_client_response(message)

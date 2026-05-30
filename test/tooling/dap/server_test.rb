@@ -164,6 +164,23 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  class ScriptedDAPProtocol
+    attr_reader :written
+
+    def initialize(messages)
+      @messages = messages.dup
+      @written = []
+    end
+
+    def read_message
+      @messages.shift
+    end
+
+    def write_message(message)
+      @written << message
+    end
+  end
+
   class FakeBridgeBackend
     attr_reader :requests
 
@@ -706,6 +723,82 @@ class DAPServerTest < Minitest::Test
       response, _events = client.send_request("threads", {})
       assert_equal false, response["success"]
       assert_match(/initialize request must be sent first/, response["message"])
+    end
+  end
+
+  def test_run_skips_invalid_protocol_messages_and_continues_processing
+    protocol = ScriptedDAPProtocol.new([
+      MilkTea::DAP::Protocol::INVALID_MESSAGE,
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      nil,
+    ])
+
+    server = MilkTea::DAP::Server.new(protocol: protocol)
+    server.run
+
+    init_response = find_response(protocol.written, 1)
+    assert_equal true, init_response["success"] || init_response[:success]
+    initialized_events = find_events(protocol.written, "initialized")
+    assert_equal 1, initialized_events.length
+  end
+
+  def test_reverse_request_timeout_uses_configured_timeout_message
+    original_timeout = ENV["MILK_TEA_DAP_REVERSE_REQUEST_TIMEOUT"]
+    ENV["MILK_TEA_DAP_REVERSE_REQUEST_TIMEOUT"] = "0.05"
+
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true } },
+      { "seq" => 3, "type" => "request", "command" => "configurationDone", "arguments" => {} }
+    ]
+    protocol = InMemoryProtocol.new(incoming)
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event, on_request|
+        Class.new do
+          def initialize(on_event, on_request)
+            @on_event = on_event
+            @on_request = on_request
+          end
+
+          def start! = true
+          def stop! = true
+
+          def request(command, arguments, timeout: 5)
+            _arguments = arguments
+            _timeout = timeout
+            case command
+            when "initialize"
+              { "success" => true, "body" => { "supportsConfigurationDoneRequest" => true } }
+            when "launch"
+              { "success" => true, "body" => {} }
+            when "configurationDone"
+              @on_request.call({
+                "seq" => 900,
+                "type" => "request",
+                "command" => "runInTerminal",
+                "arguments" => { "kind" => "integrated", "title" => "Timed Out", "cwd" => "/tmp", "args" => ["/usr/bin/true"] }
+              })
+            else
+              { "success" => true, "body" => {} }
+            end
+          end
+        end.new(on_event, on_request)
+      end
+    )
+
+    server.run
+
+    conf_response = find_response(protocol.written, 3)
+    assert_equal false, conf_response["success"] || conf_response[:success]
+    message = conf_response["message"] || conf_response[:message]
+    assert_match(/timed out after 0\.1s: runInTerminal/, message)
+  ensure
+    if original_timeout.nil?
+      ENV.delete("MILK_TEA_DAP_REVERSE_REQUEST_TIMEOUT")
+    else
+      ENV["MILK_TEA_DAP_REVERSE_REQUEST_TIMEOUT"] = original_timeout
     end
   end
 
