@@ -1290,6 +1290,51 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/let-else error binding for value requires Result\[T, E\]/, error.message)
   end
 
+  def test_type_checks_var_else_status_success_binding_and_assignment
+    source = <<~MT
+      # module demo.var_status_flow
+
+
+
+      function parse(input: int) -> Result[int, int]:
+          if input < 0:
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
+
+      function read_value(input: int) -> int:
+          var value = parse(input) else:
+              return 7
+          value += 3
+          return value
+    MT
+
+    result = check_program_source(source)
+
+    assert_equal true, result.root_analysis.functions.key?("read_value")
+  end
+
+  def test_rejects_var_else_discard_binding
+    source = <<~MT
+      # module demo.var_discard_flow
+
+
+
+      function parse() -> Result[int, int]:
+          return Result[int, int].success(value= 1)
+
+      function main() -> int:
+          var _ = parse() else:
+              return 1
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/var-else discard binding _ is not allowed/, error.message)
+  end
+
   def test_type_checks_for_loop_over_custom_iterator_protocol
     source = <<~MT
       # module demo.iterator_for

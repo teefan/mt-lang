@@ -5522,7 +5522,7 @@ module MilkTea
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, env)
-          IR::Name.new(name: binding[:c_name], type: binding[:storage_type], pointer: binding[:pointer])
+          lower_assignment_binding_target(binding)
         when AST::MemberAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
@@ -5550,6 +5550,25 @@ module MilkTea
           raise LoweringError, "unsupported assignment target #{expression.class.name}"
         else
           raise LoweringError, "unsupported assignment target #{expression.class.name}"
+        end
+      end
+
+      def lower_assignment_binding_target(binding)
+        storage_type = binding[:storage_type]
+        visible_type = binding[:type]
+        storage_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+
+        case binding[:projection]
+        when :result_success_value
+          variant_binding_projection_expression(storage_ref, storage_type, "success", "value", visible_type)
+        when :option_some_value
+          variant_binding_projection_expression(storage_ref, storage_type, "some", "value", visible_type)
+        else
+          if visible_type == storage_type || (storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type)
+            IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
+          else
+            storage_ref
+          end
         end
       end
 

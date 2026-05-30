@@ -2310,7 +2310,6 @@ module MilkTea
         end
 
         if statement.else_body || statement.recovered_else
-          raise_sema_error("let-else is only allowed on let declarations") unless statement.kind == :let
           success_type = let_else_success_type(inferred_type)
           error_type = let_else_error_type(inferred_type)
 
@@ -2323,6 +2322,10 @@ module MilkTea
 
           if discard_binding && declared_type
             raise_sema_error("let-else discard binding _ cannot have a type annotation")
+          end
+
+          if discard_binding && statement.kind == :var
+            raise_sema_error("var-else discard binding _ is not allowed")
           end
 
           if statement.else_binding && !error_type
@@ -2377,7 +2380,7 @@ module MilkTea
             raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
           end
 
-          storage_type = inferred_type
+          storage_type = statement.kind == :var ? final_type : inferred_type
           const_value = nil
         else
           if declared_type

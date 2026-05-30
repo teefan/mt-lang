@@ -1059,7 +1059,6 @@ module MilkTea
         value = parse_expression
         if match(:else)
           else_started = true
-          raise error(previous, "let-else is only allowed on let declarations") unless kind == :let
 
           if match(:as)
             binding_token = consume_name("expected error binding name after 'as'")

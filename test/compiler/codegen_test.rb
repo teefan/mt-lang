@@ -2607,6 +2607,32 @@ function main() -> int:
     assert_match(/return value\.data\.success\.value \+ 10;/, generated)
   end
 
+  def test_generate_c_for_var_else_status_success_binding_and_assignment
+    source = <<~MT
+      # module demo.main
+
+
+
+      function parse(input: int) -> Result[int, int]:
+          if input < 0:
+              return Result[int, int].failure(error= 7)
+          return Result[int, int].success(value= input + 1)
+
+      function main() -> int:
+          var value = parse(4) else:
+              return 1
+          value += 2
+          return value
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/Result_int_int value = demo_main_parse\(4\);/, generated)
+    assert_match(/if \(value\.kind == Result_int_int_kind_failure\)/, generated)
+    assert_match(/value\.data\.success\.value \+= 2;/, generated)
+    assert_match(/return value\.data\.success\.value;/, generated)
+  end
+
   def test_generate_c_for_let_else_status_void_discard_binding
     source = <<~MT
       # module demo.main
