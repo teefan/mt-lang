@@ -50,7 +50,6 @@ extending BinaryHeap[T]:
             read(left) = read(right)
             read(right) = temp
 
-        return
 
 
     static function sift_up(current: ref[BinaryHeap[T]], start_index: ptr_uint) -> void:
@@ -65,7 +64,6 @@ extending BinaryHeap[T]:
             BinaryHeap[T].swap(current, child, parent)
             child = parent
 
-        return
 
 
     static function sift_down(current: ref[BinaryHeap[T]], start_index: ptr_uint) -> void:
@@ -95,7 +93,6 @@ extending BinaryHeap[T]:
             BinaryHeap[T].swap(current, parent, candidate)
             parent = candidate
 
-        return
 
 
     public function len() -> ptr_uint:
@@ -125,23 +122,19 @@ extending BinaryHeap[T]:
 
     public mutable function clear() -> void:
         this.values.clear()
-        return
 
 
     public mutable function release() -> void:
         this.values.release()
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
-        return
 
 
     public mutable function push(value: T) -> void:
         this.values.push(value)
         BinaryHeap[T].sift_up(this, this.values.len() - 1)
-        return
 
 
     public mutable function pop() -> Option[T]:
