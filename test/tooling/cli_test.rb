@@ -822,78 +822,102 @@ class MilkTeaCliTest < Minitest::Test
       cc_path = File.join(dir, "fake-cc")
       ar_path = File.join(dir, "fake-ar")
       bundle_path = File.join(dir, "bundle")
+      git_path = File.join(dir, "git")
+      clang_path = File.join(dir, "clang")
+      cmake_path = File.join(dir, "cmake")
+      ninja_path = File.join(dir, "ninja")
 
-      [cc_path, ar_path, bundle_path].each do |path|
+      [cc_path, ar_path, bundle_path, git_path, clang_path, cmake_path, ninja_path].each do |path|
         File.write(path, "#!/bin/sh\nexit 0\n")
         File.chmod(0o755, path)
       end
 
-      prepared = []
       fake_binding = Object.new
-      fake_binding.define_singleton_method(:prepare!) do |cc:|
-        prepared << cc
-      end
-      fake_registry = Object.new
-      fake_registry.define_singleton_method(:find_by_module_name) do |module_name|
-        raise "unexpected module #{module_name}" unless module_name == "std.c.raylib"
+      fake_binding.define_singleton_method(:name) { "raylib" }
+      fake_binding.define_singleton_method(:module_name) { "std.c.raylib" }
+      fake_binding.define_singleton_method(:header_path) do |env:|
+        raise "missing PATH" unless env["PATH"]
 
-        fake_binding
+        "/tmp/raylib.h"
       end
+
+      fake_source = Object.new
+      fake_source.define_singleton_method(:name) { "raylib" }
+      fake_source.define_singleton_method(:checkout_root) { Pathname.new("/tmp/raylib-upstream") }
+      fake_source.define_singleton_method(:sentinel_paths) { ["src/raylib.h"] }
+
+      FileUtils.mkdir_p("/tmp/raylib-upstream/src")
+      File.write("/tmp/raylib-upstream/src/raylib.h", "#define RAYLIB_H 1\n")
 
       out = StringIO.new
       err = StringIO.new
 
-      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path) do
-        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { fake_registry }) do
-          MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path, "CLANG" => clang_path, "CMAKE" => cmake_path) do
+        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { [fake_binding] }) do
+          with_singleton_method_override(MilkTea::UpstreamSources, :default_sources, ->(*, **) { [fake_source] }) do
+            MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+          end
         end
       end
 
       assert_equal 0, status
       assert_equal "", err.string
-      assert_equal [cc_path], prepared
       assert_match(/ok ruby:/, out.string)
       assert_match(/ok cc: #{Regexp.escape(cc_path)}/, out.string)
       assert_match(/ok ar: #{Regexp.escape(ar_path)}/, out.string)
       assert_match(/ok bundle: bundle/, out.string)
-      assert_match(/ok raylib: std\.c\.raylib prepared/, out.string)
+      assert_match(/ok git: git/, out.string)
+      assert_match(/ok clang: #{Regexp.escape(clang_path)}/, out.string)
+      assert_match(/ok cmake: #{Regexp.escape(cmake_path)}/, out.string)
+      assert_match(/ok ninja: ninja/, out.string)
+      assert_match(%r{ok source/raylib: /tmp/raylib-upstream}, out.string)
+      assert_match(%r{ok binding/raylib: std\.c\.raylib -> /tmp/raylib\.h}, out.string)
     end
   end
 
-  def test_toolchain_doctor_command_reports_raylib_prepare_errors
+  def test_toolchain_doctor_command_reports_binding_header_errors
     require_relative "../../lib/milk_tea/bindings"
 
-    Dir.mktmpdir("milk-tea-cli-toolchain-doctor-raylib-error") do |dir|
+    Dir.mktmpdir("milk-tea-cli-toolchain-doctor-binding-error") do |dir|
       cc_path = File.join(dir, "fake-cc")
       ar_path = File.join(dir, "fake-ar")
       bundle_path = File.join(dir, "bundle")
+      git_path = File.join(dir, "git")
+      clang_path = File.join(dir, "clang")
+      cmake_path = File.join(dir, "cmake")
+      ninja_path = File.join(dir, "ninja")
 
-      [cc_path, ar_path, bundle_path].each do |path|
+      [cc_path, ar_path, bundle_path, git_path, clang_path, cmake_path, ninja_path].each do |path|
         File.write(path, "#!/bin/sh\nexit 0\n")
         File.chmod(0o755, path)
       end
 
       fake_binding = Object.new
-      fake_binding.define_singleton_method(:prepare!) do |**|
+      fake_binding.define_singleton_method(:name) { "raylib" }
+      fake_binding.define_singleton_method(:module_name) { "std.c.raylib" }
+      fake_binding.define_singleton_method(:header_path) do |**|
         raise MilkTea::RawBindings::Error, "raylib setup failed"
       end
-      fake_registry = Object.new
-      fake_registry.define_singleton_method(:find_by_module_name) do |_module_name|
-        fake_binding
-      end
+
+      fake_source = Object.new
+      fake_source.define_singleton_method(:name) { "raylib" }
+      fake_source.define_singleton_method(:checkout_root) { Pathname.new("/tmp/raylib-upstream") }
+      fake_source.define_singleton_method(:sentinel_paths) { [] }
 
       out = StringIO.new
       err = StringIO.new
 
-      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path) do
-        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { fake_registry }) do
-          MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+      status = with_env("PATH" => dir, "CC" => cc_path, "AR" => ar_path, "CLANG" => clang_path, "CMAKE" => cmake_path) do
+        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { [fake_binding] }) do
+          with_singleton_method_override(MilkTea::UpstreamSources, :default_sources, ->(*, **) { [fake_source] }) do
+            MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+          end
         end
       end
 
       assert_equal 1, status
       assert_equal "", err.string
-      assert_match(/fail raylib: raylib setup failed/, out.string)
+      assert_match(/fail binding\/raylib: raylib setup failed/, out.string)
     end
   end
 
@@ -903,8 +927,12 @@ class MilkTeaCliTest < Minitest::Test
     Dir.mktmpdir("milk-tea-cli-toolchain-doctor-missing-cc") do |dir|
       ar_path = File.join(dir, "fake-ar")
       bundle_path = File.join(dir, "bundle")
+      git_path = File.join(dir, "git")
+      clang_path = File.join(dir, "clang")
+      cmake_path = File.join(dir, "cmake")
+      ninja_path = File.join(dir, "ninja")
 
-      [ar_path, bundle_path].each do |path|
+      [ar_path, bundle_path, git_path, clang_path, cmake_path, ninja_path].each do |path|
         File.write(path, "#!/bin/sh\nexit 0\n")
         File.chmod(0o755, path)
       end
@@ -913,7 +941,11 @@ class MilkTeaCliTest < Minitest::Test
       err = StringIO.new
 
       status = with_env("PATH" => dir, "CC" => "missing-cc", "AR" => ar_path) do
-        MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+        with_singleton_method_override(MilkTea::RawBindings, :default_registry, ->(*, **) { [] }) do
+          with_singleton_method_override(MilkTea::UpstreamSources, :default_sources, ->(*, **) { [] }) do
+            MilkTea::CLI.start(["toolchain", "doctor"], out:, err:)
+          end
+        end
       end
 
       assert_equal 1, status
@@ -921,7 +953,7 @@ class MilkTeaCliTest < Minitest::Test
       assert_match(/fail cc: missing-cc/, out.string)
       assert_match(/ok ar: #{Regexp.escape(ar_path)}/, out.string)
       assert_match(/ok bundle: bundle/, out.string)
-      assert_match(/fail raylib: skipped \(missing C compiler\)/, out.string)
+      assert_match(/ok git: git/, out.string)
     end
   end
 
