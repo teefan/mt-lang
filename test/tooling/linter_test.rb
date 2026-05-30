@@ -2468,6 +2468,40 @@ class MilkTeaLinterDirectionalFfiArgTest < Minitest::Test
   end
 end
 
+class MilkTeaLinterProfileBootstrapTest < Minitest::Test
+  def test_lint_source_skips_context_bootstrap_when_sema_facts_provided
+    source = <<~MT
+      function main() -> int:
+          let unused = 1
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source, path: "demo.mt")
+    facts = MilkTea::Sema.check(ast, imported_modules: {})
+    profile = MilkTea::Linter::Profile.new
+
+    warnings = MilkTea::Linter.lint_source(source, path: "demo.mt", sema_facts: facts, profile:)
+
+    assert warnings.any? { |w| w.code == "unused-local" }
+    refute profile.timings_ms.keys.any? { |name| name.start_with?("context_bootstrap.") }
+  end
+
+  def test_fix_source_with_sema_facts_does_not_crash_when_context_is_skipped
+    source = <<~MT
+      function main() -> int:
+          var x = 1
+          return x
+    MT
+
+    ast = MilkTea::Parser.parse(source, path: "demo.mt")
+    facts = MilkTea::Sema.check(ast, imported_modules: {})
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", sema_facts: facts)
+
+    assert_includes fixed, "let x = 1"
+  end
+end
+
 class MilkTeaLinterPreferVarElseTest < Minitest::Test
   private def lint_with_sema(source, path: "demo.mt", **kwargs)
     ast = MilkTea::Parser.parse(source, path: path)
