@@ -15,6 +15,7 @@ module MilkTea
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
       ptr const_ptr ref span array str_buffer Task Option Result
+      struct_handle field_handle callable_handle attribute_handle
     ]).freeze
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 
@@ -111,6 +112,34 @@ module MilkTea
         name
       end
     end
+
+    class ReflectionHandleType < Base
+      attr_reader :name
+
+      def initialize(name)
+        @name = name
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(ReflectionHandleType) && other.name == name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name].hash
+      end
+
+      def to_s
+        name
+      end
+    end
+
+    BUILTIN_STRUCT_HANDLE_TYPE = ReflectionHandleType.new("struct_handle")
+    BUILTIN_FIELD_HANDLE_TYPE = ReflectionHandleType.new("field_handle")
+    BUILTIN_CALLABLE_HANDLE_TYPE = ReflectionHandleType.new("callable_handle")
+    BUILTIN_ATTRIBUTE_HANDLE_TYPE = ReflectionHandleType.new("attribute_handle")
 
     class Primitive < Base
       POINTER_INTEGER_WIDTH = Fiddle::SIZEOF_VOIDP * 8

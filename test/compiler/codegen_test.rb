@@ -87,6 +87,174 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/return nanosleep\(&duration, NULL\);/, generated)
   end
 
+  def test_generate_c_for_multiplayer_descriptor_hooks
+    source = <<~MT
+      # module demo.multiplayer_descriptor_codegen
+
+      import std.multiplayer as mp
+
+      @[mp.replicated(authority = mp.Authority.owner)]
+      struct PlayerState:
+          @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 1, rate_hz = 30, target = mp.SyncTarget.observers)]
+          x: float
+          hp: int
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 2, require_owner = true)]
+      function submit_input(context: mp.RpcContext, entity: mp.EntityId, input: int) -> void:
+          return
+
+      function main() -> int:
+          let state_desc = mp.state_descriptor[PlayerState]()
+          let rpc_desc = mp.rpc_descriptor(callable_of(submit_input))
+          if state_desc.sync_field_count != 1:
+              return 10
+          if rpc_desc.channel != 2:
+              return 11
+          if state_desc.schema_hash == 0 or rpc_desc.schema_hash == 0:
+              return 12
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_includes generated, '"demo.multiplayer_descriptor_codegen.PlayerState"'
+    assert_match(/\.sync_field_count = 1/, generated)
+    assert_match(/\.sync_mode =/, generated)
+    assert_match(/\.sync_channel =/, generated)
+    assert_match(/\.sync_rate_hz =/, generated)
+    assert_match(/\.sync_target =/, generated)
+    assert_includes generated, '"demo.multiplayer_descriptor_codegen.submit_input"'
+    assert_match(/\.channel = 2/, generated)
+  end
+
+  def test_generate_c_for_imported_multiplayer_descriptor_hooks
+    source = <<~MT
+      # module demo.imported_multiplayer_descriptor_codegen
+
+      import std.multiplayer as mp
+      import demo.game_schema as schema
+
+      function main() -> int:
+          let state_desc = mp.state_descriptor[schema.PlayerState]()
+          let rpc_desc = mp.rpc_descriptor(callable_of(schema.submit_input))
+          if state_desc.sync_field_count != 1:
+              return 10
+          if rpc_desc.channel != 2:
+              return 11
+          if state_desc.schema_hash == 0 or rpc_desc.schema_hash == 0:
+              return 12
+          return 0
+    MT
+
+    imported_sources = {
+      "demo/game_schema.mt" => <<~MT,
+        # module demo.game_schema
+
+        import std.multiplayer as net
+
+        public const SNAP_RATE: ptr_uint = 30
+
+        @[net.replicated(authority = net.Authority.server)]
+        public struct PlayerState:
+            @[net.sync(mode = net.TransferMode.unreliable_ordered, channel = 1, rate_hz = SNAP_RATE, target = net.SyncTarget.observers)]
+            x: float
+            hp: int
+
+        @[net.rpc(direction = net.RpcDirection.client_to_server, mode = net.TransferMode.reliable, channel = 2, require_owner = true)]
+        public function submit_input(context: net.RpcContext, input: int) -> void:
+            return
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_includes generated, '"demo.game_schema.PlayerState"'
+    assert_match(/\.sync_field_count = 1/, generated)
+    assert_match(/\.sync_mode =/, generated)
+    assert_match(/\.sync_channel =/, generated)
+    assert_match(/\.sync_rate_hz =/, generated)
+    assert_match(/\.sync_target =/, generated)
+    assert_includes generated, '"demo.game_schema.submit_input"'
+    assert_match(/\.channel = 2/, generated)
+  end
+
+  def test_generate_c_for_multiplayer_typed_rpc_dispatch_helper
+    source = <<~MT
+      # module demo.multiplayer_typed_dispatch_codegen
+
+      import std.multiplayer as mp
+      import std.multiplayer.rpc as rpc
+
+      var applied_flags: ubyte = 0
+      var applied_axis: short = 0
+      var applied_fire: bool = false
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.unreliable_ordered, channel = 0, require_owner = false)]
+      function submit_input(context: mp.RpcContext, input_flags: ubyte, axis: short, fire: bool) -> void:
+          applied_flags = input_flags
+          applied_axis = axis
+          applied_fire = fire
+
+      function main() -> int:
+          var payload = array[ubyte, 4](7, 1, 244, 1)
+          let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 3)
+          let dispatched = rpc.dispatch_typed_payload(callable_of(submit_input), context, payload) else:
+              return 1
+          if not dispatched:
+              return 2
+          if applied_flags != 7:
+              return 3
+          if applied_axis != 500:
+              return 4
+          if not applied_fire:
+              return 5
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/submit_input_typed_dispatch_0/, generated)
+    assert_match(/typed rpc payload size mismatch/, generated)
+    assert_match(/submit_input\(context,/, generated)
+  end
+
+  def test_generate_c_for_multiplayer_typed_rpc_dispatch_struct_payload
+    source = <<~MT
+      # module demo.multiplayer_typed_dispatch_struct_codegen
+
+      import std.multiplayer as mp
+      import std.multiplayer.rpc as rpc
+
+      struct InputFrame:
+          button_flags: ubyte
+          axis_x: short
+          axis_y: short
+
+      var applied_axis_x: short = 0
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.unreliable_ordered, channel = 0, require_owner = false)]
+      function submit_input(context: mp.RpcContext, frame: InputFrame) -> void:
+          applied_axis_x = frame.axis_x
+
+      function main() -> int:
+          var payload = array[ubyte, 5](3, 0, 10, 0, 1)
+          let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 3)
+          let dispatched = rpc.dispatch_typed_payload(callable_of(submit_input), context, payload) else:
+              return 1
+          if not dispatched:
+              return 2
+          if applied_axis_x != 10:
+              return 3
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/submit_input_typed_dispatch_0/, generated)
+    assert_match(/submit_input\(context,/, generated)
+    assert_match(/axis_x/, generated)
+  end
+
     def test_generate_c_for_local_enums_flags_and_unions
       source = <<~MT
 

@@ -1,0 +1,714 @@
+# frozen_string_literal: true
+
+require "tmpdir"
+require_relative "../test_helper"
+
+class MilkTeaStdMultiplayerEnetTest < Minitest::Test
+  def test_snapshot_and_rpc_codecs_roundtrip_and_validate_headers
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer.protocol as protocol
+import std.multiplayer.snapshot as snapshot
+import std.multiplayer.rpc as rpc
+import std.multiplayer as mp
+import std.multiplayer.enet as mp_enet
+import std.enet as enet
+import std.vec as vec
+
+var dispatch_invocation_count: int = 0
+
+function handle_submit_input(message: rpc.IncomingRpc) -> Result[bool, rpc.DispatchError]:
+    if message.payload_size != 3:
+        return Result[bool, rpc.DispatchError].failure(
+            error = rpc.DispatchError(
+                code = protocol.ErrorCode.invalid_argument,
+                message = "unexpected payload size",
+            ),
+        )
+    dispatch_invocation_count += 1
+    return Result[bool, rpc.DispatchError].success(value = true)
+
+function expect_snapshot_roundtrip() -> int:
+    let header = protocol.SnapshotPacketHeader(tick = 42, baseline_tick = 40, entity_count = 3)
+    var encoded = snapshot.encode_header(header)
+    let decoded = snapshot.decode_header(encoded) else:
+        return 1
+
+    if decoded.tick != 42:
+        return 2
+    if decoded.baseline_tick != 40:
+        return 3
+    if decoded.entity_count != 3:
+        return 4
+
+    var queue = vec.Vec[snapshot.IncomingSnapshotPacket].create()
+    defer snapshot.release_queue(ref_of(queue))
+
+    var body = array[ubyte, 3](9, 8, 7)
+    var framed = snapshot.build_payload(header, body)
+    defer framed.release()
+
+    let queued = snapshot.enqueue_incoming(ref_of(queue), Option[protocol.ConnectionId].none, 5, framed.as_span()) else:
+        return 5
+    if not queued:
+        return 6
+
+    let dequeued_snapshot = snapshot.dequeue_incoming(ref_of(queue)) else:
+        return 7
+    var packet = dequeued_snapshot
+
+    if packet.header.tick != 42:
+        packet.release()
+        return 8
+    if packet.channel != 5:
+        packet.release()
+        return 9
+
+    let payload = packet.payload.as_span()
+    if payload.len != 3:
+        packet.release()
+        return 10
+    if payload[0] != 9 or payload[1] != 8 or payload[2] != 7:
+        packet.release()
+        return 11
+
+    packet.release()
+    return 0
+
+function expect_rpc_roundtrip() -> int:
+    let header = protocol.RpcPacketHeader(channel = 7, direction = protocol.RpcDirection.client_to_server, payload_size = 2)
+    var encoded = rpc.encode_header(header)
+    let decoded = rpc.decode_header(encoded) else:
+        return 20
+
+    if decoded.channel != 7:
+        return 21
+    if decoded.direction != protocol.RpcDirection.client_to_server:
+        return 22
+    if decoded.payload_size != 2:
+        return 23
+
+    var queue = vec.Vec[rpc.IncomingRpcPacket].create()
+    defer rpc.release_queue(ref_of(queue))
+
+    var body = array[ubyte, 2](1, 2)
+    var framed = rpc.build_payload(header, body)
+    defer framed.release()
+
+    let queued = rpc.enqueue_incoming(
+        ref_of(queue),
+        Option[protocol.ConnectionId].none,
+        7,
+        protocol.RpcDirection.client_to_server,
+        framed.as_span(),
+    ) else:
+        return 24
+
+    if not queued:
+        return 25
+
+    let dequeued_rpc = rpc.dequeue_incoming(ref_of(queue)) else:
+        return 26
+    var packet = dequeued_rpc
+    if packet.header.channel != 7:
+        packet.release()
+        return 27
+    if packet.header.direction != protocol.RpcDirection.client_to_server:
+        packet.release()
+        return 28
+
+    let payload = packet.payload.as_span()
+    if payload.len != 2 or payload[0] != 1 or payload[1] != 2:
+        packet.release()
+        return 29
+
+    packet.release()
+    return 0
+
+function expect_rpc_invalid_direction_is_rejected() -> int:
+    var queue = vec.Vec[rpc.IncomingRpcPacket].create()
+    defer rpc.release_queue(ref_of(queue))
+
+    var invalid_payload = array[ubyte, 11](
+        0,
+        0,
+        0,
+        7,
+        9,
+        0,
+        0,
+        0,
+        2,
+        1,
+        2,
+    )
+
+    match rpc.enqueue_incoming(
+        ref_of(queue),
+        Option[protocol.ConnectionId].none,
+        7,
+        protocol.RpcDirection.client_to_server,
+        invalid_payload,
+    ):
+        Result.success as payload:
+            if payload.value:
+                return 40
+            return 41
+        Result.failure as _:
+            return 0
+
+
+function expect_rpc_runtime_validation() -> int:
+    let descriptor = mp.RpcDescriptor(
+        name = "SubmitInput",
+        direction = protocol.RpcDirection.client_to_server,
+        mode = protocol.TransferMode.reliable,
+        channel = 1,
+        require_owner = true,
+        schema_hash = 0x3001,
+    )
+
+    let outgoing = rpc.OutgoingRpc(
+        descriptor = descriptor,
+        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].none, tick = 11),
+        payload_size = 3,
+    )
+    let encoded = rpc.encode_outgoing(outgoing) else:
+        return 42
+    if encoded.payload_size != 3:
+        return 43
+
+    let invalid_incoming = rpc.IncomingRpc(
+        descriptor = descriptor,
+        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].none, tick = 12),
+        payload_size = 3,
+    )
+    match rpc.decode_incoming(invalid_incoming):
+        Result.success as _:
+            return 44
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.invalid_argument:
+                return 45
+
+    let valid_incoming = rpc.IncomingRpc(
+        descriptor = descriptor,
+        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].some(value = 7), tick = 13),
+        payload_size = 3,
+    )
+    let decoded = rpc.decode_incoming(valid_incoming) else:
+        return 46
+    if decoded.context.tick != 13:
+        return 47
+
+    match rpc.dispatch(valid_incoming):
+        Result.success as _:
+            return 50
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.not_registered:
+                return 51
+
+    var table = rpc.RpcDispatchTable.create()
+    defer table.release()
+
+    let route_registered = table.register_route(descriptor, handle_submit_input) else:
+        return 52
+    if not route_registered:
+        return 53
+
+    let dispatched = table.dispatch(valid_incoming) else:
+        return 54
+    if not dispatched:
+        return 55
+    if dispatch_invocation_count != 1:
+        return 56
+
+    let duplicate = table.register_route(descriptor, handle_submit_input)
+    match duplicate:
+        Result.success as _:
+            return 57
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.already_registered:
+                return 58
+
+    let table_dispatch = rpc.dispatch_with_routes(table.routes.as_span(), valid_incoming) else:
+        return 59
+    if not table_dispatch:
+        return 60
+    if dispatch_invocation_count != 2:
+        return 61
+
+    let unknown_descriptor = mp.RpcDescriptor(
+        name = "UnknownRpc",
+        direction = protocol.RpcDirection.client_to_server,
+        mode = protocol.TransferMode.reliable,
+        channel = 1,
+        require_owner = true,
+        schema_hash = 0x3002,
+    )
+    let unknown_message = rpc.IncomingRpc(
+        descriptor = unknown_descriptor,
+        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].some(value = 7), tick = 14),
+        payload_size = 3,
+    )
+    match table.dispatch(unknown_message):
+        Result.success as _:
+            return 62
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.not_registered:
+                return 63
+
+    match table.dispatch(invalid_incoming):
+        Result.success as _:
+            return 64
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.invalid_argument:
+                return 65
+
+    match rpc.dispatch_with_routes(table.routes.as_span(), invalid_incoming):
+        Result.success as _:
+            return 66
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.invalid_argument:
+                return 67
+
+    return 0
+
+
+function expect_loopback_send_receive() -> int:
+    var registry = mp.Registry.create()
+    registry.freeze()
+    defer registry.release()
+
+    var address = enet.Address(host = uint<-enet.HOST_ANY, port = 0)
+    let server_result = mp_enet.listen(address, 2, 4, registry, mp.default_config())
+    match server_result:
+        Result.failure as payload:
+            return 50
+        Result.success as payload:
+            var server = payload.value
+            defer server.release()
+
+            let server_host = server.host else:
+                return 51
+
+            unsafe:
+                let port = int<-read(server_host).address.port
+                if port <= 0:
+                    return 52
+
+                var remote = enet.Address(host = uint<-enet.HOST_ANY, port = ushort<-port)
+                if enet.address_set_host_ip(ptr_of(remote), "127.0.0.1") != 0:
+                    return 53
+                let client_result = mp_enet.connect(remote, 4, registry, mp.default_config())
+                match client_result:
+                    Result.failure as client_payload:
+                        return 54
+                    Result.success as client_payload:
+                        var client = client_payload.value
+                        defer client.release()
+
+                        var handshake_rounds: ptr_uint = 0
+                        while handshake_rounds < 64:
+                            let _ = server.pump(1) else:
+                                return 55
+                            let _ = client.pump(1) else:
+                                return 56
+                            if client.peer != null and client.protocol_ready():
+                                break
+                            handshake_rounds += 1
+
+                        if client.peer == null or not client.protocol_ready():
+                            return 57
+
+                        let snapshot_header = protocol.SnapshotPacketHeader(tick = 91, baseline_tick = 90, entity_count = 1)
+                        var snapshot_payload = array[ubyte, 3](5, 4, 3)
+                        var snapshot_sent = false
+                        match client.send_snapshot(1, protocol.TransferMode.reliable, snapshot_header, snapshot_payload):
+                            Result.success as send_payload:
+                                if not send_payload.value:
+                                    return 58
+                                snapshot_sent = true
+                            Result.failure as _:
+                                let _ = server.pump(1) else:
+                                    return 59
+                                let _ = client.pump(1) else:
+                                    return 60
+                                match client.send_snapshot(1, protocol.TransferMode.reliable, snapshot_header, snapshot_payload):
+                                    Result.success as retry_payload:
+                                        if not retry_payload.value:
+                                            return 61
+                                        snapshot_sent = true
+                                    Result.failure as _:
+                                        return 62
+
+                        if not snapshot_sent:
+                            return 63
+                        client.flush()
+
+                        match client.send_rpc(1, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_owner, snapshot_payload):
+                            Result.success as _:
+                                return 130
+                            Result.failure as send_error:
+                                if send_error.error.code != protocol.ErrorCode.invalid_argument:
+                                    return 131
+
+                        let rpc_send = client.send_rpc(1, protocol.TransferMode.reliable, protocol.RpcDirection.client_to_server, snapshot_payload) else:
+                            return 64
+                        if not rpc_send:
+                            return 65
+                        client.flush()
+
+                        var transfer_rounds: ptr_uint = 0
+                        while transfer_rounds < 40:
+                            let _ = server.pump(1) else:
+                                return 66
+                            let _ = client.pump(0) else:
+                                return 67
+                            if server.pending_snapshot_count() > 0 and server.pending_rpc_count() > 0:
+                                break
+                            transfer_rounds += 1
+
+                        if server.pending_snapshot_count() != 1:
+                            return 68
+                        if server.pending_rpc_count() != 1:
+                            return 69
+                        if server.pending_unknown_count() != 0:
+                            return 70
+
+                        let snapshot_packet = server.pop_snapshot() else:
+                            return 71
+                        var received_snapshot = snapshot_packet
+                        defer received_snapshot.release()
+                        if received_snapshot.header.tick != 91:
+                            return 72
+                        if received_snapshot.header.baseline_tick != 90:
+                            return 73
+                        if received_snapshot.channel != 1:
+                            return 74
+
+                        let received_snapshot_payload = received_snapshot.payload.as_span()
+                        if received_snapshot_payload.len != 3:
+                            return 75
+                        if received_snapshot_payload[0] != 5 or received_snapshot_payload[1] != 4 or received_snapshot_payload[2] != 3:
+                            return 76
+
+                        let rpc_packet = server.pop_rpc() else:
+                            return 77
+                        var received_rpc = rpc_packet
+                        defer received_rpc.release()
+                        if received_rpc.header.channel != 1:
+                            return 78
+                        if received_rpc.header.direction != protocol.RpcDirection.client_to_server:
+                            return 79
+
+                        let received_rpc_payload = received_rpc.payload.as_span()
+                        if received_rpc_payload.len != 3:
+                            return 80
+                        if received_rpc_payload[0] != 5 or received_rpc_payload[1] != 4 or received_rpc_payload[2] != 3:
+                            return 81
+
+                        let server_snapshot_header = protocol.SnapshotPacketHeader(tick = 101, baseline_tick = 100, entity_count = 2)
+                        let server_snapshot_send = server.broadcast_snapshot(2, protocol.TransferMode.reliable, server_snapshot_header, snapshot_payload) else:
+                            return 82
+                        if not server_snapshot_send:
+                            return 83
+
+                        let server_rpc_send = server.broadcast_rpc(2, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_owner, snapshot_payload) else:
+                            return 84
+                        if not server_rpc_send:
+                            return 85
+
+                        match server.broadcast_rpc(2, protocol.TransferMode.reliable, protocol.RpcDirection.client_to_server, snapshot_payload):
+                            Result.success as _:
+                                return 132
+                            Result.failure as send_error:
+                                if send_error.error.code != protocol.ErrorCode.invalid_argument:
+                                    return 133
+
+                        let verified_connection = server.first_verified_connection() else:
+                            return 134
+
+                        let targeted_rpc_send = server.send_rpc_to(verified_connection, 3, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_connection, snapshot_payload) else:
+                            return 135
+                        if not targeted_rpc_send:
+                            return 136
+
+                        let observers_rpc_send = server.broadcast_rpc(0, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_observers, snapshot_payload) else:
+                            return 144
+                        if not observers_rpc_send:
+                            return 145
+
+                        let all_rpc_send = server.broadcast_rpc(1, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_all, snapshot_payload) else:
+                            return 146
+                        if not all_rpc_send:
+                            return 147
+
+                        match server.send_rpc_to(999999, 3, protocol.TransferMode.reliable, protocol.RpcDirection.server_to_connection, snapshot_payload):
+                            Result.success as _:
+                                return 137
+                            Result.failure as send_error:
+                                if send_error.error.code != protocol.ErrorCode.not_found:
+                                    return 138
+
+                        server.flush()
+
+                        var broadcast_rounds: ptr_uint = 0
+                        while broadcast_rounds < 40:
+                            let _ = server.pump(0) else:
+                                return 86
+                            let _ = client.pump(1) else:
+                                return 87
+                            if client.pending_snapshot_count() > 0 and client.pending_rpc_count() > 3:
+                                break
+                            broadcast_rounds += 1
+
+                        if client.pending_snapshot_count() != 1:
+                            return 88
+                        if client.pending_rpc_count() != 4:
+                            return 89
+                        if client.pending_unknown_count() != 0:
+                            return 90
+
+                        let client_snapshot_packet = client.pop_snapshot() else:
+                            return 91
+                        var client_snapshot = client_snapshot_packet
+                        defer client_snapshot.release()
+                        if client_snapshot.header.tick != 101:
+                            return 92
+                        if client_snapshot.channel != 2:
+                            return 93
+
+                        let client_snapshot_payload = client_snapshot.payload.as_span()
+                        if client_snapshot_payload.len != 3:
+                            return 94
+                        if client_snapshot_payload[0] != 5 or client_snapshot_payload[1] != 4 or client_snapshot_payload[2] != 3:
+                            return 95
+
+                        let client_rpc_packet = client.pop_rpc() else:
+                            return 96
+                        var client_rpc = client_rpc_packet
+                        defer client_rpc.release()
+                        if client_rpc.header.channel != 2:
+                            return 97
+                        if client_rpc.header.direction != protocol.RpcDirection.server_to_owner:
+                            return 98
+
+                        let client_rpc_payload = client_rpc.payload.as_span()
+                        if client_rpc_payload.len != 3:
+                            return 99
+                        if client_rpc_payload[0] != 5 or client_rpc_payload[1] != 4 or client_rpc_payload[2] != 3:
+                            return 100
+
+                        let client_targeted_rpc_packet = client.pop_rpc() else:
+                            return 139
+                        var client_targeted_rpc = client_targeted_rpc_packet
+                        defer client_targeted_rpc.release()
+                        if client_targeted_rpc.header.channel != 3:
+                            return 140
+                        if client_targeted_rpc.header.direction != protocol.RpcDirection.server_to_connection:
+                            return 141
+
+                        let client_targeted_rpc_payload = client_targeted_rpc.payload.as_span()
+                        if client_targeted_rpc_payload.len != 3:
+                            return 142
+                        if client_targeted_rpc_payload[0] != 5 or client_targeted_rpc_payload[1] != 4 or client_targeted_rpc_payload[2] != 3:
+                            return 143
+
+                        let client_observers_rpc_packet = client.pop_rpc() else:
+                            return 148
+                        var client_observers_rpc = client_observers_rpc_packet
+                        defer client_observers_rpc.release()
+                        if client_observers_rpc.header.channel != 0:
+                            return 149
+                        if client_observers_rpc.header.direction != protocol.RpcDirection.server_to_observers:
+                            return 150
+
+                        let client_observers_rpc_payload = client_observers_rpc.payload.as_span()
+                        if client_observers_rpc_payload.len != 3:
+                            return 151
+                        if client_observers_rpc_payload[0] != 5 or client_observers_rpc_payload[1] != 4 or client_observers_rpc_payload[2] != 3:
+                            return 152
+
+                        let client_all_rpc_packet = client.pop_rpc() else:
+                            return 153
+                        var client_all_rpc = client_all_rpc_packet
+                        defer client_all_rpc.release()
+                        if client_all_rpc.header.channel != 1:
+                            return 154
+                        if client_all_rpc.header.direction != protocol.RpcDirection.server_to_all:
+                            return 155
+
+                        let client_all_rpc_payload = client_all_rpc.payload.as_span()
+                        if client_all_rpc_payload.len != 3:
+                            return 156
+                        if client_all_rpc_payload[0] != 5 or client_all_rpc_payload[1] != 4 or client_all_rpc_payload[2] != 3:
+                            return 157
+
+                        let client_peer = client.peer else:
+                            return 101
+
+                        var malformed_rpc_packet = array[ubyte, 10](
+                            ubyte<-protocol.PacketKind.rpc,
+                            0,
+                            0,
+                            0,
+                            1,
+                            9,
+                            0,
+                            0,
+                            0,
+                            0,
+                        )
+                        let enet_packet = enet.packet_create(
+                            unsafe: const_ptr[void]<-ptr_of(malformed_rpc_packet),
+                            10,
+                            enet.PacketFlag.ENET_PACKET_FLAG_RELIABLE,
+                        ) else:
+                            return 102
+
+                        if enet.peer_send(client_peer, 1, enet_packet) < 0:
+                            enet.packet_destroy(enet_packet)
+                            return 103
+                        client.flush()
+
+                        var malformed_rounds: ptr_uint = 0
+                        while malformed_rounds < 40:
+                            let _ = server.pump(1) else:
+                                return 104
+                            let _ = client.pump(0) else:
+                                return 105
+                            if server.pending_unknown_count() > 0:
+                                break
+                            malformed_rounds += 1
+
+                        if server.pending_unknown_count() != 1:
+                            return 106
+
+                        return 0
+
+
+function expect_protocol_mismatch_rejected() -> int:
+    var server_registry = mp.Registry.create()
+    server_registry.freeze()
+    defer server_registry.release()
+
+    var client_registry = mp.Registry.create()
+    let _ = client_registry.add_state(mp.StateDescriptor(
+        name = "MismatchState",
+        authority = protocol.Authority.server,
+        schema_hash = 1,
+        sync_field_count = 1,
+        sync_mode = protocol.TransferMode.unreliable_ordered,
+        sync_channel = 0,
+        sync_rate_hz = 20,
+        sync_target = protocol.SyncTarget.observers,
+    )) else:
+        return 110
+    client_registry.freeze()
+    defer client_registry.release()
+
+    if server_registry.protocol_hash() == client_registry.protocol_hash():
+        return 111
+
+    var address = enet.Address(host = uint<-enet.HOST_ANY, port = 0)
+    let server_result = mp_enet.listen(address, 2, 4, server_registry, mp.default_config())
+    match server_result:
+        Result.failure as _:
+            return 112
+        Result.success as payload:
+            var server = payload.value
+            defer server.release()
+
+            let server_host = server.host else:
+                return 113
+
+            unsafe:
+                let port = int<-read(server_host).address.port
+                if port <= 0:
+                    return 114
+
+                var remote = enet.Address(host = uint<-enet.HOST_ANY, port = ushort<-port)
+                if enet.address_set_host_ip(ptr_of(remote), "127.0.0.1") != 0:
+                    return 115
+
+                let client_result = mp_enet.connect(remote, 4, client_registry, mp.default_config())
+                match client_result:
+                    Result.failure as _:
+                        return 116
+                    Result.success as client_payload:
+                        var client = client_payload.value
+                        defer client.release()
+
+                        var rounds: ptr_uint = 0
+                        while rounds < 80:
+                            let _ = server.pump(1) else:
+                                return 117
+                            let _ = client.pump(1) else:
+                                return 118
+                            if client.peer == null:
+                                break
+                            rounds += 1
+
+                        if client.protocol_ready():
+                            return 119
+                        if client.peer != null:
+                            return 120
+                        if client.pending_unknown_count() == 0:
+                            return 121
+
+                        return 0
+
+function main() -> int:
+    let snapshot_status = expect_snapshot_roundtrip()
+    if snapshot_status != 0:
+        return snapshot_status
+
+    let rpc_status = expect_rpc_roundtrip()
+    if rpc_status != 0:
+        return rpc_status
+
+    let invalid_rpc_status = expect_rpc_invalid_direction_is_rejected()
+    if invalid_rpc_status != 0:
+        return invalid_rpc_status
+
+    let rpc_runtime_status = expect_rpc_runtime_validation()
+    if rpc_runtime_status != 0:
+        return rpc_runtime_status
+
+    let loopback_status = expect_loopback_send_receive()
+    if loopback_status != 0:
+        return loopback_status
+
+    return expect_protocol_mismatch_rejected()
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  private
+
+  def run_program(source, compiler:)
+    Dir.mktmpdir("milk-tea-std-multiplayer-enet") do |dir|
+      source_path = File.join(dir, "program.mt")
+      File.write(source_path, source)
+      return MilkTea::Run.run(source_path, cc: compiler)
+    end
+  end
+
+  def compiler_available?(compiler)
+    return File.executable?(compiler) if compiler.include?(File::SEPARATOR)
+
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
+      candidate = File.join(entry, compiler)
+      File.file?(candidate) && File.executable?(candidate)
+    end
+  end
+end

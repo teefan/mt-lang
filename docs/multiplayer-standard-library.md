@@ -94,7 +94,7 @@ Primary surface:
 - `Registry`
 - `World`
 - `state_descriptor[T]()`
-- `rpc_descriptor(callable_of(...))`
+- `rpc_descriptor(target: callable_handle)`
 - `@[replicated(...)]`
 - `@[sync(...)]`
 - `@[rpc(...)]`
@@ -145,21 +145,25 @@ Primary functions and methods:
 
 - `World.create(registry: Registry, config: Config, role: WorldRole) -> Result[World, Error]`
 - `World.spawn[T](state: T, owner: Option[ConnectionId]) -> Result[EntityId, Error]`
+- `World.spawn_with_descriptor[T](descriptor: StateDescriptor, state: T, owner: Option[ConnectionId]) -> Result[EntityId, Error]`
 - `World.despawn(entity: EntityId) -> Result[bool, Error]`
 - `World.transfer_ownership(entity: EntityId, owner: Option[ConnectionId]) -> Result[bool, Error]`
 - `World.state_ptr[T](entity: EntityId) -> ptr[T]?`
+- `World.state_ptr_with_descriptor[T](entity: EntityId, descriptor: StateDescriptor) -> ptr[T]?`
 - `World.state_copy[T](entity: EntityId) -> Option[T]`
+- `World.state_copy_with_descriptor[T](entity: EntityId, descriptor: StateDescriptor) -> Option[T]`
 
 Notes:
 
 - `Registry.freeze()` must be called before `World.create(...)`; `World.create(...)` fails if the registry is still mutable.
 - `World.create(...)` snapshots the frozen registry contract for that world instance; it does not reopen registration.
-- `World.spawn[T](...)` fails when `state_descriptor[T]()` is not already registered in the frozen registry.
+- `World.spawn[T](...)` remains the ergonomic path for worlds with exactly one registered state descriptor.
+- For multi-state worlds, use `World.spawn_with_descriptor[T](...)` explicitly.
 - `owner` is `Option[ConnectionId]`, not a nullable integer ID. `Option.some(...)` is only meaningful for owner-authoritative replicated types.
 - `World.despawn(...)` returns `Result.success(value = false)` when the entity is already absent.
 - `World.transfer_ownership(...)` returns `Result.success(value = false)` when the entity is absent or already has the requested owner. It fails only for invalid world state or unsupported authority mode.
-- `World.state_ptr[T](...)` returns `null` when the entity is absent or when the entity exists but is registered under a different replicated type.
-- `World.state_copy[T](...)` returns `Option.none` for that same absent-or-type-mismatch path.
+- `World.state_ptr[T](...)` and `World.state_copy[T](...)` require exactly one registered state descriptor and return empty otherwise.
+- For multi-state worlds, use descriptor-aware accessors `state_ptr_with_descriptor[T](...)` and `state_copy_with_descriptor[T](...)`.
 - The pointer form is explicit because Milk Tea does not have a nullable `ref[T]` type.
 - V1 keeps authority enforcement in the world/session runtime rather than in capability-typed references. `World` owns data; backend code decides which mutations are allowed to become network-visible.
 - V1 should compute state deltas by comparing current state to the last acknowledged baseline instead of relying on hidden dirty-bit mutation tracking.
@@ -176,12 +180,24 @@ Primary types:
 - `OutgoingRpc`
 - `IncomingRpc`
 - `DispatchError`
+- `RpcDispatchRoute`
+- `RpcDispatchTable`
+- `IncomingRpcPacket`
 
 Primary functions and methods:
 
 - `encode_outgoing(...)`
 - `decode_incoming(...)`
-- `dispatch(...)`
+- `RpcDispatchTable.create()`
+- `RpcDispatchTable.register_route(...)`
+- `RpcDispatchTable.dispatch(...)`
+- `dispatch_with_routes(...)`
+- `encode_header(...)`
+- `decode_header(...)`
+- `build_payload(...)`
+- `enqueue_incoming(...)`
+- `dequeue_incoming(...)`
+- `release_queue(...)`
 
 User-facing convenience methods should eventually live on backend sessions:
 
@@ -191,7 +207,8 @@ User-facing convenience methods should eventually live on backend sessions:
 
 Notes:
 
-- The first implementation should keep the sending side descriptor-driven and explicit until the descriptor and dispatch core is stable.
+- `dispatch(...)` without a table is intentionally rejected; handler invocation requires an explicit `RpcDispatchTable` route.
+- Routes are descriptor-backed (`schema_hash` + descriptor name) and duplicate registration is rejected.
 - V1 does not commit the final typed wrapper signature for those convenience methods yet.
 - Any later `callable_of(...)` sugar should remain ordinary library ergonomics rather than a new v1 compiler hook.
 - RPC delivery policy is carried by the descriptor and enforced by the backend.
@@ -203,24 +220,39 @@ Build and apply replicated state snapshots.
 
 Primary types:
 
-- `SnapshotHeader`
-- `BaselineId`
-- `AckWindow`
-- `InterpolationBuffer`
+- `Snapshot`
+- `DeltaFrame`
+- `BaselineSet`
+- `IncomingSnapshotPacket`
 
 Primary functions and methods:
 
-- `encode_spawn(...)`
-- `encode_despawn(...)`
-- `encode_state_delta(...)`
-- `apply_spawn(...)`
-- `apply_despawn(...)`
-- `apply_state_delta(...)`
+- `capture(...)`
+- `diff(...)`
+- `apply(...)`
+- `encode_header(...)`
+- `decode_header(...)`
+- `build_payload(...)`
+- `enqueue_incoming(...)`
+- `dequeue_incoming(...)`
+- `release_queue(...)`
 
 Notes:
 
 - This module is mostly runtime plumbing and should remain fairly low-level.
 - V1 should prioritize correctness and obviousness over heavy compression tricks.
+
+### `std.multiplayer.wire`
+
+Responsibility:
+Shared big-endian wire primitives used by snapshot/rpc/backend packet framing.
+
+Primary functions:
+
+- `encode_u32_be(...)`
+- `decode_u32_be(...)`
+- `encode_u64_be(...)`
+- `decode_u64_be(...)`
 
 ### `std.multiplayer.relevancy`
 
@@ -309,13 +341,53 @@ Primary methods:
 - `pump(timeout_ms: uint) -> Result[ptr_uint, mp.Error]`
 - `flush() -> void`
 - `release() -> void`
-- `send_rpc(...)` convenience wrappers once the base runtime is stable
+- `protocol_ready() -> bool` on `Client`
+- `connection_id() -> Option[mp.ConnectionId]` on `Client`
+- `pending_session_event_count() -> ptr_uint`
+- `pop_session_event() -> Option[SessionEventRecord]`
+- `connected_peer_count() -> ptr_uint` on `Server`
+- `verified_peer_count() -> ptr_uint` on `Server`
+- `has_verified_connection(connection: mp.ConnectionId) -> bool` on `Server`
+- `first_verified_connection() -> Option[mp.ConnectionId]` on `Server`
+- `is_connected() -> bool` on `Client`
+- `Client.send_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Server.send_rpc_to(connection, channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Server.broadcast_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 
 Notes:
 
 - ENet is the first backend because it already gives Milk Tea channels, reliable and unreliable delivery, peer lifecycle, throttling, and a game-oriented service loop.
 - The first implementation should prioritize dedicated-server and remote-client flow.
 - Listen-server convenience can be added after the dedicated path is stable.
+- Client send helpers should fail fast until handshake completes (`protocol_ready() == true`) so game code can gate outbound traffic explicitly.
+- `Client.send_rpc(...)` rejects directions other than `client_to_server`.
+- `Server.send_rpc_to(...)` and `Server.broadcast_rpc(...)` reject `client_to_server`; server-side sends must use `server_to_*` directions.
+- `Server.send_rpc_to(...)` requires a verified target connection and returns `not_found` when the connection is absent or not yet verified.
+- Connection setup must verify protocol-hash handshake packets before accepting snapshot or RPC traffic.
+- Session lifecycle visibility should be first-class through queued events (`connected`, `disconnected`, `snapshot_received`, `rpc_received`) so gameplay code does not need transport-specific polling hacks.
+
+### Matchmaking And Discovery Boundary
+
+Responsibilities should be split intentionally:
+
+- `std.multiplayer` core: replication, RPC framing, authority, protocol validation, connection lifecycle.
+- game or service layer: creating games, listing games, filtering games, passwords, region, party rules.
+
+For v1 this means game listing should stay outside the core runtime and be implemented by:
+
+- a game-specific lobby service (HTTP/WebSocket/dedicated coordinator), or
+- an optional higher-level module (`std.multiplayer.matchmaking`) built on top of core sessions.
+
+### Public IP And Internet Join
+
+Direct internet join by typing a host public IP is possible, with expected network constraints:
+
+- host must expose/forward the game port (example: `24567/UDP`) from router to game process.
+- host firewall must allow that UDP port.
+- joining peers connect to the host public IP and configured port.
+
+NAT traversal and relay are separate concerns from core replication.
+They should be addressed in the signaling/ICE layer (`std.multiplayer.signal`, `std.multiplayer.ice`) rather than added to the transport-neutral multiplayer core.
 
 ### `std.multiplayer.signal`
 
@@ -378,7 +450,7 @@ struct PlayerState:
     health: int
 
 
-@[mp.rpc(direction = mp.RpcDirection.to_server, mode = mp.TransferMode.unreliable_ordered, channel = 1, require_owner = true)]
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.unreliable_ordered, channel = 1, require_owner = true)]
 function submit_input(context: mp.RpcContext, entity: mp.EntityId, input: PlayerInput) -> void:
     ...
 

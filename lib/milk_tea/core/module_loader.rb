@@ -479,6 +479,7 @@ module MilkTea
 
     def module_binding(analysis)
       types = {}
+      type_declarations = {}
       interfaces = {}
       attributes = {}
       private_types = {}
@@ -492,6 +493,7 @@ module MilkTea
       analysis.ast.declarations.each do |declaration|
         case declaration
         when AST::StructDecl, AST::UnionDecl, AST::VariantDecl, AST::EnumDecl, AST::FlagsDecl, AST::OpaqueDecl, AST::TypeAliasDecl
+          type_declarations[declaration.name] = declaration
           target = exported_declaration?(analysis, declaration) ? types : private_types
           target[declaration.name] = analysis.types.fetch(declaration.name)
         when AST::InterfaceDecl
@@ -515,8 +517,10 @@ module MilkTea
       Sema::ModuleBinding.new(
         name: analysis.module_name,
         types:,
+        type_declarations:,
         interfaces:,
         attributes:,
+        attribute_applications: analysis.attribute_applications,
         values:,
         functions:,
         methods:,
