@@ -1893,24 +1893,24 @@ module MilkTea
                 fixed: fixed,
               }
             end
-            next if fixed == content
-
-            line_count = content.count("\n")
-            actions << {
-              title: Linter::FIX_ALL_TITLE,
-              kind: 'source.fixAll',
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: 0, character: 0 },
-                      end:   { line: line_count + 1, character: 0 }
-                    },
-                    newText: fixed
-                  }]
+            if fixed != content
+              line_count = content.count("\n")
+              actions << {
+                title: Linter::FIX_ALL_TITLE,
+                kind: 'source.fixAll',
+                edit: {
+                  changes: {
+                    uri => [{
+                      range: {
+                        start: { line: 0, character: 0 },
+                        end:   { line: line_count + 1, character: 0 }
+                      },
+                      newText: fixed
+                    }]
+                  }
                 }
               }
-            }
+            end
           rescue StandardError => e
             warn "Error building source.fixAll action: #{e.message}"
           end
