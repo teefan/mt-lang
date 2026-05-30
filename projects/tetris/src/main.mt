@@ -532,9 +532,8 @@ function main() -> int:
     rl.init_audio_device()
     defer rl.close_audio_device()
 
-    let loaded_assets = load_runtime_assets() else as error:
+    var assets = load_runtime_assets() else as error:
         return runtime_assets_exit_code(error)
-    var assets = loaded_assets
     defer assets.release()
 
     var title = default[TitleScreen]

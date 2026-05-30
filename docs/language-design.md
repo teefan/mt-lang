@@ -527,6 +527,7 @@ Notes:
 
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
+- When a `span[T]` boundary is expected, addressable `array[T, N]` values coerce directly; this keeps array-to-span usage on the existing boundary-conversion surface instead of adding a parallel `array.as_span()` method family.
 - `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. They are not alternate text objects and should not grow a parallel everyday text API.
 - `str_buffer[N]` is the one source-level mutable UTF-8 text type. It owns `N` writable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
 - If low-level code needs to validate raw `array[char, N]` storage as text, that conversion belongs in an explicit helper or imported boundary, not as a built-in method family on raw arrays.

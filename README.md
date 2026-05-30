@@ -457,6 +457,8 @@ Type constructors:
 - `fn(params...) -> R`
 - `proc(params...) -> R`
 
+When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. There is no separate `array.as_span()` method surface.
+
 Nullability:
 
 - Nullable form is `T?` for pointer-like types.
