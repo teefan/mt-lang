@@ -725,6 +725,8 @@ For recoverable failures, use `Result[T, E]`. Its `.success(...)` and `.failure(
 
 For repeated pointer-plus-length span construction, use the built-in `span[T](data = ..., len = ...)` form directly. If the pattern repeats often in one codebase, define a small local helper in your own module instead of depending on a standard helper module.
 
+When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly through the existing boundary coercion rules. There is no separate `array.as_span()` method surface.
+
 `read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first. Calls in the other direction are also lighter now: if a function expects `ref[T]`, passing a mutable addressable `T` borrows it implicitly.
 
 ### 7.1 Current standard collection modules

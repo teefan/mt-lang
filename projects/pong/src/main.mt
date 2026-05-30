@@ -456,10 +456,8 @@ function update_game(app: ref[App]) -> void:
 
 
 function update_host_network(app: ref[App]) -> void:
-    let server = app.server else:
+    var runtime = app.server else:
         return
-
-    var runtime = server
     let _ = runtime.pump(0) else:
         app.status_code = 5
         app.server = Option[mp_enet.Server].some(value = runtime)
@@ -496,12 +494,10 @@ function update_host_network(app: ref[App]) -> void:
         app.disconnect_message = "Remote player disconnected."
 
     while runtime.pending_rpc_count() > 0:
-        let packet = runtime.pop_rpc() else:
+        var received = runtime.pop_rpc() else:
             app.status_code = 15
             app.server = Option[mp_enet.Server].some(value = runtime)
             return
-
-        var received = packet
         defer received.release()
 
         if received.header.channel != app.submit_input_descriptor.channel:
@@ -528,10 +524,8 @@ function update_host_network(app: ref[App]) -> void:
 
 
 function update_join_network(app: ref[App]) -> void:
-    let client = app.client else:
+    var runtime = app.client else:
         return
-
-    var runtime = client
     let _ = runtime.pump(0) else:
         app.status_code = 6
         app.disconnect_message = "Connection failed while polling network events."
@@ -583,12 +577,10 @@ function update_join_network(app: ref[App]) -> void:
     app.client_was_ready = ready_now
 
     while runtime.pending_snapshot_count() > 0:
-        let packet = runtime.pop_snapshot() else:
+        var received = runtime.pop_snapshot() else:
             app.status_code = 16
             app.client = Option[mp_enet.Client].some(value = runtime)
             return
-
-        var received = packet
         defer received.release()
 
         let bytes = received.payload.as_span()
@@ -1034,9 +1026,8 @@ function run_smoke_test() -> int:
         port = default_port,
     )
 
-    let server_result = mp_enet.listen(address, 2, 2, registry, mp.default_config()) else:
+    var server = mp_enet.listen(address, 2, 2, registry, mp.default_config()) else:
         return 11
-    var server = server_result
     defer server.release()
 
     var remote = enet.Address(
@@ -1046,9 +1037,8 @@ function run_smoke_test() -> int:
     if enet.address_set_host_ip(ptr_of(remote), "127.0.0.1") != 0:
         return 12
 
-    let client_result = mp_enet.connect(remote, 2, registry, mp.default_config()) else:
+    var client = mp_enet.connect(remote, 2, registry, mp.default_config()) else:
         return 13
-    var client = client_result
     defer client.release()
 
     var rounds: ptr_uint = 0
@@ -1078,9 +1068,8 @@ function run_smoke_test() -> int:
             return 19
 
         if client.pending_snapshot_count() > 0 and client.protocol_ready():
-            let packet = client.pop_snapshot() else:
+            var received = client.pop_snapshot() else:
                 return 20
-            var received = packet
             defer received.release()
             var smoke_state = default_state()
             let decoded = decode_snapshot_payload(received.payload.as_span(), ref_of(smoke_state))

@@ -1,9 +1,7 @@
 import mtop.dashboard as dashboard
 import std.cli as cli
 import std.libc as libc
-import std.str as text
 import std.terminal as terminal
-import std.vec as vec
 
 
 function write_stdout_text(value: str) -> int:
@@ -74,36 +72,36 @@ function app_definition(options: span[cli.OptionSpec], commands: span[cli.Comman
 
 
 function main(args: span[str]) -> int:
-    var options = vec.Vec[cli.OptionSpec].create()
-    defer options.release()
-    options.push(cli.value_option(
-        "interval-ms",
-        Option[str].some(value= "i"),
-        "MS",
-        "Dashboard refresh interval in milliseconds",
-        false,
-        Option[str].some(value= "900"),
-    ))
-    options.push(cli.flag_option("no-mouse", Option[str].none, "Disable mouse reporting in dashboard mode"))
+    let options = array[cli.OptionSpec, 2](
+        cli.value_option(
+            "interval-ms",
+            Option[str].some(value= "i"),
+            "MS",
+            "Dashboard refresh interval in milliseconds",
+            false,
+            Option[str].some(value= "900"),
+        ),
+        cli.flag_option("no-mouse", Option[str].none, "Disable mouse reporting in dashboard mode"),
+    )
 
-    var commands = vec.Vec[cli.CommandSpec].create()
-    defer commands.release()
-    commands.push(cli.command_spec(
-        "dashboard",
-        "Run the interactive terminal dashboard",
-        "Run the interactive terminal dashboard",
-        zero[span[cli.OptionSpec]],
-        Option[str].none,
-    ))
-    commands.push(cli.command_spec(
-        "once",
-        "Print a single snapshot and exit",
-        "Print a single snapshot and exit",
-        zero[span[cli.OptionSpec]],
-        Option[str].none,
-    ))
+    let commands = array[cli.CommandSpec, 2](
+        cli.command_spec(
+            "dashboard",
+            "Run the interactive terminal dashboard",
+            "Run the interactive terminal dashboard",
+            zero[span[cli.OptionSpec]],
+            Option[str].none,
+        ),
+        cli.command_spec(
+            "once",
+            "Print a single snapshot and exit",
+            "Print a single snapshot and exit",
+            zero[span[cli.OptionSpec]],
+            Option[str].none,
+        ),
+    )
 
-    let app = app_definition(options.as_span(), commands.as_span())
+    let app = app_definition(options, commands)
     match cli.parse(app, args):
         Result.failure as payload:
             var error = payload.error
