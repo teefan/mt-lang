@@ -183,6 +183,93 @@ class MilkTeaFormatterTest < Minitest::Test
     assert_includes formatted, "]:\n"
   end
 
+  def test_tidy_mode_does_not_wrap_external_function_declaration_params
+    source = <<~MT
+      external function enet_host_create(address: ptr[Address], peer_count: ptr_uint, channel_limit: ptr_uint, incoming_bandwidth: uint, outgoing_bandwidth: uint) -> ptr[Host]
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 60)
+
+    assert_equal source, formatted
+  end
+
+  def test_tidy_mode_does_not_wrap_fn_type_alias_signature_params
+    source = <<~MT
+      type DrawSolidPolygonFcn = fn(arg0: Transform, arg1: const_ptr[Vec2], arg2: int, arg3: float, arg4: HexColor, arg5: ptr[void]) -> void
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 60)
+
+    assert_equal source, formatted
+  end
+
+  def test_tidy_mode_does_not_wrap_struct_field_fn_signature_params
+    source = <<~MT
+      struct DebugDraw:
+          DrawSolidPolygonFcn: fn(arg0: Transform, arg1: const_ptr[Vec2], arg2: int, arg3: float, arg4: HexColor, arg5: ptr[void]) -> void
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 60)
+
+    assert_equal source, formatted
+  end
+
+  def test_tidy_mode_separates_top_level_declaration_groups
+    source = <<~MT
+      external
+      link "box2d"
+      include "box2d/box2d.h"
+      opaque b2TreeNode = c"struct b2TreeNode"
+      type b2AllocFcn = fn(arg0: uint, arg1: int) -> ptr[void]
+      external function b2GetByteCount() -> int
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "include \"box2d/box2d.h\"\n\nopaque b2TreeNode"
+    assert_includes formatted, "opaque b2TreeNode = c\"struct b2TreeNode\"\n\ntype b2AllocFcn"
+    assert_includes formatted, "type b2AllocFcn = fn(arg0: uint, arg1: int) -> ptr[void]\n\nexternal function b2GetByteCount() -> int"
+  end
+
+  def test_tidy_mode_separates_consecutive_top_level_struct_declarations
+    source = <<~MT
+      struct A:
+          value: int
+      struct B:
+          value: int
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "value: int\n\nstruct B:"
+  end
+
+  def test_tidy_mode_separates_consecutive_top_level_enum_declarations
+    source = <<~MT
+      enum KindA: int
+          a = 0
+      enum KindB: int
+          b = 1
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "a = 0\n\nenum KindB:"
+  end
+
+  def test_tidy_mode_separates_consecutive_top_level_union_declarations
+    source = <<~MT
+      union DataA:
+          value: int
+      union DataB:
+          value: int
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "value: int\n\nunion DataB:"
+  end
+
   def test_tidy_mode_wraps_long_if_logical_chain
     source = <<~MT
       function main(kind: int, has_byte: bool, ctrl: bool, alt: bool, input_byte: int) -> void:
