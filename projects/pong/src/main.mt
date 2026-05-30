@@ -596,7 +596,7 @@ function host_broadcast_snapshot(app: ref[App]) -> void:
     let server = app.server else:
         return
 
-    let runtime = server
+    var runtime = server
     let descriptor = app.state_descriptor
     let snapshot_tick = app.tick
     app.tick += 1
