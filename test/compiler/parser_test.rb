@@ -120,19 +120,25 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::Call, propagation_stmt.expression.operand
   end
 
-  def test_rejects_var_else_local_declaration
+  def test_parses_var_else_local_declaration
     source = <<~MT
       function main(handle: ptr[int]?) -> int:
           var value = handle else:
               return 1
-          return 0
+          unsafe:
+              return read(value)
     MT
 
-    error = assert_raises(MilkTea::ParseError) do
-      MilkTea::Parser.parse(source)
-    end
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    local_decl = main_fn.body.first
 
-    assert_match(/let-else is only allowed on let declarations/, error.message)
+    assert_instance_of MilkTea::AST::LocalDecl, local_decl
+    assert_equal :var, local_decl.kind
+    assert_instance_of MilkTea::AST::Identifier, local_decl.value
+    assert_nil local_decl.else_binding
+    assert_equal 1, local_decl.else_body.length
+    assert_instance_of MilkTea::AST::ReturnStmt, local_decl.else_body.first
   end
 
   def test_rejects_keyword_as_local_variable_name_with_clear_message
