@@ -2429,7 +2429,7 @@ function main(value: int) -> int:
     end
   end
 
-  def test_source_fixall_wraps_long_call_arguments_using_project_max_line_length
+  def test_source_fixall_does_not_offer_action_for_line_too_long_only_file
     Dir.mktmpdir("milk-tea-lsp-fixall-line-length") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -2462,17 +2462,12 @@ function main(value: int) -> int:
         })
 
         actions = response.fetch("result")
-        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
-        assert fixall, "expected a source.fixAll action"
-        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
-        assert_includes edit_text, "return log_value(\n"
-        assert_includes edit_text, "        \"delta\",\n"
-        refute_includes edit_text, "return log_value(\"alpha\", \"beta\", \"gamma\", \"delta\")"
+        refute actions.any? { |action| action["kind"] == "source.fixAll" }
       end
     end
   end
 
-  def test_source_fixall_wraps_long_tuple_literal_using_project_max_line_length
+  def test_source_fixall_does_not_offer_action_for_line_too_long_tuple_only_file
     Dir.mktmpdir("milk-tea-lsp-fixall-line-length-tuple") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -2506,18 +2501,12 @@ function main(value: int) -> int:
         })
 
         actions = response.fetch("result")
-        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
-        assert fixall, "expected a source.fixAll action"
-        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
-        assert_includes edit_text, "let pair = (\n"
-        assert_includes edit_text, "        alpha_value,\n"
-        assert_includes edit_text, "        gamma_value\n"
-        refute_includes edit_text, "        gamma_value,\n"
+        refute actions.any? { |action| action["kind"] == "source.fixAll" }
       end
     end
   end
 
-  def test_source_fixall_wraps_long_if_logical_chain_using_project_max_line_length
+  def test_source_fixall_does_not_offer_action_for_line_too_long_condition_only_file
     Dir.mktmpdir("milk-tea-lsp-fixall-line-length-condition") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -2551,18 +2540,12 @@ function main(value: int) -> int:
         })
 
         actions = response.fetch("result")
-        fixall = actions.find { |action| action["kind"] == "source.fixAll" }
-        assert fixall, "expected a source.fixAll action"
-        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
-        assert_includes edit_text, "    if (\n"
-        assert_includes edit_text, "        and has_byte\n"
-        assert_includes edit_text, "        and input_byte != 64\n"
-        assert_includes edit_text, "    ):\n"
+        refute actions.any? { |action| action["kind"] == "source.fixAll" }
       end
     end
   end
 
-  def test_source_fixall_honors_active_formatter_mode_and_invalidates_cache
+  def test_source_fixall_is_lint_only_and_ignores_formatter_mode_changes
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
@@ -2578,9 +2561,7 @@ function main(value: int) -> int:
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
 
-      tidy_expected = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
-      safe_expected = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :safe)
-      refute_equal tidy_expected, safe_expected
+      expected = MilkTea::Linter.fix_source(source, path: "demo.mt")
 
       tidy_response = client.send_request("textDocument/codeAction", {
         "textDocument" => { "uri" => uri },
@@ -2594,7 +2575,7 @@ function main(value: int) -> int:
       tidy_actions = tidy_response.fetch("result")
       tidy_fixall = tidy_actions.find { |action| action["kind"] == "source.fixAll" }
       assert tidy_fixall, "expected a source.fixAll action for tidy mode"
-      assert_equal tidy_expected, tidy_fixall.dig("edit", "changes", uri, 0, "newText")
+      assert_equal expected, tidy_fixall.dig("edit", "changes", uri, 0, "newText")
 
       client.send_notification("workspace/didChangeConfiguration", {
         "settings" => {
@@ -2618,18 +2599,18 @@ function main(value: int) -> int:
       safe_actions = safe_response.fetch("result")
       safe_fixall = safe_actions.find { |action| action["kind"] == "source.fixAll" }
       assert safe_fixall, "expected a source.fixAll action for safe mode"
-      assert_equal safe_expected, safe_fixall.dig("edit", "changes", uri, 0, "newText")
+      assert_equal expected, safe_fixall.dig("edit", "changes", uri, 0, "newText")
     end
   end
 
-  def test_code_action_skips_source_fixall_for_workspace_std_files
+  def test_code_action_provides_source_fixall_for_workspace_std_files
     Dir.mktmpdir("milk-tea-lsp-code-action-std") do |dir|
       std_dir = File.join(dir, "std", "c")
       Dir.mkdir(File.join(dir, "std"))
       Dir.mkdir(std_dir)
 
       file_path = File.join(std_dir, "sdl3.mt")
-      source = "function add(a:int,b:int)->int:\n    return a+b\n"
+      source = "function main() -> void:\n    return\n"
       File.write(file_path, source)
 
       root_uri = path_to_uri(dir)
@@ -2652,7 +2633,10 @@ function main(value: int) -> int:
         })
 
         actions = response.fetch("result")
-        refute actions.any? { |a| a["kind"] == "source.fixAll" }
+        fixall = actions.find { |a| a["kind"] == "source.fixAll" }
+        assert fixall, "expected a source.fixAll action for std file"
+        edit_text = fixall.dig("edit", "changes", uri, 0, "newText")
+        refute_includes edit_text, "\n    return\n"
       end
     end
   end
