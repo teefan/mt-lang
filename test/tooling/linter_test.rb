@@ -2802,6 +2802,21 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     assert_includes fixed, "unsafe:"
     refute_includes fixed, "\n    return\n"
   end
+
+  def test_fix_source_converges_chained_unsafe_then_return_fixes_in_one_call
+    source = <<~MT
+      function main() -> void:
+          unsafe:
+              let copy = 1
+          return
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    refute_includes fixed, "unsafe:"
+    refute_includes fixed, "\n    return\n"
+    assert_includes fixed, "let copy = 1"
+  end
 end
 
 class MilkTeaLinterRedundantReturnTest < Minitest::Test
