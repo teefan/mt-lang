@@ -413,7 +413,7 @@ module MilkTea
         false
       end
 
-      # Skip source.fixAll generation for files where full-file format+lint is
+      # Skip source.fixAll generation for files where full-file lint fixing is
       # too expensive to run on each codeAction request.
       def skip_expensive_source_fix_all?(uri, content)
         !skip_expensive_work_reason(uri, content).nil?
@@ -422,11 +422,9 @@ module MilkTea
       end
 
       def skip_expensive_work_reason(uri, content)
-        file_path = uri_to_path(uri)
         return 'library-uri' if library_uri?(uri)
-        return 'std-path' if file_path&.include?('/std/')
 
-        # Heuristic thresholds to avoid expensive full-file formatter/linter runs.
+        # Heuristic thresholds to avoid expensive full-file lint-fix runs.
         return 'large-bytes' if content.bytesize > 200_000
         return 'large-lines' if content.count("\n") > 1200
 
@@ -1871,38 +1869,32 @@ module MilkTea
         end # want_quickfix
         quickfix_ms = elapsed_ms(quickfix_start)
 
-        # ── source.fixAll: apply all auto-fixes at once ────────────────────
-        # Skip for files outside the workspace root (library/std files) since
-        # formatting and linting a large stdlib file costs seconds per call.
+        # ── source.fixAll: apply all lint auto-fixes at once ───────────────
+        # Skip for files outside the workspace root (library files) and very
+        # large files to keep codeAction latency bounded.
         fixall_ms = 0.0
         fixall_skipped_reason = want_fixall ? skip_expensive_work_reason(uri, content) : 'not-requested'
         unless fixall_skipped_reason
           fixall_start = monotonic_time
           begin
             content_hash = content.hash
-            format_mode = @format_mode
             cached_fixall = @fixall_cache[uri]
             if cached_fixall &&
-               cached_fixall[:content_hash] == content_hash &&
-               cached_fixall[:format_mode] == format_mode
+               cached_fixall[:content_hash] == content_hash
               fixed = cached_fixall[:fixed]
             else
-              formatted = begin
-                Formatter.format_source(content, path: uri, mode: format_mode)
+              fixed = begin
+                Linter.fix_source(content, path: uri)
               rescue StandardError
                 content
               end
-              fixed = begin
-                Linter.fix_source(formatted, path: uri)
-              rescue StandardError
-                formatted
-              end
               @fixall_cache[uri] = {
                 content_hash: content_hash,
-                format_mode: format_mode,
                 fixed: fixed,
               }
             end
+            next if fixed == content
+
             line_count = content.count("\n")
             actions << {
               title: Linter::FIX_ALL_TITLE,
