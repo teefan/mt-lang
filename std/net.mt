@@ -495,7 +495,7 @@ function tcp_socket_address_from_getsockname(handle: ptr[NativeTcpHandle]?) -> R
     let status_code = libuv_c.uv_tcp_getsockname(
             live_handle,
             sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
-            ptr_of(name_length),
+            ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
@@ -512,7 +512,7 @@ function tcp_socket_address_from_getpeername(handle: ptr[NativeTcpHandle]?) -> R
     let status_code = libuv_c.uv_tcp_getpeername(
             live_handle,
             sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
-            ptr_of(name_length),
+            ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
@@ -541,7 +541,7 @@ function udp_socket_address_from_getsockname(handle: ptr[NativeUdpHandle]?) -> R
     let status_code = libuv_c.uv_udp_getsockname(
             live_handle,
             sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
-            ptr_of(name_length),
+            ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
@@ -558,7 +558,7 @@ function udp_socket_address_from_getpeername(handle: ptr[NativeUdpHandle]?) -> R
     let status_code = libuv_c.uv_udp_getpeername(
             live_handle,
             sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)),
-            ptr_of(name_length),
+            ptr_of(name_length)
         )
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
@@ -633,7 +633,7 @@ function resolve_task(state: ptr[ResolveState]) -> Task[Result[SocketAddress, Er
             ready = resolve_ready,
             set_waiter = resolve_set_waiter,
             release = resolve_release,
-            take_result = resolve_take_result,
+            take_result = resolve_take_result
         )
 
 
@@ -700,7 +700,7 @@ function resolve_all_task(state: ptr[ResolveAllState]) -> Task[Result[vec.Vec[So
             ready = resolve_all_ready,
             set_waiter = resolve_all_set_waiter,
             release = resolve_all_release,
-            take_result = resolve_all_take_result,
+            take_result = resolve_all_take_result
         )
 
 
@@ -771,7 +771,7 @@ function connect_task(state: ptr[ConnectState]) -> Task[Result[TcpStream, Error]
             ready = connect_ready,
             set_waiter = connect_set_waiter,
             release = connect_release,
-            take_result = connect_take_result,
+            take_result = connect_take_result
         )
 
 
@@ -887,7 +887,7 @@ function accept_task(state: ptr[AcceptState]) -> Task[Result[TcpStream, Error]]:
             ready = accept_ready,
             set_waiter = accept_set_waiter,
             release = accept_release,
-            take_result = accept_take_result,
+            take_result = accept_take_result
         )
 
 
@@ -1117,7 +1117,7 @@ function write_task(state: ptr[WriteState]) -> Task[Result[ptr_uint, Error]]:
             ready = write_ready,
             set_waiter = write_set_waiter,
             release = write_release,
-            take_result = write_take_result,
+            take_result = write_take_result
         )
 
 
@@ -1335,7 +1335,7 @@ function stream_read_task(state: ptr[ReadState]) -> Task[Result[bytes.Bytes, Err
             ready = stream_read_ready,
             set_waiter = stream_read_set_waiter,
             release = stream_read_release,
-            take_result = stream_read_take_result,
+            take_result = stream_read_take_result
         )
 
 
@@ -1568,7 +1568,7 @@ function shutdown_task(state: ptr[ShutdownState]) -> Task[Result[bool, Error]]:
             ready = shutdown_ready,
             set_waiter = shutdown_set_waiter,
             release = shutdown_release,
-            take_result = shutdown_take_result,
+            take_result = shutdown_take_result
         )
 
 
@@ -1751,7 +1751,7 @@ function udp_send_task(state: ptr[UdpSendState]) -> Task[Result[ptr_uint, Error]
             ready = udp_send_ready,
             set_waiter = udp_send_set_waiter,
             release = udp_send_release,
-            take_result = udp_send_take_result,
+            take_result = udp_send_take_result
         )
 
 
@@ -1971,7 +1971,7 @@ function udp_receive_task(state: ptr[UdpReceiveState]) -> Task[Result[UdpDatagra
             ready = udp_receive_ready,
             set_waiter = udp_receive_set_waiter,
             release = udp_receive_release,
-            take_result = udp_receive_take_result,
+            take_result = udp_receive_take_result
         )
 
 
@@ -2466,7 +2466,7 @@ extending SocketAddress:
         return cstring.compare_bytes(
                 unsafe: const_ptr[void]<-left,
                 unsafe: const_ptr[void]<-right,
-                this.len,
+                this.len
             ) == 0
 
 

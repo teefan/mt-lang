@@ -89,7 +89,7 @@ function encode_uint(value: uint) -> array[ubyte, 4]:
         ubyte<-((value >> 24) & 255),
         ubyte<-((value >> 16) & 255),
         ubyte<-((value >> 8) & 255),
-        ubyte<-(value & 255),
+        ubyte<-(value & 255)
     )
 
 
@@ -135,7 +135,7 @@ function create_protocol_state() -> ProtocolState:
             received_initialized = false,
             received_sequence = 0,
             received_mask = 0,
-            pending_reliable = vec.Vec[PendingReliable].create(),
+            pending_reliable = vec.Vec[PendingReliable].create()
         )
 
 
@@ -197,7 +197,7 @@ function decode_header(packet: bytes.Bytes) -> Result[PacketHeader, Error]:
             sequence = decode_uint(packet_span, 4),
             ack = decode_uint(packet_span, 8),
             ack_bits = decode_uint(packet_span, 12),
-            packet_flags = packet_span[16],
+            packet_flags = packet_span[16]
         ))
 
 
@@ -508,7 +508,7 @@ extending Channel:
                         return Result[Option[Message], Error].success(value = Option[Message].some(value = Message(
                                 sequence = header.sequence,
                                 reliable = is_reliable,
-                                payload = copy_payload(packet),
+                                payload = copy_payload(packet)
                             )))
 
 
@@ -677,7 +677,7 @@ extending Host:
                                         source = datagram.source,
                                         sequence = header.sequence,
                                         reliable = is_reliable,
-                                        payload = payload,
+                                        payload = payload
                                     )))
 
 

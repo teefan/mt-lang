@@ -298,7 +298,7 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
                     host = string.String.from_str(host_text),
                     authority = string.String.from_str(authority_text),
                     target = target,
-                    port = port,
+                    port = port
                 )
             )
 
@@ -588,7 +588,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
         reason = reason,
         headers = vec.Vec[Header].create(),
         content_length = Option[ptr_uint].none,
-        chunked = false,
+        chunked = false
     )
 
     var index = header_index
@@ -740,7 +740,7 @@ function parse_buffered_response(raw_response: span[ubyte]) -> Result[Response, 
                             status_code = head.status_code,
                             reason = head.reason,
                             headers = head.headers,
-                            body = body,
+                            body = body
                         )
                     )
 
@@ -953,7 +953,7 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
                             status_code = head.status_code,
                             reason = head.reason,
                             headers = head.headers,
-                            body = body,
+                            body = body
                         )
                     )
 

@@ -128,7 +128,7 @@ function sleep_task(state: ptr[SleepState]) -> Task[int]:
             ready = sleep_ready,
             set_waiter = sleep_set_waiter,
             release = sleep_release,
-            take_result = sleep_take_result,
+            take_result = sleep_take_result
         )
 
 
@@ -138,7 +138,7 @@ function work_task[T](state: ptr[WorkState[T]]) -> Task[T]:
             ready = work_ready[T],
             set_waiter = work_set_waiter[T],
             release = work_release[T],
-            take_result = work_take_result[T],
+            take_result = work_take_result[T]
         )
 
 

@@ -180,7 +180,7 @@ function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
         entry_flags = entry_bits,
         data_offset = data_offset,
         stored_size = stored_size,
-        unpacked_size = unpacked_size,
+        unpacked_size = unpacked_size
     ))
 
 

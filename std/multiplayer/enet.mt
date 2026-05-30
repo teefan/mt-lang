@@ -81,7 +81,7 @@ extending TypedRpcDispatchTable:
     ) -> Result[bool, mp.Error]:
         if typed_rpc_find_route(this.routes.as_span(), descriptor) != null:
             return Result[bool, mp.Error].failure(
-                error = mp.error(mp.ErrorCode.already_registered, "typed rpc route is already registered"),
+                error = mp.error(mp.ErrorCode.already_registered, "typed rpc route is already registered")
             )
 
         this.routes.push(TypedRpcRoute(descriptor = descriptor, handler = handler))
@@ -133,7 +133,6 @@ extending Server:
             return
 
         enet.host_flush(host)
-        return
 
 
     public function disconnect_connection(connection: mp.ConnectionId, data: uint) -> Result[bool, mp.Error]:
@@ -182,7 +181,6 @@ extending Server:
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.outbound_world_signature_baseline))
         this.world.release()
-        return
 
 
     public function pending_snapshot_count() -> ptr_uint:
@@ -299,12 +297,12 @@ extending Server:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
             match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success as _:
+                Result.success:
                     snapshot_runtime.apply_payload(
                         packet.header.tick,
                         packet.header.entity_count,
                         packet.payload.as_span(),
-                        ref_of(this.inbound_snapshot_baseline),
+                        ref_of(this.inbound_snapshot_baseline)
                     )
                     processed += 1
                 Result.failure as payload:
@@ -408,7 +406,7 @@ extending Server:
             channel,
             transfer_mode,
             header,
-            payload,
+            payload
         ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
@@ -464,7 +462,7 @@ extending Server:
             channel,
             transfer_mode,
             direction,
-            payload,
+            payload
         ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
@@ -495,7 +493,7 @@ extending Server:
             snapshot_channel,
             snapshot_transfer_mode,
             snapshot_header,
-            snapshot_payload,
+            snapshot_payload
         ) else as snapshot_error:
             return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
 
@@ -506,7 +504,7 @@ extending Server:
             rpc_channel,
             rpc_transfer_mode,
             rpc_direction,
-            rpc_payload,
+            rpc_payload
         ) else as rpc_error:
             return Result[mp.TickDispatchReport, mp.Error].failure(error = rpc_error)
 
@@ -514,8 +512,8 @@ extending Server:
             value = mp.TickDispatchReport(
                 snapshots_sent = snapshots_sent,
                 rpcs_sent = rpcs_sent,
-                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes(),
-            ),
+                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes()
+            )
         )
 
 
@@ -545,7 +543,7 @@ extending Server:
             let snapshot_header = mp.SnapshotPacketHeader(
                 tick = tick,
                 baseline_tick = this.outbound_world_signature_baseline.last_applied_tick,
-                entity_count = current_signature.entity_count,
+                entity_count = current_signature.entity_count
             )
 
             if snapshot_payload.len > 0:
@@ -554,7 +552,7 @@ extending Server:
                     snapshot_channel,
                     snapshot_transfer_mode,
                     snapshot_header,
-                    snapshot_payload,
+                    snapshot_payload
                 ) else as snapshot_error:
                     return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
                 snapshots_sent = sent
@@ -564,7 +562,7 @@ extending Server:
                     snapshot_channel,
                     snapshot_transfer_mode,
                     snapshot_header,
-                    world_payload.as_span(),
+                    world_payload.as_span()
                 ) else as snapshot_error:
                     return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
                 snapshots_sent = sent
@@ -579,7 +577,7 @@ extending Server:
             rpc_channel,
             rpc_transfer_mode,
             rpc_direction,
-            rpc_payload,
+            rpc_payload
         ) else as rpc_error:
             return Result[mp.TickDispatchReport, mp.Error].failure(error = rpc_error)
 
@@ -587,8 +585,8 @@ extending Server:
             value = mp.TickDispatchReport(
                 snapshots_sent = snapshots_sent,
                 rpcs_sent = rpcs_sent,
-                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes(),
-            ),
+                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes()
+            )
         )
 
 
@@ -627,8 +625,8 @@ extending Server:
             return Result[bool, mp.Error].failure(
                 error = mp.error(
                     mp.ErrorCode.not_found,
-                    "verified target connection was not found",
-                ),
+                    "verified target connection was not found"
+                )
             )
 
         let required_bytes = rpc_wire_bytes(channel, direction, payload)
@@ -675,8 +673,8 @@ extending Server:
             return Result[bool, mp.Error].failure(
                 error = mp.error(
                     mp.ErrorCode.not_found,
-                    "verified target connection was not found",
-                ),
+                    "verified target connection was not found"
+                )
             )
 
         let required_bytes = snapshot_wire_bytes(header, payload)
@@ -844,7 +842,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
-                                    sender,
+                                    sender
                                 )
                             else:
                                 increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -860,7 +858,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
-                                    sender,
+                                    sender
                                 )
                             else:
                                 increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -868,7 +866,6 @@ extending Server:
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
                     pass
-        return
 
 
 extending Client:
@@ -908,7 +905,6 @@ extending Client:
             return
 
         enet.host_flush(host)
-        return
 
 
     public mutable function disconnect(data: uint) -> Result[bool, mp.Error]:
@@ -942,7 +938,6 @@ extending Client:
         reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
         this.world.release()
-        return
 
 
     public mutable function apply_client_event(evt: ptr[enet.Event]) -> void:
@@ -954,9 +949,9 @@ extending Client:
                     this.connection_id_value = Option[mp.ConnectionId].none
                     enqueue_session_event(ref_of(this.session_events), SessionEvent.connected, Option[mp.ConnectionId].none)
                     match send_handshake_hello(read(evt).peer, this.world.protocol_hash()):
-                        Result.success as _:
+                        Result.success:
                             pass
-                        Result.failure as _:
+                        Result.failure:
                             increment_unknown_count(ref_of(this.unknown_packet_count))
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
                     enqueue_session_event(ref_of(this.session_events), SessionEvent.disconnected, this.connection_id_value)
@@ -1007,7 +1002,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
-                                    this.connection_id_value,
+                                    this.connection_id_value
                                 )
                             else:
                                 increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -1023,7 +1018,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
-                                    this.connection_id_value,
+                                    this.connection_id_value
                                 )
                             else:
                                 increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -1031,7 +1026,6 @@ extending Client:
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
                     pass
-        return
 
 
     public function pending_snapshot_count() -> ptr_uint:
@@ -1081,12 +1075,12 @@ extending Client:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
             match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success as _:
+                Result.success:
                     snapshot_runtime.apply_payload(
                         packet.header.tick,
                         packet.header.entity_count,
                         packet.payload.as_span(),
-                        ref_of(this.inbound_snapshot_baseline),
+                        ref_of(this.inbound_snapshot_baseline)
                     )
                     processed += 1
                 Result.failure as payload:
@@ -1177,7 +1171,7 @@ public function listen(address: enet.Address, peer_count: ptr_uint, channel_limi
         snapshot_budget_cursor = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
         inbound_snapshot_baseline = empty_snapshot_baseline(),
-        outbound_world_signature_baseline = empty_snapshot_baseline(),
+        outbound_world_signature_baseline = empty_snapshot_baseline()
     ))
 
 
@@ -1195,7 +1189,7 @@ public function localhost_address(port: ushort) -> Result[enet.Address, mp.Error
     var remote = enet.Address(host = uint<-enet.HOST_ANY, port = port)
     if enet.address_set_host_ip(ptr_of(remote), "127.0.0.1") != 0:
         return Result[enet.Address, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.invalid_argument, "failed to set localhost endpoint"),
+            error = mp.error(mp.ErrorCode.invalid_argument, "failed to set localhost endpoint")
         )
 
     return Result[enet.Address, mp.Error].success(value = remote)
@@ -1207,7 +1201,7 @@ public function connect(address: enet.Address, channel_count: ptr_uint, registry
 
     var client_address = enet.Address(
         host = uint<-enet.HOST_ANY,
-        port = ushort<-enet.PORT_ANY,
+        port = ushort<-enet.PORT_ANY
     )
     let host = enet.host_create(ptr_of(client_address), 1, channel_count, 0, 0) else:
         release_runtime()
@@ -1236,7 +1230,7 @@ public function connect(address: enet.Address, channel_count: ptr_uint, registry
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         unknown_packet_count = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
-        inbound_snapshot_baseline = empty_snapshot_baseline(),
+        inbound_snapshot_baseline = empty_snapshot_baseline()
     ))
 
 
@@ -1261,21 +1255,19 @@ function empty_snapshot_baseline() -> snapshot_runtime.BaselineSet:
         last_applied_tick = 0,
         last_applied_entity_count = 0,
         last_applied_payload_bytes = 0,
-        last_applied_payload_hash = 0,
+        last_applied_payload_hash = 0
     )
 
 
 function reset_snapshot_baseline(baseline: ref[snapshot_runtime.BaselineSet]) -> void:
     unsafe:
         read(baseline) = empty_snapshot_baseline()
-    return
 
 
 function consume_event_packet(evt: ptr[enet.Event]) -> void:
     unsafe:
         if read(evt).type_ == enet.EventType.ENET_EVENT_TYPE_RECEIVE:
             enet.packet_destroy(read(evt).packet)
-    return
 
 
 function packet_kind(packet: ptr[enet.Packet]) -> Option[mp.PacketKind]:
@@ -1311,7 +1303,6 @@ function increment_unknown_count(unknown_packet_count: ref[ptr_uint]) -> void:
     unsafe:
         let current = read(unknown_packet_count)
         read(unknown_packet_count) = current + 1
-    return
 
 
 function enqueue_session_event(
@@ -1365,12 +1356,12 @@ function typed_rpc_dispatch_packet(
 
     if matched_count == 0:
         return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet"),
+            error = mp.error(mp.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet")
         )
 
     if matched_count > 1:
         return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet"),
+            error = mp.error(mp.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet")
         )
 
     unsafe:
@@ -1381,7 +1372,7 @@ function typed_rpc_dispatch_packet(
                 return Result[bool, mp.Error].success(value = payload_value.value)
             Result.failure as payload_error:
                 return Result[bool, mp.Error].failure(
-                    error = mp.error(payload_error.error.code, payload_error.error.message),
+                    error = mp.error(payload_error.error.code, payload_error.error.message)
                 )
 
 
@@ -1407,28 +1398,28 @@ function handle_received_packet(
                 incoming_snapshots,
                 sender,
                 channel,
-                payload,
+                payload
             )
             match snapshot_status:
-                Result.failure as _:
+                Result.failure:
                     increment_unknown_count(unknown_packet_count)
-                Result.success as _:
+                Result.success:
                     unsafe:
                         # snapshot header is fixed at 20 bytes (tick u64 + baseline_tick u64 + entity_count u32)
                         let snapshot_body = span[ubyte](
                             data = payload.data + 20,
-                            len = payload.len - 20,
+                            len = payload.len - 20
                         )
                         match world.apply_snapshot_payload(snapshot_body):
-                            Result.success as _:
+                            Result.success:
                                 pass
-                            Result.failure as _:
+                            Result.failure:
                                 pass
 
                     match snapshot_runtime.apply_from_packet(payload, inbound_snapshot_baseline):
-                        Result.success as _:
+                        Result.success:
                             pass
-                        Result.failure as _:
+                        Result.failure:
                             pass
         mp.PacketKind.rpc:
             let rpc_direction = infer_inbound_rpc_direction(payload, inferred_direction) else:
@@ -1440,12 +1431,12 @@ function handle_received_packet(
                 sender,
                 channel,
                 rpc_direction,
-                payload,
+                payload
             )
             match rpc_status:
-                Result.failure as _:
+                Result.failure:
                     increment_unknown_count(unknown_packet_count)
-                Result.success as _:
+                Result.success:
                     pass
         mp.PacketKind.handshake_hello:
             increment_unknown_count(unknown_packet_count)
@@ -1454,7 +1445,6 @@ function handle_received_packet(
         mp.PacketKind.handshake_reject:
             increment_unknown_count(unknown_packet_count)
 
-    return
 
 
 function acquire_runtime() -> Result[bool, mp.Error]:
@@ -1474,7 +1464,6 @@ function release_runtime() -> void:
     if runtime_ref_count == 0:
         enet.deinitialize()
 
-    return
 
 
 function send_wire_payload(peer: ptr[enet.Peer], channel: uint, transfer_mode: mp.TransferMode, kind: mp.PacketKind, payload: span[ubyte]) -> Result[bool, mp.Error]:
@@ -1569,8 +1558,8 @@ function decode_handshake_welcome(payload: span[ubyte]) -> Result[mp.HandshakeWe
     return Result[mp.HandshakeWelcome, mp.Error].success(
         value = mp.HandshakeWelcome(
             protocol_hash = wire.decode_u64_be(payload, 0),
-            connection = wire.decode_u64_be(payload, 8),
-        ),
+            connection = wire.decode_u64_be(payload, 8)
+        )
     )
 
 
@@ -1587,13 +1576,11 @@ function is_peer_verified(peer: ptr[enet.Peer]) -> bool:
 function mark_peer_verified(peer: ptr[enet.Peer]) -> void:
     unsafe:
         read(peer).eventData = 1
-    return
 
 
 function mark_peer_unverified(peer: ptr[enet.Peer]) -> void:
     unsafe:
         read(peer).eventData = 0
-    return
 
 
 function find_verified_peer(host: ptr[enet.Host], connection: mp.ConnectionId) -> ptr[enet.Peer]?:
@@ -1621,7 +1608,6 @@ function append_verified_connections(host: ptr[enet.Host], out_connections: ref[
             if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
                 out_connections.push(peer_connection_id(peer))
             index += 1
-    return
 
 
 function append_weighted_verified_connections(host: ptr[enet.Host], out_connections: ref[vec.Vec[WeightedConnection]]) -> void:
@@ -1634,7 +1620,6 @@ function append_weighted_verified_connections(host: ptr[enet.Host], out_connecti
             if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
                 out_connections.push(WeightedConnection(connection = peer_connection_id(peer), weight = 1))
             index += 1
-    return
 
 
 function append_rotated_connections(
@@ -1657,7 +1642,6 @@ function append_rotated_connections(
             destination.push(read(source.data + prefix_index))
         prefix_index += 1
 
-    return
 
 
 function send_snapshots_budgeted_impl(
@@ -1728,7 +1712,7 @@ function send_snapshots_scheduled_fair_impl(
                 continue
 
             match scheduler.reserve(framed_bytes):
-                Option.some as _:
+                Option.some:
                     pass
                 Option.none:
                     break
@@ -1853,7 +1837,7 @@ function send_rpcs_scheduled_fair_impl(
                 continue
 
             match scheduler.reserve(framed_bytes):
-                Option.some as _:
+                Option.some:
                     pass
                 Option.none:
                     break
@@ -1873,8 +1857,8 @@ function validate_client_outbound_direction(direction: mp.RpcDirection) -> Resul
         return Result[bool, mp.Error].failure(
             error = mp.error(
                 mp.ErrorCode.invalid_argument,
-                "client send_rpc requires direction = client_to_server",
-            ),
+                "client send_rpc requires direction = client_to_server"
+            )
         )
 
     return Result[bool, mp.Error].success(value = true)
@@ -1885,8 +1869,8 @@ function validate_server_outbound_direction(direction: mp.RpcDirection) -> Resul
         return Result[bool, mp.Error].failure(
             error = mp.error(
                 mp.ErrorCode.invalid_argument,
-                "server rpc send requires a server_to_* direction",
-            ),
+                "server rpc send requires a server_to_* direction"
+            )
         )
 
     return Result[bool, mp.Error].success(value = true)

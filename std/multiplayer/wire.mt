@@ -3,7 +3,7 @@ public function encode_u32_be(value: uint) -> array[ubyte, 4]:
         ubyte<-((value >> 24) & 255),
         ubyte<-((value >> 16) & 255),
         ubyte<-((value >> 8) & 255),
-        ubyte<-(value & 255),
+        ubyte<-(value & 255)
     )
 
 
@@ -25,7 +25,7 @@ public function encode_u64_be(value: ulong) -> array[ubyte, 8]:
         ubyte<-((value >> 24) & 255),
         ubyte<-((value >> 16) & 255),
         ubyte<-((value >> 8) & 255),
-        ubyte<-(value & 255),
+        ubyte<-(value & 255)
     )
 
 

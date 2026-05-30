@@ -369,7 +369,7 @@ function capture_internal(command: span[str], cwd: Option[str], env: span[Enviro
                 value= CaptureResult(
                     stdout = take_owned_string(raw_result.stdout_data, raw_result.stdout_len),
                     stderr = take_owned_string(raw_result.stderr_data, raw_result.stderr_len),
-                    status = ExitStatus(exit_code = raw_result.exit_status, term_signal = raw_result.term_signal),
+                    status = ExitStatus(exit_code = raw_result.exit_status, term_signal = raw_result.term_signal)
                 )
             )
 

@@ -61,13 +61,13 @@ extending RpcDispatchTable:
             return Result[bool, protocol.Error].failure(
                 error = protocol.error(
                     protocol.ErrorCode.already_registered,
-                    "rpc dispatch route is already registered",
-                ),
+                    "rpc dispatch route is already registered"
+                )
             )
 
         this.routes.push(RpcDispatchRoute(
             descriptor = descriptor,
-            handler = handler,
+            handler = handler
         ))
         return Result[bool, protocol.Error].success(value = true)
 
@@ -113,8 +113,8 @@ public function dispatch_with_routes(
         return Result[bool, DispatchError].failure(
             error = dispatch_error(
                 protocol.ErrorCode.invalid_argument,
-                "rpc dispatch requires a sender when descriptor requires owner",
-            ),
+                "rpc dispatch requires a sender when descriptor requires owner"
+            )
         )
 
     let route = find_route(routes, message.descriptor) else:
@@ -160,14 +160,14 @@ public function encode_header(header: protocol.RpcPacketHeader) -> array[ubyte, 
         payload_size[0],
         payload_size[1],
         payload_size[2],
-        payload_size[3],
+        payload_size[3]
     )
 
 
 public function decode_header(input: span[ubyte]) -> Result[protocol.RpcPacketHeader, protocol.Error]:
     if input.len < rpc_header_bytes:
         return Result[protocol.RpcPacketHeader, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc packet is too small"),
+            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc packet is too small")
         )
 
     let direction = decode_direction(input[4]) else as direction_error:
@@ -179,8 +179,8 @@ public function decode_header(input: span[ubyte]) -> Result[protocol.RpcPacketHe
         value = protocol.RpcPacketHeader(
             channel = wire.decode_u32_be(input, 0),
             direction = direction,
-            payload_size = ptr_uint<-wire.decode_u32_be(input, 5),
-        ),
+            payload_size = ptr_uint<-wire.decode_u32_be(input, 5)
+        )
     )
 
 
@@ -206,29 +206,29 @@ public function enqueue_incoming(
 
     if header.channel != channel:
         return Result[bool, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc channel does not match transport channel"),
+            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc channel does not match transport channel")
         )
 
     if header.direction != direction:
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,
-                "rpc direction does not match transport context",
-            ),
+                "rpc direction does not match transport context"
+            )
         )
 
     unsafe:
         let body_len = payload.len - rpc_header_bytes
         if header.payload_size != body_len:
             return Result[bool, protocol.Error].failure(
-                error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size does not match header"),
+                error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size does not match header")
             )
 
         let body = span[ubyte](data = payload.data + rpc_header_bytes, len = body_len)
         queue.push(IncomingRpcPacket(
             header = header,
             context = protocol.RpcContext(sender = sender, tick = 0),
-            payload = bytes.Bytes.copy(body),
+            payload = bytes.Bytes.copy(body)
         ))
 
     return Result[bool, protocol.Error].success(value = true)
@@ -274,7 +274,7 @@ function decode_direction(raw: ubyte) -> Result[protocol.RpcDirection, protocol.
         return Result[protocol.RpcDirection, protocol.Error].success(value = protocol.RpcDirection.server_to_all)
 
     return Result[protocol.RpcDirection, protocol.Error].failure(
-        error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc direction value is invalid"),
+        error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc direction value is invalid")
     )
 
 
@@ -312,24 +312,24 @@ function validate_incoming(message: IncomingRpc) -> Result[bool, protocol.Error]
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,
-                "rpc payload size does not match descriptor payload_size",
-            ),
+                "rpc payload size does not match descriptor payload_size"
+            )
         )
 
     if message.descriptor.decode_payload_binding != registry.expected_rpc_decode_payload_binding(message.descriptor):
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,
-                "rpc descriptor decode_payload binding mismatch",
-            ),
+                "rpc descriptor decode_payload binding mismatch"
+            )
         )
 
     if message.descriptor.dispatch_typed_binding != registry.expected_rpc_dispatch_typed_binding(message.descriptor):
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,
-                "rpc descriptor dispatch_typed binding mismatch",
-            ),
+                "rpc descriptor dispatch_typed binding mismatch"
+            )
         )
 
     if message.descriptor.direction == protocol.RpcDirection.client_to_server and
@@ -337,8 +337,8 @@ function validate_incoming(message: IncomingRpc) -> Result[bool, protocol.Error]
         return Result[bool, protocol.Error].failure(
             error = protocol.error(
                 protocol.ErrorCode.invalid_argument,
-                "incoming client_to_server rpc requires sender connection",
-            ),
+                "incoming client_to_server rpc requires sender connection"
+            )
         )
 
     return Result[bool, protocol.Error].success(value = true)
@@ -347,7 +347,7 @@ function validate_incoming(message: IncomingRpc) -> Result[bool, protocol.Error]
 function validate_payload_size(payload_size: ptr_uint) -> Result[bool, protocol.Error]:
     if payload_size > 0xffffffff:
         return Result[bool, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size exceeds 32-bit wire header"),
+            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size exceeds 32-bit wire header")
         )
 
     return Result[bool, protocol.Error].success(value = true)

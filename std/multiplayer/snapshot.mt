@@ -40,7 +40,7 @@ public function capture(tick: protocol.Tick, entity_count: ptr_uint) -> Snapshot
         tick = tick,
         entity_count = entity_count,
         payload_bytes = 0,
-        payload_hash = 0,
+        payload_hash = 0
     )
 
 
@@ -49,7 +49,7 @@ public function capture_payload(tick: protocol.Tick, entity_count: ptr_uint, pay
         tick = tick,
         entity_count = entity_count,
         payload_bytes = payload.len,
-        payload_hash = payload_fingerprint(payload),
+        payload_hash = payload_fingerprint(payload)
     )
 
 
@@ -69,7 +69,7 @@ public function diff(current: Snapshot, baseline: Snapshot) -> DeltaFrame:
         tick = current.tick,
         baseline_tick = baseline.tick,
         changed_entity_count = changed_entity_count,
-        payload_changed = payload_changed,
+        payload_changed = payload_changed
     )
 
 
@@ -98,7 +98,7 @@ public function snapshot_from_baseline(baselines: BaselineSet) -> Snapshot:
         tick = baselines.last_applied_tick,
         entity_count = baselines.last_applied_entity_count,
         payload_bytes = baselines.last_applied_payload_bytes,
-        payload_hash = baselines.last_applied_payload_hash,
+        payload_hash = baselines.last_applied_payload_hash
     )
 
 
@@ -128,7 +128,7 @@ public function apply_from_packet(payload: span[ubyte], baselines: ref[BaselineS
     unsafe:
         let body = span[ubyte](
             data = payload.data + snapshot_header_bytes,
-            len = payload.len - snapshot_header_bytes,
+            len = payload.len - snapshot_header_bytes
         )
         apply_payload(header.tick, header.entity_count, body, baselines)
 
@@ -159,14 +159,14 @@ public function encode_header(header: protocol.SnapshotPacketHeader) -> array[ub
         entity_count[0],
         entity_count[1],
         entity_count[2],
-        entity_count[3],
+        entity_count[3]
     )
 
 
 public function decode_header(input: span[ubyte]) -> Result[protocol.SnapshotPacketHeader, protocol.Error]:
     if input.len < snapshot_header_bytes:
         return Result[protocol.SnapshotPacketHeader, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "snapshot packet is too small"),
+            error = protocol.error(protocol.ErrorCode.invalid_argument, "snapshot packet is too small")
         )
 
     let tick = wire.decode_u64_be(input, 0)
@@ -176,8 +176,8 @@ public function decode_header(input: span[ubyte]) -> Result[protocol.SnapshotPac
         value = protocol.SnapshotPacketHeader(
             tick = tick,
             baseline_tick = baseline_tick,
-            entity_count = entity_count,
-        ),
+            entity_count = entity_count
+        )
     )
 
 
@@ -202,13 +202,13 @@ public function enqueue_incoming(
     unsafe:
         let body = span[ubyte](
             data = payload.data + snapshot_header_bytes,
-            len = payload.len - snapshot_header_bytes,
+            len = payload.len - snapshot_header_bytes
         )
         queue.push(IncomingSnapshotPacket(
             header = header,
             sender = sender,
             channel = channel,
-            payload = bytes.Bytes.copy(body),
+            payload = bytes.Bytes.copy(body)
         ))
 
     return Result[bool, protocol.Error].success(value = true)

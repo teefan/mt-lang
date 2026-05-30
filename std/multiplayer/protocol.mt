@@ -125,7 +125,7 @@ public function default_config() -> Config:
     return Config(
         snapshot_tick_hz = 20,
         max_entities = 4096,
-        max_rpcs_per_tick = 1024,
+        max_rpcs_per_tick = 1024
     )
 
 
@@ -135,8 +135,8 @@ public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickSched
         next_sequence = 0,
         budget = TickBudget(
             max_bytes_per_tick = max_bytes_per_tick,
-            used_bytes_this_tick = 0,
-        ),
+            used_bytes_this_tick = 0
+        )
     )
 
 
@@ -148,7 +148,7 @@ public function create_tick_budget_plan(total_bytes: ptr_uint, snapshot_ratio_pe
     return TickBudgetPlan(
         total_bytes = total_bytes,
         snapshot_bytes = snapshot_bytes,
-        rpc_bytes = total_bytes - snapshot_bytes,
+        rpc_bytes = total_bytes - snapshot_bytes
     )
 
 
@@ -180,7 +180,7 @@ extending TickScheduler:
         let reservation = TickReservation(
             tick = this.current_tick,
             sequence = this.next_sequence,
-            reserved_bytes = bytes,
+            reserved_bytes = bytes
         )
         this.next_sequence += 1
         this.budget.used_bytes_this_tick += bytes
