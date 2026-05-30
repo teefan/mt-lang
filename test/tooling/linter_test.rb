@@ -157,6 +157,20 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_fix_source_with_select_redundant_return_does_not_apply_line_too_long_tidy
+    source = <<~MT
+      function main() -> void:
+          log_value("alpha", "beta", "gamma", "delta", "epsilon", "zeta")
+          return
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-return"])
+
+    assert_includes fixed, "log_value(\"alpha\", \"beta\", \"gamma\", \"delta\", \"epsilon\", \"zeta\")"
+    refute_includes fixed, "log_value(\n"
+    refute_includes fixed, "\n    return\n"
+  end
+
   def test_warns_on_redundant_ignored_match_binding
     source = <<~MT
       function main(value: Option[int]) -> int:
@@ -2592,14 +2606,13 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
   def test_warns_on_redundant_inline_unsafe_expression
     warnings = lint_with_sema(<<~MT, path: "demo.mt")
-      function main() -> ptr[int]:
-          var value: int = 0
-          return unsafe: ptr[int]<-ptr_of(value)
+      function main() -> int:
+          return unsafe: 1 + 2
     MT
 
     warning = warnings.find { |w| w.code == "redundant-unsafe" }
     assert warning, "expected redundant-unsafe warning"
-    assert_equal 3, warning.line
+    assert_equal 2, warning.line
     assert_equal 12, warning.column
     assert_equal :hint, warning.severity
   end
@@ -2608,9 +2621,8 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
     profile = MilkTea::Linter::Profile.new
 
     warnings = lint_with_sema(<<~MT, path: "demo.mt", profile:)
-      function main() -> ptr[int]:
-          var value: int = 0
-          return unsafe: ptr[int]<-ptr_of(value)
+      function main() -> int:
+          return unsafe: 1 + 2
     MT
 
     assert warnings.any? { |warning| warning.code == "redundant-unsafe" }
@@ -2661,16 +2673,24 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
   def test_warns_on_redundant_inline_unsafe_expression_even_with_unrelated_later_error
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
-      function main() -> ptr[int]:
-          var value: int = 0
-          let pointer = unsafe: ptr[int]<-ptr_of(value)
+      function main() -> int:
+          let pointer = unsafe: 1 + 2
           let broken = unsafe: read(ptr[int]<-0)
           return pointer
     MT
 
-    warning = warnings.find { |w| w.code == "redundant-unsafe" && w.line == 3 }
+    warning = warnings.find { |w| w.code == "redundant-unsafe" && w.line == 2 }
     assert warning, "expected redundant-unsafe warning"
     assert_equal 19, warning.column
+  end
+
+  def test_does_not_warn_on_inline_unsafe_expression_with_builtin_pointer_cast_syntax
+    warnings = lint_with_sema(<<~MT, path: "demo.mt")
+      function main(memory: ptr[ubyte]) -> ptr[int]:
+          return unsafe: ptr[int]<-memory
+    MT
+
+    refute warnings.any? { |w| w.code == "redundant-unsafe" }
   end
 
   def test_does_not_warn_on_generic_method_unsafe_block_with_pointer_cast
@@ -2763,15 +2783,39 @@ class MilkTeaLinterRedundantUnsafeTest < Minitest::Test
 
   def test_fix_source_removes_redundant_inline_unsafe_expression
     source = <<~MT
-      function main() -> ptr[int]:
-          var value: int = 0
-          return unsafe: ptr[int]<-ptr_of(value)
+      function main() -> int:
+          return unsafe: 1 + 2
     MT
 
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
 
-    assert_includes fixed, "return ptr[int]<-ptr_of(value)"
-    refute_includes fixed, "return unsafe: ptr[int]<-ptr_of(value)"
+    assert_includes fixed, "return 1 + 2"
+    refute_includes fixed, "return unsafe: 1 + 2"
+  end
+
+  def test_fix_source_keeps_inline_unsafe_expression_with_builtin_pointer_cast_syntax
+    source = <<~MT
+      function main(memory: ptr[ubyte]) -> ptr[int]:
+          return unsafe: ptr[int]<-memory
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
+
+    assert_includes fixed, "return unsafe: ptr[int]<-memory"
+  end
+
+  def test_fix_source_respects_select_filter_for_redundant_return_only
+    source = <<~MT
+      function main() -> void:
+          unsafe:
+              let copy = 1
+          return
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["redundant-return"])
+
+    assert_includes fixed, "unsafe:"
+    refute_includes fixed, "\n    return\n"
   end
 end
 
