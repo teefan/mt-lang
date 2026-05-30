@@ -772,21 +772,9 @@ Iterator notes for those collection modules:
 
 String categories:
 
-- `str` (string view)
-- `cstr` (C ABI string)
-- `str_buffer[N]` (fixed-capacity mutable string buffer)
 
 `str_buffer[N]` methods:
 
-- `clear()`
-- `assign(str)`
-- `append(str)`
-- `assign_format(str)`
-- `append_format(str)`
-- `len()`
-- `capacity()`
-- `as_str()`
-- `as_cstr()`
 
 Format string syntax:
 
