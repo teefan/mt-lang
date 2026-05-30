@@ -292,10 +292,16 @@ Possible public surface once the descriptor-driven path is proven:
 
 - `Server.send_snapshot_to(...)`
 - `Server.send_snapshots_budgeted(...)`
+- `Server.send_snapshots_budgeted_weighted(...)`
 - `Server.broadcast_snapshot_budgeted(...)`
+- `Server.broadcast_snapshot_budgeted_weighted(...)`
+- `Server.broadcast_snapshot_budgeted_fair(...)`
+- `Server.broadcast_snapshot_scheduled_fair(...)`
 - `Client.send_rpc(...)`
 - `Server.send_rpc_to(...)`
 - `Server.broadcast_rpc(...)`
+- `Server.broadcast_rpc_scheduled_fair(...)`
+- `Server.dispatch_tick_fair(...)`
 
 Constraint:
 

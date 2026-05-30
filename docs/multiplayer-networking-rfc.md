@@ -136,7 +136,7 @@ V1 also fixes a few cost-sensitive boundaries explicitly:
 
 - all networking attribute arguments are written explicitly in source; the compiler does not invent default channel, rate, target, or ownership values
 - `@[rpc(...)]` changes descriptor generation and inbound dispatch only; it does not rewrite ordinary function calls into network sends
-- send-side ergonomics remain ordinary library APIs in v1 rather than additional compiler hooks
+- send-side ergonomics remain ordinary library APIs in v1 rather than additional compiler hooks (for example budgeted, weighted, fair, and tick-dispatch session helpers in `std.multiplayer.enet`)
 
 ## Standard Attribute Vocabulary
 
@@ -238,6 +238,11 @@ Rules:
 2. `rpc_descriptor(target: callable_handle)` is valid only when `target` is written directly as `callable_of(name)` and `name` resolves to a top-level `@[rpc(...)]` callable.
 3. These hooks lower directly to generated static descriptor objects. They are not general runtime reflection.
 4. No additional send-side multiplayer compiler hook is part of v1.
+
+Send-side note:
+
+- Outbound replication and RPC send ergonomics are library-level APIs on sessions (`std.multiplayer.enet`) and may include convenience helpers such as budget planning or fair/weighted fanout.
+- These helpers are runtime APIs, not compiler hooks.
 
 ## Semantic Rules
 

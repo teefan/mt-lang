@@ -105,6 +105,18 @@ public struct TickScheduler:
     budget: TickBudget
 
 
+public struct TickBudgetPlan:
+    total_bytes: ptr_uint
+    snapshot_bytes: ptr_uint
+    rpc_bytes: ptr_uint
+
+
+public struct TickDispatchReport:
+    snapshots_sent: ptr_uint
+    rpcs_sent: ptr_uint
+    consumed_bytes: ptr_uint
+
+
 public function error(code: ErrorCode, message: str) -> Error:
     return Error(code = code, message = message)
 
@@ -125,6 +137,18 @@ public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickSched
             max_bytes_per_tick = max_bytes_per_tick,
             used_bytes_this_tick = 0,
         ),
+    )
+
+
+public function create_tick_budget_plan(total_bytes: ptr_uint, snapshot_ratio_percent: uint) -> TickBudgetPlan:
+    if snapshot_ratio_percent >= 100:
+        return TickBudgetPlan(total_bytes = total_bytes, snapshot_bytes = total_bytes, rpc_bytes = 0)
+
+    let snapshot_bytes = (total_bytes * ptr_uint<-snapshot_ratio_percent) / 100
+    return TickBudgetPlan(
+        total_bytes = total_bytes,
+        snapshot_bytes = snapshot_bytes,
+        rpc_bytes = total_bytes - snapshot_bytes,
     )
 
 

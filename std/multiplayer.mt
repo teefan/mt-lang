@@ -27,6 +27,8 @@ public type RpcPacketHeader = protocol.RpcPacketHeader
 public type TickBudget = protocol.TickBudget
 public type TickReservation = protocol.TickReservation
 public type TickScheduler = protocol.TickScheduler
+public type TickBudgetPlan = protocol.TickBudgetPlan
+public type TickDispatchReport = protocol.TickDispatchReport
 public type StateDescriptor = registry.StateDescriptor
 public type RpcDescriptor = registry.RpcDescriptor
 public type Registry = registry.Registry
@@ -67,6 +69,10 @@ public function default_config() -> Config:
 
 public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickScheduler:
     return protocol.create_tick_scheduler(max_bytes_per_tick)
+
+
+public function create_tick_budget_plan(total_bytes: ptr_uint, snapshot_ratio_percent: uint) -> TickBudgetPlan:
+    return protocol.create_tick_budget_plan(total_bytes, snapshot_ratio_percent)
 
 
 public function state_descriptor[T]() -> StateDescriptor:

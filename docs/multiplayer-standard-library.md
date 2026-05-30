@@ -270,6 +270,30 @@ Primary functions and methods:
 - `always()`
 - `owner_only()`
 - `callback(filter: fn(connection: ConnectionId, entity: EntityId) -> bool) -> Policy`
+- `grid(connection_cell, entity_cell, cell_radius)`
+- `owner_or_grid(connection_cell, entity_cell, cell_radius)`
+- `owner_or_grid_index(index, connection, entity, owner, cell_radius)`
+
+### `std.multiplayer.spatial`
+
+Responsibility:
+Provide explicit, reusable spatial indexing helpers for relevancy and AOI filtering.
+
+Primary types:
+
+- `GridCell`
+- `GridIndex`
+
+Primary functions and methods:
+
+- `GridIndex.create()`
+- `GridIndex.set_connection_cell(...)`
+- `GridIndex.set_entity_cell(...)`
+- `GridIndex.connection_cell(...)`
+- `GridIndex.entity_cell(...)`
+- `allows_by_grid(index, connection, entity, cell_radius)`
+- `within_cell_radius_coords(...)`
+- `world_to_cell(position_x, position_y, cell_size)`
 
 Future extensions:
 
@@ -295,6 +319,20 @@ Primary types:
 - `HandshakeReject`
 - `SnapshotPacketHeader`
 - `RpcPacketHeader`
+- `TickBudget`
+- `TickReservation`
+- `TickScheduler`
+- `TickBudgetPlan`
+- `TickDispatchReport`
+
+Primary functions and methods:
+
+- `create_tick_scheduler(max_bytes_per_tick)`
+- `create_tick_budget_plan(total_bytes, snapshot_ratio_percent)`
+- `TickScheduler.begin_tick(tick)`
+- `TickScheduler.remaining_bytes()`
+- `TickScheduler.consumed_bytes()`
+- `TickScheduler.reserve(bytes)`
 
 Notes:
 
@@ -329,6 +367,7 @@ Primary types:
 - `Server`
 - `Client`
 - `SessionEvent`
+- `WeightedConnection`
 
 Primary functions:
 
@@ -353,9 +392,15 @@ Primary methods:
 - `Client.send_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 - `Server.send_snapshot_to(connection, channel, transfer_mode, header, payload) -> Result[bool, mp.Error]`
 - `Server.send_snapshots_budgeted(prioritized_connections, channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
+- `Server.send_snapshots_budgeted_weighted(weighted_connections, channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
 - `Server.broadcast_snapshot_budgeted(channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
+- `Server.broadcast_snapshot_budgeted_weighted(channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
+- `Server.broadcast_snapshot_budgeted_fair(channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
+- `Server.broadcast_snapshot_scheduled_fair(scheduler, channel, transfer_mode, header, payload) -> Result[ptr_uint, mp.Error]`
 - `Server.send_rpc_to(connection, channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 - `Server.broadcast_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Server.broadcast_rpc_scheduled_fair(scheduler, channel, transfer_mode, direction, payload) -> Result[ptr_uint, mp.Error]`
+- `Server.dispatch_tick_fair(tick, plan, snapshot_channel, snapshot_transfer_mode, snapshot_header, snapshot_payload, rpc_channel, rpc_transfer_mode, rpc_direction, rpc_payload) -> Result[mp.TickDispatchReport, mp.Error]`
 
 Notes:
 
@@ -368,6 +413,7 @@ Notes:
 - `Server.send_rpc_to(...)` requires a verified target connection and returns `not_found` when the connection is absent or not yet verified.
 - Connection setup must verify protocol-hash handshake packets before accepting snapshot or RPC traffic.
 - Session lifecycle visibility should be first-class through queued events (`connected`, `disconnected`, `snapshot_received`, `rpc_received`) so gameplay code does not need transport-specific polling hacks.
+- When game code wants one call per frame for outbound traffic, use `create_tick_budget_plan(...)` and `Server.dispatch_tick_fair(...)`; use weighted APIs when one-shot priority ordering is needed, and fair APIs when starvation resistance is the primary goal.
 
 ### Matchmaking And Discovery Boundary
 
