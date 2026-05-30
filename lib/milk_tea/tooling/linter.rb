@@ -42,7 +42,6 @@ module MilkTea
     RESERVED_IMPORT_ALIAS_NAMES = Types::RESERVED_IMPORT_ALIAS_NAMES.to_set.freeze
     RESERVED_TYPE_BINDING_NAMES = Types::RESERVED_TYPE_BINDING_NAMES.to_set.freeze
     AUTO_FIXABLE_RULE_CODES = %w[
-      line-too-long
       prefer-let
       redundant-ignored-match-binding
       redundant-read-cast
@@ -300,7 +299,7 @@ module MilkTea
     # Handles: prefer-let, redundant-ignored-match-binding,
     # redundant-read-cast, redundant-read-release-temp, prefer-let-else,
     # directional-ffi-arg, redundant-else, redundant-unsafe,
-    # redundant-return, redundant-cast, line-too-long.
+    # redundant-return, redundant-cast, reserved-primitive-name.
     # Returns the fixed source (may be identical if nothing was fixable).
     def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
       cfg = load_config(path)
@@ -489,14 +488,6 @@ module MilkTea
       end
 
       fixed_source = lines.join
-      if rule_enabled.call("line-too-long")
-        fixed_source = Formatter.wrap_long_argument_lists(
-          fixed_source,
-          max_line_length: effective_max_line_length(path),
-          path:,
-        )
-      end
-
       if rule_enabled.call("redundant-cast")
         redundant_cast_warnings = lint_source(fixed_source, path:, select: Set["redundant-cast"]).select do |w|
           w.code == "redundant-cast" && w.line && w.column && w.length
