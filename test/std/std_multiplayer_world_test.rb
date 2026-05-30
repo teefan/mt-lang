@@ -12,21 +12,14 @@ class MilkTeaStdMultiplayerWorldTest < Minitest::Test
 
 import std.multiplayer as mp
 
+@[mp.replicated(authority = mp.Authority.server)]
 struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
     health: int
 
 function build_registry() -> mp.Registry:
     var registry = mp.Registry.create()
-    let _ = registry.add_state(mp.StateDescriptor(
-        name = "PlayerState",
-        authority = mp.Authority.server,
-        schema_hash = 0x1001,
-        sync_field_count = 1,
-        sync_mode = mp.TransferMode.unreliable_ordered,
-        sync_channel = 0,
-        sync_rate_hz = 20,
-        sync_target = mp.SyncTarget.observers,
-    )) else:
+    let _ = registry.add_state(mp.state_descriptor[PlayerState]()) else:
         return registry
     registry.freeze()
     return registry
@@ -94,35 +87,21 @@ function main() -> int:
 
 import std.multiplayer as mp
 
+@[mp.replicated(authority = mp.Authority.server)]
 struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
     health: int
 
+@[mp.replicated(authority = mp.Authority.server)]
 struct ProjectileState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
     velocity: long
 
 function player_descriptor() -> mp.StateDescriptor:
-    return mp.StateDescriptor(
-        name = "PlayerState",
-        authority = mp.Authority.server,
-        schema_hash = 0x2001,
-        sync_field_count = 1,
-        sync_mode = mp.TransferMode.unreliable_ordered,
-        sync_channel = 0,
-        sync_rate_hz = 20,
-        sync_target = mp.SyncTarget.observers,
-    )
+    return mp.state_descriptor[PlayerState]()
 
 function projectile_descriptor() -> mp.StateDescriptor:
-    return mp.StateDescriptor(
-        name = "ProjectileState",
-        authority = mp.Authority.server,
-        schema_hash = 0x2002,
-        sync_field_count = 1,
-        sync_mode = mp.TransferMode.unreliable_ordered,
-        sync_channel = 0,
-        sync_rate_hz = 20,
-        sync_target = mp.SyncTarget.observers,
-    )
+    return mp.state_descriptor[ProjectileState]()
 
 function build_registry() -> mp.Registry:
     var registry = mp.Registry.create()
@@ -199,21 +178,14 @@ function main() -> int:
 
 import std.multiplayer as mp
 
+@[mp.replicated(authority = mp.Authority.server)]
 struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
     health: int
 
 function build_registry() -> mp.Registry:
     var registry = mp.Registry.create()
-    let _ = registry.add_state(mp.StateDescriptor(
-        name = "PlayerState",
-        authority = mp.Authority.server,
-        schema_hash = 0x3001,
-        sync_field_count = 1,
-        sync_mode = mp.TransferMode.unreliable_ordered,
-        sync_channel = 0,
-        sync_rate_hz = 20,
-        sync_target = mp.SyncTarget.observers,
-    )) else:
+    let _ = registry.add_state(mp.state_descriptor[PlayerState]()) else:
         return registry
     registry.freeze()
     return registry
@@ -242,6 +214,249 @@ function main() -> int:
                 Result.failure as payload:
                     if payload.error.code != mp.ErrorCode.invalid_argument:
                         return 5
+
+            return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_world_snapshot_payload_roundtrip_applies_descriptor_matched_entity_state
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer as mp
+
+@[mp.replicated(authority = mp.Authority.server)]
+struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    health: int
+
+function player_descriptor() -> mp.StateDescriptor:
+    return mp.state_descriptor[PlayerState]()
+
+function build_registry() -> mp.Registry:
+    var registry = mp.Registry.create()
+    let _ = registry.add_state(player_descriptor()) else:
+        return registry
+    registry.freeze()
+    return registry
+
+function main() -> int:
+    var registry = build_registry()
+    defer registry.release()
+
+    let descriptor = player_descriptor()
+
+    let source_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.server)
+    match source_world_result:
+        Result.failure as _:
+            return 1
+        Result.success as source_payload:
+            var source_world = source_payload.value
+            defer source_world.release()
+
+            let sink_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.client)
+            match sink_world_result:
+                Result.failure as _:
+                    return 2
+                Result.success as sink_payload:
+                    var sink_world = sink_payload.value
+                    defer sink_world.release()
+
+                    let source_entity = source_world.spawn_with_descriptor(descriptor, PlayerState(health = 77), Option[mp.ConnectionId].none) else:
+                        return 3
+                    let sink_entity = sink_world.spawn_with_descriptor(descriptor, PlayerState(health = 5), Option[mp.ConnectionId].none) else:
+                        return 4
+
+                    if source_entity != sink_entity:
+                        return 5
+
+                    var encoded = source_world.encode_snapshot_payload() else:
+                        return 6
+                    defer encoded.release()
+
+                    let applied = sink_world.apply_snapshot_payload(encoded.as_span()) else:
+                        return 10
+                    if applied != 1:
+                        return 7
+
+                    let state = sink_world.state_copy_with_descriptor[PlayerState](sink_entity, descriptor) else:
+                        return 8
+                    if state.health != 77:
+                        return 9
+
+                    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_world_snapshot_payload_partial_apply_for_mixed_descriptors
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer as mp
+
+@[mp.replicated(authority = mp.Authority.server)]
+struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    health: int
+
+@[mp.replicated(authority = mp.Authority.server)]
+struct ProjectileState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    velocity: long
+
+@[mp.replicated(authority = mp.Authority.server)]
+struct ProjectileStateClient:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    velocity: int
+
+function build_registry() -> mp.Registry:
+    var registry = mp.Registry.create()
+    let _ = registry.add_state(mp.state_descriptor[PlayerState]()) else:
+        return registry
+    let _ = registry.add_state(mp.state_descriptor[ProjectileState]()) else:
+        return registry
+    let _ = registry.add_state(mp.state_descriptor[ProjectileStateClient]()) else:
+        return registry
+    registry.freeze()
+    return registry
+
+function main() -> int:
+    var registry = build_registry()
+    defer registry.release()
+
+    let player = mp.state_descriptor[PlayerState]()
+    let projectile_server = mp.state_descriptor[ProjectileState]()
+    let projectile_client = mp.state_descriptor[ProjectileStateClient]()
+
+    let source_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.server)
+    match source_world_result:
+        Result.failure as _:
+            return 1
+        Result.success as source_payload:
+            var source_world = source_payload.value
+            defer source_world.release()
+
+            let sink_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.client)
+            match sink_world_result:
+                Result.failure as _:
+                    return 2
+                Result.success as sink_payload:
+                    var sink_world = sink_payload.value
+                    defer sink_world.release()
+
+                    let source_player = source_world.spawn_with_descriptor(player, PlayerState(health = 90), Option[mp.ConnectionId].none) else:
+                        return 3
+                    let sink_player = sink_world.spawn_with_descriptor(player, PlayerState(health = 1), Option[mp.ConnectionId].none) else:
+                        return 4
+
+                    let source_projectile = source_world.spawn_with_descriptor(projectile_server, ProjectileState(velocity = 120), Option[mp.ConnectionId].none) else:
+                        return 5
+                    let sink_projectile = sink_world.spawn_with_descriptor(projectile_client, ProjectileStateClient(velocity = 2), Option[mp.ConnectionId].none) else:
+                        return 6
+
+                    if source_player != sink_player:
+                        return 7
+                    if source_projectile != sink_projectile:
+                        return 8
+
+                    var encoded = source_world.encode_snapshot_payload() else:
+                        return 9
+                    defer encoded.release()
+
+                    let applied = sink_world.apply_snapshot_payload(encoded.as_span()) else:
+                        return 10
+                    if applied != 1:
+                        return 11
+
+                    let player_state = sink_world.state_copy_with_descriptor[PlayerState](sink_player, player) else:
+                        return 12
+                    if player_state.health != 90:
+                        return 13
+
+                    let projectile_state = sink_world.state_copy_with_descriptor[ProjectileStateClient](sink_projectile, projectile_client) else:
+                        return 14
+                    if projectile_state.velocity != 2:
+                        return 15
+
+                    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
+  def test_world_snapshot_payload_parser_rejects_truncated_and_trailing_entries
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer as mp
+
+function main() -> int:
+    var registry = mp.Registry.create()
+    registry.freeze()
+    defer registry.release()
+
+    let world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.client)
+    match world_result:
+        Result.failure as _:
+            return 1
+        Result.success as world_payload:
+            var world = world_payload.value
+            defer world.release()
+
+            var too_small = array[ubyte, 3](0, 0, 0)
+            match world.apply_snapshot_payload(too_small):
+                Result.success as _:
+                    return 2
+                Result.failure as payload:
+                    if payload.error.code != mp.ErrorCode.invalid_argument:
+                        return 3
+
+            var truncated_entry = array[ubyte, 23](
+                0, 0, 0, 1,
+                0, 0, 0, 1,
+                0, 0, 0, 0, 0, 0, 0, 1,
+                0, 0, 0, 4,
+                7, 8, 9,
+            )
+            match world.apply_snapshot_payload(truncated_entry):
+                Result.success as _:
+                    return 4
+                Result.failure as payload:
+                    if payload.error.code != mp.ErrorCode.invalid_argument:
+                        return 5
+
+            var trailing_bytes = array[ubyte, 5](0, 0, 0, 0, 9)
+            match world.apply_snapshot_payload(trailing_bytes):
+                Result.success as _:
+                    return 6
+                Result.failure as payload:
+                    if payload.error.code != mp.ErrorCode.invalid_argument:
+                        return 7
 
             return 0
 

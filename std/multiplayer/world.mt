@@ -1,6 +1,8 @@
 import std.multiplayer.protocol as protocol
 import std.multiplayer.registry as registry
 import std.multiplayer.snapshot as snapshot_runtime
+import std.multiplayer.wire as wire
+import std.bytes as bytes
 import std.mem.heap as heap
 import std.str as text
 import std.vec as vec
@@ -107,6 +109,110 @@ extending World:
     public function apply_snapshot_signature(tick: protocol.Tick, baselines: ref[snapshot_runtime.BaselineSet]) -> void:
         let signature = this.snapshot_state_signature(tick)
         snapshot_runtime.apply(signature, baselines)
+
+
+    public function encode_snapshot_payload() -> Result[bytes.Bytes, Error]:
+        var estimated_size: ptr_uint = 4
+        var estimate_index: ptr_uint = 0
+        while estimate_index < this.entities.len():
+            let entity = this.entities.get(estimate_index)
+            if entity != null:
+                unsafe:
+                    let record = read(ptr[EntityRecord]<-entity)
+                    estimated_size += 16 + record.state_size
+            estimate_index += 1
+
+        var output = vec.Vec[ubyte].with_capacity(estimated_size)
+        defer output.release()
+
+        output.append_array(wire.encode_u32_be(uint<-this.entities.len()))
+
+        var index: ptr_uint = 0
+        while index < this.entities.len():
+            let entity = this.entities.get(index)
+            if entity != null:
+                unsafe:
+                    let record = read(ptr[EntityRecord]<-entity)
+                    if record.descriptor.encode_full_binding != registry.expected_state_encode_full_binding(record.descriptor):
+                        return Result[bytes.Bytes, Error].failure(
+                            error = protocol.error(ErrorCode.invalid_argument, "state descriptor encode_full binding mismatch"),
+                        )
+
+                    output.append_array(wire.encode_u32_be(uint<-record.entity))
+                    output.append_array(wire.encode_u64_be(record.descriptor.schema_hash))
+                    output.append_array(wire.encode_u32_be(uint<-record.state_size))
+                    if record.state_storage != null and record.state_size > 0:
+                        let state_bytes = span[ubyte](
+                            data = ptr[ubyte]<-record.state_storage,
+                            len = record.state_size,
+                        )
+                        output.append_span(state_bytes)
+            index += 1
+
+        return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(output.as_span()))
+
+
+    public mutable function apply_snapshot_payload(payload: span[ubyte]) -> Result[ptr_uint, Error]:
+        if payload.len < 4:
+            return Result[ptr_uint, Error].failure(
+                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload is too small"),
+            )
+
+        var applied: ptr_uint = 0
+        var offset: ptr_uint = 0
+        let entity_count = ptr_uint<-wire.decode_u32_be(payload, offset)
+        offset += 4
+
+        var index: ptr_uint = 0
+        while index < entity_count:
+            if payload.len - offset < 16:
+                return Result[ptr_uint, Error].failure(
+                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry header is truncated"),
+                )
+
+            let entity = protocol.EntityId<-wire.decode_u32_be(payload, offset)
+            offset += 4
+            let schema_hash = wire.decode_u64_be(payload, offset)
+            offset += 8
+            let state_size = ptr_uint<-wire.decode_u32_be(payload, offset)
+            offset += 4
+
+            if payload.len - offset < state_size:
+                return Result[ptr_uint, Error].failure(
+                    error = protocol.error(ErrorCode.invalid_argument, "snapshot payload entry body is truncated"),
+                )
+
+            let record = find_entity_record(this.entities.as_span(), entity)
+            if record != null:
+                unsafe:
+                    let current = read(record)
+                    if current.descriptor.schema_hash == schema_hash and current.state_size == state_size and current.state_storage != null:
+                        if current.descriptor.decode_full_binding != registry.expected_state_decode_full_binding(current.descriptor):
+                            return Result[ptr_uint, Error].failure(
+                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor decode_full binding mismatch"),
+                            )
+
+                        if current.descriptor.apply_delta_binding != registry.expected_state_apply_delta_binding(current.descriptor):
+                            return Result[ptr_uint, Error].failure(
+                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor apply_delta binding mismatch"),
+                            )
+
+                        copy_state_bytes(
+                            ptr[ubyte]<-current.state_storage,
+                            payload.data + offset,
+                            state_size,
+                        )
+                        applied += 1
+
+            offset += state_size
+            index += 1
+
+        if offset != payload.len:
+            return Result[ptr_uint, Error].failure(
+                error = protocol.error(ErrorCode.invalid_argument, "snapshot payload has trailing bytes"),
+            )
+
+        return Result[ptr_uint, Error].success(value = applied)
 
 
     public mutable function release() -> void:
@@ -332,3 +438,13 @@ function same_owner(left: Option[ConnectionId], right: Option[ConnectionId]) -> 
                     return false
                 Option.none:
                     return true
+
+
+function copy_state_bytes(destination: ptr[ubyte], source: ptr[ubyte], size: ptr_uint) -> void:
+    var index: ptr_uint = 0
+    while index < size:
+        unsafe:
+            read(destination + index) = read(source + index)
+        index += 1
+
+    return

@@ -1,6 +1,6 @@
 # `std.multiplayer.enet` Implementation Plan
 
-Status: draft implementation plan
+Status: locked (Phase D)
 
 This document describes the first implementation pass for `std.multiplayer.enet` on top of the current codebase.
 It is intentionally narrow.
@@ -261,6 +261,7 @@ Planned server flow:
 6. Route receive events into handshake, snapshot, or RPC decode paths.
 7. On each server tick, build per-peer state deltas based on relevancy and last acknowledged baseline.
 8. Send snapshots over the configured ENet channels.
+9. Run one-call inbound gameplay processing through `process_incoming_snapshots()` and `process_incoming_rpcs_typed(...)` when game code wants per-frame queue draining and dispatch.
 
 Planned client flow:
 
@@ -270,6 +271,7 @@ Planned client flow:
 4. Pump ENet events.
 5. Apply spawn, despawn, and state delta packets into the client `World`.
 6. Decode and dispatch incoming RPCs.
+7. Optionally replace manual queue popping with one-call inbound gameplay processing helpers.
 
 V1 ENet mapping rules:
 
@@ -302,6 +304,14 @@ Possible public surface once the descriptor-driven path is proven:
 - `Server.broadcast_rpc(...)`
 - `Server.broadcast_rpc_scheduled_fair(...)`
 - `Server.dispatch_tick_fair(...)`
+
+Completed alongside friendly APIs:
+
+- `Server.process_incoming_snapshots()`
+- `Server.process_incoming_rpcs_typed(...)`
+- `Client.process_incoming_snapshots()`
+- `Client.process_incoming_rpcs_typed(...)`
+- `TypedRpcDispatchTable` route registration and packet dispatch helpers in `std.multiplayer.enet`
 
 Constraint:
 
