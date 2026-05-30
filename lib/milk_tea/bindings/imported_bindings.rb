@@ -1365,6 +1365,7 @@ module MilkTea
       }.freeze
       OPENGL_INDEXED_PARAM_NAMES = %w[buf index mask_number].freeze
       OPENGL_TYPED_ALPHA_STEMS = %w[
+        array
         attrib
         boolean
         buffer
@@ -1372,6 +1373,7 @@ module MilkTea
         feedback
         float
         framebuffer
+        indexed
         integer
         internalformat
         interface
@@ -1385,7 +1387,10 @@ module MilkTea
         resource
         shader
         stage
+        subroutine
+        subroutines
         sync
+        uniform
       ].freeze
       OPENGL_TYPED_QUERY_BASES = %w[boolean double float integer].freeze
       OPENGL_NUMERIC_SUFFIX_CONTEXTS = %w[
@@ -1417,6 +1422,10 @@ module MilkTea
           next_token = tokens[index + 1]
 
           case token
+          when "getn"
+            normalized.concat(%w[get n])
+            index += 1
+            next
           when "64i"
             if next_token == "v"
               if normalized.last == "integer"
