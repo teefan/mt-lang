@@ -218,6 +218,8 @@ module MilkTea
       init = false
       output_format = :text
       ignore_generated = false
+      profile_rules = false
+      profile_rules_limit = 12
       input_paths = []
       until @argv.empty?
         arg = @argv.shift
@@ -266,10 +268,28 @@ module MilkTea
           end
         when "--ignore-generated"
           ignore_generated = true
+        when "--profile-rules"
+          profile_rules = true
+        when "--profile-rules-limit"
+          raw_limit = @argv.shift
+          unless raw_limit
+            @err.puts("--profile-rules-limit requires a positive integer")
+            return 1
+          end
+          profile_rules_limit = raw_limit.to_i
+          if profile_rules_limit <= 0
+            @err.puts("--profile-rules-limit requires a positive integer")
+            return 1
+          end
         else
           @err.puts("unknown lint flag: #{flag}")
           return 1
         end
+      end
+
+      if profile_rules && output_format == :json
+        @err.puts("--profile-rules is only supported with --output-format text")
+        return 1
       end
 
       if init
@@ -304,6 +324,7 @@ module MilkTea
       ensure_current_lockfiles!(paths) if resolution[:frozen]
 
       if fix
+        lint_profiles = []
         paths.each do |p|
           announce_file_action(p, "lint-fix")
           source = read_source_file(p)
@@ -312,29 +333,38 @@ module MilkTea
             next
           end
 
+          facts = lint_sema_facts_for(source, p, locked: resolution[:locked])
+          profile = profile_rules ? Linter::Profile.new : nil
+
           fixed = Linter.fix_source(
             source,
             path: p,
-            sema_facts: lint_sema_facts_for(source, p, locked: resolution[:locked]),
+            sema_facts: facts,
             select:,
             ignore:,
+            profile:,
           )
+          lint_profiles << { path: p, profile:, mode: :pre_fix_scan } if profile
           if fixed != source
             File.write(p, fixed)
             @out.puts("fixed #{p}")
           end
         end
+        print_lint_rule_profiles(lint_profiles, limit: profile_rules_limit) if profile_rules
         return 0
       end
 
+      lint_profiles = []
       all_warnings = paths.flat_map do |p|
         announce_file_action(p, "lint") if output_format == :text
         source = read_source_file(p)
         next [] if ignore_generated && generated_source?(source)
 
         facts = lint_sema_facts_for(source, p, locked: resolution[:locked])
-
-        Linter.lint_source(source, path: p, select:, ignore:, sema_facts: facts)
+        profile = profile_rules ? Linter::Profile.new : nil
+        warnings = Linter.lint_source(source, path: p, select:, ignore:, sema_facts: facts, profile:)
+        lint_profiles << { path: p, profile:, mode: :lint } if profile
+        warnings
       end
 
       if output_format == :json
@@ -358,6 +388,8 @@ module MilkTea
         @out.puts("#{warning.path}:#{warning.line}: #{warning.code}: #{warning.message}")
       end
 
+      print_lint_rule_profiles(lint_profiles, limit: profile_rules_limit) if profile_rules
+
       file_count = all_warnings.map(&:path).uniq.size
       noun = all_warnings.size == 1 ? "warning" : "warnings"
       files_str = file_count == 1 ? "1 file" : "#{file_count} files"
@@ -375,6 +407,47 @@ module MilkTea
       File.write(path, Linter.default_config_source)
       @out.puts("created #{path}")
       0
+    end
+
+    def print_lint_rule_profiles(lint_profiles, limit:)
+      lint_profiles.each do |entry|
+        profile = entry[:profile]
+        next unless profile
+
+        rows = profile.rule_breakdown(limit:, min_ms: 0.0)
+        rule_total = profile.total_time_ms(prefix: "rule.")
+        overall_total = profile.total_time_ms
+        mode_label = entry[:mode] == :pre_fix_scan ? "pre-fix scan" : "lint scan"
+        @out.puts("lint profile #{entry[:path]} (#{mode_label}): rules=#{format('%.1f', rule_total)}ms total=#{format('%.1f', overall_total)}ms")
+
+        if rows.empty?
+          @out.puts("  no rule timing data captured")
+          next
+        end
+
+        rows.each do |row|
+          share = rule_total.positive? ? ((row[:total_ms] / rule_total) * 100.0) : 0.0
+          @out.puts(
+            "  #{row[:code]}: #{row[:count]}x total=#{format('%.1f', row[:total_ms])}ms avg=#{format('%.2f', row[:avg_ms])}ms share=#{format('%.1f', share)}%"
+          )
+        end
+
+        non_rule_rows = profile.timings_ms
+          .filter_map do |name, total_ms|
+            next if name.start_with?("rule.")
+            next if total_ms < 1.0
+
+            [name, total_ms]
+          end
+          .sort_by { |_name, total_ms| -total_ms }
+          .first(5)
+          .map do |name, total_ms|
+            count = profile.counts[name]
+            "#{name}:#{count}x/#{format('%.1f', total_ms)}ms"
+          end
+
+        @out.puts("  non-rule hot phases: #{non_rule_rows.join(', ')}") unless non_rule_rows.empty?
+      end
     end
 
     def check_command
@@ -942,6 +1015,8 @@ module MilkTea
             --fix                   Apply auto-fixable changes in place.
             --output-format FORMAT  Output format: text (default) or json.
             --ignore-generated      Skip files that start with '# generated by mtc'.
+            --profile-rules         Print per-rule lint scan timing breakdown.
+            --profile-rules-limit N Show at most N rules per file (default: 12).
             --locked                Use package.lock for semantic dependency resolution.
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
@@ -1058,7 +1133,7 @@ module MilkTea
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N]")
-      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--ignore-generated] [--profile-rules] [--profile-rules-limit N] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
       io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")

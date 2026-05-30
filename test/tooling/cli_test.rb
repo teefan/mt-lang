@@ -3753,6 +3753,47 @@ class MilkTeaCliTest < Minitest::Test
     end
   end
 
+  def test_lint_command_profile_rules_reports_breakdown
+    Dir.mktmpdir("milk-tea-cli-lint-profile") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        function main() -> int:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--profile-rules", "--profile-rules-limit", "5"], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      assert_match(/lint profile .*sample\.mt \(lint scan\): rules=/, out.string)
+      assert_match(/share=/, out.string)
+    end
+  end
+
+  def test_lint_command_fix_profile_rules_reports_pre_fix_scan
+    Dir.mktmpdir("milk-tea-cli-lint-fix-profile") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        function main() -> int:
+            var x = 1
+            return x
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--fix", "--profile-rules"], out:, err:)
+
+      assert_equal 0, status
+      assert_equal "", err.string
+      assert_match(/fixed .*sample\.mt/, out.string)
+      assert_match(/lint profile .*sample\.mt \(pre-fix scan\): rules=/, out.string)
+      assert_includes File.read(path), "let x = 1"
+    end
+  end
+
   def test_lint_command_output_format_json
     Dir.mktmpdir("milk-tea-cli-lint-json") do |dir|
       path = File.join(dir, "sample.mt")
@@ -3954,8 +3995,11 @@ class MilkTeaCliTest < Minitest::Test
       [["lint"], /missing source file path/],
       [["lint", "--select"], /--select requires a comma-separated list of rule codes/],
       [["lint", "--ignore"], /--ignore requires a comma-separated list of rule codes/],
+      [["lint", "--profile-rules-limit"], /--profile-rules-limit requires a positive integer/],
+      [["lint", "--profile-rules-limit", "0", "sample.mt"], /--profile-rules-limit requires a positive integer/],
       [["lint", "--output-format"], /--output-format requires an argument \(text, json\)/],
       [["lint", "--output-format", "yaml", "sample.mt"], /unknown output format: yaml \(use text or json\)/],
+      [["lint", "--output-format", "json", "--profile-rules", "sample.mt"], /--profile-rules is only supported with --output-format text/],
       [["lint", "--bogus", "sample.mt"], /unknown lint flag: --bogus/],
     ].each do |argv, pattern|
       out = StringIO.new

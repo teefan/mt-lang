@@ -121,6 +121,31 @@ module MilkTea
           .first(limit)
           .join(',')
       end
+
+      def total_time_ms(prefix: nil)
+        return @timings_ms.values.sum unless prefix
+
+        @timings_ms.sum { |name, total_ms| name.start_with?(prefix) ? total_ms : 0.0 }
+      end
+
+      def rule_breakdown(limit: 10, min_ms: 0.1)
+        @timings_ms
+          .filter_map do |name, total_ms|
+            next unless name.start_with?("rule.")
+            next if total_ms < min_ms
+
+            count = @counts[name]
+            {
+              phase: name,
+              code: name.delete_prefix("rule.").tr("_", "-"),
+              total_ms: total_ms,
+              count:,
+              avg_ms: count.positive? ? (total_ms / count) : total_ms,
+            }
+          end
+          .sort_by { |entry| -entry[:total_ms] }
+          .first(limit)
+      end
     end
 
     StatementFlowAnalysis = Data.define(:graph, :reachability, :nullability, :constant_propagation, :loop_body_nodes)
@@ -134,6 +159,12 @@ module MilkTea
     def self.lint_source(source, path: nil, select: nil, ignore: nil, sema_facts: UNSET, unresolved_import_paths: UNSET, profile: nil, lint_tier: :full)
       sema_facts_provided = !sema_facts.equal?(UNSET)
       unresolved_import_paths_provided = !unresolved_import_paths.equal?(UNSET)
+      if sema_facts_provided && !unresolved_import_paths_provided
+        # Callers that already computed semantic facts should not pay for a
+        # second context bootstrap only to derive unresolved imports.
+        unresolved_import_paths = Set.new
+        unresolved_import_paths_provided = true
+      end
       cfg = load_config(path)
       context = nil
       if !sema_facts_provided || !unresolved_import_paths_provided
@@ -277,7 +308,7 @@ module MilkTea
     # redundant-return, reserved-primitive-name,
     # trailing-list-comma.
     # Returns the fixed source (may be identical if nothing was fixable).
-    def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5)
+    def self.fix_source(source, path: nil, sema_facts: nil, select: nil, ignore: nil, max_passes: 5, profile: nil)
       pass_limit = [max_passes.to_i, 1].max
       current_source = source
       current_sema_facts = sema_facts
@@ -289,6 +320,7 @@ module MilkTea
           sema_facts: current_sema_facts,
           select:,
           ignore:,
+          profile:,
         )
         return current_source if updated_source == current_source
 
@@ -300,7 +332,7 @@ module MilkTea
       current_source
     end
 
-    def self.fix_source_single_pass_isolating_rules(source, path: nil, sema_facts: nil, select: nil, ignore: nil)
+    def self.fix_source_single_pass_isolating_rules(source, path: nil, sema_facts: nil, select: nil, ignore: nil, profile: nil)
       cfg = load_config(path)
       effective_select = select || cfg&.fetch(:select, nil)
       effective_ignore = ignore || cfg&.fetch(:ignore, nil)
@@ -314,6 +346,16 @@ module MilkTea
 
       current_source = source
       current_sema_facts = sema_facts
+
+      preflight_warnings = lint_source(
+        current_source,
+        path:,
+        sema_facts: current_sema_facts,
+        select: Set.new(enabled_rules),
+        ignore: effective_ignore,
+        profile:,
+      )
+      return current_source if preflight_warnings.empty?
 
       enabled_rules.each do |rule_code|
         updated_source = fix_source_single_pass(
@@ -343,13 +385,14 @@ module MilkTea
         true
       end
 
-      working_context = best_effort_lint_context(source, path:)
+      working_context = sema_facts ? nil : best_effort_lint_context(source, path:)
       working_sema_facts = sema_facts || working_context[:facts]
+      unresolved_import_paths = sema_facts ? Set.new : working_context[:unresolved_import_paths]
       warnings = lint_source(
         source,
         path:,
         sema_facts: working_sema_facts,
-        unresolved_import_paths: working_context[:unresolved_import_paths],
+        unresolved_import_paths:,
         select:,
         ignore:,
       )
@@ -500,7 +543,7 @@ module MilkTea
           fixed_source = apply_reserved_primitive_name_fixes(fixed_source, reserved_fixes)
         end
       end
-      validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context[:errors])
+      validated_fixed_source(source, fixed_source, path:, baseline_errors: working_context&.[](:errors))
     end
 
     def self.validated_fixed_source(original_source, fixed_source, path:, baseline_errors:)
