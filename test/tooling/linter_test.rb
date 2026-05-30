@@ -31,7 +31,7 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
-  def test_fix_source_wraps_long_call_arguments_for_line_too_long
+  def test_fix_source_does_not_wrap_long_call_arguments_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -48,14 +48,11 @@ class MilkTeaLinterTest < Minitest::Test
 
       fixed = MilkTea::Linter.fix_source(source, path: path)
 
-      assert_includes fixed, "return log_value(\n"
-      assert_includes fixed, "        \"alpha\",\n"
-      assert_includes fixed, "        \"delta\",\n"
-      refute_includes fixed, "return log_value(\"alpha\", \"beta\", \"gamma\", \"delta\")"
+      assert_equal source, fixed
     end
   end
 
-  def test_fix_source_wraps_long_tuple_literal_without_trailing_comma
+  def test_fix_source_does_not_wrap_long_tuple_literal_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long-tuple") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -73,14 +70,11 @@ class MilkTeaLinterTest < Minitest::Test
 
       fixed = MilkTea::Linter.fix_source(source, path: path)
 
-      assert_includes fixed, "let pair = (\n"
-      assert_includes fixed, "        alpha_value,\n"
-      assert_includes fixed, "        gamma_value\n"
-      refute_includes fixed, "        gamma_value,\n"
+      assert_equal source, fixed
     end
   end
 
-  def test_fix_source_wraps_long_type_argument_list_for_line_too_long
+  def test_fix_source_does_not_wrap_long_type_argument_list_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long-type-list") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -97,14 +91,11 @@ class MilkTeaLinterTest < Minitest::Test
 
       fixed = MilkTea::Linter.fix_source(source, path: path)
 
-      assert_includes fixed, "function main() -> Result[\n"
-      assert_includes fixed, "    Option[AlphaValue],\n"
-      assert_includes fixed, "    GammaValue,\n"
-      assert_includes fixed, "]:\n"
+      assert_equal source, fixed
     end
   end
 
-  def test_fix_source_wraps_long_if_logical_chain_for_line_too_long
+  def test_fix_source_does_not_wrap_long_if_logical_chain_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long-condition") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -122,14 +113,11 @@ class MilkTeaLinterTest < Minitest::Test
 
       fixed = MilkTea::Linter.fix_source(source, path: path)
 
-      assert_includes fixed, "    if (\n"
-      assert_includes fixed, "        kind == 2\n"
-      assert_includes fixed, "        and input_byte != 64\n"
-      assert_includes fixed, "    ):\n"
+      assert_equal source, fixed
     end
   end
 
-  def test_fix_source_wraps_long_else_if_logical_chain_for_line_too_long
+  def test_fix_source_does_not_wrap_long_else_if_logical_chain_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long-else-if") do |dir|
       path = File.join(dir, "sample.mt")
       File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
@@ -150,10 +138,7 @@ class MilkTeaLinterTest < Minitest::Test
 
       fixed = MilkTea::Linter.fix_source(source, path: path)
 
-      assert_includes fixed, "    else if (\n"
-      assert_includes fixed, "        flag\n"
-      assert_includes fixed, "        and value < 200\n"
-      assert_includes fixed, "    ):\n"
+      assert_equal source, fixed
     end
   end
 
