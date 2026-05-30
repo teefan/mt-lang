@@ -169,6 +169,19 @@ class MilkTeaFormatterTest < Minitest::Test
     refute_includes formatted, "        gamma_value,\n"
   end
 
+  def test_tidy_mode_wraps_long_function_params_without_trailing_comma
+    source = <<~MT
+      function render_frame(alpha_value: int, beta_value: int, gamma_value: int) -> int:
+          return alpha_value + beta_value + gamma_value
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy, max_line_length: 60)
+
+    assert_includes formatted, "function render_frame(\n"
+    assert_includes formatted, "    gamma_value: int\n"
+    refute_includes formatted, "    gamma_value: int,\n"
+  end
+
   def test_tidy_mode_wraps_long_type_argument_list
     source = <<~MT
       function main() -> Result[Option[AlphaValue], BetaValue, GammaValue]:

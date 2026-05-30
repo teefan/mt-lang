@@ -625,6 +625,73 @@ class MilkTeaLinterTest < Minitest::Test
     assert_equal [], warnings
   end
 
+  def test_no_prefer_let_when_array_to_span_call_requires_mutable_lvalue
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function consume(payload: span[ubyte]) -> int:
+          return int<-payload.len
+
+      function main() -> int:
+          var payload = array[ubyte, 2](ubyte<-1, ubyte<-2)
+          let _len = consume(payload)
+          return 0
+    MT
+
+    refute warnings.any? { |warning| warning.code == "prefer-let" && warning.message.include?("payload") }
+  end
+
+  def test_does_not_warn_on_trailing_param_comma
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function compute(
+          left: int,
+          right: int,
+      ) -> int:
+          return 0
+    MT
+
+    refute warnings.any? { |entry| entry.code == "trailing-list-comma" }
+  end
+
+  def test_warns_on_trailing_call_argument_comma
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      function sum(left: int, right: int) -> int:
+          return left + right
+
+      function main() -> int:
+          let value = sum(
+              1,
+              2,
+          )
+          return value
+    MT
+
+    warning = warnings.find do |entry|
+      entry.code == "trailing-list-comma" &&
+        entry.message.include?("call argument list")
+    end
+    assert warning, "expected trailing comma warning for call argument list"
+    assert_equal 7, warning.line
+    assert_equal :hint, warning.severity
+  end
+
+  def test_fix_source_removes_trailing_call_argument_comma
+    source = <<~MT
+      function sum(left: int, right: int) -> int:
+          return left + right
+
+      function main() -> int:
+          let value = sum(
+              1,
+              2,
+          )
+          return value
+    MT
+
+    fixed = MilkTea::Linter.fix_source(source, path: "demo.mt", select: Set["trailing-list-comma"])
+
+    refute_includes fixed, "        2,\n"
+    assert_includes fixed, "        2\n"
+  end
+
   # ── unreachable-code ────────────────────────────────────────────────
 
   def test_unreachable_code_after_return
@@ -1071,6 +1138,25 @@ class MilkTeaLinterTest < Minitest::Test
 
     fixed = MilkTea::Linter.fix_source(source, path: "demo.mt")
     assert_equal source, fixed
+  end
+
+  def test_fix_source_still_applies_other_rules_when_prefer_let_is_not_safe
+    path = File.expand_path("../../std/multiplayer/enet.mt", __dir__)
+    source = File.read(path)
+
+    before_warnings = MilkTea::Linter.lint_source(source, path: path)
+    before_redundant_return_count = before_warnings.count { |warning| warning.code == "redundant-return" }
+    before_prefer_let_count = before_warnings.count { |warning| warning.code == "prefer-let" }
+
+    fixed = MilkTea::Linter.fix_source(source, path: path)
+    refute_equal source, fixed
+
+    after_warnings = MilkTea::Linter.lint_source(fixed, path: path)
+    after_redundant_return_count = after_warnings.count { |warning| warning.code == "redundant-return" }
+    after_prefer_let_count = after_warnings.count { |warning| warning.code == "prefer-let" }
+
+    assert_operator after_redundant_return_count, :<, before_redundant_return_count
+    assert_equal before_prefer_let_count, after_prefer_let_count
   end
 
   # ── missing-return ─────────────────────────────────────────────────────

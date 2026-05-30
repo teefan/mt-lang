@@ -38,7 +38,14 @@ module MilkTea
     end
     LocalCompletionFrame = Data.define(:start_line, :end_line, :function_name, :receiver_type, :snapshots)
     LocalCompletionSnapshot = Data.define(:line, :column, :bindings)
-    BindingResolution = Data.define(:identifier_binding_ids, :declaration_binding_ids, :mutating_argument_identifier_ids, :mutable_receiver_expression_ids, :binding_types)
+    BindingResolution = Data.define(
+      :identifier_binding_ids,
+      :declaration_binding_ids,
+      :mutating_argument_identifier_ids,
+      :mutable_receiver_expression_ids,
+      :mutable_lvalue_argument_identifier_ids,
+      :binding_types,
+    )
     class FlowScope
       def initialize = (@bindings = {})
       def [](key) = @bindings[key]
@@ -1945,6 +1952,7 @@ module MilkTea
 
         initial_scope = {}
         scopes.each do |scope|
+        @mutable_lvalue_argument_identifier_ids = {}
           scope.each do |name, binding|
             initial_scope[name] = binding.id if binding.respond_to?(:id) && binding.id
           end
@@ -1962,6 +1970,7 @@ module MilkTea
           declaration_binding_ids: declaration_binding_ids,
           mutating_argument_identifier_ids: {},
           mutable_receiver_expression_ids: {},
+          mutable_lvalue_argument_identifier_ids: {},
           binding_types: {},
         )
       end
@@ -4162,6 +4171,12 @@ module MilkTea
         return unless receiver
 
         @mutable_receiver_expression_ids[receiver.object_id] = true
+      end
+
+      def record_mutable_lvalue_argument_identifier(expression)
+        return unless expression.is_a?(AST::Identifier)
+
+        @mutable_lvalue_argument_identifier_ids[expression.object_id] = true
       end
 
       def check_format_string_literal(format_string, scopes:)
@@ -7644,6 +7659,7 @@ module MilkTea
           return false unless array_element_type(actual_type) == expected_type.element_type
 
           infer_addr_source_type(expression, scopes:)
+          record_mutable_lvalue_argument_identifier(expression)
           return true
         end
 
@@ -7651,6 +7667,7 @@ module MilkTea
           return false unless expected_type.element_type == @types.fetch("char")
 
           infer_addr_source_type(expression, scopes:)
+          record_mutable_lvalue_argument_identifier(expression)
           return true
         end
 
@@ -7913,6 +7930,7 @@ module MilkTea
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
           mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
           mutable_receiver_expression_ids: @mutable_receiver_expression_ids.dup.freeze,
+          mutable_lvalue_argument_identifier_ids: @mutable_lvalue_argument_identifier_ids.dup.freeze,
           binding_types: @binding_type_by_id.dup.freeze,
         )
       end
