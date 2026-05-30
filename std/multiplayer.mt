@@ -45,6 +45,7 @@ public type PolicyKind = relevancy.PolicyKind
 
 
 public attribute[struct] replicated(authority: Authority)
+public attribute[struct] sync_defaults(mode: TransferMode, channel: ubyte, rate_hz: uint, target: SyncTarget)
 public attribute[field] sync(mode: TransferMode, channel: ubyte, rate_hz: uint, target: SyncTarget)
 public attribute[callable] rpc(direction: RpcDirection, mode: TransferMode, channel: ubyte, require_owner: bool)
 

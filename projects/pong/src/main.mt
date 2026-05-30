@@ -40,87 +40,32 @@ public enum NetMode: ubyte
 
 
 @[mp.replicated(authority = mp.Authority.server)]
+@[
+    mp.sync_defaults(
+        mode = mp.TransferMode.unreliable_ordered,
+        channel = net_channel_attr,
+        rate_hz = 30,
+        target = mp.SyncTarget.observers,
+    )
+]
 public struct PongNetState:
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     phase: ubyte
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     ball_x: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     ball_y: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     paddle_host_y: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     paddle_join_y: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     score_host: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     score_join: int
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     ball_dir_x_positive: bool
-    @[
-        mp.sync(
-            mode = mp.TransferMode.unreliable_ordered,
-            channel = net_channel_attr,
-            rate_hz = 30,
-            target = mp.SyncTarget.observers,
-        )
-    ]
+    @[mp.sync]
     ball_dir_y_positive: bool
 
 
@@ -337,7 +282,7 @@ function parse_port_text(value: str) -> Option[ushort]:
     return Option[ushort].some(value = ushort<-parsed)
 
 
-function lookup_public_ip() -> Result[str, str]:
+function lookup_public_ip() -> Result[string.String, string.String]:
     var command = vec.Vec[str].create()
     defer command.release()
     command.push("/bin/sh")
@@ -348,24 +293,29 @@ function lookup_public_ip() -> Result[str, str]:
         Result.failure as payload:
             var owned_error = payload.error
             defer owned_error.release()
-            return Result[str, str].failure(error = f"failed to run curl: #{owned_error.message.as_str()}")
+            let message = string.String.from_str(f"failed to run curl: #{owned_error.message.as_str()}")
+            return Result[string.String, string.String].failure(error = message)
         Result.success as payload:
             var result = payload.value
             defer result.release()
 
             if not result.status.success():
                 let stderr_text = result.stderr_text() else:
-                    return Result[str, str].failure(error = "curl failed")
-                return Result[str, str].failure(error = stderr_text.trim_ascii_whitespace())
+                    let error_message = string.String.from_str("curl failed")
+                    return Result[string.String, string.String].failure(error = error_message)
+                let stderr_trimmed = stderr_text.trim_ascii_whitespace()
+                return Result[string.String, string.String].failure(error = string.String.from_str(stderr_trimmed))
 
             let stdout_text = result.stdout_text() else:
-                return Result[str, str].failure(error = "curl returned non-utf8 output")
+                let error_message = string.String.from_str("curl returned non-utf8 output")
+                return Result[string.String, string.String].failure(error = error_message)
 
             let trimmed = stdout_text.trim_ascii_whitespace()
             if trimmed.len == 0:
-                return Result[str, str].failure(error = "empty response from ip service")
+                let error_message = string.String.from_str("empty response from ip service")
+                return Result[string.String, string.String].failure(error = error_message)
 
-            return Result[str, str].success(value = trimmed)
+            return Result[string.String, string.String].success(value = string.String.from_str(trimmed))
 
 
 function sanitize_public_ip_for_ui(raw: str) -> string.String:
@@ -385,6 +335,11 @@ function sanitize_public_ip_for_ui(raw: str) -> string.String:
     return sanitized
 
 
+function release_owned_string(value: string.String) -> void:
+    var owned = value
+    owned.release()
+
+
 function public_ip_ascii_allowed(value: ubyte) -> bool:
     if value >= 48 and value <= 57:
         return true
@@ -396,6 +351,25 @@ function public_ip_ascii_allowed(value: ubyte) -> bool:
         return true
 
     return false
+
+
+function fetch_public_ip_into_app(app: ref[App]) -> void:
+    let public_ip = lookup_public_ip() else as lookup_error:
+        var owned_lookup_error = lookup_error
+        defer owned_lookup_error.release()
+        read(app).public_ip_message = "Public IP lookup failed."
+        read(app).public_ip_input.assign("unknown")
+        return
+
+    defer release_owned_string(public_ip)
+    let trimmed_public_ip = public_ip.as_str().trim_ascii_whitespace()
+    var sanitized_public_ip = sanitize_public_ip_for_ui(trimmed_public_ip)
+    defer sanitized_public_ip.release()
+    read(app).public_ip_input.assign(sanitized_public_ip.as_str())
+    if sanitized_public_ip.as_str().equal(trimmed_public_ip):
+        read(app).public_ip_message = "Share this IP with joiners. Router must forward UDP port."
+    else:
+        read(app).public_ip_message = "Public IP sanitized for display. Copy and verify before sharing."
 
 
 function join_start(app: ref[App]) -> bool:
@@ -975,30 +949,17 @@ function draw_lobby(app: ref[App]) -> void:
                 host_broadcast_snapshot(app)
 
         if gui.button(rl.Rectangle(x = 340.0, y = 250.0, width = 190.0, height = 40.0), "Fetch Public IP") != 0:
-            let public_ip = lookup_public_ip() else as lookup_error:
-                read(app).public_ip_message = f"Public IP lookup failed: #{lookup_error}"
-                read(app).public_ip_input.assign("unknown")
-                return
-
-            let trimmed_public_ip = public_ip.trim_ascii_whitespace()
-            var sanitized_public_ip = sanitize_public_ip_for_ui(trimmed_public_ip)
-            defer sanitized_public_ip.release()
-            read(app).public_ip_input.assign(sanitized_public_ip.as_str())
-            if sanitized_public_ip.as_str().equal(trimmed_public_ip):
-                read(app).public_ip_message = "Share this IP with joiners. Router must forward UDP port."
-            else:
-                read(app).public_ip_message = "Public IP sanitized for display. Copy and verify before sharing."
+            fetch_public_ip_into_app(app)
 
         if gui.button(rl.Rectangle(x = 544.0, y = 250.0, width = 150.0, height = 40.0), "Copy Public IP") != 0:
             rl.set_clipboard_text(read(app).public_ip_input.as_str())
             read(app).public_ip_message = "Public IP copied to clipboard."
 
         rl.draw_text("Public IP", 340, 310, 22, rl.LIGHTGRAY)
-        unsafe: gui.text_box(
-            rl.Rectangle(x = 340.0, y = 336.0, width = 354.0, height = 36.0),
-            read(app).public_ip_input,
-            false,
-        )
+        let public_ip_bounds = rl.Rectangle(x = 340.0, y = 336.0, width = 354.0, height = 36.0)
+        rl.draw_rectangle_rounded(public_ip_bounds, 0.12, 8, rl.Color(r = 24, g = 30, b = 44, a = 255))
+        rl.draw_rectangle_rounded_lines_ex(public_ip_bounds, 0.12, 8, 1.0, rl.Color(r = 96, g = 108, b = 148, a = 255))
+        rl.draw_text(read(app).public_ip_input.as_str(), 350, 345, 20, rl.RAYWHITE)
         rl.draw_text(read(app).public_ip_message, 340, 380, 20, rl.GRAY)
 
     if read(app).mode == NetMode.join:

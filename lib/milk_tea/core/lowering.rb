@@ -10026,19 +10026,27 @@ module MilkTea
 
         with_analysis_context(analysis) do
           replicated_binding = multiplayer_attribute_binding("replicated")
+          sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
           sync_binding = multiplayer_attribute_binding("sync")
           replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_descriptor requires a @[std.multiplayer.replicated(...)] struct")
           replicated_arguments = replicated_application.argument_values
+          sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
 
           sync_fields = struct_handle.declaration.fields.filter_map do |field_declaration|
             field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
             sync_application = find_attribute_application(field_handle, sync_binding)
             next unless sync_application
 
+            sync_arguments = if sync_application.argument_values.empty?
+                               sync_defaults_application&.argument_values || raise(LoweringError, "state_descriptor sync marker field #{field_declaration.name} requires @[std.multiplayer.sync_defaults(...)] on the struct")
+                             else
+                               sync_application.argument_values
+                             end
+
             {
               name: field_declaration.name,
               type: struct_handle.struct_type.field(field_declaration.name),
-              arguments: sync_application.argument_values,
+              arguments: sync_arguments,
             }
           end
 

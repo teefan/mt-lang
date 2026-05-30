@@ -950,6 +950,10 @@ module MilkTea
         params = binding.params
         arguments = application.arguments
 
+        if multiplayer_sync_marker_application?(binding, arguments)
+          return {}
+        end
+
         if params.empty?
           raise_sema_error("attribute #{binding.name} does not take arguments") if arguments.any?
 
@@ -1002,6 +1006,10 @@ module MilkTea
 
           values[param.name] = const_value
         end
+      end
+
+      def multiplayer_sync_marker_application?(binding, arguments)
+        binding.name == "sync" && binding.module_name == "std.multiplayer" && arguments.empty?
       end
 
       def resolve_attribute_binding(name)
@@ -4693,6 +4701,9 @@ module MilkTea
       end
 
       def validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+        sync_defaults_application = resolved_attribute_applications_for_target(struct_handle).find do |application|
+          application.binding.name == "sync_defaults" && application.binding.module_name == "std.multiplayer"
+        end
         normalized_sync = nil
 
         struct_handle.declaration.fields.each do |field_declaration|
@@ -4702,7 +4713,17 @@ module MilkTea
           end
           next unless sync_application
 
-          sync_arguments = sync_application.argument_values
+          sync_arguments = if sync_application.argument_values.empty?
+                             unless sync_defaults_application
+                               raise_sema_error(
+                                 "sync field #{state_type}.#{field_declaration.name} uses @[std.multiplayer.sync] marker but struct is missing @[std.multiplayer.sync_defaults(...)]",
+                               )
+                             end
+
+                             sync_defaults_application.argument_values
+                           else
+                             sync_application.argument_values
+                           end
           current_sync = {
             mode: sync_arguments.fetch("mode"),
             channel: sync_arguments.fetch("channel"),
