@@ -54,7 +54,7 @@ extending LinkedMap[K, V]:
 
     static function bucket_index(entry_hash: uint, capacity: ptr_uint) -> ptr_uint:
         let bucket_count = uint<-capacity
-        return (entry_hash % bucket_count)
+        return ptr_uint<-(entry_hash % bucket_count)
 
 
     static function find_node(current: LinkedMap[K, V], key: K, key_hash: uint) -> ptr[Node[K, V]]?:

@@ -1665,17 +1665,38 @@ module MilkTea
               }
             }
 
-          when 'directional-ffi-arg'
-            next if source_line.empty?
-
-            argument_text = source_line[diag_start_char...diag_end_char].to_s
-            next if argument_text.empty?
-
-            replacement = Linter.rewrite_directional_ffi_argument(argument_text)
-            next if replacement == argument_text
+          when 'prefer-var-else'
+            fix = Linter.build_prefer_let_else_fix(content.lines, diag_line - 1)
+            next unless fix
 
             actions << {
-              title: Linter.quick_fix_title('directional-ffi-arg'),
+              title: Linter.quick_fix_title('prefer-var-else'),
+              kind: 'quickFix',
+              diagnostics: [diag],
+              edit: {
+                changes: {
+                  uri => [{
+                    range: {
+                      start: { line: fix[:start_line_idx], character: 0 },
+                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
+                    },
+                    newText: fix[:new_text]
+                  }]
+                }
+              }
+            }
+
+          when 'redundant-bool-compare'
+            next if source_line.empty?
+
+            expression = source_line[diag_start_char...diag_end_char].to_s
+            next if expression.empty?
+
+            replacement = Linter.redundant_bool_compare_replacement(expression)
+            next unless replacement
+
+            actions << {
+              title: Linter.quick_fix_title('redundant-bool-compare'),
               kind: 'quickFix',
               diagnostics: [diag],
               edit: {

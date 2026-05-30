@@ -282,18 +282,20 @@ function work_complete(req: ptr[NativeWorkRequest], status_code: int) -> void:
 
 function work_execute_state[T](state_frame: ptr[void]) -> void:
     let state = work_state[T](state_frame)
-    state.result = state.run_work()
+    unsafe:
+        state.result = state.run_work()
 
 
 public function work_set_waiter[T](frame: ptr[void], waiter_frame: ptr[void], waiter: fn(frame: ptr[void]) -> void) -> void:
     let state = work_state[T](frame)
-    if state.ready:
-        waiter(waiter_frame)
-        return
+    unsafe:
+        if state.ready:
+            waiter(waiter_frame)
+            return
 
-    state.waiter_frame = waiter_frame
-    state.waiter = waiter
-    state.waiter_registered = true
+        state.waiter_frame = waiter_frame
+        state.waiter = waiter
+        state.waiter_registered = true
 
 
 public function work_release[T](frame: ptr[void]) -> void:
@@ -421,12 +423,13 @@ public function work_on[T](runtime: Runtime, run_work: fn() -> T) -> Task[T]:
         libuv.req_set_data(work_as_req(req), ptr[void]<-state)
 
     let queue_status = libuv.queue_work(loop, req, work_execute, work_complete)
-    if queue_status != 0:
-        state.status = queue_status
-        state.ready = true
-        state.queued = false
-    else:
-        state.queued = true
+    unsafe:
+        if queue_status != 0:
+            state.status = queue_status
+            state.ready = true
+            state.queued = false
+        else:
+            state.queued = true
 
     return work_task[T](state)
 

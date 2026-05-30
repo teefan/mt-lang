@@ -189,7 +189,7 @@ Rules:
   - `let` is immutable
   - `var` is mutable
 - A local declaration without initializer requires explicit type and must be zero-initializable.
-- `let` declarations may use a guard form over nullable values, `Option[T]`, and `Result[T, E]`:
+- `let` and `var` declarations may use a guard form over nullable values, `Option[T]`, and `Result[T, E]`:
 
 ```mt
 let window = maybe_window else:
@@ -197,11 +197,14 @@ let window = maybe_window else:
 
 let image = load_image(path) else:
     return 1
+
+var runtime = maybe_runtime else:
+    return 1
 ```
 
-Rules for `let ... else:`:
+Rules for `let ... else:` and `var ... else:`:
 
-- only `let` supports an `else` block
+- both `let` and `var` support an `else` block
 - the initializer must have type `T?`, `Option[T]`, or `Result[T, E]`
 - an explicit type annotation, if present, must name the success type `T`
 - for `Option[T]`, the bound name is the `some.value`
@@ -876,14 +879,21 @@ The auto-fix column corresponds to `mtc lint --fix`.
 |---|---|---|---|
 | `borrow-and-mutate` | warning | — | Local is borrowed with `ref_of` or `ptr_of` and also mutated in the same scope |
 | `constant-condition` | warning | — | Branch or loop condition is provably always `true` or always `false` |
-| `dead-assignment` | warning | yes | Assigned value is overwritten before any read |
-| `directional-ffi-arg` | hint | yes | Legacy `ptr_of` / `ref_of` / `out` call-site wrapper is redundant for directional FFI parameters |
+| `dead-assignment` | warning | — | Assigned value is overwritten before any read |
+| `duplicate-if-condition` | warning | — | `if`/`else if` branch repeats a previous condition and is unreachable |
+| `directional-ffi-arg` | hint | — | Legacy `ptr_of` / `ref_of` / `out` call-site wrapper is redundant for directional FFI parameters |
+| `event-capacity` | warning | — | Event capacity may copy too many listeners to stack on emit |
+| `line-too-long` | warning | — | Source line exceeds configured maximum length |
 | `loop-single-iteration` | warning | — | Loop body always exits on the first iteration |
 | `missing-return` | error | — | Function with a non-void return type lacks a guaranteed return on all paths |
+| `noop-compound-assignment` | hint | — | Compound assignment uses an identity value and has no effect |
 | `platform-api-drift` | warning | — | Public API differs across sibling platform-specific variants of the same module |
 | `prefer-let` | hint | yes | `var` binding is never mutated; use `let` instead |
 | `prefer-let-else` | hint | yes | Nullable guard can be rewritten as `let ... else:` |
+| `prefer-var-else` | hint | yes | Nullable guard can be rewritten as `var ... else:` |
+| `redundant-bool-compare` | hint | yes | Comparing a boolean expression to `true`/`false` is redundant |
 | `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
+| `redundant-ignored-match-binding` | hint | yes | Ignored `as _` match binding is redundant |
 | `redundant-null-check` | hint | — | Null check on a value already known to be non-null by flow analysis |
 | `redundant-read-cast` | hint | yes | Pointer-like cast inside `read(...)` is unnecessary |
 | `redundant-read-release-temp` | hint | yes | Temporary that only stores `read(...)` to call `.release()` can be inlined |
@@ -892,6 +902,7 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `self-assignment` | warning | — | Variable is assigned to itself |
 | `self-comparison` | warning | — | Value is compared to itself, making the condition constant |
 | `shadow` | warning | — | Local binding shadows an outer binding with the same name |
+| `trailing-list-comma` | hint | yes | Trailing comma in call argument list is redundant |
 | `unreachable-code` | warning | — | Code after a guaranteed terminator cannot execute |
 | `unused-import` | warning | yes | Import alias is never referenced |
 | `unused-local` | warning | — | Local binding is never referenced |
@@ -923,7 +934,7 @@ When both `select` and `ignore` are present, `select` takes precedence and `igno
 
 `max_line_length` defaults to `120` when omitted.
 
-`line-too-long` auto-fix currently rewrites only parser-valid same-line comma-delimited `()` groups and type-position `[]` groups. Tuple literals may be rewritten without a trailing comma when the parser requires it.
+`line-too-long` code actions currently rewrite only parser-valid same-line comma-delimited `()` groups and type-position `[]` groups. Tuple literals may be rewritten without a trailing comma when the parser requires it.
 
 ### 11.4 Per-line suppressions
 
