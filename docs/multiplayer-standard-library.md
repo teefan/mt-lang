@@ -390,6 +390,7 @@ Primary methods:
 - `first_verified_connection() -> Option[mp.ConnectionId]` on `Server`
 - `is_connected() -> bool` on `Client`
 - `Client.send_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Client.disconnect(data) -> Result[bool, mp.Error]`
 - `Server.send_snapshot_to(connection, channel, transfer_mode, header, payload) -> Result[bool, mp.Error]`
 - `Server.send_snapshots_budgeted(prioritized_connections, channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
 - `Server.send_snapshots_budgeted_weighted(weighted_connections, channel, transfer_mode, header, payload, max_bytes) -> Result[ptr_uint, mp.Error]`
@@ -399,8 +400,15 @@ Primary methods:
 - `Server.broadcast_snapshot_scheduled_fair(scheduler, channel, transfer_mode, header, payload) -> Result[ptr_uint, mp.Error]`
 - `Server.send_rpc_to(connection, channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
 - `Server.broadcast_rpc(channel, transfer_mode, direction, payload) -> Result[bool, mp.Error]`
+- `Server.disconnect_connection(connection, data) -> Result[bool, mp.Error]`
+- `Server.disconnect_all(data) -> Result[ptr_uint, mp.Error]`
 - `Server.broadcast_rpc_scheduled_fair(scheduler, channel, transfer_mode, direction, payload) -> Result[ptr_uint, mp.Error]`
 - `Server.dispatch_tick_fair(tick, plan, snapshot_channel, snapshot_transfer_mode, snapshot_header, snapshot_payload, rpc_channel, rpc_transfer_mode, rpc_direction, rpc_payload) -> Result[mp.TickDispatchReport, mp.Error]`
+- `Server.dispatch_world_tick_fair(tick, plan, snapshot_channel, snapshot_transfer_mode, snapshot_payload, rpc_channel, rpc_transfer_mode, rpc_direction, rpc_payload) -> Result[mp.TickDispatchReport, mp.Error]`
+- `Server.outbound_snapshot_baseline_state() -> snapshot.BaselineSet`
+- `Server.inbound_snapshot_baseline_state() -> snapshot.BaselineSet`
+- `Client.outbound_snapshot_baseline_state() -> snapshot.BaselineSet`
+- `Client.inbound_snapshot_baseline_state() -> snapshot.BaselineSet`
 
 Notes:
 
@@ -414,6 +422,7 @@ Notes:
 - Connection setup must verify protocol-hash handshake packets before accepting snapshot or RPC traffic.
 - Session lifecycle visibility should be first-class through queued events (`connected`, `disconnected`, `snapshot_received`, `rpc_received`) so gameplay code does not need transport-specific polling hacks.
 - When game code wants one call per frame for outbound traffic, use `create_tick_budget_plan(...)` and `Server.dispatch_tick_fair(...)`; use weighted APIs when one-shot priority ordering is needed, and fair APIs when starvation resistance is the primary goal.
+- `Server.dispatch_world_tick_fair(...)` is the higher-level orchestration entry point when snapshot send/skip decisions should follow `World.snapshot_state_signature(...)` deltas automatically.
 
 ### Matchmaking And Discovery Boundary
 

@@ -9031,6 +9031,10 @@ module MilkTea
               return [:compile_time_builtin, "rpc_descriptor", nil, multiplayer_rpc_descriptor_function_type]
             end
 
+            if multiplayer_root_import_call?(callee, "rpc_payload_size")
+              return [:compile_time_builtin, "rpc_payload_size", nil, multiplayer_rpc_payload_size_function_type]
+            end
+
             if imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
               return [:compile_time_builtin, "rpc_dispatch_typed_payload", nil, multiplayer_rpc_typed_dispatch_function_type]
             end
@@ -9167,6 +9171,10 @@ module MilkTea
 
           if multiplayer_root_specialization_call?(callee, "state_descriptor")
             return [:compile_time_builtin, "state_descriptor", nil, multiplayer_state_descriptor_function_type]
+          end
+
+          if multiplayer_root_specialization_call?(callee, "state_wire_size")
+            return [:compile_time_builtin, "state_wire_size", nil, multiplayer_state_wire_size_function_type]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
@@ -10026,8 +10034,12 @@ module MilkTea
         case builtin_name
         when "state_descriptor"
           lower_multiplayer_state_descriptor_call(expression, type:)
+        when "state_wire_size"
+          lower_multiplayer_state_wire_size_call(expression, type:)
         when "rpc_descriptor"
           lower_multiplayer_rpc_descriptor_call(expression, type:)
+        when "rpc_payload_size"
+          lower_multiplayer_rpc_payload_size_call(expression, type:)
         when "rpc_dispatch_typed_payload"
           lower_multiplayer_rpc_typed_payload_call(expression, env:, type:)
         else
@@ -10123,6 +10135,39 @@ module MilkTea
         end
       end
 
+      def lower_multiplayer_state_wire_size_call(expression, type:)
+        callee = expression.callee
+        raise LoweringError, "state_wire_size requires a specialized call" unless callee.is_a?(AST::Specialization)
+
+        struct_type = resolve_type_ref(callee.arguments.fetch(0).value)
+        struct_handle = struct_handle_for_type(struct_type) || raise(LoweringError, "state_wire_size requires a struct type")
+        analysis = analysis_for_module(struct_handle.struct_type.module_name)
+
+        with_analysis_context(analysis) do
+          replicated_binding = multiplayer_attribute_binding("replicated")
+          sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
+          sync_binding = multiplayer_attribute_binding("sync")
+          replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_wire_size requires a @[std.multiplayer.replicated(...)] struct")
+          replicated_application
+          sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
+
+          payload_size = 0
+          struct_handle.declaration.fields.each do |field_declaration|
+            field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
+            sync_application = find_attribute_application(field_handle, sync_binding)
+            next unless sync_application
+
+            if sync_application.argument_values.empty? && !sync_defaults_application
+              raise LoweringError, "state_wire_size sync marker field #{field_declaration.name} requires @[std.multiplayer.sync_defaults(...)] on the struct"
+            end
+
+            payload_size += multiplayer_typed_rpc_encoded_size(struct_handle.struct_type.field(field_declaration.name))
+          end
+
+          return IR::IntegerLiteral.new(value: payload_size, type:)
+        end
+      end
+
       def lower_multiplayer_rpc_descriptor_call(expression, type:)
         target_expression = expression.arguments.fetch(0).value
         raise LoweringError, "rpc_descriptor expects callable_of(name)" unless target_expression.is_a?(AST::Call)
@@ -10161,6 +10206,27 @@ module MilkTea
               IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
             ],
           )
+        end
+      end
+
+      def lower_multiplayer_rpc_payload_size_call(expression, type:)
+        target_expression = expression.arguments.fetch(0).value
+        raise LoweringError, "rpc_payload_size expects callable_of(name)" unless target_expression.is_a?(AST::Call)
+
+        callable_expression = target_expression.arguments.fetch(0).value
+        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "rpc_payload_size expects a top-level callable")
+        analysis = analysis_for_module(rpc_target.fetch(:module_name))
+
+        with_analysis_context(analysis) do
+          rpc_binding = multiplayer_attribute_binding("rpc")
+          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), rpc_target.fetch(:binding).ast)
+          find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "rpc_payload_size expects a @[std.multiplayer.rpc(...)] callable")
+
+          payload_size = rpc_target.fetch(:binding).type.params.drop(1).sum do |param|
+            multiplayer_typed_rpc_encoded_size(param.type)
+          end
+
+          return IR::IntegerLiteral.new(value: payload_size, type:)
         end
       end
 
@@ -10590,9 +10656,17 @@ module MilkTea
         Types::Function.new("state_descriptor", params: [], return_type: descriptor_type)
       end
 
+      def multiplayer_state_wire_size_function_type
+        Types::Function.new("state_wire_size", params: [], return_type: @types.fetch("ptr_uint"))
+      end
+
       def multiplayer_rpc_descriptor_function_type
         descriptor_type = analysis_for_module("std.multiplayer.registry").types.fetch("RpcDescriptor")
         Types::Function.new("rpc_descriptor", params: [], return_type: descriptor_type)
+      end
+
+      def multiplayer_rpc_payload_size_function_type
+        Types::Function.new("rpc_payload_size", params: [], return_type: @types.fetch("ptr_uint"))
       end
 
       def multiplayer_rpc_typed_dispatch_function_type

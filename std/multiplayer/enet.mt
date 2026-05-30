@@ -17,6 +17,9 @@ public struct Server:
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
     unknown_packet_count: ptr_uint
     snapshot_budget_cursor: ptr_uint
+    outbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    inbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    outbound_world_signature_baseline: snapshot_runtime.BaselineSet
 
 
 public struct Client:
@@ -29,6 +32,8 @@ public struct Client:
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
     unknown_packet_count: ptr_uint
+    outbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    inbound_snapshot_baseline: snapshot_runtime.BaselineSet
 
 
 public enum SessionEvent: ubyte
@@ -88,6 +93,36 @@ extending Server:
         return
 
 
+    public function disconnect_connection(connection: mp.ConnectionId, data: uint) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        let peer = find_verified_peer(host, connection) else:
+            return Result[bool, mp.Error].success(value = false)
+
+        enet.peer_disconnect_later(peer, data)
+        return Result[bool, mp.Error].success(value = true)
+
+
+    public function disconnect_all(data: uint) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        var disconnected: ptr_uint = 0
+        unsafe:
+            let peers = read(host).peers
+            let peer_count = read(host).peerCount
+            var index: ptr_uint = 0
+            while index < peer_count:
+                let peer = peers + index
+                if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
+                    enet.peer_disconnect_later(peer, data)
+                    disconnected += 1
+                index += 1
+
+        return Result[ptr_uint, mp.Error].success(value = disconnected)
+
+
     public mutable function release() -> void:
         if this.host != null:
             unsafe:
@@ -100,6 +135,9 @@ extending Server:
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
         this.unknown_packet_count = 0
         this.snapshot_budget_cursor = 0
+        reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
+        reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
+        reset_snapshot_baseline(ref_of(this.outbound_world_signature_baseline))
         this.world.release()
         return
 
@@ -118,6 +156,14 @@ extending Server:
 
     public function pending_session_event_count() -> ptr_uint:
         return this.session_events.len()
+
+
+    public function outbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        return this.outbound_snapshot_baseline
+
+
+    public function inbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        return this.inbound_snapshot_baseline
 
 
     public function connected_peer_count() -> ptr_uint:
@@ -193,13 +239,19 @@ extending Server:
         return rpc_runtime.dequeue_incoming(ref_of(this.incoming_rpcs))
 
 
-    public function broadcast_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function broadcast_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
         let host = this.host else:
             return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        return broadcast_wire_payload(host, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span())
+        let sent = broadcast_wire_payload(host, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            return Result[bool, mp.Error].failure(error = send_error)
+
+        if sent:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[bool, mp.Error].success(value = sent)
 
 
     public function estimate_snapshot_wire_bytes(header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> ptr_uint:
@@ -222,7 +274,7 @@ extending Server:
         return rpc_wire_bytes(channel, direction, payload)
 
 
-    public function broadcast_snapshot_scheduled(
+    public mutable function broadcast_snapshot_scheduled(
         scheduler: ref[mp.TickScheduler],
         channel: uint,
         transfer_mode: mp.TransferMode,
@@ -271,6 +323,7 @@ extending Server:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -373,6 +426,62 @@ extending Server:
         )
 
 
+    public mutable function dispatch_world_tick_fair(
+        tick: mp.Tick,
+        plan: mp.TickBudgetPlan,
+        snapshot_channel: uint,
+        snapshot_transfer_mode: mp.TransferMode,
+        snapshot_payload: span[ubyte],
+        rpc_channel: uint,
+        rpc_transfer_mode: mp.TransferMode,
+        rpc_direction: mp.RpcDirection,
+        rpc_payload: span[ubyte],
+    ) -> Result[mp.TickDispatchReport, mp.Error]:
+        let current_signature = this.world.snapshot_state_signature(tick)
+        let should_send_snapshot = snapshot_runtime.should_send_against_baseline(current_signature, this.outbound_world_signature_baseline)
+
+        var snapshot_scheduler = mp.create_tick_scheduler(plan.snapshot_bytes)
+        snapshot_scheduler.begin_tick(tick)
+
+        var snapshots_sent: ptr_uint = 0
+        if should_send_snapshot:
+            let snapshot_header = mp.SnapshotPacketHeader(
+                tick = tick,
+                baseline_tick = this.outbound_world_signature_baseline.last_applied_tick,
+                entity_count = current_signature.entity_count,
+            )
+            let sent = this.broadcast_snapshot_scheduled_fair(
+                ref_of(snapshot_scheduler),
+                snapshot_channel,
+                snapshot_transfer_mode,
+                snapshot_header,
+                snapshot_payload,
+            ) else as snapshot_error:
+                return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
+            snapshots_sent = sent
+            if snapshots_sent > 0:
+                snapshot_runtime.apply(current_signature, ref_of(this.outbound_world_signature_baseline))
+
+        var rpc_scheduler = mp.create_tick_scheduler(plan.rpc_bytes)
+        rpc_scheduler.begin_tick(tick)
+        let rpcs_sent = this.broadcast_rpc_scheduled_fair(
+            ref_of(rpc_scheduler),
+            rpc_channel,
+            rpc_transfer_mode,
+            rpc_direction,
+            rpc_payload,
+        ) else as rpc_error:
+            return Result[mp.TickDispatchReport, mp.Error].failure(error = rpc_error)
+
+        return Result[mp.TickDispatchReport, mp.Error].success(
+            value = mp.TickDispatchReport(
+                snapshots_sent = snapshots_sent,
+                rpcs_sent = rpcs_sent,
+                consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes(),
+            ),
+        )
+
+
     public function send_rpc_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
         let host = this.host else:
             return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
@@ -418,7 +527,7 @@ extending Server:
         return this.send_rpc_to(connection, channel, transfer_mode, direction, payload)
 
 
-    public function send_snapshot_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function send_snapshot_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
         let host = this.host else:
             return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
 
@@ -432,10 +541,16 @@ extending Server:
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        return send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span())
+        let sent = send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            return Result[bool, mp.Error].failure(error = send_error)
+
+        if sent:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[bool, mp.Error].success(value = sent)
 
 
-    public function send_snapshot_to_scheduled(
+    public mutable function send_snapshot_to_scheduled(
         scheduler: ref[mp.TickScheduler],
         connection: mp.ConnectionId,
         channel: uint,
@@ -460,7 +575,7 @@ extending Server:
         return this.send_snapshot_to(connection, channel, transfer_mode, header, payload)
 
 
-    public function send_snapshots_budgeted(
+    public mutable function send_snapshots_budgeted(
         prioritized_connections: span[mp.ConnectionId],
         channel: uint,
         transfer_mode: mp.TransferMode,
@@ -470,10 +585,17 @@ extending Server:
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
             return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
-        return send_snapshots_budgeted_impl(host, prioritized_connections, channel, transfer_mode, header, payload, max_bytes)
+
+        let sent = send_snapshots_budgeted_impl(host, prioritized_connections, channel, transfer_mode, header, payload, max_bytes) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent > 0:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
 
 
-    public function broadcast_snapshot_budgeted(
+    public mutable function broadcast_snapshot_budgeted(
         channel: uint,
         transfer_mode: mp.TransferMode,
         header: mp.SnapshotPacketHeader,
@@ -489,7 +611,7 @@ extending Server:
         return this.send_snapshots_budgeted(connections.as_span(), channel, transfer_mode, header, payload, max_bytes)
 
 
-    public function send_snapshots_budgeted_weighted(
+    public mutable function send_snapshots_budgeted_weighted(
         weighted_connections: span[WeightedConnection],
         channel: uint,
         transfer_mode: mp.TransferMode,
@@ -499,10 +621,17 @@ extending Server:
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
             return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
-        return send_snapshots_budgeted_weighted_impl(host, weighted_connections, channel, transfer_mode, header, payload, max_bytes)
+
+        let sent = send_snapshots_budgeted_weighted_impl(host, weighted_connections, channel, transfer_mode, header, payload, max_bytes) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent > 0:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
 
 
-    public function broadcast_snapshot_budgeted_weighted(
+    public mutable function broadcast_snapshot_budgeted_weighted(
         channel: uint,
         transfer_mode: mp.TransferMode,
         header: mp.SnapshotPacketHeader,
@@ -515,7 +644,14 @@ extending Server:
         var weighted_connections = vec.Vec[WeightedConnection].create()
         defer weighted_connections.release()
         append_weighted_verified_connections(host, ref_of(weighted_connections))
-        return send_snapshots_budgeted_weighted_impl(host, weighted_connections.as_span(), channel, transfer_mode, header, payload, max_bytes)
+
+        let sent = send_snapshots_budgeted_weighted_impl(host, weighted_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent > 0:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
 
 
     public mutable function broadcast_snapshot_budgeted_fair(
@@ -546,6 +682,7 @@ extending Server:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -591,6 +728,7 @@ extending Server:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
@@ -605,6 +743,7 @@ extending Server:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
@@ -660,6 +799,16 @@ extending Client:
         return
 
 
+    public mutable function disconnect(data: uint) -> Result[bool, mp.Error]:
+        let peer = this.peer else:
+            return Result[bool, mp.Error].success(value = false)
+
+        enet.peer_disconnect_later(peer, data)
+        reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
+        reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
+        return Result[bool, mp.Error].success(value = true)
+
+
     public mutable function release() -> void:
         if this.peer != null:
             unsafe:
@@ -678,6 +827,8 @@ extending Client:
         snapshot_runtime.release_queue(ref_of(this.incoming_snapshots))
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
         this.unknown_packet_count = 0
+        reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
+        reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
         this.world.release()
         return
 
@@ -700,6 +851,8 @@ extending Client:
                     this.peer = null
                     this.protocol_verified = false
                     this.connection_id_value = Option[mp.ConnectionId].none
+                    reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
+                    reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
                         increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -726,6 +879,8 @@ extending Client:
                             if this.peer != null:
                                 enet.peer_disconnect_now(ptr[enet.Peer]<-this.peer, 0)
                                 this.peer = null
+                            reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
+                            reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                         mp.PacketKind.handshake_hello:
                             increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.snapshot:
@@ -734,6 +889,7 @@ extending Client:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
@@ -748,6 +904,7 @@ extending Client:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
@@ -779,6 +936,14 @@ extending Client:
         return this.session_events.len()
 
 
+    public function outbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        return this.outbound_snapshot_baseline
+
+
+    public function inbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        return this.inbound_snapshot_baseline
+
+
     public function is_connected() -> bool:
         return this.peer != null
 
@@ -803,7 +968,7 @@ extending Client:
         return this.connection_id_value
 
 
-    public function send_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function send_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
         let peer = this.peer else:
             return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "client peer is not connected"))
         if not this.protocol_verified:
@@ -811,7 +976,13 @@ extending Client:
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        return send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span())
+        let sent = send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            return Result[bool, mp.Error].failure(error = send_error)
+
+        if sent:
+            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+
+        return Result[bool, mp.Error].success(value = sent)
 
 
     public function send_rpc(channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
@@ -850,6 +1021,9 @@ public function listen(address: enet.Address, peer_count: ptr_uint, channel_limi
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         unknown_packet_count = 0,
         snapshot_budget_cursor = 0,
+        outbound_snapshot_baseline = empty_snapshot_baseline(),
+        inbound_snapshot_baseline = empty_snapshot_baseline(),
+        outbound_world_signature_baseline = empty_snapshot_baseline(),
     ))
 
 
@@ -887,11 +1061,28 @@ public function connect(address: enet.Address, channel_count: ptr_uint, registry
         incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         unknown_packet_count = 0,
+        outbound_snapshot_baseline = empty_snapshot_baseline(),
+        inbound_snapshot_baseline = empty_snapshot_baseline(),
     ))
 
 
 function empty_event() -> enet.Event:
     return zero[enet.Event]
+
+
+function empty_snapshot_baseline() -> snapshot_runtime.BaselineSet:
+    return snapshot_runtime.BaselineSet(
+        last_applied_tick = 0,
+        last_applied_entity_count = 0,
+        last_applied_payload_bytes = 0,
+        last_applied_payload_hash = 0,
+    )
+
+
+function reset_snapshot_baseline(baseline: ref[snapshot_runtime.BaselineSet]) -> void:
+    unsafe:
+        read(baseline) = empty_snapshot_baseline()
+    return
 
 
 function consume_event_packet(evt: ptr[enet.Event]) -> void:
@@ -954,6 +1145,7 @@ function dequeue_session_event(queue: ref[vec.Vec[SessionEventRecord]]) -> Optio
 function handle_received_packet(
     incoming_snapshots: ref[vec.Vec[snapshot_runtime.IncomingSnapshotPacket]],
     incoming_rpcs: ref[vec.Vec[rpc_runtime.IncomingRpcPacket]],
+    inbound_snapshot_baseline: ref[snapshot_runtime.BaselineSet],
     unknown_packet_count: ref[ptr_uint],
     packet: ptr[enet.Packet],
     channel: uint,
@@ -977,7 +1169,11 @@ function handle_received_packet(
                 Result.failure as _:
                     increment_unknown_count(unknown_packet_count)
                 Result.success as _:
-                    pass
+                    match snapshot_runtime.apply_from_packet(payload, inbound_snapshot_baseline):
+                        Result.success as _:
+                            pass
+                        Result.failure as _:
+                            pass
         mp.PacketKind.rpc:
             let rpc_direction = infer_inbound_rpc_direction(payload, inferred_direction) else:
                 increment_unknown_count(unknown_packet_count)

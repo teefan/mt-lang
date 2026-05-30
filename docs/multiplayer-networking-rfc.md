@@ -134,7 +134,7 @@ That means:
 
 V1 also fixes a few cost-sensitive boundaries explicitly:
 
-- all networking attribute arguments are written explicitly in source; the compiler does not invent default channel, rate, target, or ownership values
+- all networking attribute arguments are written explicitly in source unless the struct uses `@[sync_defaults(...)]` and fields use marker-form `@[sync]`; in that case `sync_defaults` is the single explicit source of channel/rate/target/mode
 - `@[rpc(...)]` changes descriptor generation and inbound dispatch only; it does not rewrite ordinary function calls into network sends
 - send-side ergonomics remain ordinary library APIs in v1 rather than additional compiler hooks (for example budgeted, weighted, fair, and tick-dispatch session helpers in `std.multiplayer.enet`)
 
@@ -159,7 +159,8 @@ public attribute[callable] rpc(
 ```
 
 The compiler-recognized attribute shape is exactly the one above.
-V1 does not invent default `channel`, `rate_hz`, `target`, or `require_owner` values during semantic analysis or lowering.
+V1 does not invent default `require_owner` values during semantic analysis or lowering.
+For sync metadata, v1 accepts either fully explicit `@[sync(...)]` per field or marker-form `@[sync]` when the enclosing replicated struct provides explicit `@[sync_defaults(...)]`.
 
 Recommended enum surface:
 

@@ -3644,6 +3644,7 @@ module MilkTea
         case callable_kind
         when :function
           return check_multiplayer_rpc_descriptor_call(callable, expression.arguments, scopes:) if multiplayer_rpc_descriptor_call?(expression.callee, callable)
+          return check_multiplayer_rpc_payload_size_call(callable, expression.arguments, scopes:) if multiplayer_rpc_payload_size_call?(expression.callee, callable)
           return check_multiplayer_rpc_typed_dispatch_call(callable, expression.arguments, scopes:) if multiplayer_rpc_typed_dispatch_call?(expression.callee, callable)
 
           callable = specialize_function_binding(
@@ -3653,6 +3654,7 @@ module MilkTea
             receiver_type: callable_receiver_type_for_specialization(expression.callee, scopes:),
           )
 
+          return check_multiplayer_state_wire_size_call(callable, expression.arguments, scopes:) if multiplayer_state_wire_size_call?(expression.callee, callable)
           return check_multiplayer_state_descriptor_call(callable, expression.arguments, scopes:) if multiplayer_state_descriptor_call?(expression.callee, callable)
 
           check_function_call(callable, expression.arguments, scopes:)
@@ -4354,6 +4356,25 @@ module MilkTea
         binding.type.return_type
       end
 
+      def check_multiplayer_state_wire_size_call(binding, arguments, scopes:)
+        raise_sema_error("state_wire_size does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("state_wire_size expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+        raise_sema_error("state_wire_size requires exactly one type argument") unless binding.type_arguments.length == 1
+
+        state_type = binding.type_arguments.first
+        raise_sema_error("state_wire_size expects a concrete struct type") if state_type.is_a?(Types::StructInstance) || state_type.is_a?(Types::GenericStructDefinition)
+
+        struct_handle = struct_handle_for_type(state_type)
+        raise_sema_error("state_wire_size expects a concrete struct type") unless struct_handle
+        unless multiplayer_attribute_applied?(struct_handle, attribute_name: "replicated")
+          raise_sema_error("state_wire_size expects a @[std.multiplayer.replicated(...)] struct")
+        end
+
+        validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+
+        binding.type.return_type
+      end
+
       def check_multiplayer_rpc_descriptor_call(binding, arguments, scopes:)
         raise_sema_error("rpc_descriptor does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("rpc_descriptor expects 1 argument, got #{arguments.length}") unless arguments.length == 1
@@ -4372,6 +4393,37 @@ module MilkTea
         raise_sema_error("rpc_descriptor expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable") unless callable_kind == :function
 
         validate_multiplayer_rpc_callable!(callable_binding)
+
+        binding.type.return_type
+      end
+
+      def check_multiplayer_rpc_payload_size_call(binding, arguments, scopes:)
+        raise_sema_error("rpc_payload_size does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("rpc_payload_size expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        target_expression = arguments.first.value
+        unless direct_callable_of_expression?(target_expression)
+          raise_sema_error("rpc_payload_size expects callable_of(name) as a direct argument")
+        end
+
+        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
+        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
+          raise_sema_error("rpc_payload_size expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
+        raise_sema_error("rpc_payload_size expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable") unless callable_kind == :function
+
+        validate_multiplayer_rpc_callable!(callable_binding)
+
+        payload_params = callable_binding.type.params.drop(1)
+        unsupported = payload_params.find do |param|
+          multiplayer_typed_rpc_payload_type_error(param.type)
+        end
+        if unsupported
+          reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
+          raise_sema_error("rpc_payload_size does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}")
+        end
 
         binding.type.return_type
       end
@@ -4658,8 +4710,16 @@ module MilkTea
         binding.name == "state_descriptor" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
       end
 
+      def multiplayer_state_wire_size_function?(binding)
+        binding.name == "state_wire_size" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
       def multiplayer_rpc_descriptor_function?(binding)
         binding.name == "rpc_descriptor" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
+      def multiplayer_rpc_payload_size_function?(binding)
+        binding.name == "rpc_payload_size" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
       end
 
       def multiplayer_rpc_typed_dispatch_function?(binding)
@@ -4674,10 +4734,24 @@ module MilkTea
         multiplayer_root_import_call?(callee.callee, "state_descriptor")
       end
 
+      def multiplayer_state_wire_size_call?(callee, binding)
+        return true if multiplayer_state_wire_size_function?(binding)
+
+        return false unless callee.is_a?(AST::Specialization)
+
+        multiplayer_root_import_call?(callee.callee, "state_wire_size")
+      end
+
       def multiplayer_rpc_descriptor_call?(callee, binding)
         return true if multiplayer_rpc_descriptor_function?(binding)
 
         multiplayer_root_import_call?(callee, "rpc_descriptor")
+      end
+
+      def multiplayer_rpc_payload_size_call?(callee, binding)
+        return true if multiplayer_rpc_payload_size_function?(binding)
+
+        multiplayer_root_import_call?(callee, "rpc_payload_size")
       end
 
       def multiplayer_rpc_typed_dispatch_call?(callee, binding)

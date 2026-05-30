@@ -1,5 +1,6 @@
 import std.multiplayer.protocol as protocol
 import std.multiplayer.registry as registry
+import std.multiplayer.snapshot as snapshot_runtime
 import std.mem.heap as heap
 import std.str as text
 import std.vec as vec
@@ -69,6 +70,43 @@ extending World:
 
     public function entity_count() -> ptr_uint:
         return this.entities.len()
+
+
+    public function snapshot_state_signature(tick: protocol.Tick) -> snapshot_runtime.Snapshot:
+        var payload_bytes: ptr_uint = 0
+        var payload_hash: ulong = 1469598103934665603
+
+        var entity_index: ptr_uint = 0
+        while entity_index < this.entities.len():
+            let entity = this.entities.get(entity_index)
+            if entity != null:
+                unsafe:
+                    let record = read(ptr[EntityRecord]<-entity)
+                    payload_bytes += record.state_size
+                    if record.state_storage != null and record.state_size > 0:
+                        let state_bytes = ptr[ubyte]<-record.state_storage
+                        var byte_index: ptr_uint = 0
+                        while byte_index < record.state_size:
+                            payload_hash = payload_hash ^ ulong<-read(state_bytes + byte_index)
+                            payload_hash = payload_hash * 1099511628211
+                            byte_index += 1
+
+            entity_index += 1
+
+        if payload_bytes == 0:
+            payload_hash = 0
+
+        return snapshot_runtime.Snapshot(
+            tick = tick,
+            entity_count = this.entities.len(),
+            payload_bytes = payload_bytes,
+            payload_hash = payload_hash,
+        )
+
+
+    public function apply_snapshot_signature(tick: protocol.Tick, baselines: ref[snapshot_runtime.BaselineSet]) -> void:
+        let signature = this.snapshot_state_signature(tick)
+        snapshot_runtime.apply(signature, baselines)
 
 
     public mutable function release() -> void:
