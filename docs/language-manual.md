@@ -895,8 +895,6 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `redundant-else` | warning | yes | `else` block is unnecessary because all prior branches return |
 | `redundant-ignored-match-binding` | hint | yes | Ignored `as _` match binding is redundant |
 | `redundant-null-check` | hint | — | Null check on a value already known to be non-null by flow analysis |
-| `redundant-read-cast` | hint | yes | Pointer-like cast inside `read(...)` is unnecessary |
-| `redundant-read-release-temp` | hint | yes | Temporary that only stores `read(...)` to call `.release()` can be inlined |
 | `redundant-return` | hint | yes | Final bare `return` in a `void` function is unnecessary |
 | `reserved-primitive-name` | warning | yes | Binding uses a reserved built-in type name in its active namespace |
 | `self-assignment` | warning | — | Variable is assigned to itself |

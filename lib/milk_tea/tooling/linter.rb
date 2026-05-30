@@ -27,8 +27,6 @@ module MilkTea
       redundant-else
       redundant-ignored-match-binding
       redundant-null-check
-      redundant-read-cast
-      redundant-read-release-temp
       redundant-return
       reserved-primitive-name
       self-assignment
@@ -47,8 +45,6 @@ module MilkTea
     AUTO_FIXABLE_RULE_CODES = %w[
       prefer-let
       redundant-ignored-match-binding
-      redundant-read-cast
-      redundant-read-release-temp
       prefer-let-else
       prefer-var-else
       redundant-bool-compare
@@ -65,8 +61,6 @@ module MilkTea
       "redundant-ignored-match-binding" => "Remove redundant as _",
       "redundant-else" => "Remove redundant else",
       "redundant-return" => "Remove redundant return",
-      "redundant-read-cast" => "Remove redundant read cast",
-      "redundant-read-release-temp" => "Inline read(...).release()",
       "prefer-let-else" => "Rewrite as let-else",
       "prefer-var-else" => "Rewrite as var-else",
       "redundant-bool-compare" => "Simplify boolean comparison",
@@ -278,7 +272,6 @@ module MilkTea
 
     # Apply auto-fixable rules to source text.
     # Handles: prefer-let, redundant-ignored-match-binding,
-    # redundant-read-cast, redundant-read-release-temp,
     # prefer-let-else, prefer-var-else, redundant-bool-compare,
     # redundant-else,
     # redundant-return, reserved-primitive-name,
@@ -383,27 +376,6 @@ module MilkTea
 
         lines[idx] = lines[idx].dup
         lines[idx][span[:start_char]...span[:end_char]] = ""
-      end
-
-      # redundant-read-cast: replace read(T<-value) with read(value).
-      redundant_read_cast_fixes = warnings.select { |w| w.code == "redundant-read-cast" && w.line && w.symbol_name }
-      redundant_read_cast_fixes.sort_by(&:line).each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
-
-        symbol = Regexp.escape(w.symbol_name)
-        pattern = /(read\(\s*)(?:ptr|const_ptr|ref)\[[^\)]*\]<-\s*#{symbol}(\s*\))/
-        lines[idx] = lines[idx].sub(pattern, "\\1#{w.symbol_name}\\2")
-      end
-
-      # redundant-read-release-temp: collapse `var owned = read(...); owned.release()`
-      # into `read(...).release()`.
-      read_release_temp_fixes = warnings.select { |w| w.code == "redundant-read-release-temp" && w.line }
-      read_release_temp_fixes.sort_by(&:line).reverse_each do |w|
-        fix = build_read_release_temp_fix(lines, w.line - 1)
-        next unless fix
-
-        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
       end
 
       # prefer-let-else: rewrite adjacent nullable guard clauses into
@@ -588,24 +560,6 @@ module MilkTea
         start_offset += line.length
       end
       offsets
-    end
-
-    def self.build_read_release_temp_fix(lines, decl_idx)
-      return nil if decl_idx.nil? || decl_idx.negative? || decl_idx + 1 >= lines.length
-
-      declaration = lines[decl_idx].delete_suffix("\n")
-      release = lines[decl_idx + 1].delete_suffix("\n")
-      match = declaration.match(/\A(\s*)var\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*:\s*[^=]+)?\s*=\s*(read\(.+\))\s*(#.*)?\z/)
-      return nil unless match
-
-      indent, name, read_expression, comment = match.captures
-      return nil unless release.match?(/\A#{Regexp.escape(indent)}#{Regexp.escape(name)}\.release\(\)\s*\z/)
-
-      new_text = +"#{indent}#{read_expression}.release()"
-      new_text << " #{comment}" if comment
-      new_text << "\n"
-
-      { start_line_idx: decl_idx, end_line_idx: decl_idx + 1, new_text: }
     end
 
     def self.build_prefer_let_else_fix(lines, if_idx, symbol_name: nil)
@@ -1832,8 +1786,6 @@ module MilkTea
         profile_phase("rule.redundant_null_check") { emit_redundant_null_check_warnings(function.body) }
         profile_phase("rule.prefer_let_else") { emit_prefer_let_else_warnings(function.body) }
         profile_phase("rule.prefer_var_else") { emit_prefer_var_else_warnings(function.body) }
-        profile_phase("rule.redundant_read_cast") { emit_redundant_read_cast_warnings(function.body) }
-        profile_phase("rule.redundant_read_release_temp") { emit_redundant_read_release_temp_warnings(function.body) }
         profile_phase("rule.redundant_return") { emit_redundant_return_warnings(function) }
         profile_phase("rule.loop_single_iteration") { emit_loop_single_iteration_warnings(function.body) }
       end
@@ -2166,8 +2118,6 @@ module MilkTea
           emit_redundant_null_check_warnings(expression.body)
           emit_prefer_let_else_warnings(expression.body)
           emit_prefer_var_else_warnings(expression.body)
-          emit_redundant_read_cast_warnings(expression.body)
-          emit_redundant_read_release_temp_warnings(expression.body)
           emit_loop_single_iteration_warnings(expression.body)
         end
       when AST::AwaitExpr
@@ -3396,84 +3346,6 @@ module MilkTea
       binding_resolution.binding_types[binding_id]
     end
 
-    # ── redundant-read-cast ──────────────────────────────────────────────
-
-    def emit_redundant_read_cast_warnings(stmts)
-      return if stmts.nil? || stmts.empty?
-
-      binding_resolution = @sema_facts&.binding_resolution
-      binding_types = binding_resolution&.binding_types
-      cfg_resolution = cfg_binding_resolution
-      return unless binding_resolution && binding_types && cfg_resolution
-
-      analysis = statement_flow_analysis(stmts)
-      return unless analysis
-
-      graph = analysis.graph
-      nf = analysis.nullability
-      seen = Set.new
-
-      graph.each_node do |node|
-        statement = node.statement
-        next unless statement
-        next if seen.include?(statement.object_id)
-
-        seen << statement.object_id
-        warn_redundant_read_casts_in_statement(statement, nonnull: nf.nonnull_before(statement), binding_resolution:, binding_types:)
-      end
-    end
-
-    def warn_redundant_read_casts_in_statement(statement, nonnull:, binding_resolution:, binding_types:)
-      each_statement_expression(statement) do |expression|
-        candidate = redundant_read_cast_candidate(expression)
-        next unless candidate
-
-        source = candidate[:source]
-        binding_id = binding_resolution.identifier_binding_ids[source.object_id]
-        next unless binding_id
-
-        binding_type = binding_types[binding_id]
-        next unless binding_type
-
-        target_text = render_type_surface(candidate[:target_type])
-        redundant = if binding_type.to_s == target_text
-                      true
-                    elsif binding_type.is_a?(Types::Nullable) && binding_type.base.to_s == target_text
-                      nonnull.include?(binding_id)
-                    else
-                      false
-                    end
-        next unless redundant
-
-        @warnings << Warning.new(
-          path: @path,
-          line: expression_line(candidate[:cast_expression]) || expression_line(source),
-          column: expression_column(candidate[:cast_expression]) || expression_column(source),
-          length: expression_length(candidate[:cast_expression]) || expression_length(source),
-          code: "redundant-read-cast",
-          message: "cast to #{target_text} is redundant here; use read(#{source.name}) directly",
-          severity: :hint,
-          symbol_name: source.name
-        )
-      end
-    end
-
-    def redundant_read_cast_candidate(expression)
-      return unless expression.is_a?(AST::Call)
-      return unless expression.callee.is_a?(AST::Identifier) && expression.callee.name == "read"
-      return unless expression.arguments.length == 1
-
-      cast = pointer_like_cast_expression(expression.arguments.first.value)
-      return unless cast
-      return unless cast[:source].is_a?(AST::Identifier)
-
-      {
-        source: cast[:source],
-        target_type: cast[:target_type],
-        cast_expression: expression.arguments.first.value,
-      }
-    end
-
     def pointer_like_cast_expression(expression)
       return unless expression.is_a?(AST::Call)
 
@@ -3560,71 +3432,6 @@ module MilkTea
         expression.parts.each do |part|
           walk_expression_tree(part.expression, &block) if part.is_a?(AST::FormatExprPart)
         end
-      end
-    end
-
-    # ── redundant-read-release-temp ─────────────────────────────────────
-
-    def emit_redundant_read_release_temp_warnings(stmts)
-      return if stmts.nil? || stmts.empty?
-
-      walk_statement_lists(stmts) do |statement_list|
-        statement_list.each_with_index do |_statement, index|
-          candidate = redundant_read_release_temp_candidate(statement_list, index)
-          next unless candidate
-
-          declaration = candidate[:declaration]
-          @warnings << Warning.new(
-            path: @path,
-            line: declaration.line,
-            column: declaration.column,
-            length: declaration.name.length,
-            code: "redundant-read-release-temp",
-            message: "temporary '#{declaration.name}' only stores read(...) to call release(); use read(...).release() directly",
-            severity: :hint,
-            symbol_name: declaration.name
-          )
-        end
-      end
-    end
-
-    def redundant_read_release_temp_candidate(stmts, index)
-      declaration = stmts[index]
-      release_stmt = stmts[index + 1]
-      return unless declaration.is_a?(AST::LocalDecl)
-      return unless declaration.kind == :var
-      return unless declaration.value && declaration.name
-      return if ignored_binding_name?(declaration.name)
-      return unless read_call_expression?(declaration.value)
-      return unless release_stmt.is_a?(AST::ExpressionStmt)
-      return unless release_call_on_identifier?(release_stmt.expression, declaration.name)
-      return if stmts[(index + 2)..]&.any? { |statement| statement_uses_identifier?(statement, declaration.name) }
-
-      { declaration:, release_stmt: }
-    end
-
-    def read_call_expression?(expression)
-      expression.is_a?(AST::Call) &&
-        expression.callee.is_a?(AST::Identifier) &&
-        expression.callee.name == "read" &&
-        expression.arguments.length == 1
-    end
-
-    def release_call_on_identifier?(expression, name)
-      expression.is_a?(AST::Call) &&
-        expression.callee.is_a?(AST::MemberAccess) &&
-        expression.callee.member == "release" &&
-        expression.callee.receiver.is_a?(AST::Identifier) &&
-        expression.callee.receiver.name == name &&
-        expression.arguments.empty?
-    end
-
-    def statement_uses_identifier?(statement, name)
-      catch(:statement_uses_identifier) do
-        each_statement_expression(statement) do |expression|
-          throw(:statement_uses_identifier, true) if expression.is_a?(AST::Identifier) && expression.name == name
-        end
-        false
       end
     end
 
@@ -3757,7 +3564,7 @@ module MilkTea
               column: stmt.column,
               length: stmt.length || "while".length,
               code: "loop-single-iteration",
-              message: "loop body always exits on the first iteration — consider replacing with an 'if' block",
+              message: "loop body always exits on the first iteration - consider replacing with an 'if' block",
               severity: :warning
             )
           end
@@ -3771,7 +3578,7 @@ module MilkTea
               column: stmt.column,
               length: stmt.length || "for".length,
               code: "loop-single-iteration",
-              message: "loop body always exits on the first iteration — consider iterating directly without a loop",
+              message: "loop body always exits on the first iteration - consider iterating directly without a loop",
               severity: :warning
             )
           end
