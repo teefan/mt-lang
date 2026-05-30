@@ -31,6 +31,46 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_line_too_long_ignores_external_function_declaration_headers
+    Dir.mktmpdir("milk-tea-linter-line-too-long-external-header") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        external function enet_host_create(address: ptr[Address], peer_count: ptr_uint, channel_limit: ptr_uint, incoming_bandwidth: uint, outgoing_bandwidth: uint) -> ptr[Host]
+      MT
+
+      warnings = MilkTea::Linter.lint_source(source, path: path)
+
+      refute warnings.any? { |entry| entry.code == "line-too-long" }
+    end
+  end
+
+  def test_line_too_long_ignores_foreign_function_declaration_headers
+    Dir.mktmpdir("milk-tea-linter-line-too-long-foreign-header") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(File.join(dir, ".mt-lint.yml"), <<~YAML)
+        max_line_length: 40
+        select:
+          - line-too-long
+        ignore: []
+      YAML
+
+      source = <<~MT
+        foreign function enet_host_create(address: ptr[Address], peer_count: ptr_uint, channel_limit: ptr_uint, incoming_bandwidth: uint, outgoing_bandwidth: uint) -> ptr[Host] = "enet_host_create"
+      MT
+
+      warnings = MilkTea::Linter.lint_source(source, path: path)
+
+      refute warnings.any? { |entry| entry.code == "line-too-long" }
+    end
+  end
+
   def test_fix_source_does_not_wrap_long_call_arguments_for_line_too_long
     Dir.mktmpdir("milk-tea-linter-fix-line-too-long") do |dir|
       path = File.join(dir, "sample.mt")
