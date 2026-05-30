@@ -40,7 +40,12 @@ public function format_into(buffer: ptr[char], max_size: ptr_uint, format: str, 
     return format_date_time(buffer, max_size, format, ptr[DateTime]<-value)
 
 
-public function format_local_time_into(buffer: ptr[char], max_size: ptr_uint, format: str, value: Timestamp) -> ptr_uint:
+public function format_local_time_into(
+    buffer: ptr[char],
+    max_size: ptr_uint,
+    format: str,
+    value: Timestamp
+) -> ptr_uint:
     return format_into(buffer, max_size, format, local_time_ptr(value))
 
 

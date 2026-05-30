@@ -15,6 +15,7 @@ foreign function easy_setopt_url(curl_handle: ptr[c.CURL], url: cstr) -> c.CURLc
 foreign function easy_setopt_writefunction(curl_handle: ptr[c.CURL], write_callback: c.curl_write_callback) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-20011, write_callback)
 foreign function easy_setopt_followlocation(curl_handle: ptr[c.CURL], follow: ptr_int) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-52, follow)
 
+
 function write_response_chunk(data: ptr[char], size: ptr_uint, count: ptr_uint, user_data: ptr[void]) -> ptr_uint:
     if size != 0 and count > heap.ptr_uint_max() / size:
         return 0

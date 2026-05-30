@@ -1,6 +1,5 @@
 import std.deque as deque
 
-
 public struct Queue[T]:
     values: deque.Deque[T]
 

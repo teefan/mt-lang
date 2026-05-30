@@ -4,33 +4,27 @@ import std.mem.heap as heap
 import std.str as text
 import std.string as string
 
-
 public struct EnvironmentEntry:
     name: str
     value: str
 
-
 public struct ExitStatus:
     exit_code: long
     term_signal: int
-
 
 public struct CaptureResult:
     stdout: string.String
     stderr: string.String
     status: ExitStatus
 
-
 public struct ProcessError:
     code: int
     message: string.String
-
 
 public struct ReadResult:
     ready: bool
     closed: bool
     data: string.String
-
 
 public struct ChildProcess:
     pid: int
@@ -38,11 +32,9 @@ public struct ChildProcess:
     stdout_fd: int
     stderr_fd: int
 
-
 public struct PtyProcess:
     pid: int
     master_fd: int
-
 
 struct PreparedCommand:
     storage: arena.Arena
@@ -139,9 +131,16 @@ function write_environment_value(space: ref[arena.Arena], entry: EnvironmentEntr
         return cstr<-buffer
 
 
-function prepare_command(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[PreparedCommand, ProcessError]:
+function prepare_command(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[PreparedCommand, ProcessError]:
     if command.len == 0:
-        return Result[PreparedCommand, ProcessError].failure(error= ProcessError(code = -1, message = string.String.from_str("process command cannot be empty")))
+        return Result[PreparedCommand, ProcessError].failure(error= ProcessError(
+            code = -1,
+            message = string.String.from_str("process command cannot be empty")
+        ))
 
     let total_bytes = total_storage_bytes(command, cwd, env)
     var storage = arena.create_aligned(total_bytes, align_of(ptr[char]))
@@ -282,7 +281,10 @@ function wait_internal(pid: int, non_blocking: bool) -> Result[Option[ExitStatus
     if not raw_result.ready:
         return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].none)
 
-    return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].some(value= take_wait_status(raw_result)))
+    return Result[
+        Option[ExitStatus],
+        ProcessError
+    ].success(value= Option[ExitStatus].some(value= take_wait_status(raw_result)))
 
 
 function kill_internal(pid: int, signal: int) -> Result[bool, ProcessError]:
@@ -309,7 +311,11 @@ function resize_pty_internal(fd: int, columns: int, rows: int) -> Result[bool, P
     return Result[bool, ProcessError].success(value= true)
 
 
-function spawn_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[ChildProcess, ProcessError]:
+function spawn_internal(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[ChildProcess, ProcessError]:
     let prepared_result = prepare_command(command, cwd, env)
     match prepared_result:
         Result.failure as payload:
@@ -320,16 +326,34 @@ function spawn_internal(command: span[str], cwd: Option[str], env: span[Environm
 
             var raw_handle = zero[c.mt_process_spawn_handle]
             var raw_error = zero[c.mt_process_error]
-            let status = c.mt_process_spawn_interactive(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_handle, raw_error)
+            let status = c.mt_process_spawn_interactive(
+                prepared.file,
+                prepared.args,
+                prepared.env,
+                prepared.cwd,
+                raw_handle,
+                raw_error
+            )
             if status != 0:
                 return Result[ChildProcess, ProcessError].failure(error= take_process_error(raw_error))
 
             return Result[ChildProcess, ProcessError].success(
-                value= ChildProcess(pid = raw_handle.pid, stdin_fd = raw_handle.stdin_fd, stdout_fd = raw_handle.stdout_fd, stderr_fd = raw_handle.stderr_fd)
+                value= ChildProcess(
+                    pid = raw_handle.pid,
+                    stdin_fd = raw_handle.stdin_fd,
+                    stdout_fd = raw_handle.stdout_fd,
+                    stderr_fd = raw_handle.stderr_fd
+                )
             )
 
 
-function spawn_pty_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry], columns: int, rows: int) -> Result[PtyProcess, ProcessError]:
+function spawn_pty_internal(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry],
+    columns: int,
+    rows: int
+) -> Result[PtyProcess, ProcessError]:
     if columns <= 0 or rows <= 0:
         return Result[PtyProcess, ProcessError].failure(error= simple_process_error("pty size must be positive"))
 
@@ -343,14 +367,30 @@ function spawn_pty_internal(command: span[str], cwd: Option[str], env: span[Envi
 
             var raw_handle = zero[c.mt_process_pty_handle]
             var raw_error = zero[c.mt_process_error]
-            let status = c.mt_process_spawn_pty(prepared.file, prepared.args, prepared.env, prepared.cwd, columns, rows, raw_handle, raw_error)
+            let status = c.mt_process_spawn_pty(
+                prepared.file,
+                prepared.args,
+                prepared.env,
+                prepared.cwd,
+                columns,
+                rows,
+                raw_handle,
+                raw_error
+            )
             if status != 0:
                 return Result[PtyProcess, ProcessError].failure(error= take_process_error(raw_error))
 
-            return Result[PtyProcess, ProcessError].success(value= PtyProcess(pid = raw_handle.pid, master_fd = raw_handle.master_fd))
+            return Result[PtyProcess, ProcessError].success(value= PtyProcess(
+                pid = raw_handle.pid,
+                master_fd = raw_handle.master_fd
+            ))
 
 
-function capture_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[CaptureResult, ProcessError]:
+function capture_internal(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[CaptureResult, ProcessError]:
     let prepared_result = prepare_command(command, cwd, env)
     match prepared_result:
         Result.failure as payload:
@@ -361,7 +401,14 @@ function capture_internal(command: span[str], cwd: Option[str], env: span[Enviro
 
             var raw_result = zero[c.mt_process_capture_result]
             var raw_error = zero[c.mt_process_error]
-            let status_code = c.mt_process_capture(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_result, raw_error)
+            let status_code = c.mt_process_capture(
+                prepared.file,
+                prepared.args,
+                prepared.env,
+                prepared.cwd,
+                raw_result,
+                raw_error
+            )
             if status_code != 0:
                 return Result[CaptureResult, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -374,7 +421,11 @@ function capture_internal(command: span[str], cwd: Option[str], env: span[Enviro
             )
 
 
-function spawn_detached_internal(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[int, ProcessError]:
+function spawn_detached_internal(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[int, ProcessError]:
     let prepared_result = prepare_command(command, cwd, env)
     match prepared_result:
         Result.failure as payload:
@@ -385,7 +436,14 @@ function spawn_detached_internal(command: span[str], cwd: Option[str], env: span
 
             var pid: int = 0
             var raw_error = zero[c.mt_process_error]
-            let status_code = c.mt_process_spawn_detached(prepared.file, prepared.args, prepared.env, prepared.cwd, pid, raw_error)
+            let status_code = c.mt_process_spawn_detached(
+                prepared.file,
+                prepared.args,
+                prepared.env,
+                prepared.cwd,
+                pid,
+                raw_error
+            )
             if status_code != 0:
                 return Result[int, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -486,7 +544,10 @@ extending ChildProcess:
                         this.pid = 0
                         return Result[ExitStatus, ProcessError].success(value= status_payload.value)
                     Option.none:
-                        return Result[ExitStatus, ProcessError].failure(error= simple_process_error("process wait returned no status"))
+                        return Result[
+                            ExitStatus,
+                            ProcessError
+                        ].failure(error= simple_process_error("process wait returned no status"))
 
 
     public mutable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
@@ -498,7 +559,10 @@ extending ChildProcess:
                 match payload.value:
                     Option.some as status_payload:
                         this.pid = 0
-                        return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].some(value= status_payload.value))
+                        return Result[
+                            Option[ExitStatus],
+                            ProcessError
+                        ].success(value= Option[ExitStatus].some(value= status_payload.value))
                     Option.none:
                         return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].none)
 
@@ -549,7 +613,10 @@ extending PtyProcess:
                         this.pid = 0
                         return Result[ExitStatus, ProcessError].success(value= status_payload.value)
                     Option.none:
-                        return Result[ExitStatus, ProcessError].failure(error= simple_process_error("process wait returned no status"))
+                        return Result[
+                            ExitStatus,
+                            ProcessError
+                        ].failure(error= simple_process_error("process wait returned no status"))
 
 
     public mutable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
@@ -561,7 +628,10 @@ extending PtyProcess:
                 match payload.value:
                     Option.some as status_payload:
                         this.pid = 0
-                        return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].some(value= status_payload.value))
+                        return Result[
+                            Option[ExitStatus],
+                            ProcessError
+                        ].success(value= Option[ExitStatus].some(value= status_payload.value))
                     Option.none:
                         return Result[Option[ExitStatus], ProcessError].success(value= Option[ExitStatus].none)
 
@@ -593,7 +663,11 @@ public function capture_in(command: span[str], cwd: str) -> Result[CaptureResult
     return capture_internal(command, Option[str].some(value= cwd), empty_environment())
 
 
-public function capture_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[CaptureResult, ProcessError]:
+public function capture_with_env(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[CaptureResult, ProcessError]:
     return capture_internal(command, cwd, env)
 
 
@@ -605,7 +679,11 @@ public function spawn_in(command: span[str], cwd: str) -> Result[ChildProcess, P
     return spawn_internal(command, Option[str].some(value= cwd), empty_environment())
 
 
-public function spawn_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[ChildProcess, ProcessError]:
+public function spawn_with_env(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[ChildProcess, ProcessError]:
     return spawn_internal(command, cwd, env)
 
 
@@ -617,7 +695,13 @@ public function spawn_pty_in(command: span[str], cwd: str, columns: int, rows: i
     return spawn_pty_internal(command, Option[str].some(value= cwd), empty_environment(), columns, rows)
 
 
-public function spawn_pty_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry], columns: int, rows: int) -> Result[PtyProcess, ProcessError]:
+public function spawn_pty_with_env(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry],
+    columns: int,
+    rows: int
+) -> Result[PtyProcess, ProcessError]:
     return spawn_pty_internal(command, cwd, env, columns, rows)
 
 
@@ -629,5 +713,9 @@ public function spawn_detached_in(command: span[str], cwd: str) -> Result[int, P
     return spawn_detached_internal(command, Option[str].some(value= cwd), empty_environment())
 
 
-public function spawn_detached_with_env(command: span[str], cwd: Option[str], env: span[EnvironmentEntry]) -> Result[int, ProcessError]:
+public function spawn_detached_with_env(
+    command: span[str],
+    cwd: Option[str],
+    env: span[EnvironmentEntry]
+) -> Result[int, ProcessError]:
     return spawn_detached_internal(command, cwd, env)

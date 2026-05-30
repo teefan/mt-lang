@@ -2,7 +2,9 @@
 external
 
 include "gl_registry_helpers.h"
+
 opaque __GLsync = c"struct __GLsync"
+
 type GLenum = uint
 type GLboolean = ubyte
 type GLbitfield = uint
@@ -43,6 +45,7 @@ type GLDEBUGPROCAMD = fn(arg0: GLuint, arg1: GLenum, arg2: GLenum, arg3: GLsizei
 type GLhalfNV = ushort
 type GLvdpauSurfaceNV = ptr_int
 type GLVULKANPROCNV = fn() -> void
+
 external function mt_gl_reset_loader() -> void
 external function mt_gl_use_glfw_loader() -> void
 external function mt_gl_use_sdl_loader() -> void
@@ -704,6 +707,7 @@ external function glViewportArrayv(first: uint, count: int, v: const_ptr[GLfloat
 external function glViewportIndexedf(index: uint, x: float, y: float, w: float, h: float) -> void
 external function glViewportIndexedfv(index: uint, v: const_ptr[GLfloat]) -> void
 external function glWaitSync(sync: ptr[__GLsync], flags_: uint, timeout: ptr_uint) -> void
+
 const GL_DEPTH_BUFFER_BIT: int = 256
 const GL_STENCIL_BUFFER_BIT: int = 1024
 const GL_COLOR_BUFFER_BIT: int = 16384

@@ -3,19 +3,24 @@ external
 
 link "box2d"
 include "box2d/box2d.h"
+
 opaque b2TreeNode = c"struct b2TreeNode"
+
 type b2AllocFcn = fn(arg0: uint, arg1: int) -> ptr[void]
 type b2FreeFcn = fn(arg0: ptr[void], arg1: uint) -> void
 type b2AssertFcn = fn(arg0: cstr, arg1: cstr, arg2: int) -> int
 type b2LogFcn = fn(arg0: cstr) -> void
+
 external function b2SetAllocator(allocFcn: ptr[b2AllocFcn], freeFcn: ptr[b2FreeFcn]) -> void
 external function b2GetByteCount() -> int
 external function b2SetAssertFcn(assertFcn: ptr[b2AssertFcn]) -> void
 external function b2SetLogFcn(logFcn: ptr[b2LogFcn]) -> void
+
 struct b2Version:
     major: int
     minor: int
     revision: int
+
 external function b2GetVersion() -> b2Version
 external function b2InternalAssert(condition: cstr, fileName: cstr, lineNumber: int) -> int
 external function b2GetTicks() -> ulong
@@ -23,31 +28,40 @@ external function b2GetMilliseconds(ticks: ptr_uint) -> float
 external function b2GetMillisecondsAndReset(ticks: ptr[ulong]) -> float
 external function b2Yield() -> void
 external function b2Hash(hash: uint, data: const_ptr[ubyte], count: int) -> uint
+
 struct b2Vec2:
     x: float
     y: float
+
 struct b2CosSin:
     cosine: float
     sine: float
+
 struct b2Rot:
     c: float
     s: float
+
 struct b2Transform:
     p: b2Vec2
     q: b2Rot
+
 struct b2Mat22:
     cx: b2Vec2
     cy: b2Vec2
+
 struct b2AABB:
     lowerBound: b2Vec2
     upperBound: b2Vec2
+
 struct b2Plane:
     normal: b2Vec2
     offset: float
+
 const b2Vec2_zero: b2Vec2 = b2Vec2(x = 0.0, y = 0.0)
 const b2Rot_identity: b2Rot = b2Rot(c = 1.0, s = 0.0)
 const b2Transform_identity: b2Transform = b2Transform(p = b2Vec2(x = 0.0, y = 0.0), q = b2Rot(c = 1.0, s = 0.0))
 const b2Mat22_zero: b2Mat22 = b2Mat22(cx = b2Vec2(x = 0.0, y = 0.0), cy = b2Vec2(x = 0.0, y = 0.0))
+
 external function b2IsValidFloat(a: float) -> bool
 external function b2IsValidVec2(v: b2Vec2) -> bool
 external function b2IsValidRotation(q: b2Rot) -> bool
@@ -59,50 +73,61 @@ external function b2ComputeCosSin(radians: float) -> b2CosSin
 external function b2ComputeRotationBetweenUnitVectors(v1: b2Vec2, v2: b2Vec2) -> b2Rot
 external function b2SetLengthUnitsPerMeter(lengthUnits: float) -> void
 external function b2GetLengthUnitsPerMeter() -> float
+
 struct b2RayCastInput:
     origin: b2Vec2
     translation: b2Vec2
     maxFraction: float
+
 struct b2ShapeProxy:
     points: array[b2Vec2, 8]
     count: int
     radius: float
+
 struct b2ShapeCastInput:
     proxy: b2ShapeProxy
     translation: b2Vec2
     maxFraction: float
     canEncroach: bool
+
 struct b2CastOutput:
     normal: b2Vec2
     point: b2Vec2
     fraction: float
     iterations: int
     hit: bool
+
 struct b2MassData:
     mass: float
     center: b2Vec2
     rotationalInertia: float
+
 struct b2Circle:
     center: b2Vec2
     radius: float
+
 struct b2Capsule:
     center1: b2Vec2
     center2: b2Vec2
     radius: float
+
 struct b2Polygon:
     vertices: array[b2Vec2, 8]
     normals: array[b2Vec2, 8]
     centroid: b2Vec2
     radius: float
     count: int
+
 struct b2Segment:
     point1: b2Vec2
     point2: b2Vec2
+
 struct b2ChainSegment:
     ghost1: b2Vec2
     segment: b2Segment
     ghost2: b2Vec2
     chainId: int
+
 external function b2IsValidRay(input: const_ptr[b2RayCastInput]) -> bool
 external function b2MakePolygon(hull: const_ptr[b2Hull], radius: float) -> b2Polygon
 external function b2MakeOffsetPolygon(hull: const_ptr[b2Hull], position: b2Vec2, rotation: b2Rot) -> b2Polygon
@@ -131,29 +156,41 @@ external function b2ShapeCastCircle(shape: const_ptr[b2Circle], input: const_ptr
 external function b2ShapeCastCapsule(shape: const_ptr[b2Capsule], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
 external function b2ShapeCastSegment(shape: const_ptr[b2Segment], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
 external function b2ShapeCastPolygon(shape: const_ptr[b2Polygon], input: const_ptr[b2ShapeCastInput]) -> b2CastOutput
+
 struct b2Hull:
     points: array[b2Vec2, 8]
     count: int
+
 external function b2ComputeHull(points: const_ptr[b2Vec2], count: int) -> b2Hull
 external function b2ValidateHull(hull: const_ptr[b2Hull]) -> bool
+
 struct b2SegmentDistanceResult:
     closest1: b2Vec2
     closest2: b2Vec2
     fraction1: float
     fraction2: float
     distanceSquared: float
+
 external function b2SegmentDistance(p1: b2Vec2, q1: b2Vec2, p2: b2Vec2, q2: b2Vec2) -> b2SegmentDistanceResult
+
 struct b2SimplexCache:
     count: ushort
     indexA: array[ubyte, 3]
     indexB: array[ubyte, 3]
-const b2_emptySimplexCache: b2SimplexCache = b2SimplexCache(count = 0, indexA = array[ubyte, 3](0, 0, 0), indexB = array[ubyte, 3](0, 0, 0))
+
+const b2_emptySimplexCache: b2SimplexCache = b2SimplexCache(
+    count = 0,
+    indexA = array[ubyte, 3](0, 0, 0),
+    indexB = array[ubyte, 3](0, 0, 0)
+)
+
 struct b2DistanceInput:
     proxyA: b2ShapeProxy
     proxyB: b2ShapeProxy
     transformA: b2Transform
     transformB: b2Transform
     useRadii: bool
+
 struct b2DistanceOutput:
     pointA: b2Vec2
     pointB: b2Vec2
@@ -161,6 +198,7 @@ struct b2DistanceOutput:
     distance: float
     iterations: int
     simplexCount: int
+
 struct b2SimplexVertex:
     wA: b2Vec2
     wB: b2Vec2
@@ -168,12 +206,15 @@ struct b2SimplexVertex:
     a: float
     indexA: int
     indexB: int
+
 struct b2Simplex:
     v1: b2SimplexVertex
     v2: b2SimplexVertex
     v3: b2SimplexVertex
     count: int
+
 external function b2ShapeDistance(input: const_ptr[b2DistanceInput], cache: ptr[b2SimplexCache], simplexes: ptr[b2Simplex], simplexCapacity: int) -> b2DistanceOutput
+
 struct b2ShapeCastPairInput:
     proxyA: b2ShapeProxy
     proxyB: b2ShapeProxy
@@ -182,34 +223,42 @@ struct b2ShapeCastPairInput:
     translationB: b2Vec2
     maxFraction: float
     canEncroach: bool
+
 external function b2ShapeCast(input: const_ptr[b2ShapeCastPairInput]) -> b2CastOutput
 external function b2MakeProxy(points: const_ptr[b2Vec2], count: int, radius: float) -> b2ShapeProxy
 external function b2MakeOffsetProxy(points: const_ptr[b2Vec2], count: int, radius: float, position: b2Vec2, rotation: b2Rot) -> b2ShapeProxy
+
 struct b2Sweep:
     localCenter: b2Vec2
     c1: b2Vec2
     c2: b2Vec2
     q1: b2Rot
     q2: b2Rot
+
 external function b2GetSweepTransform(sweep: const_ptr[b2Sweep], time: float) -> b2Transform
+
 struct b2TOIInput:
     proxyA: b2ShapeProxy
     proxyB: b2ShapeProxy
     sweepA: b2Sweep
     sweepB: b2Sweep
     maxFraction: float
+
 enum b2TOIState: int
     b2_toiStateUnknown = 0
     b2_toiStateFailed = 1
     b2_toiStateOverlapped = 2
     b2_toiStateHit = 3
     b2_toiStateSeparated = 4
+
 struct b2TOIOutput:
     state: b2TOIState
     point: b2Vec2
     normal: b2Vec2
     fraction: float
+
 external function b2TimeOfImpact(input: const_ptr[b2TOIInput]) -> b2TOIOutput
+
 struct b2ManifoldPoint:
     clipPoint: b2Vec2
     anchorA: b2Vec2
@@ -222,11 +271,13 @@ struct b2ManifoldPoint:
     normalVelocity: float
     id: ushort
     persisted: bool
+
 struct b2Manifold:
     normal: b2Vec2
     rollingImpulse: float
     points: array[b2ManifoldPoint, 2]
     pointCount: int
+
 external function b2CollideCircles(circleA: const_ptr[b2Circle], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
 external function b2CollideCapsuleAndCircle(capsuleA: const_ptr[b2Capsule], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
 external function b2CollideSegmentAndCircle(segmentA: const_ptr[b2Segment], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
@@ -239,6 +290,7 @@ external function b2CollideSegmentAndPolygon(segmentA: const_ptr[b2Segment], xfA
 external function b2CollideChainSegmentAndCircle(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, circleB: const_ptr[b2Circle], xfB: b2Transform) -> b2Manifold
 external function b2CollideChainSegmentAndCapsule(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, capsuleB: const_ptr[b2Capsule], xfB: b2Transform, cache: ptr[b2SimplexCache]) -> b2Manifold
 external function b2CollideChainSegmentAndPolygon(segmentA: const_ptr[b2ChainSegment], xfA: b2Transform, polygonB: const_ptr[b2Polygon], xfB: b2Transform, cache: ptr[b2SimplexCache]) -> b2Manifold
+
 struct b2DynamicTree:
     nodes: ptr[b2TreeNode]
     root: int
@@ -251,9 +303,11 @@ struct b2DynamicTree:
     leafCenters: ptr[b2Vec2]
     binIndices: ptr[int]
     rebuildCapacity: int
+
 struct b2TreeStats:
     nodeVisits: int
     leafVisits: int
+
 external function b2DynamicTree_Create() -> b2DynamicTree
 external function b2DynamicTree_Destroy(tree: ptr[b2DynamicTree]) -> void
 external function b2DynamicTree_CreateProxy(tree: ptr[b2DynamicTree], aabb: b2AABB, categoryBits: ptr_uint, userData: ptr_uint) -> int
@@ -262,12 +316,18 @@ external function b2DynamicTree_MoveProxy(tree: ptr[b2DynamicTree], proxyId: int
 external function b2DynamicTree_EnlargeProxy(tree: ptr[b2DynamicTree], proxyId: int, aabb: b2AABB) -> void
 external function b2DynamicTree_SetCategoryBits(tree: ptr[b2DynamicTree], proxyId: int, categoryBits: ptr_uint) -> void
 external function b2DynamicTree_GetCategoryBits(tree: ptr[b2DynamicTree], proxyId: int) -> ulong
+
 type b2TreeQueryCallbackFcn = fn(arg0: int, arg1: ulong, arg2: ptr[void]) -> bool
+
 external function b2DynamicTree_Query(tree: const_ptr[b2DynamicTree], aabb: b2AABB, maskBits: ptr_uint, callback: ptr[b2TreeQueryCallbackFcn], context: ptr[void]) -> b2TreeStats
 external function b2DynamicTree_QueryAll(tree: const_ptr[b2DynamicTree], aabb: b2AABB, callback: ptr[b2TreeQueryCallbackFcn], context: ptr[void]) -> b2TreeStats
+
 type b2TreeRayCastCallbackFcn = fn(arg0: const_ptr[b2RayCastInput], arg1: int, arg2: ulong, arg3: ptr[void]) -> float
+
 external function b2DynamicTree_RayCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2RayCastInput], maskBits: ptr_uint, callback: ptr[b2TreeRayCastCallbackFcn], context: ptr[void]) -> b2TreeStats
+
 type b2TreeShapeCastCallbackFcn = fn(arg0: const_ptr[b2ShapeCastInput], arg1: int, arg2: ulong, arg3: ptr[void]) -> float
+
 external function b2DynamicTree_ShapeCast(tree: const_ptr[b2DynamicTree], input: const_ptr[b2ShapeCastInput], maskBits: ptr_uint, callback: ptr[b2TreeShapeCastCallbackFcn], context: ptr[void]) -> b2TreeStats
 external function b2DynamicTree_GetHeight(tree: const_ptr[b2DynamicTree]) -> int
 external function b2DynamicTree_GetAreaRatio(tree: const_ptr[b2DynamicTree]) -> float
@@ -279,55 +339,68 @@ external function b2DynamicTree_GetUserData(tree: const_ptr[b2DynamicTree], prox
 external function b2DynamicTree_GetAABB(tree: const_ptr[b2DynamicTree], proxyId: int) -> b2AABB
 external function b2DynamicTree_Validate(tree: const_ptr[b2DynamicTree]) -> void
 external function b2DynamicTree_ValidateNoEnlarged(tree: const_ptr[b2DynamicTree]) -> void
+
 struct b2PlaneResult:
     plane: b2Plane
     point: b2Vec2
     hit: bool
+
 struct b2CollisionPlane:
     plane: b2Plane
     pushLimit: float
     push: float
     clipVelocity: bool
+
 struct b2PlaneSolverResult:
     translation: b2Vec2
     iterationCount: int
+
 external function b2SolvePlanes(targetDelta: b2Vec2, planes: ptr[b2CollisionPlane], count: int) -> b2PlaneSolverResult
 external function b2ClipVector(vector: b2Vec2, planes: const_ptr[b2CollisionPlane], count: int) -> b2Vec2
+
 struct b2WorldId:
     index1: ushort
     generation: ushort
+
 struct b2BodyId:
     index1: int
     world0: ushort
     generation: ushort
+
 struct b2ShapeId:
     index1: int
     world0: ushort
     generation: ushort
+
 struct b2ChainId:
     index1: int
     world0: ushort
     generation: ushort
+
 struct b2JointId:
     index1: int
     world0: ushort
     generation: ushort
+
 struct b2ContactId:
     index1: int
     world0: ushort
     padding: short
     generation: uint
+
 const b2_nullWorldId: b2WorldId = b2WorldId(index1 = 0, generation = 0)
 const b2_nullBodyId: b2BodyId = b2BodyId(index1 = 0, world0 = 0, generation = 0)
 const b2_nullShapeId: b2ShapeId = b2ShapeId(index1 = 0, world0 = 0, generation = 0)
 const b2_nullChainId: b2ChainId = b2ChainId(index1 = 0, world0 = 0, generation = 0)
 const b2_nullJointId: b2JointId = b2JointId(index1 = 0, world0 = 0, generation = 0)
 const b2_nullContactId: b2ContactId = b2ContactId(index1 = 0, world0 = 0, padding = 0, generation = 0)
+
 type b2TaskCallback = fn(arg0: ptr[void]) -> void
 type b2EnqueueTaskCallback = fn(arg0: ptr[b2TaskCallback], arg1: ptr[void], arg2: ptr[void]) -> ptr[void]
 type b2FinishTaskCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
 type b2FrictionCallback = fn(arg0: float, arg1: ulong, arg2: float, arg3: ulong) -> float
 type b2RestitutionCallback = fn(arg0: float, arg1: ulong, arg2: float, arg3: ulong) -> float
+
 struct b2RayResult:
     shapeId: b2ShapeId
     point: b2Vec2
@@ -336,6 +409,7 @@ struct b2RayResult:
     nodeVisits: int
     leafVisits: int
     hit: bool
+
 struct b2WorldDef:
     gravity: b2Vec2
     restitutionThreshold: float
@@ -355,16 +429,20 @@ struct b2WorldDef:
     userTaskContext: ptr[void]
     userData: ptr[void]
     internalValue: int
+
 external function b2DefaultWorldDef() -> b2WorldDef
+
 enum b2BodyType: int
     b2_staticBody = 0
     b2_kinematicBody = 1
     b2_dynamicBody = 2
     b2_bodyTypeCount = 3
+
 struct b2MotionLocks:
     linearX: bool
     linearY: bool
     angularZ: bool
+
 struct b2BodyDef:
     type_: b2BodyType
     position: b2Vec2
@@ -384,16 +462,22 @@ struct b2BodyDef:
     isEnabled: bool
     allowFastRotation: bool
     internalValue: int
+
 external function b2DefaultBodyDef() -> b2BodyDef
+
 struct b2Filter:
     categoryBits: ptr_uint
     maskBits: ptr_uint
     groupIndex: int
+
 external function b2DefaultFilter() -> b2Filter
+
 struct b2QueryFilter:
     categoryBits: ptr_uint
     maskBits: ptr_uint
+
 external function b2DefaultQueryFilter() -> b2QueryFilter
+
 enum b2ShapeType: int
     b2_circleShape = 0
     b2_capsuleShape = 1
@@ -401,6 +485,7 @@ enum b2ShapeType: int
     b2_polygonShape = 3
     b2_chainSegmentShape = 4
     b2_shapeTypeCount = 5
+
 struct b2SurfaceMaterial:
     friction: float
     restitution: float
@@ -408,7 +493,9 @@ struct b2SurfaceMaterial:
     tangentSpeed: float
     userMaterialId: ptr_uint
     customColor: uint
+
 external function b2DefaultSurfaceMaterial() -> b2SurfaceMaterial
+
 struct b2ShapeDef:
     userData: ptr[void]
     material: b2SurfaceMaterial
@@ -423,7 +510,9 @@ struct b2ShapeDef:
     invokeContactCreation: bool
     updateBodyMass: bool
     internalValue: int
+
 external function b2DefaultShapeDef() -> b2ShapeDef
+
 struct b2ChainDef:
     userData: ptr[void]
     points: const_ptr[b2Vec2]
@@ -434,7 +523,9 @@ struct b2ChainDef:
     isLoop: bool
     enableSensorEvents: bool
     internalValue: int
+
 external function b2DefaultChainDef() -> b2ChainDef
+
 struct b2Profile:
     step: float
     pairs: float
@@ -459,6 +550,7 @@ struct b2Profile:
     bullets: float
     sleepIslands: float
     sensors: float
+
 struct b2Counters:
     bodyCount: int
     shapeCount: int
@@ -471,6 +563,7 @@ struct b2Counters:
     byteCount: int
     taskCount: int
     colorCounts: array[int, 24]
+
 enum b2JointType: int
     b2_distanceJoint = 0
     b2_filterJoint = 1
@@ -479,6 +572,7 @@ enum b2JointType: int
     b2_revoluteJoint = 4
     b2_weldJoint = 5
     b2_wheelJoint = 6
+
 struct b2JointDef:
     userData: ptr[void]
     bodyIdA: b2BodyId
@@ -491,6 +585,7 @@ struct b2JointDef:
     constraintDampingRatio: float
     drawScale: float
     collideConnected: bool
+
 struct b2DistanceJointDef:
     base: b2JointDef
     length: float
@@ -506,7 +601,9 @@ struct b2DistanceJointDef:
     maxMotorForce: float
     motorSpeed: float
     internalValue: int
+
 external function b2DefaultDistanceJointDef() -> b2DistanceJointDef
+
 struct b2MotorJointDef:
     base: b2JointDef
     linearVelocity: b2Vec2
@@ -520,11 +617,15 @@ struct b2MotorJointDef:
     angularDampingRatio: float
     maxSpringTorque: float
     internalValue: int
+
 external function b2DefaultMotorJointDef() -> b2MotorJointDef
+
 struct b2FilterJointDef:
     base: b2JointDef
     internalValue: int
+
 external function b2DefaultFilterJointDef() -> b2FilterJointDef
+
 struct b2PrismaticJointDef:
     base: b2JointDef
     enableSpring: bool
@@ -538,7 +639,9 @@ struct b2PrismaticJointDef:
     maxMotorForce: float
     motorSpeed: float
     internalValue: int
+
 external function b2DefaultPrismaticJointDef() -> b2PrismaticJointDef
+
 struct b2RevoluteJointDef:
     base: b2JointDef
     targetAngle: float
@@ -552,7 +655,9 @@ struct b2RevoluteJointDef:
     maxMotorTorque: float
     motorSpeed: float
     internalValue: int
+
 external function b2DefaultRevoluteJointDef() -> b2RevoluteJointDef
+
 struct b2WeldJointDef:
     base: b2JointDef
     linearHertz: float
@@ -560,7 +665,9 @@ struct b2WeldJointDef:
     linearDampingRatio: float
     angularDampingRatio: float
     internalValue: int
+
 external function b2DefaultWeldJointDef() -> b2WeldJointDef
+
 struct b2WheelJointDef:
     base: b2JointDef
     enableSpring: bool
@@ -573,33 +680,42 @@ struct b2WheelJointDef:
     maxMotorTorque: float
     motorSpeed: float
     internalValue: int
+
 external function b2DefaultWheelJointDef() -> b2WheelJointDef
+
 struct b2ExplosionDef:
     maskBits: ptr_uint
     position: b2Vec2
     radius: float
     falloff: float
     impulsePerLength: float
+
 external function b2DefaultExplosionDef() -> b2ExplosionDef
+
 struct b2SensorBeginTouchEvent:
     sensorShapeId: b2ShapeId
     visitorShapeId: b2ShapeId
+
 struct b2SensorEndTouchEvent:
     sensorShapeId: b2ShapeId
     visitorShapeId: b2ShapeId
+
 struct b2SensorEvents:
     beginEvents: ptr[b2SensorBeginTouchEvent]
     endEvents: ptr[b2SensorEndTouchEvent]
     beginCount: int
     endCount: int
+
 struct b2ContactBeginTouchEvent:
     shapeIdA: b2ShapeId
     shapeIdB: b2ShapeId
     contactId: b2ContactId
+
 struct b2ContactEndTouchEvent:
     shapeIdA: b2ShapeId
     shapeIdB: b2ShapeId
     contactId: b2ContactId
+
 struct b2ContactHitEvent:
     shapeIdA: b2ShapeId
     shapeIdB: b2ShapeId
@@ -607,6 +723,7 @@ struct b2ContactHitEvent:
     point: b2Vec2
     normal: b2Vec2
     approachSpeed: float
+
 struct b2ContactEvents:
     beginEvents: ptr[b2ContactBeginTouchEvent]
     endEvents: ptr[b2ContactEndTouchEvent]
@@ -614,30 +731,37 @@ struct b2ContactEvents:
     beginCount: int
     endCount: int
     hitCount: int
+
 struct b2BodyMoveEvent:
     userData: ptr[void]
     transform: b2Transform
     bodyId: b2BodyId
     fellAsleep: bool
+
 struct b2BodyEvents:
     moveEvents: ptr[b2BodyMoveEvent]
     moveCount: int
+
 struct b2JointEvent:
     jointId: b2JointId
     userData: ptr[void]
+
 struct b2JointEvents:
     jointEvents: ptr[b2JointEvent]
     count: int
+
 struct b2ContactData:
     contactId: b2ContactId
     shapeIdA: b2ShapeId
     shapeIdB: b2ShapeId
     manifold: b2Manifold
+
 type b2CustomFilterFcn = fn(arg0: b2ShapeId, arg1: b2ShapeId, arg2: ptr[void]) -> bool
 type b2PreSolveFcn = fn(arg0: b2ShapeId, arg1: b2ShapeId, arg2: b2Vec2, arg3: b2Vec2, arg4: ptr[void]) -> bool
 type b2OverlapResultFcn = fn(arg0: b2ShapeId, arg1: ptr[void]) -> bool
 type b2CastResultFcn = fn(arg0: b2ShapeId, arg1: b2Vec2, arg2: b2Vec2, arg3: float, arg4: ptr[void]) -> float
 type b2PlaneResultFcn = fn(arg0: b2ShapeId, arg1: const_ptr[b2PlaneResult], arg2: ptr[void]) -> bool
+
 enum b2HexColor: int
     b2_colorAliceBlue = 15792383
     b2_colorAntiqueWhite = 16444375
@@ -784,12 +908,14 @@ enum b2HexColor: int
     b2_colorBox2DBlue = 3190463
     b2_colorBox2DGreen = 9226532
     b2_colorBox2DYellow = 16772748
+
 enum b2ContactDrawType: int
     b2_drawContacts_None = 0
     b2_drawContacts_Clip = 1
     b2_drawContacts_AnchorA = 2
     b2_drawContacts_AnchorB = 3
     b2_drawContacts_Average = 4
+
 struct b2DebugDraw:
     DrawPolygonFcn: fn(arg0: const_ptr[b2Vec2], arg1: int, arg2: b2HexColor, arg3: ptr[void]) -> void
     DrawSolidPolygonFcn: fn(arg0: b2Transform, arg1: const_ptr[b2Vec2], arg2: int, arg3: float, arg4: b2HexColor, arg5: ptr[void]) -> void
@@ -817,6 +943,7 @@ struct b2DebugDraw:
     drawFrictionForces: bool
     drawIslands: bool
     context: ptr[void]
+
 external function b2DefaultDebugDraw() -> b2DebugDraw
 external function b2CreateWorld(def: const_ptr[b2WorldDef]) -> b2WorldId
 external function b2DestroyWorld(worldId: b2WorldId) -> void
@@ -1141,6 +1268,7 @@ external function b2WheelJoint_GetMaxMotorTorque(jointId: b2JointId) -> float
 external function b2WheelJoint_GetMotorTorque(jointId: b2JointId) -> float
 external function b2Contact_IsValid(id: b2ContactId) -> bool
 external function b2Contact_GetData(contactId: b2ContactId) -> b2ContactData
+
 const B2_ENABLE_VALIDATION: int = 0
 const B2_HASH_INIT: int = 5381
 const B2_PI: float = 3.14159274

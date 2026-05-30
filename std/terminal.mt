@@ -3,16 +3,13 @@ import std.fmt as fmt
 import std.string as string
 import std.vec as vec
 
-
 public struct Size:
     width: int
     height: int
 
-
 public struct Error:
     code: int
     message: string.String
-
 
 public enum Color: int
     black = 0
@@ -31,7 +28,6 @@ public enum Color: int
     bright_magenta = 13
     bright_cyan = 14
     bright_white = 15
-
 
 public enum KeyCode: int
     none = 0
@@ -57,7 +53,6 @@ public enum KeyCode: int
     function_4 = 20
     unknown = 21
 
-
 public enum MouseAction: int
     none = 0
     press = 1
@@ -66,20 +61,17 @@ public enum MouseAction: int
     scroll_up = 4
     scroll_down = 5
 
-
 public enum MouseButton: int
     none = 0
     left = 1
     middle = 2
     right = 3
 
-
 public enum EventKind: int
     none = 0
     key = 1
     mouse = 2
     resize = 3
-
 
 public struct KeyEvent:
     code: KeyCode
@@ -88,7 +80,6 @@ public struct KeyEvent:
     ctrl: bool
     alt: bool
     shifted: bool
-
 
 public struct MouseEvent:
     action: MouseAction
@@ -99,18 +90,15 @@ public struct MouseEvent:
     alt: bool
     shifted: bool
 
-
 public struct Event:
     kind: EventKind
     key: KeyEvent
     mouse: MouseEvent
     size: Size
 
-
 struct ParsedDecimal:
     value: int
     next_index: ptr_uint
-
 
 public struct Terminal:
     input: vec.Vec[ubyte]
@@ -143,15 +131,56 @@ function default_key_event() -> KeyEvent:
 
 
 function default_mouse_event() -> MouseEvent:
-    return MouseEvent(action = MouseAction.none, button = MouseButton.none, column = 0, row = 0, ctrl = false, alt = false, shifted = false)
+    return MouseEvent(
+        action = MouseAction.none,
+        button = MouseButton.none,
+        column = 0,
+        row = 0,
+        ctrl = false,
+        alt = false,
+        shifted = false
+    )
 
 
 function key_event(code: KeyCode, input_value: ubyte, has_byte: bool, ctrl: bool, alt: bool, shifted: bool) -> Event:
-    return Event(kind = EventKind.key, key = KeyEvent(code = code, input_byte = input_value, has_byte = has_byte, ctrl = ctrl, alt = alt, shifted = shifted), mouse = default_mouse_event(), size = Size(width = 0, height = 0))
+    return Event(
+        kind = EventKind.key,
+        key = KeyEvent(
+            code = code,
+            input_byte = input_value,
+            has_byte = has_byte,
+            ctrl = ctrl,
+            alt = alt,
+            shifted = shifted
+        ),
+        mouse = default_mouse_event(),
+        size = Size(width = 0, height = 0)
+    )
 
 
-function mouse_event(action: MouseAction, button: MouseButton, column: int, row: int, ctrl: bool, alt: bool, shifted: bool) -> Event:
-    return Event(kind = EventKind.mouse, key = default_key_event(), mouse = MouseEvent(action = action, button = button, column = column, row = row, ctrl = ctrl, alt = alt, shifted = shifted), size = Size(width = 0, height = 0))
+function mouse_event(
+    action: MouseAction,
+    button: MouseButton,
+    column: int,
+    row: int,
+    ctrl: bool,
+    alt: bool,
+    shifted: bool
+) -> Event:
+    return Event(
+        kind = EventKind.mouse,
+        key = default_key_event(),
+        mouse = MouseEvent(
+            action = action,
+            button = button,
+            column = column,
+            row = row,
+            ctrl = ctrl,
+            alt = alt,
+            shifted = shifted
+        ),
+        size = Size(width = 0, height = 0)
+    )
 
 
 function resize_event(current: Size) -> Event:
@@ -454,16 +483,56 @@ function parse_mouse_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
 
             if (button_code & 64) != 0:
                 if (button_code & 1) != 0:
-                    return Option[Event].some(value = mouse_event(MouseAction.scroll_down, MouseButton.none, column, row, ctrl, alt, shifted))
-                return Option[Event].some(value = mouse_event(MouseAction.scroll_up, MouseButton.none, column, row, ctrl, alt, shifted))
+                    return Option[Event].some(value = mouse_event(
+                        MouseAction.scroll_down,
+                        MouseButton.none,
+                        column,
+                        row,
+                        ctrl,
+                        alt,
+                        shifted
+                    ))
+                return Option[Event].some(value = mouse_event(
+                    MouseAction.scroll_up,
+                    MouseButton.none,
+                    column,
+                    row,
+                    ctrl,
+                    alt,
+                    shifted
+                ))
 
             if final_byte == 109:
-                return Option[Event].some(value = mouse_event(MouseAction.release, decode_mouse_button(button_code), column, row, ctrl, alt, shifted))
+                return Option[Event].some(value = mouse_event(
+                    MouseAction.release,
+                    decode_mouse_button(button_code),
+                    column,
+                    row,
+                    ctrl,
+                    alt,
+                    shifted
+                ))
 
             if (button_code & 32) != 0:
-                return Option[Event].some(value = mouse_event(MouseAction.move, decode_mouse_button(button_code), column, row, ctrl, alt, shifted))
+                return Option[Event].some(value = mouse_event(
+                    MouseAction.move,
+                    decode_mouse_button(button_code),
+                    column,
+                    row,
+                    ctrl,
+                    alt,
+                    shifted
+                ))
 
-            return Option[Event].some(value = mouse_event(MouseAction.press, decode_mouse_button(button_code), column, row, ctrl, alt, shifted))
+            return Option[Event].some(value = mouse_event(
+                MouseAction.press,
+                decode_mouse_button(button_code),
+                column,
+                row,
+                ctrl,
+                alt,
+                shifted
+            ))
         Option.none:
             return Option[Event].none
 
@@ -543,7 +612,14 @@ function parse_csi_event(buffer: ref[vec.Vec[ubyte]]) -> Option[Event]:
                                 apply_modifier(ref_of(event_.key), modifier)
                                 return Option[Event].some(value = event_)
 
-                            if final_byte == 65 or final_byte == 66 or final_byte == 67 or final_byte == 68 or final_byte == 72 or final_byte == 70:
+                            if (
+                                final_byte == 65
+                                or final_byte == 66
+                                or final_byte == 67
+                                or final_byte == 68
+                                or final_byte == 72
+                                or final_byte == 70
+                            ):
                                 return Option[Event].some(value = parse_csi_letter(buffer, final_byte, modifier))
 
                             return Option[Event].some(value = key_event(KeyCode.unknown, 0, false, false, false, false))
@@ -909,7 +985,10 @@ extending Terminal:
                     let current = payload.value
                     if current.width != this.size.width or current.height != this.size.height:
                         this.size = current
-                        return Result[Option[Event], Error].success(value= Option[Event].some(value = resize_event(current)))
+                        return Result[
+                            Option[Event],
+                            Error
+                        ].success(value= Option[Event].some(value = resize_event(current)))
 
         match parse_event(ref_of(this.input)):
             Option.some as payload:

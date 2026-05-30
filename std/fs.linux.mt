@@ -8,7 +8,6 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const path_kind_none: int = 0
 const path_kind_file: int = 1
 const path_kind_directory: int = 2
@@ -17,17 +16,14 @@ public struct Error:
     code: int
     message: string.String
 
-
 public struct Entries:
     values: vec.Vec[string.String]
-
 
 public enum MetadataKind: int
     none = 0
     file = 1
     directory = 2
     other = 3
-
 
 public struct Metadata:
     kind: MetadataKind
@@ -71,7 +67,10 @@ function validate_utf8_string(text_value: string.String, error_message: str) -> 
         Option.none:
             var owned = text_value
             owned.release()
-            return Result[string.String, Error].failure(error= Error(code = -1, message = string.String.from_str(error_message)))
+            return Result[string.String, Error].failure(error= Error(
+                code = -1,
+                message = string.String.from_str(error_message)
+            ))
 
 
 function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
@@ -329,7 +328,10 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                 while index < entries.len():
                     match entries.get(index):
                         Option.none:
-                            return Result[bool, Error].failure(error= static_error("fs copy entry missing source entry"))
+                            return Result[
+                                bool,
+                                Error
+                            ].failure(error= static_error("fs copy entry missing source entry"))
                         Option.some as entry_payload:
                             var child_source = path_ops.join(source_path, entry_payload.value)
                             var child_target = path_ops.join(target_path, entry_payload.value)
@@ -347,7 +349,10 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                 return Result[bool, Error].success(value= true)
 
     if exists(source_path):
-        return Result[bool, Error].failure(error= static_error("fs.copy_entry supports only regular files and directories"))
+        return Result[
+            bool,
+            Error
+        ].failure(error= static_error("fs.copy_entry supports only regular files and directories"))
 
     return Result[bool, Error].failure(error= static_error("fs.copy_entry source does not exist"))
 
@@ -404,7 +409,11 @@ public function rename(source_path: str, target_path: str) -> Result[bool, Error
     defer target_storage.release()
 
     var raw_error = zero[c.mt_fs_error]
-    let status_code = c.mt_fs_rename(source_storage.to_cstr(source_path), target_storage.to_cstr(target_path), raw_error)
+    let status_code = c.mt_fs_rename(
+        source_storage.to_cstr(source_path),
+        target_storage.to_cstr(target_path),
+        raw_error
+    )
     if status_code != 0:
         return Result[bool, Error].failure(error= take_error(raw_error, "fs rename failed"))
 
@@ -418,7 +427,10 @@ public function current_directory() -> Result[string.String, Error]:
     if status_code != 0:
         return Result[string.String, Error].failure(error= take_error(raw_error, "fs current directory failed"))
 
-    return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.current_directory requires UTF-8 text")
+    return validate_utf8_string(
+        take_owned_string(raw_text.data, raw_text.len),
+        "fs.current_directory requires UTF-8 text"
+    )
 
 
 public function find_ancestor_containing(path: str, entry_name: str) -> Option[string.String]:
@@ -453,7 +465,10 @@ public function temporary_directory() -> string.String:
     var raw_error = zero[c.mt_fs_error]
     let status_code = c.mt_fs_temporary_directory(raw_text, raw_error)
     if status_code == 0:
-        match validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.temporary_directory requires UTF-8 text"):
+        match validate_utf8_string(
+            take_owned_string(raw_text.data, raw_text.len),
+            "fs.temporary_directory requires UTF-8 text"
+        ):
             Result.success as payload:
                 return payload.value
             Result.failure as payload:
@@ -488,18 +503,32 @@ public function canonicalize(path: str) -> Result[string.String, Error]:
 
 public function create_temporary_directory(parent_dir: str, prefix: str) -> Result[string.String, Error]:
     if prefix.len == 0:
-        return Result[string.String, Error].failure(error= static_error("fs.create_temporary_directory requires a non-empty prefix"))
+        return Result[
+            string.String,
+            Error
+        ].failure(error= static_error("fs.create_temporary_directory requires a non-empty prefix"))
 
     var storage = arena.create(parent_dir.len + prefix.len + 2)
     defer storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
-    let status_code = c.mt_fs_create_temporary_directory(storage.to_cstr(parent_dir), storage.to_cstr(prefix), raw_text, raw_error)
+    let status_code = c.mt_fs_create_temporary_directory(
+        storage.to_cstr(parent_dir),
+        storage.to_cstr(prefix),
+        raw_text,
+        raw_error
+    )
     if status_code != 0:
-        return Result[string.String, Error].failure(error= take_error(raw_error, "fs create temporary directory failed"))
+        return Result[string.String, Error].failure(error= take_error(
+            raw_error,
+            "fs create temporary directory failed"
+        ))
 
-    return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.create_temporary_directory requires UTF-8 text")
+    return validate_utf8_string(
+        take_owned_string(raw_text.data, raw_text.len),
+        "fs.create_temporary_directory requires UTF-8 text"
+    )
 
 
 public function create_temporary_directory_in_system_temp(prefix: str) -> Result[string.String, Error]:
@@ -510,18 +539,30 @@ public function create_temporary_directory_in_system_temp(prefix: str) -> Result
 
 public function create_temporary_file(parent_dir: str, prefix: str, suffix: str) -> Result[string.String, Error]:
     if prefix.len == 0:
-        return Result[string.String, Error].failure(error= static_error("fs.create_temporary_file requires a non-empty prefix"))
+        return Result[
+            string.String,
+            Error
+        ].failure(error= static_error("fs.create_temporary_file requires a non-empty prefix"))
 
     var storage = arena.create(parent_dir.len + prefix.len + suffix.len + 3)
     defer storage.release()
 
     var raw_text = zero[c.mt_fs_string]
     var raw_error = zero[c.mt_fs_error]
-    let status_code = c.mt_fs_create_temporary_file(storage.to_cstr(parent_dir), storage.to_cstr(prefix), storage.to_cstr(suffix), raw_text, raw_error)
+    let status_code = c.mt_fs_create_temporary_file(
+        storage.to_cstr(parent_dir),
+        storage.to_cstr(prefix),
+        storage.to_cstr(suffix),
+        raw_text,
+        raw_error
+    )
     if status_code != 0:
         return Result[string.String, Error].failure(error= take_error(raw_error, "fs create temporary file failed"))
 
-    return validate_utf8_string(take_owned_string(raw_text.data, raw_text.len), "fs.create_temporary_file requires UTF-8 text")
+    return validate_utf8_string(
+        take_owned_string(raw_text.data, raw_text.len),
+        "fs.create_temporary_file requires UTF-8 text"
+    )
 
 
 public function create_temporary_file_in_system_temp(prefix: str, suffix: str) -> Result[string.String, Error]:
@@ -578,7 +619,10 @@ public function list_files_recursive(path: str) -> Result[Entries, Error]:
 
     if not is_directory(path):
         if exists(path):
-            return Result[Entries, Error].failure(error= static_error("fs.list_files_recursive supports only regular files and directories"))
+            return Result[
+                Entries,
+                Error
+            ].failure(error= static_error("fs.list_files_recursive supports only regular files and directories"))
 
         return Result[Entries, Error].failure(error= static_error("fs.list_files_recursive path does not exist"))
 

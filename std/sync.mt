@@ -3,19 +3,15 @@ import std.libuv as libuv
 import std.str as text
 import std.string as string
 
-
 public struct Error:
     code: int
     message: string.String
 
-
 public struct Mutex:
     handle: ptr[c.mt_mutex]?
 
-
 public struct Condition:
     handle: ptr[c.mt_condition]?
-
 
 public struct Semaphore:
     handle: ptr[c.mt_semaphore]?

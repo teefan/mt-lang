@@ -8,6 +8,7 @@ public struct String:
     capacity: ptr_uint
     owns_storage: bool
 
+
 extending String:
     public static function create() -> String:
         return String(data = null, len = 0, capacity = 0, owns_storage = true)

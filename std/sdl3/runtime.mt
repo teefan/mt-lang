@@ -6,7 +6,6 @@ import std.string as string
 function run_app_no_args_uninitialized() -> int:
     fatal(c"std.sdl3.runtime.run_app_no_args callback not initialized")
 
-
 var run_app_no_args_slot: array[fn() -> int, 1] = array[fn() -> int, 1](run_app_no_args_uninitialized)
 
 

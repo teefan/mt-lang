@@ -8,23 +8,18 @@ import std.string as string
 import std.sync as sync
 import std.vec as vec
 
-
 type NativeHandle = libuv.uv_handle_t
 type NativeAsyncHandle = libuv.uv_async_t
-
 
 public struct Error:
     code: int
     message: string.String
 
-
 public struct Mailbox[T]:
     state: ptr[MailboxState[T]]?
 
-
 struct MailboxStateBase:
     destroy: fn(state_frame: ptr[void]) -> void
-
 
 struct MailboxState[T]:
     destroy: fn(state_frame: ptr[void]) -> void
@@ -87,7 +82,10 @@ public function create_on[T](runtime: aio.Runtime) -> Result[Mailbox[T], Error]:
     let mutex_result = sync.create_mutex()
     match mutex_result:
         Result.failure as payload:
-            return Result[Mailbox[T], Error].failure(error = Error(code = payload.error.code, message = payload.error.message))
+            return Result[Mailbox[T], Error].failure(error = Error(
+                code = payload.error.code,
+                message = payload.error.message
+            ))
         Result.success as payload:
             let loop = aio_backend.runtime_loop(runtime)
             let handle = alloc_async_handle()

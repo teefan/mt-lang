@@ -3,11 +3,14 @@ external
 
 link "glfw3"
 include "GLFW/glfw3.h"
+
 type GLFWglproc = fn() -> void
 type GLFWvkproc = fn() -> void
+
 opaque GLFWmonitor = c"GLFWmonitor"
 opaque GLFWwindow = c"GLFWwindow"
 opaque GLFWcursor = c"GLFWcursor"
+
 type GLFWallocatefun = fn(arg0: ptr_uint, arg1: ptr[void]) -> ptr[void]
 type GLFWreallocatefun = fn(arg0: ptr[void], arg1: ptr_uint, arg2: ptr[void]) -> ptr[void]
 type GLFWdeallocatefun = fn(arg0: ptr[void], arg1: ptr[void]) -> void
@@ -31,6 +34,7 @@ type GLFWcharmodsfun = fn(arg0: ptr[GLFWwindow], arg1: uint, arg2: int) -> void
 type GLFWdropfun = fn(arg0: ptr[GLFWwindow], arg1: int, arg2: ptr[cstr]) -> void
 type GLFWmonitorfun = fn(arg0: ptr[GLFWmonitor], arg1: int) -> void
 type GLFWjoystickfun = fn(arg0: int, arg1: int) -> void
+
 struct GLFWvidmode:
     width: int
     height: int
@@ -38,23 +42,28 @@ struct GLFWvidmode:
     greenBits: int
     blueBits: int
     refreshRate: int
+
 struct GLFWgammaramp:
     red: ptr[ushort]
     green: ptr[ushort]
     blue: ptr[ushort]
     size: uint
+
 struct GLFWimage:
     width: int
     height: int
     pixels: ptr[ubyte]
+
 struct GLFWgamepadstate:
     buttons: array[ubyte, 15]
     axes: array[float, 6]
+
 struct GLFWallocator:
     allocate: fn(arg0: ptr_uint, arg1: ptr[void]) -> ptr[void]
     reallocate: fn(arg0: ptr[void], arg1: ptr_uint, arg2: ptr[void]) -> ptr[void]
     deallocate: fn(arg0: ptr[void], arg1: ptr[void]) -> void
     user: ptr[void]
+
 external function glfwInit() -> int
 external function glfwTerminate() -> void
 external function glfwInitHint(hint: int, value: int) -> void
@@ -175,6 +184,7 @@ external function glfwExtensionSupported(extension: cstr) -> int
 external function glfwGetProcAddress(procname: cstr) -> GLFWglproc?
 external function glfwVulkanSupported() -> int
 external function glfwGetRequiredInstanceExtensions(count: ptr[uint]) -> ptr[cstr]?
+
 const GLFW_VERSION_MAJOR: int = 3
 const GLFW_VERSION_MINOR: int = 5
 const GLFW_VERSION_REVISION: int = 0

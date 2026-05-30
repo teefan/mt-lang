@@ -11,17 +11,14 @@ public struct Error:
     code: int
     message: string.String
 
-
 public struct WorkItem:
     run: fn(arg: ptr[void]) -> void
     complete: fn(arg: ptr[void]) -> void
     arg: ptr[void]
 
-
 public struct Pool:
     state: ptr[PoolState]?
     workers: vec.Vec[thread.Thread]
-
 
 struct PoolState:
     mutex: sync.Mutex
@@ -208,7 +205,11 @@ extending Error:
 
 
 extending WorkItem:
-    public static function create(run: fn(arg: ptr[void]) -> void, complete: fn(arg: ptr[void]) -> void, arg: ptr[void]) -> WorkItem:
+    public static function create(
+        run: fn(arg: ptr[void]) -> void,
+        complete: fn(arg: ptr[void]) -> void,
+        arg: ptr[void]
+    ) -> WorkItem:
         return WorkItem(run = run, complete = complete, arg = arg)
 
 

@@ -2,17 +2,14 @@ external
 
 include "terminal_support.h"
 
-
 struct mt_terminal_size = c"mt_terminal_size":
     width: int
     height: int
-
 
 struct mt_terminal_error = c"mt_terminal_error":
     code: int
     message_data: ptr[char]?
     message_len: ptr_uint
-
 
 external function mt_terminal_stdin_is_tty() -> bool
 external function mt_terminal_stdout_is_tty() -> bool

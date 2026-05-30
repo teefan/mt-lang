@@ -1,7 +1,6 @@
 import std.mem.heap as heap
 import std.str as text
 
-
 public struct Bytes:
     data: ptr[ubyte]?
     len: ptr_uint

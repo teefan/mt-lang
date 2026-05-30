@@ -1,9 +1,7 @@
 import std.vec as vec
 
-
 public struct BinaryHeap[T]:
     values: vec.Vec[T]
-
 
 public struct Iter[T]:
     data: ptr[T]?
@@ -51,7 +49,6 @@ extending BinaryHeap[T]:
             read(right) = temp
 
 
-
     static function sift_up(current: ref[BinaryHeap[T]], start_index: ptr_uint) -> void:
         var child = start_index
         while child != 0:
@@ -63,7 +60,6 @@ extending BinaryHeap[T]:
 
             BinaryHeap[T].swap(current, child, parent)
             child = parent
-
 
 
     static function sift_down(current: ref[BinaryHeap[T]], start_index: ptr_uint) -> void:
@@ -92,7 +88,6 @@ extending BinaryHeap[T]:
 
             BinaryHeap[T].swap(current, parent, candidate)
             parent = candidate
-
 
 
     public function len() -> ptr_uint:

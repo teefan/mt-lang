@@ -1,6 +1,5 @@
 import std.mem.heap as heap
 
-
 struct Node[T]:
     value: T
     left: ptr[Node[T]]?
@@ -8,17 +7,14 @@ struct Node[T]:
     parent: ptr[Node[T]]?
     height: int
 
-
 struct SearchResult[T]:
     node: ptr[Node[T]]?
     parent: ptr[Node[T]]?
     compare: int
     found: bool
 
-
 public struct Iter[T]:
     node: ptr[Node[T]]?
-
 
 public struct OrderedSet[T]:
     root: ptr[Node[T]]?
@@ -47,7 +43,6 @@ extending OrderedSet[T]:
 
         unsafe:
             read(node).height = next_height + 1
-
 
 
     static function balance_factor(node: ptr[Node[T]]?) -> int:
@@ -91,7 +86,12 @@ extending OrderedSet[T]:
         return null
 
 
-    static function replace_child(current: ref[OrderedSet[T]], parent: ptr[Node[T]]?, previous: ptr[Node[T]], replacement: ptr[Node[T]]?) -> void:
+    static function replace_child(
+        current: ref[OrderedSet[T]],
+        parent: ptr[Node[T]]?,
+        previous: ptr[Node[T]],
+        replacement: ptr[Node[T]]?
+    ) -> void:
         if parent == null:
             current.root = replacement
         else:
@@ -107,7 +107,6 @@ extending OrderedSet[T]:
         if replacement != null:
             unsafe:
                 read(ptr[Node[T]]<-replacement).parent = parent
-
 
 
     static function rotate_left(current: ref[OrderedSet[T]], node: ptr[Node[T]]) -> ptr[Node[T]]:
@@ -187,7 +186,6 @@ extending OrderedSet[T]:
                 cursor = unsafe: read(rotated).parent
             else:
                 cursor = unsafe: read(cursor_ptr).parent
-
 
 
     static function locate(current: OrderedSet[T], value: T) -> SearchResult[T]:

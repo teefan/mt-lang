@@ -6,7 +6,6 @@ import std.multiplayer.snapshot as snapshot
 import std.multiplayer.relevancy as relevancy
 import std.multiplayer.spatial as spatial
 
-
 public type ConnectionId = protocol.ConnectionId
 public type EntityId = protocol.EntityId
 public type Tick = protocol.Tick
@@ -51,7 +50,6 @@ public type PolicyKind = relevancy.PolicyKind
 public type CellCoord = relevancy.CellCoord
 public type GridCell = spatial.GridCell
 public type GridIndex = spatial.GridIndex
-
 
 public attribute[struct] replicated(authority: Authority)
 public attribute[struct] sync_defaults(mode: TransferMode, channel: ubyte, rate_hz: uint, target: SyncTarget)

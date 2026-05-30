@@ -2,7 +2,6 @@ import std.path as path
 import std.str as text
 import std.string as string
 
-
 const FILE_URI_PREFIX: str = "file://"
 
 
@@ -78,7 +77,6 @@ function append_percent_encoded_path(output: ref[string.String], path_text: str)
         else:
             append_percent_encoded_byte(output, value)
         index += 1
-
 
 
 function append_percent_encoded_byte(output: ref[string.String], value: ubyte) -> void:

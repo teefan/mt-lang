@@ -139,7 +139,11 @@ extending str:
                     return false
                 index += 3
             else if first >= 0xE1 and first <= 0xEC:
-                if index + 2 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)):
+                if (
+                    index + 2 >= this.len
+                    or not utf8_continuation_byte(this.byte_at(index + 1))
+                    or not utf8_continuation_byte(this.byte_at(index + 2))
+                ):
                     return false
                 index += 3
             else if first == 0xED:
@@ -150,25 +154,44 @@ extending str:
                     return false
                 index += 3
             else if first >= 0xEE and first <= 0xEF:
-                if index + 2 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)):
+                if (
+                    index + 2 >= this.len
+                    or not utf8_continuation_byte(this.byte_at(index + 1))
+                    or not utf8_continuation_byte(this.byte_at(index + 2))
+                ):
                     return false
                 index += 3
             else if first == 0xF0:
                 if index + 3 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)
-                if second < 0x90 or second > 0xBF or not utf8_continuation_byte(this.byte_at(index + 2)) or not utf8_continuation_byte(this.byte_at(index + 3)):
+                if (
+                    second < 0x90
+                    or second > 0xBF
+                    or not utf8_continuation_byte(this.byte_at(index + 2))
+                    or not utf8_continuation_byte(this.byte_at(index + 3))
+                ):
                     return false
                 index += 4
             else if first >= 0xF1 and first <= 0xF3:
-                if index + 3 >= this.len or not utf8_continuation_byte(this.byte_at(index + 1)) or not utf8_continuation_byte(this.byte_at(index + 2)) or not utf8_continuation_byte(this.byte_at(index + 3)):
+                if (
+                    index + 3 >= this.len
+                    or not utf8_continuation_byte(this.byte_at(index + 1))
+                    or not utf8_continuation_byte(this.byte_at(index + 2))
+                    or not utf8_continuation_byte(this.byte_at(index + 3))
+                ):
                     return false
                 index += 4
             else if first == 0xF4:
                 if index + 3 >= this.len:
                     return false
                 let second = this.byte_at(index + 1)
-                if second < 0x80 or second > 0x8F or not utf8_continuation_byte(this.byte_at(index + 2)) or not utf8_continuation_byte(this.byte_at(index + 3)):
+                if (
+                    second < 0x80
+                    or second > 0x8F
+                    or not utf8_continuation_byte(this.byte_at(index + 2))
+                    or not utf8_continuation_byte(this.byte_at(index + 3))
+                ):
                     return false
                 index += 4
             else:

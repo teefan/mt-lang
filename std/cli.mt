@@ -3,15 +3,12 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const byte_hyphen: ubyte = ubyte<-45
 const byte_equals: ubyte = ubyte<-61
-
 
 public enum OptionKind: int
     flag = 0
     value = 1
-
 
 public struct OptionSpec:
     long_name: str
@@ -22,14 +19,12 @@ public struct OptionSpec:
     default_value: Option[str]
     required: bool
 
-
 public struct CommandSpec:
     name: str
     summary: str
     help: str
     options: span[OptionSpec]
     positional_help: Option[str]
-
 
 public struct AppSpec:
     name: str
@@ -38,13 +33,11 @@ public struct AppSpec:
     commands: span[CommandSpec]
     positional_help: Option[str]
 
-
 public struct OptionMatch:
     name: string.String
     present: bool
     value: string.String
     has_value: bool
-
 
 public struct Match:
     command_name: string.String
@@ -52,7 +45,6 @@ public struct Match:
     options: vec.Vec[OptionMatch]
     positionals: vec.Vec[string.String]
     show_help: bool
-
 
 public struct Error:
     message: string.String
@@ -146,7 +138,11 @@ function append_commands_section(output: ref[string.String], commands: span[Comm
     append_line(output, "")
 
 
-function append_options_section(output: ref[string.String], app_options: span[OptionSpec], command_options: span[OptionSpec]) -> void:
+function append_options_section(
+    output: ref[string.String],
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec]
+) -> void:
     append_line(output, "Options:")
     append_line(output, "  -h, --help - Show this help")
 
@@ -176,7 +172,11 @@ function find_command(commands: span[CommandSpec], name: str) -> ptr[CommandSpec
     return null
 
 
-function find_long_option(app_options: span[OptionSpec], command_options: span[OptionSpec], name: str) -> ptr[OptionSpec]?:
+function find_long_option(
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec],
+    name: str
+) -> ptr[OptionSpec]?:
     var index: ptr_uint = 0
     while index < command_options.len:
         let candidate = unsafe: command_options.data + index
@@ -194,7 +194,11 @@ function find_long_option(app_options: span[OptionSpec], command_options: span[O
     return null
 
 
-function find_short_option(app_options: span[OptionSpec], command_options: span[OptionSpec], name: str) -> ptr[OptionSpec]?:
+function find_short_option(
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec],
+    name: str
+) -> ptr[OptionSpec]?:
     var index: ptr_uint = 0
     while index < command_options.len:
         let candidate = unsafe: command_options.data + index
@@ -248,13 +252,19 @@ function append_option_specs(matches: ptr[vec.Vec[OptionMatch]], specs: span[Opt
         match spec.short_name:
             Option.some as payload:
                 if not short_name_valid(payload.value):
-                    return Result[bool, Error].failure(error= create_error("cli short option names must be exactly one character"))
+                    return Result[
+                        bool,
+                        Error
+                    ].failure(error= create_error("cli short option names must be exactly one character"))
             Option.none:
                 pass
 
         let current = unsafe: read(matches)
         if find_option_match(current, spec.long_name) != null:
-            return Result[bool, Error].failure(error= create_error("cli option names must be unique within the active command"))
+            return Result[
+                bool,
+                Error
+            ].failure(error= create_error("cli option names must be unique within the active command"))
 
         unsafe: read(matches).push(create_option_match(spec))
         index += 1
@@ -350,7 +360,11 @@ function usage_for_command(app: AppSpec, command: CommandSpec) -> string.String:
     return usage
 
 
-function validate_required_options(result: Match, app_options: span[OptionSpec], command_options: span[OptionSpec]) -> Result[bool, Error]:
+function validate_required_options(
+    result: Match,
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec]
+) -> Result[bool, Error]:
     var index: ptr_uint = 0
     while index < app_options.len:
         let spec = unsafe: read(app_options.data + index)
@@ -390,7 +404,14 @@ public function flag_option(long_name: str, short_name: Option[str], help: str) 
     )
 
 
-public function value_option(long_name: str, short_name: Option[str], value_name: str, help: str, required: bool, default_value: Option[str]) -> OptionSpec:
+public function value_option(
+    long_name: str,
+    short_name: Option[str],
+    value_name: str,
+    help: str,
+    required: bool,
+    default_value: Option[str]
+) -> OptionSpec:
     return OptionSpec(
         long_name = long_name,
         short_name = short_name,
@@ -402,12 +423,36 @@ public function value_option(long_name: str, short_name: Option[str], value_name
     )
 
 
-public function command_spec(name: str, summary: str, help: str, options: span[OptionSpec], positional_help: Option[str]) -> CommandSpec:
-    return CommandSpec(name = name, summary = summary, help = help, options = options, positional_help = positional_help)
+public function command_spec(
+    name: str,
+    summary: str,
+    help: str,
+    options: span[OptionSpec],
+    positional_help: Option[str]
+) -> CommandSpec:
+    return CommandSpec(
+        name = name,
+        summary = summary,
+        help = help,
+        options = options,
+        positional_help = positional_help
+    )
 
 
-public function app_spec(name: str, summary: str, options: span[OptionSpec], commands: span[CommandSpec], positional_help: Option[str]) -> AppSpec:
-    return AppSpec(name = name, summary = summary, options = options, commands = commands, positional_help = positional_help)
+public function app_spec(
+    name: str,
+    summary: str,
+    options: span[OptionSpec],
+    commands: span[CommandSpec],
+    positional_help: Option[str]
+) -> AppSpec:
+    return AppSpec(
+        name = name,
+        summary = summary,
+        options = options,
+        commands = commands,
+        positional_help = positional_help
+    )
 
 
 public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:

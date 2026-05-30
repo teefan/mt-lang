@@ -1,6 +1,5 @@
 import std.map as map
 
-
 public struct Set[T]:
     values: map.Map[T, bool]
 

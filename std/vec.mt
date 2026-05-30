@@ -1,11 +1,9 @@
 import std.mem.heap as heap
 
-
 public struct Vec[T]:
     data: ptr[T]?
     len: ptr_uint
     capacity: ptr_uint
-
 
 public struct Iter[T]:
     data: ptr[T]?

@@ -2,11 +2,9 @@ import std.bytes as bytes
 import std.c.zlib as c
 import std.string as string
 
-
 public const DEFAULT_COMPRESSION: int = c.MT_ZLIB_DEFAULT_COMPRESSION
 public const BEST_SPEED: int = c.MT_ZLIB_BEST_SPEED
 public const BEST_COMPRESSION: int = c.MT_ZLIB_BEST_COMPRESSION
-
 
 public struct Error:
     code: int
@@ -55,7 +53,10 @@ public function compress_bytes(data: span[ubyte]) -> Result[bytes.Bytes, Error]:
 
 public function compress_bytes_with_level(data: span[ubyte], level: int) -> Result[bytes.Bytes, Error]:
     if level < DEFAULT_COMPRESSION or level > BEST_COMPRESSION:
-        return Result[bytes.Bytes, Error].failure(error= static_error("gzip compression level must be between -1 and 9"))
+        return Result[
+            bytes.Bytes,
+            Error
+        ].failure(error= static_error("gzip compression level must be between -1 and 9"))
 
     var raw_bytes = zero[c.mt_zlib_bytes]
     var raw_error = zero[c.mt_zlib_error]

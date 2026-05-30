@@ -2,14 +2,11 @@ import std.multiplayer.protocol as protocol
 import std.str as text
 import std.vec as vec
 
-
 public type Error = protocol.Error
 public type ErrorCode = protocol.ErrorCode
 
-
 const descriptor_hash_basis: ulong = 14695981039346656037
 const descriptor_hash_prime: ulong = 1099511628211
-
 
 public struct StateDescriptor:
     name: str
@@ -26,7 +23,6 @@ public struct StateDescriptor:
     sync_rate_hz: uint
     sync_target: protocol.SyncTarget
 
-
 public struct RpcDescriptor:
     name: str
     direction: protocol.RpcDirection
@@ -37,7 +33,6 @@ public struct RpcDescriptor:
     payload_size: ptr_uint
     decode_payload_binding: ulong
     dispatch_typed_binding: ulong
-
 
 public struct Registry:
     states: vec.Vec[StateDescriptor]
@@ -121,10 +116,16 @@ extending Registry:
 
     public mutable function add_state(descriptor: StateDescriptor) -> Result[bool, Error]:
         if this.frozen:
-            return Result[bool, Error].failure(error = registry_error(ErrorCode.registry_frozen, "registry is already frozen"))
+            return Result[bool, Error].failure(error = registry_error(
+                ErrorCode.registry_frozen,
+                "registry is already frozen"
+            ))
 
         if has_state_descriptor(this.states.as_span(), descriptor):
-            return Result[bool, Error].failure(error = registry_error(ErrorCode.already_registered, "state descriptor is already registered"))
+            return Result[bool, Error].failure(error = registry_error(
+                ErrorCode.already_registered,
+                "state descriptor is already registered"
+            ))
 
         this.states.push(descriptor)
         return Result[bool, Error].success(value = true)
@@ -132,10 +133,16 @@ extending Registry:
 
     public mutable function add_rpc(descriptor: RpcDescriptor) -> Result[bool, Error]:
         if this.frozen:
-            return Result[bool, Error].failure(error = registry_error(ErrorCode.registry_frozen, "registry is already frozen"))
+            return Result[bool, Error].failure(error = registry_error(
+                ErrorCode.registry_frozen,
+                "registry is already frozen"
+            ))
 
         if has_rpc_descriptor(this.rpcs.as_span(), descriptor):
-            return Result[bool, Error].failure(error = registry_error(ErrorCode.already_registered, "rpc descriptor is already registered"))
+            return Result[bool, Error].failure(error = registry_error(
+                ErrorCode.already_registered,
+                "rpc descriptor is already registered"
+            ))
 
         this.rpcs.push(descriptor)
         return Result[bool, Error].success(value = true)

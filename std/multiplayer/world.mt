@@ -7,21 +7,17 @@ import std.mem.heap as heap
 import std.str as text
 import std.vec as vec
 
-
 public type Error = protocol.Error
 public type ErrorCode = protocol.ErrorCode
 public type ConnectionId = protocol.ConnectionId
 public type EntityId = protocol.EntityId
 
-
 public enum WorldRole: ubyte
     server = 0
     client = 1
 
-
 public struct Ownership:
     owner: Option[ConnectionId]
-
 
 public struct EntityRecord:
     entity: EntityId
@@ -29,7 +25,6 @@ public struct EntityRecord:
     owner: Option[ConnectionId]
     state_size: ptr_uint
     state_storage: ptr[void]?
-
 
 public struct World:
     role: WorldRole
@@ -135,7 +130,10 @@ extending World:
                     let record = read(entity)
                     if record.descriptor.encode_full_binding != registry.expected_state_encode_full_binding(record.descriptor):
                         return Result[bytes.Bytes, Error].failure(
-                            error = protocol.error(ErrorCode.invalid_argument, "state descriptor encode_full binding mismatch")
+                            error = protocol.error(
+                                ErrorCode.invalid_argument,
+                                "state descriptor encode_full binding mismatch"
+                            )
                         )
 
                     output.append_array(wire.encode_u32_be(uint<-record.entity))
@@ -186,15 +184,25 @@ extending World:
             if record != null:
                 unsafe:
                     let current = read(record)
-                    if current.descriptor.schema_hash == schema_hash and current.state_size == state_size and current.state_storage != null:
+                    if (
+                        current.descriptor.schema_hash == schema_hash
+                        and current.state_size == state_size
+                        and current.state_storage != null
+                    ):
                         if current.descriptor.decode_full_binding != registry.expected_state_decode_full_binding(current.descriptor):
                             return Result[ptr_uint, Error].failure(
-                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor decode_full binding mismatch")
+                                error = protocol.error(
+                                    ErrorCode.invalid_argument,
+                                    "state descriptor decode_full binding mismatch"
+                                )
                             )
 
                         if current.descriptor.apply_delta_binding != registry.expected_state_apply_delta_binding(current.descriptor):
                             return Result[ptr_uint, Error].failure(
-                                error = protocol.error(ErrorCode.invalid_argument, "state descriptor apply_delta binding mismatch")
+                                error = protocol.error(
+                                    ErrorCode.invalid_argument,
+                                    "state descriptor apply_delta binding mismatch"
+                                )
                             )
 
                         copy_state_bytes(
@@ -412,13 +420,11 @@ function release_entity_record(entities: ptr[vec.Vec[EntityRecord]], index: ptr_
             read(record_ptr).state_storage = null
 
 
-
 function release_entity_storage(entities: ref[vec.Vec[EntityRecord]]) -> void:
     var index: ptr_uint = 0
     while index < entities.len():
         release_entity_record(ptr_of(entities), index)
         index += 1
-
 
 
 function same_owner(left: Option[ConnectionId], right: Option[ConnectionId]) -> bool:
@@ -443,4 +449,3 @@ function copy_state_bytes(destination: ptr[ubyte], source: ptr[ubyte], size: ptr
         unsafe:
             read(destination + index) = read(source + index)
         index += 1
-

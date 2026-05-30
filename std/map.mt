@@ -1,22 +1,18 @@
 import std.mem.heap as heap
 
-
 struct Node[K, V]:
     hash: uint
     key: K
     value: V
     next: ptr[Node[K, V]]?
 
-
 public struct Entry[K, V]:
     key: const_ptr[K]
     value: ptr[V]
 
-
 public struct RemovedEntry[K, V]:
     key: K
     value: V
-
 
 public struct Keys[K, V]:
     buckets: ptr[ptr[Node[K, V]]?]?
@@ -24,20 +20,17 @@ public struct Keys[K, V]:
     bucket_count: ptr_uint
     node: ptr[Node[K, V]]?
 
-
 public struct Values[K, V]:
     buckets: ptr[ptr[Node[K, V]]?]?
     bucket_index: ptr_uint
     bucket_count: ptr_uint
     node: ptr[Node[K, V]]?
 
-
 public struct Entries[K, V]:
     buckets: ptr[ptr[Node[K, V]]?]?
     bucket_index: ptr_uint
     bucket_count: ptr_uint
     node: ptr[Node[K, V]]?
-
 
 public struct Map[K, V]:
     buckets: ptr[ptr[Node[K, V]]?]?

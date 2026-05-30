@@ -1,6 +1,5 @@
 import std.mem.heap as heap
 
-
 struct Node[K, V]:
     hash: uint
     key: K
@@ -9,29 +8,23 @@ struct Node[K, V]:
     order_prev: ptr[Node[K, V]]?
     order_next: ptr[Node[K, V]]?
 
-
 public struct Entry[K, V]:
     key: const_ptr[K]
     value: ptr[V]
-
 
 public struct RemovedEntry[K, V]:
     key: K
     value: V
 
-
 public struct Keys[K, V]:
     node: ptr[Node[K, V]]?
-
 
 public struct Values[K, V]:
     node: ptr[Node[K, V]]?
 
-
 public struct Entries[K, V]:
     node: ptr[Node[K, V]]?
     started: bool
-
 
 public struct LinkedMap[K, V]:
     buckets: ptr[ptr[Node[K, V]]?]?
@@ -93,7 +86,6 @@ extending LinkedMap[K, V]:
         else:
             unsafe:
                 read(ptr[Node[K, V]]<-next).order_prev = previous
-
 
 
     public function len() -> ptr_uint:

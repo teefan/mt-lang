@@ -3,9 +3,7 @@ import std.multiplayer.wire as wire
 import std.bytes as bytes
 import std.vec as vec
 
-
 const snapshot_header_bytes: ptr_uint = 20
-
 
 public struct Snapshot:
     tick: protocol.Tick
@@ -13,20 +11,17 @@ public struct Snapshot:
     payload_bytes: ptr_uint
     payload_hash: ulong
 
-
 public struct DeltaFrame:
     tick: protocol.Tick
     baseline_tick: protocol.Tick
     changed_entity_count: ptr_uint
     payload_changed: bool
 
-
 public struct BaselineSet:
     last_applied_tick: protocol.Tick
     last_applied_entity_count: ptr_uint
     last_applied_payload_bytes: ptr_uint
     last_applied_payload_hash: ulong
-
 
 public struct IncomingSnapshotPacket:
     header: protocol.SnapshotPacketHeader

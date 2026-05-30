@@ -1,12 +1,10 @@
 import std.mem.heap as heap
 
-
 public struct Deque[T]:
     data: ptr[T]?
     head: ptr_uint
     len: ptr_uint
     capacity: ptr_uint
-
 
 public struct Iter[T]:
     data: ptr[T]?

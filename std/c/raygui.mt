@@ -4,20 +4,26 @@ external
 link "raylib"
 link "m"
 include "raygui.h"
+
 opaque va_list = c"va_list"
+
 struct Vector2:
     x: float
     y: float
+
 struct Vector3:
     x: float
     y: float
     z: float
+
 struct Vector4:
     x: float
     y: float
     z: float
     w: float
+
 type Quaternion = Vector4
+
 struct Matrix:
     m0: float
     m4: float
@@ -35,35 +41,43 @@ struct Matrix:
     m7: float
     m11: float
     m15: float
+
 struct Color:
     r: ubyte
     g: ubyte
     b: ubyte
     a: ubyte
+
 struct Rectangle:
     x: float
     y: float
     width: float
     height: float
+
 struct Image:
     data: ptr[void]
     width: int
     height: int
     mipmaps: int
     format: int
+
 struct Texture:
     id: uint
     width: int
     height: int
     mipmaps: int
     format: int
+
 type Texture2D = Texture
 type TextureCubemap = Texture
+
 struct RenderTexture:
     id: uint
     texture: Texture
     depth: Texture
+
 type RenderTexture2D = RenderTexture
+
 struct NPatchInfo:
     source: Rectangle
     left: int
@@ -71,12 +85,14 @@ struct NPatchInfo:
     right: int
     bottom: int
     layout: int
+
 struct GlyphInfo:
     value: int
     offsetX: int
     offsetY: int
     advanceX: int
     image: Image
+
 struct Font:
     baseSize: int
     glyphCount: int
@@ -84,18 +100,22 @@ struct Font:
     texture: Texture
     recs: ptr[Rectangle]
     glyphs: ptr[GlyphInfo]
+
 struct Camera3D:
     position: Vector3
     target: Vector3
     up: Vector3
     fovy: float
     projection: int
+
 type Camera = Camera3D
+
 struct Camera2D:
     offset: Vector2
     target: Vector2
     rotation: float
     zoom: float
+
 struct Mesh:
     vertexCount: int
     triangleCount: int
@@ -113,29 +133,37 @@ struct Mesh:
     animNormals: ptr[float]
     vaoId: uint
     vboId: ptr[uint]
+
 struct Shader:
     id: uint
     locs: ptr[int]
+
 struct MaterialMap:
     texture: Texture
     color: Color
     value: float
+
 struct Material:
     shader: Shader
     maps: ptr[MaterialMap]
     params: array[float, 4]
+
 struct Transform:
     translation: Vector3
     rotation: Vector4
     scale: Vector3
+
 type ModelAnimPose = ptr[Transform]
+
 struct BoneInfo:
     name: array[char, 32]
     parent: int
+
 struct ModelSkeleton:
     boneCount: int
     bones: ptr[BoneInfo]
     bindPose: ptr[Transform]
+
 struct Model:
     transform: Matrix
     meshCount: int
@@ -146,45 +174,55 @@ struct Model:
     skeleton: ModelSkeleton
     currentPose: ptr[Transform]
     boneMatrices: ptr[Matrix]
+
 struct ModelAnimation:
     name: array[char, 32]
     boneCount: int
     keyframeCount: int
     keyframePoses: ptr[ModelAnimPose]
+
 struct Ray:
     position: Vector3
     direction: Vector3
+
 struct RayCollision:
     hit: bool
     distance: float
     point: Vector3
     normal: Vector3
+
 struct BoundingBox:
     min: Vector3
     max: Vector3
+
 struct Wave:
     frameCount: uint
     sampleRate: uint
     sampleSize: uint
     channels: uint
     data: ptr[void]
+
 opaque rAudioBuffer = c"rAudioBuffer"
 opaque rAudioProcessor = c"rAudioProcessor"
+
 struct AudioStream:
     buffer: ptr[rAudioBuffer]
     processor: ptr[rAudioProcessor]
     sampleRate: uint
     sampleSize: uint
     channels: uint
+
 struct Sound:
     stream: AudioStream
     frameCount: uint
+
 struct Music:
     stream: AudioStream
     frameCount: uint
     looping: bool
     ctxType: int
     ctxData: ptr[void]
+
 struct VrDeviceInfo:
     hResolution: int
     vResolution: int
@@ -195,6 +233,7 @@ struct VrDeviceInfo:
     interpupillaryDistance: float
     lensDistortionValues: array[float, 4]
     chromaAbCorrection: array[float, 4]
+
 struct VrStereoConfig:
     projection: array[Matrix, 2]
     viewOffset: array[Matrix, 2]
@@ -204,17 +243,21 @@ struct VrStereoConfig:
     rightScreenCenter: array[float, 2]
     scale: array[float, 2]
     scaleIn: array[float, 2]
+
 struct FilePathList:
     count: uint
     paths: ptr[ptr[char]]
+
 struct AutomationEvent:
     frame: uint
     type_: uint
     params: array[int, 4]
+
 struct AutomationEventList:
     capacity: uint
     count: uint
     events: ptr[AutomationEvent]
+
 flags ConfigFlags: int
     FLAG_VSYNC_HINT = 64
     FLAG_FULLSCREEN_MODE = 2
@@ -232,6 +275,7 @@ flags ConfigFlags: int
     FLAG_BORDERLESS_WINDOWED_MODE = 32768
     FLAG_MSAA_4X_HINT = 32
     FLAG_INTERLACED_HINT = 65536
+
 enum TraceLogLevel: int
     LOG_ALL = 0
     LOG_TRACE = 1
@@ -241,6 +285,7 @@ enum TraceLogLevel: int
     LOG_ERROR = 5
     LOG_FATAL = 6
     LOG_NONE = 7
+
 enum KeyboardKey: int
     KEY_NULL = 0
     KEY_APOSTROPHE = 39
@@ -352,6 +397,7 @@ enum KeyboardKey: int
     KEY_MENU = 5
     KEY_VOLUME_UP = 24
     KEY_VOLUME_DOWN = 25
+
 enum MouseButton: int
     MOUSE_BUTTON_LEFT = 0
     MOUSE_BUTTON_RIGHT = 1
@@ -360,6 +406,7 @@ enum MouseButton: int
     MOUSE_BUTTON_EXTRA = 4
     MOUSE_BUTTON_FORWARD = 5
     MOUSE_BUTTON_BACK = 6
+
 enum MouseCursor: int
     MOUSE_CURSOR_DEFAULT = 0
     MOUSE_CURSOR_ARROW = 1
@@ -372,6 +419,7 @@ enum MouseCursor: int
     MOUSE_CURSOR_RESIZE_NESW = 8
     MOUSE_CURSOR_RESIZE_ALL = 9
     MOUSE_CURSOR_NOT_ALLOWED = 10
+
 enum GamepadButton: int
     GAMEPAD_BUTTON_UNKNOWN = 0
     GAMEPAD_BUTTON_LEFT_FACE_UP = 1
@@ -391,6 +439,7 @@ enum GamepadButton: int
     GAMEPAD_BUTTON_MIDDLE_RIGHT = 15
     GAMEPAD_BUTTON_LEFT_THUMB = 16
     GAMEPAD_BUTTON_RIGHT_THUMB = 17
+
 enum GamepadAxis: int
     GAMEPAD_AXIS_LEFT_X = 0
     GAMEPAD_AXIS_LEFT_Y = 1
@@ -398,6 +447,7 @@ enum GamepadAxis: int
     GAMEPAD_AXIS_RIGHT_Y = 3
     GAMEPAD_AXIS_LEFT_TRIGGER = 4
     GAMEPAD_AXIS_RIGHT_TRIGGER = 5
+
 enum MaterialMapIndex: int
     MATERIAL_MAP_ALBEDO = 0
     MATERIAL_MAP_METALNESS = 1
@@ -410,6 +460,7 @@ enum MaterialMapIndex: int
     MATERIAL_MAP_IRRADIANCE = 8
     MATERIAL_MAP_PREFILTER = 9
     MATERIAL_MAP_BRDF = 10
+
 enum ShaderLocationIndex: int
     SHADER_LOC_VERTEX_POSITION = 0
     SHADER_LOC_VERTEX_TEXCOORD01 = 1
@@ -441,6 +492,7 @@ enum ShaderLocationIndex: int
     SHADER_LOC_VERTEX_BONEWEIGHTS = 27
     SHADER_LOC_MATRIX_BONETRANSFORMS = 28
     SHADER_LOC_VERTEX_INSTANCETRANSFORM = 29
+
 enum ShaderUniformDataType: int
     SHADER_UNIFORM_FLOAT = 0
     SHADER_UNIFORM_VEC2 = 1
@@ -455,11 +507,13 @@ enum ShaderUniformDataType: int
     SHADER_UNIFORM_UIVEC3 = 10
     SHADER_UNIFORM_UIVEC4 = 11
     SHADER_UNIFORM_SAMPLER2D = 12
+
 enum ShaderAttributeDataType: int
     SHADER_ATTRIB_FLOAT = 0
     SHADER_ATTRIB_VEC2 = 1
     SHADER_ATTRIB_VEC3 = 2
     SHADER_ATTRIB_VEC4 = 3
+
 enum PixelFormat: int
     PIXELFORMAT_UNCOMPRESSED_GRAYSCALE = 1
     PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA = 2
@@ -485,6 +539,7 @@ enum PixelFormat: int
     PIXELFORMAT_COMPRESSED_PVRT_RGBA = 22
     PIXELFORMAT_COMPRESSED_ASTC_4x4_RGBA = 23
     PIXELFORMAT_COMPRESSED_ASTC_8x8_RGBA = 24
+
 enum TextureFilter: int
     TEXTURE_FILTER_POINT = 0
     TEXTURE_FILTER_BILINEAR = 1
@@ -492,21 +547,25 @@ enum TextureFilter: int
     TEXTURE_FILTER_ANISOTROPIC_4X = 3
     TEXTURE_FILTER_ANISOTROPIC_8X = 4
     TEXTURE_FILTER_ANISOTROPIC_16X = 5
+
 enum TextureWrap: int
     TEXTURE_WRAP_REPEAT = 0
     TEXTURE_WRAP_CLAMP = 1
     TEXTURE_WRAP_MIRROR_REPEAT = 2
     TEXTURE_WRAP_MIRROR_CLAMP = 3
+
 enum CubemapLayout: int
     CUBEMAP_LAYOUT_AUTO_DETECT = 0
     CUBEMAP_LAYOUT_LINE_VERTICAL = 1
     CUBEMAP_LAYOUT_LINE_HORIZONTAL = 2
     CUBEMAP_LAYOUT_CROSS_THREE_BY_FOUR = 3
     CUBEMAP_LAYOUT_CROSS_FOUR_BY_THREE = 4
+
 flags FontType: int
     FONT_DEFAULT = 0
     FONT_BITMAP = 1
     FONT_SDF = 2
+
 enum BlendMode: int
     BLEND_ALPHA = 0
     BLEND_ADDITIVE = 1
@@ -516,6 +575,7 @@ enum BlendMode: int
     BLEND_ALPHA_PREMULTIPLY = 5
     BLEND_CUSTOM = 6
     BLEND_CUSTOM_SEPARATE = 7
+
 flags Gesture: int
     GESTURE_NONE = 0
     GESTURE_TAP = 1
@@ -528,12 +588,14 @@ flags Gesture: int
     GESTURE_SWIPE_DOWN = 128
     GESTURE_PINCH_IN = 256
     GESTURE_PINCH_OUT = 512
+
 enum CameraMode: int
     CAMERA_CUSTOM = 0
     CAMERA_FREE = 1
     CAMERA_ORBITAL = 2
     CAMERA_FIRST_PERSON = 3
     CAMERA_THIRD_PERSON = 4
+
 flags CameraProjection: int
     CAMERA_PERSPECTIVE = 0
     CAMERA_ORTHOGRAPHIC = 1
@@ -541,11 +603,13 @@ flags NPatchLayout: int
     NPATCH_NINE_PATCH = 0
     NPATCH_THREE_PATCH_VERTICAL = 1
     NPATCH_THREE_PATCH_HORIZONTAL = 2
+
 type TraceLogCallback = fn(arg0: int, arg1: cstr, arg2: va_list) -> void
 type LoadFileDataCallback = fn(arg0: cstr, arg1: ptr[int]) -> ptr[ubyte]
 type SaveFileDataCallback = fn(arg0: cstr, arg1: ptr[void], arg2: int) -> bool
 type LoadFileTextCallback = fn(arg0: cstr) -> ptr[char]
 type SaveFileTextCallback = fn(arg0: cstr, arg1: cstr) -> bool
+
 external function InitWindow(width: int, height: int, title: cstr) -> void
 external function CloseWindow() -> void
 external function SetWindowState(flags_: uint) -> void
@@ -1015,7 +1079,9 @@ external function GetRayCollisionBox(ray: Ray, box: BoundingBox) -> RayCollision
 external function GetRayCollisionMesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision
 external function GetRayCollisionTriangle(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3) -> RayCollision
 external function GetRayCollisionQuad(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3, p4: Vector3) -> RayCollision
+
 type AudioCallback = fn(arg0: ptr[void], arg1: uint) -> void
+
 external function InitAudioDevice() -> void
 external function CloseAudioDevice() -> void
 external function SetMasterVolume(volume: float) -> void
@@ -1071,15 +1137,18 @@ external function AttachAudioStreamProcessor(stream: AudioStream, processor: fn(
 external function DetachAudioStreamProcessor(stream: AudioStream, processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
 external function AttachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
 external function DetachAudioMixedProcessor(processor: fn(arg0: ptr[void], arg1: uint) -> void) -> void
+
 struct GuiStyleProp:
     controlId: ushort
     propertyId: ushort
     propertyValue: int
+
 enum GuiState: int
     STATE_NORMAL = 0
     STATE_FOCUSED = 1
     STATE_PRESSED = 2
     STATE_DISABLED = 3
+
 flags GuiTextAlignment: int
     TEXT_ALIGN_LEFT = 0
     TEXT_ALIGN_CENTER = 1
@@ -1092,6 +1161,7 @@ flags GuiTextWrapMode: int
     TEXT_WRAP_NONE = 0
     TEXT_WRAP_CHAR = 1
     TEXT_WRAP_WORD = 2
+
 enum GuiControl: int
     DEFAULT = 0
     LABEL = 1
@@ -1109,6 +1179,7 @@ enum GuiControl: int
     COLORPICKER = 13
     SCROLLBAR = 14
     STATUSBAR = 15
+
 enum GuiControlProperty: int
     BORDER_COLOR_NORMAL = 0
     BASE_COLOR_NORMAL = 1
@@ -1125,6 +1196,7 @@ enum GuiControlProperty: int
     BORDER_WIDTH = 12
     TEXT_PADDING = 13
     TEXT_ALIGNMENT = 14
+
 enum GuiDefaultProperty: int
     TEXT_SIZE = 16
     TEXT_SPACING = 17
@@ -1133,14 +1205,18 @@ enum GuiDefaultProperty: int
     TEXT_LINE_SPACING = 20
     TEXT_ALIGNMENT_VERTICAL = 21
     TEXT_WRAP_MODE = 22
+
 flags GuiToggleProperty: int
     GROUP_PADDING = 16
+
 enum GuiSliderProperty: int
     SLIDER_WIDTH = 16
     SLIDER_PADDING = 17
+
 enum GuiProgressBarProperty: int
     PROGRESS_PADDING = 16
     PROGRESS_SIDE = 17
+
 enum GuiScrollBarProperty: int
     ARROWS_SIZE = 16
     ARROWS_VISIBLE = 17
@@ -1148,21 +1224,27 @@ enum GuiScrollBarProperty: int
     SCROLL_SLIDER_SIZE = 19
     SCROLL_PADDING = 20
     SCROLL_SPEED = 21
+
 flags GuiCheckBoxProperty: int
     CHECK_PADDING = 16
+
 enum GuiComboBoxProperty: int
     COMBO_BUTTON_WIDTH = 16
     COMBO_BUTTON_SPACING = 17
+
 enum GuiDropdownBoxProperty: int
     ARROW_PADDING = 16
     DROPDOWN_ITEMS_SPACING = 17
     DROPDOWN_ARROW_HIDDEN = 18
     DROPDOWN_ROLL_UP = 19
+
 flags GuiTextBoxProperty: int
     TEXT_READONLY = 16
+
 enum GuiValueBoxProperty: int
     SPINNER_BUTTON_WIDTH = 16
     SPINNER_BUTTON_SPACING = 17
+
 enum GuiListViewProperty: int
     LIST_ITEMS_HEIGHT = 16
     LIST_ITEMS_SPACING = 17
@@ -1170,12 +1252,14 @@ enum GuiListViewProperty: int
     SCROLLBAR_SIDE = 19
     LIST_ITEMS_BORDER_NORMAL = 20
     LIST_ITEMS_BORDER_WIDTH = 21
+
 enum GuiColorPickerProperty: int
     COLOR_SELECTOR_SIZE = 16
     HUEBAR_WIDTH = 17
     HUEBAR_PADDING = 18
     HUEBAR_SELECTOR_HEIGHT = 19
     HUEBAR_SELECTOR_OVERFLOW = 20
+
 external function GuiEnable() -> void
 external function GuiDisable() -> void
 external function GuiLock() -> void
@@ -1234,6 +1318,7 @@ external function GuiColorBarAlpha(bounds: Rectangle, text: cstr, alpha: ptr[flo
 external function GuiColorBarHue(bounds: Rectangle, text: cstr, value: ptr[float]) -> int
 external function GuiColorPickerHSV(bounds: Rectangle, text: cstr, colorHsv: ptr[Vector3]) -> int
 external function GuiColorPanelHSV(bounds: Rectangle, text: cstr, colorHsv: ptr[Vector3]) -> int
+
 enum GuiIconName: int
     ICON_NONE = 0
     ICON_FOLDER_FILE_OPEN = 1
@@ -1491,6 +1576,7 @@ enum GuiIconName: int
     ICON_253 = 253
     ICON_254 = 254
     ICON_255 = 255
+
 const RAYGUI_VERSION_MAJOR: int = 4
 const RAYGUI_VERSION_MINOR: int = 5
 const RAYGUI_VERSION_PATCH: int = 0

@@ -5,9 +5,7 @@ import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.wire as wire
 import std.vec as vec
 
-
 var runtime_ref_count: ptr_uint = 0
-
 
 public struct Server:
     host: ptr[enet.Host]?
@@ -20,7 +18,6 @@ public struct Server:
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
     outbound_world_signature_baseline: snapshot_runtime.BaselineSet
-
 
 public struct Client:
     host: ptr[enet.Host]?
@@ -35,28 +32,23 @@ public struct Client:
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
 
-
 public enum SessionEvent: ubyte
     connected = 0
     disconnected = 1
     snapshot_received = 2
     rpc_received = 3
 
-
 public struct SessionEventRecord:
     kind: SessionEvent
     connection: Option[mp.ConnectionId]
-
 
 public struct WeightedConnection:
     connection: mp.ConnectionId
     weight: uint
 
-
 public struct TypedRpcRoute:
     descriptor: mp.RpcDescriptor
     handler: fn(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc_runtime.DispatchError]
-
 
 public struct TypedRpcDispatchTable:
     routes: vec.Vec[TypedRpcRoute]
@@ -103,13 +95,19 @@ extending Server:
 
     public mutable function pump(timeout_ms: uint) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var processed: ptr_uint = 0
         var evt = empty_event()
         let serviced = enet.host_service(host, ptr_of(evt), timeout_ms)
         if serviced < 0:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_service failed"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "enet host_service failed"
+            ))
 
         if serviced > 0:
             processed += 1
@@ -118,7 +116,10 @@ extending Server:
         while true:
             let polled = enet.host_check_events(host, ptr_of(evt))
             if polled < 0:
-                return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_check_events failed"))
+                return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                    mp.ErrorCode.unsupported,
+                    "enet host_check_events failed"
+                ))
             if polled == 0:
                 break
 
@@ -137,7 +138,10 @@ extending Server:
 
     public function disconnect_connection(connection: mp.ConnectionId, data: uint) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         let peer = find_verified_peer(host, connection) else:
             return Result[bool, mp.Error].success(value = false)
@@ -148,7 +152,10 @@ extending Server:
 
     public function disconnect_all(data: uint) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var disconnected: ptr_uint = 0
         unsafe:
@@ -320,7 +327,11 @@ extending Server:
             var packet = this.pop_rpc() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            let dispatched = table.dispatch_packet(packet.context, packet.header, packet.payload.as_span()) else as dispatch_error:
+            let dispatched = table.dispatch_packet(
+                packet.context,
+                packet.header,
+                packet.payload.as_span()
+            ) else as dispatch_error:
                 packet.release()
                 return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
 
@@ -330,17 +341,36 @@ extending Server:
             packet.release()
 
 
-    public mutable function broadcast_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function broadcast_snapshot(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        let sent = broadcast_wire_payload(host, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+        let sent = broadcast_wire_payload(
+            host,
+            channel,
+            transfer_mode,
+            mp.PacketKind.snapshot,
+            encoded.as_span()
+        ) else as send_error:
             return Result[bool, mp.Error].failure(error = send_error)
 
         if sent:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[bool, mp.Error].success(value = sent)
 
@@ -349,9 +379,17 @@ extending Server:
         return snapshot_wire_bytes(header, payload)
 
 
-    public function broadcast_rpc(channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public function broadcast_rpc(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        direction: mp.RpcDirection,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
         let _ = validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
@@ -361,7 +399,11 @@ extending Server:
         return broadcast_wire_payload(host, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span())
 
 
-    public function estimate_rpc_wire_bytes(channel: uint, direction: mp.RpcDirection, payload: span[ubyte]) -> ptr_uint:
+    public function estimate_rpc_wire_bytes(
+        channel: uint,
+        direction: mp.RpcDirection,
+        payload: span[ubyte]
+    ) -> ptr_uint:
         return rpc_wire_bytes(channel, direction, payload)
 
 
@@ -386,7 +428,10 @@ extending Server:
         payload: span[ubyte],
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var connections = vec.Vec[mp.ConnectionId].create()
         defer connections.release()
@@ -414,7 +459,12 @@ extending Server:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -440,7 +490,10 @@ extending Server:
         payload: span[ubyte],
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
         let _ = validate_server_outbound_direction(direction) else as direction_error:
             return Result[ptr_uint, mp.Error].failure(error = direction_error)
 
@@ -529,7 +582,10 @@ extending Server:
         rpc_payload: span[ubyte],
     ) -> Result[mp.TickDispatchReport, mp.Error]:
         let current_signature = this.world.snapshot_state_signature(tick)
-        let should_send_snapshot = snapshot_runtime.should_send_against_baseline(current_signature, this.outbound_world_signature_baseline)
+        let should_send_snapshot = snapshot_runtime.should_send_against_baseline(
+            current_signature,
+            this.outbound_world_signature_baseline
+        )
 
         var snapshot_scheduler = mp.create_tick_scheduler(plan.snapshot_bytes)
         snapshot_scheduler.begin_tick(tick)
@@ -590,9 +646,18 @@ extending Server:
         )
 
 
-    public function send_rpc_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public function send_rpc_to(
+        connection: mp.ConnectionId,
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        direction: mp.RpcDirection,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
         let _ = validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
@@ -619,7 +684,10 @@ extending Server:
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         if find_verified_peer(host, connection) == null:
             return Result[bool, mp.Error].failure(
@@ -635,9 +703,18 @@ extending Server:
         return this.send_rpc_to(connection, channel, transfer_mode, direction, payload)
 
 
-    public mutable function send_snapshot_to(connection: mp.ConnectionId, channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function send_snapshot_to(
+        connection: mp.ConnectionId,
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         let peer = find_verified_peer(host, connection) else:
             return Result[bool, mp.Error].failure(
@@ -649,11 +726,22 @@ extending Server:
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        let sent = send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+        let sent = send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.snapshot,
+            encoded.as_span()
+        ) else as send_error:
             return Result[bool, mp.Error].failure(error = send_error)
 
         if sent:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[bool, mp.Error].success(value = sent)
 
@@ -667,7 +755,10 @@ extending Server:
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
         let host = this.host else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         if find_verified_peer(host, connection) == null:
             return Result[bool, mp.Error].failure(
@@ -692,13 +783,29 @@ extending Server:
         max_bytes: ptr_uint,
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
-        let sent = send_snapshots_budgeted_impl(host, prioritized_connections, channel, transfer_mode, header, payload, max_bytes) else as send_error:
+        let sent = send_snapshots_budgeted_impl(
+            host,
+            prioritized_connections,
+            channel,
+            transfer_mode,
+            header,
+            payload,
+            max_bytes
+        ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent > 0:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -711,7 +818,10 @@ extending Server:
         max_bytes: ptr_uint,
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var connections = vec.Vec[mp.ConnectionId].create()
         defer connections.release()
@@ -728,13 +838,29 @@ extending Server:
         max_bytes: ptr_uint,
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
-        let sent = send_snapshots_budgeted_weighted_impl(host, weighted_connections, channel, transfer_mode, header, payload, max_bytes) else as send_error:
+        let sent = send_snapshots_budgeted_weighted_impl(
+            host,
+            weighted_connections,
+            channel,
+            transfer_mode,
+            header,
+            payload,
+            max_bytes
+        ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent > 0:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -747,17 +873,33 @@ extending Server:
         max_bytes: ptr_uint,
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var weighted_connections = vec.Vec[WeightedConnection].create()
         defer weighted_connections.release()
         append_weighted_verified_connections(host, ref_of(weighted_connections))
 
-        let sent = send_snapshots_budgeted_weighted_impl(host, weighted_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
+        let sent = send_snapshots_budgeted_weighted_impl(
+            host,
+            weighted_connections.as_span(),
+            channel,
+            transfer_mode,
+            header,
+            payload,
+            max_bytes
+        ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent > 0:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -770,7 +912,10 @@ extending Server:
         max_bytes: ptr_uint,
     ) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
 
         var connections = vec.Vec[mp.ConnectionId].create()
         defer connections.release()
@@ -783,14 +928,27 @@ extending Server:
         defer ordered_connections.release()
         append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
 
-        let sent = send_snapshots_budgeted_impl(host, ordered_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
+        let sent = send_snapshots_budgeted_impl(
+            host,
+            ordered_connections.as_span(),
+            channel,
+            transfer_mode,
+            header,
+            payload,
+            max_bytes
+        ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent == 0:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -799,10 +957,18 @@ extending Server:
         unsafe:
             match read(evt).type_:
                 enet.EventType.ENET_EVENT_TYPE_CONNECT:
-                    enqueue_session_event(ref_of(this.session_events), SessionEvent.connected, Option[mp.ConnectionId].some(value = peer_connection_id(read(evt).peer)))
+                    enqueue_session_event(
+                        ref_of(this.session_events),
+                        SessionEvent.connected,
+                        Option[mp.ConnectionId].some(value = peer_connection_id(read(evt).peer))
+                    )
                     mark_peer_unverified(read(evt).peer)
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
-                    enqueue_session_event(ref_of(this.session_events), SessionEvent.disconnected, Option[mp.ConnectionId].some(value = peer_connection_id(read(evt).peer)))
+                    enqueue_session_event(
+                        ref_of(this.session_events),
+                        SessionEvent.disconnected,
+                        Option[mp.ConnectionId].some(value = peer_connection_id(read(evt).peer))
+                    )
                     mark_peer_unverified(read(evt).peer)
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
@@ -821,7 +987,11 @@ extending Server:
                                 return
 
                             if hello.protocol_hash != this.world.protocol_hash():
-                                let _ = send_handshake_reject(read(evt).peer, this.world.protocol_hash(), mp.ErrorCode.invalid_argument)
+                                let _ = send_handshake_reject(
+                                    read(evt).peer,
+                                    this.world.protocol_hash(),
+                                    mp.ErrorCode.invalid_argument
+                                )
                                 enet.peer_disconnect_later(read(evt).peer, 0)
                             else:
                                 mark_peer_verified(read(evt).peer)
@@ -832,7 +1002,11 @@ extending Server:
                             increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.snapshot:
                             if is_peer_verified(read(evt).peer):
-                                enqueue_session_event(ref_of(this.session_events), SessionEvent.snapshot_received, sender)
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.snapshot_received,
+                                    sender
+                                )
                                 handle_received_packet(
                                     ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
@@ -875,13 +1049,19 @@ extending Client:
 
     public mutable function pump(timeout_ms: uint) -> Result[ptr_uint, mp.Error]:
         let host = this.host else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "client host is not initialized"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "client host is not initialized"
+            ))
 
         var processed: ptr_uint = 0
         var evt = empty_event()
         let serviced = enet.host_service(host, ptr_of(evt), timeout_ms)
         if serviced < 0:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_service failed"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "enet host_service failed"
+            ))
 
         if serviced > 0:
             processed += 1
@@ -890,7 +1070,10 @@ extending Client:
         while true:
             let polled = enet.host_check_events(host, ptr_of(evt))
             if polled < 0:
-                return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_check_events failed"))
+                return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                    mp.ErrorCode.unsupported,
+                    "enet host_check_events failed"
+                ))
             if polled == 0:
                 break
 
@@ -947,14 +1130,22 @@ extending Client:
                     this.peer = read(evt).peer
                     this.protocol_verified = false
                     this.connection_id_value = Option[mp.ConnectionId].none
-                    enqueue_session_event(ref_of(this.session_events), SessionEvent.connected, Option[mp.ConnectionId].none)
+                    enqueue_session_event(
+                        ref_of(this.session_events),
+                        SessionEvent.connected,
+                        Option[mp.ConnectionId].none
+                    )
                     match send_handshake_hello(read(evt).peer, this.world.protocol_hash()):
                         Result.success:
                             pass
                         Result.failure:
                             increment_unknown_count(ref_of(this.unknown_packet_count))
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
-                    enqueue_session_event(ref_of(this.session_events), SessionEvent.disconnected, this.connection_id_value)
+                    enqueue_session_event(
+                        ref_of(this.session_events),
+                        SessionEvent.disconnected,
+                        this.connection_id_value
+                    )
                     this.peer = null
                     this.protocol_verified = false
                     this.connection_id_value = Option[mp.ConnectionId].none
@@ -992,7 +1183,11 @@ extending Client:
                             increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.snapshot:
                             if this.protocol_verified:
-                                enqueue_session_event(ref_of(this.session_events), SessionEvent.snapshot_received, this.connection_id_value)
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.snapshot_received,
+                                    this.connection_id_value
+                                )
                                 handle_received_packet(
                                     ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
@@ -1008,7 +1203,11 @@ extending Client:
                                 increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.rpc:
                             if this.protocol_verified:
-                                enqueue_session_event(ref_of(this.session_events), SessionEvent.rpc_received, this.connection_id_value)
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.rpc_received,
+                                    this.connection_id_value
+                                )
                                 handle_received_packet(
                                     ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
@@ -1098,7 +1297,11 @@ extending Client:
             var packet = this.pop_rpc() else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            let dispatched = table.dispatch_packet(packet.context, packet.header, packet.payload.as_span()) else as dispatch_error:
+            let dispatched = table.dispatch_packet(
+                packet.context,
+                packet.header,
+                packet.payload.as_span()
+            ) else as dispatch_error:
                 packet.release()
                 return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
 
@@ -1116,28 +1319,61 @@ extending Client:
         return this.connection_id_value
 
 
-    public mutable function send_snapshot(channel: uint, transfer_mode: mp.TransferMode, header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public mutable function send_snapshot(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let peer = this.peer else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "client peer is not connected"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "client peer is not connected"
+            ))
         if not this.protocol_verified:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "protocol handshake is not complete"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "protocol handshake is not complete"
+            ))
 
         var encoded = snapshot_runtime.build_payload(header, payload)
         defer encoded.release()
-        let sent = send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+        let sent = send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.snapshot,
+            encoded.as_span()
+        ) else as send_error:
             return Result[bool, mp.Error].failure(error = send_error)
 
         if sent:
-            snapshot_runtime.apply_payload(header.tick, header.entity_count, payload, ref_of(this.outbound_snapshot_baseline))
+            snapshot_runtime.apply_payload(
+                header.tick,
+                header.entity_count,
+                payload,
+                ref_of(this.outbound_snapshot_baseline)
+            )
 
         return Result[bool, mp.Error].success(value = sent)
 
 
-    public function send_rpc(channel: uint, transfer_mode: mp.TransferMode, direction: mp.RpcDirection, payload: span[ubyte]) -> Result[bool, mp.Error]:
+    public function send_rpc(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        direction: mp.RpcDirection,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
         let peer = this.peer else:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "client peer is not connected"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "client peer is not connected"
+            ))
         if not this.protocol_verified:
-            return Result[bool, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "protocol handshake is not complete"))
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "protocol handshake is not complete"
+            ))
         let _ = validate_client_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
@@ -1147,14 +1383,23 @@ extending Client:
         return send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span())
 
 
-public function listen(address: enet.Address, peer_count: ptr_uint, channel_limit: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Server, mp.Error]:
+public function listen(
+    address: enet.Address,
+    peer_count: ptr_uint,
+    channel_limit: ptr_uint,
+    registry: mp.Registry,
+    config: mp.Config
+) -> Result[Server, mp.Error]:
     let _ = acquire_runtime() else as runtime_error:
         return Result[Server, mp.Error].failure(error = runtime_error)
 
     var bind_address = address
     let host = enet.host_create(ptr_of(bind_address), peer_count, channel_limit, 0, 0) else:
         release_runtime()
-        return Result[Server, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_create failed for server"))
+        return Result[Server, mp.Error].failure(error = mp.error(
+            mp.ErrorCode.unsupported,
+            "enet host_create failed for server"
+        ))
 
     let world = mp.World.create(registry, config, mp.WorldRole.server) else as world_error:
         enet.host_destroy(host)
@@ -1195,7 +1440,12 @@ public function localhost_address(port: ushort) -> Result[enet.Address, mp.Error
     return Result[enet.Address, mp.Error].success(value = remote)
 
 
-public function connect(address: enet.Address, channel_count: ptr_uint, registry: mp.Registry, config: mp.Config) -> Result[Client, mp.Error]:
+public function connect(
+    address: enet.Address,
+    channel_count: ptr_uint,
+    registry: mp.Registry,
+    config: mp.Config
+) -> Result[Client, mp.Error]:
     let _ = acquire_runtime() else as runtime_error:
         return Result[Client, mp.Error].failure(error = runtime_error)
 
@@ -1205,7 +1455,10 @@ public function connect(address: enet.Address, channel_count: ptr_uint, registry
     )
     let host = enet.host_create(ptr_of(client_address), 1, channel_count, 0, 0) else:
         release_runtime()
-        return Result[Client, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet host_create failed for client"))
+        return Result[Client, mp.Error].failure(error = mp.error(
+            mp.ErrorCode.unsupported,
+            "enet host_create failed for client"
+        ))
 
     var remote_address = address
     let peer = enet.host_connect(host, ptr_of(remote_address), channel_count, 0) else:
@@ -1348,7 +1601,11 @@ function typed_rpc_dispatch_packet(
     while index < routes.len:
         unsafe:
             let descriptor = read(routes.data + index).descriptor
-            if descriptor.channel == header.channel and descriptor.direction == header.direction and descriptor.payload_size == payload.len:
+            if (
+                descriptor.channel == header.channel
+                and descriptor.direction == header.direction
+                and descriptor.payload_size == payload.len
+            ):
                 if matched_count == 0:
                     matched_index = index
                 matched_count += 1
@@ -1446,7 +1703,6 @@ function handle_received_packet(
             increment_unknown_count(unknown_packet_count)
 
 
-
 function acquire_runtime() -> Result[bool, mp.Error]:
     if runtime_ref_count == 0:
         if enet.initialize() != 0:
@@ -1465,8 +1721,13 @@ function release_runtime() -> void:
         enet.deinitialize()
 
 
-
-function send_wire_payload(peer: ptr[enet.Peer], channel: uint, transfer_mode: mp.TransferMode, kind: mp.PacketKind, payload: span[ubyte]) -> Result[bool, mp.Error]:
+function send_wire_payload(
+    peer: ptr[enet.Peer],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    kind: mp.PacketKind,
+    payload: span[ubyte]
+) -> Result[bool, mp.Error]:
     let channel_id = encode_channel_id(channel) else as channel_error:
         return Result[bool, mp.Error].failure(error = channel_error)
 
@@ -1482,7 +1743,13 @@ function send_wire_payload(peer: ptr[enet.Peer], channel: uint, transfer_mode: m
     return Result[bool, mp.Error].success(value = true)
 
 
-function broadcast_wire_payload(host: ptr[enet.Host], channel: uint, transfer_mode: mp.TransferMode, kind: mp.PacketKind, payload: span[ubyte]) -> Result[bool, mp.Error]:
+function broadcast_wire_payload(
+    host: ptr[enet.Host],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    kind: mp.PacketKind,
+    payload: span[ubyte]
+) -> Result[bool, mp.Error]:
     let channel_id = encode_channel_id(channel) else as channel_error:
         return Result[bool, mp.Error].failure(error = channel_error)
 
@@ -1494,7 +1761,11 @@ function broadcast_wire_payload(host: ptr[enet.Host], channel: uint, transfer_mo
     return Result[bool, mp.Error].success(value = true)
 
 
-function create_wire_packet(kind: mp.PacketKind, payload: span[ubyte], packet_flags: enet.PacketFlag) -> Result[ptr[enet.Packet], mp.Error]:
+function create_wire_packet(
+    kind: mp.PacketKind,
+    payload: span[ubyte],
+    packet_flags: enet.PacketFlag
+) -> Result[ptr[enet.Packet], mp.Error]:
     var framed = vec.Vec[ubyte].with_capacity(payload.len + 1)
     defer framed.release()
 
@@ -1503,7 +1774,10 @@ function create_wire_packet(kind: mp.PacketKind, payload: span[ubyte], packet_fl
 
     let framed_span = framed.as_span()
     let packet = enet.packet_create(unsafe: const_ptr[void]<-framed_span.data, framed_span.len, packet_flags) else:
-        return Result[ptr[enet.Packet], mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "enet packet_create failed"))
+        return Result[ptr[enet.Packet], mp.Error].failure(error = mp.error(
+            mp.ErrorCode.unsupported,
+            "enet packet_create failed"
+        ))
 
     return Result[ptr[enet.Packet], mp.Error].success(value = packet)
 
@@ -1520,7 +1794,10 @@ function packet_flags_for_transfer_mode(transfer_mode: mp.TransferMode) -> enet.
 
 function encode_channel_id(channel: uint) -> Result[ubyte, mp.Error]:
     if channel > 255:
-        return Result[ubyte, mp.Error].failure(error = mp.error(mp.ErrorCode.invalid_argument, "channel must be <= 255 for ENet"))
+        return Result[ubyte, mp.Error].failure(error = mp.error(
+            mp.ErrorCode.invalid_argument,
+            "channel must be <= 255 for ENet"
+        ))
 
     return Result[ubyte, mp.Error].success(value = ubyte<-channel)
 
@@ -1530,7 +1807,11 @@ function send_handshake_hello(peer: ptr[enet.Peer], protocol_hash: ulong) -> Res
     return send_wire_payload(peer, 0, mp.TransferMode.reliable, mp.PacketKind.handshake_hello, encoded)
 
 
-function send_handshake_welcome(peer: ptr[enet.Peer], protocol_hash: ulong, connection: mp.ConnectionId) -> Result[bool, mp.Error]:
+function send_handshake_welcome(
+    peer: ptr[enet.Peer],
+    protocol_hash: ulong,
+    connection: mp.ConnectionId
+) -> Result[bool, mp.Error]:
     var payload = vec.Vec[ubyte].with_capacity(16)
     defer payload.release()
     payload.append_array(wire.encode_u64_be(protocol_hash))
@@ -1538,7 +1819,11 @@ function send_handshake_welcome(peer: ptr[enet.Peer], protocol_hash: ulong, conn
     return send_wire_payload(peer, 0, mp.TransferMode.reliable, mp.PacketKind.handshake_welcome, payload.as_span())
 
 
-function send_handshake_reject(peer: ptr[enet.Peer], protocol_hash: ulong, reason: mp.ErrorCode) -> Result[bool, mp.Error]:
+function send_handshake_reject(
+    peer: ptr[enet.Peer],
+    protocol_hash: ulong,
+    reason: mp.ErrorCode
+) -> Result[bool, mp.Error]:
     var payload = vec.Vec[ubyte].with_capacity(12)
     defer payload.release()
     payload.append_array(wire.encode_u64_be(protocol_hash))
@@ -1548,13 +1833,22 @@ function send_handshake_reject(peer: ptr[enet.Peer], protocol_hash: ulong, reaso
 
 function decode_handshake_hello(payload: span[ubyte]) -> Result[mp.HandshakeHello, mp.Error]:
     if payload.len < 8:
-        return Result[mp.HandshakeHello, mp.Error].failure(error = mp.error(mp.ErrorCode.invalid_argument, "handshake hello packet is too small"))
-    return Result[mp.HandshakeHello, mp.Error].success(value = mp.HandshakeHello(protocol_hash = wire.decode_u64_be(payload, 0)))
+        return Result[mp.HandshakeHello, mp.Error].failure(error = mp.error(
+            mp.ErrorCode.invalid_argument,
+            "handshake hello packet is too small"
+        ))
+    return Result[
+        mp.HandshakeHello,
+        mp.Error
+    ].success(value = mp.HandshakeHello(protocol_hash = wire.decode_u64_be(payload, 0)))
 
 
 function decode_handshake_welcome(payload: span[ubyte]) -> Result[mp.HandshakeWelcome, mp.Error]:
     if payload.len < 16:
-        return Result[mp.HandshakeWelcome, mp.Error].failure(error = mp.error(mp.ErrorCode.invalid_argument, "handshake welcome packet is too small"))
+        return Result[mp.HandshakeWelcome, mp.Error].failure(error = mp.error(
+            mp.ErrorCode.invalid_argument,
+            "handshake welcome packet is too small"
+        ))
     return Result[mp.HandshakeWelcome, mp.Error].success(
         value = mp.HandshakeWelcome(
             protocol_hash = wire.decode_u64_be(payload, 0),
@@ -1610,7 +1904,10 @@ function append_verified_connections(host: ptr[enet.Host], out_connections: ref[
             index += 1
 
 
-function append_weighted_verified_connections(host: ptr[enet.Host], out_connections: ref[vec.Vec[WeightedConnection]]) -> void:
+function append_weighted_verified_connections(
+    host: ptr[enet.Host],
+    out_connections: ref[vec.Vec[WeightedConnection]]
+) -> void:
     unsafe:
         let peers = read(host).peers
         let peer_count = read(host).peerCount
@@ -1641,7 +1938,6 @@ function append_rotated_connections(
         unsafe:
             destination.push(read(source.data + prefix_index))
         prefix_index += 1
-
 
 
 function send_snapshots_budgeted_impl(
@@ -1677,7 +1973,13 @@ function send_snapshots_budgeted_impl(
                 index += 1
                 continue
 
-            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            let sent = send_wire_payload(
+                ptr[enet.Peer]<-peer,
+                channel,
+                transfer_mode,
+                mp.PacketKind.snapshot,
+                encoded.as_span()
+            ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
                 sent_count += 1
@@ -1717,7 +2019,13 @@ function send_snapshots_scheduled_fair_impl(
                 Option.none:
                     break
 
-            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            let sent = send_wire_payload(
+                ptr[enet.Peer]<-peer,
+                channel,
+                transfer_mode,
+                mp.PacketKind.snapshot,
+                encoded.as_span()
+            ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
                 sent_count += 1
@@ -1764,7 +2072,10 @@ function send_snapshots_budgeted_weighted_impl(
                 break
 
         let sent_flag_ptr = sent_mask.get(next_index) else:
-            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.unsupported, "weighted snapshot sent mask missing slot"))
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "weighted snapshot sent mask missing slot"
+            ))
         unsafe:
             read(sent_flag_ptr) = true
 
@@ -1774,7 +2085,13 @@ function send_snapshots_budgeted_weighted_impl(
             if peer == null:
                 continue
 
-            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.snapshot, encoded.as_span()) else as send_error:
+            let sent = send_wire_payload(
+                ptr[enet.Peer]<-peer,
+                channel,
+                transfer_mode,
+                mp.PacketKind.snapshot,
+                encoded.as_span()
+            ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
                 sent_count += 1
@@ -1842,7 +2159,13 @@ function send_rpcs_scheduled_fair_impl(
                 Option.none:
                     break
 
-            let sent = send_wire_payload(ptr[enet.Peer]<-peer, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span()) else as send_error:
+            let sent = send_wire_payload(
+                ptr[enet.Peer]<-peer,
+                channel,
+                transfer_mode,
+                mp.PacketKind.rpc,
+                encoded.as_span()
+            ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
                 sent_count += 1

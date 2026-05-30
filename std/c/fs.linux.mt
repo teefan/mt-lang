@@ -4,23 +4,19 @@ link "uv"
 
 include "fs_support.h"
 
-
 struct mt_fs_string = c"mt_fs_string":
     data: ptr[char]?
     len: ptr_uint
-
 
 struct mt_fs_entries = c"mt_fs_entries":
     data: ptr[ptr[char]]?
     lengths: ptr[ptr_uint]?
     count: ptr_uint
 
-
 struct mt_fs_error = c"mt_fs_error":
     code: int
     message_data: ptr[char]?
     message_len: ptr_uint
-
 
 struct mt_fs_metadata = c"mt_fs_metadata":
     kind: int
@@ -28,7 +24,6 @@ struct mt_fs_metadata = c"mt_fs_metadata":
     size: ptr_uint
     modified_seconds: ptr_int
     modified_nanoseconds: ptr_int
-
 
 external function mt_fs_path_kind(path: cstr) -> int
 external function mt_fs_get_metadata(path: cstr, out out_metadata: mt_fs_metadata, out out_error: mt_fs_error) -> int

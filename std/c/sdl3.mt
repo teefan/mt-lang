@@ -4,25 +4,32 @@ external
 link "SDL3"
 include "SDL3/SDL.h"
 include "SDL3/SDL_main.h"
+
 union SDL_GamepadBinding_input:
     button: int
     axis: SDL_GamepadBinding_input_axis
     hat: SDL_GamepadBinding_input_hat
+
 union SDL_GamepadBinding_output:
     button: SDL_GamepadButton
     axis: SDL_GamepadBinding_output_axis
+
 struct SDL_GamepadBinding_input_axis:
     axis: int
     axis_min: int
     axis_max: int
+
 struct SDL_GamepadBinding_input_hat:
     hat: int
     hat_mask: int
+
 struct SDL_GamepadBinding_output_axis:
     axis: SDL_GamepadAxis
     axis_min: int
     axis_max: int
+
 opaque va_list = c"va_list"
+
 type Sint8 = byte
 type Uint8 = ubyte
 type Sint16 = short
@@ -32,26 +39,33 @@ type Uint32 = uint
 type Sint64 = ptr_int
 type Uint64 = ptr_uint
 type SDL_Time = ptr_int
+
 struct SDL_alignment_test:
     a: ubyte
     b: ptr[void]
+
 enum SDL_DUMMY_ENUM: int
     DUMMY_ENUM_VALUE = 0
+
 external function SDL_malloc(size: ptr_uint) -> ptr[void]?
 external function SDL_calloc(nmemb: ptr_uint, size: ptr_uint) -> ptr[void]?
 external function SDL_realloc(mem: ptr[void]?, size: ptr_uint) -> ptr[void]?
 external function SDL_free(mem: ptr[void]?) -> void
+
 type SDL_malloc_func = fn(arg0: ptr_uint) -> ptr[void]
 type SDL_calloc_func = fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void]
 type SDL_realloc_func = fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void]
 type SDL_free_func = fn(arg0: ptr[void]) -> void
+
 external function SDL_GetOriginalMemoryFunctions(malloc_func: ptr[SDL_malloc_func], calloc_func: ptr[SDL_calloc_func], realloc_func: ptr[SDL_realloc_func], free_func: ptr[SDL_free_func]) -> void
 external function SDL_GetMemoryFunctions(malloc_func: ptr[SDL_malloc_func], calloc_func: ptr[SDL_calloc_func], realloc_func: ptr[SDL_realloc_func], free_func: ptr[SDL_free_func]) -> void
 external function SDL_SetMemoryFunctions(malloc_func: fn(arg0: ptr_uint) -> ptr[void], calloc_func: fn(arg0: ptr_uint, arg1: ptr_uint) -> ptr[void], realloc_func: fn(arg0: ptr[void], arg1: ptr_uint) -> ptr[void], free_func: fn(arg0: ptr[void]) -> void) -> bool
 external function SDL_aligned_alloc(alignment: ptr_uint, size: ptr_uint) -> ptr[void]?
 external function SDL_aligned_free(mem: ptr[void]?) -> void
 external function SDL_GetNumAllocations() -> int
+
 opaque SDL_Environment = c"SDL_Environment"
+
 external function SDL_GetEnvironment() -> ptr[SDL_Environment]?
 external function SDL_CreateEnvironment(populated: bool) -> ptr[SDL_Environment]?
 external function SDL_GetEnvironmentVariable(env: ptr[SDL_Environment], name: cstr) -> cstr?
@@ -63,10 +77,14 @@ external function SDL_getenv(name: cstr) -> cstr?
 external function SDL_getenv_unsafe(name: cstr) -> cstr?
 external function SDL_setenv_unsafe(name: cstr, value: cstr, overwrite: int) -> int
 external function SDL_unsetenv_unsafe(name: cstr) -> int
+
 type SDL_CompareCallback = fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int
+
 external function SDL_qsort(base: ptr[void], nmemb: ptr_uint, size: ptr_uint, compare: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int) -> void
 external function SDL_bsearch(key: const_ptr[void], base: const_ptr[void], nmemb: ptr_uint, size: ptr_uint, compare: fn(arg0: const_ptr[void], arg1: const_ptr[void]) -> int) -> ptr[void]?
+
 type SDL_CompareCallback_r = fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> int
+
 external function SDL_qsort_r(base: ptr[void], nmemb: ptr_uint, size: ptr_uint, compare: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> int, userdata: ptr[void]) -> void
 external function SDL_bsearch_r(key: const_ptr[void], base: const_ptr[void], nmemb: ptr_uint, size: ptr_uint, compare: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: const_ptr[void]) -> int, userdata: ptr[void]) -> ptr[void]?
 external function SDL_abs(x: int) -> int
@@ -206,19 +224,25 @@ external function SDL_sqrt(x: double) -> double
 external function SDL_sqrtf(x: float) -> float
 external function SDL_tan(x: double) -> double
 external function SDL_tanf(x: float) -> float
+
 opaque SDL_iconv_data_t = c"struct SDL_iconv_data_t"
+
 type SDL_iconv_t = ptr[SDL_iconv_data_t]
+
 external function SDL_iconv_open(tocode: cstr, fromcode: cstr) -> SDL_iconv_t
 external function SDL_iconv_close(cd: ptr[SDL_iconv_data_t]) -> int
 external function SDL_iconv(cd: ptr[SDL_iconv_data_t], inbuf: ptr[cstr], inbytesleft: ptr[ptr_uint], outbuf: ptr[ptr[char]], outbytesleft: ptr[ptr_uint]) -> ptr_uint
 external function SDL_iconv_string(tocode: cstr, fromcode: cstr, inbuf: cstr, inbytesleft: ptr_uint) -> ptr[char]?
+
 type SDL_FunctionPointer = fn() -> void
+
 enum SDL_AssertState: int
     SDL_ASSERTION_RETRY = 0
     SDL_ASSERTION_BREAK = 1
     SDL_ASSERTION_ABORT = 2
     SDL_ASSERTION_IGNORE = 3
     SDL_ASSERTION_ALWAYS_IGNORE = 4
+
 struct SDL_AssertData:
     always_ignore: bool
     trigger_count: uint
@@ -227,14 +251,19 @@ struct SDL_AssertData:
     linenum: int
     function_: cstr
     next: const_ptr[SDL_AssertData]
+
 external function SDL_ReportAssertion(data: ptr[SDL_AssertData], func: cstr, file: cstr, line: int) -> SDL_AssertState
+
 type SDL_AssertionHandler = fn(arg0: const_ptr[SDL_AssertData], arg1: ptr[void]) -> SDL_AssertState
+
 external function SDL_SetAssertionHandler(handler: SDL_AssertionHandler?, userdata: ptr[void]) -> void
 external function SDL_GetDefaultAssertionHandler() -> SDL_AssertionHandler
 external function SDL_GetAssertionHandler(puserdata: ptr[ptr[void]]) -> SDL_AssertionHandler
 external function SDL_GetAssertionReport() -> const_ptr[SDL_AssertData]?
 external function SDL_ResetAssertionReport() -> void
+
 opaque SDL_AsyncIO = c"SDL_AsyncIO"
+
 flags SDL_AsyncIOTaskType: int
     SDL_ASYNCIO_TASK_READ = 0
     SDL_ASYNCIO_TASK_WRITE = 1
@@ -243,6 +272,7 @@ flags SDL_AsyncIOResult: int
     SDL_ASYNCIO_COMPLETE = 0
     SDL_ASYNCIO_FAILURE = 1
     SDL_ASYNCIO_CANCELED = 2
+
 struct SDL_AsyncIOOutcome:
     asyncio: ptr[SDL_AsyncIO]
     type_: SDL_AsyncIOTaskType
@@ -252,7 +282,9 @@ struct SDL_AsyncIOOutcome:
     bytes_requested: ptr_uint
     bytes_transferred: ptr_uint
     userdata: ptr[void]
+
 opaque SDL_AsyncIOQueue = c"SDL_AsyncIOQueue"
+
 external function SDL_AsyncIOFromFile(file: cstr, mode: cstr) -> ptr[SDL_AsyncIO]?
 external function SDL_GetAsyncIOSize(asyncio: ptr[SDL_AsyncIO]) -> Sint64
 external function SDL_ReadAsyncIO(asyncio: ptr[SDL_AsyncIO], ptr: ptr[void], offset: ptr_uint, size: ptr_uint, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
@@ -264,20 +296,26 @@ external function SDL_GetAsyncIOResult(queue: ptr[SDL_AsyncIOQueue], outcome: pt
 external function SDL_WaitAsyncIOResult(queue: ptr[SDL_AsyncIOQueue], outcome: ptr[SDL_AsyncIOOutcome], timeoutMS: int) -> bool
 external function SDL_SignalAsyncIOQueue(queue: ptr[SDL_AsyncIOQueue]) -> void
 external function SDL_LoadFileAsync(file: cstr, queue: ptr[SDL_AsyncIOQueue], userdata: ptr[void]) -> bool
+
 type SDL_SpinLock = int
+
 external function SDL_TryLockSpinlock(lock: ptr[SDL_SpinLock]) -> bool
 external function SDL_LockSpinlock(lock: ptr[SDL_SpinLock]) -> void
 external function SDL_UnlockSpinlock(lock: ptr[SDL_SpinLock]) -> void
 external function SDL_MemoryBarrierReleaseFunction() -> void
 external function SDL_MemoryBarrierAcquireFunction() -> void
+
 struct SDL_AtomicInt:
     value: int
+
 external function SDL_CompareAndSwapAtomicInt(a: ptr[SDL_AtomicInt], oldval: int, newval: int) -> bool
 external function SDL_SetAtomicInt(a: ptr[SDL_AtomicInt], v: int) -> int
 external function SDL_GetAtomicInt(a: ptr[SDL_AtomicInt]) -> int
 external function SDL_AddAtomicInt(a: ptr[SDL_AtomicInt], v: int) -> int
+
 struct SDL_AtomicU32:
     value: uint
+
 external function SDL_CompareAndSwapAtomicU32(a: ptr[SDL_AtomicU32], oldval: uint, newval: uint) -> bool
 external function SDL_SetAtomicU32(a: ptr[SDL_AtomicU32], v: uint) -> Uint32
 external function SDL_GetAtomicU32(a: ptr[SDL_AtomicU32]) -> Uint32
@@ -290,7 +328,9 @@ external function SDL_SetErrorV(fmt: cstr, ap: va_list) -> bool
 external function SDL_OutOfMemory() -> bool
 external function SDL_GetError() -> cstr
 external function SDL_ClearError() -> bool
+
 type SDL_PropertiesID = uint
+
 enum SDL_PropertyType: int
     SDL_PROPERTY_TYPE_INVALID = 0
     SDL_PROPERTY_TYPE_POINTER = 1
@@ -298,12 +338,15 @@ enum SDL_PropertyType: int
     SDL_PROPERTY_TYPE_NUMBER = 3
     SDL_PROPERTY_TYPE_FLOAT = 4
     SDL_PROPERTY_TYPE_BOOLEAN = 5
+
 external function SDL_GetGlobalProperties() -> SDL_PropertiesID
 external function SDL_CreateProperties() -> SDL_PropertiesID
 external function SDL_CopyProperties(src: uint, dst: uint) -> bool
 external function SDL_LockProperties(props: uint) -> bool
 external function SDL_UnlockProperties(props: uint) -> void
+
 type SDL_CleanupPropertyCallback = fn(arg0: ptr[void], arg1: ptr[void]) -> void
+
 external function SDL_SetPointerPropertyWithCleanup(props: uint, name: cstr, value: ptr[void]?, cleanup: fn(arg0: ptr[void], arg1: ptr[void]) -> void, userdata: ptr[void]) -> bool
 external function SDL_SetPointerProperty(props: uint, name: cstr, value: ptr[void]?) -> bool
 external function SDL_SetStringProperty(props: uint, name: cstr, value: cstr?) -> bool
@@ -318,23 +361,31 @@ external function SDL_GetNumberProperty(props: uint, name: cstr, default_value: 
 external function SDL_GetFloatProperty(props: uint, name: cstr, default_value: float) -> float
 external function SDL_GetBooleanProperty(props: uint, name: cstr, default_value: bool) -> bool
 external function SDL_ClearProperty(props: uint, name: cstr) -> bool
+
 type SDL_EnumeratePropertiesCallback = fn(arg0: ptr[void], arg1: SDL_PropertiesID, arg2: cstr) -> void
+
 external function SDL_EnumerateProperties(props: uint, callback: fn(arg0: ptr[void], arg1: SDL_PropertiesID, arg2: cstr) -> void, userdata: ptr[void]) -> bool
 external function SDL_DestroyProperties(props: uint) -> void
+
 opaque SDL_Thread = c"SDL_Thread"
+
 type SDL_ThreadID = ptr_uint
 type SDL_TLSID = SDL_AtomicInt
+
 enum SDL_ThreadPriority: int
     SDL_THREAD_PRIORITY_LOW = 0
     SDL_THREAD_PRIORITY_NORMAL = 1
     SDL_THREAD_PRIORITY_HIGH = 2
     SDL_THREAD_PRIORITY_TIME_CRITICAL = 3
+
 enum SDL_ThreadState: int
     SDL_THREAD_UNKNOWN = 0
     SDL_THREAD_ALIVE = 1
     SDL_THREAD_DETACHED = 2
     SDL_THREAD_COMPLETE = 3
+
 type SDL_ThreadFunction = fn(arg0: ptr[void]) -> int
+
 external function SDL_CreateThreadRuntime(fn_: fn(arg0: ptr[void]) -> int, name: cstr, data: ptr[void], pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]?
 external function SDL_CreateThreadWithPropertiesRuntime(props: uint, pfnBeginThread: fn() -> void, pfnEndThread: fn() -> void) -> ptr[SDL_Thread]?
 external function SDL_GetThreadName(thread: ptr[SDL_Thread]) -> cstr
@@ -345,16 +396,22 @@ external function SDL_WaitThread(thread: ptr[SDL_Thread], status: ptr[int]?) -> 
 external function SDL_GetThreadState(thread: ptr[SDL_Thread]) -> SDL_ThreadState
 external function SDL_DetachThread(thread: ptr[SDL_Thread]) -> void
 external function SDL_GetTLS(id: ptr[SDL_TLSID]) -> ptr[void]?
+
 type SDL_TLSDestructorCallback = fn(arg0: ptr[void]) -> void
+
 external function SDL_SetTLS(id: ptr[SDL_TLSID], value: const_ptr[void], destructor: fn(arg0: ptr[void]) -> void) -> bool
 external function SDL_CleanupTLS() -> void
+
 opaque SDL_Mutex = c"SDL_Mutex"
+
 external function SDL_CreateMutex() -> ptr[SDL_Mutex]?
 external function SDL_LockMutex(mutex: ptr[SDL_Mutex]) -> void
 external function SDL_TryLockMutex(mutex: ptr[SDL_Mutex]) -> bool
 external function SDL_UnlockMutex(mutex: ptr[SDL_Mutex]) -> void
 external function SDL_DestroyMutex(mutex: ptr[SDL_Mutex]) -> void
+
 opaque SDL_RWLock = c"SDL_RWLock"
+
 external function SDL_CreateRWLock() -> ptr[SDL_RWLock]?
 external function SDL_LockRWLockForReading(rwlock: ptr[SDL_RWLock]) -> void
 external function SDL_LockRWLockForWriting(rwlock: ptr[SDL_RWLock]) -> void
@@ -362,7 +419,9 @@ external function SDL_TryLockRWLockForReading(rwlock: ptr[SDL_RWLock]) -> bool
 external function SDL_TryLockRWLockForWriting(rwlock: ptr[SDL_RWLock]) -> bool
 external function SDL_UnlockRWLock(rwlock: ptr[SDL_RWLock]) -> void
 external function SDL_DestroyRWLock(rwlock: ptr[SDL_RWLock]) -> void
+
 opaque SDL_Semaphore = c"SDL_Semaphore"
+
 external function SDL_CreateSemaphore(initial_value: uint) -> ptr[SDL_Semaphore]?
 external function SDL_DestroySemaphore(sem: ptr[SDL_Semaphore]) -> void
 external function SDL_WaitSemaphore(sem: ptr[SDL_Semaphore]) -> void
@@ -370,25 +429,31 @@ external function SDL_TryWaitSemaphore(sem: ptr[SDL_Semaphore]) -> bool
 external function SDL_WaitSemaphoreTimeout(sem: ptr[SDL_Semaphore], timeoutMS: int) -> bool
 external function SDL_SignalSemaphore(sem: ptr[SDL_Semaphore]) -> void
 external function SDL_GetSemaphoreValue(sem: ptr[SDL_Semaphore]) -> Uint32
+
 opaque SDL_Condition = c"SDL_Condition"
+
 external function SDL_CreateCondition() -> ptr[SDL_Condition]?
 external function SDL_DestroyCondition(cond: ptr[SDL_Condition]) -> void
 external function SDL_SignalCondition(cond: ptr[SDL_Condition]) -> void
 external function SDL_BroadcastCondition(cond: ptr[SDL_Condition]) -> void
 external function SDL_WaitCondition(cond: ptr[SDL_Condition], mutex: ptr[SDL_Mutex]) -> void
 external function SDL_WaitConditionTimeout(cond: ptr[SDL_Condition], mutex: ptr[SDL_Mutex], timeoutMS: int) -> bool
+
 enum SDL_InitStatus: int
     SDL_INIT_STATUS_UNINITIALIZED = 0
     SDL_INIT_STATUS_INITIALIZING = 1
     SDL_INIT_STATUS_INITIALIZED = 2
     SDL_INIT_STATUS_UNINITIALIZING = 3
+
 struct SDL_InitState:
     status: SDL_AtomicInt
     thread: ptr_uint
     reserved: ptr[void]
+
 external function SDL_ShouldInit(state: ptr[SDL_InitState]) -> bool
 external function SDL_ShouldQuit(state: ptr[SDL_InitState]) -> bool
 external function SDL_SetInitialized(state: ptr[SDL_InitState], initialized: bool) -> void
+
 enum SDL_IOStatus: int
     SDL_IO_STATUS_READY = 0
     SDL_IO_STATUS_ERROR = 1
@@ -396,10 +461,12 @@ enum SDL_IOStatus: int
     SDL_IO_STATUS_NOT_READY = 3
     SDL_IO_STATUS_READONLY = 4
     SDL_IO_STATUS_WRITEONLY = 5
+
 flags SDL_IOWhence: int
     SDL_IO_SEEK_SET = 0
     SDL_IO_SEEK_CUR = 1
     SDL_IO_SEEK_END = 2
+
 struct SDL_IOStreamInterface:
     version: uint
     size: fn(arg0: ptr[void]) -> Sint64
@@ -408,7 +475,9 @@ struct SDL_IOStreamInterface:
     write: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: ptr_uint, arg3: ptr[SDL_IOStatus]) -> ptr_uint
     flush: fn(arg0: ptr[void], arg1: ptr[SDL_IOStatus]) -> bool
     close: fn(arg0: ptr[void]) -> bool
+
 opaque SDL_IOStream = c"SDL_IOStream"
+
 external function SDL_IOFromFile(file: cstr, mode: cstr) -> ptr[SDL_IOStream]?
 external function SDL_IOFromMem(mem: ptr[void], size: ptr_uint) -> ptr[SDL_IOStream]?
 external function SDL_IOFromConstMem(mem: const_ptr[void], size: ptr_uint) -> ptr[SDL_IOStream]?
@@ -457,6 +526,7 @@ external function SDL_WriteU64LE(dst: ptr[SDL_IOStream], value: ptr_uint) -> boo
 external function SDL_WriteS64LE(dst: ptr[SDL_IOStream], value: ptr_int) -> bool
 external function SDL_WriteU64BE(dst: ptr[SDL_IOStream], value: ptr_uint) -> bool
 external function SDL_WriteS64BE(dst: ptr[SDL_IOStream], value: ptr_int) -> bool
+
 enum SDL_AudioFormat: int
     SDL_AUDIO_UNKNOWN = 0
     SDL_AUDIO_U8 = 1
@@ -470,12 +540,16 @@ enum SDL_AudioFormat: int
     SDL_AUDIO_S16 = 32784
     SDL_AUDIO_S32 = 32800
     SDL_AUDIO_F32 = 33056
+
 type SDL_AudioDeviceID = uint
+
 struct SDL_AudioSpec:
     format: SDL_AudioFormat
     channels: int
     freq: int
+
 opaque SDL_AudioStream = c"SDL_AudioStream"
+
 external function SDL_GetNumAudioDrivers() -> int
 external function SDL_GetAudioDriver(index: int) -> cstr?
 external function SDL_GetCurrentAudioDriver() -> cstr?
@@ -511,7 +585,9 @@ external function SDL_GetAudioStreamOutputChannelMap(stream: ptr[SDL_AudioStream
 external function SDL_SetAudioStreamInputChannelMap(stream: ptr[SDL_AudioStream], chmap: const_ptr[int], count: int) -> bool
 external function SDL_SetAudioStreamOutputChannelMap(stream: ptr[SDL_AudioStream], chmap: const_ptr[int], count: int) -> bool
 external function SDL_PutAudioStreamData(stream: ptr[SDL_AudioStream], buf: const_ptr[void], len: int) -> bool
+
 type SDL_AudioStreamDataCompleteCallback = fn(arg0: ptr[void], arg1: const_ptr[void], arg2: int) -> void
+
 external function SDL_PutAudioStreamDataNoCopy(stream: ptr[SDL_AudioStream], buf: const_ptr[void], len: int, callback: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: int) -> void, userdata: ptr[void]) -> bool
 external function SDL_PutAudioStreamPlanarData(stream: ptr[SDL_AudioStream], channel_buffers: const_ptr[const_ptr[void]?], num_channels: int, num_samples: int) -> bool
 external function SDL_GetAudioStreamData(stream: ptr[SDL_AudioStream], buf: ptr[void], len: int) -> int
@@ -524,12 +600,16 @@ external function SDL_ResumeAudioStreamDevice(stream: ptr[SDL_AudioStream]) -> b
 external function SDL_AudioStreamDevicePaused(stream: ptr[SDL_AudioStream]) -> bool
 external function SDL_LockAudioStream(stream: ptr[SDL_AudioStream]) -> bool
 external function SDL_UnlockAudioStream(stream: ptr[SDL_AudioStream]) -> bool
+
 type SDL_AudioStreamCallback = fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: int, arg3: int) -> void
+
 external function SDL_SetAudioStreamGetCallback(stream: ptr[SDL_AudioStream], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: int, arg3: int) -> void, userdata: ptr[void]) -> bool
 external function SDL_SetAudioStreamPutCallback(stream: ptr[SDL_AudioStream], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: int, arg3: int) -> void, userdata: ptr[void]) -> bool
 external function SDL_DestroyAudioStream(stream: ptr[SDL_AudioStream]) -> void
 external function SDL_OpenAudioDeviceStream(devid: uint, spec: const_ptr[SDL_AudioSpec], callback: fn(arg0: ptr[void], arg1: ptr[SDL_AudioStream], arg2: int, arg3: int) -> void, userdata: ptr[void]?) -> ptr[SDL_AudioStream]?
+
 type SDL_AudioPostmixCallback = fn(arg0: ptr[void], arg1: const_ptr[SDL_AudioSpec], arg2: ptr[float], arg3: int) -> void
+
 external function SDL_SetAudioPostmixCallback(devid: uint, callback: fn(arg0: ptr[void], arg1: const_ptr[SDL_AudioSpec], arg2: ptr[float], arg3: int) -> void, userdata: ptr[void]) -> bool
 external function SDL_LoadWAV_IO(src: ptr[SDL_IOStream], closeio: bool, spec: ptr[SDL_AudioSpec], audio_buf: ptr[ptr[Uint8]], audio_len: ptr[Uint32]) -> bool
 external function SDL_LoadWAV(path: cstr, spec: ptr[SDL_AudioSpec], audio_buf: ptr[ptr[Uint8]], audio_len: ptr[Uint32]) -> bool
@@ -537,13 +617,16 @@ external function SDL_MixAudio(dst: ptr[Uint8], src: const_ptr[Uint8], format: S
 external function SDL_ConvertAudioSamples(src_spec: const_ptr[SDL_AudioSpec], src_data: const_ptr[Uint8], src_len: int, dst_spec: const_ptr[SDL_AudioSpec], dst_data: ptr[ptr[Uint8]], dst_len: ptr[int]) -> bool
 external function SDL_GetAudioFormatName(format: SDL_AudioFormat) -> cstr
 external function SDL_GetSilenceValueForFormat(format: SDL_AudioFormat) -> int
+
 type SDL_BlendMode = uint
+
 enum SDL_BlendOperation: int
     SDL_BLENDOPERATION_ADD = 1
     SDL_BLENDOPERATION_SUBTRACT = 2
     SDL_BLENDOPERATION_REV_SUBTRACT = 3
     SDL_BLENDOPERATION_MINIMUM = 4
     SDL_BLENDOPERATION_MAXIMUM = 5
+
 enum SDL_BlendFactor: int
     SDL_BLENDFACTOR_ZERO = 1
     SDL_BLENDFACTOR_ONE = 2
@@ -555,7 +638,9 @@ enum SDL_BlendFactor: int
     SDL_BLENDFACTOR_ONE_MINUS_DST_COLOR = 8
     SDL_BLENDFACTOR_DST_ALPHA = 9
     SDL_BLENDFACTOR_ONE_MINUS_DST_ALPHA = 10
+
 external function SDL_ComposeCustomBlendMode(srcColorFactor: SDL_BlendFactor, dstColorFactor: SDL_BlendFactor, colorOperation: SDL_BlendOperation, srcAlphaFactor: SDL_BlendFactor, dstAlphaFactor: SDL_BlendFactor, alphaOperation: SDL_BlendOperation) -> SDL_BlendMode
+
 enum SDL_PixelType: int
     SDL_PIXELTYPE_UNKNOWN = 0
     SDL_PIXELTYPE_INDEX1 = 1
@@ -570,10 +655,12 @@ enum SDL_PixelType: int
     SDL_PIXELTYPE_ARRAYF16 = 10
     SDL_PIXELTYPE_ARRAYF32 = 11
     SDL_PIXELTYPE_INDEX2 = 12
+
 flags SDL_BitmapOrder: int
     SDL_BITMAPORDER_NONE = 0
     SDL_BITMAPORDER_4321 = 1
     SDL_BITMAPORDER_1234 = 2
+
 enum SDL_PackedOrder: int
     SDL_PACKEDORDER_NONE = 0
     SDL_PACKEDORDER_XRGB = 1
@@ -584,6 +671,7 @@ enum SDL_PackedOrder: int
     SDL_PACKEDORDER_BGRX = 6
     SDL_PACKEDORDER_ABGR = 7
     SDL_PACKEDORDER_BGRA = 8
+
 enum SDL_ArrayOrder: int
     SDL_ARRAYORDER_NONE = 0
     SDL_ARRAYORDER_RGB = 1
@@ -592,6 +680,7 @@ enum SDL_ArrayOrder: int
     SDL_ARRAYORDER_BGR = 4
     SDL_ARRAYORDER_BGRA = 5
     SDL_ARRAYORDER_ABGR = 6
+
 enum SDL_PackedLayout: int
     SDL_PACKEDLAYOUT_NONE = 0
     SDL_PACKEDLAYOUT_332 = 1
@@ -602,6 +691,7 @@ enum SDL_PackedLayout: int
     SDL_PACKEDLAYOUT_8888 = 6
     SDL_PACKEDLAYOUT_2101010 = 7
     SDL_PACKEDLAYOUT_1010102 = 8
+
 enum SDL_PixelFormat: int
     SDL_PIXELFORMAT_UNKNOWN = 0
     SDL_PIXELFORMAT_INDEX1LSB = 1
@@ -676,6 +766,7 @@ enum SDL_PixelFormat: int
     SDL_PIXELFORMAT_XRGB32 = 375789572
     SDL_PIXELFORMAT_BGRX32 = 370546692
     SDL_PIXELFORMAT_XBGR32 = 371595268
+
 flags SDL_ColorType: int
     SDL_COLOR_TYPE_UNKNOWN = 0
     SDL_COLOR_TYPE_RGB = 1
@@ -684,6 +775,7 @@ flags SDL_ColorRange: int
     SDL_COLOR_RANGE_UNKNOWN = 0
     SDL_COLOR_RANGE_LIMITED = 1
     SDL_COLOR_RANGE_FULL = 2
+
 enum SDL_ColorPrimaries: int
     SDL_COLOR_PRIMARIES_UNKNOWN = 0
     SDL_COLOR_PRIMARIES_BT709 = 1
@@ -699,6 +791,7 @@ enum SDL_ColorPrimaries: int
     SDL_COLOR_PRIMARIES_SMPTE432 = 12
     SDL_COLOR_PRIMARIES_EBU3213 = 22
     SDL_COLOR_PRIMARIES_CUSTOM = 31
+
 enum SDL_TransferCharacteristics: int
     SDL_TRANSFER_CHARACTERISTICS_UNKNOWN = 0
     SDL_TRANSFER_CHARACTERISTICS_BT709 = 1
@@ -719,6 +812,7 @@ enum SDL_TransferCharacteristics: int
     SDL_TRANSFER_CHARACTERISTICS_SMPTE428 = 17
     SDL_TRANSFER_CHARACTERISTICS_HLG = 18
     SDL_TRANSFER_CHARACTERISTICS_CUSTOM = 31
+
 enum SDL_MatrixCoefficients: int
     SDL_MATRIX_COEFFICIENTS_IDENTITY = 0
     SDL_MATRIX_COEFFICIENTS_BT709 = 1
@@ -735,11 +829,13 @@ enum SDL_MatrixCoefficients: int
     SDL_MATRIX_COEFFICIENTS_CHROMA_DERIVED_CL = 13
     SDL_MATRIX_COEFFICIENTS_ICTCP = 14
     SDL_MATRIX_COEFFICIENTS_CUSTOM = 31
+
 enum SDL_ChromaLocation: int
     SDL_CHROMA_LOCATION_NONE = 0
     SDL_CHROMA_LOCATION_LEFT = 1
     SDL_CHROMA_LOCATION_CENTER = 2
     SDL_CHROMA_LOCATION_TOPLEFT = 3
+
 enum SDL_Colorspace: int
     SDL_COLORSPACE_UNKNOWN = 0
     SDL_COLORSPACE_SRGB = 1
@@ -754,21 +850,25 @@ enum SDL_Colorspace: int
     SDL_COLORSPACE_BT2020_FULL = 10
     SDL_COLORSPACE_RGB_DEFAULT = 301991328
     SDL_COLORSPACE_YUV_DEFAULT = 554703046
+
 struct SDL_Color:
     r: ubyte
     g: ubyte
     b: ubyte
     a: ubyte
+
 struct SDL_FColor:
     r: float
     g: float
     b: float
     a: float
+
 struct SDL_Palette:
     ncolors: int
     colors: ptr[SDL_Color]
     version: uint
     refcount: int
+
 struct SDL_PixelFormatDetails:
     format: SDL_PixelFormat
     bits_per_pixel: ubyte
@@ -786,6 +886,7 @@ struct SDL_PixelFormatDetails:
     Gshift: ubyte
     Bshift: ubyte
     Ashift: ubyte
+
 external function SDL_GetPixelFormatName(format: SDL_PixelFormat) -> cstr
 external function SDL_GetMasksForPixelFormat(format: SDL_PixelFormat, bpp: ptr[int], Rmask: ptr[Uint32], Gmask: ptr[Uint32], Bmask: ptr[Uint32], Amask: ptr[Uint32]) -> bool
 external function SDL_GetPixelFormatForMasks(bpp: int, Rmask: uint, Gmask: uint, Bmask: uint, Amask: uint) -> SDL_PixelFormat
@@ -797,22 +898,27 @@ external function SDL_MapRGB(format: const_ptr[SDL_PixelFormatDetails], palette:
 external function SDL_MapRGBA(format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: ubyte, g: ubyte, b: ubyte, a: ubyte) -> Uint32
 external function SDL_GetRGB(pixelvalue: uint, format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: ptr[Uint8]?, g: ptr[Uint8]?, b: ptr[Uint8]?) -> void
 external function SDL_GetRGBA(pixelvalue: uint, format: const_ptr[SDL_PixelFormatDetails], palette: const_ptr[SDL_Palette]?, r: ptr[Uint8]?, g: ptr[Uint8]?, b: ptr[Uint8]?, a: ptr[Uint8]?) -> void
+
 struct SDL_Point:
     x: int
     y: int
+
 struct SDL_FPoint:
     x: float
     y: float
+
 struct SDL_Rect:
     x: int
     y: int
     w: int
     h: int
+
 struct SDL_FRect:
     x: float
     y: float
     w: float
     h: float
+
 external function SDL_HasRectIntersection(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect]) -> bool
 external function SDL_GetRectIntersection(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect], result: ptr[SDL_Rect]) -> bool
 external function SDL_GetRectUnion(A: const_ptr[SDL_Rect], B: const_ptr[SDL_Rect], result: ptr[SDL_Rect]) -> bool
@@ -823,17 +929,21 @@ external function SDL_GetRectIntersectionFloat(A: const_ptr[SDL_FRect], B: const
 external function SDL_GetRectUnionFloat(A: const_ptr[SDL_FRect], B: const_ptr[SDL_FRect], result: ptr[SDL_FRect]) -> bool
 external function SDL_GetRectEnclosingPointsFloat(points: const_ptr[SDL_FPoint], count: int, clip: const_ptr[SDL_FRect]?, result: ptr[SDL_FRect]) -> bool
 external function SDL_GetRectAndLineIntersectionFloat(rect: const_ptr[SDL_FRect], X1: ptr[float], Y1: ptr[float], X2: ptr[float], Y2: ptr[float]) -> bool
+
 type SDL_SurfaceFlags = uint
+
 enum SDL_ScaleMode: int
     SDL_SCALEMODE_INVALID = -1
     SDL_SCALEMODE_NEAREST = 0
     SDL_SCALEMODE_LINEAR = 1
     SDL_SCALEMODE_PIXELART = 2
+
 enum SDL_FlipMode: int
     SDL_FLIP_NONE = 0
     SDL_FLIP_HORIZONTAL = 1
     SDL_FLIP_VERTICAL = 2
     SDL_FLIP_HORIZONTAL_AND_VERTICAL = 3
+
 struct SDL_Surface:
     flags_: uint
     format: SDL_PixelFormat
@@ -843,6 +953,7 @@ struct SDL_Surface:
     pixels: ptr[void]
     refcount: int
     reserved: ptr[void]
+
 external function SDL_CreateSurface(width: int, height: int, format: SDL_PixelFormat) -> ptr[SDL_Surface]?
 external function SDL_CreateSurfaceFrom(width: int, height: int, format: SDL_PixelFormat, pixels: ptr[void], pitch: int) -> ptr[SDL_Surface]?
 external function SDL_DestroySurface(surface: ptr[SDL_Surface]) -> void
@@ -908,8 +1019,11 @@ external function SDL_ReadSurfacePixel(surface: ptr[SDL_Surface], x: int, y: int
 external function SDL_ReadSurfacePixelFloat(surface: ptr[SDL_Surface], x: int, y: int, r: ptr[float]?, g: ptr[float]?, b: ptr[float]?, a: ptr[float]?) -> bool
 external function SDL_WriteSurfacePixel(surface: ptr[SDL_Surface], x: int, y: int, r: ubyte, g: ubyte, b: ubyte, a: ubyte) -> bool
 external function SDL_WriteSurfacePixelFloat(surface: ptr[SDL_Surface], x: int, y: int, r: float, g: float, b: float, a: float) -> bool
+
 type SDL_CameraID = uint
+
 opaque SDL_Camera = c"SDL_Camera"
+
 struct SDL_CameraSpec:
     format: SDL_PixelFormat
     colorspace: SDL_Colorspace
@@ -917,14 +1031,17 @@ struct SDL_CameraSpec:
     height: int
     framerate_numerator: int
     framerate_denominator: int
+
 flags SDL_CameraPosition: int
     SDL_CAMERA_POSITION_UNKNOWN = 0
     SDL_CAMERA_POSITION_FRONT_FACING = 1
     SDL_CAMERA_POSITION_BACK_FACING = 2
+
 enum SDL_CameraPermissionState: int
     SDL_CAMERA_PERMISSION_STATE_DENIED = -1
     SDL_CAMERA_PERMISSION_STATE_PENDING = 0
     SDL_CAMERA_PERMISSION_STATE_APPROVED = 1
+
 external function SDL_GetNumCameraDrivers() -> int
 external function SDL_GetCameraDriver(index: int) -> cstr?
 external function SDL_GetCurrentCameraDriver() -> cstr?
@@ -946,8 +1063,10 @@ external function SDL_HasClipboardText() -> bool
 external function SDL_SetPrimarySelectionText(text: cstr) -> bool
 external function SDL_GetPrimarySelectionText() -> ptr[char]?
 external function SDL_HasPrimarySelectionText() -> bool
+
 type SDL_ClipboardDataCallback = fn(arg0: ptr[void], arg1: cstr, arg2: ptr[ptr_uint]) -> const_ptr[void]
 type SDL_ClipboardCleanupCallback = fn(arg0: ptr[void]) -> void
+
 external function SDL_SetClipboardData(callback: fn(arg0: ptr[void], arg1: cstr, arg2: ptr[ptr_uint]) -> const_ptr[void], cleanup: fn(arg0: ptr[void]) -> void, userdata: ptr[void], mime_types: const_ptr[cstr], num_mime_types: ptr_uint) -> bool
 external function SDL_ClearClipboardData() -> bool
 external function SDL_GetClipboardData(mime_type: cstr, size: ptr[ptr_uint]) -> ptr[void]?
@@ -972,13 +1091,17 @@ external function SDL_HasLASX() -> bool
 external function SDL_GetSystemRAM() -> int
 external function SDL_GetSIMDAlignment() -> ptr_uint
 external function SDL_GetSystemPageSize() -> int
+
 type SDL_DisplayID = uint
 type SDL_WindowID = uint
+
 flags SDL_SystemTheme: int
     SDL_SYSTEM_THEME_UNKNOWN = 0
     SDL_SYSTEM_THEME_LIGHT = 1
     SDL_SYSTEM_THEME_DARK = 2
+
 opaque SDL_DisplayModeData = c"SDL_DisplayModeData"
+
 struct SDL_DisplayMode:
     displayID: uint
     format: SDL_PixelFormat
@@ -989,18 +1112,23 @@ struct SDL_DisplayMode:
     refresh_rate_numerator: int
     refresh_rate_denominator: int
     internal: ptr[SDL_DisplayModeData]
+
 enum SDL_DisplayOrientation: int
     SDL_ORIENTATION_UNKNOWN = 0
     SDL_ORIENTATION_LANDSCAPE = 1
     SDL_ORIENTATION_LANDSCAPE_FLIPPED = 2
     SDL_ORIENTATION_PORTRAIT = 3
     SDL_ORIENTATION_PORTRAIT_FLIPPED = 4
+
 opaque SDL_Window = c"SDL_Window"
+
 type SDL_WindowFlags = ptr_uint
+
 flags SDL_FlashOperation: int
     SDL_FLASH_CANCEL = 0
     SDL_FLASH_BRIEFLY = 1
     SDL_FLASH_UNTIL_FOCUSED = 2
+
 enum SDL_ProgressState: int
     SDL_PROGRESS_STATE_INVALID = -1
     SDL_PROGRESS_STATE_NONE = 0
@@ -1008,7 +1136,9 @@ enum SDL_ProgressState: int
     SDL_PROGRESS_STATE_NORMAL = 2
     SDL_PROGRESS_STATE_PAUSED = 3
     SDL_PROGRESS_STATE_ERROR = 4
+
 opaque SDL_GLContextState = c"struct SDL_GLContextState"
+
 type SDL_GLContext = ptr[SDL_GLContextState]
 type SDL_EGLDisplay = ptr[void]
 type SDL_EGLConfig = ptr[void]
@@ -1017,6 +1147,7 @@ type SDL_EGLAttrib = ptr_int
 type SDL_EGLint = int
 type SDL_EGLAttribArrayCallback = fn(arg0: ptr[void]) -> ptr[SDL_EGLAttrib]
 type SDL_EGLIntArrayCallback = fn(arg0: ptr[void], arg1: SDL_EGLDisplay, arg2: SDL_EGLConfig) -> ptr[SDL_EGLint]
+
 enum SDL_GLAttr: int
     SDL_GL_RED_SIZE = 0
     SDL_GL_GREEN_SIZE = 1
@@ -1046,10 +1177,12 @@ enum SDL_GLAttr: int
     SDL_GL_CONTEXT_NO_ERROR = 25
     SDL_GL_FLOATBUFFERS = 26
     SDL_GL_EGL_PLATFORM = 27
+
 type SDL_GLProfile = uint
 type SDL_GLContextFlag = uint
 type SDL_GLContextReleaseFlag = uint
 type SDL_GLContextResetNotification = uint
+
 external function SDL_GetNumVideoDrivers() -> int
 external function SDL_GetVideoDriver(index: int) -> cstr?
 external function SDL_GetCurrentVideoDriver() -> cstr?
@@ -1133,6 +1266,7 @@ external function SDL_SetWindowParent(window: ptr[SDL_Window], parent: ptr[SDL_W
 external function SDL_SetWindowModal(window: ptr[SDL_Window], modal: bool) -> bool
 external function SDL_SetWindowFocusable(window: ptr[SDL_Window], focusable: bool) -> bool
 external function SDL_ShowWindowSystemMenu(window: ptr[SDL_Window], x: int, y: int) -> bool
+
 enum SDL_HitTestResult: int
     SDL_HITTEST_NORMAL = 0
     SDL_HITTEST_DRAGGABLE = 1
@@ -1144,7 +1278,9 @@ enum SDL_HitTestResult: int
     SDL_HITTEST_RESIZE_BOTTOM = 7
     SDL_HITTEST_RESIZE_BOTTOMLEFT = 8
     SDL_HITTEST_RESIZE_LEFT = 9
+
 type SDL_HitTest = fn(arg0: ptr[SDL_Window], arg1: const_ptr[SDL_Point], arg2: ptr[void]) -> SDL_HitTestResult
+
 external function SDL_SetWindowHitTest(window: ptr[SDL_Window], callback: fn(arg0: ptr[SDL_Window], arg1: const_ptr[SDL_Point], arg2: ptr[void]) -> SDL_HitTestResult, callback_data: ptr[void]) -> bool
 external function SDL_SetWindowShape(window: ptr[SDL_Window], shape: ptr[SDL_Surface]?) -> bool
 external function SDL_FlashWindow(window: ptr[SDL_Window], operation: SDL_FlashOperation) -> bool
@@ -1176,22 +1312,30 @@ external function SDL_GL_SetSwapInterval(interval: int) -> bool
 external function SDL_GL_GetSwapInterval(interval: ptr[int]) -> bool
 external function SDL_GL_SwapWindow(window: ptr[SDL_Window]) -> bool
 external function SDL_GL_DestroyContext(context: ptr[SDL_GLContextState]) -> bool
+
 struct SDL_DialogFileFilter:
     name: cstr
     pattern: cstr
+
 type SDL_DialogFileCallback = fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void
+
 external function SDL_ShowOpenFileDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], window: ptr[SDL_Window]?, filters: const_ptr[SDL_DialogFileFilter]?, nfilters: int, default_location: cstr?, allow_many: bool) -> void
 external function SDL_ShowSaveFileDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], window: ptr[SDL_Window]?, filters: const_ptr[SDL_DialogFileFilter]?, nfilters: int, default_location: cstr?) -> void
 external function SDL_ShowOpenFolderDialog(callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], window: ptr[SDL_Window]?, default_location: cstr?, allow_many: bool) -> void
+
 flags SDL_FileDialogType: int
     SDL_FILEDIALOG_OPENFILE = 0
     SDL_FILEDIALOG_SAVEFILE = 1
     SDL_FILEDIALOG_OPENFOLDER = 2
+
 external function SDL_ShowFileDialogWithProperties(type_: SDL_FileDialogType, callback: fn(arg0: ptr[void], arg1: const_ptr[cstr], arg2: int) -> void, userdata: ptr[void], props: uint) -> void
+
 struct SDL_GUID:
     data: array[Uint8, 16]
+
 external function SDL_GUIDToString(guid: SDL_GUID, pszGUID: ptr[char], cbGUID: int) -> void
 external function SDL_StringToGUID(pchGUID: cstr) -> SDL_GUID
+
 enum SDL_PowerState: int
     SDL_POWERSTATE_ERROR = -1
     SDL_POWERSTATE_UNKNOWN = 0
@@ -1199,9 +1343,13 @@ enum SDL_PowerState: int
     SDL_POWERSTATE_NO_BATTERY = 2
     SDL_POWERSTATE_CHARGING = 3
     SDL_POWERSTATE_CHARGED = 4
+
 external function SDL_GetPowerInfo(seconds: ptr[int]?, percent: ptr[int]?) -> SDL_PowerState
+
 opaque SDL_Sensor = c"SDL_Sensor"
+
 type SDL_SensorID = uint
+
 enum SDL_SensorType: int
     SDL_SENSOR_INVALID = -1
     SDL_SENSOR_UNKNOWN = 0
@@ -1212,6 +1360,7 @@ enum SDL_SensorType: int
     SDL_SENSOR_ACCEL_R = 5
     SDL_SENSOR_GYRO_R = 6
     SDL_SENSOR_COUNT = 7
+
 external function SDL_GetSensors(count: ptr[int]?) -> ptr[SDL_SensorID]?
 external function SDL_GetSensorNameForID(instance_id: uint) -> cstr?
 external function SDL_GetSensorTypeForID(instance_id: uint) -> SDL_SensorType
@@ -1226,8 +1375,11 @@ external function SDL_GetSensorID(sensor: ptr[SDL_Sensor]) -> SDL_SensorID
 external function SDL_GetSensorData(sensor: ptr[SDL_Sensor], data: ptr[float], num_values: int) -> bool
 external function SDL_CloseSensor(sensor: ptr[SDL_Sensor]) -> void
 external function SDL_UpdateSensors() -> void
+
 opaque SDL_Joystick = c"SDL_Joystick"
+
 type SDL_JoystickID = uint
+
 enum SDL_JoystickType: int
     SDL_JOYSTICK_TYPE_UNKNOWN = 0
     SDL_JOYSTICK_TYPE_GAMEPAD = 1
@@ -1240,11 +1392,13 @@ enum SDL_JoystickType: int
     SDL_JOYSTICK_TYPE_ARCADE_PAD = 8
     SDL_JOYSTICK_TYPE_THROTTLE = 9
     SDL_JOYSTICK_TYPE_COUNT = 10
+
 enum SDL_JoystickConnectionState: int
     SDL_JOYSTICK_CONNECTION_INVALID = -1
     SDL_JOYSTICK_CONNECTION_UNKNOWN = 0
     SDL_JOYSTICK_CONNECTION_WIRED = 1
     SDL_JOYSTICK_CONNECTION_WIRELESS = 2
+
 external function SDL_LockJoysticks() -> void
 external function SDL_TryLockJoysticks() -> bool
 external function SDL_UnlockJoysticks() -> void
@@ -1261,12 +1415,15 @@ external function SDL_GetJoystickTypeForID(instance_id: uint) -> SDL_JoystickTyp
 external function SDL_OpenJoystick(instance_id: uint) -> ptr[SDL_Joystick]?
 external function SDL_GetJoystickFromID(instance_id: uint) -> ptr[SDL_Joystick]?
 external function SDL_GetJoystickFromPlayerIndex(player_index: int) -> ptr[SDL_Joystick]?
+
 struct SDL_VirtualJoystickTouchpadDesc:
     nfingers: ushort
     padding: array[Uint16, 3]
+
 struct SDL_VirtualJoystickSensorDesc:
     type_: SDL_SensorType
     rate: float
+
 struct SDL_VirtualJoystickDesc:
     version: uint
     type_: ushort
@@ -1294,6 +1451,7 @@ struct SDL_VirtualJoystickDesc:
     SendEffect: fn(arg0: ptr[void], arg1: const_ptr[void], arg2: int) -> bool
     SetSensorsEnabled: fn(arg0: ptr[void], arg1: bool) -> bool
     Cleanup: fn(arg0: ptr[void]) -> void
+
 external function SDL_AttachVirtualJoystick(desc: const_ptr[SDL_VirtualJoystickDesc]) -> SDL_JoystickID
 external function SDL_DetachVirtualJoystick(instance_id: uint) -> bool
 external function SDL_IsJoystickVirtual(instance_id: uint) -> bool
@@ -1337,7 +1495,9 @@ external function SDL_SendJoystickEffect(joystick: ptr[SDL_Joystick], data: cons
 external function SDL_CloseJoystick(joystick: ptr[SDL_Joystick]) -> void
 external function SDL_GetJoystickConnectionState(joystick: ptr[SDL_Joystick]) -> SDL_JoystickConnectionState
 external function SDL_GetJoystickPowerInfo(joystick: ptr[SDL_Joystick], percent: ptr[int]?) -> SDL_PowerState
+
 opaque SDL_Gamepad = c"SDL_Gamepad"
+
 enum SDL_GamepadType: int
     SDL_GAMEPAD_TYPE_UNKNOWN = 0
     SDL_GAMEPAD_TYPE_STANDARD = 1
@@ -1352,6 +1512,7 @@ enum SDL_GamepadType: int
     SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR = 10
     SDL_GAMEPAD_TYPE_GAMECUBE = 11
     SDL_GAMEPAD_TYPE_COUNT = 12
+
 enum SDL_GamepadButton: int
     SDL_GAMEPAD_BUTTON_INVALID = -1
     SDL_GAMEPAD_BUTTON_SOUTH = 0
@@ -1381,6 +1542,7 @@ enum SDL_GamepadButton: int
     SDL_GAMEPAD_BUTTON_MISC5 = 24
     SDL_GAMEPAD_BUTTON_MISC6 = 25
     SDL_GAMEPAD_BUTTON_COUNT = 26
+
 enum SDL_GamepadButtonLabel: int
     SDL_GAMEPAD_BUTTON_LABEL_UNKNOWN = 0
     SDL_GAMEPAD_BUTTON_LABEL_A = 1
@@ -1391,6 +1553,7 @@ enum SDL_GamepadButtonLabel: int
     SDL_GAMEPAD_BUTTON_LABEL_CIRCLE = 6
     SDL_GAMEPAD_BUTTON_LABEL_SQUARE = 7
     SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE = 8
+
 enum SDL_GamepadAxis: int
     SDL_GAMEPAD_AXIS_INVALID = -1
     SDL_GAMEPAD_AXIS_LEFTX = 0
@@ -1400,16 +1563,19 @@ enum SDL_GamepadAxis: int
     SDL_GAMEPAD_AXIS_LEFT_TRIGGER = 4
     SDL_GAMEPAD_AXIS_RIGHT_TRIGGER = 5
     SDL_GAMEPAD_AXIS_COUNT = 6
+
 enum SDL_GamepadBindingType: int
     SDL_GAMEPAD_BINDTYPE_NONE = 0
     SDL_GAMEPAD_BINDTYPE_BUTTON = 1
     SDL_GAMEPAD_BINDTYPE_AXIS = 2
     SDL_GAMEPAD_BINDTYPE_HAT = 3
+
 struct SDL_GamepadBinding:
     input_type: SDL_GamepadBindingType
     input: SDL_GamepadBinding_input
     output_type: SDL_GamepadBindingType
     output: SDL_GamepadBinding_output
+
 external function SDL_AddGamepadMapping(mapping: cstr) -> int
 external function SDL_AddGamepadMappingsFromIO(src: ptr[SDL_IOStream], closeio: bool) -> int
 external function SDL_AddGamepadMappingsFromFile(file: cstr) -> int
@@ -1483,6 +1649,7 @@ external function SDL_SendGamepadEffect(gamepad: ptr[SDL_Gamepad], data: const_p
 external function SDL_CloseGamepad(gamepad: ptr[SDL_Gamepad]) -> void
 external function SDL_GetGamepadAppleSFSymbolsNameForButton(gamepad: ptr[SDL_Gamepad], button: SDL_GamepadButton) -> cstr?
 external function SDL_GetGamepadAppleSFSymbolsNameForAxis(gamepad: ptr[SDL_Gamepad], axis: SDL_GamepadAxis) -> cstr?
+
 enum SDL_Scancode: int
     SDL_SCANCODE_UNKNOWN = 0
     SDL_SCANCODE_A = 4
@@ -1733,9 +1900,11 @@ enum SDL_Scancode: int
     SDL_SCANCODE_ENDCALL = 290
     SDL_SCANCODE_RESERVED = 400
     SDL_SCANCODE_COUNT = 512
+
 type SDL_Keycode = uint
 type SDL_Keymod = ushort
 type SDL_KeyboardID = uint
+
 external function SDL_HasKeyboard() -> bool
 external function SDL_GetKeyboards(count: ptr[int]?) -> ptr[SDL_KeyboardID]?
 external function SDL_GetKeyboardNameForID(instance_id: uint) -> cstr?
@@ -1752,6 +1921,7 @@ external function SDL_GetScancodeFromName(name: cstr) -> SDL_Scancode
 external function SDL_GetKeyName(key: uint) -> cstr
 external function SDL_GetKeyFromName(name: cstr) -> SDL_Keycode
 external function SDL_StartTextInput(window: ptr[SDL_Window]) -> bool
+
 enum SDL_TextInputType: int
     SDL_TEXTINPUT_TYPE_TEXT = 0
     SDL_TEXTINPUT_TYPE_TEXT_NAME = 1
@@ -1762,11 +1932,13 @@ enum SDL_TextInputType: int
     SDL_TEXTINPUT_TYPE_NUMBER = 6
     SDL_TEXTINPUT_TYPE_NUMBER_PASSWORD_HIDDEN = 7
     SDL_TEXTINPUT_TYPE_NUMBER_PASSWORD_VISIBLE = 8
+
 enum SDL_Capitalization: int
     SDL_CAPITALIZE_NONE = 0
     SDL_CAPITALIZE_SENTENCES = 1
     SDL_CAPITALIZE_WORDS = 2
     SDL_CAPITALIZE_LETTERS = 3
+
 external function SDL_StartTextInputWithProperties(window: ptr[SDL_Window], props: uint) -> bool
 external function SDL_TextInputActive(window: ptr[SDL_Window]) -> bool
 external function SDL_StopTextInput(window: ptr[SDL_Window]) -> bool
@@ -1775,8 +1947,11 @@ external function SDL_SetTextInputArea(window: ptr[SDL_Window], rect: const_ptr[
 external function SDL_GetTextInputArea(window: ptr[SDL_Window], rect: ptr[SDL_Rect]?, cursor: ptr[int]?) -> bool
 external function SDL_HasScreenKeyboardSupport() -> bool
 external function SDL_ScreenKeyboardShown(window: ptr[SDL_Window]) -> bool
+
 type SDL_MouseID = uint
+
 opaque SDL_Cursor = c"SDL_Cursor"
+
 enum SDL_SystemCursor: int
     SDL_SYSTEM_CURSOR_DEFAULT = 0
     SDL_SYSTEM_CURSOR_TEXT = 1
@@ -1799,14 +1974,18 @@ enum SDL_SystemCursor: int
     SDL_SYSTEM_CURSOR_SW_RESIZE = 18
     SDL_SYSTEM_CURSOR_W_RESIZE = 19
     SDL_SYSTEM_CURSOR_COUNT = 20
+
 flags SDL_MouseWheelDirection: int
     SDL_MOUSEWHEEL_NORMAL = 0
     SDL_MOUSEWHEEL_FLIPPED = 1
+
 struct SDL_CursorFrameInfo:
     surface: ptr[SDL_Surface]
     duration: uint
+
 type SDL_MouseButtonFlags = uint
 type SDL_MouseMotionTransformCallback = fn(arg0: ptr[void], arg1: Uint64, arg2: ptr[SDL_Window], arg3: SDL_MouseID, arg4: ptr[float], arg5: ptr[float]) -> void
+
 external function SDL_HasMouse() -> bool
 external function SDL_GetMice(count: ptr[int]?) -> ptr[SDL_MouseID]?
 external function SDL_GetMouseNameForID(instance_id: uint) -> cstr?
@@ -1831,24 +2010,30 @@ external function SDL_DestroyCursor(cursor: ptr[SDL_Cursor]) -> void
 external function SDL_ShowCursor() -> bool
 external function SDL_HideCursor() -> bool
 external function SDL_CursorVisible() -> bool
+
 type SDL_TouchID = ptr_uint
 type SDL_FingerID = ptr_uint
+
 enum SDL_TouchDeviceType: int
     SDL_TOUCH_DEVICE_INVALID = -1
     SDL_TOUCH_DEVICE_DIRECT = 0
     SDL_TOUCH_DEVICE_INDIRECT_ABSOLUTE = 1
     SDL_TOUCH_DEVICE_INDIRECT_RELATIVE = 2
+
 struct SDL_Finger:
     id: ptr_uint
     x: float
     y: float
     pressure: float
+
 external function SDL_GetTouchDevices(count: ptr[int]?) -> ptr[SDL_TouchID]?
 external function SDL_GetTouchDeviceName(touchID: ptr_uint) -> cstr?
 external function SDL_GetTouchDeviceType(touchID: ptr_uint) -> SDL_TouchDeviceType
 external function SDL_GetTouchFingers(touchID: ptr_uint, count: ptr[int]) -> ptr[ptr[SDL_Finger]]?
+
 type SDL_PenID = uint
 type SDL_PenInputFlags = uint
+
 enum SDL_PenAxis: int
     SDL_PEN_AXIS_PRESSURE = 0
     SDL_PEN_AXIS_XTILT = 1
@@ -1858,12 +2043,15 @@ enum SDL_PenAxis: int
     SDL_PEN_AXIS_SLIDER = 5
     SDL_PEN_AXIS_TANGENTIAL_PRESSURE = 6
     SDL_PEN_AXIS_COUNT = 7
+
 enum SDL_PenDeviceType: int
     SDL_PEN_DEVICE_TYPE_INVALID = -1
     SDL_PEN_DEVICE_TYPE_UNKNOWN = 0
     SDL_PEN_DEVICE_TYPE_DIRECT = 1
     SDL_PEN_DEVICE_TYPE_INDIRECT = 2
+
 external function SDL_GetPenDeviceType(instance_id: uint) -> SDL_PenDeviceType
+
 enum SDL_EventType: int
     SDL_EVENT_FIRST = 0
     SDL_EVENT_QUIT = 256
@@ -1989,10 +2177,12 @@ enum SDL_EventType: int
     SDL_EVENT_USER = 32768
     SDL_EVENT_LAST = 65535
     SDL_EVENT_ENUM_PADDING = 2147483647
+
 struct SDL_CommonEvent:
     type_: uint
     reserved: uint
     timestamp: ptr_uint
+
 struct SDL_DisplayEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2000,6 +2190,7 @@ struct SDL_DisplayEvent:
     displayID: uint
     data1: int
     data2: int
+
 struct SDL_WindowEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2007,11 +2198,13 @@ struct SDL_WindowEvent:
     windowID: uint
     data1: int
     data2: int
+
 struct SDL_KeyboardDeviceEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
+
 struct SDL_KeyboardEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2024,6 +2217,7 @@ struct SDL_KeyboardEvent:
     raw: ushort
     down: bool
     repeat: bool
+
 struct SDL_TextEditingEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2032,6 +2226,7 @@ struct SDL_TextEditingEvent:
     text: cstr
     start: int
     length: int
+
 struct SDL_TextEditingCandidatesEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2044,17 +2239,20 @@ struct SDL_TextEditingCandidatesEvent:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_TextInputEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
     text: cstr
+
 struct SDL_MouseDeviceEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
+
 struct SDL_MouseMotionEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2066,6 +2264,7 @@ struct SDL_MouseMotionEvent:
     y: float
     xrel: float
     yrel: float
+
 struct SDL_MouseButtonEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2078,6 +2277,7 @@ struct SDL_MouseButtonEvent:
     padding: ubyte
     x: float
     y: float
+
 struct SDL_MouseWheelEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2091,6 +2291,7 @@ struct SDL_MouseWheelEvent:
     mouse_y: float
     integer_x: int
     integer_y: int
+
 struct SDL_JoyAxisEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2102,6 +2303,7 @@ struct SDL_JoyAxisEvent:
     padding3: ubyte
     value: short
     padding4: ushort
+
 struct SDL_JoyBallEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2113,6 +2315,7 @@ struct SDL_JoyBallEvent:
     padding3: ubyte
     xrel: short
     yrel: short
+
 struct SDL_JoyHatEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2122,6 +2325,7 @@ struct SDL_JoyHatEvent:
     value: ubyte
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_JoyButtonEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2131,11 +2335,13 @@ struct SDL_JoyButtonEvent:
     down: bool
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_JoyDeviceEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
+
 struct SDL_JoyBatteryEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2143,6 +2349,7 @@ struct SDL_JoyBatteryEvent:
     which: uint
     state: SDL_PowerState
     percent: int
+
 struct SDL_GamepadAxisEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2154,6 +2361,7 @@ struct SDL_GamepadAxisEvent:
     padding3: ubyte
     value: short
     padding4: ushort
+
 struct SDL_GamepadButtonEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2163,11 +2371,13 @@ struct SDL_GamepadButtonEvent:
     down: bool
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_GamepadDeviceEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
+
 struct SDL_GamepadTouchpadEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2178,6 +2388,7 @@ struct SDL_GamepadTouchpadEvent:
     x: float
     y: float
     pressure: float
+
 struct SDL_GamepadSensorEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2186,6 +2397,7 @@ struct SDL_GamepadSensorEvent:
     sensor: int
     data: array[float, 3]
     sensor_timestamp: ptr_uint
+
 struct SDL_AudioDeviceEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2195,16 +2407,19 @@ struct SDL_AudioDeviceEvent:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_CameraDeviceEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     which: uint
+
 struct SDL_RenderEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
+
 struct SDL_TouchFingerEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2217,18 +2432,21 @@ struct SDL_TouchFingerEvent:
     dy: float
     pressure: float
     windowID: uint
+
 struct SDL_PinchFingerEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     scale: float
     windowID: uint
+
 struct SDL_PenProximityEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
     windowID: uint
     which: uint
+
 struct SDL_PenMotionEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2238,6 +2456,7 @@ struct SDL_PenMotionEvent:
     pen_state: uint
     x: float
     y: float
+
 struct SDL_PenTouchEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2249,6 +2468,7 @@ struct SDL_PenTouchEvent:
     y: float
     eraser: bool
     down: bool
+
 struct SDL_PenButtonEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2260,6 +2480,7 @@ struct SDL_PenButtonEvent:
     y: float
     button: ubyte
     down: bool
+
 struct SDL_PenAxisEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2271,6 +2492,7 @@ struct SDL_PenAxisEvent:
     y: float
     axis: SDL_PenAxis
     value: float
+
 struct SDL_DropEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2280,6 +2502,7 @@ struct SDL_DropEvent:
     y: float
     source: cstr
     data: cstr
+
 struct SDL_ClipboardEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2287,6 +2510,7 @@ struct SDL_ClipboardEvent:
     owner: bool
     num_mime_types: int
     mime_types: ptr[cstr]
+
 struct SDL_SensorEvent:
     type_: SDL_EventType
     reserved: uint
@@ -2294,10 +2518,12 @@ struct SDL_SensorEvent:
     which: uint
     data: array[float, 6]
     sensor_timestamp: ptr_uint
+
 struct SDL_QuitEvent:
     type_: SDL_EventType
     reserved: uint
     timestamp: ptr_uint
+
 struct SDL_UserEvent:
     type_: uint
     reserved: uint
@@ -2306,6 +2532,7 @@ struct SDL_UserEvent:
     code: int
     data1: ptr[void]
     data2: ptr[void]
+
 union SDL_Event:
     type_: uint
     common: SDL_CommonEvent
@@ -2347,11 +2574,14 @@ union SDL_Event:
     drop: SDL_DropEvent
     clipboard: SDL_ClipboardEvent
     padding: array[Uint8, 128]
+
 external function SDL_PumpEvents() -> void
+
 flags SDL_EventAction: int
     SDL_ADDEVENT = 0
     SDL_PEEKEVENT = 1
     SDL_GETEVENT = 2
+
 external function SDL_PeepEvents(events: ptr[SDL_Event]?, numevents: int, action: SDL_EventAction, minType: uint, maxType: uint) -> int
 external function SDL_HasEvent(type_: uint) -> bool
 external function SDL_HasEvents(minType: uint, maxType: uint) -> bool
@@ -2361,7 +2591,9 @@ external function SDL_PollEvent(event_: ptr[SDL_Event]?) -> bool
 external function SDL_WaitEvent(event_: ptr[SDL_Event]?) -> bool
 external function SDL_WaitEventTimeout(event_: ptr[SDL_Event]?, timeoutMS: int) -> bool
 external function SDL_PushEvent(event_: ptr[SDL_Event]) -> bool
+
 type SDL_EventFilter = fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool
+
 external function SDL_SetEventFilter(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> void
 external function SDL_GetEventFilter(filter: ptr[SDL_EventFilter], userdata: ptr[ptr[void]]) -> bool
 external function SDL_AddEventWatch(filter: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> bool, userdata: ptr[void]) -> bool
@@ -2374,6 +2606,7 @@ external function SDL_GetWindowFromEvent(event_: const_ptr[SDL_Event]) -> ptr[SD
 external function SDL_GetEventDescription(event_: const_ptr[SDL_Event], buf: ptr[char], buflen: int) -> int
 external function SDL_GetBasePath() -> cstr?
 external function SDL_GetPrefPath(org: cstr, app: cstr) -> ptr[char]
+
 enum SDL_Folder: int
     SDL_FOLDER_HOME = 0
     SDL_FOLDER_DESKTOP = 1
@@ -2387,25 +2620,33 @@ enum SDL_Folder: int
     SDL_FOLDER_TEMPLATES = 9
     SDL_FOLDER_VIDEOS = 10
     SDL_FOLDER_COUNT = 11
+
 external function SDL_GetUserFolder(folder: SDL_Folder) -> cstr
+
 enum SDL_PathType: int
     SDL_PATHTYPE_NONE = 0
     SDL_PATHTYPE_FILE = 1
     SDL_PATHTYPE_DIRECTORY = 2
     SDL_PATHTYPE_OTHER = 3
+
 struct SDL_PathInfo:
     type_: SDL_PathType
     size: ptr_uint
     create_time: ptr_int
     modify_time: ptr_int
     access_time: ptr_int
+
 type SDL_GlobFlags = uint
+
 external function SDL_CreateDirectory(path: cstr) -> bool
+
 flags SDL_EnumerationResult: int
     SDL_ENUM_CONTINUE = 0
     SDL_ENUM_SUCCESS = 1
     SDL_ENUM_FAILURE = 2
+
 type SDL_EnumerateDirectoryCallback = fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> SDL_EnumerationResult
+
 external function SDL_EnumerateDirectory(path: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> SDL_EnumerationResult, userdata: ptr[void]) -> bool
 external function SDL_RemovePath(path: cstr) -> bool
 external function SDL_RenamePath(oldpath: cstr, newpath: cstr) -> bool
@@ -2413,6 +2654,7 @@ external function SDL_CopyFile(oldpath: cstr, newpath: cstr) -> bool
 external function SDL_GetPathInfo(path: cstr, info: ptr[SDL_PathInfo]?) -> bool
 external function SDL_GlobDirectory(path: cstr, pattern: cstr, flags_: uint, count: ptr[int]) -> ptr[ptr[char]]?
 external function SDL_GetCurrentDirectory() -> ptr[char]
+
 opaque SDL_GPUDevice = c"SDL_GPUDevice"
 opaque SDL_GPUBuffer = c"SDL_GPUBuffer"
 opaque SDL_GPUTransferBuffer = c"SDL_GPUTransferBuffer"
@@ -2426,24 +2668,29 @@ opaque SDL_GPURenderPass = c"SDL_GPURenderPass"
 opaque SDL_GPUComputePass = c"SDL_GPUComputePass"
 opaque SDL_GPUCopyPass = c"SDL_GPUCopyPass"
 opaque SDL_GPUFence = c"SDL_GPUFence"
+
 enum SDL_GPUPrimitiveType: int
     SDL_GPU_PRIMITIVETYPE_TRIANGLELIST = 0
     SDL_GPU_PRIMITIVETYPE_TRIANGLESTRIP = 1
     SDL_GPU_PRIMITIVETYPE_LINELIST = 2
     SDL_GPU_PRIMITIVETYPE_LINESTRIP = 3
     SDL_GPU_PRIMITIVETYPE_POINTLIST = 4
+
 flags SDL_GPULoadOp: int
     SDL_GPU_LOADOP_LOAD = 0
     SDL_GPU_LOADOP_CLEAR = 1
     SDL_GPU_LOADOP_DONT_CARE = 2
+
 enum SDL_GPUStoreOp: int
     SDL_GPU_STOREOP_STORE = 0
     SDL_GPU_STOREOP_DONT_CARE = 1
     SDL_GPU_STOREOP_RESOLVE = 2
     SDL_GPU_STOREOP_RESOLVE_AND_STORE = 3
+
 flags SDL_GPUIndexElementSize: int
     SDL_GPU_INDEXELEMENTSIZE_16BIT = 0
     SDL_GPU_INDEXELEMENTSIZE_32BIT = 1
+
 enum SDL_GPUTextureFormat: int
     SDL_GPU_TEXTUREFORMAT_INVALID = 0
     SDL_GPU_TEXTUREFORMAT_A8_UNORM = 1
@@ -2550,18 +2797,22 @@ enum SDL_GPUTextureFormat: int
     SDL_GPU_TEXTUREFORMAT_ASTC_10x10_FLOAT = 102
     SDL_GPU_TEXTUREFORMAT_ASTC_12x10_FLOAT = 103
     SDL_GPU_TEXTUREFORMAT_ASTC_12x12_FLOAT = 104
+
 type SDL_GPUTextureUsageFlags = uint
+
 enum SDL_GPUTextureType: int
     SDL_GPU_TEXTURETYPE_2D = 0
     SDL_GPU_TEXTURETYPE_2D_ARRAY = 1
     SDL_GPU_TEXTURETYPE_3D = 2
     SDL_GPU_TEXTURETYPE_CUBE = 3
     SDL_GPU_TEXTURETYPE_CUBE_ARRAY = 4
+
 enum SDL_GPUSampleCount: int
     SDL_GPU_SAMPLECOUNT_1 = 0
     SDL_GPU_SAMPLECOUNT_2 = 1
     SDL_GPU_SAMPLECOUNT_4 = 2
     SDL_GPU_SAMPLECOUNT_8 = 3
+
 enum SDL_GPUCubeMapFace: int
     SDL_GPU_CUBEMAPFACE_POSITIVEX = 0
     SDL_GPU_CUBEMAPFACE_NEGATIVEX = 1
@@ -2569,14 +2820,18 @@ enum SDL_GPUCubeMapFace: int
     SDL_GPU_CUBEMAPFACE_NEGATIVEY = 3
     SDL_GPU_CUBEMAPFACE_POSITIVEZ = 4
     SDL_GPU_CUBEMAPFACE_NEGATIVEZ = 5
+
 type SDL_GPUBufferUsageFlags = uint
+
 flags SDL_GPUTransferBufferUsage: int
     SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD = 0
     SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD = 1
 flags SDL_GPUShaderStage: int
     SDL_GPU_SHADERSTAGE_VERTEX = 0
     SDL_GPU_SHADERSTAGE_FRAGMENT = 1
+
 type SDL_GPUShaderFormat = uint
+
 enum SDL_GPUVertexElementFormat: int
     SDL_GPU_VERTEXELEMENTFORMAT_INVALID = 0
     SDL_GPU_VERTEXELEMENTFORMAT_INT = 1
@@ -2609,6 +2864,7 @@ enum SDL_GPUVertexElementFormat: int
     SDL_GPU_VERTEXELEMENTFORMAT_USHORT4_NORM = 28
     SDL_GPU_VERTEXELEMENTFORMAT_HALF2 = 29
     SDL_GPU_VERTEXELEMENTFORMAT_HALF4 = 30
+
 flags SDL_GPUVertexInputRate: int
     SDL_GPU_VERTEXINPUTRATE_VERTEX = 0
     SDL_GPU_VERTEXINPUTRATE_INSTANCE = 1
@@ -2622,6 +2878,7 @@ flags SDL_GPUCullMode: int
 flags SDL_GPUFrontFace: int
     SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE = 0
     SDL_GPU_FRONTFACE_CLOCKWISE = 1
+
 enum SDL_GPUCompareOp: int
     SDL_GPU_COMPAREOP_INVALID = 0
     SDL_GPU_COMPAREOP_NEVER = 1
@@ -2632,6 +2889,7 @@ enum SDL_GPUCompareOp: int
     SDL_GPU_COMPAREOP_NOT_EQUAL = 6
     SDL_GPU_COMPAREOP_GREATER_OR_EQUAL = 7
     SDL_GPU_COMPAREOP_ALWAYS = 8
+
 enum SDL_GPUStencilOp: int
     SDL_GPU_STENCILOP_INVALID = 0
     SDL_GPU_STENCILOP_KEEP = 1
@@ -2642,6 +2900,7 @@ enum SDL_GPUStencilOp: int
     SDL_GPU_STENCILOP_INVERT = 6
     SDL_GPU_STENCILOP_INCREMENT_AND_WRAP = 7
     SDL_GPU_STENCILOP_DECREMENT_AND_WRAP = 8
+
 enum SDL_GPUBlendOp: int
     SDL_GPU_BLENDOP_INVALID = 0
     SDL_GPU_BLENDOP_ADD = 1
@@ -2649,6 +2908,7 @@ enum SDL_GPUBlendOp: int
     SDL_GPU_BLENDOP_REVERSE_SUBTRACT = 3
     SDL_GPU_BLENDOP_MIN = 4
     SDL_GPU_BLENDOP_MAX = 5
+
 enum SDL_GPUBlendFactor: int
     SDL_GPU_BLENDFACTOR_INVALID = 0
     SDL_GPU_BLENDFACTOR_ZERO = 1
@@ -2664,7 +2924,9 @@ enum SDL_GPUBlendFactor: int
     SDL_GPU_BLENDFACTOR_CONSTANT_COLOR = 11
     SDL_GPU_BLENDFACTOR_ONE_MINUS_CONSTANT_COLOR = 12
     SDL_GPU_BLENDFACTOR_SRC_ALPHA_SATURATE = 13
+
 type SDL_GPUColorComponentFlags = ubyte
+
 flags SDL_GPUFilter: int
     SDL_GPU_FILTER_NEAREST = 0
     SDL_GPU_FILTER_LINEAR = 1
@@ -2679,11 +2941,13 @@ flags SDL_GPUPresentMode: int
     SDL_GPU_PRESENTMODE_VSYNC = 0
     SDL_GPU_PRESENTMODE_IMMEDIATE = 1
     SDL_GPU_PRESENTMODE_MAILBOX = 2
+
 enum SDL_GPUSwapchainComposition: int
     SDL_GPU_SWAPCHAINCOMPOSITION_SDR = 0
     SDL_GPU_SWAPCHAINCOMPOSITION_SDR_LINEAR = 1
     SDL_GPU_SWAPCHAINCOMPOSITION_HDR_EXTENDED_LINEAR = 2
     SDL_GPU_SWAPCHAINCOMPOSITION_HDR10_ST2084 = 3
+
 struct SDL_GPUViewport:
     x: float
     y: float
@@ -2691,14 +2955,17 @@ struct SDL_GPUViewport:
     h: float
     min_depth: float
     max_depth: float
+
 struct SDL_GPUTextureTransferInfo:
     transfer_buffer: ptr[SDL_GPUTransferBuffer]
     offset: uint
     pixels_per_row: uint
     rows_per_layer: uint
+
 struct SDL_GPUTransferBufferLocation:
     transfer_buffer: ptr[SDL_GPUTransferBuffer]
     offset: uint
+
 struct SDL_GPUTextureLocation:
     texture: ptr[SDL_GPUTexture]
     mip_level: uint
@@ -2706,6 +2973,7 @@ struct SDL_GPUTextureLocation:
     x: uint
     y: uint
     z: uint
+
 struct SDL_GPUTextureRegion:
     texture: ptr[SDL_GPUTexture]
     mip_level: uint
@@ -2716,6 +2984,7 @@ struct SDL_GPUTextureRegion:
     w: uint
     h: uint
     d: uint
+
 struct SDL_GPUBlitRegion:
     texture: ptr[SDL_GPUTexture]
     mip_level: uint
@@ -2724,28 +2993,34 @@ struct SDL_GPUBlitRegion:
     y: uint
     w: uint
     h: uint
+
 struct SDL_GPUBufferLocation:
     buffer: ptr[SDL_GPUBuffer]
     offset: uint
+
 struct SDL_GPUBufferRegion:
     buffer: ptr[SDL_GPUBuffer]
     offset: uint
     size: uint
+
 struct SDL_GPUIndirectDrawCommand:
     num_vertices: uint
     num_instances: uint
     first_vertex: uint
     first_instance: uint
+
 struct SDL_GPUIndexedIndirectDrawCommand:
     num_indices: uint
     num_instances: uint
     first_index: uint
     vertex_offset: int
     first_instance: uint
+
 struct SDL_GPUIndirectDispatchCommand:
     groupcount_x: uint
     groupcount_y: uint
     groupcount_z: uint
+
 struct SDL_GPUSamplerCreateInfo:
     min_filter: SDL_GPUFilter
     mag_filter: SDL_GPUFilter
@@ -2763,26 +3038,31 @@ struct SDL_GPUSamplerCreateInfo:
     padding1: ubyte
     padding2: ubyte
     props: uint
+
 struct SDL_GPUVertexBufferDescription:
     slot: uint
     pitch: uint
     input_rate: SDL_GPUVertexInputRate
     instance_step_rate: uint
+
 struct SDL_GPUVertexAttribute:
     location: uint
     buffer_slot: uint
     format: SDL_GPUVertexElementFormat
     offset: uint
+
 struct SDL_GPUVertexInputState:
     vertex_buffer_descriptions: const_ptr[SDL_GPUVertexBufferDescription]
     num_vertex_buffers: uint
     vertex_attributes: const_ptr[SDL_GPUVertexAttribute]
     num_vertex_attributes: uint
+
 struct SDL_GPUStencilOpState:
     fail_op: SDL_GPUStencilOp
     pass_op: SDL_GPUStencilOp
     depth_fail_op: SDL_GPUStencilOp
     compare_op: SDL_GPUCompareOp
+
 struct SDL_GPUColorTargetBlendState:
     src_color_blendfactor: SDL_GPUBlendFactor
     dst_color_blendfactor: SDL_GPUBlendFactor
@@ -2795,6 +3075,7 @@ struct SDL_GPUColorTargetBlendState:
     enable_color_write_mask: bool
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_GPUShaderCreateInfo:
     code_size: ptr_uint
     code: const_ptr[Uint8]
@@ -2806,6 +3087,7 @@ struct SDL_GPUShaderCreateInfo:
     num_storage_buffers: uint
     num_uniform_buffers: uint
     props: uint
+
 struct SDL_GPUTextureCreateInfo:
     type_: SDL_GPUTextureType
     format: SDL_GPUTextureFormat
@@ -2816,14 +3098,17 @@ struct SDL_GPUTextureCreateInfo:
     num_levels: uint
     sample_count: SDL_GPUSampleCount
     props: uint
+
 struct SDL_GPUBufferCreateInfo:
     usage: uint
     size: uint
     props: uint
+
 struct SDL_GPUTransferBufferCreateInfo:
     usage: SDL_GPUTransferBufferUsage
     size: uint
     props: uint
+
 struct SDL_GPURasterizerState:
     fill_mode: SDL_GPUFillMode
     cull_mode: SDL_GPUCullMode
@@ -2835,6 +3120,7 @@ struct SDL_GPURasterizerState:
     enable_depth_clip: bool
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_GPUMultisampleState:
     sample_count: SDL_GPUSampleCount
     sample_mask: uint
@@ -2842,6 +3128,7 @@ struct SDL_GPUMultisampleState:
     enable_alpha_to_coverage: bool
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_GPUDepthStencilState:
     compare_op: SDL_GPUCompareOp
     back_stencil_state: SDL_GPUStencilOpState
@@ -2854,9 +3141,11 @@ struct SDL_GPUDepthStencilState:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_GPUColorTargetDescription:
     format: SDL_GPUTextureFormat
     blend_state: SDL_GPUColorTargetBlendState
+
 struct SDL_GPUGraphicsPipelineTargetInfo:
     color_target_descriptions: const_ptr[SDL_GPUColorTargetDescription]
     num_color_targets: uint
@@ -2865,6 +3154,7 @@ struct SDL_GPUGraphicsPipelineTargetInfo:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_GPUGraphicsPipelineCreateInfo:
     vertex_shader: ptr[SDL_GPUShader]
     fragment_shader: ptr[SDL_GPUShader]
@@ -2875,6 +3165,7 @@ struct SDL_GPUGraphicsPipelineCreateInfo:
     depth_stencil_state: SDL_GPUDepthStencilState
     target_info: SDL_GPUGraphicsPipelineTargetInfo
     props: uint
+
 struct SDL_GPUComputePipelineCreateInfo:
     code_size: ptr_uint
     code: const_ptr[Uint8]
@@ -2890,6 +3181,7 @@ struct SDL_GPUComputePipelineCreateInfo:
     threadcount_y: uint
     threadcount_z: uint
     props: uint
+
 struct SDL_GPUColorTargetInfo:
     texture: ptr[SDL_GPUTexture]
     mip_level: uint
@@ -2904,6 +3196,7 @@ struct SDL_GPUColorTargetInfo:
     cycle_resolve_texture: bool
     padding1: ubyte
     padding2: ubyte
+
 struct SDL_GPUDepthStencilTargetInfo:
     texture: ptr[SDL_GPUTexture]
     clear_depth: float
@@ -2915,6 +3208,7 @@ struct SDL_GPUDepthStencilTargetInfo:
     clear_stencil: ubyte
     mip_level: ubyte
     layer: ubyte
+
 struct SDL_GPUBlitInfo:
     source: SDL_GPUBlitRegion
     destination: SDL_GPUBlitRegion
@@ -2926,18 +3220,22 @@ struct SDL_GPUBlitInfo:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_GPUBufferBinding:
     buffer: ptr[SDL_GPUBuffer]
     offset: uint
+
 struct SDL_GPUTextureSamplerBinding:
     texture: ptr[SDL_GPUTexture]
     sampler: ptr[SDL_GPUSampler]
+
 struct SDL_GPUStorageBufferReadWriteBinding:
     buffer: ptr[SDL_GPUBuffer]
     cycle: bool
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 struct SDL_GPUStorageTextureReadWriteBinding:
     texture: ptr[SDL_GPUTexture]
     mip_level: uint
@@ -2946,10 +3244,12 @@ struct SDL_GPUStorageTextureReadWriteBinding:
     padding1: ubyte
     padding2: ubyte
     padding3: ubyte
+
 external function SDL_GPUSupportsShaderFormats(format_flags: uint, name: cstr?) -> bool
 external function SDL_GPUSupportsProperties(props: uint) -> bool
 external function SDL_CreateGPUDevice(format_flags: uint, debug_mode: bool, name: cstr?) -> ptr[SDL_GPUDevice]?
 external function SDL_CreateGPUDeviceWithProperties(props: uint) -> ptr[SDL_GPUDevice]?
+
 struct SDL_GPUVulkanOptions:
     vulkan_api_version: uint
     feature_list: ptr[void]
@@ -2958,6 +3258,7 @@ struct SDL_GPUVulkanOptions:
     device_extension_names: ptr[cstr]
     instance_extension_count: uint
     instance_extension_names: ptr[cstr]
+
 external function SDL_DestroyGPUDevice(device: ptr[SDL_GPUDevice]) -> void
 external function SDL_GetNumGPUDrivers() -> int
 external function SDL_GetGPUDriver(index: int) -> cstr
@@ -3049,13 +3350,17 @@ external function SDL_GPUTextureSupportsSampleCount(device: ptr[SDL_GPUDevice], 
 external function SDL_CalculateGPUTextureFormatSize(format: SDL_GPUTextureFormat, width: uint, height: uint, depth_or_layer_count: uint) -> Uint32
 external function SDL_GetPixelFormatFromGPUTextureFormat(format: SDL_GPUTextureFormat) -> SDL_PixelFormat
 external function SDL_GetGPUTextureFormatFromPixelFormat(format: SDL_PixelFormat) -> SDL_GPUTextureFormat
+
 opaque SDL_Haptic = c"SDL_Haptic"
+
 type SDL_HapticEffectType = ushort
 type SDL_HapticDirectionType = ubyte
 type SDL_HapticEffectID = int
+
 struct SDL_HapticDirection:
     type_: ubyte
     dir: array[Sint32, 3]
+
 struct SDL_HapticConstant:
     type_: ushort
     direction: SDL_HapticDirection
@@ -3068,6 +3373,7 @@ struct SDL_HapticConstant:
     attack_level: ushort
     fade_length: ushort
     fade_level: ushort
+
 struct SDL_HapticPeriodic:
     type_: ushort
     direction: SDL_HapticDirection
@@ -3083,6 +3389,7 @@ struct SDL_HapticPeriodic:
     attack_level: ushort
     fade_length: ushort
     fade_level: ushort
+
 struct SDL_HapticCondition:
     type_: ushort
     direction: SDL_HapticDirection
@@ -3096,6 +3403,7 @@ struct SDL_HapticCondition:
     left_coeff: array[Sint16, 3]
     deadband: array[Uint16, 3]
     center: array[Sint16, 3]
+
 struct SDL_HapticRamp:
     type_: ushort
     direction: SDL_HapticDirection
@@ -3109,11 +3417,13 @@ struct SDL_HapticRamp:
     attack_level: ushort
     fade_length: ushort
     fade_level: ushort
+
 struct SDL_HapticLeftRight:
     type_: ushort
     length: uint
     large_magnitude: ushort
     small_magnitude: ushort
+
 struct SDL_HapticCustom:
     type_: ushort
     direction: SDL_HapticDirection
@@ -3129,6 +3439,7 @@ struct SDL_HapticCustom:
     attack_level: ushort
     fade_length: ushort
     fade_level: ushort
+
 union SDL_HapticEffect:
     type_: ushort
     constant: SDL_HapticConstant
@@ -3137,7 +3448,9 @@ union SDL_HapticEffect:
     ramp: SDL_HapticRamp
     leftright: SDL_HapticLeftRight
     custom: SDL_HapticCustom
+
 type SDL_HapticID = uint
+
 external function SDL_GetHaptics(count: ptr[int]?) -> ptr[SDL_HapticID]?
 external function SDL_GetHapticNameForID(instance_id: uint) -> cstr?
 external function SDL_OpenHaptic(instance_id: uint) -> ptr[SDL_Haptic]?
@@ -3169,13 +3482,16 @@ external function SDL_HapticRumbleSupported(haptic: ptr[SDL_Haptic]) -> bool
 external function SDL_InitHapticRumble(haptic: ptr[SDL_Haptic]) -> bool
 external function SDL_PlayHapticRumble(haptic: ptr[SDL_Haptic], strength: float, length: uint) -> bool
 external function SDL_StopHapticRumble(haptic: ptr[SDL_Haptic]) -> bool
+
 opaque SDL_hid_device = c"SDL_hid_device"
+
 enum SDL_hid_bus_type: int
     SDL_HID_API_BUS_UNKNOWN = 0
     SDL_HID_API_BUS_USB = 1
     SDL_HID_API_BUS_BLUETOOTH = 2
     SDL_HID_API_BUS_I2C = 3
     SDL_HID_API_BUS_SPI = 4
+
 struct SDL_hid_device_info:
     path: ptr[char]
     vendor_id: ushort
@@ -3192,6 +3508,7 @@ struct SDL_hid_device_info:
     interface_protocol: int
     bus_type: SDL_hid_bus_type
     next: ptr[SDL_hid_device_info]
+
 external function SDL_hid_init() -> int
 external function SDL_hid_exit() -> int
 external function SDL_hid_device_change_count() -> Uint32
@@ -3215,47 +3532,62 @@ external function SDL_hid_get_indexed_string(dev: ptr[SDL_hid_device], string_in
 external function SDL_hid_get_device_info(dev: ptr[SDL_hid_device]) -> ptr[SDL_hid_device_info]?
 external function SDL_hid_get_report_descriptor(dev: ptr[SDL_hid_device], buf: ptr[ubyte], buf_size: ptr_uint) -> int
 external function SDL_hid_ble_scan(active: bool) -> void
+
 flags SDL_HintPriority: int
     SDL_HINT_DEFAULT = 0
     SDL_HINT_NORMAL = 1
     SDL_HINT_OVERRIDE = 2
+
 external function SDL_SetHintWithPriority(name: cstr, value: cstr, priority: SDL_HintPriority) -> bool
 external function SDL_SetHint(name: cstr, value: cstr) -> bool
 external function SDL_ResetHint(name: cstr) -> bool
 external function SDL_ResetHints() -> void
 external function SDL_GetHint(name: cstr) -> cstr?
 external function SDL_GetHintBoolean(name: cstr, default_value: bool) -> bool
+
 type SDL_HintCallback = fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void
+
 external function SDL_AddHintCallback(name: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void, userdata: ptr[void]) -> bool
 external function SDL_RemoveHintCallback(name: cstr, callback: fn(arg0: ptr[void], arg1: cstr, arg2: cstr, arg3: cstr) -> void, userdata: ptr[void]) -> void
+
 type SDL_InitFlags = uint
+
 flags SDL_AppResult: int
     SDL_APP_CONTINUE = 0
     SDL_APP_SUCCESS = 1
     SDL_APP_FAILURE = 2
+
 type SDL_AppInit_func = fn(arg0: ptr[ptr[void]], arg1: int, arg2: ptr[ptr[char]]) -> SDL_AppResult
 type SDL_AppIterate_func = fn(arg0: ptr[void]) -> SDL_AppResult
 type SDL_AppEvent_func = fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> SDL_AppResult
 type SDL_AppQuit_func = fn(arg0: ptr[void], arg1: SDL_AppResult) -> void
+
 external function SDL_Init(flags_: uint) -> bool
 external function SDL_InitSubSystem(flags_: uint) -> bool
 external function SDL_QuitSubSystem(flags_: uint) -> void
 external function SDL_WasInit(flags_: uint) -> SDL_InitFlags
 external function SDL_Quit() -> void
 external function SDL_IsMainThread() -> bool
+
 type SDL_MainThreadCallback = fn(arg0: ptr[void]) -> void
+
 external function SDL_RunOnMainThread(callback: fn(arg0: ptr[void]) -> void, userdata: ptr[void], wait_complete: bool) -> bool
 external function SDL_SetAppMetadata(appname: cstr, appversion: cstr, appidentifier: cstr) -> bool
 external function SDL_SetAppMetadataProperty(name: cstr, value: cstr?) -> bool
 external function SDL_GetAppMetadataProperty(name: cstr) -> cstr
+
 opaque SDL_SharedObject = c"SDL_SharedObject"
+
 external function SDL_LoadObject(sofile: cstr) -> ptr[SDL_SharedObject]?
 external function SDL_LoadFunction(handle: ptr[SDL_SharedObject], name: cstr) -> SDL_FunctionPointer?
 external function SDL_UnloadObject(handle: ptr[SDL_SharedObject]) -> void
+
 struct SDL_Locale:
     language: cstr
     country: cstr
+
 external function SDL_GetPreferredLocales(count: ptr[int]?) -> ptr[ptr[SDL_Locale]]?
+
 enum SDL_LogCategory: int
     SDL_LOG_CATEGORY_APPLICATION = 0
     SDL_LOG_CATEGORY_ERROR = 1
@@ -3277,6 +3609,7 @@ enum SDL_LogCategory: int
     SDL_LOG_CATEGORY_RESERVED9 = 17
     SDL_LOG_CATEGORY_RESERVED10 = 18
     SDL_LOG_CATEGORY_CUSTOM = 19
+
 enum SDL_LogPriority: int
     SDL_LOG_PRIORITY_INVALID = 0
     SDL_LOG_PRIORITY_TRACE = 1
@@ -3287,6 +3620,7 @@ enum SDL_LogPriority: int
     SDL_LOG_PRIORITY_ERROR = 6
     SDL_LOG_PRIORITY_CRITICAL = 7
     SDL_LOG_PRIORITY_COUNT = 8
+
 external function SDL_SetLogPriorities(priority: SDL_LogPriority) -> void
 external function SDL_SetLogPriority(category: int, priority: SDL_LogPriority) -> void
 external function SDL_GetLogPriority(category: int) -> SDL_LogPriority
@@ -3302,20 +3636,26 @@ external function SDL_LogError(category: int, fmt: cstr, ...) -> void
 external function SDL_LogCritical(category: int, fmt: cstr, ...) -> void
 external function SDL_LogMessage(category: int, priority: SDL_LogPriority, fmt: cstr, ...) -> void
 external function SDL_LogMessageV(category: int, priority: SDL_LogPriority, fmt: cstr, ap: va_list) -> void
+
 type SDL_LogOutputFunction = fn(arg0: ptr[void], arg1: int, arg2: SDL_LogPriority, arg3: cstr) -> void
+
 external function SDL_GetDefaultLogOutputFunction() -> SDL_LogOutputFunction
 external function SDL_GetLogOutputFunction(callback: ptr[SDL_LogOutputFunction], userdata: ptr[ptr[void]]) -> void
 external function SDL_SetLogOutputFunction(callback: fn(arg0: ptr[void], arg1: int, arg2: SDL_LogPriority, arg3: cstr) -> void, userdata: ptr[void]) -> void
+
 type SDL_MessageBoxFlags = uint
 type SDL_MessageBoxButtonFlags = uint
+
 struct SDL_MessageBoxButtonData:
     flags_: uint
     buttonID: int
     text: cstr
+
 struct SDL_MessageBoxColor:
     r: ubyte
     g: ubyte
     b: ubyte
+
 enum SDL_MessageBoxColorType: int
     SDL_MESSAGEBOX_COLOR_BACKGROUND = 0
     SDL_MESSAGEBOX_COLOR_TEXT = 1
@@ -3323,8 +3663,10 @@ enum SDL_MessageBoxColorType: int
     SDL_MESSAGEBOX_COLOR_BUTTON_BACKGROUND = 3
     SDL_MESSAGEBOX_COLOR_BUTTON_SELECTED = 4
     SDL_MESSAGEBOX_COLOR_COUNT = 5
+
 struct SDL_MessageBoxColorScheme:
     colors: array[SDL_MessageBoxColor, 5]
+
 struct SDL_MessageBoxData:
     flags_: uint
     window: ptr[SDL_Window]
@@ -3333,21 +3675,28 @@ struct SDL_MessageBoxData:
     numbuttons: int
     buttons: const_ptr[SDL_MessageBoxButtonData]
     colorScheme: const_ptr[SDL_MessageBoxColorScheme]
+
 external function SDL_ShowMessageBox(messageboxdata: const_ptr[SDL_MessageBoxData], buttonid: ptr[int]) -> bool
 external function SDL_ShowSimpleMessageBox(flags_: uint, title: cstr, message: cstr, window: ptr[SDL_Window]?) -> bool
+
 type SDL_MetalView = ptr[void]
+
 external function SDL_Metal_CreateView(window: ptr[SDL_Window]) -> SDL_MetalView
 external function SDL_Metal_DestroyView(view: ptr[void]) -> void
 external function SDL_Metal_GetLayer(view: ptr[void]) -> ptr[void]
 external function SDL_OpenURL(url: cstr) -> bool
 external function SDL_GetPlatform() -> cstr
+
 opaque SDL_Process = c"SDL_Process"
+
 external function SDL_CreateProcess(args: const_ptr[cstr], pipe_stdio: bool) -> ptr[SDL_Process]?
+
 enum SDL_ProcessIO: int
     SDL_PROCESS_STDIO_INHERITED = 0
     SDL_PROCESS_STDIO_NULL = 1
     SDL_PROCESS_STDIO_APP = 2
     SDL_PROCESS_STDIO_REDIRECT = 3
+
 external function SDL_CreateProcessWithProperties(props: uint) -> ptr[SDL_Process]?
 external function SDL_GetProcessProperties(process: ptr[SDL_Process]) -> SDL_PropertiesID
 external function SDL_ReadProcess(process: ptr[SDL_Process], datasize: ptr[ptr_uint]?, exitcode: ptr[int]?) -> ptr[void]?
@@ -3356,31 +3705,38 @@ external function SDL_GetProcessOutput(process: ptr[SDL_Process]) -> ptr[SDL_IOS
 external function SDL_KillProcess(process: ptr[SDL_Process], force: bool) -> bool
 external function SDL_WaitProcess(process: ptr[SDL_Process], block: bool, exitcode: ptr[int]?) -> bool
 external function SDL_DestroyProcess(process: ptr[SDL_Process]) -> void
+
 struct SDL_Vertex:
     position: SDL_FPoint
     color: SDL_FColor
     tex_coord: SDL_FPoint
+
 flags SDL_TextureAccess: int
     SDL_TEXTUREACCESS_STATIC = 0
     SDL_TEXTUREACCESS_STREAMING = 1
     SDL_TEXTUREACCESS_TARGET = 2
+
 enum SDL_TextureAddressMode: int
     SDL_TEXTURE_ADDRESS_INVALID = -1
     SDL_TEXTURE_ADDRESS_AUTO = 0
     SDL_TEXTURE_ADDRESS_CLAMP = 1
     SDL_TEXTURE_ADDRESS_WRAP = 2
+
 enum SDL_RendererLogicalPresentation: int
     SDL_LOGICAL_PRESENTATION_DISABLED = 0
     SDL_LOGICAL_PRESENTATION_STRETCH = 1
     SDL_LOGICAL_PRESENTATION_LETTERBOX = 2
     SDL_LOGICAL_PRESENTATION_OVERSCAN = 3
     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE = 4
+
 opaque SDL_Renderer = c"SDL_Renderer"
+
 struct SDL_Texture:
     format: SDL_PixelFormat
     w: int
     h: int
     refcount: int
+
 external function SDL_GetNumRenderDrivers() -> int
 external function SDL_GetRenderDriver(index: int) -> cstr?
 external function SDL_CreateWindowAndRenderer(title: cstr, width: int, height: int, window_flags: ptr_uint, window: ptr[ptr[SDL_Window]]?, renderer: ptr[ptr[SDL_Renderer]]?) -> bool
@@ -3479,6 +3835,7 @@ external function SDL_RenderDebugText(renderer: ptr[SDL_Renderer], x: float, y: 
 external function SDL_RenderDebugTextFormat(renderer: ptr[SDL_Renderer], x: float, y: float, fmt: cstr, ...) -> bool
 external function SDL_SetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: SDL_ScaleMode) -> bool
 external function SDL_GetDefaultTextureScaleMode(renderer: ptr[SDL_Renderer], scale_mode: ptr[SDL_ScaleMode]) -> bool
+
 struct SDL_GPURenderStateCreateInfo:
     fragment_shader: ptr[SDL_GPUShader]
     num_sampler_bindings: int
@@ -3488,7 +3845,9 @@ struct SDL_GPURenderStateCreateInfo:
     num_storage_buffers: int
     storage_buffers: const_ptr[ptr[SDL_GPUBuffer]]
     props: uint
+
 opaque SDL_GPURenderState = c"SDL_GPURenderState"
+
 external function SDL_CreateGPURenderState(renderer: ptr[SDL_Renderer], createinfo: const_ptr[SDL_GPURenderStateCreateInfo]) -> ptr[SDL_GPURenderState]?
 external function SDL_SetGPURenderStateSamplerBindings(state: ptr[SDL_GPURenderState], num_sampler_bindings: int, sampler_bindings: const_ptr[SDL_GPUTextureSamplerBinding]) -> bool
 external function SDL_SetGPURenderStateStorageTextures(state: ptr[SDL_GPURenderState], num_storage_textures: int, storage_textures: const_ptr[ptr[SDL_GPUTexture]]) -> bool
@@ -3496,6 +3855,7 @@ external function SDL_SetGPURenderStateStorageBuffers(state: ptr[SDL_GPURenderSt
 external function SDL_SetGPURenderStateFragmentUniforms(state: ptr[SDL_GPURenderState], slot_index: uint, data: const_ptr[void], length: uint) -> bool
 external function SDL_SetGPURenderState(renderer: ptr[SDL_Renderer], state: ptr[SDL_GPURenderState]?) -> bool
 external function SDL_DestroyGPURenderState(state: ptr[SDL_GPURenderState]) -> void
+
 struct SDL_StorageInterface:
     version: uint
     close: fn(arg0: ptr[void]) -> bool
@@ -3509,7 +3869,9 @@ struct SDL_StorageInterface:
     rename: fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> bool
     copy: fn(arg0: ptr[void], arg1: cstr, arg2: cstr) -> bool
     space_remaining: fn(arg0: ptr[void]) -> Uint64
+
 opaque SDL_Storage = c"SDL_Storage"
+
 external function SDL_OpenTitleStorage(override: cstr, props: uint) -> ptr[SDL_Storage]?
 external function SDL_OpenUserStorage(org: cstr, app: cstr, props: uint) -> ptr[SDL_Storage]?
 external function SDL_OpenFileStorage(path: cstr?) -> ptr[SDL_Storage]?
@@ -3532,12 +3894,14 @@ external function SDL_SetLinuxThreadPriorityAndPolicy(threadID: ptr_int, sdlPrio
 external function SDL_IsPhone() -> bool
 external function SDL_IsTablet() -> bool
 external function SDL_IsTV() -> bool
+
 enum SDL_Sandbox: int
     SDL_SANDBOX_NONE = 0
     SDL_SANDBOX_UNKNOWN_CONTAINER = 1
     SDL_SANDBOX_FLATPAK = 2
     SDL_SANDBOX_SNAP = 3
     SDL_SANDBOX_MACOS = 4
+
 external function SDL_GetSandbox() -> SDL_Sandbox
 external function SDL_OnApplicationWillTerminate() -> void
 external function SDL_OnApplicationDidReceiveMemoryWarning() -> void
@@ -3545,6 +3909,7 @@ external function SDL_OnApplicationWillEnterBackground() -> void
 external function SDL_OnApplicationDidEnterBackground() -> void
 external function SDL_OnApplicationWillEnterForeground() -> void
 external function SDL_OnApplicationDidEnterForeground() -> void
+
 struct SDL_DateTime:
     year: int
     month: int
@@ -3555,6 +3920,7 @@ struct SDL_DateTime:
     nanosecond: int
     day_of_week: int
     utc_offset: int
+
 flags SDL_DateFormat: int
     SDL_DATE_FORMAT_YYYYMMDD = 0
     SDL_DATE_FORMAT_DDMMYYYY = 1
@@ -3562,6 +3928,7 @@ flags SDL_DateFormat: int
 flags SDL_TimeFormat: int
     SDL_TIME_FORMAT_24HR = 0
     SDL_TIME_FORMAT_12HR = 1
+
 external function SDL_GetDateTimeLocalePreferences(dateFormat: ptr[SDL_DateFormat]?, timeFormat: ptr[SDL_TimeFormat]?) -> bool
 external function SDL_GetCurrentTime(ticks: ptr[SDL_Time]) -> bool
 external function SDL_TimeToDateTime(ticks: ptr_int, dt: ptr[SDL_DateTime], localTime: bool) -> bool
@@ -3578,18 +3945,25 @@ external function SDL_GetPerformanceFrequency() -> Uint64
 external function SDL_Delay(ms: uint) -> void
 external function SDL_DelayNS(ns: ptr_uint) -> void
 external function SDL_DelayPrecise(ns: ptr_uint) -> void
+
 type SDL_TimerID = uint
 type SDL_TimerCallback = fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint32) -> Uint32
+
 external function SDL_AddTimer(interval: uint, callback: fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint32) -> Uint32, userdata: ptr[void]) -> SDL_TimerID
+
 type SDL_NSTimerCallback = fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint64) -> Uint64
+
 external function SDL_AddTimerNS(interval: ptr_uint, callback: fn(arg0: ptr[void], arg1: SDL_TimerID, arg2: Uint64) -> Uint64, userdata: ptr[void]) -> SDL_TimerID
 external function SDL_RemoveTimer(id: uint) -> bool
+
 opaque SDL_Tray = c"SDL_Tray"
 opaque SDL_TrayMenu = c"SDL_TrayMenu"
 opaque SDL_TrayEntry = c"SDL_TrayEntry"
+
 type SDL_TrayEntryFlags = uint
 type SDL_TrayCallback = fn(arg0: ptr[void], arg1: ptr[SDL_TrayEntry]) -> void
 type SDL_TrayClickCallback = fn(arg0: ptr[void], arg1: ptr[SDL_Tray]) -> bool
+
 external function SDL_CreateTray(icon: ptr[SDL_Surface], tooltip: cstr) -> ptr[SDL_Tray]
 external function SDL_CreateTrayWithProperties(props: uint) -> ptr[SDL_Tray]
 external function SDL_SetTrayIcon(tray: ptr[SDL_Tray], icon: ptr[SDL_Surface]) -> void
@@ -3616,12 +3990,15 @@ external function SDL_GetTrayMenuParentTray(menu: ptr[SDL_TrayMenu]) -> ptr[SDL_
 external function SDL_UpdateTrays() -> void
 external function SDL_GetVersion() -> int
 external function SDL_GetRevision() -> cstr
+
 type SDL_main_func = fn(arg0: int, arg1: ptr[ptr[char]]) -> int
+
 external function SDL_main(argc: int, argv: ptr[ptr[char]]) -> int
 external function SDL_SetMainReady() -> void
 external function SDL_RunApp(argc: int, argv: ptr[ptr[char]]?, mainFunction: fn(arg0: int, arg1: ptr[ptr[char]]) -> int, reserved: ptr[void]?) -> int
 external function SDL_EnterAppMainCallbacks(argc: int, argv: ptr[ptr[char]], appinit: fn(arg0: ptr[ptr[void]], arg1: int, arg2: ptr[ptr[char]]) -> SDL_AppResult, appiter: fn(arg0: ptr[void]) -> SDL_AppResult, appevent: fn(arg0: ptr[void], arg1: ptr[SDL_Event]) -> SDL_AppResult, appquit: fn(arg0: ptr[void], arg1: SDL_AppResult) -> void) -> int
 external function SDL_GDKSuspendComplete() -> void
+
 const SDL_PLATFORM_LINUX: int = 1
 const SDL_PLATFORM_UNIX: int = 1
 const SDL_MAX_SINT64: ptr_int = 9223372036854775807

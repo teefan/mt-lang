@@ -1,6 +1,5 @@
 import std.linked_map as linked_map
 
-
 public struct LinkedSet[T]:
     values: linked_map.LinkedMap[T, bool]
 

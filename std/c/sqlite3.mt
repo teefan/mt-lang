@@ -3,33 +3,45 @@ external
 
 link "sqlite3"
 include "sqlite3.h"
+
 struct sqlite3_index_constraint = c"struct sqlite3_index_constraint":
     iColumn: int
     op: ubyte
     usable: ubyte
     iTermOffset: int
+
 struct sqlite3_index_orderby = c"struct sqlite3_index_orderby":
     iColumn: int
     desc: ubyte
+
 struct sqlite3_index_constraint_usage = c"struct sqlite3_index_constraint_usage":
     argvIndex: int
     omit: ubyte
+
 opaque va_list = c"va_list"
+
 external function sqlite3_libversion() -> cstr
 external function sqlite3_sourceid() -> cstr
 external function sqlite3_libversion_number() -> int
 external function sqlite3_compileoption_used(zOptName: cstr) -> int
 external function sqlite3_compileoption_get(N: int) -> cstr
 external function sqlite3_threadsafe() -> int
+
 opaque sqlite3 = c"sqlite3"
+
 type sqlite3_int64 = long
 type sqlite3_uint64 = ulong
+
 external function sqlite3_close(arg0: ptr[sqlite3]) -> int
 external function sqlite3_close_v2(arg0: ptr[sqlite3]) -> int
+
 type sqlite3_callback = fn(arg0: ptr[void], arg1: int, arg2: ptr[ptr[char]], arg3: ptr[ptr[char]]) -> int
+
 external function sqlite3_exec(arg0: ptr[sqlite3], sql: cstr, callback: fn(arg0: ptr[void], arg1: int, arg2: ptr[ptr[char]], arg3: ptr[ptr[char]]) -> int, arg3: ptr[void], errmsg: ptr[ptr[char]]) -> int
+
 struct sqlite3_file:
     pMethods: const_ptr[sqlite3_io_methods]
+
 struct sqlite3_io_methods:
     iVersion: int
     xClose: fn(arg0: ptr[sqlite3_file]) -> int
@@ -50,10 +62,13 @@ struct sqlite3_io_methods:
     xShmUnmap: fn(arg0: ptr[sqlite3_file], arg1: int) -> int
     xFetch: fn(arg0: ptr[sqlite3_file], arg1: sqlite3_int64, arg2: int, arg3: ptr[ptr[void]]) -> int
     xUnfetch: fn(arg0: ptr[sqlite3_file], arg1: sqlite3_int64, arg2: ptr[void]) -> int
+
 opaque sqlite3_mutex = c"sqlite3_mutex"
 opaque sqlite3_api_routines = c"sqlite3_api_routines"
+
 type sqlite3_filename = cstr
 type sqlite3_syscall_ptr = fn() -> void
+
 struct sqlite3_vfs:
     iVersion: int
     szOsFile: int
@@ -77,12 +92,14 @@ struct sqlite3_vfs:
     xSetSystemCall: fn(arg0: ptr[sqlite3_vfs], arg1: cstr, arg2: sqlite3_syscall_ptr) -> int
     xGetSystemCall: fn(arg0: ptr[sqlite3_vfs], arg1: cstr) -> sqlite3_syscall_ptr
     xNextSystemCall: fn(arg0: ptr[sqlite3_vfs], arg1: cstr) -> cstr
+
 external function sqlite3_initialize() -> int
 external function sqlite3_shutdown() -> int
 external function sqlite3_os_init() -> int
 external function sqlite3_os_end() -> int
 external function sqlite3_config(arg0: int, ...) -> int
 external function sqlite3_db_config(arg0: ptr[sqlite3], op: int, ...) -> int
+
 struct sqlite3_mem_methods:
     xMalloc: fn(arg0: int) -> ptr[void]
     xFree: fn(arg0: ptr[void]) -> void
@@ -92,6 +109,7 @@ struct sqlite3_mem_methods:
     xInit: fn(arg0: ptr[void]) -> int
     xShutdown: fn(arg0: ptr[void]) -> void
     pAppData: ptr[void]
+
 external function sqlite3_extended_result_codes(arg0: ptr[sqlite3], onoff: int) -> int
 external function sqlite3_last_insert_rowid(arg0: ptr[sqlite3]) -> sqlite3_int64
 external function sqlite3_set_last_insert_rowid(arg0: ptr[sqlite3], arg1: long) -> void
@@ -146,7 +164,9 @@ external function sqlite3_errmsg16(arg0: ptr[sqlite3]) -> const_ptr[void]
 external function sqlite3_errstr(arg0: int) -> cstr
 external function sqlite3_error_offset(db: ptr[sqlite3]) -> int
 external function sqlite3_set_errmsg(db: ptr[sqlite3], errcode: int, zErrMsg: cstr) -> int
+
 opaque sqlite3_stmt = c"sqlite3_stmt"
+
 external function sqlite3_limit(arg0: ptr[sqlite3], id: int, newVal: int) -> int
 external function sqlite3_prepare(db: ptr[sqlite3], zSql: cstr, nByte: int, ppStmt: ptr[ptr[sqlite3_stmt]], pzTail: ptr[cstr]) -> int
 external function sqlite3_prepare_v2(db: ptr[sqlite3], zSql: cstr, nByte: int, ppStmt: ptr[ptr[sqlite3_stmt]], pzTail: ptr[cstr]) -> int
@@ -160,8 +180,10 @@ external function sqlite3_stmt_readonly(pStmt: ptr[sqlite3_stmt]) -> int
 external function sqlite3_stmt_isexplain(pStmt: ptr[sqlite3_stmt]) -> int
 external function sqlite3_stmt_explain(pStmt: ptr[sqlite3_stmt], eMode: int) -> int
 external function sqlite3_stmt_busy(arg0: ptr[sqlite3_stmt]) -> int
+
 opaque sqlite3_value = c"sqlite3_value"
 opaque sqlite3_context = c"sqlite3_context"
+
 external function sqlite3_bind_blob(arg0: ptr[sqlite3_stmt], arg1: int, arg2: const_ptr[void], n: int, arg4: fn(arg0: ptr[void]) -> void) -> int
 external function sqlite3_bind_blob64(arg0: ptr[sqlite3_stmt], arg1: int, arg2: const_ptr[void], arg3: ulong, arg4: fn(arg0: ptr[void]) -> void) -> int
 external function sqlite3_bind_double(arg0: ptr[sqlite3_stmt], arg1: int, arg2: double) -> int
@@ -240,7 +262,9 @@ external function sqlite3_get_auxdata(arg0: ptr[sqlite3_context], N: int) -> ptr
 external function sqlite3_set_auxdata(arg0: ptr[sqlite3_context], N: int, arg2: ptr[void], arg3: fn(arg0: ptr[void]) -> void) -> void
 external function sqlite3_get_clientdata(arg0: ptr[sqlite3], arg1: cstr) -> ptr[void]
 external function sqlite3_set_clientdata(arg0: ptr[sqlite3], arg1: cstr, arg2: ptr[void], arg3: fn(arg0: ptr[void]) -> void) -> int
+
 type sqlite3_destructor_type = fn(arg0: ptr[void]) -> void
+
 external function sqlite3_result_blob(arg0: ptr[sqlite3_context], arg1: const_ptr[void], arg2: int, arg3: fn(arg0: ptr[void]) -> void) -> void
 external function sqlite3_result_blob64(arg0: ptr[sqlite3_context], arg1: const_ptr[void], arg2: ulong, arg3: fn(arg0: ptr[void]) -> void) -> void
 external function sqlite3_result_double(arg0: ptr[sqlite3_context], arg1: double) -> void
@@ -294,6 +318,7 @@ external function sqlite3_enable_load_extension(db: ptr[sqlite3], onoff: int) ->
 external function sqlite3_auto_extension(xEntryPoint: fn() -> void) -> int
 external function sqlite3_cancel_auto_extension(xEntryPoint: fn() -> void) -> int
 external function sqlite3_reset_auto_extension() -> void
+
 struct sqlite3_module:
     iVersion: int
     xCreate: fn(arg0: ptr[sqlite3], arg1: ptr[void], arg2: int, arg3: const_ptr[cstr], arg4: ptr[ptr[sqlite3_vtab]], arg5: ptr[ptr[char]]) -> int
@@ -320,6 +345,7 @@ struct sqlite3_module:
     xRollbackTo: fn(arg0: ptr[sqlite3_vtab], arg1: int) -> int
     xShadowName: fn(arg0: cstr) -> int
     xIntegrity: fn(arg0: ptr[sqlite3_vtab], arg1: cstr, arg2: cstr, arg3: int, arg4: ptr[ptr[char]]) -> int
+
 struct sqlite3_index_info:
     nConstraint: int
     aConstraint: ptr[sqlite3_index_constraint]
@@ -334,18 +360,24 @@ struct sqlite3_index_info:
     estimatedRows: long
     idxFlags: int
     colUsed: ulong
+
 external function sqlite3_create_module(db: ptr[sqlite3], zName: cstr, p: const_ptr[sqlite3_module], pClientData: ptr[void]) -> int
 external function sqlite3_create_module_v2(db: ptr[sqlite3], zName: cstr, p: const_ptr[sqlite3_module], pClientData: ptr[void], xDestroy: fn(arg0: ptr[void]) -> void) -> int
 external function sqlite3_drop_modules(db: ptr[sqlite3], azKeep: ptr[cstr]) -> int
+
 struct sqlite3_vtab:
     pModule: const_ptr[sqlite3_module]
     nRef: int
     zErrMsg: ptr[char]
+
 struct sqlite3_vtab_cursor:
     pVtab: ptr[sqlite3_vtab]
+
 external function sqlite3_declare_vtab(arg0: ptr[sqlite3], zSQL: cstr) -> int
 external function sqlite3_overload_function(arg0: ptr[sqlite3], zFuncName: cstr, nArg: int) -> int
+
 opaque sqlite3_blob = c"sqlite3_blob"
+
 external function sqlite3_blob_open(arg0: ptr[sqlite3], zDb: cstr, zTable: cstr, zColumn: cstr, iRow: long, flags_: int, ppBlob: ptr[ptr[sqlite3_blob]]) -> int
 external function sqlite3_blob_reopen(arg0: ptr[sqlite3_blob], arg1: long) -> int
 external function sqlite3_blob_close(arg0: ptr[sqlite3_blob]) -> int
@@ -360,6 +392,7 @@ external function sqlite3_mutex_free(arg0: ptr[sqlite3_mutex]) -> void
 external function sqlite3_mutex_enter(arg0: ptr[sqlite3_mutex]) -> void
 external function sqlite3_mutex_try(arg0: ptr[sqlite3_mutex]) -> int
 external function sqlite3_mutex_leave(arg0: ptr[sqlite3_mutex]) -> void
+
 struct sqlite3_mutex_methods:
     xMutexInit: fn() -> int
     xMutexEnd: fn() -> int
@@ -370,6 +403,7 @@ struct sqlite3_mutex_methods:
     xMutexLeave: fn(arg0: ptr[sqlite3_mutex]) -> void
     xMutexHeld: fn(arg0: ptr[sqlite3_mutex]) -> int
     xMutexNotheld: fn(arg0: ptr[sqlite3_mutex]) -> int
+
 external function sqlite3_mutex_held(arg0: ptr[sqlite3_mutex]) -> int
 external function sqlite3_mutex_notheld(arg0: ptr[sqlite3_mutex]) -> int
 external function sqlite3_db_mutex(arg0: ptr[sqlite3]) -> ptr[sqlite3_mutex]
@@ -378,7 +412,9 @@ external function sqlite3_test_control(op: int, ...) -> int
 external function sqlite3_keyword_count() -> int
 external function sqlite3_keyword_name(arg0: int, arg1: ptr[cstr], arg2: ptr[int]) -> int
 external function sqlite3_keyword_check(arg0: cstr, arg1: int) -> int
+
 opaque sqlite3_str = c"sqlite3_str"
+
 external function sqlite3_str_new(arg0: ptr[sqlite3]) -> ptr[sqlite3_str]
 external function sqlite3_str_finish(arg0: ptr[sqlite3_str]) -> ptr[char]
 external function sqlite3_str_free(arg0: ptr[sqlite3_str]) -> void
@@ -397,10 +433,13 @@ external function sqlite3_status64(op: int, pCurrent: ptr[sqlite3_int64], pHighw
 external function sqlite3_db_status(arg0: ptr[sqlite3], op: int, pCur: ptr[int], pHiwtr: ptr[int], resetFlg: int) -> int
 external function sqlite3_db_status64(arg0: ptr[sqlite3], arg1: int, arg2: ptr[sqlite3_int64], arg3: ptr[sqlite3_int64], arg4: int) -> int
 external function sqlite3_stmt_status(arg0: ptr[sqlite3_stmt], op: int, resetFlg: int) -> int
+
 opaque sqlite3_pcache = c"sqlite3_pcache"
+
 struct sqlite3_pcache_page:
     pBuf: ptr[void]
     pExtra: ptr[void]
+
 struct sqlite3_pcache_methods2:
     iVersion: int
     pArg: ptr[void]
@@ -415,6 +454,7 @@ struct sqlite3_pcache_methods2:
     xTruncate: fn(arg0: ptr[sqlite3_pcache], arg1: uint) -> void
     xDestroy: fn(arg0: ptr[sqlite3_pcache]) -> void
     xShrink: fn(arg0: ptr[sqlite3_pcache]) -> void
+
 struct sqlite3_pcache_methods:
     pArg: ptr[void]
     xInit: fn(arg0: ptr[void]) -> int
@@ -427,7 +467,9 @@ struct sqlite3_pcache_methods:
     xRekey: fn(arg0: ptr[sqlite3_pcache], arg1: ptr[void], arg2: uint, arg3: uint) -> void
     xTruncate: fn(arg0: ptr[sqlite3_pcache], arg1: uint) -> void
     xDestroy: fn(arg0: ptr[sqlite3_pcache]) -> void
+
 opaque sqlite3_backup = c"sqlite3_backup"
+
 external function sqlite3_backup_init(pDest: ptr[sqlite3], zDestName: cstr, pSource: ptr[sqlite3], zSourceName: cstr) -> ptr[sqlite3_backup]
 external function sqlite3_backup_step(p: ptr[sqlite3_backup], nPage: int) -> int
 external function sqlite3_backup_finish(p: ptr[sqlite3_backup]) -> int
@@ -457,8 +499,10 @@ external function sqlite3_stmt_scanstatus_v2(pStmt: ptr[sqlite3_stmt], idx: int,
 external function sqlite3_stmt_scanstatus_reset(arg0: ptr[sqlite3_stmt]) -> void
 external function sqlite3_db_cacheflush(arg0: ptr[sqlite3]) -> int
 external function sqlite3_system_errno(arg0: ptr[sqlite3]) -> int
+
 struct sqlite3_snapshot:
     hidden: array[ubyte, 48]
+
 external function sqlite3_snapshot_get(db: ptr[sqlite3], zSchema: cstr, ppSnapshot: ptr[ptr[sqlite3_snapshot]]) -> int
 external function sqlite3_snapshot_open(db: ptr[sqlite3], zSchema: cstr, pSnapshot: ptr[sqlite3_snapshot]) -> int
 external function sqlite3_snapshot_free(arg0: ptr[sqlite3_snapshot]) -> void
@@ -468,15 +512,20 @@ external function sqlite3_serialize(db: ptr[sqlite3], zSchema: cstr, piSize: ptr
 external function sqlite3_deserialize(db: ptr[sqlite3], zSchema: cstr, pData: ptr[ubyte], szDb: long, szBuf: long, mFlags: uint) -> int
 external function sqlite3_carray_bind_v2(pStmt: ptr[sqlite3_stmt], i: int, aData: ptr[void], nData: int, mFlags: int, xDel: fn(arg0: ptr[void]) -> void, pDel: ptr[void]) -> int
 external function sqlite3_carray_bind(pStmt: ptr[sqlite3_stmt], i: int, aData: ptr[void], nData: int, mFlags: int, xDel: fn(arg0: ptr[void]) -> void) -> int
+
 type sqlite3_rtree_dbl = double
+
 external function sqlite3_rtree_geometry_callback(db: ptr[sqlite3], zGeom: cstr, xGeom: fn(arg0: ptr[sqlite3_rtree_geometry], arg1: int, arg2: ptr[sqlite3_rtree_dbl], arg3: ptr[int]) -> int, pContext: ptr[void]) -> int
+
 struct sqlite3_rtree_geometry:
     pContext: ptr[void]
     nParam: int
     aParam: ptr[sqlite3_rtree_dbl]
     pUser: ptr[void]
     xDelUser: fn(arg0: ptr[void]) -> void
+
 external function sqlite3_rtree_query_callback(db: ptr[sqlite3], zQueryFunc: cstr, xQueryFunc: fn(arg0: ptr[sqlite3_rtree_query_info]) -> int, pContext: ptr[void], xDestructor: fn(arg0: ptr[void]) -> void) -> int
+
 struct sqlite3_rtree_query_info:
     pContext: ptr[void]
     nParam: int
@@ -494,6 +543,7 @@ struct sqlite3_rtree_query_info:
     eWithin: int
     rScore: double
     apSqlParam: ptr[ptr[sqlite3_value]]
+
 const SQLITE_VERSION_NUMBER: int = 3053001
 const SQLITE_OK: int = 0
 const SQLITE_ERROR: int = 1
