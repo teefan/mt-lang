@@ -530,7 +530,7 @@ module MilkTea
         @workspace.index_workspace(@root_uri) if @root_uri
 
         @workspace.open_document_uris.each do |uri|
-          schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
         end
         nil
       end
@@ -560,7 +560,7 @@ module MilkTea
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
         diagnostics_start = monotonic_time
-        schedule_diagnostics(uri, mode: :fast) unless @workspace.background_document?(uri)
+        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
@@ -593,7 +593,7 @@ module MilkTea
 
         invalidate_document_caches(uri)
         refresh_open_document_dependency_state(uri)
-        schedule_diagnostics(uri, mode: :fast) unless @workspace.background_document?(uri)
+        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
         nil
       end
 
@@ -606,7 +606,7 @@ module MilkTea
         if previous_source == 'background-document' && source != 'background-document' && !@workspace.get_content(uri).empty?
           @semantic_tokens_cache.delete(uri)
           @fixall_cache.delete(uri)
-          schedule_diagnostics(uri, force: true, mode: :fast)
+          schedule_diagnostics(uri, force: true)
         end
 
         nil
@@ -633,7 +633,7 @@ module MilkTea
         @workspace.update_document(uri, text) if text
         invalidate_document_caches(uri)
         refresh_open_document_dependency_state(uri)
-        schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+        schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
         nil
       end
 
@@ -1333,7 +1333,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
         end
       end
 
@@ -1347,7 +1347,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
         end
       end
 
@@ -1360,7 +1360,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true, mode: :full) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
         end
       end
 
@@ -1934,7 +1934,7 @@ module MilkTea
         return { kind: 'full', items: [] } unless uri
 
         content = @workspace.get_content(uri)
-        diagnostics = @workspace.collect_diagnostics(uri, mode: :full)
+        diagnostics = @workspace.collect_diagnostics(uri)
         fingerprint = diagnostics_fingerprint(content, diagnostics)
         previous_result_id = params['previousResultId']
         cached = @diagnostic_report_cache[uri]
@@ -2439,7 +2439,7 @@ module MilkTea
 
         invalidate_document_caches_for(affected_uris)
         affected_uris.each do |affected_uri|
-          schedule_diagnostics(affected_uri, force: true, mode: :fast) unless @workspace.background_document?(affected_uri)
+          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
         end
         nil
       end
@@ -2457,7 +2457,7 @@ module MilkTea
         affected_uris = @workspace.refresh_open_document_dependency_caches(changed_uri)
         invalidate_document_caches_for(affected_uris)
         affected_uris.each do |affected_uri|
-          schedule_diagnostics(affected_uri, force: true, mode: :fast) unless @workspace.background_document?(affected_uri)
+          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
         end
         affected_uris
       end
@@ -2480,10 +2480,9 @@ module MilkTea
 
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
-      def schedule_diagnostics(uri, force: false, mode: :fast)
+      def schedule_diagnostics(uri, force: false)
         content = @workspace.get_content(uri)
         content_digest = Digest::SHA256.hexdigest(content)
-        normalized_mode = mode.to_s == 'full' ? :full : :fast
         enqueue = false
 
         @diagnostics_mutex.synchronize do
@@ -2498,7 +2497,6 @@ module MilkTea
           @diagnostics_pending[uri] = {
             generation: @diagnostics_generation[uri],
             content: content,
-            mode: normalized_mode,
           }
 
           unless @diagnostics_enqueued.include?(uri)
@@ -2572,7 +2570,7 @@ module MilkTea
 
           @diagnostics_perf[:dequeued] += 1 if perf_logging?
 
-          diagnostics = collect_diagnostics_for_content(uri, snapshot[:content], mode: snapshot[:mode])
+          diagnostics = collect_diagnostics_for_content(uri, snapshot[:content])
           publish = false
           @diagnostics_mutex.synchronize do
             publish = snapshot[:generation] == @diagnostics_generation[uri]
@@ -2607,8 +2605,8 @@ module MilkTea
         end
       end
 
-      def collect_diagnostics_for_content(uri, _content, mode: :fast)
-        @workspace.collect_diagnostics(uri, mode: mode)
+      def collect_diagnostics_for_content(uri, _content)
+        @workspace.collect_diagnostics(uri)
       rescue StandardError => e
         warn "LSP diagnostics error #{uri}: #{e.message}"
         []
