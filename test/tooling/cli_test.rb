@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "json"
 require "open3"
 require "rbconfig"
 require "stringio"
@@ -115,6 +116,7 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 1, status
       assert_equal "", err.string
+      assert_match(/about to format-check .*sample\.mt/, out.string)
       assert_match(/needs formatting/, out.string)
     end
   end
@@ -248,7 +250,30 @@ class MilkTeaCliTest < Minitest::Test
 
       assert_equal 1, status
       assert_equal "", err.string
+      assert_match(/about to lint .*sample\.mt/, out.string)
       assert_match(/sample\.mt:2: unused-local: unused local 'unused'/, out.string)
+    end
+  end
+
+  def test_lint_command_json_output_remains_machine_readable
+    Dir.mktmpdir("milk-tea-cli-lint-json-readable") do |dir|
+      path = File.join(dir, "sample.mt")
+      File.write(path, <<~MT)
+        function main() -> int:
+            let unused = 1
+            return 0
+      MT
+      out = StringIO.new
+      err = StringIO.new
+
+      status = MilkTea::CLI.start(["lint", path, "--output-format", "json"], out:, err:)
+
+      assert_equal 1, status
+      assert_equal "", err.string
+      parsed = JSON.parse(out.string)
+      assert_equal true, parsed.is_a?(Array)
+      assert_equal "unused-local", parsed.first.fetch("code")
+      refute_match(/about to lint/, out.string)
     end
   end
 
