@@ -412,10 +412,10 @@ function socket_address_from_unknown_sockaddr(address: const_ptr[NativeSockAddr]
 
     let family = unsafe: read(live_address).sa_family
     if family == ipv4_socket_family():
-        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, ptr_uint<-size_of(NativeSockAddrIn))
+        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, size_of(NativeSockAddrIn))
 
     if family == ipv6_socket_family():
-        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, ptr_uint<-size_of(NativeSockAddrIn6))
+        return socket_address_from_sockaddr(unsafe: ptr[NativeSockAddr]?<-address, size_of(NativeSockAddrIn6))
 
     return Result[SocketAddress, Error].failure(error= invalid_address_error("unsupported socket address family"))
 
@@ -1031,7 +1031,7 @@ function tcp_stream_close_callback(handle: ptr[NativeHandle]) -> void:
     if pending_read != null[ptr[ReadState]]:
         unsafe:
             read(stream).read_state = null
-            read(ptr[ReadState]<-pending_read).stream = null
+            read(pending_read).stream = null
         finish_stream_read(unsafe: ptr[ReadState]<-pending_read, Result[bytes.Bytes, Error].failure(error= net_error("tcp stream closed")), -1)
 
     unsafe:
@@ -1086,7 +1086,7 @@ function write_cleanup_and_release(state: ptr[WriteState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as ok_payload:
-                    unsafe: ptr_uint<-ok_payload.value
+                    ptr_uint<-ok_payload.value
                 Result.failure as error_payload:
                     var error = error_payload.error
                     error.release()
@@ -1537,7 +1537,7 @@ function shutdown_cleanup_and_release(state: ptr[ShutdownState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    unsafe: bool<-payload.value
+                    bool<-payload.value
                 Result.failure as payload:
                     var error = payload.error
                     error.release()
@@ -1660,7 +1660,7 @@ function udp_socket_close_callback(handle: ptr[NativeHandle]) -> void:
     if pending_receive != null[ptr[UdpReceiveState]]:
         unsafe:
             read(socket).receive_state = null
-            read(ptr[UdpReceiveState]<-pending_receive).socket = null
+            read(pending_receive).socket = null
         finish_udp_receive(unsafe: ptr[UdpReceiveState]<-pending_receive, Result[UdpDatagram, Error].failure(error= net_error("udp socket closed")), -1)
 
     unsafe:
@@ -1720,7 +1720,7 @@ function udp_send_cleanup_and_release(state: ptr[UdpSendState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as ok_payload:
-                    unsafe: ptr_uint<-ok_payload.value
+                    ptr_uint<-ok_payload.value
                 Result.failure as error_payload:
                     var error = error_payload.error
                     error.release()
@@ -2586,7 +2586,7 @@ public function ipv4(ip: str, port: int) -> Result[SocketAddress, Error]:
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-size_of(libuv.sockaddr_in))
+    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), size_of(libuv.sockaddr_in))
 
 
 public function ipv6(ip: str, port: int) -> Result[SocketAddress, Error]:
@@ -2595,7 +2595,7 @@ public function ipv6(ip: str, port: int) -> Result[SocketAddress, Error]:
     if status_code != 0:
         return Result[SocketAddress, Error].failure(error= libuv_error(status_code))
 
-    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), ptr_uint<-size_of(libuv.sockaddr_in6))
+    return socket_address_from_sockaddr(sockaddr_storage_as_sockaddr(unsafe: ptr[NativeSocketStorage]<-ptr_of(raw)), size_of(libuv.sockaddr_in6))
 
 
 public function resolve_first_on(runtime: aio.Runtime, node: str, service: str) -> Task[Result[SocketAddress, Error]]:

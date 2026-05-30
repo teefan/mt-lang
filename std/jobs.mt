@@ -51,15 +51,14 @@ function error_from_mailbox(source: aio_mailbox.Error) -> Error:
 
 function noop_completion(arg: ptr[void]) -> void:
     unsafe: ptr[void]<-arg
-    return
 
 
 function stop_pool_state(state: ptr[PoolState]) -> void:
-    var mutex = unsafe: read(state).mutex
+    let mutex = unsafe: read(state).mutex
     mutex.lock()
     defer mutex.unlock()
     unsafe: read(state).stopping = true
-    var condition = unsafe: read(state).condition
+    let condition = unsafe: read(state).condition
     condition.broadcast()
 
 
@@ -94,7 +93,7 @@ function join_and_release_workers(workers: ref[vec.Vec[thread.Thread]]) -> void:
                         error.release()
                         fatal(c"jobs worker join failed")
                     Result.success as join_payload:
-                        unsafe: join_payload.value
+                        join_payload.value
 
     workers.release()
 
@@ -102,7 +101,7 @@ function join_and_release_workers(workers: ref[vec.Vec[thread.Thread]]) -> void:
 function worker_entry(state_raw: ptr[void]) -> void:
     let state = unsafe: ptr[PoolState]<-state_raw
     while true:
-        var mutex = unsafe: read(state).mutex
+        let mutex = unsafe: read(state).mutex
         mutex.lock()
 
         while true:
@@ -110,7 +109,7 @@ function worker_entry(state_raw: ptr[void]) -> void:
             if not should_wait:
                 break
 
-            var condition = unsafe: read(state).condition
+            let condition = unsafe: read(state).condition
             condition.wait(mutex)
 
         let should_stop = unsafe: read(state).stopping and read(state).queue.is_empty()
@@ -132,14 +131,14 @@ function worker_entry(state_raw: ptr[void]) -> void:
                 let item = payload.value
                 item.run(item.arg)
 
-                var completions = unsafe: read(state).completions
+                let completions = unsafe: read(state).completions
                 let send_result = completions.send(item)
                 match send_result:
                     Result.failure as send_payload:
                         var error = send_payload.error
                         error.release()
                     Result.success as send_payload:
-                        unsafe: send_payload.value
+                        send_payload.value
 
                 mutex.lock()
                 unsafe: read(state).running_jobs -= 1
@@ -206,7 +205,6 @@ public function create(worker_count: ptr_uint) -> Result[Pool, Error]:
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending WorkItem:
@@ -233,7 +231,7 @@ extending Pool:
         let state = this.state else:
             return Result[bool, Error].failure(error = jobs_error(-1, "jobs pool is released"))
 
-        var mutex = unsafe: read(state).mutex
+        let mutex = unsafe: read(state).mutex
         mutex.lock()
         defer mutex.unlock()
 
@@ -244,7 +242,7 @@ extending Pool:
             read(state).queue.push_back(item)
             read(state).queued_jobs += 1
 
-        var condition = unsafe: read(state).condition
+        let condition = unsafe: read(state).condition
         condition.signal()
         return Result[bool, Error].success(value = true)
 
@@ -253,7 +251,7 @@ extending Pool:
         let state = this.state else:
             return false
 
-        var completions = unsafe: read(state).completions
+        let completions = unsafe: read(state).completions
         match completions.try_recv():
             Option.none:
                 return false
@@ -274,7 +272,7 @@ extending Pool:
         let state = this.state else:
             return 0
 
-        var mutex = unsafe: read(state).mutex
+        let mutex = unsafe: read(state).mutex
         mutex.lock()
         defer mutex.unlock()
         return unsafe: read(state).queued_jobs
@@ -284,7 +282,7 @@ extending Pool:
         let state = this.state else:
             return 0
 
-        var mutex = unsafe: read(state).mutex
+        let mutex = unsafe: read(state).mutex
         mutex.lock()
         defer mutex.unlock()
         return unsafe: read(state).queued_jobs + read(state).running_jobs

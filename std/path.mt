@@ -18,8 +18,8 @@ public function normalize_separators(path: str) -> string.String:
     var index: ptr_uint = 0
     while index < path.len:
         let value = path.byte_at(index)
-        if value == ubyte<-92:
-            result.push_byte(ubyte<-47)
+        if value == 92:
+            result.push_byte(47)
         else:
             result.push_byte(value)
         index += 1
@@ -230,7 +230,7 @@ function root_length(path: str) -> ptr_uint:
     if is_separator(path.byte_at(0)):
         return 1
 
-    if path.len >= 3 and is_ascii_letter(path.byte_at(0)) and path.byte_at(1) == ubyte<-58 and is_separator(path.byte_at(2)):
+    if path.len >= 3 and is_ascii_letter(path.byte_at(0)) and path.byte_at(1) == 58 and is_separator(path.byte_at(2)):
         return 3
 
     return 0
@@ -246,7 +246,7 @@ function roots_compatible(left: str, left_root: ptr_uint, right: str, right_root
     if left_root == 1:
         return true
 
-    if left_root == 3 and left.byte_at(1) == ubyte<-58 and right.byte_at(1) == ubyte<-58:
+    if left_root == 3 and left.byte_at(1) == 58 and right.byte_at(1) == 58:
         return ascii_fold(left.byte_at(0)) == ascii_fold(right.byte_at(0))
 
     var index: ptr_uint = 0
@@ -260,8 +260,8 @@ function roots_compatible(left: str, left_root: ptr_uint, right: str, right_root
 
 
 function ascii_fold(value: ubyte) -> ubyte:
-    if value >= ubyte<-65 and value <= ubyte<-90:
-        return value + ubyte<-32
+    if value >= 65 and value <= 90:
+        return value + 32
 
     return value
 
@@ -290,7 +290,7 @@ function collect_normalized_segments(path: str, root: ptr_uint, output: ref[vec.
                     let last_segment = read(last_segment_ptr)
                     if not segment_is_parent_directory(path, last_segment.start, last_segment.len):
                         match output.pop():
-                            Option.some as _:
+                            Option.some:
                                 pass
                             Option.none:
                                 fatal(c"path.collect_normalized_segments failed to pop segment")
@@ -305,11 +305,11 @@ function collect_normalized_segments(path: str, root: ptr_uint, output: ref[vec.
 
 
 function segment_is_current_directory(path: str, start: ptr_uint, len: ptr_uint) -> bool:
-    return len == 1 and path.byte_at(start) == ubyte<-46
+    return len == 1 and path.byte_at(start) == 46
 
 
 function segment_is_parent_directory(path: str, start: ptr_uint, len: ptr_uint) -> bool:
-    return len == 2 and path.byte_at(start) == ubyte<-46 and path.byte_at(start + 1) == ubyte<-46
+    return len == 2 and path.byte_at(start) == 46 and path.byte_at(start + 1) == 46
 
 
 function segments_equal(left: str, left_segment: Segment, right: str, right_segment: Segment) -> bool:
@@ -356,7 +356,7 @@ function extension_dot(name: str) -> Option[ptr_uint]:
     var index = name.len
     while index > 0:
         index -= 1
-        if name.byte_at(index) == ubyte<-46:
+        if name.byte_at(index) == 46:
             if index == 0:
                 return Option[ptr_uint].none
 
@@ -366,8 +366,8 @@ function extension_dot(name: str) -> Option[ptr_uint]:
 
 
 function is_separator(value: ubyte) -> bool:
-    return value == ubyte<-47 or value == ubyte<-92
+    return value == 47 or value == 92
 
 
 function is_ascii_letter(value: ubyte) -> bool:
-    return (value >= ubyte<-65 and value <= ubyte<-90) or (value >= ubyte<-97 and value <= ubyte<-122)
+    return (value >= 65 and value <= 90) or (value >= 97 and value <= 122)

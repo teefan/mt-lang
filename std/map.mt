@@ -58,7 +58,7 @@ extending Map[K, V]:
 
     static function bucket_index(entry_hash: uint, capacity: ptr_uint) -> ptr_uint:
         let bucket_count = uint<-capacity
-        return ptr_uint<-(entry_hash % bucket_count)
+        return (entry_hash % bucket_count)
 
 
     static function find_node(current: Map[K, V], key: K, key_hash: uint) -> ptr[Node[K, V]]?:
@@ -153,7 +153,6 @@ extending Map[K, V]:
                 index += 1
 
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
@@ -161,7 +160,6 @@ extending Map[K, V]:
         heap.release(this.buckets)
         this.buckets = null
         this.capacity = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
@@ -201,7 +199,6 @@ extending Map[K, V]:
 
         this.buckets = new_buckets
         this.capacity = new_capacity
-        return
 
 
     public mutable function set(key: K, value: V) -> Option[V]:
@@ -251,7 +248,7 @@ extending Map[K, V]:
                     fatal(c"map.Map.get_or_insert missing inserted value")
                 unsafe:
                     return ptr_of(read(ptr[Node[K, V]]<-current).value)
-            Option.some as _:
+            Option.some:
                 fatal(c"map.Map.get_or_insert replaced unexpectedly")
 
 

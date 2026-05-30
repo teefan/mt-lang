@@ -81,8 +81,7 @@ extending OrderedMap[K, V]:
     static function minimum(node: ptr[Node[K, V]]?) -> ptr[Node[K, V]]?:
         var current = node
         while current != null:
-            let left = unsafe: read(ptr[Node[K, V]]<-current).left
-            if left == null:
+            let left = unsafe: read(ptr[Node[K, V]]<-current).left else:
                 return current
 
             current = left
@@ -129,7 +128,6 @@ extending OrderedMap[K, V]:
             unsafe:
                 read(ptr[Node[K, V]]<-replacement).parent = parent
 
-        return
 
 
     static function rotate_left(current: ref[OrderedMap[K, V]], node: ptr[Node[K, V]]) -> ptr[Node[K, V]]:
@@ -210,7 +208,6 @@ extending OrderedMap[K, V]:
             else:
                 cursor = unsafe: read(cursor_ptr).parent
 
-        return
 
 
     static function locate(current: OrderedMap[K, V], key: K) -> SearchResult[K, V]:
@@ -245,7 +242,6 @@ extending OrderedMap[K, V]:
         OrderedMap[K, V].release_subtree(left)
         OrderedMap[K, V].release_subtree(right)
         heap.release(node)
-        return
 
 
     static function detach_node(current: ref[OrderedMap[K, V]], node: ptr[Node[K, V]]) -> ptr[Node[K, V]]?:
@@ -332,12 +328,10 @@ extending OrderedMap[K, V]:
         OrderedMap[K, V].release_subtree(this.root)
         this.root = null
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
         this.clear()
-        return
 
 
     public mutable function set(key: K, value: V) -> Option[V]:

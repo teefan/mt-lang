@@ -84,7 +84,7 @@ function clear_pointer_slot(slot: ptr[ptr[char]]) -> void:
     unsafe:
         let buffer = ptr[ubyte]<-slot
         while index < slot_bytes:
-            read(buffer + index) = ubyte<-0
+            read(buffer + index) = 0
             index += 1
 
 
@@ -132,7 +132,7 @@ function write_environment_value(space: ref[arena.Arena], entry: EnvironmentEntr
         let buffer = ptr[char]<-memory
         if entry.name.len != 0:
             heap.copy_bytes(ptr[ubyte]<-buffer, ptr[ubyte]<-entry.name.data, entry.name.len)
-        read(ptr[ubyte]<-buffer + entry.name.len) = ubyte<-61
+        read(ptr[ubyte]<-buffer + entry.name.len) = 61
         if entry.value.len != 0:
             heap.copy_bytes(ptr[ubyte]<-buffer + entry.name.len + 1, ptr[ubyte]<-entry.value.data, entry.value.len)
         read(buffer + entry.name.len + 1 + entry.value.len) = zero[char]
@@ -144,7 +144,7 @@ function prepare_command(command: span[str], cwd: Option[str], env: span[Environ
         return Result[PreparedCommand, ProcessError].failure(error= ProcessError(code = -1, message = string.String.from_str("process command cannot be empty")))
 
     let total_bytes = total_storage_bytes(command, cwd, env)
-    var storage = arena.create_aligned(total_bytes, ptr_uint<-align_of(ptr[char]))
+    var storage = arena.create_aligned(total_bytes, align_of(ptr[char]))
 
     let allocated_args = storage.alloc[ptr[char]](command.len + 1) else:
         fatal(c"process args storage exhausted")
@@ -219,7 +219,7 @@ function close_fd_quiet(fd: int) -> void:
         return
 
     var raw_error = zero[c.mt_process_error]
-    unsafe: c.mt_process_close_fd(fd, raw_error)
+    c.mt_process_close_fd(fd, raw_error)
 
 
 function close_fd_checked(fd: int) -> Result[bool, ProcessError]:
@@ -227,7 +227,7 @@ function close_fd_checked(fd: int) -> Result[bool, ProcessError]:
         return Result[bool, ProcessError].success(value= true)
 
     var raw_error = zero[c.mt_process_error]
-    let status = unsafe: c.mt_process_close_fd(fd, raw_error)
+    let status = c.mt_process_close_fd(fd, raw_error)
     if status != 0:
         return Result[bool, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -240,7 +240,7 @@ function read_fd_internal(fd: int, timeout_ms: int) -> Result[ReadResult, Proces
 
     var raw_result = zero[c.mt_process_read_result]
     var raw_error = zero[c.mt_process_error]
-    let status = unsafe: c.mt_process_read_fd(fd, timeout_ms, raw_result, raw_error)
+    let status = c.mt_process_read_fd(fd, timeout_ms, raw_result, raw_error)
     if status != 0:
         return Result[ReadResult, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -257,7 +257,7 @@ function write_fd_internal(fd: int, value: str) -> Result[ptr_uint, ProcessError
 
     var written: ptr_uint = 0
     var raw_error = zero[c.mt_process_error]
-    let status = unsafe: c.mt_process_write_fd(fd, data, value.len, written, raw_error)
+    let status = c.mt_process_write_fd(fd, data, value.len, written, raw_error)
     if status != 0:
         return Result[ptr_uint, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -272,9 +272,9 @@ function wait_internal(pid: int, non_blocking: bool) -> Result[Option[ExitStatus
     var raw_error = zero[c.mt_process_error]
     var status = 0
     if non_blocking:
-        status = unsafe: c.mt_process_try_wait(pid, raw_result, raw_error)
+        status = c.mt_process_try_wait(pid, raw_result, raw_error)
     else:
-        status = unsafe: c.mt_process_wait(pid, raw_result, raw_error)
+        status = c.mt_process_wait(pid, raw_result, raw_error)
 
     if status != 0:
         return Result[Option[ExitStatus], ProcessError].failure(error= take_process_error(raw_error))
@@ -290,7 +290,7 @@ function kill_internal(pid: int, signal: int) -> Result[bool, ProcessError]:
         return Result[bool, ProcessError].failure(error= simple_process_error("process pid is invalid"))
 
     var raw_error = zero[c.mt_process_error]
-    let status = unsafe: c.mt_process_kill(pid, signal, raw_error)
+    let status = c.mt_process_kill(pid, signal, raw_error)
     if status != 0:
         return Result[bool, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -302,7 +302,7 @@ function resize_pty_internal(fd: int, columns: int, rows: int) -> Result[bool, P
         return Result[bool, ProcessError].failure(error= simple_process_error("process stream is closed"))
 
     var raw_error = zero[c.mt_process_error]
-    let status = unsafe: c.mt_process_pty_resize(fd, columns, rows, raw_error)
+    let status = c.mt_process_pty_resize(fd, columns, rows, raw_error)
     if status != 0:
         return Result[bool, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -320,7 +320,7 @@ function spawn_internal(command: span[str], cwd: Option[str], env: span[Environm
 
             var raw_handle = zero[c.mt_process_spawn_handle]
             var raw_error = zero[c.mt_process_error]
-            let status = unsafe: c.mt_process_spawn_interactive(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_handle, raw_error)
+            let status = c.mt_process_spawn_interactive(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_handle, raw_error)
             if status != 0:
                 return Result[ChildProcess, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -343,7 +343,7 @@ function spawn_pty_internal(command: span[str], cwd: Option[str], env: span[Envi
 
             var raw_handle = zero[c.mt_process_pty_handle]
             var raw_error = zero[c.mt_process_error]
-            let status = unsafe: c.mt_process_spawn_pty(prepared.file, prepared.args, prepared.env, prepared.cwd, columns, rows, raw_handle, raw_error)
+            let status = c.mt_process_spawn_pty(prepared.file, prepared.args, prepared.env, prepared.cwd, columns, rows, raw_handle, raw_error)
             if status != 0:
                 return Result[PtyProcess, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -361,7 +361,7 @@ function capture_internal(command: span[str], cwd: Option[str], env: span[Enviro
 
             var raw_result = zero[c.mt_process_capture_result]
             var raw_error = zero[c.mt_process_error]
-            let status_code = unsafe: c.mt_process_capture(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_result, raw_error)
+            let status_code = c.mt_process_capture(prepared.file, prepared.args, prepared.env, prepared.cwd, raw_result, raw_error)
             if status_code != 0:
                 return Result[CaptureResult, ProcessError].failure(error= take_process_error(raw_error))
 
@@ -385,7 +385,7 @@ function spawn_detached_internal(command: span[str], cwd: Option[str], env: span
 
             var pid: int = 0
             var raw_error = zero[c.mt_process_error]
-            let status_code = unsafe: c.mt_process_spawn_detached(prepared.file, prepared.args, prepared.env, prepared.cwd, pid, raw_error)
+            let status_code = c.mt_process_spawn_detached(prepared.file, prepared.args, prepared.env, prepared.cwd, pid, raw_error)
             if status_code != 0:
                 return Result[int, ProcessError].failure(error= take_process_error(raw_error))
 

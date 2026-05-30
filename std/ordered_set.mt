@@ -61,8 +61,7 @@ extending OrderedSet[T]:
     static function minimum(node: ptr[Node[T]]?) -> ptr[Node[T]]?:
         var current = node
         while current != null:
-            let left = unsafe: read(ptr[Node[T]]<-current).left
-            if left == null:
+            let left = unsafe: read(ptr[Node[T]]<-current).left else:
                 return current
 
             current = left
@@ -109,7 +108,6 @@ extending OrderedSet[T]:
             unsafe:
                 read(ptr[Node[T]]<-replacement).parent = parent
 
-        return
 
 
     static function rotate_left(current: ref[OrderedSet[T]], node: ptr[Node[T]]) -> ptr[Node[T]]:
@@ -190,7 +188,6 @@ extending OrderedSet[T]:
             else:
                 cursor = unsafe: read(cursor_ptr).parent
 
-        return
 
 
     static function locate(current: OrderedSet[T], value: T) -> SearchResult[T]:
@@ -225,7 +222,6 @@ extending OrderedSet[T]:
         OrderedSet[T].release_subtree(left)
         OrderedSet[T].release_subtree(right)
         heap.release(node)
-        return
 
 
     static function detach_node(current: ref[OrderedSet[T]], node: ptr[Node[T]]) -> ptr[Node[T]]?:
@@ -286,12 +282,10 @@ extending OrderedSet[T]:
         OrderedSet[T].release_subtree(this.root)
         this.root = null
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
         this.clear()
-        return
 
 
     public mutable function insert(value: T) -> bool:

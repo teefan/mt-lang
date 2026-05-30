@@ -256,7 +256,7 @@ function mark_received(protocol: ptr[ProtocolState], sequence: uint) -> bool:
             else:
                 unsafe: read(protocol).received_mask = 0
 
-            unsafe: read(protocol).received_mask |= (uint<-1) << (distance - 1)
+            unsafe: read(protocol).received_mask |= (1) << (distance - 1)
 
         unsafe: read(protocol).received_sequence = sequence
         return true
@@ -290,7 +290,7 @@ async function send_connected_packet(socket: net.UdpSocket, protocol: ptr[Protoc
         Result.failure as error_payload:
             return Result[bool, Error].failure(error = error_from_net(error_payload.error))
         Result.success as send_payload:
-            unsafe: send_payload.value
+            send_payload.value
             return Result[bool, Error].success(value = true)
 
 
@@ -310,7 +310,7 @@ async function send_packet_to(socket: net.UdpSocket, destination: net.SocketAddr
         Result.failure as error_payload:
             return Result[bool, Error].failure(error = error_from_net(error_payload.error))
         Result.success as send_payload:
-            unsafe: send_payload.value
+            send_payload.value
             return Result[bool, Error].success(value = true)
 
 
@@ -400,7 +400,6 @@ public function listen(local_address: net.SocketAddress, config: Config) -> Resu
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Config:
@@ -449,7 +448,7 @@ extending Channel:
             Result.failure as error_payload:
                 return Result[uint, Error].failure(error = error_payload.error)
             Result.success as send_payload:
-                unsafe: send_payload.value
+                send_payload.value
                 return Result[uint, Error].success(value = sequence)
 
 
@@ -468,7 +467,7 @@ extending Channel:
             Result.failure as error_payload:
                 return Result[uint, Error].failure(error = error_payload.error)
             Result.success as send_payload:
-                unsafe: send_payload.value
+                send_payload.value
                 unsafe: read(protocol).pending_reliable.push(PendingReliable(sequence = sequence, payload = bytes.Bytes.copy(content), last_sent_frame = frame))
                 return Result[uint, Error].success(value = sequence)
 
@@ -498,7 +497,7 @@ extending Channel:
                                 Result.failure as ack_payload:
                                     return Result[Option[Message], Error].failure(error = ack_payload.error)
                                 Result.success as ack_payload:
-                                    unsafe: ack_payload.value
+                                    ack_payload.value
 
                         if (header.packet_flags & ack_only_flag) != 0:
                             return Result[Option[Message], Error].success(value = Option[Message].none)
@@ -535,7 +534,7 @@ extending Channel:
                 Result.failure as error_payload:
                     return Result[ptr_uint, Error].failure(error = error_payload.error)
                 Result.success as send_payload:
-                    unsafe: send_payload.value
+                    send_payload.value
                     unsafe: read(entry_ptr).last_sent_frame = frame
                     resent += 1
 
@@ -599,7 +598,7 @@ extending Host:
                     Result.failure as error_payload:
                         return Result[uint, Error].failure(error = error_payload.error)
                     Result.success as send_payload:
-                        unsafe: send_payload.value
+                        send_payload.value
                         return Result[uint, Error].success(value = sequence)
 
 
@@ -624,7 +623,7 @@ extending Host:
                     Result.failure as error_payload:
                         return Result[uint, Error].failure(error = error_payload.error)
                     Result.success as send_payload:
-                        unsafe: send_payload.value
+                        send_payload.value
                         unsafe: read(protocol).pending_reliable.push(PendingReliable(sequence = sequence, payload = bytes.Bytes.copy(content), last_sent_frame = frame))
                         return Result[uint, Error].success(value = sequence)
 
@@ -662,7 +661,7 @@ extending Host:
                                             datagram.release()
                                             return Result[Option[HostMessage], Error].failure(error = ack_payload.error)
                                         Result.success as ack_payload:
-                                            unsafe: ack_payload.value
+                                            ack_payload.value
 
                                 if (header.packet_flags & ack_only_flag) != 0:
                                     datagram.release()
@@ -709,7 +708,7 @@ extending Host:
                     Result.failure as error_payload:
                         return Result[ptr_uint, Error].failure(error = error_payload.error)
                     Result.success as send_payload:
-                        unsafe: send_payload.value
+                        send_payload.value
                         unsafe: read(entry_ptr).last_sent_frame = frame
                         resent += 1
 

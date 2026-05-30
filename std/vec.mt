@@ -81,7 +81,6 @@ extending Vec[T]:
 
     public mutable function clear() -> void:
         this.len = 0
-        return
 
 
     public mutable function release() -> void:
@@ -89,7 +88,6 @@ extending Vec[T]:
         this.data = null
         this.len = 0
         this.capacity = 0
-        return
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:
@@ -111,7 +109,6 @@ extending Vec[T]:
 
         this.data = resized
         this.capacity = new_capacity
-        return
 
 
     public mutable function append_span(values: span[T]) -> void:
@@ -156,13 +153,11 @@ extending Vec[T]:
                     index += 1
 
         this.len = new_len
-        return
 
 
     public mutable function append_array[N](values: array[T, N]) -> void:
         var local_values = values
         this.append_span(local_values)
-        return
 
 
     public mutable function insert(index: ptr_uint, value: T) -> bool:
@@ -200,7 +195,6 @@ extending Vec[T]:
             read(data_ptr + this.len) = value
 
         this.len += 1
-        return
 
 
     public mutable function pop() -> Option[T]:

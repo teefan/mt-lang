@@ -46,7 +46,7 @@ public function percent_decode(text_value: str) -> Option[string.String]:
     var index: ptr_uint = 0
     while index < text_value.len:
         let value = text_value.byte_at(index)
-        if value != ubyte<-37:
+        if value != 37:
             result.push_byte(value)
             index += 1
             continue
@@ -71,7 +71,7 @@ function append_percent_encoded_path(output: ref[string.String], path_text: str)
     var index: ptr_uint = 0
     while index < path_text.len:
         let value = path_text.byte_at(index)
-        if value == ubyte<-47:
+        if value == 47:
             output.push_byte(value)
         else if safe_path_byte(value):
             output.push_byte(value)
@@ -82,43 +82,43 @@ function append_percent_encoded_path(output: ref[string.String], path_text: str)
 
 
 function append_percent_encoded_byte(output: ref[string.String], value: ubyte) -> void:
-    output.push_byte(ubyte<-37)
-    output.push_byte(hex_digit(value >> ubyte<-4))
-    output.push_byte(hex_digit(value & ubyte<-0x0F))
+    output.push_byte(37)
+    output.push_byte(hex_digit(value >> 4))
+    output.push_byte(hex_digit(value & 0x0F))
 
 
 function hex_digit(value: ubyte) -> ubyte:
-    if value < ubyte<-10:
-        return ubyte<-(ubyte<-48 + value)
+    if value < 10:
+        return (48 + value)
 
-    return ubyte<-(ubyte<-65 + (value - ubyte<-10))
+    return (65 + (value - 10))
 
 
 function hex_digit_value(value: ubyte) -> int:
-    if value >= ubyte<-48 and value <= ubyte<-57:
+    if value >= 48 and value <= 57:
         return int<-(value - ubyte<-48)
-    if value >= ubyte<-65 and value <= ubyte<-70:
+    if value >= 65 and value <= 70:
         return 10 + int<-(value - ubyte<-65)
-    if value >= ubyte<-97 and value <= ubyte<-102:
+    if value >= 97 and value <= 102:
         return 10 + int<-(value - ubyte<-97)
 
     return -1
 
 
 function safe_path_byte(value: ubyte) -> bool:
-    return ascii_letter(value) or ascii_digit(value) or value == ubyte<-95 or value == ubyte<-46 or value == ubyte<-45 or value == ubyte<-42
+    return ascii_letter(value) or ascii_digit(value) or value == 95 or value == 46 or value == 45 or value == 42
 
 
 function ascii_letter(value: ubyte) -> bool:
-    return (value >= ubyte<-65 and value <= ubyte<-90) or (value >= ubyte<-97 and value <= ubyte<-122)
+    return (value >= 65 and value <= 90) or (value >= 97 and value <= 122)
 
 
 function ascii_digit(value: ubyte) -> bool:
-    return value >= ubyte<-48 and value <= ubyte<-57
+    return value >= 48 and value <= 57
 
 
 function leading_slash_drive_path(path_text: str) -> bool:
-    return path_text.len >= 3 and path_text.byte_at(0) == ubyte<-47 and ascii_letter(path_text.byte_at(1)) and path_text.byte_at(2) == ubyte<-58
+    return path_text.len >= 3 and path_text.byte_at(0) == 47 and ascii_letter(path_text.byte_at(1)) and path_text.byte_at(2) == 58
 
 
 function owned_utf8_view(value: string.String) -> Option[str]:

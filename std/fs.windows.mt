@@ -66,7 +66,7 @@ function take_error(raw: c.mt_fs_error, fallback: str) -> Error:
 
 function validate_utf8_string(text_value: string.String, error_message: str) -> Result[string.String, Error]:
     match text.utf8_byte_span_as_str(unsafe: span[ubyte](data = ptr[ubyte]<-text_value.data, len = text_value.len)):
-        Option.some as _:
+        Option.some:
             return Result[string.String, Error].success(value= text_value)
         Option.none:
             var owned = text_value
@@ -81,13 +81,11 @@ function release_string_values(values: ref[vec.Vec[string.String]]) -> void:
             fatal(c"fs.release_string_values missing value")
 
         unsafe:
-            var owned = read(value_ptr)
-            owned.release()
+            read(value_ptr).release()
 
         index += 1
 
     values.release()
-    return
 
 
 function path_kind(path: str) -> int:
@@ -112,7 +110,6 @@ function metadata_kind(raw_kind: int) -> MetadataKind:
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Entries:
@@ -145,7 +142,6 @@ extending Entries:
 
     public mutable function release() -> void:
         release_string_values(ref_of(this.values))
-        return
 
 
 extending Metadata:
@@ -199,9 +195,9 @@ public function read_lines(path: str) -> Result[Entries, Error]:
             var start: ptr_uint = 0
             var index: ptr_uint = 0
             while index < content_text.len:
-                if content_text.byte_at(index) == ubyte<-10:
+                if content_text.byte_at(index) == 10:
                     var stop = index
-                    if stop > start and content_text.byte_at(stop - 1) == ubyte<-13:
+                    if stop > start and content_text.byte_at(stop - 1) == 13:
                         stop -= 1
 
                     values.push(string.String.from_str(content_text.slice(start, stop - start)))
@@ -211,7 +207,7 @@ public function read_lines(path: str) -> Result[Entries, Error]:
 
             if start < content_text.len:
                 var stop = content_text.len
-                if stop > start and content_text.byte_at(stop - 1) == ubyte<-13:
+                if stop > start and content_text.byte_at(stop - 1) == 13:
                     stop -= 1
 
                 values.push(string.String.from_str(content_text.slice(start, stop - start)))
@@ -304,7 +300,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
         match create_directories(path_ops.dirname(target_path)):
             Result.failure as payload:
                 return Result[bool, Error].failure(error= payload.error)
-            Result.success as _:
+            Result.success:
                 pass
 
         match read_bytes(source_path):
@@ -319,7 +315,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
         match create_directories(target_path):
             Result.failure as payload:
                 return Result[bool, Error].failure(error= payload.error)
-            Result.success as _:
+            Result.success:
                 pass
 
         match list_entries(source_path):
@@ -342,7 +338,7 @@ public function copy_entry(source_path: str, target_path: str) -> Result[bool, E
                                     child_source.release()
                                     child_target.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
-                                Result.success as _:
+                                Result.success:
                                     pass
                             child_source.release()
                             child_target.release()
@@ -388,7 +384,7 @@ public function remove_tree(path: str) -> Result[bool, Error]:
                                 Result.failure as child_payload:
                                     child_path.release()
                                     return Result[bool, Error].failure(error= child_payload.error)
-                                Result.success as _:
+                                Result.success:
                                     pass
                             child_path.release()
                     index += 1
@@ -443,7 +439,7 @@ public function find_ancestor_containing(path: str, entry_name: str) -> Option[s
             current.release()
             return Option[string.String].none
 
-        var parent = string.String.from_str(parent_text)
+        let parent = string.String.from_str(parent_text)
         current.release()
         current = parent
 
@@ -470,19 +466,19 @@ public function temporary_directory() -> string.String:
 
     let configured_temp = libc.get_environment_variable("TEMP")
     if configured_temp != null:
-        let configured_path = text.cstr_as_str(cstr<-configured_temp)
+        let configured_path = text.cstr_as_str(configured_temp)
         if configured_path.len != 0:
             return string.String.from_str(configured_path)
 
     let configured_tmp = libc.get_environment_variable("TMP")
     if configured_tmp != null:
-        let configured_path = text.cstr_as_str(cstr<-configured_tmp)
+        let configured_path = text.cstr_as_str(configured_tmp)
         if configured_path.len != 0:
             return string.String.from_str(configured_path)
 
     let configured_local_app_data = libc.get_environment_variable("LOCALAPPDATA")
     if configured_local_app_data != null:
-        let configured_path = text.cstr_as_str(cstr<-configured_local_app_data)
+        let configured_path = text.cstr_as_str(configured_local_app_data)
         if configured_path.len != 0:
             return string.String.from_str(configured_path)
 
@@ -603,7 +599,7 @@ public function list_files_recursive(path: str) -> Result[Entries, Error]:
         Result.failure as payload:
             release_string_values(ref_of(values))
             return Result[Entries, Error].failure(error= payload.error)
-        Result.success as _:
+        Result.success:
             return Result[Entries, Error].success(value= Entries(values = values))
 
 
@@ -633,7 +629,7 @@ function collect_files_recursive(path: str, output: ref[vec.Vec[string.String]])
                             Result.failure as child_payload:
                                 child_path.release()
                                 return Result[bool, Error].failure(error= child_payload.error)
-                            Result.success as _:
+                            Result.success:
                                 pass
                         child_path.release()
                 index += 1

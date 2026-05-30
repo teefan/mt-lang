@@ -96,8 +96,8 @@ function transport_error(detail: str) -> Error:
 
 
 function ascii_fold(value: ubyte) -> ubyte:
-    if value >= ubyte<-65 and value <= ubyte<-90:
-        return value + ubyte<-32
+    if value >= 65 and value <= 90:
+        return value + 32
 
     return value
 
@@ -144,14 +144,14 @@ function parse_decimal(text_value: str) -> Option[ptr_uint]:
     var index: ptr_uint = 0
     while index < text_value.len:
         let current = text_value.byte_at(index)
-        if current < ubyte<-48 or current > ubyte<-57:
+        if current < 48 or current > 57:
             return Option[ptr_uint].none
 
         let digit = ptr_uint<-(current - ubyte<-48)
-        if value > (heap.ptr_uint_max() - digit) / ptr_uint<-10:
+        if value > (heap.ptr_uint_max() - digit) / 10:
             return Option[ptr_uint].none
 
-        value = value * ptr_uint<-10 + digit
+        value = value * 10 + digit
         index += 1
 
     return Option[ptr_uint].some(value = value)
@@ -161,7 +161,7 @@ function parse_port(text_value: str) -> Option[int]:
     let parsed = parse_decimal(text_value) else:
         return Option[int].none
 
-    if parsed > ptr_uint<-65535:
+    if parsed > 65535:
         return Option[int].none
 
     return Option[int].some(value = int<-parsed)
@@ -171,7 +171,7 @@ function parse_target(rest: str) -> Result[string.String, Error]:
     if rest.len == 0:
         return Result[string.String, Error].success(value = string.String.from_str("/"))
 
-    let fragment_index = find_byte_from(rest, ubyte<-35, 0)
+    let fragment_index = find_byte_from(rest, 35, 0)
     var target_text = rest
     match fragment_index:
         Option.none:
@@ -183,10 +183,10 @@ function parse_target(rest: str) -> Result[string.String, Error]:
         return Result[string.String, Error].success(value = string.String.from_str("/"))
 
     let first = target_text.byte_at(0)
-    if first == ubyte<-47:
+    if first == 47:
         return Result[string.String, Error].success(value = string.String.from_str(target_text))
 
-    if first == ubyte<-63:
+    if first == 63:
         var target = string.String.from_str("/")
         target.append(target_text)
         return Result[string.String, Error].success(value = target)
@@ -220,7 +220,7 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
     var index: ptr_uint = 0
     while index < remainder.len:
         let current = remainder.byte_at(index)
-        if current == ubyte<-47 or current == ubyte<-63 or current == ubyte<-35:
+        if current == 47 or current == 63 or current == 35:
             authority_end = index
             break
         index += 1
@@ -229,14 +229,14 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
     if authority_text.len == 0:
         return Result[ParsedUrl, Error].failure(error = url_error("missing authority"))
 
-    if count_byte(authority_text, ubyte<-64) != 0:
+    if count_byte(authority_text, 64) != 0:
         return Result[ParsedUrl, Error].failure(error = url_error("userinfo is not supported"))
 
     var host_text = authority_text
     var port = default_port_for_scheme(scheme)
-    if authority_text.byte_at(0) == ubyte<-91:
+    if authority_text.byte_at(0) == 91:
         var closing_bracket: ptr_uint = 0
-        match find_byte_from(authority_text, ubyte<-93, 1):
+        match find_byte_from(authority_text, 93, 1):
             Option.none:
                 return Result[ParsedUrl, Error].failure(error = url_error("missing closing ']' for IPv6 host"))
             Option.some as payload:
@@ -247,7 +247,7 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
 
         host_text = authority_text.slice(1, closing_bracket - 1)
         if closing_bracket + 1 < authority_text.len:
-            if authority_text.byte_at(closing_bracket + 1) != ubyte<-58:
+            if authority_text.byte_at(closing_bracket + 1) != 58:
                 return Result[ParsedUrl, Error].failure(error = url_error("unexpected text after IPv6 host"))
 
             let port_start = closing_bracket + 2
@@ -258,13 +258,13 @@ function parse_url(url: str) -> Result[ParsedUrl, Error]:
                 Option.some as payload:
                     port = payload.value
     else:
-        let colon_count = count_byte(authority_text, ubyte<-58)
+        let colon_count = count_byte(authority_text, 58)
         if colon_count > 1:
             return Result[ParsedUrl, Error].failure(error = url_error("IPv6 hosts must be wrapped in []"))
 
         if colon_count == 1:
             var colon_index: ptr_uint = 0
-            match authority_text.find_byte(ubyte<-58):
+            match authority_text.find_byte(58):
                 Option.none:
                     fatal(c"http.parse_url missing authority port separator")
                 Option.some as payload:
@@ -321,7 +321,7 @@ function valid_http_token(value: str) -> bool:
     var index: ptr_uint = 0
     while index < value.len:
         let current = value.byte_at(index)
-        if current <= ubyte<-32 or current >= ubyte<-127 or current == ubyte<-58:
+        if current <= 32 or current >= 127 or current == 58:
             return false
         index += 1
 
@@ -332,7 +332,7 @@ function valid_http_header_value(value: str) -> bool:
     var index: ptr_uint = 0
     while index < value.len:
         let current = value.byte_at(index)
-        if current == ubyte<-13 or current == ubyte<-10:
+        if current == 13 or current == 10:
             return false
         index += 1
 
@@ -433,7 +433,7 @@ function find_crlf(text_value: str, start: ptr_uint) -> Option[ptr_uint]:
 
     var index = start
     while index + 1 < text_value.len:
-        if text_value.byte_at(index) == ubyte<-13 and text_value.byte_at(index + 1) == ubyte<-10:
+        if text_value.byte_at(index) == 13 and text_value.byte_at(index + 1) == 10:
             return Option[ptr_uint].some(value = index)
         index += 1
 
@@ -446,7 +446,7 @@ function find_header_terminator(data: span[ubyte]) -> Option[ptr_uint]:
 
     var index: ptr_uint = 0
     while index + 3 < data.len:
-        if unsafe: read(data.data + index) == ubyte<-13 and read(data.data + index + 1) == ubyte<-10 and read(data.data + index + 2) == ubyte<-13 and read(data.data + index + 3) == ubyte<-10:
+        if unsafe: read(data.data + index) == 13 and read(data.data + index + 1) == 10 and read(data.data + index + 2) == 13 and read(data.data + index + 3) == 10:
             return Option[ptr_uint].some(value = index)
         index += 1
 
@@ -459,7 +459,7 @@ function find_crlf_bytes(data: span[ubyte], start: ptr_uint) -> Option[ptr_uint]
 
     var index = start
     while index + 1 < data.len:
-        if unsafe: read(data.data + index) == ubyte<-13 and read(data.data + index + 1) == ubyte<-10:
+        if unsafe: read(data.data + index) == 13 and read(data.data + index + 1) == 10:
             return Option[ptr_uint].some(value = index)
         index += 1
 
@@ -467,22 +467,22 @@ function find_crlf_bytes(data: span[ubyte], start: ptr_uint) -> Option[ptr_uint]
 
 
 function hexadecimal_digit_value(current: ubyte) -> Option[ptr_uint]:
-    if current < ubyte<-48:
+    if current < 48:
         return Option[ptr_uint].none
 
-    if current <= ubyte<-57:
+    if current <= 57:
         return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-48))
 
-    if current < ubyte<-65:
+    if current < 65:
         return Option[ptr_uint].none
 
-    if current <= ubyte<-70:
+    if current <= 70:
         return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-55))
 
-    if current < ubyte<-97:
+    if current < 97:
         return Option[ptr_uint].none
 
-    if current <= ubyte<-102:
+    if current <= 102:
         return Option[ptr_uint].some(value = ptr_uint<-(current - ubyte<-87))
 
     return Option[ptr_uint].none
@@ -499,10 +499,10 @@ function parse_hexadecimal(text_value: str) -> Option[ptr_uint]:
         let digit = hexadecimal_digit_value(current) else:
             return Option[ptr_uint].none
 
-        if value > (heap.ptr_uint_max() - digit) / ptr_uint<-16:
+        if value > (heap.ptr_uint_max() - digit) / 16:
             return Option[ptr_uint].none
 
-        value = value * ptr_uint<-16 + digit
+        value = value * 16 + digit
         index += 1
 
     return Option[ptr_uint].some(value = value)
@@ -510,7 +510,7 @@ function parse_hexadecimal(text_value: str) -> Option[ptr_uint]:
 
 function parse_chunk_size(text_value: str) -> Option[ptr_uint]:
     var size_text = text_value
-    let extension = find_byte_from(text_value, ubyte<-59, 0) else:
+    let extension = find_byte_from(text_value, 59, 0) else:
         let parsed = parse_hexadecimal(size_text.trim_ascii_whitespace()) else:
             return Option[ptr_uint].none
         return Option[ptr_uint].some(value = parsed)
@@ -541,7 +541,6 @@ function discard_buffer_prefix(buffer: ref[vec.Vec[ubyte]], count: ptr_uint) -> 
             index += 1
 
     buffer.len = remaining
-    return
 
 
 function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
@@ -559,7 +558,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
         return Result[ResponseHead, Error].failure(error = response_error("unsupported HTTP version"))
 
     var first_space: ptr_uint = 0
-    match status_line.find_byte(ubyte<-32):
+    match status_line.find_byte(32):
         Option.none:
             return Result[ResponseHead, Error].failure(error = response_error("missing status code"))
         Option.some as payload:
@@ -578,7 +577,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
 
     var reason = string.String.create()
     if first_space + 4 < status_line.len:
-        if status_line.byte_at(first_space + 4) != ubyte<-32:
+        if status_line.byte_at(first_space + 4) != 32:
             return Result[ResponseHead, Error].failure(error = response_error("status line must separate code and reason with a space"))
 
         let reason_start = first_space + 5
@@ -607,7 +606,7 @@ function parse_response_head(header_text: str) -> Result[ResponseHead, Error]:
             return Result[ResponseHead, Error].failure(error = response_error("unexpected blank header line"))
 
         var separator: ptr_uint = 0
-        match line.find_byte(ubyte<-58):
+        match line.find_byte(58):
             Option.none:
                 head.release()
                 return Result[ResponseHead, Error].failure(error = response_error("header line is missing ':'"))
@@ -692,7 +691,7 @@ function decode_buffered_chunked_body(encoded: span[ubyte]) -> Result[bytes.Byte
         body.append_span(chunk_bytes)
         cursor += chunk_size
 
-        if unsafe: read(encoded.data + cursor) != ubyte<-13 or read(encoded.data + cursor + 1) != ubyte<-10:
+        if unsafe: read(encoded.data + cursor) != 13 or read(encoded.data + cursor + 1) != 10:
             return Result[bytes.Bytes, Error].failure(error = response_error("chunk data must end with CRLF"))
 
         cursor += 2
@@ -716,7 +715,7 @@ function parse_buffered_response(raw_response: span[ubyte]) -> Result[Response, 
     let header_length = find_header_terminator(raw_response) else:
         return Result[Response, Error].failure(error = response_error("response ended before headers were complete"))
 
-    let header_bytes = unsafe: span[ubyte](data = raw_response.data, len = header_length)
+    let header_bytes = span[ubyte](data = raw_response.data, len = header_length)
     let header_text = text.utf8_byte_span_as_str(header_bytes) else:
         return Result[Response, Error].failure(error = response_error("headers are not valid UTF-8"))
 
@@ -845,7 +844,7 @@ async function read_chunked_body(stream: net.TcpStream, prefix: span[ubyte]) -> 
         cursor += chunk_size
 
         let unread = buffer.as_span()
-        if unsafe: read(unread.data + cursor) != ubyte<-13 or read(unread.data + cursor + 1) != ubyte<-10:
+        if unsafe: read(unread.data + cursor) != 13 or read(unread.data + cursor + 1) != 10:
             return Result[bytes.Bytes, Error].failure(error = response_error("chunk data must end with CRLF"))
 
         cursor += 2
@@ -929,7 +928,7 @@ async function read_response(stream: net.TcpStream) -> Result[Response, Error]:
                         headers_ready = true
 
     let raw = received.as_span()
-    let header_bytes = unsafe: span[ubyte](data = raw.data, len = header_length)
+    let header_bytes = span[ubyte](data = raw.data, len = header_length)
     let header_text = text.utf8_byte_span_as_str(header_bytes) else:
         return Result[Response, Error].failure(error = response_error("headers are not valid UTF-8"))
 
@@ -1042,14 +1041,12 @@ async function request_with_transport(parsed: ParsedUrl, request_bytes: span[uby
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Header:
     public mutable function release() -> void:
         this.name.release()
         this.value.release()
-        return
 
 
 extending Response:
@@ -1067,7 +1064,6 @@ extending Response:
 
         this.headers.release()
         this.body.release()
-        return
 
 
     public function header(name: str) -> Option[str]:
@@ -1090,7 +1086,6 @@ extending ParsedUrl:
         this.host.release()
         this.authority.release()
         this.target.release()
-        return
 
 
 extending ResponseHead:
@@ -1107,7 +1102,6 @@ extending ResponseHead:
             index += 1
 
         this.headers.release()
-        return
 
 
 public async function get(url: str) -> Result[Response, Error]:

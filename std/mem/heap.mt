@@ -267,4 +267,3 @@ public function release[T](memory: ptr[T]?) -> void:
         return
 
     unsafe: release_bytes(ptr[void]<-memory)
-    return

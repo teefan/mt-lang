@@ -162,4 +162,3 @@ extending Pool:
         this.slot_alignment = 0
         this.slot_count = 0
         this.used_count = 0
-        return

@@ -157,7 +157,6 @@ extending TickScheduler:
         this.current_tick = tick
         this.next_sequence = 0
         this.budget.used_bytes_this_tick = 0
-        return
 
 
     public function consumed_bytes() -> ptr_uint:

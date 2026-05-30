@@ -68,7 +68,7 @@ public function get_bytes(url: str) -> Result[bytes.Bytes, curl.Code]:
     if int<-url_status != CURLE_OK_CODE:
         return Result[bytes.Bytes, curl.Code].failure(error= url_status)
 
-    let follow_status = easy_setopt_followlocation(handle, ptr_int<-1)
+    let follow_status = easy_setopt_followlocation(handle, 1)
     if int<-follow_status != CURLE_OK_CODE:
         return Result[bytes.Bytes, curl.Code].failure(error= follow_status)
 

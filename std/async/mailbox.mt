@@ -52,7 +52,6 @@ function handle_as_async(handle: ptr[NativeHandle]) -> ptr[NativeAsyncHandle]:
 
 function mailbox_async_callback(handle: ptr[NativeAsyncHandle]) -> void:
     unsafe: ptr[NativeAsyncHandle]<-handle
-    return
 
 
 function mailbox_destroy_state[T](state_frame: ptr[void]) -> void:
@@ -119,7 +118,6 @@ public function create[T]() -> Result[Mailbox[T], Error]:
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Mailbox[T]:
@@ -157,9 +155,9 @@ extending Mailbox[T]:
             let rollback = unsafe: read(state).queue.pop_back()
             match rollback:
                 Option.none:
-                    unsafe: rollback
+                    rollback
                 Option.some as payload:
-                    unsafe: payload.value
+                    payload.value
             return Result[bool, Error].failure(error = libuv_error(status_code))
 
         return Result[bool, Error].success(value = true)

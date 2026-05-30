@@ -237,7 +237,7 @@ function poll_take_result(frame: ptr[void]) -> Result[int, Error]:
         if state.status_code == 0:
             return Result[int, Error].success(value = state.revents)
 
-        var error = state.error
+        let error = state.error
         state.error = empty_error()
         state.error_owned = false
         return Result[int, Error].failure(error = error)
@@ -314,7 +314,7 @@ async function wait_for_io(runtime: aio.Runtime, fd: int, status_code: int) -> R
         Result.failure as payload:
             return Result[bool, Error].failure(error = payload.error)
         Result.success as payload:
-            unsafe: payload.value
+            payload.value
             return Result[bool, Error].success(value = true)
 
 
@@ -362,7 +362,7 @@ async function handshake_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) 
                         Result.failure as wait_error_payload:
                             return Result[bool, Error].failure(error = wait_error_payload.error)
                         Result.success as wait_payload:
-                            unsafe: wait_payload.value
+                            wait_payload.value
                             continue
 
                 if status_code == tls_io_eof:
@@ -404,7 +404,7 @@ async function write_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, cont
                         Result.failure as wait_error_payload:
                             return Result[ptr_uint, Error].failure(error = wait_error_payload.error)
                         Result.success as wait_payload:
-                            unsafe: wait_payload.value
+                            wait_payload.value
                             continue
 
                 if status_code == tls_io_eof:
@@ -438,26 +438,26 @@ async function read_once_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?, 
                 let status_code = c.mt_tls_client_read(client, buffer, max_bytes, transferred, raw_error)
                 if status_code == tls_io_ready:
                     if transferred == 0:
-                        unsafe: heap.release(buffer)
+                        heap.release(buffer)
                         return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
 
                     return Result[bytes.Bytes, Error].success(value = bytes.Bytes(data = buffer, len = transferred))
 
                 if status_code == tls_io_eof:
-                    unsafe: heap.release(buffer)
+                    heap.release(buffer)
                     return Result[bytes.Bytes, Error].success(value = bytes.Bytes.empty())
 
                 if status_code == tls_io_want_read or status_code == tls_io_want_write:
                     let wait_result = await wait_for_io(runtime, unsafe: read(state).fd, status_code)
                     match wait_result:
                         Result.failure as wait_error_payload:
-                            unsafe: heap.release(buffer)
+                            heap.release(buffer)
                             return Result[bytes.Bytes, Error].failure(error = wait_error_payload.error)
                         Result.success as wait_payload:
-                            unsafe: wait_payload.value
+                            wait_payload.value
                             continue
 
-                unsafe: heap.release(buffer)
+                heap.release(buffer)
                 return Result[bytes.Bytes, Error].failure(error = take_error(raw_error, "tls read failed"))
 
 
@@ -485,7 +485,7 @@ async function shutdown_on(runtime: aio.Runtime, state_raw: ptr[StreamState]?) -
                         Result.failure as wait_error_payload:
                             return Result[bool, Error].failure(error = wait_error_payload.error)
                         Result.success as wait_payload:
-                            unsafe: wait_payload.value
+                            wait_payload.value
                             continue
 
                 return Result[bool, Error].failure(error = take_error(raw_error, "tls shutdown failed"))
@@ -524,12 +524,10 @@ public async function connect_on(runtime: aio.Runtime, host: str, port: int) -> 
                     Result.success as connect_payload:
                         if last_error_owned:
                             last_error.release()
-                            last_error_owned = false
                         return await client_on(runtime, host, connect_payload.value)
 
                 index += 1
 
-            last_error_owned = false
             return Result[Stream, Error].failure(error = last_error)
 
 
@@ -574,7 +572,7 @@ public async function client_on(runtime: aio.Runtime, host: str, transport: net.
                     stream.release()
                     return Result[Stream, Error].failure(error = handshake_payload.error)
                 Result.success as handshake_payload:
-                    unsafe: handshake_payload.value
+                    handshake_payload.value
                     return Result[Stream, Error].success(value = stream)
 
 
@@ -585,7 +583,6 @@ public function client(host: str, transport: net.TcpStream) -> Task[Result[Strea
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 extending Stream:

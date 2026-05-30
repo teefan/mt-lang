@@ -47,7 +47,6 @@ function static_error(message: str) -> Error:
 extending Error:
     public mutable function release() -> void:
         this.message.release()
-        return
 
 
 public function compress_bytes(data: span[ubyte]) -> Result[bytes.Bytes, Error]:
