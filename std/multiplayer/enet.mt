@@ -16,6 +16,7 @@ public struct Server:
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
     unknown_packet_count: ptr_uint
+    snapshot_budget_cursor: ptr_uint
 
 
 public struct Client:
@@ -93,6 +94,7 @@ extending Server:
         snapshot_runtime.release_queue(ref_of(this.incoming_snapshots))
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
         this.unknown_packet_count = 0
+        this.snapshot_budget_cursor = 0
         this.world.release()
         return
 
@@ -366,6 +368,38 @@ extending Server:
         defer connections.release()
         append_verified_connections(host, ref_of(connections))
         return this.send_snapshots_budgeted(connections.as_span(), channel, transfer_mode, header, payload, max_bytes)
+
+
+    public mutable function broadcast_snapshot_budgeted_fair(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte],
+        max_bytes: ptr_uint,
+    ) -> Result[ptr_uint, mp.Error]:
+        let host = this.host else:
+            return Result[ptr_uint, mp.Error].failure(error = mp.error(mp.ErrorCode.not_found, "server host is not initialized"))
+
+        var connections = vec.Vec[mp.ConnectionId].create()
+        defer connections.release()
+        append_verified_connections(host, ref_of(connections))
+        if connections.len() == 0:
+            return Result[ptr_uint, mp.Error].success(value = 0)
+
+        let start_index = this.snapshot_budget_cursor % connections.len()
+        var ordered_connections = vec.Vec[mp.ConnectionId].with_capacity(connections.len())
+        defer ordered_connections.release()
+        append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
+
+        let sent = this.send_snapshots_budgeted(ordered_connections.as_span(), channel, transfer_mode, header, payload, max_bytes) else as send_error:
+            return Result[ptr_uint, mp.Error].failure(error = send_error)
+
+        if sent == 0:
+            this.snapshot_budget_cursor = (start_index + 1) % connections.len()
+        else:
+            this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+
+        return Result[ptr_uint, mp.Error].success(value = sent)
 
 
     public mutable function apply_server_event(evt: ptr[enet.Event]) -> void:
@@ -667,6 +701,7 @@ public function listen(address: enet.Address, peer_count: ptr_uint, channel_limi
         incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         unknown_packet_count = 0,
+        snapshot_budget_cursor = 0,
     ))
 
 
@@ -986,6 +1021,29 @@ function append_verified_connections(host: ptr[enet.Host], out_connections: ref[
             if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
                 out_connections.push(peer_connection_id(peer))
             index += 1
+    return
+
+
+function append_rotated_connections(
+    source: span[mp.ConnectionId],
+    start_index: ptr_uint,
+    destination: ref[vec.Vec[mp.ConnectionId]],
+) -> void:
+    if source.len == 0:
+        return
+
+    var index = start_index
+    while index < source.len:
+        unsafe:
+            destination.push(read(source.data + index))
+        index += 1
+
+    var prefix_index: ptr_uint = 0
+    while prefix_index < start_index:
+        unsafe:
+            destination.push(read(source.data + prefix_index))
+        prefix_index += 1
+
     return
 
 
