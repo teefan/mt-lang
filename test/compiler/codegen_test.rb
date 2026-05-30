@@ -127,6 +127,38 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\.channel = 2/, generated)
   end
 
+  def test_generate_c_for_multiplayer_descriptor_hooks_with_sync_defaults
+    source = <<~MT
+      # module demo.multiplayer_descriptor_defaults_codegen
+
+      import std.multiplayer as mp
+
+      @[mp.replicated(authority = mp.Authority.owner)]
+      @[mp.sync_defaults(mode = mp.TransferMode.unreliable_ordered, channel = 1, rate_hz = 30, target = mp.SyncTarget.observers)]
+      struct PlayerState:
+          @[mp.sync]
+          x: float
+          hp: int
+
+      function main() -> int:
+          let state_desc = mp.state_descriptor[PlayerState]()
+          if state_desc.sync_field_count != 1:
+              return 10
+          if state_desc.schema_hash == 0:
+              return 11
+          return 0
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_includes generated, '"demo.multiplayer_descriptor_defaults_codegen.PlayerState"'
+    assert_match(/\.sync_field_count = 1/, generated)
+    assert_match(/\.sync_mode =/, generated)
+    assert_match(/\.sync_channel =/, generated)
+    assert_match(/\.sync_rate_hz =/, generated)
+    assert_match(/\.sync_target =/, generated)
+  end
+
   def test_generate_c_for_imported_multiplayer_descriptor_hooks
     source = <<~MT
       # module demo.imported_multiplayer_descriptor_codegen

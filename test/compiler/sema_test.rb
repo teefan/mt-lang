@@ -4636,6 +4636,49 @@ function main() -> int:
     assert_equal true, program.root_analysis.functions.key?("main")
   end
 
+  def test_type_checks_multiplayer_surface_scaffold_with_sync_defaults
+    program = check_program_source(<<~MT)
+      # module demo.multiplayer_defaults
+
+      import std.multiplayer as mp
+
+      @[mp.replicated(authority = mp.Authority.server)]
+      @[mp.sync_defaults(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+      struct PlayerState:
+          @[mp.sync]
+          x: float
+
+      function main() -> int:
+          let state_desc = mp.state_descriptor[PlayerState]()
+          if state_desc.sync_field_count != 1:
+              return 1
+          return 0
+    MT
+
+    assert_equal true, program.root_analysis.functions.key?("main")
+  end
+
+  def test_rejects_multiplayer_state_descriptor_sync_marker_without_sync_defaults
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(<<~MT)
+        # module demo.multiplayer_sync_marker_missing_defaults
+
+        import std.multiplayer as mp
+
+        @[mp.replicated(authority = mp.Authority.server)]
+        struct PlayerState:
+            @[mp.sync]
+            x: int
+
+        function main() -> int:
+            let _ = mp.state_descriptor[PlayerState]()
+            return 0
+      MT
+    end
+
+    assert_match(/uses @\[std\.multiplayer\.sync\] marker but struct is missing @\[std\.multiplayer\.sync_defaults\(\.\.\.\)\]/, error.message)
+  end
+
   def test_rejects_multiplayer_rpc_descriptor_for_non_rpc_callable
     error = assert_raises(MilkTea::SemaError) do
       check_program_source(<<~MT)
