@@ -73,26 +73,49 @@ module MilkTea
       checks << ["cc", executable_available?(cc), cc]
       checks << ["ar", executable_available?(ar), ar]
       checks << ["bundle", executable_available?("bundle"), "bundle"]
+      checks << ["git", executable_available?("git"), "git"]
+      checks << ["clang", executable_available?(ENV.fetch("CLANG", "clang")), ENV.fetch("CLANG", "clang")]
+      checks << ["cmake", executable_available?(ENV.fetch("CMAKE", "cmake")), ENV.fetch("CMAKE", "cmake")]
+      checks << ["ninja", executable_available?("ninja"), "ninja"]
 
-      raylib_ok = false
-      raylib_detail = "std.c.raylib binding missing"
-      if checks.assoc("cc")[1]
-        begin
-          registry = RawBindings.default_registry(root: MilkTea.root)
-          raylib_binding = registry.find_by_module_name("std.c.raylib")
-          if raylib_binding
-            raylib_binding.prepare!(cc: cc)
-            raylib_ok = true
-            raylib_detail = "std.c.raylib prepared"
-          end
-        rescue RawBindings::Error => e
-          raylib_ok = false
-          raylib_detail = e.message
+      UpstreamSources.default_sources(root: MilkTea.root).each do |source|
+        missing = source.sentinel_paths.reject do |relative_path|
+          File.exist?(source.checkout_root.join(relative_path))
         end
-      else
-        raylib_detail = "skipped (missing C compiler)"
+        if missing.empty?
+          checks << ["source/#{source.name}", true, source.checkout_root.to_s]
+        else
+          checks << ["source/#{source.name}", false, "missing #{missing.first} under #{source.checkout_root}"]
+        end
       end
-      checks << ["raylib", raylib_ok, raylib_detail]
+
+      RawBindings.default_registry(root: MilkTea.root)
+        .select { |binding| binding.module_name.start_with?("std.c.") }
+        .sort_by(&:name)
+        .each do |binding|
+        begin
+          header_path = binding.header_path(env: ENV)
+          checks << ["binding/#{binding.name}", true, "#{binding.module_name} -> #{header_path}"]
+        rescue RawBindings::Error => header_error
+          unless checks.assoc("cc")[1]
+            checks << ["binding/#{binding.name}", false, "skipped (missing C compiler)"]
+            next
+          end
+
+          unless binding.respond_to?(:prepare!)
+            checks << ["binding/#{binding.name}", false, header_error.message]
+            next
+          end
+
+          begin
+            binding.prepare!(env: ENV, cc:)
+            header_path = binding.header_path(env: ENV)
+            checks << ["binding/#{binding.name}", true, "#{binding.module_name} -> #{header_path}"]
+          rescue RawBindings::Error => e
+            checks << ["binding/#{binding.name}", false, e.message]
+          end
+        end
+      end
 
       checks.each do |name, ok, detail|
         @out.puts("#{ok ? 'ok' : 'fail'} #{name}: #{detail}")
