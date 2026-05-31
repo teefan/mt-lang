@@ -88,11 +88,9 @@ Runtime:
 
 ## Explicitly Not Implemented Here
 
-1. ICE/libjuice multiplayer transport backend (`std.multiplayer.ice`).
-2. Signaling/session negotiation layer (`std.multiplayer.signal`).
-3. NAT punching orchestration integrated into multiplayer sessions.
-4. Lobby/matchmaking services.
-5. Prediction/rollback netcode.
+1. NAT punching orchestration integrated into multiplayer sessions.
+2. Lobby/matchmaking services.
+3. Prediction/rollback netcode.
 
 ## libjuice/NAT Punching Status
 
@@ -101,9 +99,9 @@ Current repository state:
 - `std.libjuice` exists as imported bindings.
 - `std.c.libjuice` raw binding surface exists.
 - Binding registration tests exist under `test/bindings/*`.
-- No multiplayer-facing NAT traversal runtime is wired into `std.multiplayer` yet.
+- `std.multiplayer.ice` and `std.multiplayer.signal` runtime modules are implemented and provide libjuice-backed ICE and signaling primitives.
 
-This means NAT punching is planned/deferred only, not implemented in the multiplayer runtime stack.
+This means basic ICE and signaling support is available in the runtime; higher-level matchmaking, lobby services, and any broader orchestration remain outside the core multiplayer runtime and require application-level integration.
 
 ## Remaining Follow-On Work
 

@@ -170,9 +170,10 @@ Direct public-IP join remains an ENet + UDP forwarding/firewall concern in user 
 Current state:
 
 - `std.libjuice` and `std.c.libjuice` bindings exist.
-- No implemented `std.multiplayer.ice` module exists.
-- No implemented `std.multiplayer.signal` module exists.
-- No integrated NAT punching/session orchestration is currently part of `std.multiplayer`.
+ - `std.multiplayer.ice` runtime module is implemented (libjuice-backed ICE transport).
+ - `std.multiplayer.signal` runtime module is implemented (signaling/session negotiation primitives).
+ - Binding coverage: `std.libjuice` and `std.c.libjuice` bindings exist.
+ - Higher-level NAT punching orchestration and matchmaking remain outside the core runtime and require application-level integration.
 
 Future ICE/NAT work should layer on existing core runtime modules instead of changing core ENet behavior.
 
