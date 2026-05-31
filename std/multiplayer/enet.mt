@@ -5,6 +5,9 @@ import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.wire as wire
 import std.vec as vec
 
+public type TypedRpcRoute = rpc_runtime.TypedRpcRoute
+public type TypedRpcDispatchTable = rpc_runtime.TypedRpcDispatchTable
+
 var runtime_ref_count: ptr_uint = 0
 
 public struct Server:
@@ -15,6 +18,7 @@ public struct Server:
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
     unknown_packet_count: ptr_uint
     snapshot_budget_cursor: ptr_uint
+    rpc_budget_cursor: ptr_uint
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
     outbound_world_signature_baseline: snapshot_runtime.BaselineSet
@@ -46,46 +50,6 @@ public struct WeightedConnection:
     connection: mp.ConnectionId
     weight: uint
 
-public struct TypedRpcRoute:
-    descriptor: mp.RpcDescriptor
-    handler: fn(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc_runtime.DispatchError]
-
-public struct TypedRpcDispatchTable:
-    routes: vec.Vec[TypedRpcRoute]
-
-
-extending TypedRpcDispatchTable:
-    public static function create() -> TypedRpcDispatchTable:
-        return TypedRpcDispatchTable(routes = vec.Vec[TypedRpcRoute].create())
-
-
-    public function route_count() -> ptr_uint:
-        return this.routes.len()
-
-
-    public mutable function release() -> void:
-        this.routes.release()
-
-
-    public mutable function register_route(
-        descriptor: mp.RpcDescriptor,
-        handler: fn(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc_runtime.DispatchError],
-    ) -> Result[bool, mp.Error]:
-        if typed_rpc_find_route(this.routes.as_span(), descriptor) != null:
-            return Result[bool, mp.Error].failure(
-                error = mp.error(mp.ErrorCode.already_registered, "typed rpc route is already registered")
-            )
-
-        this.routes.push(TypedRpcRoute(descriptor = descriptor, handler = handler))
-        return Result[bool, mp.Error].success(value = true)
-
-
-    public function dispatch_packet(
-        context: mp.RpcContext,
-        header: mp.RpcPacketHeader,
-        payload: span[ubyte],
-    ) -> Result[bool, mp.Error]:
-        return typed_rpc_dispatch_packet(this.routes.as_span(), context, header, payload)
 
 
 extending Server:
@@ -184,6 +148,7 @@ extending Server:
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
         this.unknown_packet_count = 0
         this.snapshot_budget_cursor = 0
+        this.rpc_budget_cursor = 0
         reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.outbound_world_signature_baseline))
@@ -320,7 +285,7 @@ extending Server:
 
 
     public mutable function process_incoming_rpcs_typed(
-        table: ref[TypedRpcDispatchTable],
+        table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
@@ -390,7 +355,7 @@ extending Server:
                 mp.ErrorCode.not_found,
                 "server host is not initialized"
             ))
-        let _ = validate_server_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
         let header = mp.RpcPacketHeader(channel = channel, direction = direction, payload_size = payload.len)
@@ -494,7 +459,7 @@ extending Server:
                 mp.ErrorCode.not_found,
                 "server host is not initialized"
             ))
-        let _ = validate_server_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_server_outbound_direction(direction) else as direction_error:
             return Result[ptr_uint, mp.Error].failure(error = direction_error)
 
         var connections = vec.Vec[mp.ConnectionId].create()
@@ -503,7 +468,7 @@ extending Server:
         if connections.len() == 0:
             return Result[ptr_uint, mp.Error].success(value = 0)
 
-        let start_index = this.snapshot_budget_cursor % connections.len()
+        let start_index = this.rpc_budget_cursor % connections.len()
         var ordered_connections = vec.Vec[mp.ConnectionId].with_capacity(connections.len())
         defer ordered_connections.release()
         append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
@@ -520,9 +485,9 @@ extending Server:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
 
         if sent == 0:
-            this.snapshot_budget_cursor = (start_index + 1) % connections.len()
+            this.rpc_budget_cursor = (start_index + 1) % connections.len()
         else:
-            this.snapshot_budget_cursor = (start_index + sent) % connections.len()
+            this.rpc_budget_cursor = (start_index + sent) % connections.len()
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -592,10 +557,6 @@ extending Server:
 
         var snapshots_sent: ptr_uint = 0
         if should_send_snapshot:
-            var world_payload = this.world.encode_snapshot_payload() else as world_payload_error:
-                return Result[mp.TickDispatchReport, mp.Error].failure(error = world_payload_error)
-            defer world_payload.release()
-
             let snapshot_header = mp.SnapshotPacketHeader(
                 tick = tick,
                 baseline_tick = this.outbound_world_signature_baseline.last_applied_tick,
@@ -613,6 +574,10 @@ extending Server:
                     return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
                 snapshots_sent = sent
             else:
+                var world_payload = this.world.encode_snapshot_payload() else as world_payload_error:
+                    return Result[mp.TickDispatchReport, mp.Error].failure(error = world_payload_error)
+                defer world_payload.release()
+
                 let sent = this.broadcast_snapshot_scheduled_fair(
                     ref_of(snapshot_scheduler),
                     snapshot_channel,
@@ -658,7 +623,7 @@ extending Server:
                 mp.ErrorCode.not_found,
                 "server host is not initialized"
             ))
-        let _ = validate_server_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
         let peer = find_verified_peer(host, connection) else:
@@ -1290,7 +1255,7 @@ extending Client:
 
 
     public mutable function process_incoming_rpcs_typed(
-        table: ref[TypedRpcDispatchTable],
+        table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         var processed: ptr_uint = 0
         while true:
@@ -1374,7 +1339,7 @@ extending Client:
                 mp.ErrorCode.unsupported,
                 "protocol handshake is not complete"
             ))
-        let _ = validate_client_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_client_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
         let header = mp.RpcPacketHeader(channel = channel, direction = direction, payload_size = payload.len)
@@ -1414,6 +1379,7 @@ public function listen(
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         unknown_packet_count = 0,
         snapshot_budget_cursor = 0,
+        rpc_budget_cursor = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
         inbound_snapshot_baseline = empty_snapshot_baseline(),
         outbound_world_signature_baseline = empty_snapshot_baseline()
@@ -1552,10 +1518,10 @@ function packet_payload_span(packet: ptr[enet.Packet]) -> span[ubyte]:
         return span[ubyte](data = base + 1, len = read(packet).dataLength - 1)
 
 
-function increment_unknown_count(unknown_packet_count: ref[ptr_uint]) -> void:
-    unsafe:
-        let current = read(unknown_packet_count)
-        read(unknown_packet_count) = current + 1
+
+
+function increment_unknown_count(counter: ref[ptr_uint]) -> void:
+    rpc_runtime.increment_unknown_count(counter)
 
 
 function enqueue_session_event(
@@ -1572,65 +1538,6 @@ function dequeue_session_event(queue: ref[vec.Vec[SessionEventRecord]]) -> Optio
     return Option[SessionEventRecord].some(value = item)
 
 
-function typed_rpc_descriptor_matches(left: mp.RpcDescriptor, right: mp.RpcDescriptor) -> bool:
-    return left.schema_hash == right.schema_hash and left.name == right.name
-
-
-function typed_rpc_find_route(routes: span[TypedRpcRoute], descriptor: mp.RpcDescriptor) -> ptr[TypedRpcRoute]?:
-    var index: ptr_uint = 0
-    while index < routes.len:
-        unsafe:
-            let route = routes.data + index
-            if typed_rpc_descriptor_matches(read(route).descriptor, descriptor):
-                return route
-        index += 1
-
-    return null
-
-
-function typed_rpc_dispatch_packet(
-    routes: span[TypedRpcRoute],
-    context: mp.RpcContext,
-    header: mp.RpcPacketHeader,
-    payload: span[ubyte],
-) -> Result[bool, mp.Error]:
-    var matched_index: ptr_uint = 0
-    var matched_count: ptr_uint = 0
-
-    var index: ptr_uint = 0
-    while index < routes.len:
-        unsafe:
-            let descriptor = read(routes.data + index).descriptor
-            if (
-                descriptor.channel == header.channel
-                and descriptor.direction == header.direction
-                and descriptor.payload_size == payload.len
-            ):
-                if matched_count == 0:
-                    matched_index = index
-                matched_count += 1
-        index += 1
-
-    if matched_count == 0:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet")
-        )
-
-    if matched_count > 1:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet")
-        )
-
-    unsafe:
-        let route = routes.data + matched_index
-        let handler = read(route).handler
-        match handler(context, payload):
-            Result.success as payload_value:
-                return Result[bool, mp.Error].success(value = payload_value.value)
-            Result.failure as payload_error:
-                return Result[bool, mp.Error].failure(
-                    error = mp.error(payload_error.error.code, payload_error.error.message)
-                )
 
 
 function handle_received_packet(
@@ -1661,18 +1568,6 @@ function handle_received_packet(
                 Result.failure:
                     increment_unknown_count(unknown_packet_count)
                 Result.success:
-                    unsafe:
-                        # snapshot header is fixed at 20 bytes (tick u64 + baseline_tick u64 + entity_count u32)
-                        let snapshot_body = span[ubyte](
-                            data = payload.data + 20,
-                            len = payload.len - 20
-                        )
-                        match world.apply_snapshot_payload(snapshot_body):
-                            Result.success:
-                                pass
-                            Result.failure:
-                                pass
-
                     match snapshot_runtime.apply_from_packet(payload, inbound_snapshot_baseline):
                         Result.success:
                             pass
@@ -2173,30 +2068,6 @@ function send_rpcs_scheduled_fair_impl(
         index += 1
 
     return Result[ptr_uint, mp.Error].success(value = sent_count)
-
-
-function validate_client_outbound_direction(direction: mp.RpcDirection) -> Result[bool, mp.Error]:
-    if direction != mp.RpcDirection.client_to_server:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(
-                mp.ErrorCode.invalid_argument,
-                "client send_rpc requires direction = client_to_server"
-            )
-        )
-
-    return Result[bool, mp.Error].success(value = true)
-
-
-function validate_server_outbound_direction(direction: mp.RpcDirection) -> Result[bool, mp.Error]:
-    if direction == mp.RpcDirection.client_to_server:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(
-                mp.ErrorCode.invalid_argument,
-                "server rpc send requires a server_to_* direction"
-            )
-        )
-
-    return Result[bool, mp.Error].success(value = true)
 
 
 function infer_inbound_rpc_direction(

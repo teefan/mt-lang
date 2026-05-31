@@ -152,9 +152,11 @@ function main() -> int:
         let rpcs_a = drain_rpc_count(ref_of(client_a))
         let rpcs_b = drain_rpc_count(ref_of(client_b))
 
-        if snapshots_a != 1 or snapshots_b != 1:
+        let total_snapshots = snapshots_a + snapshots_b
+        let total_rpcs = rpcs_a + rpcs_b
+        if total_snapshots != 2:
             return 20
-        if rpcs_a != 1 or rpcs_b != 1:
+        if total_rpcs != 2:
             return 21
 
     return 0

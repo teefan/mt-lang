@@ -166,3 +166,40 @@ extending TickScheduler:
         this.next_sequence += 1
         this.budget.used_bytes_this_tick += bytes
         return Option[TickReservation].some(value = reservation)
+
+
+public struct ConnectionStats:
+    latency_ms: uint
+    packets_sent: ulong
+    packets_received: ulong
+    packets_lost: ulong
+    bytes_sent: ulong
+    bytes_received: ulong
+    round_trip_time_ms: uint
+
+
+public function connection_stats_default() -> ConnectionStats:
+    return ConnectionStats(
+        latency_ms = 0,
+        packets_sent = 0,
+        packets_received = 0,
+        packets_lost = 0,
+        bytes_sent = 0,
+        bytes_received = 0,
+        round_trip_time_ms = 0
+    )
+
+
+public function packet_kind_from_byte(value: ubyte) -> Option[PacketKind]:
+    if value == ubyte<-PacketKind.handshake_hello:
+        return Option[PacketKind].some(value = PacketKind.handshake_hello)
+    if value == ubyte<-PacketKind.handshake_welcome:
+        return Option[PacketKind].some(value = PacketKind.handshake_welcome)
+    if value == ubyte<-PacketKind.handshake_reject:
+        return Option[PacketKind].some(value = PacketKind.handshake_reject)
+    if value == ubyte<-PacketKind.snapshot:
+        return Option[PacketKind].some(value = PacketKind.snapshot)
+    if value == ubyte<-PacketKind.rpc:
+        return Option[PacketKind].some(value = PacketKind.rpc)
+
+    return Option[PacketKind].none
