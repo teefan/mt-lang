@@ -97,12 +97,11 @@ Compiler coverage:
 Runtime coverage includes world/snapshot/relevancy/hooks/enet suites under `test/std/std_multiplayer_*`.
 
 ## Out Of Scope Here
-
-This RFC does not define an ICE backend or NAT punching runtime orchestration.
+This RFC does not prescribe matchmaking, lobby, or platform-level orchestration for session discovery.
 
 Current repository boundary:
 
 - `std.libjuice` and `std.c.libjuice` bindings exist.
-- no `std.multiplayer.ice` runtime module exists
-- no `std.multiplayer.signal` runtime module exists
-- no NAT punching flow is integrated into `std.multiplayer`
+- `std.multiplayer.ice` runtime module exists (libjuice-backed ICE transport).
+- `std.multiplayer.signal` runtime module exists (signaling/session negotiation primitives).
+- Higher-level NAT punching orchestration and matchmaking remain outside the core runtime and require application-level integration.
