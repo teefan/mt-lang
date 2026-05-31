@@ -57,9 +57,6 @@ public struct SendOptions:
     fair_start_index: ptr_uint
 
 
-
-
-
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
         return ptr_of(this.world)
@@ -1526,8 +1523,6 @@ function packet_payload_span(packet: ptr[enet.Packet]) -> span[ubyte]:
         return span[ubyte](data = base + 1, len = read(packet).dataLength - 1)
 
 
-
-
 function increment_unknown_count(counter: ref[ptr_uint]) -> void:
     rpc_runtime.increment_unknown_count(counter)
 
@@ -1544,8 +1539,6 @@ function dequeue_session_event(queue: ref[vec.Vec[SessionEventRecord]]) -> Optio
     let item = queue.remove(0) else:
         return Option[SessionEventRecord].none
     return Option[SessionEventRecord].some(value = item)
-
-
 
 
 function handle_received_packet(
