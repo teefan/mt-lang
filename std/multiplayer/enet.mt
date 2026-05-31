@@ -46,11 +46,6 @@ public struct SessionEventRecord:
     kind: SessionEvent
     connection: Option[mp.ConnectionId]
 
-public struct WeightedConnection:
-    connection: mp.ConnectionId
-    weight: uint
-
-
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
         return ptr_of(this.world)
@@ -794,7 +789,7 @@ extending Server:
 
 
     public mutable function send_snapshots_budgeted_weighted(
-        weighted_connections: span[WeightedConnection],
+        weighted_connections: span[mp.WeightedConnection],
         channel: uint,
         transfer_mode: mp.TransferMode,
         header: mp.SnapshotPacketHeader,
@@ -842,7 +837,7 @@ extending Server:
                 "server host is not initialized"
             ))
 
-        var weighted_connections = vec.Vec[WeightedConnection].create()
+        var weighted_connections = vec.Vec[mp.WeightedConnection].create()
         defer weighted_connections.release()
         append_weighted_verified_connections(host, ref_of(weighted_connections))
 
@@ -1792,7 +1787,7 @@ function append_verified_connections(host: ptr[enet.Host], out_connections: ref[
 
 function append_weighted_verified_connections(
     host: ptr[enet.Host],
-    out_connections: ref[vec.Vec[WeightedConnection]]
+    out_connections: ref[vec.Vec[mp.WeightedConnection]]
 ) -> void:
     unsafe:
         let peers = read(host).peers
@@ -1801,7 +1796,7 @@ function append_weighted_verified_connections(
         while index < peer_count:
             let peer = peers + index
             if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                out_connections.push(WeightedConnection(connection = peer_connection_id(peer), weight = 1))
+                out_connections.push(mp.WeightedConnection(connection = peer_connection_id(peer), weight = 1))
             index += 1
 
 
@@ -1923,7 +1918,7 @@ function send_snapshots_scheduled_fair_impl(
 
 function send_snapshots_budgeted_weighted_impl(
     host: ptr[enet.Host],
-    weighted_connections: span[WeightedConnection],
+    weighted_connections: span[mp.WeightedConnection],
     channel: uint,
     transfer_mode: mp.TransferMode,
     header: mp.SnapshotPacketHeader,
@@ -1987,7 +1982,7 @@ function send_snapshots_budgeted_weighted_impl(
 
 
 function pick_highest_weight_unsent(
-    weighted_connections: span[WeightedConnection],
+    weighted_connections: span[mp.WeightedConnection],
     sent_mask: span[bool],
 ) -> Option[ptr_uint]:
     if weighted_connections.len == 0:

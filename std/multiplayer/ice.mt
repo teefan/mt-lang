@@ -303,6 +303,12 @@ extending Server:
         return unsafe: read(context).unknown_packet_count
 
 
+    public function snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        let context = this.receive_context else:
+            return empty_ice_baseline()
+        return unsafe: read(context).inbound_snapshot_baseline
+
+
     public mutable function map_inbound_channel_sender(
         channel: uint,
         connection: mp.ConnectionId
@@ -649,6 +655,12 @@ extending Client:
         let context = this.receive_context else:
             return 0
         return unsafe: read(context).unknown_packet_count
+
+
+    public function snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
+        let context = this.receive_context else:
+            return empty_ice_baseline()
+        return unsafe: read(context).inbound_snapshot_baseline
 
 
     public mutable function map_inbound_channel_sender(
@@ -1159,3 +1171,12 @@ function noop_gathering_done(agent: juice.Agent, user_ptr: ptr[void]) -> void:
 
 function noop_recv(agent: juice.Agent, data: cstr, size: ptr_uint, user_ptr: ptr[void]) -> void:
     pass
+
+
+function empty_ice_baseline() -> snapshot_runtime.BaselineSet:
+    return snapshot_runtime.BaselineSet(
+        last_applied_tick = 0,
+        last_applied_entity_count = 0,
+        last_applied_payload_bytes = 0,
+        last_applied_payload_hash = 0
+    )

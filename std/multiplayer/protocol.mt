@@ -181,8 +181,24 @@ public struct ConnectionStats:
 public struct SendOptions:
     scheduler: Option[ptr[TickScheduler]]
     max_bytes: ptr_uint
+    weighted_connections: span[WeightedConnection]
     fair_mode: bool
     fair_start_index: ptr_uint
+
+
+public struct WeightedConnection:
+    connection: ConnectionId
+    weight: uint
+
+
+public function send_defaults() -> SendOptions:
+    return SendOptions(
+        scheduler = Option[ptr[TickScheduler]].none,
+        max_bytes = 0,
+        weighted_connections = span[WeightedConnection](),
+        fair_mode = false,
+        fair_start_index = 0
+    )
 
 
 public function connection_stats_default() -> ConnectionStats:
