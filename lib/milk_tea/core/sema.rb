@@ -6096,6 +6096,10 @@ module MilkTea
         return true if integer_to_char_compatibility?(actual_type, expected_type)
         return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
+        return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
+        return true if actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function) &&
+                      !actual_type.receiver_type && !actual_type.variadic &&
+                      function_type_matches_proc_type?(actual_type, expected_type)
 
         false
       end

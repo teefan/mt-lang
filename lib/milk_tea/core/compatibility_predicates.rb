@@ -19,7 +19,10 @@ module MilkTea
       return false unless function_type.return_type == proc_type.return_type
 
       function_type.params.zip(proc_type.params).all? do |function_param, proc_param|
-        function_param.type == proc_param.type && function_param.mutable == proc_param.mutable
+        next false unless function_param.mutable == proc_param.mutable
+
+        function_param.type == proc_param.type ||
+          same_external_opaque_handle_pointer_compatibility?(function_param.type, proc_param.type)
       end
     end
 
