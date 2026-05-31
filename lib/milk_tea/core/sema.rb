@@ -642,6 +642,7 @@ module MilkTea
 
         payload_type = decl.payload_type ? resolve_type_ref(decl.payload_type, type_params:, type_param_constraints:) : nil
         if payload_type
+          raise_sema_error("event #{decl.name} payload cannot be ref[T] in v1") if ref_type?(payload_type)
           validate_stored_ref_type!(payload_type, "event #{decl.name} payload")
           raise_sema_error("event #{decl.name} payload uses unsupported proc nesting") unless proc_storage_supported_type?(payload_type)
           raise_sema_error("event #{decl.name} payload cannot use event storage type #{payload_type}") if noncopyable_event_storage_type?(payload_type)
@@ -5350,17 +5351,35 @@ module MilkTea
 
         case kind
         when :event_subscribe, :event_subscribe_once
-          raise_sema_error("#{method_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+          if arguments.length == 2 && arguments.none?(&:name)
+            state_type = infer_expression(arguments[0].value, scopes:)
+            unless pointer_type?(state_type) && !null_type?(state_type)
+              raise_sema_error("first argument to #{receiver_type}.#{method_name} stateful overload must be a non-null pointer, got #{state_type}")
+            end
 
-          listener_type = event_listener_type(receiver_type)
-          actual_type = infer_expression(arguments.first.value, scopes:, expected_type: listener_type)
-          ensure_argument_assignable!(
-            actual_type,
-            listener_type,
-            external: false,
-            message: "argument listener to #{receiver_type}.#{method_name} expects #{listener_type}, got #{actual_type}",
-            expression: arguments.first.value,
-          )
+            state_pointed_type = state_type.arguments.first
+            expected_listener_type = event_stateful_listener_type(receiver_type, state_pointed_type)
+            actual_listener_type = infer_expression(arguments[1].value, scopes:, expected_type: expected_listener_type)
+            ensure_argument_assignable!(
+              actual_listener_type,
+              expected_listener_type,
+              external: false,
+              message: "listener argument to #{receiver_type}.#{method_name} expects #{expected_listener_type}, got #{actual_listener_type}",
+              expression: arguments[1].value,
+            )
+          elsif arguments.length == 1
+            listener_type = event_listener_type(receiver_type)
+            actual_type = infer_expression(arguments.first.value, scopes:, expected_type: listener_type)
+            ensure_argument_assignable!(
+              actual_type,
+              listener_type,
+              external: false,
+              message: "argument listener to #{receiver_type}.#{method_name} expects #{listener_type}, got #{actual_type}",
+              expression: arguments.first.value,
+            )
+          else
+            raise_sema_error("#{method_name} expects 1 or 2 arguments, got #{arguments.length}")
+          end
 
           event_subscription_result_type
         when :event_unsubscribe
@@ -5375,7 +5394,7 @@ module MilkTea
             expression: arguments.first.value,
           )
 
-          @types.fetch("void")
+          @types.fetch("bool")
         when :event_emit
           if receiver_type.payload_type.nil?
             raise_sema_error("emit expects 0 arguments, got #{arguments.length}") unless arguments.empty?
@@ -5404,6 +5423,18 @@ module MilkTea
 
       def event_listener_type(event_type)
         params = []
+        params << Types::Parameter.new("value", event_type.payload_type) if event_type.payload_type
+
+        Types::Function.new(
+          nil,
+          params:,
+          return_type: @types.fetch("void"),
+          external: false,
+        )
+      end
+
+      def event_stateful_listener_type(event_type, state_type)
+        params = [Types::Parameter.new("state", Types::GenericInstance.new("ptr", [state_type]))]
         params << Types::Parameter.new("value", event_type.payload_type) if event_type.payload_type
 
         Types::Function.new(

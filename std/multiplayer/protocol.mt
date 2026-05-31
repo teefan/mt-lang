@@ -178,6 +178,13 @@ public struct ConnectionStats:
     round_trip_time_ms: uint
 
 
+public struct SendOptions:
+    scheduler: Option[ptr[TickScheduler]]
+    max_bytes: ptr_uint
+    fair_mode: bool
+    fair_start_index: ptr_uint
+
+
 public function connection_stats_default() -> ConnectionStats:
     return ConnectionStats(
         latency_ms = 0,

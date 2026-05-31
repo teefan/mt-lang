@@ -50,6 +50,14 @@ public struct WeightedConnection:
     connection: mp.ConnectionId
     weight: uint
 
+public struct SendOptions:
+    scheduler: Option[ptr[mp.TickScheduler]]
+    max_bytes: ptr_uint
+    fair_mode: bool
+    fair_start_index: ptr_uint
+
+
+
 
 
 extending Server:
