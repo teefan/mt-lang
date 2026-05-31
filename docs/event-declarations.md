@@ -1,6 +1,6 @@
 # Event Declarations
 
-Status: finalized (implemented)
+Status: finalized (implemented — including stateful subscriptions from stateful-event-subscriptions.md)
 
 This document describes the built-in event declaration surface for Milk Tea.
 It adds one new declaration form, `event`, and a small built-in event API with five canonical operations:

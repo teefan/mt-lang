@@ -660,6 +660,7 @@ module MilkTea
           event_type:,
           event_pointer_type: pointer_to(event_type),
           listener_type:,
+          stateful_listener_type: event_stateful_listener_function_type(event_type),
           slot_type:,
           slot_pointer_type: pointer_to(slot_type),
           slots_type:,
@@ -871,7 +872,7 @@ module MilkTea
             IR::Param.new(name: "event", c_name: "event", type: runtime.fetch(:event_pointer_type), pointer: false),
             IR::Param.new(name: "subscription", c_name: "subscription", type: @types.fetch("Subscription"), pointer: false),
           ],
-          return_type: @types.fetch("void"),
+          return_type: @types.fetch("bool"),
           body:,
           entry_point: false,
         )
@@ -1444,7 +1445,7 @@ module MilkTea
       end
 
       def event_stateful_listener_call_expression(runtime, snapshots_expr, dispatch_index_expr, payload_expr)
-        listener_type = runtime.fetch(:listener_type)
+        listener_type = runtime.fetch(:stateful_listener_type)
         listener_expr = IR::Cast.new(
           target_type: listener_type,
           expression: snapshot_field_expression(snapshots_expr, dispatch_index_expr, runtime, "listener", runtime.fetch(:void_ptr)),
