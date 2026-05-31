@@ -582,15 +582,7 @@ module MilkTea
         changes = params['contentChanges'] || []
         previous_content = @workspace.get_content(uri)
 
-        # Enhancement 3: apply incremental edits in sequence
-        changes.each do |change|
-          if change['range']
-            @workspace.apply_incremental_change(uri, change)
-          else
-            # Full-document replace (sync mode 1 fallback)
-            @workspace.update_document(uri, change['text'] || '')
-          end
-        end
+        @workspace.apply_incremental_changes(uri, changes)
 
         invalidate_document_caches(uri)
         current_content = @workspace.get_content(uri)
@@ -973,28 +965,50 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token&.type == :identifier
 
+        import_alias_changes = import_alias_rename_changes(uri, token, lsp_line, lsp_char, nil, new_name)
+        return { changes: import_alias_changes } if import_alias_changes
+
+        enum_member_changes = enum_member_rename_changes(uri, token, lsp_line, lsp_char, nil, new_name)
+        return { changes: enum_member_changes } if enum_member_changes
+
         if (facts = @workspace.get_facts(uri))
           scoped_changes = scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
           return { changes: scoped_changes } if scoped_changes
+
+          enum_member_changes = enum_member_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: enum_member_changes } if enum_member_changes
         end
 
-        refs = @workspace.find_all_references(token.lexeme)
-        changes = {}
-        refs.each do |ref|
-          ref_uri = ref[:uri]
-          changes[ref_uri] ||= []
-          changes[ref_uri] << { range: ref[:range], newText: new_name }
-        end
+        lexical_changes = lexical_rename_changes_in_document(uri, token.lexeme, new_name)
+        return { changes: lexical_changes } if lexical_changes
 
-        { changes: changes }
+        nil
       rescue StandardError => e
         warn "Error in rename handler: #{e.message}"
         nil
       end
 
+      def lexical_rename_changes_in_document(uri, name, new_name)
+        tokens = @workspace.get_tokens(uri) || []
+        edits = tokens.filter_map do |tok|
+          next unless tok.type == :identifier && tok.lexeme == name
+
+          {
+            range: token_to_range(tok),
+            newText: new_name,
+          }
+        end
+
+        return nil if edits.empty?
+
+        { uri => edits }
+      end
+
       def scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
         binding_id = rename_target_binding_id(uri, token, lsp_line, lsp_char, facts)
-        return nil unless binding_id
+        unless binding_id
+          return import_alias_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+        end
 
         ranges = scoped_binding_occurrence_ranges(uri, token.lexeme, facts, binding_id, include_declaration: true)
         return nil if ranges.empty?
@@ -1008,6 +1022,87 @@ module MilkTea
             newText: new_name,
           }
         end
+
+        { uri => edits }
+      end
+
+      def import_alias_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+        alias_name = token.lexeme
+        if facts
+          return nil unless facts.imports.key?(alias_name)
+        end
+
+        ast = @workspace.get_ast(uri)
+        return nil unless ast
+
+        import_node = ast.imports.find do |imp|
+          (imp.alias_name || imp.path.parts.last) == alias_name
+        end
+        return nil unless import_node
+
+        # Validate the cursor is at the declaration site or a module-qualifier usage (alias followed by dot).
+        tokens = @workspace.get_tokens(uri) || []
+
+        cursor_at_declaration = token.line == import_node.line && token.column == import_node.column
+        unless cursor_at_declaration
+          # token was already located by find_token_at; verify it's used as a module qualifier
+          tok_idx = tokens.index { |t| t.line == token.line && t.column == token.column }
+          return nil unless tok_idx && tokens[tok_idx + 1]&.type == :dot
+        end
+
+        edits = []
+
+        # Declaration site
+        decl_char = import_node.column - 1
+        edits << {
+          range: {
+            start: { line: import_node.line - 1, character: decl_char },
+            end:   { line: import_node.line - 1, character: decl_char + alias_name.length },
+          },
+          newText: new_name,
+        }
+
+        # Usage sites: every token with this lexeme immediately followed by a dot
+        tokens.each_with_index do |tok, i|
+          next unless tok.type == :identifier && tok.lexeme == alias_name
+          next unless tokens[i + 1]&.type == :dot
+
+          edits << {
+            range: {
+              start: { line: tok.line - 1, character: tok.column - 1 },
+              end:   { line: tok.line - 1, character: tok.column - 1 + alias_name.length },
+            },
+            newText: new_name,
+          }
+        end
+
+        { uri => edits }
+      end
+
+      def enum_member_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+        tokens = @workspace.get_tokens(uri) || []
+
+        cursor_index = tokens.index { |t| t.line == token.line && t.column == token.column }
+        return nil unless cursor_index
+
+        cursor_is_enum_member = variant_enum_member_declaration?(tokens, cursor_index) ||
+                                type_name_member_access?(tokens, cursor_index, facts)
+        return nil unless cursor_is_enum_member
+
+        edits = tokens.each_with_index.filter_map do |tok, i|
+          next unless tok.type == :identifier && tok.lexeme == token.lexeme
+
+          enum_member_decl = variant_enum_member_declaration?(tokens, i)
+          enum_member_access = type_name_member_access?(tokens, i, facts)
+          next unless enum_member_decl || enum_member_access
+
+          {
+            range: token_to_range(tok),
+            newText: new_name,
+          }
+        end
+
+        return nil if edits.empty?
 
         { uri => edits }
       end
@@ -4233,7 +4328,8 @@ module MilkTea
           next if t.column >= tok.column
 
           header_line_toks = non_trivia_tokens_on_line(tokens, t.line)
-          return [:variant, :enum, :flags].include?(header_line_toks.first&.type)
+          header_kind = header_line_toks.find { |header_tok| [:variant, :enum, :flags].include?(header_tok.type) }
+          return !header_kind.nil?
         end
         false
       end
