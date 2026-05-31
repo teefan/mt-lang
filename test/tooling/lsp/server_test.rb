@@ -1959,6 +1959,777 @@ function main(value: int) -> int:
     end
   end
 
+  def test_rename_import_alias_renames_declaration_and_usages
+    Dir.mktmpdir("milk-tea-lsp-rename-import-alias") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      util_source = <<~MT
+        public struct Point:
+            x: int
+            y: int
+      MT
+      main_source = <<~MT
+        import std.util as util
+
+        function make() -> util.Point:
+            return util.Point(x = 1, y = 2)
+      MT
+
+      File.write(File.join(std_dir, "util.mt"), util_source)
+      main_path = File.join(dir, "main.mt")
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        # Rename from the alias declaration site: `import std.util as util` (line 0, "util" at col 20)
+        alias_line  = 0
+        alias_char  = main_source.lines[alias_line].index(" util") + 1
+
+        response = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => main_uri },
+          "position"     => { "line" => alias_line, "character" => alias_char },
+          "newName"      => "u"
+        })
+
+        changes = response.dig("result", "changes", main_uri)
+        assert_kind_of Array, changes, "expected rename edits for import alias"
+        # Expect: 1 declaration + 2 usages (util.Point return type, util.Point constructor)
+        assert_equal 3, changes.length, "expected 3 edits (declaration + 2 qualifier usages), got #{changes.length}"
+        changes.each { |edit| assert_equal "u", edit["newText"] }
+
+        new_texts = changes.map { |e| e["newText"] }
+        assert new_texts.all? { |t| t == "u" }
+      end
+    end
+  end
+
+  def test_rename_import_alias_from_usage_site_renames_declaration_and_all_usages
+    Dir.mktmpdir("milk-tea-lsp-rename-import-alias-usage") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      util_source = <<~MT
+        public struct Point:
+            x: int
+            y: int
+      MT
+      main_source = <<~MT
+        import std.util as util
+
+        function make() -> util.Point:
+            return util.Point(x = 1, y = 2)
+      MT
+
+      File.write(File.join(std_dir, "util.mt"), util_source)
+      main_path = File.join(dir, "main.mt")
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        # Rename from a usage site: `util.Point` on line 2 (0-based)
+        usage_line = 2
+        usage_char = main_source.lines[usage_line].index("util.") + 1
+
+        response = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => main_uri },
+          "position"     => { "line" => usage_line, "character" => usage_char },
+          "newName"      => "u"
+        })
+
+        changes = response.dig("result", "changes", main_uri)
+        assert_kind_of Array, changes, "expected rename edits when renaming from usage"
+        assert_equal 3, changes.length, "expected 3 edits (declaration + 2 qualifier usages), got #{changes.length}"
+        changes.each { |edit| assert_equal "u", edit["newText"] }
+      end
+    end
+  end
+
+  def test_rename_enum_member_renames_declaration_and_member_access_with_semantic_stability
+    source = <<~MT
+      public enum Scene: ubyte
+          menu = 0
+          lobby = 1
+          game = 2
+
+      function current() -> Scene:
+          return Scene.lobby
+    MT
+
+    with_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+
+      uri = "file:///tmp/lsp_rename_enum_member.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/rename", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 2, "character" => 4 },
+        "newName" => "lounge"
+      })
+
+      changes = response.dig("result", "changes", uri)
+      assert_kind_of Array, changes
+      assert_equal 2, changes.length
+      changes.each { |edit| assert_equal "lounge", edit["newText"] }
+
+      updated = apply_workspace_edits_to_source(source, changes)
+      client.send_notification("textDocument/didChange", {
+        "textDocument" => { "uri" => uri, "version" => 2 },
+        "contentChanges" => [{ "text" => updated }]
+      })
+
+      semantic = client.send_request("textDocument/semanticTokens/full", {
+        "textDocument" => { "uri" => uri }
+      })
+      entries = decode_semantic_token_entries(semantic.fetch("result").fetch("data"), legend)
+
+      decl_entry = semantic_entry_for_lexeme_on_line(updated, entries, "lounge", 2)
+      use_entry = semantic_entry_for_lexeme_on_line(updated, entries, "lounge", 6)
+
+      assert_equal "enumMember", decl_entry.fetch("tokenType")
+      assert_includes decl_entry.fetch("modifierNames"), "declaration"
+      assert_equal "enumMember", use_entry.fetch("tokenType")
+    end
+  end
+
+  def test_semantic_tokens_preserve_import_alias_classification_after_multi_range_did_change_batch
+    Dir.mktmpdir("milk-tea-lsp-semantic-import-alias-batch") do |dir|
+      std_dir = File.join(dir, "std")
+      FileUtils.mkdir_p(std_dir)
+
+      string_source = <<~MT
+        public struct String:
+            len: ptr_uint
+      MT
+      main_source = <<~MT
+        import std.string as string
+
+        function lookup_public_ip() -> Result[string.String, string.String]:
+            let value = string.String.from_str("ok")
+            return Result[string.String, string.String].success(value = value)
+      MT
+
+      File.write(File.join(std_dir, "string.mt"), string_source)
+      main_path = File.join(dir, "main.mt")
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        # Simulate a rename-style multi-edit batch where all ranges are relative
+        # to the same original snapshot and include multiple edits on one line.
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => main_uri, "version" => 2 },
+          "contentChanges" => [
+            {
+              "range" => {
+                "start" => { "line" => 0, "character" => 21 },
+                "end" => { "line" => 0, "character" => 27 },
+              },
+              "text" => "s"
+            },
+            {
+              "range" => {
+                "start" => { "line" => 2, "character" => 38 },
+                "end" => { "line" => 2, "character" => 44 },
+              },
+              "text" => "s"
+            },
+            {
+              "range" => {
+                "start" => { "line" => 2, "character" => 53 },
+                "end" => { "line" => 2, "character" => 59 },
+              },
+              "text" => "s"
+            },
+            {
+              "range" => {
+                "start" => { "line" => 3, "character" => 16 },
+                "end" => { "line" => 3, "character" => 22 },
+              },
+              "text" => "s"
+            },
+            {
+              "range" => {
+                "start" => { "line" => 4, "character" => 16 },
+                "end" => { "line" => 4, "character" => 22 },
+              },
+              "text" => "s"
+            },
+            {
+              "range" => {
+                "start" => { "line" => 4, "character" => 31 },
+                "end" => { "line" => 4, "character" => 37 },
+              },
+              "text" => "s"
+            },
+          ]
+        })
+
+        semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+
+        data = semantic.dig("result", "data")
+        refute_nil data
+
+        # Decode semantic token stream to absolute ranges.
+        line = 0
+        char = 0
+        entries = []
+        index = 0
+        while index < data.length
+          delta_line = data[index]
+          delta_char = data[index + 1]
+          length = data[index + 2]
+          token_type = data[index + 3]
+          modifiers = data[index + 4]
+
+          line += delta_line
+          char = delta_line.zero? ? char + delta_char : delta_char
+          entries << [line, char, length, token_type, modifiers]
+          index += 5
+        end
+
+        # Assert both renamed aliases in `Result[s.String, s.String]` are namespaces.
+        first_alias_col = "function lookup_public_ip() -> Result[s.String, s.String]:".index("s.String")
+        second_alias_col = "function lookup_public_ip() -> Result[s.String, s.String]:".rindex("s.String")
+
+        first_entry = entries.find { |entry| entry[0] == 2 && entry[1] == first_alias_col && entry[2] == 1 }
+        second_entry = entries.find { |entry| entry[0] == 2 && entry[1] == second_alias_col && entry[2] == 1 }
+
+        refute_nil first_entry, "expected semantic token entry for first renamed import alias `s`"
+        refute_nil second_entry, "expected semantic token entry for second renamed import alias `s`"
+        assert_equal 0, first_entry[3], "expected first renamed import alias to be namespace token type"
+        assert_equal 0, second_entry[3], "expected second renamed import alias to be namespace token type"
+      end
+    end
+  end
+
+  def test_rename_matrix_updates_semantic_tokens_for_common_symbol_kinds
+    cases = [
+      {
+        name: "free-function",
+        source: <<~MT,
+          function add_value(a: int) -> int:
+              return a
+
+          function main() -> int:
+              return add_value(1)
+        MT
+        rename_position: { line: 0, character: 9 },
+        new_name: "sum_value",
+        semantic_checks: [
+          { lexeme: "sum_value", token_type: "function" }
+        ],
+      },
+      {
+        name: "local-variable",
+        source: <<~MT,
+          function main() -> int:
+              let local_value = 1
+              return local_value
+        MT
+        rename_position: { line: 1, character: 8 },
+        new_name: "value_local",
+        semantic_checks: [
+          { lexeme: "value_local", token_type: "variable" }
+        ],
+      },
+      {
+        name: "parameter",
+        source: <<~MT,
+          function main(param_value: int) -> int:
+              return param_value
+        MT
+        rename_position: { line: 0, character: 14 },
+        new_name: "input_value",
+        semantic_checks: [
+          { lexeme: "input_value", token_type: "parameter" }
+        ],
+      },
+      {
+        name: "struct-type",
+        source: <<~MT,
+          struct PointType:
+              x: int
+
+          function make() -> PointType:
+              return PointType(x = 1)
+        MT
+        rename_position: { line: 0, character: 7 },
+        new_name: "Vector2",
+        semantic_checks: [
+          { lexeme: "Vector2", token_type: "type" }
+        ],
+      },
+      {
+        name: "const",
+        source: <<~MT,
+          const MAX_COUNT: int = 3
+
+          function main() -> int:
+              return MAX_COUNT
+        MT
+        rename_position: { line: 0, character: 6 },
+        new_name: "LIMIT_COUNT",
+        semantic_checks: [
+          { lexeme: "LIMIT_COUNT", token_type: "variable" }
+        ],
+      },
+      {
+        name: "global-var",
+        source: <<~MT,
+          var global_counter: int = 0
+
+          function main() -> int:
+              return global_counter
+        MT
+        rename_position: { line: 0, character: 4 },
+        new_name: "counter_global",
+        semantic_checks: [
+          { lexeme: "counter_global", token_type: "variable" }
+        ],
+      },
+      {
+        name: "for-binding",
+        source: <<~MT,
+          function sum(values: span[int]) -> int:
+              var total = 0
+              for item in values:
+                  total += item
+              return total
+        MT
+        rename_position: { line: 2, character: 8 },
+        new_name: "entry",
+        semantic_checks: [
+          { lexeme: "entry", token_type: "variable" }
+        ],
+      },
+      {
+        name: "match-binding",
+        source: <<~MT,
+          function unwrap(value: Option[int]) -> int:
+              match value:
+                  Option.some as payload:
+                      return payload
+                  Option.none:
+                      return 0
+        MT
+        rename_position: { line: 2, character: 23 },
+        new_name: "inner_value",
+        semantic_checks: [
+          { lexeme: "inner_value", token_type: "variable" }
+        ],
+      },
+    ]
+
+    with_server do |client|
+      init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+
+      cases.each_with_index do |test_case, index|
+        uri = "file:///tmp/lsp_rename_semantic_matrix_#{index}.mt"
+        source = test_case.fetch(:source)
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        rename_response = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => uri },
+          "position" => test_case.fetch(:rename_position),
+          "newName" => test_case.fetch(:new_name)
+        })
+
+        changes = rename_response.dig("result", "changes", uri)
+        assert_kind_of Array, changes, "#{test_case.fetch(:name)}: expected workspace edits"
+        refute_empty changes, "#{test_case.fetch(:name)}: expected at least one edit"
+
+        updated_source = apply_workspace_edits_to_source(source, changes)
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => updated_source }]
+        })
+
+        semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+        entries = decode_semantic_token_entries(semantic.fetch("result").fetch("data"), legend)
+
+        test_case.fetch(:semantic_checks).each do |check|
+          entry = semantic_entry_for_lexeme(updated_source, entries, check.fetch(:lexeme))
+          assert_equal check.fetch(:token_type), entry.fetch("tokenType"),
+                       "#{test_case.fetch(:name)}: expected '#{check.fetch(:lexeme)}' to be #{check.fetch(:token_type)}"
+        end
+
+        client.send_notification("textDocument/didClose", {
+          "textDocument" => { "uri" => uri }
+        })
+      end
+    end
+  end
+
+  def test_cross_file_rename_matrix_scoping_and_semantic_stability
+    Dir.mktmpdir("milk-tea-lsp-cross-file-rename-matrix") do |dir|
+      root_uri = path_to_uri(dir)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+
+        # Case 1: Same-name collisions across files should not be cross-renamed.
+        coll_a_path = File.join(dir, "collision_a.mt")
+        coll_b_path = File.join(dir, "collision_b.mt")
+        coll_a_source = <<~MT
+          function ping() -> int:
+              return 1
+
+          function call_a() -> int:
+              return ping()
+        MT
+        coll_b_source = <<~MT
+          function ping() -> int:
+              return 2
+
+          function call_b() -> int:
+              return ping()
+        MT
+        File.write(coll_a_path, coll_a_source)
+        File.write(coll_b_path, coll_b_source)
+
+        coll_a_uri = path_to_uri(coll_a_path)
+        coll_b_uri = path_to_uri(coll_b_path)
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => coll_a_uri, "languageId" => "milk-tea", "version" => 1, "text" => coll_a_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => coll_b_uri, "languageId" => "milk-tea", "version" => 1, "text" => coll_b_source }
+        })
+
+        coll_rename = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => coll_a_uri },
+          "position" => { "line" => 0, "character" => 9 },
+          "newName" => "alpha_ping"
+        })
+        coll_changes = coll_rename.dig("result", "changes") || {}
+
+        assert_includes coll_changes.keys, coll_a_uri
+        refute_includes coll_changes.keys, coll_b_uri
+
+        coll_a_updated = apply_workspace_edits_to_source(coll_a_source, coll_changes.fetch(coll_a_uri))
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => coll_a_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => coll_a_updated }]
+        })
+
+        coll_a_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => coll_a_uri }
+        })
+        coll_b_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => coll_b_uri }
+        })
+
+        coll_a_entries = decode_semantic_token_entries(coll_a_semantic.fetch("result").fetch("data"), legend)
+        coll_b_entries = decode_semantic_token_entries(coll_b_semantic.fetch("result").fetch("data"), legend)
+
+        coll_a_renamed = semantic_entry_for_lexeme(coll_a_updated, coll_a_entries, "alpha_ping")
+        assert_equal "function", coll_a_renamed.fetch("tokenType")
+
+        coll_b_ping = semantic_entry_for_lexeme(coll_b_source, coll_b_entries, "ping")
+        assert_equal "function", coll_b_ping.fetch("tokenType")
+        refute coll_changes.fetch(coll_a_uri).any? { |edit| edit.fetch("newText") == "ping" }
+
+        # Case 2: Import alias rename is scoped to the current file.
+        std_dir = File.join(dir, "std")
+        FileUtils.mkdir_p(std_dir)
+        shared_path = File.join(std_dir, "shared.mt")
+        File.write(shared_path, <<~MT)
+          public struct Point:
+              x: int
+
+          extending Point:
+              public static function zero() -> int:
+                  return 0
+        MT
+
+        import_a_path = File.join(dir, "import_a.mt")
+        import_b_path = File.join(dir, "import_b.mt")
+        import_a_source = <<~MT
+          import std.shared as util
+
+          function main_a() -> int:
+              return util.Point.zero()
+        MT
+        import_b_source = <<~MT
+          import std.shared as util
+
+          function main_b() -> int:
+              return util.Point.zero()
+        MT
+        File.write(import_a_path, import_a_source)
+        File.write(import_b_path, import_b_source)
+
+        import_a_uri = path_to_uri(import_a_path)
+        import_b_uri = path_to_uri(import_b_path)
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => import_a_uri, "languageId" => "milk-tea", "version" => 1, "text" => import_a_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => import_b_uri, "languageId" => "milk-tea", "version" => 1, "text" => import_b_source }
+        })
+
+        alias_char = import_a_source.lines[0].rindex("util")
+        alias_rename = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => import_a_uri },
+          "position" => { "line" => 0, "character" => alias_char },
+          "newName" => "fx"
+        })
+        alias_changes = alias_rename.dig("result", "changes") || {}
+
+        assert_includes alias_changes.keys, import_a_uri
+        refute_includes alias_changes.keys, import_b_uri
+
+        import_a_updated = apply_workspace_edits_to_source(import_a_source, alias_changes.fetch(import_a_uri))
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => import_a_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => import_a_updated }]
+        })
+
+        import_a_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => import_a_uri }
+        })
+        import_b_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => import_b_uri }
+        })
+
+        import_a_entries = decode_semantic_token_entries(import_a_semantic.fetch("result").fetch("data"), legend)
+        import_b_entries = decode_semantic_token_entries(import_b_semantic.fetch("result").fetch("data"), legend)
+
+        import_a_alias = semantic_entry_for_lexeme(import_a_updated, import_a_entries, "fx")
+        import_b_alias = semantic_entry_for_lexeme(import_b_source, import_b_entries, "util")
+
+        assert_equal "namespace", import_a_alias.fetch("tokenType")
+        assert_equal "namespace", import_b_alias.fetch("tokenType")
+
+        # Case 3: Renaming in a dependency should keep semantic classification stable
+        # for already-open dependent documents.
+        api_path = File.join(dir, "api.mt")
+        dep_a_path = File.join(dir, "dep_a.mt")
+        dep_b_path = File.join(dir, "dep_b.mt")
+
+        api_source = <<~MT
+          public type StatusCode = int
+
+          function local_helper(value: int) -> int:
+              return value
+        MT
+        dep_a_source = <<~MT
+          import api as api
+
+          function read_a(value: api.StatusCode) -> api.StatusCode:
+              return value
+        MT
+        dep_b_source = <<~MT
+          import api as api
+
+          function read_b(value: api.StatusCode) -> api.StatusCode:
+              return value
+        MT
+        File.write(api_path, api_source)
+        File.write(dep_a_path, dep_a_source)
+        File.write(dep_b_path, dep_b_source)
+
+        api_uri = path_to_uri(api_path)
+        dep_a_uri = path_to_uri(dep_a_path)
+        dep_b_uri = path_to_uri(dep_b_path)
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => dep_a_uri, "languageId" => "milk-tea", "version" => 1, "text" => dep_a_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => dep_b_uri, "languageId" => "milk-tea", "version" => 1, "text" => dep_b_source }
+        })
+
+        dep_rename = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => api_uri },
+          "position" => { "line" => 2, "character" => 11 },
+          "newName" => "renamed_helper"
+        })
+        dep_changes = dep_rename.dig("result", "changes") || {}
+
+        assert_includes dep_changes.keys, api_uri
+        refute_includes dep_changes.keys, dep_a_uri
+        refute_includes dep_changes.keys, dep_b_uri
+
+        api_updated = apply_workspace_edits_to_source(api_source, dep_changes.fetch(api_uri))
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => api_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => api_updated }]
+        })
+
+        dep_a_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => dep_a_uri }
+        })
+        dep_b_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => dep_b_uri }
+        })
+
+        dep_a_entries = decode_semantic_token_entries(dep_a_semantic.fetch("result").fetch("data"), legend)
+        dep_b_entries = decode_semantic_token_entries(dep_b_semantic.fetch("result").fetch("data"), legend)
+
+        dep_a_ns = semantic_entry_for_lexeme(dep_a_source, dep_a_entries, "api")
+        dep_a_type = semantic_entry_for_lexeme(dep_a_source, dep_a_entries, "StatusCode")
+        dep_b_ns = semantic_entry_for_lexeme(dep_b_source, dep_b_entries, "api")
+        dep_b_type = semantic_entry_for_lexeme(dep_b_source, dep_b_entries, "StatusCode")
+
+        assert_equal "namespace", dep_a_ns.fetch("tokenType")
+        assert_equal "type", dep_a_type.fetch("tokenType")
+        assert_equal "namespace", dep_b_ns.fetch("tokenType")
+        assert_equal "type", dep_b_type.fetch("tokenType")
+
+        # Case 4: Identical method names across unrelated receiver types in
+        # separate files must stay scoped under rename.
+        method_a_path = File.join(dir, "method_a.mt")
+        method_b_path = File.join(dir, "method_b.mt")
+        caller_a_path = File.join(dir, "caller_a.mt")
+        caller_b_path = File.join(dir, "caller_b.mt")
+
+        method_a_source = <<~MT
+          public struct Alpha:
+              value: int
+
+          extending Alpha:
+              public static function tick() -> int:
+                  return 1
+
+          function call_a() -> int:
+              return Alpha.tick()
+        MT
+        method_b_source = <<~MT
+          public struct Beta:
+              value: int
+
+          extending Beta:
+              public static function tick() -> int:
+                  return 2
+
+          function call_b() -> int:
+              return Beta.tick()
+        MT
+        caller_a_source = <<~MT
+          import method_a as ma
+
+          function run_a() -> int:
+              return ma.Alpha.tick()
+        MT
+        caller_b_source = <<~MT
+          import method_b as mb
+
+          function run_b() -> int:
+              return mb.Beta.tick()
+        MT
+
+        File.write(method_a_path, method_a_source)
+        File.write(method_b_path, method_b_source)
+        File.write(caller_a_path, caller_a_source)
+        File.write(caller_b_path, caller_b_source)
+
+        method_a_uri = path_to_uri(method_a_path)
+        method_b_uri = path_to_uri(method_b_path)
+        caller_a_uri = path_to_uri(caller_a_path)
+        caller_b_uri = path_to_uri(caller_b_path)
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => method_a_uri, "languageId" => "milk-tea", "version" => 1, "text" => method_a_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => method_b_uri, "languageId" => "milk-tea", "version" => 1, "text" => method_b_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => caller_a_uri, "languageId" => "milk-tea", "version" => 1, "text" => caller_a_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => caller_b_uri, "languageId" => "milk-tea", "version" => 1, "text" => caller_b_source }
+        })
+
+        method_decl_line = method_a_source.lines.index { |line| line.include?("function tick") }
+        method_decl_char = method_a_source.lines[method_decl_line].index("tick")
+        method_rename = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => method_a_uri },
+          "position" => { "line" => method_decl_line, "character" => method_decl_char },
+          "newName" => "pulse"
+        })
+        method_changes = method_rename.dig("result", "changes") || {}
+
+        assert_includes method_changes.keys, method_a_uri
+        refute_includes method_changes.keys, method_b_uri
+        refute_includes method_changes.keys, caller_b_uri
+
+        method_a_updated = apply_workspace_edits_to_source(method_a_source, method_changes.fetch(method_a_uri))
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => method_a_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => method_a_updated }]
+        })
+
+        method_a_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => method_a_uri }
+        })
+        method_b_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => method_b_uri }
+        })
+        caller_b_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => caller_b_uri }
+        })
+
+        method_a_entries = decode_semantic_token_entries(method_a_semantic.fetch("result").fetch("data"), legend)
+        method_b_entries = decode_semantic_token_entries(method_b_semantic.fetch("result").fetch("data"), legend)
+        caller_b_entries = decode_semantic_token_entries(caller_b_semantic.fetch("result").fetch("data"), legend)
+
+        method_a_pulse = semantic_entry_for_lexeme(method_a_updated, method_a_entries, "pulse")
+        method_b_tick = semantic_entry_for_lexeme(method_b_source, method_b_entries, "tick")
+        caller_b_tick = semantic_entry_for_lexeme(caller_b_source, caller_b_entries, "tick")
+
+        assert_equal "function", method_a_pulse.fetch("tokenType")
+        assert_equal "function", method_b_tick.fetch("tokenType")
+        assert_equal "method", caller_b_tick.fetch("tokenType")
+      end
+    end
+  end
+
   def test_did_save_republishes_diagnostics
     with_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
@@ -8439,6 +9210,51 @@ function main(value: int) -> int:
         end
       }
     end
+  end
+
+  def apply_workspace_edits_to_source(source, edits)
+    updated = source.dup
+
+    edits
+      .sort_by { |edit| [edit.dig("range", "start", "line"), edit.dig("range", "start", "character")] }
+      .reverse_each do |edit|
+      start_pos = edit.dig("range", "start")
+      end_pos = edit.dig("range", "end")
+
+      start_off = lsp_position_to_byte_offset(updated, start_pos.fetch("line"), start_pos.fetch("character"))
+      end_off = lsp_position_to_byte_offset(updated, end_pos.fetch("line"), end_pos.fetch("character"))
+
+      updated = updated.byteslice(0, start_off).to_s + edit.fetch("newText") + updated.byteslice(end_off..).to_s
+    end
+
+    updated
+  end
+
+  def lsp_position_to_byte_offset(content, line, character)
+    lines = content.split("\n", -1)
+    clamped_line = [[line.to_i, 0].max, lines.length - 1].min
+
+    preceding = if clamped_line.zero?
+                  ""
+                else
+                  lines[0...clamped_line].join("\n") + "\n"
+                end
+
+    line_text = lines[clamped_line] || ""
+    target_units = [character.to_i, 0].max
+
+    utf16_units_seen = 0
+    byte_index = 0
+    line_text.each_char do |ch|
+      codepoint = ch.ord
+      units = codepoint > 0xFFFF ? 2 : 1
+      break if utf16_units_seen + units > target_units
+
+      utf16_units_seen += units
+      byte_index += ch.bytesize
+    end
+
+    (preceding + line_text.byteslice(0, byte_index).to_s).bytesize
   end
 
   def measure_request_ms
