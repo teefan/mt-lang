@@ -8316,6 +8316,46 @@ function main(value: int) -> int:
       end
     end
 
+    def test_semantic_tokens_treat_cast_expression_parameter_references_like_other_parameter_references
+      source = <<~MT
+        function encode_u32(value: uint) -> array[ubyte, 4]:
+            return array[ubyte, 4](
+                ubyte<-((value >> 24) & 255),
+                ubyte<-((value >> 16) & 255),
+                ubyte<-((value >> 8) & 255),
+                ubyte<-(value & 255)
+            )
+      MT
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+        uri = "file:///tmp/lsp_semantic_cast_expression_parameter_test.mt"
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+        })
+
+        response = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
+
+        declaration = semantic_entry_for_lexeme_on_line(source, entries, "value", 0)
+        first_reference = semantic_entry_for_lexeme_on_line(source, entries, "value", 2)
+        second_reference = semantic_entry_for_lexeme_on_line(source, entries, "value", 3)
+        third_reference = semantic_entry_for_lexeme_on_line(source, entries, "value", 4)
+        final_reference = semantic_entry_for_lexeme_on_line(source, entries, "value", 5)
+
+        assert_equal "parameter", declaration.fetch("tokenType")
+        assert_includes declaration.fetch("modifierNames"), "declaration"
+        [first_reference, second_reference, third_reference, final_reference].each do |reference|
+          assert_equal "parameter", reference.fetch("tokenType")
+          refute_includes reference.fetch("modifierNames"), "declaration"
+        end
+      end
+    end
+
     def test_semantic_tokens_mark_builtin_associated_hooks_as_default_library
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

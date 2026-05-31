@@ -1160,7 +1160,7 @@ class MilkTeaParserTest < Minitest::Test
       MilkTea::Parser.parse(source)
     end
 
-    assert_match(/expected expression/, error.message)
+    assert_match(/unexpected indentation in statement block/, error.message)
   end
 
   def test_parses_const_pointer_types_and_ro_addr_calls
