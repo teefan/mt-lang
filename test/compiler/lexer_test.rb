@@ -285,6 +285,90 @@ class MilkTeaLexerTest < Minitest::Test
     assert_match(/unterminated heredoc literal/, error.message)
   end
 
+  def test_recovers_from_unterminated_string_and_continues_lexing_following_declaration
+    source = <<~MT
+      const title = "milk tea
+      function after() -> int:
+          return 2
+    MT
+
+    recovery_errors = []
+    tokens = MilkTea::Lexer.lex(source, path: "string_recovery.mt", recovery_errors: recovery_errors)
+
+    assert_equal 1, recovery_errors.length
+    assert_match(/unterminated string literal/, recovery_errors.first.message)
+    assert_includes tokens.map(&:type), :function
+    assert_includes tokens.map(&:lexeme), "after"
+  end
+
+  def test_recovers_from_unterminated_heredoc_and_continues_lexing_following_declaration
+    source = <<~MT
+      const shader = <<-GLSL
+          #version 330
+      function after() -> int:
+          return 2
+    MT
+
+    recovery_errors = []
+    tokens = MilkTea::Lexer.lex(source, path: "heredoc_recovery.mt", recovery_errors: recovery_errors)
+
+    assert_equal 1, recovery_errors.length
+    assert_match(/unterminated heredoc literal/, recovery_errors.first.message)
+    assert_includes tokens.map(&:type), :function
+    assert_includes tokens.map(&:lexeme), "after"
+  end
+
+  def test_recovers_from_unterminated_format_string_and_continues_lexing_following_declaration
+    source = <<~'MT'
+      const message = f"value=#{1 + 2
+      function after() -> int:
+          return 2
+    MT
+
+    recovery_errors = []
+    tokens = MilkTea::Lexer.lex(source, path: "format_recovery.mt", recovery_errors: recovery_errors)
+
+    assert_equal 2, recovery_errors.length
+    assert_match(/unterminated format interpolation|unterminated format string literal/, recovery_errors.first.message)
+    assert_includes tokens.map(&:type), :function
+    assert_includes tokens.map(&:lexeme), "after"
+  end
+
+  def test_recovers_from_unmatched_closing_delimiter_and_continues_lexing_following_declaration
+    source = <<~MT
+      function main() -> int:
+          return )
+
+      function after() -> int:
+          return 2
+    MT
+
+    recovery_errors = []
+    tokens = MilkTea::Lexer.lex(source, path: "grouping_recovery.mt", recovery_errors: recovery_errors)
+
+    assert_equal 1, recovery_errors.length
+    assert_match(/unexpected closing delimiter/, recovery_errors.first.message)
+    assert_includes tokens.map(&:type), :function
+    assert_equal 2, tokens.count { |token| token.type == :function }
+  end
+
+  def test_recovers_from_stray_closing_brace_and_continues_lexing_following_declaration
+    source = <<~MT
+      function main() -> int:
+          return }
+
+      function after() -> int:
+          return 2
+    MT
+
+    recovery_errors = []
+    tokens = MilkTea::Lexer.lex(source, path: "brace_recovery.mt", recovery_errors: recovery_errors)
+
+    assert_equal 1, recovery_errors.length
+    assert_match(/unexpected closing delimiter/, recovery_errors.first.message)
+    assert_equal 2, tokens.count { |token| token.type == :function }
+  end
+
   def test_lex_with_trivia_captures_comments_and_blank_lines
     source = <<~MT
       # module banner

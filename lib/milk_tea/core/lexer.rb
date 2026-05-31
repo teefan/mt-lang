@@ -17,7 +17,16 @@ module MilkTea
   class Lexer
     LexResult = Data.define(:tokens, :trivia)
     StringLexResult = Data.define(:consumed_lines, :next_index)
-    StringSegment = Data.define(:next_index, :value)
+    StringSegment = Data.define(:next_index, :value, :recovered) do
+      def initialize(next_index:, value:, recovered: false)
+        super(next_index:, value:, recovered:)
+      end
+    end
+
+    TOP_LEVEL_RESYNC_PREFIXES = %w[
+      attribute const enum external flags foreign function include import interface
+      link opaque public static_assert struct type union var variant extending event
+    ].freeze
 
     LINE_CONTINUATION_OPERATORS = %i[
       dot_dot
@@ -121,7 +130,14 @@ module MilkTea
         line_index += consumed_lines
       end
 
-      raise LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path) unless @grouping_depth.zero?
+      if @grouping_depth.positive?
+        if @recovery_errors
+          @recovery_errors << LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path)
+          @grouping_depth = 0
+        else
+          raise LexError.new("unclosed grouping delimiter", line: @line_count, column: 1, path: @path)
+        end
+      end
 
       while @indent_stack.length > 1
         @indent_stack.pop
@@ -163,6 +179,11 @@ module MilkTea
       end
 
       index = leading_space_count(line)
+      if @recovery_errors && @grouping_depth.positive? && index.zero? && top_level_resync_line?(line)
+        @recovery_errors << LexError.new("unclosed grouping delimiter", line: line_number, column: 1, path: @path)
+        @grouping_depth = 0
+      end
+
       if with_trivia? && index.positive?
         push_pending_leading_trivia(
           TriviaToken.new(
@@ -463,7 +484,7 @@ module MilkTea
     end
 
     def lex_string(lines, line_index, line, index, line_number, line_offset:, cstring: false)
-      segment = scan_string_segment(line, index, line_number, cstring:)
+      segment = scan_string_segment(line, index, line_number, cstring:, recover: @recovery_errors)
       consumed_lines = 1
       value = +segment.value
       last_line = line
@@ -473,8 +494,9 @@ module MilkTea
       last_line_has_newline = lines.fetch(line_index).end_with?("\n")
       remainder = line[segment.next_index..] || ""
       line_indent = leading_space_count(line)
+      recovered = segment.recovered
 
-      if remainder.strip.empty?
+      if remainder.strip.empty? && !recovered
         scan_line_index = line_index + 1
         scan_line_number = line_number + 1
         scan_line_offset = line_offset + lines.fetch(line_index).bytesize
@@ -490,7 +512,7 @@ module MilkTea
           break if scan_line[segment_start] == "#"
           break unless scan_line[segment_start, prefix.length] == prefix
 
-          continued_segment = scan_string_segment(scan_line, segment_start, scan_line_number, cstring:)
+          continued_segment = scan_string_segment(scan_line, segment_start, scan_line_number, cstring:, recover: @recovery_errors)
           continued_remainder = scan_line[continued_segment.next_index..] || ""
           break unless continued_remainder.strip.empty?
 
@@ -501,10 +523,13 @@ module MilkTea
           last_line_offset = scan_line_offset
           last_segment_end = continued_segment.next_index
           last_line_has_newline = raw_line.end_with?("\n")
+          recovered ||= continued_segment.recovered
 
           scan_line_offset += raw_line.bytesize
           scan_line_number += 1
           scan_line_index += 1
+
+          break if continued_segment.recovered
         end
       end
 
@@ -522,7 +547,7 @@ module MilkTea
       StringLexResult.new(consumed_lines:, next_index: last_segment_end)
     end
 
-    def scan_string_segment(line, index, line_number, cstring: false)
+    def scan_string_segment(line, index, line_number, cstring: false, recover: false)
       start = index
       index += cstring ? 2 : 1
       value = +""
@@ -535,7 +560,14 @@ module MilkTea
 
         if char == "\\"
           escape = line[index + 1]
-          raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path) unless escape
+          if escape.nil?
+            if recover
+              @recovery_errors << LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path) if @recovery_errors
+              return StringSegment.new(next_index: line.length, value:, recovered: true)
+            end
+
+            raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
+          end
 
           value << decode_escape(escape)
           index += 2
@@ -544,6 +576,11 @@ module MilkTea
 
         value << char
         index += 1
+      end
+
+      if recover
+        @recovery_errors << LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path) if @recovery_errors
+        return StringSegment.new(next_index: line.length, value:, recovered: true)
       end
 
       raise LexError.new("unterminated string literal", line: line_number, column: start + 1, path: @path)
@@ -571,6 +608,12 @@ module MilkTea
       terminator_line_number = nil
       terminator_line_offset = nil
       terminator_has_newline = false
+      last_line = line
+      last_line_number = line_number
+      last_line_offset = line_offset
+      last_line_has_newline = lines.fetch(line_index).end_with?("\n")
+      resync_line_offset = nil
+      resync_line_number = nil
       scan_line_number = line_number + 1
       scan_line_offset = line_offset + lines.fetch(line_index).bytesize
       scan_line_index = line_index + 1
@@ -586,13 +629,50 @@ module MilkTea
           break
         end
 
+        if @recovery_errors && top_level_resync_line?(raw_text)
+          resync_line_offset = scan_line_offset
+          resync_line_number = scan_line_number
+          break
+        end
+
         content_lines << raw_line
+        last_line = raw_text
+        last_line_number = scan_line_number
+        last_line_offset = scan_line_offset
+        last_line_has_newline = raw_line.end_with?("\n")
         scan_line_offset += raw_line.bytesize
         scan_line_number += 1
         scan_line_index += 1
       end
 
-      raise LexError.new("unterminated heredoc literal", line: line_number, column: index + 1, path: @path) if terminator_line.nil?
+      if terminator_line.nil?
+        if @recovery_errors
+          @recovery_errors << LexError.new("unterminated heredoc literal", line: line_number, column: index + 1, path: @path)
+          start_offset = line_offset + index
+          end_offset = resync_line_offset || scan_line_offset
+          lexeme = @source.byteslice(start_offset, end_offset - start_offset)
+          value = dedent_heredoc_content(content_lines)
+
+          literal = if format
+                       parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: 1)
+                     else
+                       value
+                     end
+          token_type = if format
+                         :fstring
+                       elsif cstring
+                         :cstring
+                       else
+                         :string
+                       end
+
+          @tokens << token(token_type, lexeme, literal, line_number, index + 1, start_offset:, end_offset:)
+          emit_line_newline(last_line, last_line_number, last_line_offset, last_line_has_newline)
+          return resync_line_number ? (resync_line_number - line_number) : ((scan_line_index - line_index) + 1)
+        end
+
+        raise LexError.new("unterminated heredoc literal", line: line_number, column: index + 1, path: @path)
+      end
 
       start_offset = line_offset + index
       end_offset = terminator_line_offset + terminator_line.bytesize
@@ -634,7 +714,7 @@ module MilkTea
           expr_start = index + 2
           expr_line = line
           expr_column = column + 2
-          expr_end = scan_format_interpolation_end(content, expr_start, expr_line, expr_column)
+          expr_end = scan_format_interpolation_end(content, expr_start, expr_line, expr_column, recover: @recovery_errors)
           raw_source = content[expr_start...expr_end]
           if raw_source.strip.empty?
             raise LexError.new("empty format interpolation", line: line, column:, path: @path)
@@ -686,7 +766,7 @@ module MilkTea
           parts << { kind: :text, value: text } unless text.empty?
           text = +""
           expr_start = index + 2
-          expr_end = scan_format_interpolation_end(line, expr_start, line_number, start + 1)
+          expr_end = scan_format_interpolation_end(line, expr_start, line_number, start + 1, recover: @recovery_errors)
           raw_source = line[expr_start...expr_end]
           if raw_source.strip.empty?
             raise LexError.new("empty format interpolation", line: line_number, column: index + 1, path: @path)
@@ -709,6 +789,14 @@ module MilkTea
 
         text << char
         index += 1
+      end
+
+      if @recovery_errors
+        @recovery_errors << LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
+        parts << { kind: :text, value: text } unless text.empty?
+        lexeme = line[start..]
+        @tokens << token(:fstring, lexeme, parts, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + line.length)
+        return line.length
       end
 
       raise LexError.new("unterminated format string literal", line: line_number, column: start + 1, path: @path)
@@ -789,7 +877,7 @@ module MilkTea
       end
     end
 
-    def scan_format_interpolation_end(line, index, line_number, column)
+    def scan_format_interpolation_end(line, index, line_number, column, recover: false)
       depth = 1
 
       while index < line.length
@@ -815,6 +903,11 @@ module MilkTea
         end
 
         index += 1
+      end
+
+      if recover
+        @recovery_errors << LexError.new("unterminated format interpolation", line: line_number, column:, path: @path) if @recovery_errors
+        return line.length
       end
 
       raise LexError.new("unterminated format interpolation", line: line_number, column:, path: @path)
@@ -917,6 +1010,11 @@ module MilkTea
       lexeme = line[index]
       type = ONE_CHAR_TOKENS[lexeme]
       unless type
+        if @recovery_errors && lexeme == "}"
+          @recovery_errors << LexError.new("unexpected closing delimiter", line: line_number, column: start + 1, path: @path)
+          return index + 1
+        end
+
         raise LexError.new("unexpected character #{lexeme.inspect}", line: line_number, column: start + 1, path: @path)
       end
 
@@ -932,8 +1030,36 @@ module MilkTea
       when :rparen, :rbracket
         @grouping_depth -= 1
         if @grouping_depth.negative?
-          raise LexError.new("unexpected closing delimiter", line: line_number, column: column, path: @path)
+          error = LexError.new("unexpected closing delimiter", line: line_number, column: column, path: @path)
+          if @recovery_errors
+            @recovery_errors << error
+            @grouping_depth = 0
+            return
+          end
+
+          raise error
         end
+      end
+    end
+
+    def top_level_resync_line?(line)
+      return false if line.strip.empty?
+      return false if leading_space_count(line).positive?
+
+      first_word = line.strip.split(/\s+/, 3)[0]
+      second_word = line.strip.split(/\s+/, 3)[1]
+
+      case first_word
+      when *TOP_LEVEL_RESYNC_PREFIXES
+        true
+      when "async"
+        second_word == "function"
+      when "public"
+        %w[function struct union enum flags variant type const var opaque interface extending attribute event].include?(second_word)
+      when "foreign", "external"
+        second_word == "function"
+      else
+        false
       end
     end
 

@@ -29,6 +29,7 @@ module MilkTea
         @document_sources = {} # uri -> source string from the editor client
         @document_state_mutex = Mutex.new
         @tokens_cache = {}   # uri -> [Token]
+        @last_good_tokens_cache = {} # uri -> last known-good [Token]
         @ast_cache = {}      # uri -> AST::SourceFile (nil on parse failure)
         @facts_cache = {} # uri -> Sema::Facts (projection of cached tooling snapshot facts)
         @tooling_snapshot_cache = {} # uri -> Sema::ToolingSnapshot (facts may be nil on structural failure)
@@ -709,6 +710,7 @@ module MilkTea
           @diagnostics_cache.delete(uri)
           @last_good_facts_cache.delete(uri) if clear_last_good
           @last_good_tooling_snapshot_cache.delete(uri) if clear_last_good
+          @last_good_tokens_cache.delete(uri) if clear_last_good
           delete_dependency_index(uri) if clear_last_good
         end
         @definition_cache_mutex.synchronize do
@@ -867,10 +869,11 @@ module MilkTea
         recovery_errors = []
         tokens = MilkTea::Lexer.lex(content, path: uri, recovery_errors:)
         recovery_errors.each { |error| log_error("LSP lex error #{uri}: #{error.message}") }
+        @last_good_tokens_cache[uri] = tokens
         tokens
       rescue StandardError => e
         log_error("LSP lex error #{uri}: #{e.message}")
-        nil
+        @last_good_tokens_cache[uri] || @tokens_cache[uri]
       end
 
       def parse_document(uri)
