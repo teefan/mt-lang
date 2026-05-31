@@ -8157,8 +8157,12 @@ module MilkTea
         case statement
         when AST::ErrorBlockStmt
           lines.concat(statement_list_lines(statement.body))
+        when AST::LocalDecl
+          lines << expression_end_line(statement.value) if statement.value
+          lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
         when AST::IfStmt
           statement.branches.each do |branch|
+            lines << expression_end_line(branch.condition)
             lines.concat(statement_list_lines(branch.body))
           end
           lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
@@ -8170,6 +8174,14 @@ module MilkTea
           end
         when AST::DeferStmt
           lines.concat(statement_list_lines(statement.body)) if statement.body
+        when AST::Assignment
+          lines << expression_end_line(statement.value)
+        when AST::ReturnStmt
+          lines << expression_end_line(statement.value)
+        when AST::ExpressionStmt
+          lines << expression_end_line(statement.expression)
+        when AST::StaticAssert
+          lines << expression_end_line(statement.condition)
         end
 
         lines.compact.max
@@ -8182,6 +8194,48 @@ module MilkTea
           end_line = statement_end_line(stmt)
           lines << end_line if end_line
         end
+      end
+
+      def expression_end_line(node)
+        return nil unless node
+
+        lines = [node.respond_to?(:line) ? node.line : nil]
+
+        case node
+        when AST::MemberAccess
+          lines << expression_end_line(node.receiver)
+        when AST::IndexAccess
+          lines << expression_end_line(node.receiver)
+          lines << expression_end_line(node.index)
+        when AST::Specialization
+          lines << expression_end_line(node.callee)
+        when AST::Call
+          lines << expression_end_line(node.callee)
+          node.arguments.each { |argument| lines << expression_end_line(argument.value) }
+        when AST::Argument
+          lines << expression_end_line(node.value)
+        when AST::UnaryOp
+          lines << expression_end_line(node.operand)
+        when AST::BinaryOp
+          lines << expression_end_line(node.left)
+          lines << expression_end_line(node.right)
+        when AST::IfExpr
+          lines << expression_end_line(node.condition)
+          lines << expression_end_line(node.then_expression)
+          lines << expression_end_line(node.else_expression)
+        when AST::MatchExpr
+          lines << expression_end_line(node.expression)
+          node.arms.each do |arm|
+            lines << expression_end_line(arm.pattern)
+            lines << expression_end_line(arm.value)
+          end
+        when AST::AwaitExpr
+          lines << expression_end_line(node.expression)
+        when AST::FormatExprPart
+          lines << expression_end_line(node.expression)
+        end
+
+        lines.compact.max
       end
 
       def recovered_for_statement(statement)
