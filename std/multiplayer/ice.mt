@@ -11,6 +11,9 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
+public type TypedRpcRoute = rpc_runtime.TypedRpcRoute
+public type TypedRpcDispatchTable = rpc_runtime.TypedRpcDispatchTable
+
 public enum ConnectionState: ubyte
     idle = 0
     gathering = 1
@@ -335,7 +338,7 @@ extending Server:
 
 
     public mutable function process_incoming_rpcs_typed(
-        table: ref[TypedRpcDispatchTable],
+        table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         let context = this.receive_context else:
             return Result[ptr_uint, mp.Error].failure(error = mp.error(
@@ -348,7 +351,7 @@ extending Server:
             var packet = rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs)) else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            let dispatched = typed_rpc_dispatch_packet(
+            let dispatched = rpc_runtime.typed_rpc_dispatch_packet(
                 table.routes.as_span(),
                 packet.context,
                 packet.header,
@@ -392,7 +395,7 @@ extending Server:
         if transfer_mode == mp.TransferMode.unreliable:
             pass
 
-        let _ = validate_server_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
         let agent = this.agent else:
@@ -573,7 +576,7 @@ extending Client:
         if transfer_mode == mp.TransferMode.unreliable:
             pass
 
-        let _ = validate_client_outbound_direction(direction) else as direction_error:
+        let _ = rpc_runtime.validate_client_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
         let agent = this.agent else:
@@ -653,7 +656,7 @@ extending Client:
 
 
     public mutable function process_incoming_rpcs_typed(
-        table: ref[TypedRpcDispatchTable],
+        table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         let context = this.receive_context else:
             return Result[ptr_uint, mp.Error].failure(error = mp.error(
@@ -666,7 +669,7 @@ extending Client:
             var packet = rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs)) else:
                 return Result[ptr_uint, mp.Error].success(value = processed)
 
-            let dispatched = typed_rpc_dispatch_packet(
+            let dispatched = rpc_runtime.typed_rpc_dispatch_packet(
                 table.routes.as_span(),
                 packet.context,
                 packet.header,
@@ -702,38 +705,6 @@ extending Client:
         this.connection_state = ConnectionState.closed
 
 
-public struct TypedRpcRoute:
-    descriptor: mp.RpcDescriptor
-    handler: fn(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc_runtime.DispatchError]
-
-public struct TypedRpcDispatchTable:
-    routes: vec.Vec[TypedRpcRoute]
-
-
-extending TypedRpcDispatchTable:
-    public static function create() -> TypedRpcDispatchTable:
-        return TypedRpcDispatchTable(routes = vec.Vec[TypedRpcRoute].create())
-
-
-    public function route_count() -> ptr_uint:
-        return this.routes.len()
-
-
-    public mutable function release() -> void:
-        this.routes.release()
-
-
-    public mutable function register_route(
-        descriptor: mp.RpcDescriptor,
-        handler: fn(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc_runtime.DispatchError],
-    ) -> Result[bool, mp.Error]:
-        if typed_rpc_find_route(this.routes.as_span(), descriptor) != null:
-            return Result[bool, mp.Error].failure(
-                error = mp.error(mp.ErrorCode.already_registered, "typed rpc route is already registered")
-            )
-
-        this.routes.push(TypedRpcRoute(descriptor = descriptor, handler = handler))
-        return Result[bool, mp.Error].success(value = true)
 
 
 function create_agent(ice: IceConfig, user_ptr: ptr[void]) -> Result[juice.Agent, mp.Error]:
@@ -899,61 +870,6 @@ function release_session_events(queue: ref[vec.Vec[SessionEventRecord]]) -> void
                 return
 
 
-function typed_rpc_find_route(routes: span[TypedRpcRoute], target: mp.RpcDescriptor) -> ptr[TypedRpcRoute]?:
-    var index: ptr_uint = 0
-    while index < routes.len:
-        unsafe:
-            let route = routes.data + index
-            if read(route).descriptor.schema_hash == target.schema_hash and read(route).descriptor.name.equal(target.name):
-                return route
-        index += 1
-
-    return null
-
-
-function typed_rpc_dispatch_packet(
-    routes: span[TypedRpcRoute],
-    context: mp.RpcContext,
-    header: mp.RpcPacketHeader,
-    payload: span[ubyte],
-) -> Result[bool, mp.Error]:
-    var matched_index: ptr_uint = 0
-    var matched_count: ptr_uint = 0
-
-    var index: ptr_uint = 0
-    while index < routes.len:
-        unsafe:
-            let descriptor = read(routes.data + index).descriptor
-            if (
-                descriptor.channel == header.channel
-                and descriptor.direction == header.direction
-                and descriptor.payload_size == payload.len
-            ):
-                if matched_count == 0:
-                    matched_index = index
-                matched_count += 1
-        index += 1
-
-    if matched_count == 0:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet")
-        )
-
-    if matched_count > 1:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(mp.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet")
-        )
-
-    unsafe:
-        let route = routes.data + matched_index
-        let handler = read(route).handler
-        match handler(context, payload):
-            Result.success as payload_value:
-                return Result[bool, mp.Error].success(value = payload_value.value)
-            Result.failure as payload_error:
-                return Result[bool, mp.Error].failure(
-                    error = mp.error(payload_error.error.code, payload_error.error.message)
-                )
 
 
 function send_wire_payload(agent: juice.Agent, kind: mp.PacketKind, payload: span[ubyte]) -> Result[bool, mp.Error]:
@@ -1021,7 +937,7 @@ function handle_received_payload(
         increment_unknown_count(ref_of(read(context).unknown_packet_count))
         return
 
-    let kind = packet_kind_from_u8(payload[0]) else:
+    let kind = protocol.packet_kind_from_byte(payload[0]) else:
         increment_unknown_count(ref_of(read(context).unknown_packet_count))
         return
 
@@ -1075,23 +991,9 @@ function handle_received_payload(
                 increment_unknown_count(ref_of(read(context).unknown_packet_count))
 
 
-function packet_kind_from_u8(value: ubyte) -> Option[mp.PacketKind]:
-    if value == ubyte<-mp.PacketKind.handshake_hello:
-        return Option[mp.PacketKind].some(value = mp.PacketKind.handshake_hello)
-    if value == ubyte<-mp.PacketKind.handshake_welcome:
-        return Option[mp.PacketKind].some(value = mp.PacketKind.handshake_welcome)
-    if value == ubyte<-mp.PacketKind.handshake_reject:
-        return Option[mp.PacketKind].some(value = mp.PacketKind.handshake_reject)
-    if value == ubyte<-mp.PacketKind.snapshot:
-        return Option[mp.PacketKind].some(value = mp.PacketKind.snapshot)
-    if value == ubyte<-mp.PacketKind.rpc:
-        return Option[mp.PacketKind].some(value = mp.PacketKind.rpc)
-
-    return Option[mp.PacketKind].none
-
 
 function increment_unknown_count(counter: ref[ptr_uint]) -> void:
-    read(counter) += 1
+    rpc_runtime.increment_unknown_count(counter)
 
 
 function infer_inbound_rpc_direction(
@@ -1107,30 +1009,6 @@ function infer_inbound_rpc_direction(
         return Option[mp.RpcDirection].none
 
     return Option[mp.RpcDirection].some(value = header.direction)
-
-
-function validate_server_outbound_direction(direction: mp.RpcDirection) -> Result[bool, mp.Error]:
-    if direction == mp.RpcDirection.client_to_server:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(
-                mp.ErrorCode.invalid_argument,
-                "server rpc send requires a server_to_* direction"
-            )
-        )
-
-    return Result[bool, mp.Error].success(value = true)
-
-
-function validate_client_outbound_direction(direction: mp.RpcDirection) -> Result[bool, mp.Error]:
-    if direction != mp.RpcDirection.client_to_server:
-        return Result[bool, mp.Error].failure(
-            error = mp.error(
-                mp.ErrorCode.invalid_argument,
-                "client send_rpc requires direction = client_to_server"
-            )
-        )
-
-    return Result[bool, mp.Error].success(value = true)
 
 
 function ice_recv_callback(agent: juice.Agent, data: cstr, size: ptr_uint, user_ptr: ptr[void]) -> void:

@@ -69,6 +69,135 @@ extending RpcDispatchTable:
         return dispatch_with_routes(this.routes.as_span(), message)
 
 
+public struct TypedRpcRoute:
+    descriptor: registry.RpcDescriptor
+    handler: fn(context: protocol.RpcContext, payload: span[ubyte]) -> Result[bool, DispatchError]
+
+public struct TypedRpcDispatchTable:
+    routes: vec.Vec[TypedRpcRoute]
+
+
+extending TypedRpcDispatchTable:
+    public static function create() -> TypedRpcDispatchTable:
+        return TypedRpcDispatchTable(routes = vec.Vec[TypedRpcRoute].create())
+
+
+    public function route_count() -> ptr_uint:
+        return this.routes.len()
+
+
+    public mutable function release() -> void:
+        this.routes.release()
+
+
+    public mutable function register_route(
+        descriptor: registry.RpcDescriptor,
+        handler: fn(context: protocol.RpcContext, payload: span[ubyte]) -> Result[bool, DispatchError],
+    ) -> Result[bool, protocol.Error]:
+        if typed_rpc_find_route(this.routes.as_span(), descriptor) != null:
+            return Result[bool, protocol.Error].failure(
+                error = protocol.error(protocol.ErrorCode.already_registered, "typed rpc route is already registered")
+            )
+
+        this.routes.push(TypedRpcRoute(descriptor = descriptor, handler = handler))
+        return Result[bool, protocol.Error].success(value = true)
+
+
+    public function dispatch_packet(
+        context: protocol.RpcContext,
+        header: protocol.RpcPacketHeader,
+        payload: span[ubyte],
+    ) -> Result[bool, protocol.Error]:
+        return typed_rpc_dispatch_packet(this.routes.as_span(), context, header, payload)
+
+
+public function typed_rpc_find_route(routes: span[TypedRpcRoute], target: registry.RpcDescriptor) -> ptr[TypedRpcRoute]?:
+    var index: ptr_uint = 0
+    while index < routes.len:
+        unsafe:
+            let route = routes.data + index
+            if read(route).descriptor.schema_hash == target.schema_hash and read(route).descriptor.name == target.name:
+                return route
+        index += 1
+
+    return null
+
+
+public function typed_rpc_dispatch_packet(
+    routes: span[TypedRpcRoute],
+    context: protocol.RpcContext,
+    header: protocol.RpcPacketHeader,
+    payload: span[ubyte],
+) -> Result[bool, protocol.Error]:
+    var matched_index: ptr_uint = 0
+    var matched_count: ptr_uint = 0
+
+    var index: ptr_uint = 0
+    while index < routes.len:
+        unsafe:
+            let descriptor = read(routes.data + index).descriptor
+            if (
+                descriptor.channel == header.channel
+                and descriptor.direction == header.direction
+                and descriptor.payload_size == payload.len
+            ):
+                if matched_count == 0:
+                    matched_index = index
+                matched_count += 1
+        index += 1
+
+    if matched_count == 0:
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(protocol.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet")
+        )
+
+    if matched_count > 1:
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(protocol.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet")
+        )
+
+    unsafe:
+        let route = routes.data + matched_index
+        let handler = read(route).handler
+        match handler(context, payload):
+            Result.success as payload_value:
+                return Result[bool, protocol.Error].success(value = payload_value.value)
+            Result.failure as payload_error:
+                return Result[bool, protocol.Error].failure(
+                    error = protocol.error(payload_error.error.code, payload_error.error.message)
+                )
+
+
+public function validate_client_outbound_direction(direction: protocol.RpcDirection) -> Result[bool, protocol.Error]:
+    if direction != protocol.RpcDirection.client_to_server:
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "client rpc send requires direction = client_to_server"
+            )
+        )
+
+    return Result[bool, protocol.Error].success(value = true)
+
+
+public function validate_server_outbound_direction(direction: protocol.RpcDirection) -> Result[bool, protocol.Error]:
+    if direction == protocol.RpcDirection.client_to_server:
+        return Result[bool, protocol.Error].failure(
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "server rpc send requires a server_to_* direction"
+            )
+        )
+
+    return Result[bool, protocol.Error].success(value = true)
+
+
+public function increment_unknown_count(counter: ref[ptr_uint]) -> void:
+    unsafe:
+        let current = read(counter)
+        read(counter) = current + 1
+
+
 public function encode_outgoing(message: OutgoingRpc) -> Result[OutgoingRpc, protocol.Error]:
     let _ = validate_outgoing(message) else as validation_error:
         return Result[OutgoingRpc, protocol.Error].failure(
