@@ -1,8 +1,8 @@
 # Declaration Attributes
 
-Status: draft RFC
+Status: finalized (implemented)
 
-This document proposes a single declaration-attribute system for Milk Tea.
+This document describes the declaration-attribute system for Milk Tea.
 It replaces dedicated declaration modifiers such as `packed struct` and `align(...) struct` with one canonical attribute surface and extends that surface to struct declarations, struct fields, and callable declarations.
 
 ## Summary
@@ -288,7 +288,10 @@ Rules:
 
 ### Removal of legacy syntax
 
-This RFC removes these declaration forms:
+The legacy `packed struct` / `align(N) struct` declaration forms have been removed.
+The parser now rejects them with an error directing users to the attribute syntax.
+
+These legacy forms:
 
 ```mt
 packed struct Header:
@@ -296,12 +299,9 @@ packed struct Header:
 
 align(16) struct Mat4:
     data: array[float, 16]
-
-packed align(16) struct Packet:
-    tag: ubyte
 ```
 
-They become:
+Are now written as:
 
 ```mt
 @[packed]
@@ -311,14 +311,7 @@ struct Header:
 @[align(16)]
 struct Mat4:
     data: array[float, 16]
-
-@[packed]
-@[align(16)]
-struct Packet:
-    tag: ubyte
 ```
-
-Milk Tea should not keep both spellings.
 
 ## Attribute arguments
 

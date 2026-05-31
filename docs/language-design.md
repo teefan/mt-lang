@@ -78,7 +78,7 @@ The intended reductions are deliberate:
 
 If a new feature introduces a second ordinary way to express the same concept, the language should delete one of them instead of documenting both.
 
-Declaration metadata should follow the same rule. The concrete follow-on proposal for user-defined and built-in declaration attributes lives in [Declaration Attributes](declaration-attributes.md).
+Declaration metadata should follow the same rule. The declaration-attribute system is described in [Declaration Attributes](declaration-attributes.md). The built-in event system is described in [Event Declarations](event-declarations.md).
 
 ## Overall shape
 

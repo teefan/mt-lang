@@ -1,8 +1,8 @@
 # Event Declarations
 
-Status: draft RFC
+Status: finalized (implemented)
 
-This document proposes a built-in event declaration surface for Milk Tea.
+This document describes the built-in event declaration surface for Milk Tea.
 It adds one new declaration form, `event`, and a small built-in event API with five canonical operations:
 
 - `subscribe(...)`
