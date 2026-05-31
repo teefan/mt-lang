@@ -4490,6 +4490,48 @@ function main(value: int) -> int:
     end
   end
 
+  def test_hover_and_semantic_tokens_still_work_after_tab_indentation_error
+    Dir.mktmpdir("milk-tea-lsp-tab-indentation-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      broken_source = <<~MT
+        function main() -> int:
+            let value = 1
+	    return value
+      MT
+      File.write(path, broken_source)
+
+      hover_line = broken_source.lines.index { |line| line.include?("return value") }
+      hover_char = broken_source.lines.fetch(hover_line).index("value")
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => broken_source,
+          },
+        })
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let value: int (immutable)"
+
+        semantic_tokens = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri },
+        }).dig("result", "data")
+        assert_operator semantic_tokens.length, :>, 0
+      end
+    end
+  end
+
   def test_hover_still_works_after_invalid_typed_local_declaration
     Dir.mktmpdir("milk-tea-lsp-typed-local-recovery") do |dir|
       path = File.join(dir, "main.mt")

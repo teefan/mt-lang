@@ -143,7 +143,13 @@ module MilkTea
     def lex_line(lines, line_index, line, line_number, line_offset, has_newline:)
       tab_index = line.index("\t")
       if tab_index
-        raise LexError.new("tabs are not allowed; use 4 spaces for indentation", line: line_number, column: tab_index + 1, path: @path)
+        error = LexError.new("tabs are not allowed; use 4 spaces for indentation", line: line_number, column: tab_index + 1, path: @path)
+        if @recovery_errors
+          @recovery_errors << error
+          line = line.gsub("\t", "    ")
+        else
+          raise error
+        end
       end
 
       if line.strip.empty?
