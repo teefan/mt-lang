@@ -78,8 +78,8 @@ module MilkTea
       "~" => :tilde,
     }.freeze
 
-    def self.lex(source, path: nil, mode: :syntax_only)
-      result = new(source, path: path, mode:).lex
+    def self.lex(source, path: nil, mode: :syntax_only, recovery_errors: nil)
+      result = new(source, path: path, mode:, recovery_errors:).lex
       mode == :with_trivia ? result.tokens : result
     end
 
@@ -87,10 +87,11 @@ module MilkTea
       new(source, path: path, mode: :with_trivia).lex
     end
 
-    def initialize(source, path: nil, mode: :syntax_only)
+    def initialize(source, path: nil, mode: :syntax_only, recovery_errors: nil)
       @source = source.gsub(/\r\n?/, "\n")
       @path = path
       @mode = mode
+      @recovery_errors = recovery_errors
       @tokens = []
       @trivia = []
       @pending_leading_trivia = []
@@ -170,7 +171,18 @@ module MilkTea
       end
 
       if @grouping_depth.zero?
-        emit_indentation(index, line_number, line_offset) unless @continuation_pending
+        if @continuation_pending
+          # indentation is ignored while line continuation is active
+        elsif @recovery_errors
+          begin
+            emit_indentation(index, line_number, line_offset)
+          rescue LexError => e
+            @recovery_errors << e
+            recover_indentation(index, line_number, line_offset)
+          end
+        else
+          emit_indentation(index, line_number, line_offset)
+        end
       end
       @continuation_pending = false
 
@@ -352,6 +364,28 @@ module MilkTea
       return if @indent_stack.last == indent
 
       raise LexError.new("indentation does not match any open block", line: line_number, column: 1, path: @path)
+    end
+
+    def recover_indentation(indent, line_number, line_offset)
+      recovered_indent = indent - (indent % 4)
+      current_indent = @indent_stack.last
+
+      if recovered_indent > current_indent + 4
+        recovered_indent = current_indent + 4
+      end
+
+      if recovered_indent > current_indent
+        @indent_stack << recovered_indent
+        @tokens << token(:indent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+        return
+      end
+
+      while @indent_stack.last > recovered_indent
+        @indent_stack.pop
+        @tokens << token(:dedent, "", nil, line_number, 1, start_offset: line_offset, end_offset: line_offset)
+      end
+
+      return if @indent_stack.last == recovered_indent
     end
 
     def lex_identifier(line, index, line_number, line_offset:)

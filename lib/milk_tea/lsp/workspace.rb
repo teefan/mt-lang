@@ -153,11 +153,12 @@ module MilkTea
         end
       end
 
-      # Return cached diagnostics for +uri+, re-collecting only when content changes.
-      def collect_diagnostics(uri)
+      # Return cached diagnostics for +uri+, re-collecting when content or lint tier changes.
+      def collect_diagnostics(uri, lint_tier: :full)
         total_start = perf_logging? ? monotonic_time : nil
         content = get_content(uri)
         hash = content.hash
+        normalized_lint_tier = Linter.normalize_lint_tier(lint_tier)
         cache_state = 'miss'
         lock_wait_ms = 0.0
         collect_ms = 0.0
@@ -168,7 +169,7 @@ module MilkTea
           generation = @facts_generation[uri]
           cached_snapshot = @tooling_snapshot_cache[uri]
           entry = @diagnostics_cache[uri]
-          if entry && entry[:content_hash] == hash
+          if entry && entry[:content_hash] == hash && entry[:lint_tier] == normalized_lint_tier
             cache_state = 'hit'
             diagnostics = entry[:diagnostics]
           end
@@ -182,7 +183,7 @@ module MilkTea
             generation = @facts_generation[uri]
             cached_snapshot = @tooling_snapshot_cache[uri]
             entry = @diagnostics_cache[uri]
-            if entry && entry[:content_hash] == hash
+            if entry && entry[:content_hash] == hash && entry[:lint_tier] == normalized_lint_tier
               cache_state = 'hit'
               diagnostics = entry[:diagnostics]
             end
@@ -200,7 +201,7 @@ module MilkTea
               platform_override: @platform_override,
               sema_snapshot: cached_snapshot,
               strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
-              lint_tier: :full,
+              lint_tier: normalized_lint_tier,
             )
             collect_ms = elapsed_ms(collect_start) if collect_start
             diagnostics = result[:diagnostics]
@@ -213,7 +214,11 @@ module MilkTea
                 @facts_cache[uri] = facts if facts
                 @last_good_facts_cache[uri] = facts if facts
                 update_dependency_index(uri, facts)
-                @diagnostics_cache[uri] = { content_hash: hash, diagnostics: diagnostics }
+                @diagnostics_cache[uri] = {
+                  content_hash: hash,
+                  lint_tier: normalized_lint_tier,
+                  diagnostics: diagnostics,
+                }
               else
                 cache_state = 'stale'
               end
@@ -231,7 +236,7 @@ module MilkTea
           log_perf_breakdown(
             'workspace/collect_diagnostics',
             elapsed_ms(total_start),
-            "uri=#{uri} mode=full cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
+            "uri=#{uri} mode=#{normalized_lint_tier} cache=#{cache_state} diagnostics=#{result_count} stages_ms=lock_wait:#{lock_wait_ms},collect:#{collect_ms}",
           )
         end
       end
@@ -859,7 +864,10 @@ module MilkTea
         content = get_content(uri)
         return nil if content.empty?
 
-        MilkTea::Lexer.lex(content, path: uri)
+        recovery_errors = []
+        tokens = MilkTea::Lexer.lex(content, path: uri, recovery_errors:)
+        recovery_errors.each { |error| log_error("LSP lex error #{uri}: #{error.message}") }
+        tokens
       rescue StandardError => e
         log_error("LSP lex error #{uri}: #{e.message}")
         nil

@@ -26,8 +26,14 @@ module MilkTea
     end
 
     def self.parse_collecting_errors(source = nil, path: nil, tokens: nil)
-      token_stream = tokens || Lexer.lex(source, path: path)
-      new(token_stream, path: path).parse_collecting_errors
+      if tokens
+        return new(tokens, path: path).parse_collecting_errors
+      end
+
+      lex_errors = []
+      token_stream = Lexer.lex(source, path: path, recovery_errors: lex_errors)
+      parse_result = new(token_stream, path: path).parse_collecting_errors
+      ParseRecoveryResult.new(ast: parse_result.ast, errors: lex_errors + parse_result.errors)
     end
 
     def initialize(tokens, path: nil)
@@ -973,6 +979,10 @@ module MilkTea
       statements = []
       skip_newlines
       until check(:dedent) || eof?
+        if check(:indent)
+          raise error(unexpected_statement_block_indent_token, "unexpected indentation in statement block")
+        end
+
         if @recovery_errors
           begin
             statements << parse_statement
@@ -1904,6 +1914,7 @@ module MilkTea
 
     def synchronize_to_statement_boundary
       until eof?
+        return recover_statement_block_body if check(:indent)
         return nil if check(:dedent)
 
         if check(:newline)
@@ -1916,6 +1927,17 @@ module MilkTea
       end
 
       nil
+    end
+
+    def unexpected_statement_block_indent_token
+      token = peek
+      return token unless token&.type == :indent
+
+      candidate = @tokens[@current + 1]
+      return token unless candidate
+      return token if %i[newline dedent eof].include?(candidate.type)
+
+      candidate
     end
 
     def synchronize_to_match_arm_boundary
