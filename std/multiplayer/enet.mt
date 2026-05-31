@@ -50,12 +50,6 @@ public struct WeightedConnection:
     connection: mp.ConnectionId
     weight: uint
 
-public struct SendOptions:
-    scheduler: Option[ptr[mp.TickScheduler]]
-    max_bytes: ptr_uint
-    fair_mode: bool
-    fair_start_index: ptr_uint
-
 
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
@@ -942,7 +936,7 @@ extending Server:
                     mark_peer_unverified(read(evt).peer)
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
-                        increment_unknown_count(ref_of(this.unknown_packet_count))
+                        rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         enet.packet_destroy(read(evt).packet)
                         return
 
@@ -952,7 +946,7 @@ extending Server:
                     match kind:
                         mp.PacketKind.handshake_hello:
                             let hello = decode_handshake_hello(payload) else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                                 enet.packet_destroy(read(evt).packet)
                                 return
 
@@ -967,9 +961,9 @@ extending Server:
                                 mark_peer_verified(read(evt).peer)
                                 let _ = send_handshake_welcome(read(evt).peer, this.world.protocol_hash(), connection)
                         mp.PacketKind.handshake_welcome:
-                            increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.handshake_reject:
-                            increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.snapshot:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(
@@ -989,7 +983,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.rpc:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(ref_of(this.session_events), SessionEvent.rpc_received, sender)
@@ -1005,7 +999,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
 
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
@@ -1109,7 +1103,7 @@ extending Client:
                         Result.success:
                             pass
                         Result.failure:
-                            increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
                     enqueue_session_event(
                         ref_of(this.session_events),
@@ -1123,7 +1117,7 @@ extending Client:
                     reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
-                        increment_unknown_count(ref_of(this.unknown_packet_count))
+                        rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         enet.packet_destroy(read(evt).packet)
                         return
 
@@ -1131,26 +1125,26 @@ extending Client:
                     match kind:
                         mp.PacketKind.handshake_welcome:
                             let welcome = decode_handshake_welcome(payload) else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                                 enet.packet_destroy(read(evt).packet)
                                 return
 
                             if welcome.protocol_hash != this.world.protocol_hash():
                                 this.protocol_verified = false
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                             else:
                                 this.protocol_verified = true
                                 this.connection_id_value = Option[mp.ConnectionId].some(value = welcome.connection)
                         mp.PacketKind.handshake_reject:
                             this.protocol_verified = false
-                            increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                             if this.peer != null:
                                 enet.peer_disconnect_now(ptr[enet.Peer]<-this.peer, 0)
                                 this.peer = null
                             reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
                             reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                         mp.PacketKind.handshake_hello:
-                            increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.snapshot:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1170,7 +1164,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
                         mp.PacketKind.rpc:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1190,7 +1184,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
 
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
@@ -1523,10 +1517,6 @@ function packet_payload_span(packet: ptr[enet.Packet]) -> span[ubyte]:
         return span[ubyte](data = base + 1, len = read(packet).dataLength - 1)
 
 
-function increment_unknown_count(counter: ref[ptr_uint]) -> void:
-    rpc_runtime.increment_unknown_count(counter)
-
-
 function enqueue_session_event(
     queue: ref[vec.Vec[SessionEventRecord]],
     kind: SessionEvent,
@@ -1553,7 +1543,7 @@ function handle_received_packet(
     sender: Option[mp.ConnectionId],
 ) -> void:
     let kind = packet_kind(packet) else:
-        increment_unknown_count(unknown_packet_count)
+        rpc_runtime.increment_unknown_count(unknown_packet_count)
         return
 
     let payload = packet_payload_span(packet)
@@ -1567,7 +1557,7 @@ function handle_received_packet(
             )
             match snapshot_status:
                 Result.failure:
-                    increment_unknown_count(unknown_packet_count)
+                    rpc_runtime.increment_unknown_count(unknown_packet_count)
                 Result.success:
                     match snapshot_runtime.apply_from_packet(payload, inbound_snapshot_baseline):
                         Result.success:
@@ -1575,8 +1565,8 @@ function handle_received_packet(
                         Result.failure:
                             pass
         mp.PacketKind.rpc:
-            let rpc_direction = infer_inbound_rpc_direction(payload, inferred_direction) else:
-                increment_unknown_count(unknown_packet_count)
+            let rpc_direction = rpc_runtime.infer_inbound_rpc_direction(payload, inferred_direction) else:
+                rpc_runtime.increment_unknown_count(unknown_packet_count)
                 return
 
             let rpc_status = rpc_runtime.enqueue_incoming(
@@ -1588,15 +1578,15 @@ function handle_received_packet(
             )
             match rpc_status:
                 Result.failure:
-                    increment_unknown_count(unknown_packet_count)
+                    rpc_runtime.increment_unknown_count(unknown_packet_count)
                 Result.success:
                     pass
         mp.PacketKind.handshake_hello:
-            increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_unknown_count(unknown_packet_count)
         mp.PacketKind.handshake_welcome:
-            increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_unknown_count(unknown_packet_count)
         mp.PacketKind.handshake_reject:
-            increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_unknown_count(unknown_packet_count)
 
 
 function acquire_runtime() -> Result[bool, mp.Error]:
@@ -2069,21 +2059,6 @@ function send_rpcs_scheduled_fair_impl(
         index += 1
 
     return Result[ptr_uint, mp.Error].success(value = sent_count)
-
-
-function infer_inbound_rpc_direction(
-    payload: span[ubyte],
-    inferred_direction: mp.RpcDirection,
-) -> Option[mp.RpcDirection]:
-    if inferred_direction == mp.RpcDirection.client_to_server:
-        return Option[mp.RpcDirection].some(value = mp.RpcDirection.client_to_server)
-
-    let header = rpc_runtime.decode_header(payload) else:
-        return Option[mp.RpcDirection].none
-    if header.direction == mp.RpcDirection.client_to_server:
-        return Option[mp.RpcDirection].none
-
-    return Option[mp.RpcDirection].some(value = header.direction)
 
 
 function snapshot_wire_bytes(header: mp.SnapshotPacketHeader, payload: span[ubyte]) -> ptr_uint:

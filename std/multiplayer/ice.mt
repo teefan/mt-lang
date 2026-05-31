@@ -578,6 +578,29 @@ extending Client:
         return Result[bool, mp.Error].success(value = true)
 
 
+    public function send_snapshot(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: mp.SnapshotPacketHeader,
+        payload: span[ubyte],
+    ) -> Result[bool, mp.Error]:
+        if not this.protocol_ready():
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "protocol handshake is not complete"
+            ))
+
+        let agent = this.agent else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "ice client agent is not initialized"
+            ))
+
+        var encoded = snapshot_runtime.build_payload(header, payload)
+        defer encoded.release()
+        return send_snapshot_wire_payload(agent, channel, encoded.as_span())
+
+
     public function send_rpc(
         channel: uint,
         transfer_mode: mp.TransferMode,
@@ -952,11 +975,11 @@ function handle_received_payload(
     let inferred_direction = read(context).inferred_direction
 
     if payload.len < 1:
-        increment_unknown_count(ref_of(read(context).unknown_packet_count))
+        rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
         return
 
     let kind = protocol.packet_kind_from_byte(payload[0]) else:
-        increment_unknown_count(ref_of(read(context).unknown_packet_count))
+        rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
         return
 
     unsafe:
@@ -964,7 +987,7 @@ function handle_received_payload(
         match kind:
             mp.PacketKind.snapshot:
                 if body.len < 4:
-                    increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                    rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
                     return
 
                 let channel = wire.decode_u32_be(body, 0)
@@ -978,14 +1001,14 @@ function handle_received_payload(
                     Result.success:
                         pass
                     Result.failure:
-                        increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                        rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
             mp.PacketKind.rpc:
-                let rpc_direction = infer_inbound_rpc_direction(body, inferred_direction) else:
-                    increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                let rpc_direction = rpc_runtime.infer_inbound_rpc_direction(body, inferred_direction) else:
+                    rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
                     return
 
                 let header = rpc_runtime.decode_header(body) else:
-                    increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                    rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
                     return
 
                 let sender = resolve_sender_for_channel(ref_of(read(context)), header.channel)
@@ -1000,32 +1023,13 @@ function handle_received_payload(
                     Result.success:
                         pass
                     Result.failure:
-                        increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                        rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
             mp.PacketKind.handshake_hello:
-                increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
             mp.PacketKind.handshake_welcome:
-                increment_unknown_count(ref_of(read(context).unknown_packet_count))
+                rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
             mp.PacketKind.handshake_reject:
-                increment_unknown_count(ref_of(read(context).unknown_packet_count))
-
-
-function increment_unknown_count(counter: ref[ptr_uint]) -> void:
-    rpc_runtime.increment_unknown_count(counter)
-
-
-function infer_inbound_rpc_direction(
-    payload: span[ubyte],
-    inferred_direction: mp.RpcDirection,
-) -> Option[mp.RpcDirection]:
-    if inferred_direction == mp.RpcDirection.client_to_server:
-        return Option[mp.RpcDirection].some(value = mp.RpcDirection.client_to_server)
-
-    let header = rpc_runtime.decode_header(payload) else:
-        return Option[mp.RpcDirection].none
-    if header.direction == mp.RpcDirection.client_to_server:
-        return Option[mp.RpcDirection].none
-
-    return Option[mp.RpcDirection].some(value = header.direction)
+                rpc_runtime.increment_unknown_count(ref_of(read(context).unknown_packet_count))
 
 
 function ice_recv_callback(agent: juice.Agent, data: cstr, size: ptr_uint, user_ptr: ptr[void]) -> void:

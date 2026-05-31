@@ -198,6 +198,21 @@ public function increment_unknown_count(counter: ref[ptr_uint]) -> void:
         read(counter) = current + 1
 
 
+public function infer_inbound_rpc_direction(
+    payload: span[ubyte],
+    inferred_direction: protocol.RpcDirection,
+) -> Option[protocol.RpcDirection]:
+    if inferred_direction == protocol.RpcDirection.client_to_server:
+        return Option[protocol.RpcDirection].some(value = protocol.RpcDirection.client_to_server)
+
+    let header = decode_header(payload) else:
+        return Option[protocol.RpcDirection].none
+    if header.direction == protocol.RpcDirection.client_to_server:
+        return Option[protocol.RpcDirection].none
+
+    return Option[protocol.RpcDirection].some(value = header.direction)
+
+
 public function encode_outgoing(message: OutgoingRpc) -> Result[OutgoingRpc, protocol.Error]:
     let _ = validate_outgoing(message) else as validation_error:
         return Result[OutgoingRpc, protocol.Error].failure(
