@@ -111,7 +111,10 @@ extending TypedRpcDispatchTable:
         return typed_rpc_dispatch_packet(this.routes.as_span(), context, header, payload)
 
 
-public function typed_rpc_find_route(routes: span[TypedRpcRoute], target: registry.RpcDescriptor) -> ptr[TypedRpcRoute]?:
+public function typed_rpc_find_route(
+    routes: span[TypedRpcRoute],
+    target: registry.RpcDescriptor
+) -> ptr[TypedRpcRoute]?:
     var index: ptr_uint = 0
     while index < routes.len:
         unsafe:
@@ -148,12 +151,18 @@ public function typed_rpc_dispatch_packet(
 
     if matched_count == 0:
         return Result[bool, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.not_registered, "typed rpc route is not registered for incoming packet")
+            error = protocol.error(
+                protocol.ErrorCode.not_registered,
+                "typed rpc route is not registered for incoming packet"
+            )
         )
 
     if matched_count > 1:
         return Result[bool, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "typed rpc route is ambiguous for incoming packet")
+            error = protocol.error(
+                protocol.ErrorCode.invalid_argument,
+                "typed rpc route is ambiguous for incoming packet"
+            )
         )
 
     unsafe:
