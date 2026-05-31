@@ -927,6 +927,38 @@ class MilkTeaLinterTest < Minitest::Test
     end
   end
 
+  def test_reports_stale_doc_param_tag_name
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      ## Adds one value.
+      ## @param value value to add
+      ## @param stale stale param name
+      function add(value: int) -> int:
+          return value
+    MT
+
+    warning = warnings.find { |entry| entry.code == "doc-tag" && entry.message.include?("@param 'stale'") }
+    assert warning, "expected stale @param warning"
+    assert_equal 3, warning.line
+  end
+
+  def test_reports_malformed_and_non_callable_doc_tags
+    warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
+      ## @param
+      ## @unknown tag
+      ## @return a peer
+      struct Peer:
+          id: int
+    MT
+
+    malformed = warnings.find { |entry| entry.code == "doc-tag" && entry.message.include?("@param requires") }
+    unknown = warnings.find { |entry| entry.code == "doc-tag" && entry.message.include?("unknown doc tag") }
+    non_callable = warnings.find { |entry| entry.code == "doc-tag" && entry.message.include?("only valid on function and method") }
+
+    assert malformed, "expected malformed @param warning"
+    assert unknown, "expected unknown tag warning"
+    assert non_callable, "expected non-callable doc tag warning"
+  end
+
   # ── dead-assignment ────────────────────────────────────────────────────
 
   def test_dead_assignment_plain_assignment_value_overwritten

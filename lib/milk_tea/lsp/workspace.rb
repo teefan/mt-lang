@@ -15,6 +15,7 @@ module MilkTea
       # Token types that introduce a named definition, in order of precedence
       DEFINITION_KEYWORDS = %i[function struct union enum flags variant type const var let extending opaque interface event].freeze
       DOC_COMMENT_PREFIX = '##'
+      DOC_TAG_PATTERN = /\A\s*@([A-Za-z_][A-Za-z0-9_-]*)(?:\s+(.*))?\z/
       DEFINITION_LINE_PREFIX = /^(?:\s)*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+/m
       DEFINITION_NAME_REGEX = /^\s*(?:(?:public|foreign|external)\s+)*(?:function|struct|union|enum|flags|variant|type|const|var|let|extending|opaque|interface|event)\s+([A-Za-z_][A-Za-z0-9_]*)\b/
 
@@ -34,7 +35,7 @@ module MilkTea
         @facts_cache = {} # uri -> Sema::Facts (projection of cached tooling snapshot facts)
         @tooling_snapshot_cache = {} # uri -> Sema::ToolingSnapshot (facts may be nil on structural failure)
         @symbols_cache = {}  # uri -> [{name, kind, line, column}]
-        @doc_comments_cache = {} # uri -> {"line:column" => markdown_doc}
+        @doc_comments_cache = {} # uri -> {"line:column" => structured_doc_comment_hash}
         @last_good_facts_cache = {} # uri -> last Sema::Facts that succeeded
         @last_good_tooling_snapshot_cache = {} # uri -> last Sema::ToolingSnapshot with facts that succeeded
         @shared_module_cache = {}
@@ -455,6 +456,12 @@ module MilkTea
       end
 
       def doc_comment_for_definition(uri, token)
+        return nil unless token
+
+        doc_comment_data_for_definition(uri, token)&.fetch(:raw_markdown, nil)
+      end
+
+      def doc_comment_data_for_definition(uri, token)
         return nil unless token
 
         docs_by_location = @doc_comments_cache[uri] ||= extract_doc_comments_for_definitions(uri)
@@ -1247,13 +1254,101 @@ module MilkTea
           break if stripped.empty?
           break unless stripped.start_with?(DOC_COMMENT_PREFIX)
 
-          docs << stripped.sub(/\A##\s?/, '')
+          docs << {
+            line: index + 1,
+            text: stripped.sub(/\A##\s?/, ''),
+          }
           index -= 1
         end
 
         return nil if docs.empty?
 
-        docs.reverse.join("\n")
+        build_doc_comment_data(docs.reverse)
+      end
+
+      def build_doc_comment_data(lines)
+        raw_lines = lines.map { |entry| entry[:text].to_s }
+        raw_markdown = raw_lines.join("\n")
+
+        tags = {
+          params: [],
+          returns: nil,
+          throws: [],
+          see: [],
+        }
+        tag_errors = []
+        body_lines = []
+
+        lines.each do |entry|
+          line_text = entry[:text].to_s
+          match = line_text.match(DOC_TAG_PATTERN)
+          unless match
+            body_lines << line_text
+            next
+          end
+
+          tag_name = match[1].to_s.downcase
+          payload = match[2].to_s.strip
+
+          case tag_name
+          when 'param'
+            if payload.empty?
+              tag_errors << {
+                line: entry[:line],
+                message: 'doc tag @param requires a parameter name',
+              }
+              next
+            end
+
+            name_match = payload.match(/\A([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z/)
+            unless name_match
+              tag_errors << {
+                line: entry[:line],
+                message: 'doc tag @param has an invalid parameter name',
+              }
+              next
+            end
+
+            tags[:params] << {
+              name: name_match[1],
+              text: name_match[2].to_s.strip,
+              line: entry[:line],
+            }
+          when 'return', 'returns'
+            tags[:returns] = {
+              text: payload,
+              line: entry[:line],
+            }
+          when 'throws', 'throw'
+            tags[:throws] << {
+              text: payload,
+              line: entry[:line],
+            }
+          when 'see'
+            tags[:see] << {
+              text: payload,
+              line: entry[:line],
+            }
+          else
+            tag_errors << {
+              line: entry[:line],
+              message: "unknown doc tag @#{tag_name}",
+            }
+          end
+        end
+
+        body_markdown = body_lines.join("\n").strip
+        summary_lines = body_markdown.split("\n").slice_before { |line| line.strip.empty? }.first || []
+        summary = summary_lines.join("\n").strip
+        summary = nil if summary.empty?
+
+        {
+          raw_markdown: raw_markdown,
+          summary: summary,
+          body_markdown: body_markdown,
+          tags: tags,
+          tag_errors: tag_errors,
+        }
       end
 
       def doc_comment_key(line, column)
