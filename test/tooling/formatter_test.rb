@@ -608,6 +608,7 @@ class MilkTeaFormatterTest < Minitest::Test
           @[trace("payload_len")]
           payload_len : uint
 
+
       @[trace(name = "parse_packet")]
       function parse_packet() -> int:
           return 0
@@ -623,10 +624,51 @@ class MilkTeaFormatterTest < Minitest::Test
           @[trace("payload_len")]
           payload_len : uint
 
+
       @[trace(name = "parse_packet")]
       function parse_packet() -> int:
           return 0
     MT
+  end
+
+  def test_tidy_mode_keeps_multiline_attribute_block_attached_to_function
+    source = <<~MT
+      var pending_submit_input: Option[ubyte] = Option[ubyte].none
+      @[
+          mp.rpc(
+              direction = mp.RpcDirection.client_to_server,
+              mode = mp.TransferMode.unreliable_ordered,
+              channel = net_channel_attr,
+              require_owner = false,
+          )
+      ]
+      function submit_pong_input(_context: mp.RpcContext, input_flags: ubyte) -> void:
+          pending_submit_input = Option[ubyte].some(value = input_flags)
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "var pending_submit_input: Option[ubyte] = Option[ubyte].none\n\n\n@["
+    assert_includes formatted, "]\nfunction submit_pong_input(_context: mp.RpcContext, input_flags: ubyte) -> void:"
+    refute_includes formatted, "]\n\nfunction submit_pong_input(_context: mp.RpcContext, input_flags: ubyte) -> void:"
+  end
+
+  def test_tidy_mode_keeps_stacked_attribute_blocks_attached_to_function
+    source = <<~MT
+      const VERSION: int = 1
+      @[trace(name = "top")]
+      @[
+          trace(name = "bottom")
+      ]
+      function run() -> void:
+          return
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "const VERSION: int = 1\n\n\n@[trace(name = \"top\")]"
+    assert_includes formatted, "@[trace(name = \"top\")]\n@[\n    trace(name = \"bottom\")\n]\nfunction run() -> void:"
+    refute_includes formatted, "]\n\nfunction run() -> void:"
   end
 
   def test_canonical_groups_raw_module_simple_declarations_by_kind

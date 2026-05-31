@@ -229,7 +229,14 @@ module MilkTea
         else
           if emitted_content
             current_top_level_group = top_level_declaration_group(line)
-            needed = if previous_content_line && attribute_application_line?(previous_content_line)
+            decorated_function_index = top_level_function_attached_to_attribute_start(lines, line_index)
+            needed = if decorated_function_index
+              if bodyless_function_header_at?(lines, decorated_function_index)
+                1
+              else
+                2
+              end
+            elsif previous_content_index && line_inside_attribute_application?(lines, previous_content_index)
               0
             elsif extending_block_header_line?(line)
               2 # exactly 2 blank lines before extending blocks
@@ -468,6 +475,77 @@ module MilkTea
 
     def self.attribute_application_line?(line)
       line.strip.start_with?("@[")
+    end
+
+    def self.attribute_application_end_line(lines, start_index)
+      return nil unless start_index >= 0 && start_index < lines.length
+      return nil unless attribute_application_line?(lines[start_index])
+
+      depth = 0
+      open_seen = false
+      index = start_index
+
+      while index < lines.length
+        bytes = lines[index].bytes
+        char_index = 0
+        while char_index < bytes.length
+          byte = bytes[char_index]
+          if byte == 91
+            depth += 1
+            open_seen = true
+          elsif byte == 93 && depth.positive?
+            depth -= 1
+            return index if open_seen && depth.zero?
+          end
+
+          char_index += 1
+        end
+
+        index += 1
+      end
+
+      nil
+    end
+
+    def self.line_inside_attribute_application?(lines, line_index)
+      start_index = line_index
+      while start_index >= 0
+        if attribute_application_line?(lines[start_index])
+          end_index = attribute_application_end_line(lines, start_index)
+          return false unless end_index
+
+          return line_index <= end_index
+        end
+
+        break if function_line?(lines[start_index])
+        start_index -= 1
+      end
+
+      false
+    end
+
+    def self.top_level_function_attached_to_attribute_start(lines, line_index)
+      return nil unless leading_indent_width(lines[line_index]).zero?
+      return nil unless attribute_application_line?(lines[line_index])
+      return nil if line_index.positive? && line_inside_attribute_application?(lines, line_index - 1)
+
+      cursor = line_index
+      loop do
+        end_index = attribute_application_end_line(lines, cursor)
+        return nil unless end_index
+
+        cursor = end_index + 1
+        cursor += 1 while cursor < lines.length && blank_line?(lines[cursor])
+        return nil if cursor >= lines.length
+
+        if attribute_application_line?(lines[cursor]) && leading_indent_width(lines[cursor]).zero?
+          next
+        end
+
+        return cursor if function_line?(lines[cursor]) && leading_indent_width(lines[cursor]).zero?
+
+        return nil
+      end
     end
 
     def self.top_level_declaration_group(line)
