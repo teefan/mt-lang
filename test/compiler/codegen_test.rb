@@ -366,7 +366,7 @@ class MilkTeaCodegenTest < Minitest::Test
 
           return Result[bool, rpc.DispatchError].success(value = dispatched)
 
-      function drain(client: ref[mp_enet.Client], routes: ref[mp_enet.TypedRpcDispatchTable]) -> int:
+      function drain(client: ref[mp_enet.Client], routes: ref[mp.TypedRpcDispatchTable]) -> int:
           let snapshots_processed = read(client).process_incoming_snapshots() else:
               return 1
           let rpcs_processed = read(client).process_incoming_rpcs_typed(routes) else:
@@ -376,7 +376,7 @@ class MilkTeaCodegenTest < Minitest::Test
           return 0
 
       function main() -> int:
-          var routes = mp_enet.TypedRpcDispatchTable.create()
+          var routes = mp.TypedRpcDispatchTable.create()
           defer routes.release()
 
           let descriptor = mp.rpc_descriptor(callable_of(receive_marker))

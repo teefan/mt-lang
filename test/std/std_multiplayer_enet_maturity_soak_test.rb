@@ -101,11 +101,11 @@ function main() -> int:
         let conn_c = client_c.connection_id() else:
             return 14
 
-        var weighted = vec.Vec[mp_enet.WeightedConnection].create()
+        var weighted = vec.Vec[mp.WeightedConnection].create()
         defer weighted.release()
-        weighted.push(mp_enet.WeightedConnection(connection = conn_a, weight = 8))
-        weighted.push(mp_enet.WeightedConnection(connection = conn_b, weight = 4))
-        weighted.push(mp_enet.WeightedConnection(connection = conn_c, weight = 1))
+        weighted.push(mp.WeightedConnection(connection = conn_a, weight = 8))
+        weighted.push(mp.WeightedConnection(connection = conn_b, weight = 4))
+        weighted.push(mp.WeightedConnection(connection = conn_c, weight = 1))
 
         var payload = array[ubyte, 3](4, 2, 0)
         var total_weighted_sent: ptr_uint = 0

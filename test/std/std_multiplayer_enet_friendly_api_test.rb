@@ -108,7 +108,7 @@ function main() -> int:
         pump_round += 1
 
     let rpc_descriptor = mp.rpc_descriptor(callable_of(receive_marker))
-    var typed_routes = mp_enet.TypedRpcDispatchTable.create()
+    var typed_routes = mp.TypedRpcDispatchTable.create()
     defer typed_routes.release()
     let route_added = typed_routes.register_route(rpc_descriptor, dispatch_receive_marker) else:
         return 17
