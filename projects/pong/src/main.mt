@@ -32,22 +32,18 @@ public enum Scene: ubyte
     lobby = 1
     game = 2
 
-
 public enum NetMode: ubyte
     none = 0
     host = 1
     join = 2
 
-
 @[mp.replicated(authority = mp.Authority.server)]
-@[
-    mp.sync_defaults(
-        mode = mp.TransferMode.unreliable_ordered,
-        channel = net_channel_attr,
-        rate_hz = 30,
-        target = mp.SyncTarget.observers,
-    )
-]
+@[mp.sync_defaults(
+    mode = mp.TransferMode.unreliable_ordered,
+    channel = net_channel_attr,
+    rate_hz = 30,
+    target = mp.SyncTarget.observers,
+)]
 public struct PongNetState:
     @[mp.sync]
     phase: ubyte
@@ -67,7 +63,6 @@ public struct PongNetState:
     ball_dir_x_positive: bool
     @[mp.sync]
     ball_dir_y_positive: bool
-
 
 public struct App:
     scene: Scene
@@ -91,18 +86,15 @@ public struct App:
     submit_input_descriptor: mp.RpcDescriptor
     status_code: int
 
-
 var pending_submit_input: Option[ubyte] = Option[ubyte].none
 
 
-@[
-    mp.rpc(
-        direction = mp.RpcDirection.client_to_server,
-        mode = mp.TransferMode.unreliable_ordered,
-        channel = net_channel_attr,
-        require_owner = false,
-    )
-]
+@[mp.rpc(
+    direction = mp.RpcDirection.client_to_server,
+    mode = mp.TransferMode.unreliable_ordered,
+    channel = net_channel_attr,
+    require_owner = false,
+)]
 function submit_pong_input(_context: mp.RpcContext, input_flags: ubyte) -> void:
     pending_submit_input = Option[ubyte].some(value = input_flags)
 
@@ -134,7 +126,7 @@ function main(args: span[str]) -> int:
         public_ip_message = "Press Fetch Public IP to query internet-visible address.",
         state_descriptor = state_descriptor,
         submit_input_descriptor = submit_input_descriptor,
-        status_code = 0,
+        status_code = 0
     )
     defer release_app(ref_of(app))
 
@@ -200,7 +192,7 @@ function default_state() -> PongNetState:
         score_host = 0,
         score_join = 0,
         ball_dir_x_positive = true,
-        ball_dir_y_positive = true,
+        ball_dir_y_positive = true
     )
 
 
@@ -242,7 +234,7 @@ function host_start(app: ref[App]) -> bool:
 
     let bind_address = enet.Address(
         host = uint<-enet.HOST_ANY,
-        port = default_port,
+        port = default_port
     )
 
     let server = mp_enet.listen(bind_address, 8, 2, app.registry, mp.default_config()) else:
@@ -390,7 +382,7 @@ function join_start(app: ref[App]) -> bool:
 
     var remote_address = enet.Address(
         host = uint<-enet.HOST_ANY,
-        port = parsed_port,
+        port = parsed_port
     )
     if enet.address_set_host_ip(ptr_of(remote_address), host_text) != 0:
         app.status_code = 3
@@ -467,7 +459,7 @@ function update_host_network(app: ref[App]) -> void:
         let session_event_option = runtime.pop_session_event()
         var session_event = mp_enet.SessionEventRecord(
             kind = mp_enet.SessionEvent.connected,
-            connection = Option[mp.ConnectionId].none,
+            connection = Option[mp.ConnectionId].none
         )
         match session_event_option:
             Option.none:
@@ -539,7 +531,7 @@ function update_join_network(app: ref[App]) -> void:
         let session_event_option = runtime.pop_session_event()
         var session_event = mp_enet.SessionEventRecord(
             kind = mp_enet.SessionEvent.connected,
-            connection = Option[mp.ConnectionId].none,
+            connection = Option[mp.ConnectionId].none
         )
         match session_event_option:
             Option.none:
@@ -610,7 +602,7 @@ function host_broadcast_snapshot(app: ref[App]) -> void:
     let header = mp.SnapshotPacketHeader(
         tick = snapshot_tick,
         baseline_tick = previous_tick(snapshot_tick),
-        entity_count = 1,
+        entity_count = 1
     )
 
     let send_result = runtime.broadcast_snapshot(descriptor.sync_channel, descriptor.sync_mode, header, payload_span)
@@ -671,7 +663,7 @@ function join_send_input(app: ref[App]) -> void:
         app.submit_input_descriptor.channel,
         app.submit_input_descriptor.mode,
         app.submit_input_descriptor.direction,
-        payload_span,
+        payload_span
     )
     match send_result:
         Result.failure:
@@ -722,7 +714,7 @@ function update_host_simulation(app: ref[App]) -> void:
         host_x,
         app.state.paddle_host_y,
         paddle_width,
-        paddle_height,
+        paddle_height
     ):
         app.state.ball_x = host_x + paddle_width
         app.state.ball_dir_x_positive = true
@@ -735,7 +727,7 @@ function update_host_simulation(app: ref[App]) -> void:
         join_x,
         app.state.paddle_join_y,
         paddle_width,
-        paddle_height,
+        paddle_height
     ):
         app.state.ball_x = join_x - ball_size
         app.state.ball_dir_x_positive = false
@@ -832,7 +824,7 @@ function encode_snapshot_payload(state: PongNetState) -> array[ubyte, 29]:
         directions[0],
         directions[1],
         directions[2],
-        directions[3],
+        directions[3]
     )
 
 
@@ -859,7 +851,7 @@ function encode_u32(value: uint) -> array[ubyte, 4]:
         ubyte<-((value >> 24) & 255),
         ubyte<-((value >> 16) & 255),
         ubyte<-((value >> 8) & 255),
-        ubyte<-(value & 255),
+        ubyte<-(value & 255)
     )
 
 
@@ -898,7 +890,7 @@ function draw_menu(app: ref[App]) -> void:
     if gui.text_box(
         rl.Rectangle(x = 355.0, y = 272.0, width = 250.0, height = 34.0),
         read(app).join_host_input,
-        read(app).join_host_edit_mode,
+        read(app).join_host_edit_mode
     ) != 0:
         read(app).join_host_edit_mode = not read(app).join_host_edit_mode
 
@@ -906,7 +898,7 @@ function draw_menu(app: ref[App]) -> void:
     if gui.text_box(
         rl.Rectangle(x = 355.0, y = 338.0, width = 250.0, height = 34.0),
         read(app).join_port_input,
-        read(app).join_port_edit_mode,
+        read(app).join_port_edit_mode
     ) != 0:
         read(app).join_port_edit_mode = not read(app).join_port_edit_mode
 
@@ -978,7 +970,7 @@ function draw_lobby(app: ref[App]) -> void:
         60,
         442,
         20,
-        rl.GRAY,
+        rl.GRAY
     )
 
 
@@ -989,7 +981,7 @@ function draw_game(app: ref[App]) -> void:
         arena_top,
         arena_width,
         arena_height,
-        rl.Color(r = 110, g = 128, b = 180, a = 255),
+        rl.Color(r = 110, g = 128, b = 180, a = 255)
     )
 
     let center_x = arena_left + arena_width / 2
@@ -1023,7 +1015,7 @@ function run_smoke_test() -> int:
 
     let address = enet.Address(
         host = uint<-enet.HOST_ANY,
-        port = default_port,
+        port = default_port
     )
 
     var server = mp_enet.listen(address, 2, 2, registry, mp.default_config()) else:
@@ -1051,7 +1043,7 @@ function run_smoke_test() -> int:
             state_descriptor.sync_channel,
             state_descriptor.sync_mode,
             header,
-            payload_span,
+            payload_span
         ) else:
             return 16
         if not sent:
