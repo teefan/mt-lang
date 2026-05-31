@@ -158,12 +158,14 @@ Top-level declarations:
 - `async function`
 - `external function`
 - `foreign function`
+- `event`
 - `static_assert(...)`
 
 File-kind note:
 
 - Ordinary files may use the full declaration surface above.
 - External files use a restricted declaration surface: `const`, `type`, `struct`, `union`, `enum`, `flags`, `opaque`, and `external function`. External files cannot declare new attributes, but supported attribute applications such as `@[packed]` and `@[align(...)]` may still appear on declarations that accept them.
+- `event` declarations are not allowed in external files.
 
 ### 3.1 Visibility
 
@@ -661,6 +663,8 @@ Primitive type names are reserved. They cannot be reused for value bindings, par
 - `Task[T]`
 - `fn(params...) -> R`
 - `proc(params...) -> R`
+- `Option[T]`
+- `Result[T, E]`
 
 ### 6.3 Nullability
 
@@ -750,6 +754,8 @@ The current shipped collection modules in `std` are:
 - `std.multiset.MultiSet[T]`: insertion-ordered bag built on `Counter[T]`, with `create`, `with_capacity`, `len`, `total_count`, `distinct_len`, `capacity`, `is_empty`, `count`, `contains`, `values`, `entries`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `symmetric_difference`, `clear`, `release`, `reserve`, `insert`, `add`, `remove_one`, and `remove_all`.
 - `std.queue.Queue[T]`: FIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `enqueue`, and `dequeue`.
 - `std.stack.Stack[T]`: LIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `push`, and `pop`.
+- `std.linked_map_view.SnapshotValues[K, V]`: read-only snapshot view over `LinkedMap` values in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
+- `std.linked_map_view.SnapshotEntries[K, V]`: read-only snapshot view over `LinkedMap` entries in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
 
 Iterator notes for those collection modules:
 
@@ -770,6 +776,7 @@ Iterator notes for those collection modules:
 - `MultiSet.values()` uses the pointer-returning iterator form with read-only value pointers in first-seen order.
 - `MultiSet.entries()` and `MultiSet.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ value, count }` snapshots.
 - `Queue.iter()` and `Stack.iter()` use the same mutable pointer-returning iterator form as `Deque.iter()`, and `peek()` returns a mutable element pointer because changing an element value does not violate FIFO/LIFO ordering invariants.
+- `SnapshotValues.iter()` and `SnapshotEntries.iter()` use the `next() -> bool` plus `current()` iterator form in insertion order.
 
 ## 8. Strings, C Strings, And Format Strings
 
@@ -857,11 +864,78 @@ Current async limitations:
 - `await` is supported inside `if` expressions, `if`/`else if`/`else` bodies and conditions, `while` bodies and conditions, single-form and parallel `for` bodies and iterables, `match` discriminants and arms, `let ... else:` initializers and else bodies, `unsafe` blocks, short-circuit `and`/`or` expressions, and assignment targets
 - `defer` is supported in async functions, including cleanup bodies that `await`
 
-## 11. Linting
+## 11. Events
+
+Event declarations provide a built-in typed publisher/subscriber surface with fixed-capacity listener storage.
+
+### 11.1 Declaration
+
+```mt
+event name[capacity]
+event name[capacity](PayloadType)
+public event name[capacity]
+public event name[capacity](PayloadType)
+```
+
+Examples:
+
+```mt
+public event closed[4]
+public event resized[8](ResizeEvent)
+```
+
+Rules:
+
+- The capacity expression must be a compile-time positive integer literal.
+- An event carries either no payload or exactly one payload value.
+- The payload type must be a storable type; `ref[T]` payloads are rejected.
+- Event declarations are valid at top level and as struct members.
+- `emit` is only callable from within the declaring module.
+
+### 11.2 Built-in operations
+
+- `event.subscribe(listener) -> Result[Subscription, EventError]` — register a stateless listener
+- `event.subscribe_once(listener) -> Result[Subscription, EventError]` — register a one-shot listener
+- `event.unsubscribe(subscription) -> void` — remove a listener by subscription handle
+- `event.emit()` or `event.emit(payload)` — synchronously dispatch to all listeners; only callable from the declaring module
+- `event.wait() -> Task[Result[T, EventError]]` — async wait for the next emission; returns the payload for payload events, or `Result[void, EventError]` for no-payload events
+
+`EventError` is a built-in enum with a single member `full` (value `0`), returned when listener capacity is exhausted.
+
+`Subscription` is a built-in opaque handle type returned by `subscribe` and `subscribe_once`.
+
+### 11.3 Example
+
+```mt
+struct ResizeEvent:
+    width: int
+    height: int
+
+struct Window:
+    public event closed[4]
+    public event resized[8](ResizeEvent)
+
+function on_close() -> void:
+    stdio.println("closed")
+
+function on_resize(event: ResizeEvent) -> void:
+    stdio.println(f"resize -> #{event.width}x#{event.height}")
+
+function attach(window: ref[Window]) -> Result[void, EventError]:
+    let closed_sub = window.closed.subscribe(on_close)?
+    let resized_sub = window.resized.subscribe(on_resize)?
+
+    defer window.closed.unsubscribe(closed_sub)
+    defer window.resized.unsubscribe(resized_sub)
+
+    return Result[void, EventError].success()
+```
+
+## 12. Linting
 
 The linter checks for common issues and style problems without changing program behavior.
 
-### 11.1 Running the linter
+### 12.1 Running the linter
 
 ```sh
 mtc lint path/to/file.mt
@@ -871,7 +945,7 @@ mtc lint --select prefer-let,dead-assignment file.mt
 mtc lint --ignore shadow file.mt
 ```
 
-### 11.2 Rules
+### 12.2 Rules
 
 The auto-fix column corresponds to `mtc lint --fix`.
 
@@ -907,7 +981,7 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `unused-param` | warning | — | Parameter is never referenced |
 | `useless-expression` | warning | — | Expression statement has no side effects and its result is unused |
 
-### 11.3 Config file
+### 12.3 Config file
 
 Create a default config with:
 
@@ -934,7 +1008,7 @@ When both `select` and `ignore` are present, `select` takes precedence and `igno
 
 `line-too-long` code actions currently rewrite only parser-valid same-line comma-delimited `()` groups and type-position `[]` groups. Tuple literals may be rewritten without a trailing comma when the parser requires it.
 
-### 11.4 Per-line suppressions
+### 12.4 Per-line suppressions
 
 ```mt
 var count = 0  # lint: ignore
@@ -943,7 +1017,7 @@ var total = 0  # lint: ignore(prefer-let, dead-assignment)
 
 `# lint: ignore` silences all rules on that line. `# lint: ignore(rule1, rule2)` silences only the listed rules.
 
-## 12. Current Unsupported Or Rejected Surfaces
+## 13. Current Unsupported Or Rejected Surfaces
 
 Current extending rejects:
 
@@ -951,7 +1025,7 @@ Current extending rejects:
 - generic interface declarations
 - runtime interface value types such as `Damageable` as a field, local, parameter, or return type
 
-## 13. Example
+## 14. Example
 
 ```mt
 import std.fmt as fmt
