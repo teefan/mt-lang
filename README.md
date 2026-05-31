@@ -675,7 +675,9 @@ Built-in event operations:
 
 - `event.subscribe(listener) -> Result[Subscription, EventError]`
 - `event.subscribe_once(listener) -> Result[Subscription, EventError]`
-- `event.unsubscribe(subscription) -> void`
+- `event.subscribe[State](state: ptr[State], listener: fn(ptr[State], ...)) -> Result[Subscription, EventError]` — stateful overload
+- `event.subscribe_once[State](state: ptr[State], listener: fn(ptr[State], ...)) -> Result[Subscription, EventError]` — stateful one-shot
+- `event.unsubscribe(subscription) -> bool` — returns `true` if the listener was active and removed
 - `event.emit()` or `event.emit(payload)` — only callable from the declaring module
 - `event.wait() -> Task[Result[T, EventError]]` — async wait for the next emission
 

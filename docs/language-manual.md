@@ -896,7 +896,9 @@ Rules:
 
 - `event.subscribe(listener) -> Result[Subscription, EventError]` — register a stateless listener
 - `event.subscribe_once(listener) -> Result[Subscription, EventError]` — register a one-shot listener
-- `event.unsubscribe(subscription) -> void` — remove a listener by subscription handle
+- `event.subscribe[State](state: ptr[State], listener: fn(ptr[State], ...)) -> Result[Subscription, EventError]` — register a stateful listener (the state pointer is stored verbatim and passed to the listener on each dispatch)
+- `event.subscribe_once[State](state: ptr[State], listener: fn(ptr[State], ...)) -> Result[Subscription, EventError]` — register a stateful one-shot listener
+- `event.unsubscribe(subscription) -> bool` — remove a listener by subscription handle; returns `true` if the listener was active and removed, `false` if the handle was stale or invalid
 - `event.emit()` or `event.emit(payload)` — synchronously dispatch to all listeners; only callable from the declaring module
 - `event.wait() -> Task[Result[T, EventError]]` — async wait for the next emission; returns the payload for payload events, or `Result[void, EventError]` for no-payload events
 

@@ -1,6 +1,6 @@
 # Stateful Event Subscriptions
 
-Status: draft RFC (base event system implemented; stateful overloads not yet implemented)
+Status: finalized (implemented)
 
 This document proposes a follow-up extension to [docs/event-declarations.md](docs/event-declarations.md): explicit stateful event subscriptions without hidden closures.
 
