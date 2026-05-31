@@ -4490,6 +4490,82 @@ function main(value: int) -> int:
     end
   end
 
+  def test_hover_and_semantic_tokens_fall_back_after_unterminated_string_edit
+    Dir.mktmpdir("milk-tea-lsp-unterminated-string-fallback") do |dir|
+      path = File.join(dir, "main.mt")
+      healthy_source = <<~MT
+        function main() -> int:
+            let value = 1
+            return value
+
+        function after() -> int:
+            return 2
+      MT
+      broken_source = <<~MT
+        function main() -> int:
+            let value = 1
+            return value
+
+        function after() -> int:
+            return "oops
+      MT
+      File.write(path, healthy_source)
+
+      hover_line = healthy_source.lines.index { |line| line.include?("return value") }
+      hover_char = healthy_source.lines.fetch(hover_line).index("value")
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => healthy_source,
+          },
+        })
+
+        baseline_tokens = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri },
+        }).dig("result", "data")
+        assert_operator baseline_tokens.length, :>, 0
+
+        baseline_hover = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        baseline_hover_value = baseline_hover.dig("result", "contents", "value")
+        assert_includes baseline_hover_value, "let value: int (immutable)"
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => broken_source }],
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("unterminated string literal") }
+
+        hover_after_break = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        hover_after_break_value = hover_after_break.dig("result", "contents", "value")
+        assert_includes hover_after_break_value, "let value: int (immutable)"
+
+        tokens_after_break = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri },
+        }).dig("result", "data")
+        assert_operator tokens_after_break.length, :>, 0
+      end
+    end
+  end
+
   def test_hover_and_semantic_tokens_still_work_after_tab_indentation_error
     Dir.mktmpdir("milk-tea-lsp-tab-indentation-recovery") do |dir|
       path = File.join(dir, "main.mt")
