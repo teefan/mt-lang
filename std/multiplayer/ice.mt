@@ -83,7 +83,7 @@ public function default_ice_config() -> IceConfig:
         local_port_range_end = 0,
         trickle_candidates = true,
         concurrency_mode = juice.ConcurrencyMode.JUICE_CONCURRENCY_MODE_THREAD,
-        identity_provider = default_connection_identity,
+        identity_provider = default_connection_identity
     )
 
 
@@ -203,7 +203,11 @@ extending Server:
 
         this.session_id.assign(offer.session())
         this.protocol_verified = true
-        this.verified_connection = resolve_connection_identity(this.ice.identity_provider, true, this.session_id.as_str())
+        this.verified_connection = resolve_connection_identity(
+            this.ice.identity_provider,
+            true,
+            this.session_id.as_str()
+        )
 
         if this.verified_connection == Option[mp.ConnectionId].none:
             return Result[signal.Answer, mp.Error].failure(error = mp.error(
@@ -299,7 +303,10 @@ extending Server:
         return unsafe: read(context).unknown_packet_count
 
 
-    public mutable function map_inbound_channel_sender(channel: uint, connection: mp.ConnectionId) -> Result[bool, mp.Error]:
+    public mutable function map_inbound_channel_sender(
+        channel: uint,
+        connection: mp.ConnectionId
+    ) -> Result[bool, mp.Error]:
         let context = this.receive_context else:
             return Result[bool, mp.Error].failure(error = mp.error(
                 mp.ErrorCode.not_found,
@@ -477,7 +484,7 @@ extending Client:
             this.session_id.as_str(),
             this.protocol_hash_value,
             local_sdp.as_str(),
-            this.ice.trickle_candidates,
+            this.ice.trickle_candidates
         )
         local_sdp.release()
         return Result[signal.Offer, mp.Error].success(value = payload)
@@ -507,7 +514,11 @@ extending Client:
             ))
 
         this.protocol_verified = true
-        this.connection_id_value = resolve_connection_identity(this.ice.identity_provider, false, this.session_id.as_str())
+        this.connection_id_value = resolve_connection_identity(
+            this.ice.identity_provider,
+            false,
+            this.session_id.as_str()
+        )
 
         if this.connection_id_value == Option[mp.ConnectionId].none:
             return Result[bool, mp.Error].failure(error = mp.error(
@@ -617,7 +628,10 @@ extending Client:
         return unsafe: read(context).unknown_packet_count
 
 
-    public mutable function map_inbound_channel_sender(channel: uint, connection: mp.ConnectionId) -> Result[bool, mp.Error]:
+    public mutable function map_inbound_channel_sender(
+        channel: uint,
+        connection: mp.ConnectionId
+    ) -> Result[bool, mp.Error]:
         let context = this.receive_context else:
             return Result[bool, mp.Error].failure(error = mp.error(
                 mp.ErrorCode.not_found,
@@ -703,8 +717,6 @@ extending Client:
         this.protocol_verified = false
         this.connection_id_value = Option[mp.ConnectionId].none
         this.connection_state = ConnectionState.closed
-
-
 
 
 function create_agent(ice: IceConfig, user_ptr: ptr[void]) -> Result[juice.Agent, mp.Error]:
@@ -798,7 +810,11 @@ function refresh_server_state(server: ref[Server]) -> Result[ptr_uint, mp.Error]
         if current == ConnectionState.connected:
             enqueue_static_event(ref_of(read(server).session_events), SessionEvent.connected, "ice server connected")
         if current == ConnectionState.failed:
-            enqueue_static_event(ref_of(read(server).session_events), SessionEvent.error, "ice server connection failed")
+            enqueue_static_event(
+                ref_of(read(server).session_events),
+                SessionEvent.error,
+                "ice server connection failed"
+            )
         return Result[ptr_uint, mp.Error].success(value = 1)
 
     return Result[ptr_uint, mp.Error].success(value = 0)
@@ -820,7 +836,11 @@ function refresh_client_state(client: ref[Client]) -> Result[ptr_uint, mp.Error]
         if current == ConnectionState.connected:
             enqueue_static_event(ref_of(read(client).session_events), SessionEvent.connected, "ice client connected")
         if current == ConnectionState.failed:
-            enqueue_static_event(ref_of(read(client).session_events), SessionEvent.error, "ice client connection failed")
+            enqueue_static_event(
+                ref_of(read(client).session_events),
+                SessionEvent.error,
+                "ice client connection failed"
+            )
         return Result[ptr_uint, mp.Error].success(value = 1)
 
     return Result[ptr_uint, mp.Error].success(value = 0)
@@ -868,8 +888,6 @@ function release_session_events(queue: ref[vec.Vec[SessionEventRecord]]) -> void
             Option.none:
                 queue.release()
                 return
-
-
 
 
 function send_wire_payload(agent: juice.Agent, kind: mp.PacketKind, payload: span[ubyte]) -> Result[bool, mp.Error]:
@@ -991,7 +1009,6 @@ function handle_received_payload(
                 increment_unknown_count(ref_of(read(context).unknown_packet_count))
 
 
-
 function increment_unknown_count(counter: ref[ptr_uint]) -> void:
     rpc_runtime.increment_unknown_count(counter)
 
@@ -1015,7 +1032,7 @@ function ice_recv_callback(agent: juice.Agent, data: cstr, size: ptr_uint, user_
     if data == c"":
         pass
 
-    if user_ptr == null:
+    if user_ptr == zero[ptr[void]]:
         return
 
     unsafe:
@@ -1048,11 +1065,11 @@ function create_receive_context(
                 last_applied_tick = 0,
                 last_applied_entity_count = 0,
                 last_applied_payload_bytes = 0,
-                last_applied_payload_hash = 0,
+                last_applied_payload_hash = 0
             ),
             inferred_direction = inferred_direction,
             default_sender = default_sender,
-            sender_routes = vec.Vec[SenderRoute].create(),
+            sender_routes = vec.Vec[SenderRoute].create()
         )
     return context
 
@@ -1071,11 +1088,12 @@ function resolve_sender_for_channel(
 ) -> Option[mp.ConnectionId]:
     var index: ptr_uint = 0
     while index < read(context).sender_routes.len():
-        let route = read(context).sender_routes.get(index) else:
+        let route_ptr = read(context).sender_routes.get(index)
+        if route_ptr == null:
             break
         unsafe:
-            if read(route).channel == channel:
-                return Option[mp.ConnectionId].some(value = read(route).connection)
+            if read(ptr[SenderRoute]<-route_ptr).channel == channel:
+                return Option[mp.ConnectionId].some(value = read(ptr[SenderRoute]<-route_ptr).connection)
         index += 1
 
     return read(context).default_sender
@@ -1088,11 +1106,12 @@ function set_sender_route(
 ) -> Result[bool, mp.Error]:
     var index: ptr_uint = 0
     while index < read(context).sender_routes.len():
-        let route = read(context).sender_routes.get(index) else:
+        let route_ptr = read(context).sender_routes.get(index)
+        if route_ptr == null:
             break
         unsafe:
-            if read(route).channel == channel:
-                read(route).connection = connection
+            if read(ptr[SenderRoute]<-route_ptr).channel == channel:
+                read(ptr[SenderRoute]<-route_ptr).connection = connection
                 return Result[bool, mp.Error].success(value = true)
         index += 1
 
