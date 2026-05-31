@@ -1104,6 +1104,57 @@ module MilkTea
         end
       end
 
+      # Returns open documents connected to +seed_uri+ through the import
+      # dependency graph (imports and reverse dependents).
+      def related_open_document_uris(seed_uri)
+        open_uris = @document_state_mutex.synchronize do
+          @open_documents.keys.dup
+        end
+        return [] if open_uris.empty?
+
+        @facts_cache_mutex.synchronize do
+          open_uris.each do |uri|
+            facts = @facts_cache[uri]
+            update_dependency_index(uri, facts)
+          end
+
+          open_set = open_uris.to_set
+          return [seed_uri] unless open_set.include?(seed_uri)
+
+          module_to_uris = Hash.new { |hash, key| hash[key] = Set.new }
+          open_uris.each do |uri|
+            module_name = @dependency_module_name_by_uri[uri]
+            module_to_uris[module_name] << uri if module_name
+          end
+
+          visited = Set.new
+          queue = [seed_uri]
+
+          until queue.empty?
+            current = queue.shift
+            next if visited.include?(current)
+
+            visited << current
+
+            current_module = @dependency_module_name_by_uri[current]
+            if current_module
+              @reverse_import_dependents[current_module].each do |dependent_uri|
+                queue << dependent_uri if open_set.include?(dependent_uri) && !visited.include?(dependent_uri)
+              end
+            end
+
+            imported_modules = @dependency_imports_by_uri[current] || Set.new
+            imported_modules.each do |imported_module_name|
+              module_to_uris[imported_module_name].each do |imported_uri|
+                queue << imported_uri if open_set.include?(imported_uri) && !visited.include?(imported_uri)
+              end
+            end
+          end
+
+          visited.to_a
+        end
+      end
+
       private
 
       # ── Symbol extraction (token-based, no AST position requirement) ────────

@@ -979,6 +979,9 @@ module MilkTea
           return { changes: enum_member_changes } if enum_member_changes
         end
 
+        workspace_symbol_changes = workspace_symbol_identity_rename_changes(uri, token, lsp_line, lsp_char, new_name)
+        return { changes: workspace_symbol_changes } if workspace_symbol_changes
+
         lexical_changes = lexical_rename_changes_in_document(uri, token.lexeme, new_name)
         return { changes: lexical_changes } if lexical_changes
 
@@ -1002,6 +1005,63 @@ module MilkTea
         return nil if edits.empty?
 
         { uri => edits }
+      end
+
+      def workspace_symbol_identity_rename_changes(uri, token, lsp_line, lsp_char, new_name)
+        target_location = resolve_definition_location({
+          'textDocument' => { 'uri' => uri },
+          'position' => { 'line' => lsp_line, 'character' => lsp_char },
+        }, stages: nil)
+        return nil unless target_location
+
+        target_identity = definition_identity_key(target_location)
+        return nil unless target_identity
+
+        related_uris = @workspace.related_open_document_uris(uri)
+        return nil if related_uris.empty?
+
+        changes = {}
+        related_uris.each do |related_uri|
+          tokens = @workspace.get_tokens(related_uri) || []
+          next if tokens.empty?
+
+          edits = tokens.filter_map do |candidate|
+            next unless candidate.type == :identifier && candidate.lexeme == token.lexeme
+
+            candidate_location = resolve_definition_location({
+              'textDocument' => { 'uri' => related_uri },
+              'position' => { 'line' => candidate.line - 1, 'character' => candidate.column - 1 },
+            }, stages: nil)
+            next unless candidate_location
+            next unless definition_identity_key(candidate_location) == target_identity
+
+            {
+              range: token_to_range(candidate),
+              newText: new_name,
+            }
+          end
+
+          changes[related_uri] = edits unless edits.empty?
+        end
+
+        return nil if changes.empty?
+
+        changes
+      end
+
+      def definition_identity_key(location)
+        uri = location[:uri] || location['uri']
+        range = location[:range] || location['range']
+        return nil unless uri && range
+
+        start = range[:start] || range['start']
+        return nil unless start
+
+        line = start[:line] || start['line']
+        character = start[:character] || start['character']
+        return nil if line.nil? || character.nil?
+
+        [uri, line, character]
       end
 
       def scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
@@ -2442,7 +2502,7 @@ module MilkTea
       end
 
       def refresh_open_document_dependency_state(changed_uri, previous_content: nil, current_content: nil)
-        return [] unless dependency_refresh_required_for_edit?(previous_content, current_content)
+        return [] unless dependency_refresh_required_for_edit?(changed_uri, previous_content, current_content)
 
         affected_uris = @workspace.refresh_open_document_dependency_caches(changed_uri)
         invalidate_document_caches_for(affected_uris)
@@ -2642,8 +2702,29 @@ module MilkTea
         end.join("\n")
       end
 
-      def dependency_refresh_required_for_edit?(previous_content, current_content)
-        dependency_import_fingerprint(previous_content) != dependency_import_fingerprint(current_content)
+      def dependency_export_surface_fingerprint(content)
+        content.to_s.each_line.filter_map do |line|
+          stripped = line.strip
+          next if stripped.empty? || stripped.start_with?('#')
+
+          if stripped.match?(/\A(?:public\s+)?(?:type|struct|union|enum|flags|variant|interface|event|function|const|var)\b/)
+            stripped
+          elsif stripped.match?(/\Aextending\b/)
+            stripped
+          elsif stripped.match?(/\Apublic\s+(?:function|const|var|type)\b/)
+            stripped
+          end
+        end.join("\n")
+      end
+
+      def dependency_refresh_required_for_edit?(changed_uri, previous_content, current_content)
+        return false if previous_content == current_content
+        return true if dependency_import_fingerprint(previous_content) != dependency_import_fingerprint(current_content)
+
+        related_uris = @workspace.related_open_document_uris(changed_uri)
+        return false unless related_uris.length > 1
+
+        dependency_export_surface_fingerprint(previous_content) != dependency_export_surface_fingerprint(current_content)
       end
 
       def semantic_tokens_allow_last_good_fallback?(uri)

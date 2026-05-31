@@ -2112,6 +2112,100 @@ function main(value: int) -> int:
     end
   end
 
+  def test_rename_workspace_symbol_identity_updates_related_modules_only
+    Dir.mktmpdir("milk-tea-lsp-rename-workspace-identity") do |dir|
+      api_path = File.join(dir, "api.mt")
+      consumer_path = File.join(dir, "consumer.mt")
+      unrelated_path = File.join(dir, "unrelated.mt")
+
+      api_source = <<~MT
+        public function ping() -> int:
+            return 1
+      MT
+      consumer_source = <<~MT
+        import api as api
+
+        function run() -> int:
+            return api.ping()
+      MT
+      unrelated_source = <<~MT
+        function ping() -> int:
+            return 99
+      MT
+
+      File.write(api_path, api_source)
+      File.write(consumer_path, consumer_source)
+      File.write(unrelated_path, unrelated_source)
+
+      root_uri = path_to_uri(dir)
+      api_uri = path_to_uri(api_path)
+      consumer_uri = path_to_uri(consumer_path)
+      unrelated_uri = path_to_uri(unrelated_path)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        client.send_notification("initialized", {})
+
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => consumer_uri, "languageId" => "milk-tea", "version" => 1, "text" => consumer_source }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => unrelated_uri, "languageId" => "milk-tea", "version" => 1, "text" => unrelated_source }
+        })
+
+        response = client.send_request("textDocument/rename", {
+          "textDocument" => { "uri" => api_uri },
+          "position" => { "line" => 0, "character" => 16 },
+          "newName" => "pong"
+        })
+
+        changes = response.dig("result", "changes")
+        assert_kind_of Hash, changes
+        assert_includes changes.keys, api_uri
+        assert_includes changes.keys, consumer_uri
+        refute_includes changes.keys, unrelated_uri
+
+        api_updated = apply_workspace_edits_to_source(api_source, changes.fetch(api_uri))
+        consumer_updated = apply_workspace_edits_to_source(consumer_source, changes.fetch(consumer_uri))
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => api_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => api_updated }]
+        })
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => consumer_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => consumer_updated }]
+        })
+
+        api_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => api_uri }
+        })
+        consumer_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => consumer_uri }
+        })
+        unrelated_semantic = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => unrelated_uri }
+        })
+
+        api_entries = decode_semantic_token_entries(api_semantic.fetch("result").fetch("data"), legend)
+        consumer_entries = decode_semantic_token_entries(consumer_semantic.fetch("result").fetch("data"), legend)
+        unrelated_entries = decode_semantic_token_entries(unrelated_semantic.fetch("result").fetch("data"), legend)
+
+        api_decl = semantic_entry_for_lexeme(api_updated, api_entries, "pong")
+        consumer_call = semantic_entry_for_lexeme(consumer_updated, consumer_entries, "pong")
+        unrelated_ping = semantic_entry_for_lexeme(unrelated_source, unrelated_entries, "ping")
+
+        assert_equal "function", api_decl.fetch("tokenType")
+        assert_equal "method", consumer_call.fetch("tokenType")
+        assert_equal "function", unrelated_ping.fetch("tokenType")
+      end
+    end
+  end
+
   def test_semantic_tokens_preserve_import_alias_classification_after_multi_range_did_change_batch
     Dir.mktmpdir("milk-tea-lsp-semantic-import-alias-batch") do |dir|
       std_dir = File.join(dir, "std")
@@ -7449,6 +7543,136 @@ function main(value: int) -> int:
         second_answer = semantic_entry_for_lexeme(main_source, second_entries, "Answer")
 
         assert_equal "type", second_answer.fetch("tokenType")
+      end
+    end
+  end
+
+  def test_semantic_tokens_do_not_refresh_after_non_export_imported_module_edit
+    Dir.mktmpdir("mt_lsp_semantic_tokens_import_no_surface_change") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+      api_path = File.join(dir, "api.mt")
+      main_path = File.join(dir, "main.mt")
+
+      api_initial = <<~MT
+        public function answer() -> int:
+            return 1
+      MT
+      api_updated = <<~MT
+        public function answer() -> int:
+            return 2
+      MT
+      main_source = <<~MT
+        import api as api
+
+        function main() -> int:
+            return api.answer()
+      MT
+
+      File.write(api_path, api_initial)
+      File.write(main_path, main_source)
+
+      with_server do |client|
+        init = client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        api_uri = path_to_uri(api_path)
+        main_uri = path_to_uri(main_path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => api_uri, "languageId" => "milk-tea", "version" => 1, "text" => api_initial }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => { "uri" => main_uri, "languageId" => "milk-tea", "version" => 1, "text" => main_source }
+        })
+
+        legend = init.dig("result", "capabilities", "semanticTokensProvider", "legend")
+        first = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_entries = decode_semantic_token_entries(first.fetch("result").fetch("data"), legend)
+        first_answer = semantic_entry_for_lexeme(main_source, first_entries, "answer")
+        first_type = first_answer.fetch("tokenType")
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => api_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => api_updated }]
+        })
+
+        second = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        second_entries = decode_semantic_token_entries(second.fetch("result").fetch("data"), legend)
+        second_answer = semantic_entry_for_lexeme(main_source, second_entries, "answer")
+
+        assert_equal first_type, second_answer.fetch("tokenType")
+      end
+    end
+  end
+
+  def test_document_diagnostic_imported_module_non_export_edit_returns_unchanged
+    Dir.mktmpdir("milk-tea-lsp-didchange-diagnostics-non-export") do |dir|
+      Dir.mkdir(File.join(dir, "std"))
+      helper_path = File.join(dir, "helper.mt")
+      main_path = File.join(dir, "main.mt")
+
+      helper_initial = <<~MT
+        public function answer() -> int:
+            return 1
+      MT
+      helper_updated = <<~MT
+        public function answer() -> int:
+            return 2
+      MT
+      main_source = <<~MT
+        import helper as helper
+
+        function main() -> int:
+            return helper.answer()
+      MT
+
+      File.write(helper_path, helper_initial)
+      File.write(main_path, main_source)
+
+      root_uri = path_to_uri(dir)
+      helper_uri = path_to_uri(helper_path)
+      main_uri = path_to_uri(main_path)
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => root_uri, "capabilities" => {} })
+        client.send_notification("initialized", {})
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => helper_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => helper_initial
+          }
+        })
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => main_uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => main_source
+          }
+        })
+
+        first = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri }
+        })
+        first_result = first.fetch("result")
+        assert_equal "full", first_result.fetch("kind")
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => helper_uri, "version" => 2 },
+          "contentChanges" => [{ "text" => helper_updated }]
+        })
+
+        second = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => main_uri },
+          "previousResultId" => first_result.fetch("resultId")
+        })
+        second_result = second.fetch("result")
+
+        assert_equal "unchanged", second_result.fetch("kind")
+        assert_equal first_result.fetch("resultId"), second_result.fetch("resultId")
       end
     end
   end
