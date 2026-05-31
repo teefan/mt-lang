@@ -907,14 +907,42 @@ module MilkTea
         binding = measure_perf_stage(stages, 'binding') { facts.functions[ctx[:name]] }
         return nil unless binding
 
+        doc_comment = measure_perf_stage(stages, 'docs') do
+          signature_help_doc_comment_for_call(uri, ctx[:name], lsp_line, lsp_char)
+        end
+
         result = measure_perf_stage(stages, 'build') do
           params_list = binding.type.params
           params_str  = format_params(params_list)
           label       = "#{ctx[:name]}(#{params_str}) -> #{binding.type.return_type}"
-          parameters  = params_list.map { |p| { label: "#{p.name}: #{p.type}" } }
+
+          param_docs = doc_tag_param_descriptions(doc_comment)
+          parameters  = params_list.map do |parameter|
+            entry = { label: "#{parameter.name}: #{parameter.type}" }
+            if param_docs.key?(parameter.name)
+              entry[:documentation] = {
+                kind: 'markdown',
+                value: param_docs.fetch(parameter.name),
+              }
+            end
+            entry
+          end
+
+          signature_entry = {
+            label: label,
+            parameters: parameters,
+          }
+
+          signature_docs = signature_help_markdown_for_doc_comment(doc_comment)
+          unless signature_docs.empty?
+            signature_entry[:documentation] = {
+              kind: 'markdown',
+              value: signature_docs,
+            }
+          end
 
           {
-            signatures:      [{ label: label, parameters: parameters }],
+            signatures:      [signature_entry],
             activeSignature: 0,
             activeParameter: ctx[:active_parameter]
           }
@@ -2243,13 +2271,14 @@ module MilkTea
         branch = 'global'
         items = measure_perf_stage(stages, 'build') do
           result = []
+          function_docs_cache = {}
 
           # Functions
           facts.functions.each do |name, binding|
             next unless prefix.empty? || name.start_with?(prefix)
 
             params_str = format_params(binding.type.params)
-            result << {
+            entry = {
               label:        name,
               kind:         3,  # Function
               detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
@@ -2257,6 +2286,16 @@ module MilkTea
               insertTextFormat: 1,
               sortText:     "0_#{name}"
             }
+
+            docs = completion_function_documentation(uri, name, cache: function_docs_cache)
+            unless docs.empty?
+              entry[:documentation] = {
+                kind: 'markdown',
+                value: docs,
+              }
+            end
+
+            result << entry
           end
 
           # Types
@@ -2905,6 +2944,7 @@ module MilkTea
         {
           signature: signature,
           docs: docs || hover_doc_comment_for_definition(definition_entry),
+          doc_comment: hover_doc_comment_data_for_definition(definition_entry),
           source: hover_source_label_for_definition(definition_entry) || hover_source_label_from_location(source_location),
           source_uri: source_uri,
           source_line: source_line,
@@ -3000,8 +3040,13 @@ module MilkTea
         lines << info[:signature]
         lines << "```"
 
+        rendered_doc_comment = false
+        if info[:doc_comment].is_a?(Hash)
+          rendered_doc_comment = append_structured_doc_comment_markdown(lines, info[:doc_comment])
+        end
+
         docs = info[:docs].to_s.strip
-        unless docs.empty?
+        unless rendered_doc_comment || docs.empty?
           lines << ""
           lines << docs
         end
@@ -3022,10 +3067,139 @@ module MilkTea
         lines.join("\n")
       end
 
+      def append_structured_doc_comment_markdown(lines, doc_comment)
+        body = doc_comment[:body_markdown].to_s.strip
+        tags = doc_comment.fetch(:tags, {})
+        params = Array(tags[:params]).reject { |entry| entry[:name].to_s.strip.empty? }
+        returns = tags[:returns]
+        throws = Array(tags[:throws]).reject { |entry| entry[:text].to_s.strip.empty? }
+        see_also = Array(tags[:see]).reject { |entry| entry[:text].to_s.strip.empty? }
+
+        wrote = false
+        unless body.empty?
+          lines << ""
+          lines << body
+          wrote = true
+        end
+
+        unless params.empty?
+          lines << ""
+          lines << "**Parameters**"
+          params.each do |entry|
+            description = entry[:text].to_s.strip
+            if description.empty?
+              lines << "- `#{entry[:name]}`"
+            else
+              lines << "- `#{entry[:name]}`: #{description}"
+            end
+          end
+          wrote = true
+        end
+
+        if returns
+          description = returns[:text].to_s.strip
+          unless description.empty?
+            lines << ""
+            lines << "**Returns**"
+            lines << description
+            wrote = true
+          end
+        end
+
+        unless throws.empty?
+          lines << ""
+          lines << "**Throws**"
+          throws.each do |entry|
+            lines << "- #{entry[:text]}"
+          end
+          wrote = true
+        end
+
+        unless see_also.empty?
+          lines << ""
+          lines << "**See Also**"
+          see_also.each do |entry|
+            lines << "- #{entry[:text]}"
+          end
+          wrote = true
+        end
+
+        wrote
+      end
+
       def hover_doc_comment_for_definition(definition_entry)
         return nil unless definition_entry
 
         @workspace.doc_comment_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def hover_doc_comment_data_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def signature_help_doc_comment_for_call(uri, name, lsp_line, lsp_char)
+        definition_entry = @workspace.find_definition_token_global(
+          name,
+          preferred_uri: uri,
+          before_line: lsp_line + 1,
+          before_char: lsp_char + 1,
+        )
+        return nil unless definition_entry
+
+        @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def signature_help_markdown_for_doc_comment(doc_comment)
+        return '' unless doc_comment.is_a?(Hash)
+
+        lines = []
+        body = doc_comment[:body_markdown].to_s.strip
+        lines << body unless body.empty?
+
+        returns = doc_tag_return_description(doc_comment)
+        unless returns.empty?
+          lines << '' unless lines.empty?
+          lines << "**Returns**"
+          lines << returns
+        end
+
+        lines.join("\n")
+      end
+
+      def doc_tag_param_descriptions(doc_comment)
+        return {} unless doc_comment.is_a?(Hash)
+
+        Array(doc_comment.dig(:tags, :params)).each_with_object({}) do |entry, docs|
+          name = entry[:name].to_s
+          next if name.empty?
+
+          text = entry[:text].to_s.strip
+          next if text.empty?
+
+          docs[name] = text
+        end
+      end
+
+      def doc_tag_return_description(doc_comment)
+        return '' unless doc_comment.is_a?(Hash)
+
+        doc_comment.dig(:tags, :returns, :text).to_s.strip
+      end
+
+      def completion_function_documentation(uri, name, cache:)
+        key = [uri, name]
+        return cache[key] if cache.key?(key)
+
+        definition_entry = @workspace.find_definition_token_global(name, preferred_uri: uri)
+        unless definition_entry
+          cache[key] = ''
+          return ''
+        end
+
+        doc_comment = @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+        cache[key] = signature_help_markdown_for_doc_comment(doc_comment)
       end
 
       def hover_source_label_for_definition(definition_entry)

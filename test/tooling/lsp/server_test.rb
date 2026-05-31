@@ -209,6 +209,19 @@ class LSPServerTest < Minitest::Test
         return add(1, 2)
   MT
 
+  SOURCE_WITH_STRUCTURED_DOC_TAGS = <<~MT
+    ## Adds two values.
+    ## @param a first addend
+    ## @param b second addend
+    ## @return sum of both values
+    ## @see [math reference](https://example.com/math)
+    function add(a: int, b: int) -> int:
+        return a + b
+
+    function main() -> int:
+        return add(1, 2)
+  MT
+
   SOURCE_WITH_LOCAL_INTERFACES = <<~MT
     ## Shared gameplay contract.
     interface ScreenState:
@@ -1533,6 +1546,39 @@ function main(value: int) -> int:
     end
   end
 
+  def test_hover_renders_structured_doc_tag_sections
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      client.send_notification("initialized", {})
+
+      uri = "file:///tmp/lsp_hover_structured_docs_test.mt"
+      source = SOURCE_WITH_STRUCTURED_DOC_TAGS
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => {
+          "uri" => uri,
+          "languageId" => "milk-tea",
+          "version" => 1,
+          "text" => source
+        }
+      })
+
+      hover_response = client.send_request("textDocument/hover", {
+        "textDocument" => { "uri" => uri },
+        "position" => { "line" => 9, "character" => 11 }
+      })
+
+      hover_value = hover_response.dig("result", "contents", "value")
+      assert_includes hover_value, "Adds two values."
+      assert_includes hover_value, "**Parameters**"
+      assert_includes hover_value, "- `a`: first addend"
+      assert_includes hover_value, "- `b`: second addend"
+      assert_includes hover_value, "**Returns**"
+      assert_includes hover_value, "sum of both values"
+      assert_includes hover_value, "**See Also**"
+      assert_includes hover_value, "[math reference](https://example.com/math)"
+    end
+  end
+
   def test_hover_on_imported_type_static_method_uses_qualified_receiver
     Dir.mktmpdir("milk-tea-lsp-hover-imported-type") do |dir|
       std_dir = File.join(dir, "std")
@@ -1847,6 +1893,33 @@ function main(value: int) -> int:
       })
       result = response.fetch("result")
       assert_equal 1, result["activeParameter"]
+    end
+  end
+
+  def test_signature_help_includes_doc_comment_and_parameter_docs
+    with_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_sighel_structured_docs_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => SOURCE_WITH_STRUCTURED_DOC_TAGS }
+      })
+
+      response = client.send_request("textDocument/signatureHelp", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 9, "character" => 15 }
+      })
+
+      result = response.fetch("result")
+      signature = result.dig("signatures", 0)
+      signature_docs = signature.dig("documentation", "value")
+      first_param_docs = signature.dig("parameters", 0, "documentation", "value")
+      second_param_docs = signature.dig("parameters", 1, "documentation", "value")
+
+      assert_includes signature_docs, "Adds two values."
+      assert_includes signature_docs, "**Returns**"
+      assert_includes signature_docs, "sum of both values"
+      assert_equal "first addend", first_param_docs
+      assert_equal "second addend", second_param_docs
     end
   end
 
