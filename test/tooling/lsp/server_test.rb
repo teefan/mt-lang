@@ -1973,7 +1973,7 @@ function main(value: int) -> int:
     end
   end
 
-  def test_publish_diagnostics_uses_full_mode_on_open_and_save
+  def test_publish_diagnostics_uses_fast_mode_on_change_and_full_on_open_save
     protocol = RecordingProtocol.new
     server = MilkTea::LSP::Server.new(protocol: protocol)
     uri = "file:///tmp/lsp_fast_publish_diagnostics.mt"
@@ -1984,11 +1984,35 @@ function main(value: int) -> int:
           return int<-value
     MT
 
+    observed_tiers = Queue.new
+    workspace = server.instance_variable_get(:@workspace)
+    workspace.define_singleton_method(:collect_diagnostics) do |_uri, lint_tier: :full|
+      observed_tiers << lint_tier
+      []
+    end
+
     server.send(:handle_did_open, {
       "textDocument" => {
         "uri" => uri,
         "text" => source,
       }
+    })
+
+    Timeout.timeout(5) do
+      loop do
+        message = protocol.notifications.pop
+        break message if message.dig("method") == "textDocument/publishDiagnostics" && message.dig("params", :uri) == uri
+      end
+    end
+
+
+    server.send(:handle_did_change, {
+      "textDocument" => {
+        "uri" => uri,
+      },
+      "contentChanges" => [{
+        "text" => source.sub("copy", "local_copy"),
+      }],
     })
 
     Timeout.timeout(5) do
@@ -2012,6 +2036,57 @@ function main(value: int) -> int:
       end
     end
 
+    assert_equal :full, observed_tiers.pop
+    assert_equal :fast, observed_tiers.pop
+    assert_equal :full, observed_tiers.pop
+
+  ensure
+    server&.send(:handle_shutdown, nil)
+  end
+
+  def test_did_change_refreshes_open_dependency_caches_only_when_imports_change
+    protocol = RecordingProtocol.new
+    server = MilkTea::LSP::Server.new(protocol: protocol)
+    workspace = server.instance_variable_get(:@workspace)
+    refresh_calls = Queue.new
+
+    workspace.define_singleton_method(:refresh_open_document_dependency_caches) do |changed_uri|
+      refresh_calls << changed_uri
+      []
+    end
+
+    uri = "file:///tmp/lsp_import_refresh_gate.mt"
+    source = <<~MT
+      import demo.math as math
+
+      function main() -> int:
+          return math.answer()
+    MT
+
+    server.send(:handle_did_open, {
+      "textDocument" => {
+        "uri" => uri,
+        "text" => source,
+      }
+    })
+
+    server.send(:handle_did_change, {
+      "textDocument" => { "uri" => uri },
+      "contentChanges" => [{
+        "text" => source.sub("return math.answer()", "let value = math.answer()\n    return value"),
+      }],
+    })
+
+    assert refresh_calls.empty?
+
+    server.send(:handle_did_change, {
+      "textDocument" => { "uri" => uri },
+      "contentChanges" => [{
+        "text" => source.sub("import demo.math as math", "import demo.math as math\nimport demo.extra as extra"),
+      }],
+    })
+
+    assert_equal uri, Timeout.timeout(5) { refresh_calls.pop }
   ensure
     server&.send(:handle_shutdown, nil)
   end
@@ -4348,6 +4423,69 @@ function main(value: int) -> int:
 
         hover_value = hover_response.dig("result", "contents", "value")
         assert_includes hover_value, "let value: int (immutable)"
+      end
+    end
+  end
+
+  def test_hover_and_semantic_tokens_still_work_after_lex_indentation_error
+    Dir.mktmpdir("milk-tea-lsp-lex-indentation-recovery") do |dir|
+      path = File.join(dir, "main.mt")
+      source = <<~MT
+        function main() -> int:
+            let value = 1
+            return value
+      MT
+      broken_source = <<~MT
+        function main() -> int:
+            let value = 1
+             return value
+      MT
+      File.write(path, source)
+
+      hover_line = broken_source.lines.index { |line| line.include?("return value") }
+      hover_char = broken_source.lines.fetch(hover_line).index("value")
+
+      with_server do |client|
+        client.send_request("initialize", { "rootUri" => path_to_uri(dir), "capabilities" => {} })
+        client.send_notification("initialized", {})
+
+        uri = path_to_uri(path)
+        client.send_notification("textDocument/didOpen", {
+          "textDocument" => {
+            "uri" => uri,
+            "languageId" => "milk-tea",
+            "version" => 1,
+            "text" => source,
+          },
+        })
+
+        healthy_tokens = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri },
+        }).dig("result", "data")
+        assert_operator healthy_tokens.length, :>, 0
+
+        client.send_notification("textDocument/didChange", {
+          "textDocument" => { "uri" => uri, "version" => 2 },
+          "contentChanges" => [{ "text" => broken_source }],
+        })
+
+        diagnostics = client.send_request("textDocument/diagnostic", {
+          "textDocument" => { "uri" => uri },
+        })
+        messages = diagnostics.fetch("result").fetch("items").map { |item| item.fetch("message") }
+        assert messages.any? { |message| message.include?("indentation must use multiples of 4 spaces") }
+
+        hover_response = client.send_request("textDocument/hover", {
+          "textDocument" => { "uri" => uri },
+          "position" => { "line" => hover_line, "character" => hover_char },
+        })
+        hover_value = hover_response.dig("result", "contents", "value")
+        assert_includes hover_value, "let value: int (immutable)"
+
+        semantic_tokens = client.send_request("textDocument/semanticTokens/full", {
+          "textDocument" => { "uri" => uri },
+        }).dig("result", "data")
+        assert_operator semantic_tokens.length, :>, 0
       end
     end
   end

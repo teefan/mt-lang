@@ -2366,6 +2366,46 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, function_def.body[2]
   end
 
+  def test_parse_collecting_errors_reports_unexpected_indentation_in_statement_block_and_recovers_following_declarations
+    source = <<~MT
+      function release_app() -> void:
+          shutdown_network()
+              app.registry.release()
+
+      function default_state() -> int:
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source, path: "demo.mt")
+
+    assert_equal 1, result.errors.length
+    assert_match(/unexpected indentation in statement block/, result.errors.first.message)
+    assert_match(/demo\.mt:3:9/, result.errors.first.message)
+
+    refute_nil result.ast
+    assert_equal "default_state", result.ast.declarations.last&.name
+  end
+
+  def test_parse_collecting_errors_reports_lex_indentation_error_and_preserves_following_declarations
+    source = <<~MT
+      function release_app() -> void:
+          shutdown_network()
+           app.registry.release()
+
+      function default_state() -> int:
+          return 0
+    MT
+
+    result = MilkTea::Parser.parse_collecting_errors(source, path: "demo.mt")
+
+    assert_equal 1, result.errors.length
+    assert_match(/indentation must use multiples of 4 spaces/, result.errors.first.message)
+    assert_match(/demo\.mt:3:6/, result.errors.first.message)
+
+    refute_nil result.ast
+    assert_equal %w[release_app default_state], result.ast.declarations.map(&:name)
+  end
+
   def test_parse_collecting_errors_preserves_typed_local_declaration_with_invalid_initializer
     source = <<~MT
       function main() -> int:

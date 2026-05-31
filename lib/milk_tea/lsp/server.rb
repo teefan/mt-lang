@@ -530,7 +530,7 @@ module MilkTea
         @workspace.index_workspace(@root_uri) if @root_uri
 
         @workspace.open_document_uris.each do |uri|
-          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         end
         nil
       end
@@ -560,7 +560,7 @@ module MilkTea
         @semantic_tokens_cache.delete(uri)
         @fixall_cache.delete(uri)
         diagnostics_start = monotonic_time
-        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
+        schedule_diagnostics(uri, lint_tier: :full) unless @workspace.background_document?(uri)
 
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
@@ -580,6 +580,7 @@ module MilkTea
       def handle_did_change(params)
         uri     = params['textDocument']['uri']
         changes = params['contentChanges'] || []
+        previous_content = @workspace.get_content(uri)
 
         # Enhancement 3: apply incremental edits in sequence
         changes.each do |change|
@@ -592,8 +593,9 @@ module MilkTea
         end
 
         invalidate_document_caches(uri)
-        refresh_open_document_dependency_state(uri)
-        schedule_diagnostics(uri) unless @workspace.background_document?(uri)
+        current_content = @workspace.get_content(uri)
+        refresh_open_document_dependency_state(uri, previous_content: previous_content, current_content: current_content)
+        schedule_diagnostics(uri, lint_tier: :fast) unless @workspace.background_document?(uri)
         nil
       end
 
@@ -606,7 +608,7 @@ module MilkTea
         if previous_source == 'background-document' && source != 'background-document' && !@workspace.get_content(uri).empty?
           @semantic_tokens_cache.delete(uri)
           @fixall_cache.delete(uri)
-          schedule_diagnostics(uri, force: true)
+          schedule_diagnostics(uri, force: true, lint_tier: :full)
         end
 
         nil
@@ -633,7 +635,7 @@ module MilkTea
         @workspace.update_document(uri, text) if text
         invalidate_document_caches(uri)
         refresh_open_document_dependency_state(uri)
-        schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+        schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         nil
       end
 
@@ -661,7 +663,7 @@ module MilkTea
         tokens_ms = elapsed_ms(tokens_start)
 
         facts_start = monotonic_time
-        facts = @workspace.get_facts(uri, allow_last_good_fallback: false)
+        facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
         facts_ms = elapsed_ms(facts_start)
 
         build_start = monotonic_time
@@ -874,7 +876,11 @@ module MilkTea
         return [] unless token&.type == :identifier
 
         if (facts = @workspace.get_facts(uri))
-          scoped = scoped_local_reference_locations(uri, token, lsp_line, lsp_char, facts, include_declaration: true)
+          scoped = begin
+            scoped_local_reference_locations(uri, token, lsp_line, lsp_char, facts, include_declaration: true)
+          rescue StandardError
+            nil
+          end
           unless scoped.nil?
             return scoped.map { |entry| { range: entry[:range], kind: 1 } }
           end
@@ -1333,7 +1339,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         end
       end
 
@@ -1347,7 +1353,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         end
       end
 
@@ -1360,7 +1366,7 @@ module MilkTea
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
-          schedule_diagnostics(uri, force: true) unless @workspace.background_document?(uri)
+          schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
         end
       end
 
@@ -2326,7 +2332,7 @@ module MilkTea
 
         invalidate_document_caches_for(affected_uris)
         affected_uris.each do |affected_uri|
-          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
+          schedule_diagnostics(affected_uri, force: true, lint_tier: :full) unless @workspace.background_document?(affected_uri)
         end
         nil
       end
@@ -2340,11 +2346,13 @@ module MilkTea
         uris.each { |uri| invalidate_document_caches(uri) }
       end
 
-      def refresh_open_document_dependency_state(changed_uri)
+      def refresh_open_document_dependency_state(changed_uri, previous_content: nil, current_content: nil)
+        return [] unless dependency_refresh_required_for_edit?(previous_content, current_content)
+
         affected_uris = @workspace.refresh_open_document_dependency_caches(changed_uri)
         invalidate_document_caches_for(affected_uris)
         affected_uris.each do |affected_uri|
-          schedule_diagnostics(affected_uri, force: true) unless @workspace.background_document?(affected_uri)
+          schedule_diagnostics(affected_uri, force: true, lint_tier: :full) unless @workspace.background_document?(affected_uri)
         end
         affected_uris
       end
@@ -2367,23 +2375,38 @@ module MilkTea
 
       # ── Diagnostics ──────────────────────────────────────────────────────────
 
-      def schedule_diagnostics(uri, force: false)
+      def schedule_diagnostics(uri, force: false, lint_tier: :full)
         content = @workspace.get_content(uri)
         content_digest = Digest::SHA256.hexdigest(content)
+        normalized_lint_tier = Linter.normalize_lint_tier(lint_tier)
         enqueue = false
 
         @diagnostics_mutex.synchronize do
-          if !force && @diagnostics_last_scheduled_hash[uri] == content_digest
+          previous = @diagnostics_last_scheduled_hash[uri]
+          if !force && previous && previous[:digest] == content_digest && lint_tier_rank(previous[:lint_tier]) >= lint_tier_rank(normalized_lint_tier)
             @diagnostics_perf[:skipped_unchanged] += 1 if perf_logging?
             return
           end
 
           @diagnostics_generation[uri] += 1
-          @diagnostics_last_scheduled_hash[uri] = content_digest
+          @diagnostics_last_scheduled_hash[uri] = {
+            digest: content_digest,
+            lint_tier: normalized_lint_tier,
+          }
           @diagnostics_perf[:scheduled] += 1 if perf_logging?
+
+          pending = @diagnostics_pending[uri]
+          pending_lint_tier = pending ? pending[:lint_tier] : normalized_lint_tier
+          merged_lint_tier = if pending && pending[:content] == content
+                               more_strict_lint_tier(pending_lint_tier, normalized_lint_tier)
+                             else
+                               normalized_lint_tier
+                             end
+
           @diagnostics_pending[uri] = {
             generation: @diagnostics_generation[uri],
             content: content,
+            lint_tier: merged_lint_tier,
           }
 
           unless @diagnostics_enqueued.include?(uri)
@@ -2457,7 +2480,7 @@ module MilkTea
 
           @diagnostics_perf[:dequeued] += 1 if perf_logging?
 
-          diagnostics = collect_diagnostics_for_content(uri, snapshot[:content])
+          diagnostics = collect_diagnostics_for_content(uri, snapshot[:content], lint_tier: snapshot[:lint_tier])
           publish = false
           @diagnostics_mutex.synchronize do
             publish = snapshot[:generation] == @diagnostics_generation[uri]
@@ -2492,11 +2515,46 @@ module MilkTea
         end
       end
 
-      def collect_diagnostics_for_content(uri, _content)
-        @workspace.collect_diagnostics(uri)
+      def collect_diagnostics_for_content(uri, _content, lint_tier: :full)
+        @workspace.collect_diagnostics(uri, lint_tier: lint_tier)
       rescue StandardError => e
         warn "LSP diagnostics error #{uri}: #{e.message}"
         []
+      end
+
+      def lint_tier_rank(lint_tier)
+        case Linter.normalize_lint_tier(lint_tier)
+        when :full
+          2
+        when :fast
+          1
+        else
+          0
+        end
+      end
+
+      def more_strict_lint_tier(a, b)
+        lint_tier_rank(a) >= lint_tier_rank(b) ? Linter.normalize_lint_tier(a) : Linter.normalize_lint_tier(b)
+      end
+
+      def dependency_import_fingerprint(content)
+        content.to_s.each_line.filter_map do |line|
+          stripped = line.strip
+          next if stripped.empty? || stripped.start_with?('#')
+          next unless stripped.start_with?('import ')
+
+          stripped
+        end.join("\n")
+      end
+
+      def dependency_refresh_required_for_edit?(previous_content, current_content)
+        dependency_import_fingerprint(previous_content) != dependency_import_fingerprint(current_content)
+      end
+
+      def semantic_tokens_allow_last_good_fallback?(uri)
+        @diagnostics_mutex.synchronize do
+          @diagnostics_pending.key?(uri) || @diagnostics_enqueued.include?(uri)
+        end
       end
 
       # ── Enhancement 1 helpers: hover type resolution ─────────────────────────
