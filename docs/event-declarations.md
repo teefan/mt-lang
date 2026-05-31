@@ -206,7 +206,7 @@ For a no-payload event:
 ```mt
 subscribe(listener: fn() -> void) -> Result[Subscription, EventError]
 subscribe_once(listener: fn() -> void) -> Result[Subscription, EventError]
-unsubscribe(subscription: Subscription) -> bool
+unsubscribe(subscription: Subscription) -> void
 emit() -> void
 wait() -> Task[Result[void, EventError]]
 ```
@@ -216,7 +216,7 @@ For an event with payload type `T`:
 ```mt
 subscribe(listener: fn(T) -> void) -> Result[Subscription, EventError]
 subscribe_once(listener: fn(T) -> void) -> Result[Subscription, EventError]
-unsubscribe(subscription: Subscription) -> bool
+unsubscribe(subscription: Subscription) -> void
 emit(value: T) -> void
 wait() -> Task[Result[T, EventError]]
 ```

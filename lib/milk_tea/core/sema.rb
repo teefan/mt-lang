@@ -5375,7 +5375,7 @@ module MilkTea
             expression: arguments.first.value,
           )
 
-          @types.fetch("bool")
+          @types.fetch("void")
         when :event_emit
           if receiver_type.payload_type.nil?
             raise_sema_error("emit expects 0 arguments, got #{arguments.length}") unless arguments.empty?
