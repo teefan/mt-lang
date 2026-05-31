@@ -53,6 +53,8 @@ public type PolicyKind = relevancy.PolicyKind
 public type CellCoord = relevancy.CellCoord
 public type GridCell = spatial.GridCell
 public type GridIndex = spatial.GridIndex
+public type TypedRpcRoute = rpc_runtime.TypedRpcRoute
+public type TypedRpcDispatchTable = rpc_runtime.TypedRpcDispatchTable
 
 public attribute[struct] replicated(authority: Authority)
 public attribute[struct] sync_defaults(mode: TransferMode, channel: ubyte, rate_hz: uint, target: SyncTarget)
