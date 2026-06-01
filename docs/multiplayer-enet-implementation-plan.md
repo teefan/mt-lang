@@ -1,6 +1,6 @@
 # `std.multiplayer.enet` Implementation Status
 
-Status: implemented ENet backend, explicit rollback primitives, and initial session helpers
+Status: shipped ENet backend with explicit snapshot/RPC/lockstep transport, explicit rollback primitives, and slot/ready-state session helpers
 
 This document records the current shipped implementation of `std.multiplayer.enet`.
 It replaces the earlier phase-plan view.
@@ -34,7 +34,23 @@ Implemented in stdlib:
 - `std/multiplayer/spatial.mt`
 - `std/multiplayer/wire.mt`
 - `std/multiplayer/enet.mt`
-- `std/multiplayer/enet_sync.mt`
+- `std/multiplayer/enet_sync.mt` (observer-state sync helpers layered on top of `enet`)
+
+### Deterministic lockstep transport helpers
+
+In addition to the snapshot/RPC transport, `std.multiplayer.enet` ships narrow ENet-facing
+lockstep transport:
+
+- Server-side `broadcast_lockstep_commands`, `broadcast_lockstep_checksum`,
+  `send_lockstep_commands_to`, `send_lockstep_checksum_to`
+- Client-side `send_lockstep_commands`, `send_lockstep_checksum`
+- Inbound queues with `pop_lockstep_command`, `pop_lockstep_checksum`,
+  `pending_lockstep_command_count`, `pending_lockstep_checksum_count`,
+  and matching `SessionEvent.lockstep_command_received` / `SessionEvent.lockstep_checksum_received` events
+- Turn collection, sealing, checksum reporting, and desync detection live in
+  `std.multiplayer.lockstep` and are intentionally separate from the transport layer
+
+End-to-end coverage is in `test/std/std_multiplayer_enet_lockstep_test.rb`.
 
 ### ENet server/client session backend
 
@@ -113,13 +129,16 @@ Runtime:
 - `test/std/std_multiplayer_enet_stress_test.rb`
 - `test/std/std_multiplayer_rollback_test.rb`
 - `test/std/std_multiplayer_session_test.rb`
+- `test/std/std_multiplayer_enet_lockstep_test.rb`
+- `test/std/std_multiplayer_lockstep_test.rb`
 
 ## Explicitly Not Implemented Here
 
 1. Automatic NAT traversal or NAT punching.
 2. Lobby/matchmaking services.
-3. Full prediction/rollback netcode.
+3. Full prediction/rollback netcode (explicit `std.multiplayer.rollback` primitives exist; higher-level automatic prediction is still caller-owned).
 4. Dedicated built-in relay or discovery services.
+5. Per-peer `ConnectionStats` exposure (the struct is defined in `std.multiplayer.protocol` but the ENet backend does not yet populate it; peer RTT is available but not wired through).
 
 ## Remaining Follow-On Work
 
@@ -206,14 +225,26 @@ Preferred next step when this becomes worth doing:
 - keep the boundary additive to ENet-facing runtime modules instead of baking discovery policy into core transport/runtime code
 
 7. Deterministic lockstep helpers.
-Status: deferred until a real RTS-style gameplay package needs them.
-Why deferred:
-- party-style games and lightweight action games can usually stay on the current authoritative snapshot/RPC model
-- Warcraft-style 4 to 8 player simulation benefits more from command turns, desync detection, and deterministic replay than from snapshot rollback alone
+Status: implemented as the initial narrow runtime surface; ENet transport path validated.
+Work completed:
+- `std.multiplayer.lockstep` now ships `TurnCollector[T]`, `CommandEnvelope[T]`, `ChecksumReport`, `DesyncReport`, and `TurnStatus`
+- per-slot submission tracking, sealing, application, checksum reporting, and refusal-to-advance on desync are all enforced at runtime
+- raw ENet-facing command and checksum packet codecs plus owned incoming queue helpers are in place
+- the `std.multiplayer.enet` backend ships server-side `broadcast_lockstep_*` / `send_lockstep_*_to` and client-side `send_lockstep_*`, plus `pop_lockstep_command` / `pop_lockstep_checksum` and matching `SessionEvent` entries
+- focused runtime coverage in `test/std/std_multiplayer_lockstep_test.rb` and end-to-end transport coverage in `test/std/std_multiplayer_enet_lockstep_test.rb` validate the contract
+- the full design and remaining surface lives in `docs/multiplayer-lockstep-rfc.md`
 
-Design note:
-- this path is now tracked separately in `docs/multiplayer-lockstep-rfc.md` so it stays explicit instead of being mixed into snapshot/rollback guidance
+Why this is the right current scope:
+- the runtime can truthfully run deterministic turn collection and per-peer checksum exchange now
+- richer deadline and recovery policy should wait for a second RTS-style gameplay package that proves the contract, rather than baking one application's policy into stdlib
 
-Preferred next step when this becomes worth doing:
-- add a separate command-stream layer with turn windows, input collection deadlines, deterministic checksums, and desync reporting
-- keep it parallel to snapshot replication rather than forcing all multiplayer games through one model
+8. Surface and housekeeping cleanups.
+Status: known, low priority.
+Items:
+- `Server.dispatch_tick_fair(...)` is a one-line wrapper around `dispatch_world_tick_fair(...)` and should be removed; the world-snapshot-aware version is the only one callers need
+- inbound snapshots currently decode the header twice: once when `enqueue_incoming` validates the packet, then again in `apply_from_packet`; the receiver path should decode once and reuse the parsed header
+- `RpcContext.tick` is always 0 on inbound RPCs; either populate it from the snapshot tick the server is currently emitting (when the connection has a known baseline) or document the field as caller-reserved
+- `ConnectionStats` is defined in `std.multiplayer.protocol` but the ENet backend never populates it; expose a per-`Server` accessor that fills the struct from ENet peer RTT/loss fields
+- `runtime_ref_count` in `std.multiplayer.enet` is a plain counter; safe in the current single-threaded runtime but should be re-evaluated before any concurrent host/client usage
+
+These are intentionally not blocking: they do not change wire compatibility, do not affect the public surface area exposed through `std.multiplayer`, and do not break any covered behavior.

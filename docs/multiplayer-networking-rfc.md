@@ -63,6 +63,7 @@ Root declarations live in `std/multiplayer.mt` and alias runtime modules:
 - `std/multiplayer/spatial.mt`
 - `std/multiplayer/wire.mt`
 - `std/multiplayer/enet.mt`
+- `std/multiplayer/enet_sync.mt` (small observer-state helpers layered over `enet`)
 
 ## Wire-Safe Boundary (Current)
 
@@ -104,7 +105,8 @@ This RFC does not prescribe matchmaking, lobby, platform-level orchestration for
 Current repository boundary:
 
 - `std.multiplayer.enet` is the concrete gameplay/network transport runtime.
+- `std.multiplayer.enet_sync` is the small observer-state sync layer above `enet`; it does not add a separate transport.
 - `std.multiplayer.session` is the current small runtime layer for slot occupancy and ready-state bookkeeping.
-- `std.multiplayer.lockstep` is the current small runtime layer for deterministic turn submission, sealing, checksum reporting, and desync detection.
+- `std.multiplayer.lockstep` is the current small runtime layer for deterministic turn submission, sealing, checksum reporting, and desync detection. Raw ENet-facing command/checksum transport helpers live alongside it; the wire-shape design lives in `docs/multiplayer-lockstep-rfc.md`.
 - Higher-level matchmaking, dedicated relay services, and any NAT traversal/punching layer remain outside the core runtime and require application-level integration.
-- Broader Warcraft-style deterministic command-turn networking still continues in `docs/multiplayer-lockstep-rfc.md`.
+- Broader Warcraft-style deterministic command-turn networking (deadline policy, replay capture, desync recovery) still continues in `docs/multiplayer-lockstep-rfc.md`.

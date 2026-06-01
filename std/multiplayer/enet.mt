@@ -540,28 +540,6 @@ extending Server:
         )
 
 
-    public mutable function dispatch_tick_fair(
-        tick: mp.Tick,
-        plan: mp.TickBudgetPlan,
-        snapshot_channel: uint,
-        snapshot_transfer_mode: mp.TransferMode,
-        rpc_channel: uint,
-        rpc_transfer_mode: mp.TransferMode,
-        rpc_direction: mp.RpcDirection,
-        rpc_payload: span[ubyte],
-    ) -> Result[mp.TickDispatchReport, mp.Error]:
-        return this.dispatch_world_tick_fair(
-            tick,
-            plan,
-            snapshot_channel,
-            snapshot_transfer_mode,
-            rpc_channel,
-            rpc_transfer_mode,
-            rpc_direction,
-            rpc_payload,
-        )
-
-
     public mutable function dispatch_world_tick_fair(
         tick: mp.Tick,
         plan: mp.TickBudgetPlan,
