@@ -6884,6 +6884,7 @@ module MilkTea
       end
 
       def iterator_loop_type(type)
+        type = referenced_type(type) if ref_type?(type)
         iter_method = lookup_method(type, "iter")
         return nil unless iter_method
 
