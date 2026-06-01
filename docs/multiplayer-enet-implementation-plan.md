@@ -128,4 +128,31 @@ This means basic ICE and signaling support is available in the runtime; higher-l
 
 ## Remaining Follow-On Work
 
-When prioritized, ICE/NAT work should be introduced as additive modules that reuse the existing registry/world/rpc/snapshot contract, rather than changing ENet semantics.
+When prioritized, multiplayer follow-on work should stay additive and explicit, reusing the existing registry/world/rpc/snapshot contract instead of hiding costs or forcing false backend symmetry.
+
+Current prioritized plan:
+
+1. ICE signaling ergonomics without hidden orchestration.
+Status: done.
+Work completed:
+- local libjuice candidate and gathering-done callbacks now feed explicit pending queues in `std.multiplayer.ice`
+- server/client expose `pending_local_candidate_count`, `pop_local_candidate`, `pending_local_gathering_done_count`, and `pop_local_gathering_done`
+- runtime ICE coverage now exercises explicit local signal relay instead of relying only on offer/answer
+
+2. Explicit reusable snapshot preparation.
+Status: done.
+Work completed:
+- `World.prepare_snapshot(tick, baseline_tick)` now returns an owned prepared snapshot with header, signature, and payload
+- ENet world dispatch now uses that explicit prepared snapshot surface internally instead of reassembling header and payload ad hoc
+- focused world runtime coverage validates prepared snapshot reuse and payload round-trip
+
+3. Transport-neutral gameplay session abstraction.
+Status: deferred pending clearer backend convergence.
+Why deferred:
+- ENet is multi-peer and budget-scheduler-oriented
+- ICE is currently single-session and signaling-driven
+- forcing one shared session type now would either erase real capabilities or introduce an oversized optional API surface
+
+Preferred next step when this becomes worth doing:
+- first extract a small common vocabulary around inbound queue draining and explicit snapshot/RPC send operations only
+- only promote that to a shared gameplay-facing session type once both backends can satisfy the same contract honestly

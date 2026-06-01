@@ -87,12 +87,106 @@ function main() -> int:
     if not applied:
       return 8
 
+    var relayed_candidates: ptr_uint = 0
+    var relayed_gathering_done: ptr_uint = 0
+    var signal_rounds: ptr_uint = 0
+    while signal_rounds < 960:
+      let _ = server.pump(1) else:
+        return 101
+      let _ = client.pump(1) else:
+        return 102
+
+      while client.pending_local_candidate_count() > 0:
+        let local_candidate = client.pop_local_candidate() else:
+          return 103
+        match local_candidate:
+          Option.some as payload:
+            var candidate = payload.value
+            if not candidate.session().equal("session-a"):
+              candidate.release()
+              return 104
+            let added = server.add_remote_candidate(candidate) else:
+              candidate.release()
+              return 105
+            candidate.release()
+            if not added:
+              return 106
+            relayed_candidates += 1
+          Option.none:
+            pass
+
+      while server.pending_local_candidate_count() > 0:
+        let local_candidate = server.pop_local_candidate() else:
+          return 107
+        match local_candidate:
+          Option.some as payload:
+            var candidate = payload.value
+            if not candidate.session().equal("session-a"):
+              candidate.release()
+              return 108
+            let added = client.add_remote_candidate(candidate) else:
+              candidate.release()
+              return 109
+            candidate.release()
+            if not added:
+              return 110
+            relayed_candidates += 1
+          Option.none:
+            pass
+
+      while client.pending_local_gathering_done_count() > 0:
+        let local_done = client.pop_local_gathering_done() else:
+          return 111
+        match local_done:
+          Option.some as payload:
+            var done = payload.value
+            if not done.session().equal("session-a"):
+              done.release()
+              return 112
+            let marked = server.mark_remote_gathering_done() else:
+              done.release()
+              return 113
+            done.release()
+            if not marked:
+              return 114
+            relayed_gathering_done += 1
+          Option.none:
+            pass
+
+      while server.pending_local_gathering_done_count() > 0:
+        let local_done = server.pop_local_gathering_done() else:
+          return 115
+        match local_done:
+          Option.some as payload:
+            var done = payload.value
+            if not done.session().equal("session-a"):
+              done.release()
+              return 116
+            let marked = client.mark_remote_gathering_done() else:
+              done.release()
+              return 117
+            done.release()
+            if not marked:
+              return 118
+            relayed_gathering_done += 1
+          Option.none:
+            pass
+
+      if relayed_candidates > 0 and relayed_gathering_done > 0:
+        break
+      signal_rounds += 1
+
+    if relayed_candidates == 0:
+      return 119
+    if relayed_gathering_done == 0:
+      return 120
+
     let verified_connection = server.first_verified_connection() else:
       return 9
     if verified_connection != 1:
       return 10
 
-    var wrong_answer = signal.answer("session-a", registry.protocol_hash() + ulong<-1, answer.description(), true)
+    var wrong_answer = signal.answer("session-a", bindings.registry.protocol_hash() + ulong<-1, answer.description(), true)
     defer wrong_answer.release()
     match client.apply_answer(wrong_answer):
         Result.success as _:

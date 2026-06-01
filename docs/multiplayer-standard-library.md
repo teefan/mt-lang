@@ -150,12 +150,14 @@ Implemented capabilities include:
 
 - host/client setup (`listen`, `connect`, localhost helpers)
 - protocol verification handshake
+- explicit local ICE signaling queue access (`pending_local_candidate_count`, `pop_local_candidate`, `pending_local_gathering_done_count`, `pop_local_gathering_done`) for application-level candidate relay
 - event pump/flush/release lifecycle
 - snapshot and RPC incoming queue draining (`process_incoming_snapshots`, `process_incoming_rpcs_typed`) backed by shared world/RPC queue-drain utilities
 - explicit send helpers (`send_snapshot_to`, `send_rpc_to`, `broadcast_snapshot`, `broadcast_rpc`)
 - fair/weighted/budgeted scheduling helpers
 - gameplay-facing fair tick dispatch (`dispatch_tick_fair`, which encodes snapshot bytes from the current world state internally)
 - lower-level pre-encoded fair tick dispatch (`dispatch_preencoded_tick_fair`) for runtimes that already own snapshot headers and payload bytes
+- explicit world snapshot preparation via `World.prepare_snapshot(...)`, which returns owned header/signature/payload data for reuse across send paths without hidden caching
 
 ## Behavioral Boundaries (Current)
 
@@ -181,6 +183,12 @@ Current state:
 - Higher-level NAT punching orchestration and matchmaking remain outside the core runtime and require application-level integration.
 
 Future ICE/NAT work should layer on existing core runtime modules instead of changing core ENet behavior.
+
+Current prioritization after the latest cleanup:
+
+1. Done: explicit ICE local signaling surfaces for candidate and gathering-done relay.
+2. Done: explicit prepared-snapshot surface for reusable world snapshot encoding.
+3. Deferred by design: a transport-neutral gameplay session abstraction. ENet and ICE still differ materially enough that forcing one shared session type now would add a second ordinary API without a truthful common contract.
 
 ## Existing Runtime Coverage
 
