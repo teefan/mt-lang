@@ -1,6 +1,6 @@
 # Deterministic Lockstep For LAN Strategy Games
 
-Status: draft
+Status: initial runtime surface implemented; richer deadline and recovery policy still caller-owned
 
 This RFC defines the intended path for Warcraft-style LAN multiplayer so it stays separate from the current snapshot/rollback guidance.
 
@@ -95,9 +95,9 @@ Snapshot replication and rollback remain useful, but not as the primary simulati
 If a Warcraft-style package becomes active work, the order should be:
 
 1. Define deterministic gameplay rules and checksum surface in the game package.
-2. Done: add a narrow lockstep turn-collection runtime with no discovery or service layer.
-3. Add desync reporting and replay capture before adding convenience abstractions.
-4. Only then consider rejoin, spectator sync, or partial state snapshots.
+2. Done: narrow lockstep turn-collection runtime with no discovery or service layer.
+3. Desync reporting is in; replay capture above the raw `TurnCollector[T]` layer is still caller-owned. Add it before any convenience abstraction.
+4. Rejoin, spectator sync, or partial state snapshots are still future work.
 
 ## When We Can Start
 
