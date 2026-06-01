@@ -4,6 +4,7 @@ import std.multiplayer.world as world
 import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.snapshot as snapshot
 import std.multiplayer.session as session
+import std.multiplayer.lockstep as lockstep
 import std.multiplayer.relevancy as relevancy
 import std.multiplayer.spatial as spatial
 
@@ -51,6 +52,13 @@ public type BaselineSet = snapshot.BaselineSet
 public type IncomingSnapshotPacket = snapshot.IncomingSnapshotPacket
 public type SlotEntry = session.SlotEntry
 public type SlotRoster = session.SlotRoster
+public type TurnId = lockstep.TurnId
+public type CommandPacketHeader = lockstep.CommandPacketHeader
+public type ChecksumReport = lockstep.ChecksumReport
+public type DesyncReport = lockstep.DesyncReport
+public type TurnStatus = lockstep.TurnStatus
+public type IncomingCommandPacket = lockstep.IncomingCommandPacket
+public type IncomingChecksumPacket = lockstep.IncomingChecksumPacket
 public type Policy = relevancy.Policy
 public type PolicyKind = relevancy.PolicyKind
 public type CellCoord = relevancy.CellCoord
