@@ -85,6 +85,10 @@ function choose_best_open[World, Goal, Context](
                 continue
 
             let node = read(node_ptr)
+            if node.closed:
+                open_index += 1
+                continue
+
             let score = node.cost_so_far + planner.heuristic(ptr_of(context), node.world, goal)
             if not saw_candidate or score < best_score:
                 best_score = score

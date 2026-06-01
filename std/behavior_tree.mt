@@ -124,7 +124,7 @@ function tick_node[Context](tree: ref[Tree[Context]], node_id: ptr_uint, context
 
             NodeKind.parallel_all:
                 if read(node).children.is_empty():
-                    return Status.success
+                    return Status.failure
 
                 var saw_running = false
                 for child_ptr in read(node).children:
