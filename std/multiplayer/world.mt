@@ -223,6 +223,31 @@ extending World:
         return Result[ptr_uint, Error].success(value = applied)
 
 
+    public mutable function drain_incoming_snapshots(
+        queue: ref[vec.Vec[snapshot_runtime.IncomingSnapshotPacket]],
+        baselines: ref[snapshot_runtime.BaselineSet],
+    ) -> Result[ptr_uint, Error]:
+        var processed: ptr_uint = 0
+        while true:
+            var packet = snapshot_runtime.dequeue_incoming(queue) else:
+                return Result[ptr_uint, Error].success(value = processed)
+
+            match this.apply_snapshot_payload(packet.payload.as_span()):
+                Result.success:
+                    snapshot_runtime.apply_payload(
+                        packet.header.tick,
+                        packet.header.entity_count,
+                        packet.payload.as_span(),
+                        baselines
+                    )
+                    processed += 1
+                Result.failure as payload:
+                    packet.release()
+                    return Result[ptr_uint, Error].failure(error = payload.error)
+
+            packet.release()
+
+
     public mutable function release() -> void:
         release_entity_storage(ref_of(this.entities))
         this.entities.release()

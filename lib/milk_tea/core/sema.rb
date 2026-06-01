@@ -2379,7 +2379,7 @@ module MilkTea
               type: error_type,
               mutable: false,
               kind: :let,
-              id: @preassigned_local_binding_ids.fetch(statement.else_binding.object_id),
+              id: preassigned_local_binding_id_for(statement.else_binding),
             )
             record_declaration_binding(statement.else_binding, else_binding)
             else_scopes = scopes + [{ statement.else_binding.name => else_binding }]
@@ -3664,6 +3664,9 @@ module MilkTea
             receiver_type: callable_receiver_type_for_specialization(expression.callee, scopes:),
           )
 
+          return check_multiplayer_bind_rpc_call(callable, expression.arguments, scopes:) if multiplayer_bind_rpc_call?(expression.callee, callable)
+          return check_multiplayer_bind_typed_rpc_call(callable, expression.arguments, scopes:) if multiplayer_bind_typed_rpc_call?(expression.callee, callable)
+          return check_multiplayer_bind_state_call(callable, expression.arguments, scopes:) if multiplayer_bind_state_call?(expression.callee, callable)
           return check_multiplayer_state_wire_size_call(callable, expression.arguments, scopes:) if multiplayer_state_wire_size_call?(expression.callee, callable)
           return check_multiplayer_state_descriptor_call(callable, expression.arguments, scopes:) if multiplayer_state_descriptor_call?(expression.callee, callable)
 
@@ -4402,6 +4405,40 @@ module MilkTea
         binding.type.return_type
       end
 
+      def check_multiplayer_bind_state_call(binding, arguments, scopes:)
+        validate_multiplayer_state_hook_target!(binding, arguments, hook_name: "bind_state", expected_argument_count: 1)
+        validate_multiplayer_bindings_builder_argument!(binding.type.params.fetch(0).type, arguments[0].value, scopes:, hook_name: "bind_state")
+
+        binding.type.return_type
+      end
+
+      def check_multiplayer_bind_rpc_call(binding, arguments, scopes:)
+        raise_sema_error("bind_rpc does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("bind_rpc expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        validate_multiplayer_bindings_builder_argument!(binding.type.params.fetch(0).type, arguments[0].value, scopes:, hook_name: "bind_rpc")
+        validate_multiplayer_rpc_hook_target!(arguments.drop(1), scopes:, hook_name: "bind_rpc", direct_argument_label: "second argument")
+
+        binding.type.return_type
+      end
+
+      def check_multiplayer_bind_typed_rpc_call(binding, arguments, scopes:)
+        raise_sema_error("bind_typed_rpc does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("bind_typed_rpc expects 3 arguments, got #{arguments.length}") unless arguments.length == 3
+
+        validate_multiplayer_bindings_builder_argument!(binding.type.params.fetch(0).type, arguments[0].value, scopes:, hook_name: "bind_typed_rpc")
+        callable_binding = validate_multiplayer_rpc_hook_target!(arguments[1, 1], scopes:, hook_name: "bind_typed_rpc", direct_argument_label: "second argument")
+        validate_multiplayer_typed_rpc_payload_params!(callable_binding, hook_name: "bind_typed_rpc")
+
+        handler_type = binding.type.params.fetch(2).type
+        handler_argument_type = infer_expression(arguments[2].value, scopes:, expected_type: handler_type)
+        unless call_argument_compatible?(handler_argument_type, handler_type, scopes:, external: false, expression: arguments[2].value)
+          raise_sema_error("bind_typed_rpc third argument expects #{handler_type}, got #{handler_argument_type}")
+        end
+
+        binding.type.return_type
+      end
+
       def multiplayer_typed_rpc_payload_type_error(type, visited = {})
         return nil if multiplayer_typed_rpc_scalar_payload_type?(type)
 
@@ -4629,9 +4666,9 @@ module MilkTea
         end
       end
 
-      def validate_multiplayer_state_hook_target!(binding, arguments, hook_name:)
+      def validate_multiplayer_state_hook_target!(binding, arguments, hook_name:, expected_argument_count: 0)
         raise_sema_error("#{hook_name} does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("#{hook_name} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+        raise_sema_error("#{hook_name} expects #{expected_argument_count} arguments, got #{arguments.length}") unless arguments.length == expected_argument_count
         raise_sema_error("#{hook_name} requires exactly one type argument") unless binding.type_arguments.length == 1
 
         state_type = binding.type_arguments.first
@@ -4670,6 +4707,13 @@ module MilkTea
         callable_binding
       end
 
+      def validate_multiplayer_bindings_builder_argument!(expected_type, expression, scopes:, hook_name:)
+        actual_type = infer_expression(expression, scopes:, expected_type: expected_type)
+        return if call_argument_compatible?(actual_type, expected_type, scopes:, external: false, expression: expression)
+
+        raise_sema_error("#{hook_name} first argument expects #{expected_type}, got #{actual_type}")
+      end
+
       def validate_multiplayer_typed_rpc_payload_params!(callable_binding, hook_name:)
         payload_params = callable_binding.type.params.drop(1)
         unsupported = payload_params.find do |param|
@@ -4705,12 +4749,32 @@ module MilkTea
         binding.name == "dispatch_typed_payload" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer.rpc"
       end
 
+      def multiplayer_bind_state_function?(binding)
+        binding.name == "bind_state" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
+      def multiplayer_bind_rpc_function?(binding)
+        binding.name == "bind_rpc" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
+      def multiplayer_bind_typed_rpc_function?(binding)
+        binding.name == "bind_typed_rpc" && binding.owner.respond_to?(:name) && binding.owner.name == "std.multiplayer"
+      end
+
       def multiplayer_state_descriptor_call?(callee, binding)
         return true if multiplayer_state_descriptor_function?(binding)
 
         return false unless callee.is_a?(AST::Specialization)
 
         multiplayer_root_import_call?(callee.callee, "state_descriptor")
+      end
+
+      def multiplayer_bind_state_call?(callee, binding)
+        return true if multiplayer_bind_state_function?(binding)
+
+        return false unless callee.is_a?(AST::Specialization)
+
+        multiplayer_root_import_call?(callee.callee, "bind_state")
       end
 
       def multiplayer_state_wire_size_call?(callee, binding)
@@ -4741,6 +4805,18 @@ module MilkTea
 
         imported_module = @imports.fetch(callee.receiver.name)
         imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
+      end
+
+      def multiplayer_bind_rpc_call?(callee, binding)
+        return true if multiplayer_bind_rpc_function?(binding)
+
+        multiplayer_root_import_call?(callee, "bind_rpc")
+      end
+
+      def multiplayer_bind_typed_rpc_call?(callee, binding)
+        return true if multiplayer_bind_typed_rpc_function?(binding)
+
+        multiplayer_root_import_call?(callee, "bind_typed_rpc")
       end
 
       def multiplayer_root_import_call?(callee, function_name)
@@ -5799,7 +5875,7 @@ module MilkTea
           name = parts.join(".")
           arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
 
-          if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) }
+          if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
             raise_sema_error("ref types cannot be nested inside #{name}")
           end
 
@@ -5852,7 +5928,7 @@ module MilkTea
         case argument
         when AST::TypeRef
           resolve_type_argument_ref(argument, type_params:, type_param_constraints:)
-        when AST::FunctionType
+        when AST::FunctionType, AST::ProcType
           resolve_type_ref(argument, type_params:, type_param_constraints:)
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
@@ -7507,7 +7583,74 @@ module MilkTea
       end
 
       def validate_stored_ref_type!(type, context)
-        raise_sema_error("#{context} cannot store ref types") if contains_ref_type?(type)
+        return unless contains_ref_type?(type)
+        return if stored_ref_supported_type?(type)
+
+        if callable_type?(type) || contains_callable_ref_type?(type)
+          raise_sema_error("#{context} cannot store ref types outside callable parameter positions")
+        end
+
+        raise_sema_error("#{context} cannot store ref types")
+      end
+
+      def stored_ref_supported_type?(type, visited = {})
+        return true unless type
+
+        visit_key = [type.class, type.object_id]
+        return true if visited[visit_key]
+
+        visited[visit_key] = true
+        case type
+        when Types::Nullable
+          stored_ref_supported_type?(type.base, visited)
+        when Types::GenericInstance
+          return false if ref_type?(type)
+
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited) }
+        when Types::Span
+          stored_ref_supported_type?(type.element_type, visited)
+        when Types::Task
+          stored_ref_supported_type?(type.result_type, visited)
+        when Types::Struct, Types::Union
+          type.fields.each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited) }
+        when Types::StructInstance, Types::VariantInstance
+          type.arguments.all? { |argument| stored_ref_supported_type?(argument, visited) }
+        when Types::Variant
+          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited) } }
+        when Types::Proc, Types::Function
+          callable_param_ref_supported?(type)
+        else
+          !contains_ref_type?(type)
+        end
+      end
+
+      def contains_callable_ref_type?(type, visited = {})
+        return false unless type
+
+        visit_key = [type.class, type.object_id]
+        return false if visited[visit_key]
+
+        visited[visit_key] = true
+        case type
+        when Types::Nullable
+          contains_callable_ref_type?(type.base, visited)
+        when Types::GenericInstance
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_callable_ref_type?(argument, visited) }
+        when Types::Span
+          contains_callable_ref_type?(type.element_type, visited)
+        when Types::Task
+          contains_callable_ref_type?(type.result_type, visited)
+        when Types::Struct, Types::Union
+          type.fields.each_value.any? { |field_type| contains_callable_ref_type?(field_type, visited) }
+        when Types::StructInstance, Types::VariantInstance
+          type.arguments.any? { |argument| contains_callable_ref_type?(argument, visited) }
+        when Types::Variant
+          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_callable_ref_type?(field_type, visited) } }
+        when Types::Proc, Types::Function
+          contains_ref_type?(type)
+        else
+          false
+        end
       end
 
       def contains_proc_type?(type, visited = {})
@@ -7557,9 +7700,11 @@ module MilkTea
         case type
         when Types::Proc
           true
+        when Types::GenericInstance
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
         when Types::Struct
           type.fields.each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) }
-        when Types::StructInstance
+        when Types::StructInstance, Types::VariantInstance
           type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || proc_storage_supported_type?(argument, visited) }
         when Types::Variant
           type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| proc_storage_supported_type?(field_type, visited) } }
@@ -7622,14 +7767,25 @@ module MilkTea
 
       def validate_local_ref_type!(type, local_name)
         return if ref_type?(type)
+        return if stored_ref_supported_type?(type)
 
-        raise_sema_error("local #{local_name} cannot store nested ref types") if contains_ref_type?(type)
+        if contains_ref_type?(type)
+          if callable_type?(type) || contains_callable_ref_type?(type)
+            raise_sema_error("local #{local_name} cannot store ref types outside callable parameter positions")
+          end
+
+          raise_sema_error("local #{local_name} cannot store nested ref types")
+        end
       end
 
       def validate_local_proc_type!(type, local_name, initializer:)
         return unless contains_proc_type?(type)
 
         raise_sema_error("local #{local_name} uses unsupported proc nesting") unless proc_storage_supported_type?(type)
+      end
+
+      def preassigned_local_binding_id_for(node)
+        @preassigned_local_binding_ids[node.object_id] ||= allocate_binding_id
       end
 
       def error_type?(type)

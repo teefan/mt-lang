@@ -9995,7 +9995,7 @@ module MilkTea
         case argument
         when AST::TypeRef
           resolve_type_argument_ref(argument, type_params:)
-        when AST::FunctionType
+        when AST::FunctionType, AST::ProcType
           resolve_type_ref(argument, type_params:)
         when AST::IntegerLiteral, AST::FloatLiteral
           Types::LiteralTypeArg.new(argument.value)
@@ -10184,10 +10184,16 @@ module MilkTea
           lower_multiplayer_state_descriptor_call(expression, type:)
         when "state_wire_size"
           lower_multiplayer_state_wire_size_call(expression, type:)
+        when "bind_state"
+          lower_multiplayer_bind_state_call(expression, env:, type:)
         when "rpc_descriptor"
           lower_multiplayer_rpc_descriptor_call(expression, type:)
         when "rpc_payload_size"
           lower_multiplayer_rpc_payload_size_call(expression, type:)
+        when "bind_rpc"
+          lower_multiplayer_bind_rpc_call(expression, env:, type:)
+        when "bind_typed_rpc"
+          lower_multiplayer_bind_typed_rpc_call(expression, env:, type:)
         when "rpc_dispatch_typed_payload"
           lower_multiplayer_rpc_typed_payload_call(expression, env:, type:)
         else
@@ -10248,8 +10254,26 @@ module MilkTea
         end
       end
 
+      def lower_multiplayer_bind_state_call(expression, env:, type:)
+        helper_binding = analysis_for_module("std.multiplayer").functions.fetch("bind_state_descriptor")
+        helper_type = helper_binding.type
+        builder_expression = lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: helper_type.params.fetch(0).type)
+        descriptor_type = helper_type.params.fetch(1).type
+        descriptor_expression = lower_multiplayer_state_descriptor_call(expression, type: descriptor_type)
+
+        IR::Call.new(
+          callee: function_binding_c_name(helper_binding, module_name: "std.multiplayer"),
+          arguments: [builder_expression, descriptor_expression],
+          type:,
+        )
+      end
+
       def lower_multiplayer_rpc_descriptor_call(expression, type:)
-        with_multiplayer_rpc_hook_context(expression.arguments.fetch(0).value, hook_name: "rpc_descriptor") do |rpc_target|
+        lower_multiplayer_rpc_descriptor_target(expression.arguments.fetch(0).value, type:, hook_name: "rpc_descriptor")
+      end
+
+      def lower_multiplayer_rpc_descriptor_target(target_expression, type:, hook_name:)
+        with_multiplayer_rpc_hook_context(target_expression, hook_name:) do |rpc_target|
           metadata = collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name: "rpc_descriptor")
           decode_payload_binding = multiplayer_descriptor_hash("rpc_decode_payload", rpc_target.fetch(:qualified_name))
           dispatch_typed_binding = multiplayer_descriptor_hash("rpc_dispatch_typed", rpc_target.fetch(:qualified_name))
@@ -10288,6 +10312,33 @@ module MilkTea
           metadata = collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name: "rpc_payload_size")
           return IR::IntegerLiteral.new(value: metadata.fetch(:payload_size), type:)
         end
+      end
+
+      def lower_multiplayer_bind_rpc_call(expression, env:, type:)
+        helper_binding = analysis_for_module("std.multiplayer").functions.fetch("bind_rpc_descriptor")
+        helper_type = helper_binding.type
+        builder_expression = lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: helper_type.params.fetch(0).type)
+        descriptor_expression = lower_multiplayer_rpc_descriptor_target(expression.arguments.fetch(1).value, type: helper_type.params.fetch(1).type, hook_name: "bind_rpc")
+
+        IR::Call.new(
+          callee: function_binding_c_name(helper_binding, module_name: "std.multiplayer"),
+          arguments: [builder_expression, descriptor_expression],
+          type:,
+        )
+      end
+
+      def lower_multiplayer_bind_typed_rpc_call(expression, env:, type:)
+        helper_binding = analysis_for_module("std.multiplayer").functions.fetch("bind_typed_rpc_descriptor")
+        helper_type = helper_binding.type
+        builder_expression = lower_contextual_expression(expression.arguments.fetch(0).value, env:, expected_type: helper_type.params.fetch(0).type)
+        descriptor_expression = lower_multiplayer_rpc_descriptor_target(expression.arguments.fetch(1).value, type: helper_type.params.fetch(1).type, hook_name: "bind_typed_rpc")
+        handler_expression = lower_contextual_expression(expression.arguments.fetch(2).value, env:, expected_type: helper_type.params.fetch(2).type)
+
+        IR::Call.new(
+          callee: function_binding_c_name(helper_binding, module_name: "std.multiplayer"),
+          arguments: [builder_expression, descriptor_expression, handler_expression],
+          type:,
+        )
       end
 
       def lower_multiplayer_rpc_typed_payload_call(expression, env:, type:)
@@ -10700,6 +10751,10 @@ module MilkTea
         imported_module = @imports.fetch(callee.receiver.name)
         if imported_module.name == "std.multiplayer"
           case callee.member
+          when "bind_rpc"
+            return [:compile_time_builtin, "bind_rpc", nil, multiplayer_bind_rpc_function_type]
+          when "bind_typed_rpc"
+            return [:compile_time_builtin, "bind_typed_rpc", nil, multiplayer_bind_typed_rpc_function_type]
           when "rpc_descriptor"
             return [:compile_time_builtin, "rpc_descriptor", nil, multiplayer_rpc_descriptor_function_type]
           when "rpc_payload_size"
@@ -10713,6 +10768,7 @@ module MilkTea
       end
 
       def multiplayer_compile_time_builtin_specialization_resolution(callee)
+        return [:compile_time_builtin, "bind_state", nil, multiplayer_bind_state_function_type] if multiplayer_root_specialization_call?(callee, "bind_state")
         return [:compile_time_builtin, "state_descriptor", nil, multiplayer_state_descriptor_function_type] if multiplayer_root_specialization_call?(callee, "state_descriptor")
         return [:compile_time_builtin, "state_wire_size", nil, multiplayer_state_wire_size_function_type] if multiplayer_root_specialization_call?(callee, "state_wire_size")
 
@@ -10845,6 +10901,10 @@ module MilkTea
         Types::Function.new("state_descriptor", params: [], return_type: descriptor_type)
       end
 
+      def multiplayer_bind_state_function_type
+        analysis_for_module("std.multiplayer").functions.fetch("bind_state").type
+      end
+
       def multiplayer_state_wire_size_function_type
         Types::Function.new("state_wire_size", params: [], return_type: @types.fetch("ptr_uint"))
       end
@@ -10854,8 +10914,16 @@ module MilkTea
         Types::Function.new("rpc_descriptor", params: [], return_type: descriptor_type)
       end
 
+      def multiplayer_bind_rpc_function_type
+        analysis_for_module("std.multiplayer").functions.fetch("bind_rpc").type
+      end
+
       def multiplayer_rpc_payload_size_function_type
         Types::Function.new("rpc_payload_size", params: [], return_type: @types.fetch("ptr_uint"))
+      end
+
+      def multiplayer_bind_typed_rpc_function_type
+        analysis_for_module("std.multiplayer").functions.fetch("bind_typed_rpc").type
       end
 
       def multiplayer_rpc_typed_dispatch_function_type
@@ -11920,6 +11988,47 @@ module MilkTea
         end
       end
 
+      def callable_param_ref_supported?(type)
+        case type
+        when Types::Proc
+          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+            !contains_ref_type?(type.return_type)
+        when Types::Function
+          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+            !contains_ref_type?(type.return_type) &&
+            (type.receiver_type.nil? || !contains_ref_type?(type.receiver_type))
+        else
+          false
+        end
+      end
+
+      def stored_ref_supported_type?(type, visited = {})
+        return true unless type
+
+        visit_key = [type.class, type.object_id]
+        return true if visited[visit_key]
+
+        visited[visit_key] = true
+        case type
+        when Types::Nullable
+          stored_ref_supported_type?(type.base, visited)
+        when Types::GenericInstance
+          return false if ref_type?(type)
+
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited) }
+        when Types::Span
+          stored_ref_supported_type?(type.element_type, visited)
+        when Types::Task
+          stored_ref_supported_type?(type.result_type, visited)
+        when Types::StructInstance, Types::VariantInstance
+          type.arguments.all? { |argument| stored_ref_supported_type?(argument, visited) }
+        when Types::Proc, Types::Function
+          callable_param_ref_supported?(type)
+        else
+          !contains_ref_type?(type)
+        end
+      end
+
       def pointer_to(type)
         Types::GenericInstance.new("ptr", [type])
       end
@@ -12009,7 +12118,7 @@ module MilkTea
         base = if type_ref.arguments.any?
                  name = parts.join(".")
                  args = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
-                 if name != "ref" && args.any? { |argument| contains_ref_type?(argument) }
+                 if name != "ref" && args.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
                    raise LoweringError, "ref types cannot be nested inside #{name}"
                  end
                  if name == "Task"

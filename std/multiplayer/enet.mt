@@ -185,53 +185,21 @@ extending Server:
         let host = this.host else:
             return 0
 
-        var count: ptr_uint = 0
-        unsafe:
-            let peers = read(host).peers
-            let peer_count = read(host).peerCount
-            var index: ptr_uint = 0
-            while index < peer_count:
-                let peer = peers + index
-                if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                    count += 1
-                index += 1
-
-        return count
+        return verified_peer_count_for_host(host)
 
 
     public function has_verified_connection(connection: mp.ConnectionId) -> bool:
         let host = this.host else:
             return false
 
-        unsafe:
-            let peers = read(host).peers
-            let peer_count = read(host).peerCount
-            var index: ptr_uint = 0
-            while index < peer_count:
-                let peer = peers + index
-                if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                    if peer_connection_id(peer) == connection:
-                        return true
-                index += 1
-
-        return false
+        return host_has_verified_connection(host, connection)
 
 
     public function first_verified_connection() -> Option[mp.ConnectionId]:
         let host = this.host else:
             return Option[mp.ConnectionId].none
 
-        unsafe:
-            let peers = read(host).peers
-            let peer_count = read(host).peerCount
-            var index: ptr_uint = 0
-            while index < peer_count:
-                let peer = peers + index
-                if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                    return Option[mp.ConnectionId].some(value = peer_connection_id(peer))
-                index += 1
-
-        return Option[mp.ConnectionId].none
+        return first_verified_connection_for_host(host)
 
 
     public function listening_port() -> Result[ushort, mp.Error]:
@@ -257,47 +225,16 @@ extending Server:
 
 
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
-        var processed: ptr_uint = 0
-        while true:
-            var packet = this.pop_snapshot() else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success:
-                    snapshot_runtime.apply_payload(
-                        packet.header.tick,
-                        packet.header.entity_count,
-                        packet.payload.as_span(),
-                        ref_of(this.inbound_snapshot_baseline)
-                    )
-                    processed += 1
-                Result.failure as payload:
-                    packet.release()
-                    return Result[ptr_uint, mp.Error].failure(error = payload.error)
-
-            packet.release()
+        return this.world.drain_incoming_snapshots(
+            ref_of(this.incoming_snapshots),
+            ref_of(this.inbound_snapshot_baseline)
+        )
 
 
     public mutable function process_incoming_rpcs_typed(
         table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
-        var processed: ptr_uint = 0
-        while true:
-            var packet = this.pop_rpc() else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            let dispatched = table.dispatch_packet(
-                packet.context,
-                packet.header,
-                packet.payload.as_span()
-            ) else as dispatch_error:
-                packet.release()
-                return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
-
-            if dispatched:
-                processed += 1
-
-            packet.release()
+        return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
 
 
     public mutable function broadcast_snapshot(
@@ -534,7 +471,6 @@ extending Server:
         plan: mp.TickBudgetPlan,
         snapshot_channel: uint,
         snapshot_transfer_mode: mp.TransferMode,
-        snapshot_payload: span[ubyte],
         rpc_channel: uint,
         rpc_transfer_mode: mp.TransferMode,
         rpc_direction: mp.RpcDirection,
@@ -557,30 +493,19 @@ extending Server:
                 entity_count = current_signature.entity_count
             )
 
-            if snapshot_payload.len > 0:
-                let sent = this.broadcast_snapshot_scheduled_fair(
-                    ref_of(snapshot_scheduler),
-                    snapshot_channel,
-                    snapshot_transfer_mode,
-                    snapshot_header,
-                    snapshot_payload
-                ) else as snapshot_error:
-                    return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
-                snapshots_sent = sent
-            else:
-                var world_payload = this.world.encode_snapshot_payload() else as world_payload_error:
-                    return Result[mp.TickDispatchReport, mp.Error].failure(error = world_payload_error)
-                defer world_payload.release()
+            var world_payload = this.world.encode_snapshot_payload() else as world_payload_error:
+                return Result[mp.TickDispatchReport, mp.Error].failure(error = world_payload_error)
+            defer world_payload.release()
 
-                let sent = this.broadcast_snapshot_scheduled_fair(
-                    ref_of(snapshot_scheduler),
-                    snapshot_channel,
-                    snapshot_transfer_mode,
-                    snapshot_header,
-                    world_payload.as_span()
-                ) else as snapshot_error:
-                    return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
-                snapshots_sent = sent
+            let sent = this.broadcast_snapshot_scheduled_fair(
+                ref_of(snapshot_scheduler),
+                snapshot_channel,
+                snapshot_transfer_mode,
+                snapshot_header,
+                world_payload.as_span()
+            ) else as snapshot_error:
+                return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
+            snapshots_sent = sent
 
             if snapshots_sent > 0:
                 snapshot_runtime.apply(current_signature, ref_of(this.outbound_world_signature_baseline))
@@ -1227,47 +1152,16 @@ extending Client:
 
 
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
-        var processed: ptr_uint = 0
-        while true:
-            var packet = this.pop_snapshot() else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success:
-                    snapshot_runtime.apply_payload(
-                        packet.header.tick,
-                        packet.header.entity_count,
-                        packet.payload.as_span(),
-                        ref_of(this.inbound_snapshot_baseline)
-                    )
-                    processed += 1
-                Result.failure as payload:
-                    packet.release()
-                    return Result[ptr_uint, mp.Error].failure(error = payload.error)
-
-            packet.release()
+        return this.world.drain_incoming_snapshots(
+            ref_of(this.incoming_snapshots),
+            ref_of(this.inbound_snapshot_baseline)
+        )
 
 
     public mutable function process_incoming_rpcs_typed(
         table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
-        var processed: ptr_uint = 0
-        while true:
-            var packet = this.pop_rpc() else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            let dispatched = table.dispatch_packet(
-                packet.context,
-                packet.header,
-                packet.payload.as_span()
-            ) else as dispatch_error:
-                packet.release()
-                return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
-
-            if dispatched:
-                processed += 1
-
-            packet.release()
+        return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
 
 
     public function protocol_ready() -> bool:
@@ -1771,6 +1665,39 @@ function find_verified_peer(host: ptr[enet.Host], connection: mp.ConnectionId) -
             index += 1
 
     return null
+
+
+function verified_peer_count_for_host(host: ptr[enet.Host]) -> ptr_uint:
+    var count: ptr_uint = 0
+    unsafe:
+        let peers = read(host).peers
+        let peer_count = read(host).peerCount
+        var index: ptr_uint = 0
+        while index < peer_count:
+            let peer = peers + index
+            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
+                count += 1
+            index += 1
+
+    return count
+
+
+function host_has_verified_connection(host: ptr[enet.Host], connection: mp.ConnectionId) -> bool:
+    return find_verified_peer(host, connection) != null
+
+
+function first_verified_connection_for_host(host: ptr[enet.Host]) -> Option[mp.ConnectionId]:
+    unsafe:
+        let peers = read(host).peers
+        let peer_count = read(host).peerCount
+        var index: ptr_uint = 0
+        while index < peer_count:
+            let peer = peers + index
+            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
+                return Option[mp.ConnectionId].some(value = peer_connection_id(peer))
+            index += 1
+
+    return Option[mp.ConnectionId].none
 
 
 function append_verified_connections(host: ptr[enet.Host], out_connections: ref[vec.Vec[mp.ConnectionId]]) -> void:

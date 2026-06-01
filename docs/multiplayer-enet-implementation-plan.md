@@ -43,17 +43,40 @@ Implemented in stdlib:
 4. Snapshot and RPC inbound queues plus one-call processing APIs.
 5. Explicit send helpers for snapshots and RPCs.
 6. Budgeted, weighted, scheduled, and fair-dispatch send APIs.
-7. World-signature-aware dispatch with `dispatch_world_tick_fair(...)`.
+7. World-signature-aware dispatch with `dispatch_world_tick_fair(...)`, which encodes snapshot bytes from the current world state internally.
 8. Baseline tracking accessors for snapshot flow.
 
 ## Current Intended Usage
 
-1. Build and freeze a registry from compiler-lowered descriptors.
+1. Group gameplay registration behind one installer function per feature/module, and build frozen bindings via `std.multiplayer.build_frozen_bindings_with(...)`.
 2. Start server/client via `listen(...)` / `connect(...)` (or localhost helpers).
 3. Pump ENet events each frame.
 4. Use one-call inbound processing (`process_incoming_snapshots`, `process_incoming_rpcs_typed`) or low-level pop APIs.
 5. Use explicit send APIs for outbound snapshots and RPCs.
 6. Use fair/budgeted dispatch APIs when per-tick network budgets matter.
+
+Installer pattern:
+
+```mt
+function install_combat_bindings(builder: ptr[mp.BindingsBuilder]) -> Result[ptr_uint, mp.Error]:
+	let builder_ref = unsafe: ref_of(read(builder))
+	var applied: ptr_uint = 0
+
+	let state_bound = mp.bind_state[CombatState](builder_ref) else as bind_error:
+		return Result[ptr_uint, mp.Error].failure(error = bind_error)
+	if state_bound:
+		applied += 1
+
+	let rpc_bound = mp.bind_typed_rpc(builder_ref, callable_of(submit_attack), dispatch_submit_attack) else as bind_error:
+		return Result[ptr_uint, mp.Error].failure(error = bind_error)
+	if rpc_bound:
+		applied += 1
+
+	return Result[ptr_uint, mp.Error].success(value = applied)
+
+let bindings = mp.build_frozen_bindings_with(install_combat_bindings) else:
+	fatal(c"combat bindings setup failed")
+```
 
 ## Implemented Validation and Guardrails
 

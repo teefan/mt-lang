@@ -1059,6 +1059,116 @@ function main() -> int:
     end
   end
 
+  def test_build_with_host_compiler_supports_user_facing_callable_storage_with_ref_params
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-callable-ref-surface") do |dir|
+      source_path = File.join(dir, "main.mt")
+      output_path = File.join(dir, "callable-ref-surface")
+      c_path = File.join(dir, "callable-ref-surface.c")
+
+            source = [
+            "struct Counter:",
+            "    value: int",
+            "",
+            "function times_two(value: int) -> int:",
+            "    return value * 2",
+            "",
+            "function increment(counter: ref[Counter]) -> bool:",
+            "    counter.value += 1",
+            "    return true",
+            "",
+            "struct FnEntry:",
+            "    callback: fn(value: int) -> int",
+            "",
+            "struct RefFnEntry:",
+            "    callback: fn(arg0: ref[Counter]) -> bool",
+            "",
+            "struct ProcEntry:",
+            "    callback: proc(value: int) -> int",
+            "",
+            "struct RefProcEntry:",
+            "    callback: proc(arg0: ref[Counter]) -> bool",
+            "",
+            "function plus_three(value: int) -> int:",
+            "    return value + 3",
+            "",
+            "function run_fn(value: int, callback: fn(value: int) -> int) -> int:",
+            "    return callback(value)",
+            "",
+            "function build_proc(offset: int) -> proc(value: int) -> int:",
+            "    return proc(value: int) -> int:",
+            "        return value + offset",
+            "",
+            "function main() -> int:",
+            "    if run_fn(4, plus_three) != 7:",
+            "        return 1",
+            "",
+            "    let imported_entry = FnEntry(callback = times_two)",
+            "    let fn_callbacks = array[fn(value: int) -> int, 2](plus_three, imported_entry.callback)",
+            "    if fn_callbacks[0](2) != 5:",
+            "        return 2",
+            "    if fn_callbacks[1](3) != 6:",
+            "        return 3",
+            "",
+            "    let local_proc = build_proc(4)",
+            "    let proc_entry = ProcEntry(callback = local_proc)",
+            "    let proc_callbacks = array[proc(value: int) -> int, 2](local_proc, proc_entry.callback)",
+            "    if proc_callbacks[0](3) != 7:",
+            "        return 4",
+            "    if proc_callbacks[1](4) != 8:",
+            "        return 5",
+            "",
+            "    var counter = Counter(value = 0)",
+            "    let ref_fn_entry = RefFnEntry(callback = increment)",
+            "    let ref_fn_callbacks = array[fn(arg0: ref[Counter]) -> bool, 2](ref_fn_entry.callback, increment)",
+            "    if not ref_fn_callbacks[0](ref_of(counter)):",
+            "        return 6",
+            "    if not ref_fn_callbacks[1](ref_of(counter)):",
+            "        return 7",
+            "",
+            "    let bonus = 5",
+            "    let ref_proc = proc(arg0: ref[Counter]) -> bool:",
+            "        arg0.value += bonus",
+            "        return true",
+            "    let ref_proc_entry = RefProcEntry(callback = ref_proc)",
+            "    let ref_proc_callbacks = array[proc(arg0: ref[Counter]) -> bool, 2](ref_proc, ref_proc_entry.callback)",
+            "    if not ref_proc_callbacks[0](ref_of(counter)):",
+            "        return 8",
+            "    if not ref_proc_callbacks[1](ref_of(counter)):",
+            "        return 9",
+            "",
+            "    if counter.value != 12:",
+            "        return 10",
+            "",
+            "    return 0",
+            ].join("\n") + "\n"
+            File.write(source_path, source)
+
+        result = MilkTea::Build.build(source_path, output_path:, cc: compiler, keep_c_path: c_path)
+
+        assert_equal File.expand_path(output_path), result.output_path
+        assert_equal File.expand_path(c_path), result.c_path
+        assert File.exist?(output_path)
+        assert File.executable?(output_path)
+        assert File.exist?(c_path)
+
+        stdout, stderr, status = Open3.capture3(output_path)
+        assert_equal "", stdout
+        assert_equal "", stderr
+        assert_equal 0, status.exitstatus
+
+        generated = File.read(c_path)
+        assert_match(/int32_t \(\*fn_callbacks\[2\]\)\(int32_t value\)/, generated)
+        assert_match(/\.callback = main_times_two/, generated)
+        assert_match(/typedef struct mt_proc_proc_int_int/, generated)
+        assert_match(/typedef struct mt_proc_proc_ref_.*Counter_bool/, generated)
+        assert_match(/retain\(/, generated)
+        assert_match(/release\(/, generated)
+      end
+      end
+
   def test_build_with_host_compiler_supports_safe_span_str_main_args
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

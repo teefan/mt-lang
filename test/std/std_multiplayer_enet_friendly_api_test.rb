@@ -32,29 +32,36 @@ function dispatch_receive_marker(context: mp.RpcContext, payload: span[ubyte]) -
 
     return Result[bool, rpc.DispatchError].success(value = dispatched)
 
-function build_registry() -> mp.Registry:
-    var registry = mp.Registry.create()
-    registry.freeze()
-    return registry
+
+function install_bindings(builder: ptr[mp.BindingsBuilder]) -> Result[ptr_uint, mp.Error]:
+    let builder_ref = unsafe: ref_of(read(builder))
+    let rpc_bound = mp.bind_typed_rpc(builder_ref, callable_of(receive_marker), dispatch_receive_marker) else as bind_error:
+        return Result[ptr_uint, mp.Error].failure(error = bind_error)
+    if not rpc_bound:
+        return Result[ptr_uint, mp.Error].success(value = 0)
+
+    return Result[ptr_uint, mp.Error].success(value = 1)
 
 function main() -> int:
-    var registry = build_registry()
-    defer registry.release()
-
-    let server_result = mp_enet.listen_localhost(8, 4, registry, mp.default_config()) else:
+    let built_bindings = mp.build_frozen_bindings_with(install_bindings) else:
         return 1
+    var bindings = built_bindings
+    defer bindings.release()
+
+    let server_result = mp_enet.listen_localhost(8, 4, bindings.registry, mp.default_config()) else:
+        return 2
     var server = server_result
     defer server.release()
 
     let port = server.listening_port() else:
-        return 2
-
-    if port == ushort<-0:
         return 3
 
-    let client0_result = mp_enet.connect_localhost(port, 4, registry, mp.default_config()) else:
+    if port == ushort<-0:
+        return 4
+
+    let client0_result = mp_enet.connect_localhost(port, 4, bindings.registry, mp.default_config()) else:
         return 5
-    let client1_result = mp_enet.connect_localhost(port, 4, registry, mp.default_config()) else:
+    let client1_result = mp_enet.connect_localhost(port, 4, bindings.registry, mp.default_config()) else:
         return 6
 
     var client0 = client0_result
@@ -107,20 +114,12 @@ function main() -> int:
             return 16
         pump_round += 1
 
-    let rpc_descriptor = mp.rpc_descriptor(callable_of(receive_marker))
-    var typed_routes = mp.TypedRpcDispatchTable.create()
-    defer typed_routes.release()
-    let route_added = typed_routes.register_route(rpc_descriptor, dispatch_receive_marker) else:
+    let processed_rpcs = client0.process_incoming_rpcs_typed(ref_of(bindings.typed_rpcs)) else:
         return 17
-    if not route_added:
-        return 18
-
-    let processed_rpcs = client0.process_incoming_rpcs_typed(ref_of(typed_routes)) else:
-        return 19
     if processed_rpcs != 1:
-        return 20
+        return 18
     if routed_value != 7:
-        return 21
+        return 19
 
     var world_payload = server.world.encode_snapshot_payload() else:
         return 30
@@ -153,24 +152,24 @@ function main() -> int:
         return 37
 
     let missing_disconnect = server.disconnect_connection(ulong<-999999, 0) else:
-        return 22
+        return 20
     if missing_disconnect:
-        return 23
+        return 21
 
     let disconnected = server.disconnect_connection(conn0, 0) else:
-        return 24
+        return 22
     if not disconnected:
-        return 25
+        return 23
 
     let all_disconnected = server.disconnect_all(0) else:
-        return 26
+        return 24
     if all_disconnected == 0:
-        return 27
+        return 25
 
     let client_disconnect = client1.disconnect(0) else:
-        return 28
+        return 26
     if not client_disconnect:
-        return 29
+        return 27
 
     return 0
 

@@ -41,11 +41,6 @@ import std.multiplayer.signal as signal
 
     return Result[bool, rpc.DispatchError].success(value = dispatched)
 
-function build_registry() -> mp.Registry:
-    var registry = mp.Registry.create()
-    registry.freeze()
-    return registry
-
 
 function resolve_connection_id(is_server: bool, session_id: str) -> Option[mp.ConnectionId]:
   if is_server and session_id.len == 0:
@@ -54,16 +49,23 @@ function resolve_connection_id(is_server: bool, session_id: str) -> Option[mp.Co
   return Option[mp.ConnectionId].some(value = 1)
 
 function main() -> int:
-    var registry = build_registry()
-    defer registry.release()
+    var bindings = mp.BindingsBuilder.create()
+    defer bindings.release()
+
+    let rpc_bound = mp.bind_typed_rpc(ref_of(bindings), callable_of(receive_marker), dispatch_receive_marker) else:
+      return 1
+    if not rpc_bound:
+      return 2
+
+    bindings.freeze()
 
   var ice_config = ice.default_ice_config()
   ice_config.identity_provider = resolve_connection_id
 
-  let server_result = ice.listen(registry, mp.default_config(), ice_config) else:
-        return 1
-  let client_result = ice.connect(registry, mp.default_config(), ice_config) else:
-        return 2
+  let server_result = ice.listen(bindings.registry, mp.default_config(), ice_config) else:
+        return 3
+  let client_result = ice.connect(bindings.registry, mp.default_config(), ice_config) else:
+        return 4
 
     var server = server_result
     var client = client_result
@@ -71,38 +73,38 @@ function main() -> int:
     defer client.release()
 
     let offer_result = client.create_offer("session-a") else:
-        return 3
+      return 5
     var offer = offer_result
     defer offer.release()
 
     let answer_result = server.create_answer(offer) else:
-        return 4
+      return 6
     var answer = answer_result
     defer answer.release()
 
     let applied = client.apply_answer(answer) else:
-        return 5
+      return 7
     if not applied:
-        return 6
+      return 8
 
     let verified_connection = server.first_verified_connection() else:
-        return 7
+      return 9
     if verified_connection != 1:
-        return 8
+      return 10
 
     var wrong_answer = signal.answer("session-a", registry.protocol_hash() + ulong<-1, answer.description(), true)
     defer wrong_answer.release()
     match client.apply_answer(wrong_answer):
         Result.success as _:
-            return 9
+            return 11
         Result.failure as payload:
             if payload.error.code != mp.ErrorCode.invalid_argument:
-                return 10
+                return 12
 
     let mapped_sender = server.map_inbound_channel_sender(NET_CHANNEL, 77) else:
-      return 11
+      return 13
     if not mapped_sender:
-      return 12
+      return 14
 
     var rpc_payload = array[ubyte, 1](9)
     let sent_rpc = client.send_rpc(
@@ -111,30 +113,22 @@ function main() -> int:
       protocol.RpcDirection.client_to_server,
       rpc_payload,
     ) else:
-      return 13
+      return 15
     if not sent_rpc:
-      return 14
+      return 16
 
     var rpc_rounds: ptr_uint = 0
     while rpc_rounds < 480:
       let _ = server.pump(1) else:
-        return 15
+        return 17
       let _ = client.pump(1) else:
-        return 16
+        return 18
 
       if server.pending_rpc_count() > 0:
         break
       rpc_rounds += 1
 
-    let rpc_descriptor = mp.rpc_descriptor(callable_of(receive_marker))
-    var typed_routes = ice.TypedRpcDispatchTable.create()
-    defer typed_routes.release()
-    let route_added = typed_routes.register_route(rpc_descriptor, dispatch_receive_marker) else:
-      return 17
-    if not route_added:
-      return 18
-
-    let processed_rpcs = server.process_incoming_rpcs_typed(ref_of(typed_routes)) else:
+    let processed_rpcs = server.process_incoming_rpcs_typed(ref_of(bindings.typed_rpcs)) else:
       return 19
     if processed_rpcs != 1:
       return 20

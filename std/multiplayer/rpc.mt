@@ -99,6 +99,14 @@ extending TypedRpcDispatchTable:
                 error = protocol.error(protocol.ErrorCode.already_registered, "typed rpc route is already registered")
             )
 
+        if typed_rpc_find_route_by_wire_identity(this.routes.as_span(), descriptor) != null:
+            return Result[bool, protocol.Error].failure(
+                error = protocol.error(
+                    protocol.ErrorCode.already_registered,
+                    "typed rpc route collides with an existing channel/direction/payload-size identity"
+                )
+            )
+
         this.routes.push(TypedRpcRoute(descriptor = descriptor, handler = handler))
         return Result[bool, protocol.Error].success(value = true)
 
@@ -126,6 +134,22 @@ public function typed_rpc_find_route(
     return null
 
 
+public function typed_rpc_find_route_by_wire_identity(
+    routes: span[TypedRpcRoute],
+    target: registry.RpcDescriptor
+) -> ptr[TypedRpcRoute]?:
+    var index: ptr_uint = 0
+    while index < routes.len:
+        unsafe:
+            let route = routes.data + index
+            let descriptor = read(route).descriptor
+            if typed_rpc_wire_identity_matches_descriptor(descriptor, target):
+                return route
+        index += 1
+
+    return null
+
+
 public function typed_rpc_dispatch_packet(
     routes: span[TypedRpcRoute],
     context: protocol.RpcContext,
@@ -139,11 +163,7 @@ public function typed_rpc_dispatch_packet(
     while index < routes.len:
         unsafe:
             let descriptor = read(routes.data + index).descriptor
-            if (
-                descriptor.channel == header.channel
-                and descriptor.direction == header.direction
-                and descriptor.payload_size == payload.len
-            ):
+            if typed_rpc_wire_identity_matches_packet(descriptor, header, payload):
                 if matched_count == 0:
                     matched_index = index
                 matched_count += 1
@@ -175,6 +195,52 @@ public function typed_rpc_dispatch_packet(
                 return Result[bool, protocol.Error].failure(
                     error = protocol.error(payload_error.error.code, payload_error.error.message)
                 )
+
+
+public function drain_incoming_typed_packets(
+    queue: ref[vec.Vec[IncomingRpcPacket]],
+    table: ref[TypedRpcDispatchTable],
+) -> Result[ptr_uint, protocol.Error]:
+    var processed: ptr_uint = 0
+    while true:
+        var packet = dequeue_incoming(queue) else:
+            return Result[ptr_uint, protocol.Error].success(value = processed)
+
+        let dispatched = read(table).dispatch_packet(
+            packet.context,
+            packet.header,
+            packet.payload.as_span()
+        ) else as dispatch_error:
+            packet.release()
+            return Result[ptr_uint, protocol.Error].failure(error = dispatch_error)
+
+        if dispatched:
+            processed += 1
+
+        packet.release()
+
+
+function typed_rpc_wire_identity_matches_descriptor(
+    left: registry.RpcDescriptor,
+    right: registry.RpcDescriptor,
+) -> bool:
+    return (
+        left.channel == right.channel
+        and left.direction == right.direction
+        and left.payload_size == right.payload_size
+    )
+
+
+function typed_rpc_wire_identity_matches_packet(
+    descriptor: registry.RpcDescriptor,
+    header: protocol.RpcPacketHeader,
+    payload: span[ubyte],
+) -> bool:
+    return (
+        descriptor.channel == header.channel
+        and descriptor.direction == header.direction
+        and descriptor.payload_size == payload.len
+    )
 
 
 public function validate_client_outbound_direction(direction: protocol.RpcDirection) -> Result[bool, protocol.Error]:

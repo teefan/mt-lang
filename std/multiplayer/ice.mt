@@ -159,9 +159,6 @@ extending Server:
 
 
     public mutable function pump(timeout_ms: uint) -> Result[ptr_uint, mp.Error]:
-        if timeout_ms == 0:
-            pass
-
         return refresh_server_state(ref_of(this))
 
 
@@ -329,25 +326,10 @@ extending Server:
                 "ice server receive context is not initialized"
             ))
 
-        var processed: ptr_uint = 0
-        while true:
-            var packet = snapshot_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_snapshots)) else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success:
-                    snapshot_runtime.apply_payload(
-                        packet.header.tick,
-                        packet.header.entity_count,
-                        packet.payload.as_span(),
-                        unsafe: ref_of(read(context).inbound_snapshot_baseline)
-                    )
-                    processed += 1
-                Result.failure as payload:
-                    packet.release()
-                    return Result[ptr_uint, mp.Error].failure(error = payload.error)
-
-            packet.release()
+        return this.world.drain_incoming_snapshots(
+            unsafe: ref_of(read(context).incoming_snapshots),
+            unsafe: ref_of(read(context).inbound_snapshot_baseline)
+        )
 
 
     public mutable function process_incoming_rpcs_typed(
@@ -359,24 +341,7 @@ extending Server:
                 "ice server receive context is not initialized"
             ))
 
-        var processed: ptr_uint = 0
-        while true:
-            var packet = rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs)) else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            let dispatched = rpc_runtime.typed_rpc_dispatch_packet(
-                table.routes.as_span(),
-                packet.context,
-                packet.header,
-                packet.payload.as_span()
-            ) else as dispatch_error:
-                packet.release()
-                return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
-
-            if dispatched:
-                processed += 1
-
-            packet.release()
+        return rpc_runtime.drain_incoming_typed_packets(unsafe: ref_of(read(context).incoming_rpcs), table)
 
 
     public mutable function broadcast_snapshot(
@@ -385,9 +350,6 @@ extending Server:
         header: mp.SnapshotPacketHeader,
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
-        if channel == 0 and transfer_mode == mp.TransferMode.unreliable:
-            pass
-
         let agent = this.agent else:
             return Result[bool, mp.Error].failure(error = mp.error(
                 mp.ErrorCode.not_found,
@@ -405,9 +367,6 @@ extending Server:
         direction: mp.RpcDirection,
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
-        if transfer_mode == mp.TransferMode.unreliable:
-            pass
-
         let _ = rpc_runtime.validate_server_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
@@ -450,9 +409,6 @@ extending Client:
 
 
     public mutable function pump(timeout_ms: uint) -> Result[ptr_uint, mp.Error]:
-        if timeout_ms == 0:
-            pass
-
         return refresh_client_state(ref_of(this))
 
 
@@ -613,9 +569,6 @@ extending Client:
         direction: mp.RpcDirection,
         payload: span[ubyte],
     ) -> Result[bool, mp.Error]:
-        if transfer_mode == mp.TransferMode.unreliable:
-            pass
-
         let _ = rpc_runtime.validate_client_outbound_direction(direction) else as direction_error:
             return Result[bool, mp.Error].failure(error = direction_error)
 
@@ -683,25 +636,10 @@ extending Client:
                 "ice client receive context is not initialized"
             ))
 
-        var processed: ptr_uint = 0
-        while true:
-            var packet = snapshot_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_snapshots)) else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            match this.world.apply_snapshot_payload(packet.payload.as_span()):
-                Result.success:
-                    snapshot_runtime.apply_payload(
-                        packet.header.tick,
-                        packet.header.entity_count,
-                        packet.payload.as_span(),
-                        unsafe: ref_of(read(context).inbound_snapshot_baseline)
-                    )
-                    processed += 1
-                Result.failure as payload:
-                    packet.release()
-                    return Result[ptr_uint, mp.Error].failure(error = payload.error)
-
-            packet.release()
+        return this.world.drain_incoming_snapshots(
+            unsafe: ref_of(read(context).incoming_snapshots),
+            unsafe: ref_of(read(context).inbound_snapshot_baseline)
+        )
 
 
     public mutable function process_incoming_rpcs_typed(
@@ -713,24 +651,7 @@ extending Client:
                 "ice client receive context is not initialized"
             ))
 
-        var processed: ptr_uint = 0
-        while true:
-            var packet = rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs)) else:
-                return Result[ptr_uint, mp.Error].success(value = processed)
-
-            let dispatched = rpc_runtime.typed_rpc_dispatch_packet(
-                table.routes.as_span(),
-                packet.context,
-                packet.header,
-                packet.payload.as_span()
-            ) else as dispatch_error:
-                packet.release()
-                return Result[ptr_uint, mp.Error].failure(error = dispatch_error)
-
-            if dispatched:
-                processed += 1
-
-            packet.release()
+        return rpc_runtime.drain_incoming_typed_packets(unsafe: ref_of(read(context).incoming_rpcs), table)
 
 
     public mutable function release() -> void:
