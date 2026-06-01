@@ -6071,7 +6071,7 @@ function main() -> int:
     assert_match(/typedef struct mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool/, generated)
     assert_match(/\.invoke = demo_proc_ref_storage_codegen__proc_1__invoke/, generated)
     assert_match(/entry\.callback\.retain\(entry\.callback\.env\);/, generated)
-    assert_match(/\(\*mt_checked_index_array_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_1\(&callbacks, 0\)\)\.invoke\(\(\*mt_checked_index_array_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_1\(&callbacks, 0\)\)\.env, &counter\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(&callbacks, 0\)\)\.invoke\(\(\*mt_checked_index_array_mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_value_1\(&callbacks, 0\)\)\.env, &counter\)/, generated)
   end
 
   def test_generate_c_for_proc_var_reassign_lifecycle

@@ -1,6 +1,7 @@
 import std.enet as enet
 import std.multiplayer as mp
 import std.multiplayer.enet as mp_enet
+import std.multiplayer.rollback as rollback
 import networking as pong_net
 import session as pong_session
 import std.process as process
@@ -24,6 +25,7 @@ const ball_speed_x: int = 4
 const ball_speed_y: int = 3
 const default_port: ushort = 24567
 const connect_timeout_frames: uint = 360
+const join_prediction_history_frames: ptr_uint = 240
 
 public enum Scene: ubyte
     menu = 0
@@ -53,6 +55,11 @@ public struct App:
     join_port_edit_mode: bool
     public_ip_input: str_buffer[64]
     public_ip_message: str
+    last_authoritative_tick: Option[mp.Tick]
+    next_join_input_tick: mp.Tick
+    last_applied_join_input_tick: Option[mp.Tick]
+    join_input_history: rollback.History[ubyte]
+    join_paddle_history: rollback.History[int]
     status_code: int
 
 
@@ -81,6 +88,11 @@ function main(args: span[str]) -> int:
         join_port_edit_mode = false,
         public_ip_input = zero[str_buffer[64]],
         public_ip_message = "Press Fetch Public IP to query internet-visible address.",
+        last_authoritative_tick = Option[mp.Tick].none,
+        next_join_input_tick = 1,
+        last_applied_join_input_tick = Option[mp.Tick].none,
+        join_input_history = rollback.History[ubyte].create(join_prediction_history_frames),
+        join_paddle_history = rollback.History[int].create(join_prediction_history_frames),
         status_code = 0
     )
     defer release_app(ref_of(app))
@@ -113,6 +125,8 @@ function has_arg(args: span[str], wanted: str) -> bool:
 
 function release_app(app: ref[App]) -> void:
     shutdown_network(app)
+    app.join_input_history.release()
+    app.join_paddle_history.release()
     app.bindings.release()
 
 
@@ -158,6 +172,11 @@ function shutdown_network(app: ref[App]) -> void:
     app.remote_seen = false
     app.client_was_ready = false
     app.join_wait_frames = 0
+    app.last_authoritative_tick = Option[mp.Tick].none
+    app.next_join_input_tick = 1
+    app.last_applied_join_input_tick = Option[mp.Tick].none
+    app.join_input_history.clear()
+    app.join_paddle_history.clear()
     pong_net.reset_runtime_state()
 
 
@@ -436,7 +455,9 @@ function update_host_network(app: ref[App]) -> void:
 
                 match pong_net.consume_submit_input():
                     Option.some as payload:
-                        apply_join_input(ref_of(app.state), payload.value)
+                        if should_apply_join_input(app, payload.value.tick):
+                            apply_join_input(ref_of(app.state), payload.value.input_flags)
+                            app.last_applied_join_input_tick = Option[mp.Tick].some(value = payload.value.tick)
                     Option.none:
                         app.disconnect_message = "submit_pong_input did not provide decoded payload"
 
@@ -496,11 +517,20 @@ function update_join_network(app: ref[App]) -> void:
         app.disconnect_message = ""
     app.client_was_ready = ready_now
 
-    let _ = pong_session.drain_state_snapshots(ref_of(runtime), ref_of(app.state)) else as drain_error:
+    let drained = pong_session.drain_state_snapshots_with_info(ref_of(runtime), ref_of(app.state)) else as drain_error:
         app.status_code = 16
         app.disconnect_message = drain_error.message
         app.client = Option[mp_enet.Client].some(value = runtime)
         return
+
+    match drained.latest_tick:
+        Option.some as authoritative_tick:
+            app.last_authoritative_tick = Option[mp.Tick].some(value = authoritative_tick.value)
+            if app.next_join_input_tick <= authoritative_tick.value:
+                app.next_join_input_tick = authoritative_tick.value + 1
+            reconcile_join_prediction(app, authoritative_tick.value)
+        Option.none:
+            pass
 
     if app.state.phase == 1:
         app.scene = Scene.game
@@ -540,8 +570,9 @@ function join_send_input(app: ref[App]) -> void:
     if rl.is_key_down(rl.KeyboardKey.KEY_DOWN):
         input_flags |= 2
 
-    var payload = array[ubyte, 1](input_flags)
-    let payload_span = span[ubyte](data = ptr_of(payload[0]), len = 1)
+    let input_tick = app.next_join_input_tick
+    var payload = pong_net.encode_submit_input_payload(input_tick, input_flags)
+    let payload_span = span[ubyte](data = ptr_of(payload[0]), len = 9)
     match runtime.send_rpc(
         pong_net.submit_input_descriptor().channel,
         pong_net.submit_input_descriptor().mode,
@@ -552,6 +583,12 @@ function join_send_input(app: ref[App]) -> void:
             app.status_code = 8
         Result.success:
             runtime.flush()
+            if app.state.phase == 1:
+                apply_join_input(ref_of(app.state), input_flags)
+                if not record_join_prediction(app, input_tick, input_flags):
+                    app.client = Option[mp_enet.Client].some(value = runtime)
+                    return
+            app.next_join_input_tick = input_tick + 1
 
     app.client = Option[mp_enet.Client].some(value = runtime)
 
@@ -648,6 +685,80 @@ function clamp_paddles(state: ref[pong_net.PongNetState]) -> void:
         state.paddle_join_y = min_y
     if state.paddle_join_y > max_y:
         state.paddle_join_y = max_y
+
+
+function clamp_paddle_y(value: int) -> int:
+    let min_y = arena_top
+    let max_y = arena_top + arena_height - paddle_height
+
+    if value < min_y:
+        return min_y
+    if value > max_y:
+        return max_y
+    return value
+
+
+function predict_join_paddle_y(paddle_y: int, input_flags: ubyte) -> int:
+    var next = paddle_y
+    if (input_flags & 1) != 0:
+        next -= paddle_speed
+    if (input_flags & 2) != 0:
+        next += paddle_speed
+    return clamp_paddle_y(next)
+
+
+function record_join_prediction(app: ref[App], input_tick: mp.Tick, input_flags: ubyte) -> bool:
+    let _ = app.join_input_history.record(input_tick, input_flags) else:
+        app.status_code = 33
+        app.disconnect_message = "failed to record predicted client input history"
+        return false
+
+    let _ = app.join_paddle_history.record(input_tick, app.state.paddle_join_y) else:
+        app.status_code = 34
+        app.disconnect_message = "failed to record predicted client paddle history"
+        return false
+
+    return true
+
+
+function reconcile_join_prediction(app: ref[App], authoritative_tick: mp.Tick) -> void:
+    if app.state.phase != 1:
+        app.join_input_history.clear()
+        app.join_paddle_history.clear()
+        return
+
+    app.join_input_history.discard_before(authoritative_tick)
+    app.join_paddle_history.discard_after(authoritative_tick)
+
+    let _ = app.join_paddle_history.record(authoritative_tick, app.state.paddle_join_y) else:
+        app.status_code = 35
+        app.disconnect_message = "failed to record authoritative join paddle state"
+        return
+
+    let _ = rollback.resimulate_from(
+        ref_of(app.join_paddle_history),
+        ref_of(app.join_input_history),
+        authoritative_tick,
+        predict_join_paddle_y,
+    ) else:
+        app.status_code = 36
+        app.disconnect_message = "failed to reconcile predicted join paddle state"
+        return
+
+    match app.join_paddle_history.latest():
+        Option.some as payload:
+            if payload.value.tick > authoritative_tick:
+                app.state.paddle_join_y = payload.value.value
+        Option.none:
+            pass
+
+
+function should_apply_join_input(app: ref[App], input_tick: mp.Tick) -> bool:
+    match app.last_applied_join_input_tick:
+        Option.some as payload:
+            return input_tick > payload.value
+        Option.none:
+            return true
 
 
 function intersects(ax: int, ay: int, aw: int, ah: int, bx: int, by: int, bw: int, bh: int) -> bool:
@@ -849,11 +960,53 @@ function run_smoke_test() -> int:
             return 19
 
         if client.protocol_ready():
-            let drained = pong_session.drain_state_snapshots(ref_of(client), ref_of(smoke_state)) else:
+            let drained = pong_session.drain_state_snapshots_with_info(ref_of(client), ref_of(smoke_state)) else:
                 return 20
-            if drained > 0:
+            if drained.processed > 0:
+                let latest_tick = drained.latest_tick else:
+                    return 21
+                if latest_tick != ulong<-rounds:
+                    return 22
+
+                var input_payload = pong_net.encode_submit_input_payload(77, 1)
+                let input_span = span[ubyte](data = ptr_of(input_payload[0]), len = 9)
+                match client.send_rpc(
+                    pong_net.submit_input_descriptor().channel,
+                    pong_net.submit_input_descriptor().mode,
+                    pong_net.submit_input_descriptor().direction,
+                    input_span
+                ):
+                    Result.failure:
+                        return 23
+                    Result.success:
+                        client.flush()
+
+                let _ = server.pump(1) else:
+                    return 24
+                let _ = client.pump(1) else:
+                    return 25
+
+                var received = server.pop_rpc() else:
+                    return 26
+                defer received.release()
+
+                match bindings.typed_rpcs.dispatch_packet(received.context, received.header, received.payload.as_span()):
+                    Result.failure:
+                        return 27
+                    Result.success as dispatched:
+                        if not dispatched.value:
+                            return 28
+
+                let applied = pong_net.consume_submit_input() else:
+                    return 29
+                if applied.tick != 77:
+                    return 30
+                if applied.input_flags != 1:
+                    return 31
                 return 0
 
         rounds += 1
 
-    return 22
+    return 32
+
+    return 23

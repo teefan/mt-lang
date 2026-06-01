@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "libjuice", "zstd", "sqlite3", "curl", "pcre2", "steamworks"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "zstd", "sqlite3", "curl", "pcre2", "steamworks"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"
@@ -69,11 +69,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_equal "std.c.enet", registry.fetch("enet").raw_module_name
     assert_includes registry.fetch("enet").binding_path, "/std/enet.mt"
     assert_includes registry.fetch("enet").policy_path, "/bindings/imported/enet.binding.json"
-
-    assert_equal "std.libjuice", registry.fetch("libjuice").module_name
-    assert_equal "std.c.libjuice", registry.fetch("libjuice").raw_module_name
-    assert_includes registry.fetch("libjuice").binding_path, "/std/libjuice.mt"
-    assert_includes registry.fetch("libjuice").policy_path, "/bindings/imported/libjuice.binding.json"
 
     assert_equal "std.zstd", registry.fetch("zstd").module_name
     assert_equal "std.c.zstd", registry.fetch("zstd").raw_module_name
@@ -285,21 +280,6 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/^public foreign function deinitialize\(\) -> void = c\.enet_deinitialize$/, source)
     assert_match(/^public foreign function time_get\(\) -> uint = c\.enet_time_get$/, source)
     assert_match(/^public foreign function packet_create\(data: const_ptr\[void\], data_length: ptr_uint, flag_bits: PacketFlag\) -> ptr\[Packet\]\? = c\.enet_packet_create$/, source)
-  end
-
-  def test_checked_in_libjuice_binding_matches_policy_and_loads
-    binding = MilkTea::ImportedBindings.default_registry.fetch("libjuice")
-
-    assert_includes binding.check!, "/std/c/libjuice.mt"
-
-    source = File.read(binding.binding_path)
-    refute_match(/^module /, source)
-    assert_match(/^import std\.c\.libjuice as c$/, source)
-    assert_match(/^public opaque Agent = c"juice_agent_t"$/, source)
-    assert_match(/^public const ERR_SUCCESS: int = c\.JUICE_ERR_SUCCESS$/, source)
-    assert_match(/^public foreign function create\(config: const_ptr\[Config\]\) -> Agent\? = c\.juice_create$/, source)
-    assert_match(/^public foreign function gather_candidates\(agent: Agent\) -> int = c\.juice_gather_candidates$/, source)
-    assert_match(/^public foreign function state_to_string\(state: State\) -> cstr = c\.juice_state_to_string$/, source)
   end
 
   def test_checked_in_box2d_binding_matches_policy_and_loads

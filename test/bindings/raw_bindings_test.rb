@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet libjuice zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"
@@ -228,12 +228,6 @@ class MilkTeaRawBindingsTest < Minitest::Test
     assert_includes registry.fetch("enet").tracked_header_paths, "/usr/include/enet/enet.h"
     assert_includes registry.fetch("enet").tracked_header_prefixes, "/usr/include/enet"
     assert_equal ["enet_", "ENET_", "ENet", "_ENet"], registry.fetch("enet").declaration_name_prefixes
-    assert_equal "std.c.libjuice", registry.fetch("libjuice").module_name
-    assert_equal ["juice", "pthread"], registry.fetch("libjuice").link_libraries
-    assert_includes registry.fetch("libjuice").header_candidates, "/usr/include/juice/juice.h"
-    assert_includes registry.fetch("libjuice").tracked_header_paths, "/usr/include/juice/juice.h"
-    assert_includes registry.fetch("libjuice").tracked_header_prefixes, "/usr/include/juice"
-    assert_equal ["juice_", "JUICE_"], registry.fetch("libjuice").declaration_name_prefixes
     assert_equal "std.c.zstd", registry.fetch("zstd").module_name
     assert_equal ["zstd"], registry.fetch("zstd").link_libraries
     assert_includes registry.fetch("zstd").header_candidates, "/usr/include/zstd.h"

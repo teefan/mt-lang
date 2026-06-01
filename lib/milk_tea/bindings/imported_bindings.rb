@@ -1812,13 +1812,6 @@ module MilkTea
           policy_path: root.join("bindings/imported/enet.binding.json"),
         ),
         Binding.new(
-          name: "libjuice",
-          module_name: "std.libjuice",
-          binding_path: root.join("std/libjuice.mt"),
-          raw_module_name: "std.c.libjuice",
-          policy_path: root.join("bindings/imported/libjuice.binding.json"),
-        ),
-        Binding.new(
           name: "zstd",
           module_name: "std.zstd",
           binding_path: root.join("std/zstd.mt"),

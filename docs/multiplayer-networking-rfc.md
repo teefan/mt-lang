@@ -101,7 +101,5 @@ This RFC does not prescribe matchmaking, lobby, or platform-level orchestration 
 
 Current repository boundary:
 
-- `std.libjuice` and `std.c.libjuice` bindings exist.
-- `std.multiplayer.ice` runtime module exists (libjuice-backed ICE transport).
-- `std.multiplayer.signal` runtime module exists (signaling/session negotiation primitives).
-- Higher-level NAT punching orchestration and matchmaking remain outside the core runtime and require application-level integration.
+- `std.multiplayer.enet` is the concrete gameplay/network transport runtime.
+- Higher-level matchmaking, dedicated relay services, and any NAT traversal/punching layer remain outside the core runtime and require application-level integration.
