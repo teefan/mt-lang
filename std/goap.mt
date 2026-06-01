@@ -30,6 +30,7 @@ public struct Planner[World, Goal, Context]:
     actions: vec.Vec[Action[World, Context]]
     is_goal: fn(context: ptr[Context], world: World, goal: Goal) -> bool
     heuristic: fn(context: ptr[Context], world: World, goal: Goal) -> float
+    worlds_equal: fn(left: World, right: World) -> bool
     max_iterations: ptr_uint
 
 struct SearchNode[World]:
@@ -41,15 +42,15 @@ struct SearchNode[World]:
     closed: bool
 
 
-function worlds_equal[World](left: World, right: World) -> bool:
-    return left == right
-
-
-function find_node_index[World](nodes: ref[vec.Vec[SearchNode[World]]], world: World) -> Option[ptr_uint]:
+function find_node_index[World, Goal, Context](
+    planner: ref[Planner[World, Goal, Context]],
+    nodes: ref[vec.Vec[SearchNode[World]]],
+    world: World
+) -> Option[ptr_uint]:
     var index: ptr_uint = 0
     for entry in nodes:
         unsafe:
-            if worlds_equal[World](read(entry).world, world):
+            if planner.worlds_equal(read(entry).world, world):
                 return Option[ptr_uint].some(value = index)
         index += 1
 
@@ -81,7 +82,6 @@ function choose_best_open[World, Goal, Context](
         unsafe:
             let node_index = read(entry)
             let node_ptr = nodes.get(node_index) else:
-                open_index += 1
                 continue
 
             let node = read(node_ptr)
@@ -143,7 +143,7 @@ function build_plan[World, Goal, Context](
             let step = reverse_steps.pop() else:
                 break
 
-            plan.steps.push(step.value)
+            plan.steps.push(step)
 
         reverse_steps.release()
         return plan
@@ -203,12 +203,14 @@ extending PlanningResult[World]:
 extending Planner[World, Goal, Context]:
     public static function create(
         is_goal: fn(context: ptr[Context], world: World, goal: Goal) -> bool,
-        heuristic: fn(context: ptr[Context], world: World, goal: Goal) -> float
+        heuristic: fn(context: ptr[Context], world: World, goal: Goal) -> float,
+        worlds_equal: fn(left: World, right: World) -> bool
     ) -> Planner[World, Goal, Context]:
         return Planner[World, Goal, Context](
             actions = vec.Vec[Action[World, Context]].create(),
             is_goal = is_goal,
             heuristic = heuristic,
+            worlds_equal = worlds_equal,
             max_iterations = 256,
         )
 
@@ -229,7 +231,7 @@ extending Planner[World, Goal, Context]:
         this.max_iterations = limit
 
 
-    public function plan(context: ref[Context], initial_world: World, goal: Goal) -> PlanningResult[World]:
+    public mutable function plan(context: ref[Context], initial_world: World, goal: Goal) -> PlanningResult[World]:
         var nodes = vec.Vec[SearchNode[World]].create()
         defer nodes.release()
         var open_list = vec.Vec[ptr_uint].create()
@@ -262,7 +264,7 @@ extending Planner[World, Goal, Context]:
             let best_open_index = choose_best_open(ref_of(this), ref_of(nodes), ref_of(open_list), context, goal) else:
                 break
 
-            let current_index_option = open_list.swap_remove(best_open_index.value)
+            let current_index_option = open_list.swap_remove(best_open_index)
             match current_index_option:
                 Option.none:
                     break
@@ -300,7 +302,7 @@ extending Planner[World, Goal, Context]:
 
                             let next_world = action.apply(ptr_of(context), current_node.world)
                             let next_cost = current_node.cost_so_far + action.cost(ptr_of(context), current_node.world)
-                            let existing_index = find_node_index(ref_of(nodes), next_world)
+                            let existing_index = find_node_index(ref_of(this), ref_of(nodes), next_world)
                             match existing_index:
                                 Option.none:
                                     let next_node_index = nodes.len()

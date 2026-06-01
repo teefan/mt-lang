@@ -2387,7 +2387,14 @@ module MilkTea
 
           check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:) if statement.else_body
           if statement.else_body && !statement.recovered_else
-            raise_sema_error("else block for #{statement.name} must exit control flow") unless cfg_block_always_terminates?(statement.else_body)
+            terminator = if inside_loop?
+                           CFG::Termination.block_always_terminates_in_loop?(statement.else_body)
+                         else
+                           cfg_block_always_terminates?(statement.else_body)
+                         end
+            unless terminator
+              raise_sema_error("else block for #{statement.name} must exit control flow at line #{statement.line}")
+            end
           end
 
           storage_type = statement.kind == :var ? final_type : inferred_type
@@ -7314,9 +7321,13 @@ module MilkTea
         substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          expected_argument_type = if callable_type?(parameter.type)
-                                     candidate_type = substitute_type(parameter.type, substitutions)
-                                     callable_type?(candidate_type) ? candidate_type : (contains_type_var?(candidate_type) ? nil : candidate_type)
+          candidate_type = substitute_type(parameter.type, substitutions)
+          expected_argument_type = if callable_type?(candidate_type)
+                                     candidate_type
+                                   elsif contains_type_var?(candidate_type)
+                                     nil
+                                   else
+                                     candidate_type
                                    end
           actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)

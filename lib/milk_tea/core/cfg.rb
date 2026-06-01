@@ -843,6 +843,28 @@ module MilkTea
       ensure
         @graph = nil
       end
+
+      # Build a CFG for `stmts` as if they are a branch nested inside an
+      # enclosing loop: the main exit represents only the fall-through into
+      # the next sequential statement, while break and continue each target
+      # dedicated non-exit nodes (so they are recognized as terminating the
+      # branch without falling through).  Used by
+      # Termination.block_always_terminates_in_loop?.
+      def build_loop_branch(stmts)
+        @graph = Graph.new
+        @graph.exit_id       = @graph.add_node(kind: :exit)
+        break_exit_id        = @graph.add_node(kind: :break_exit)
+        continue_exit_id     = @graph.add_node(kind: :continue_exit)
+        @graph.entry_id      = build_block(
+          stmts || [],
+          @graph.exit_id,
+          break_target:   break_exit_id,
+          continue_target: continue_exit_id,
+        )
+        @graph
+      ensure
+        @graph = nil
+      end
     end
 
     class Termination
@@ -862,6 +884,19 @@ module MilkTea
         return false if statements.nil? || statements.empty?
 
         graph = Builder.new(**builder_options).build_loop_body(statements)
+        reachability = Reachability.solve(graph)
+        !reachability.reachable_ids.include?(graph.exit_id)
+      end
+
+      # Returns true when every path through `statements` (treated as a branch
+      # nested inside an enclosing loop) terminates via return, break, continue,
+      # or fatal — never falling through to the next sequential statement.
+      # Required for let...else: / if branches that must "exit control flow"
+      # when the surrounding code can reach a `continue` or `break`.
+      def self.block_always_terminates_in_loop?(statements, **builder_options)
+        return false if statements.nil? || statements.empty?
+
+        graph = Builder.new(**builder_options).build_loop_branch(statements)
         reachability = Reachability.solve(graph)
         !reachability.reachable_ids.include?(graph.exit_id)
       end

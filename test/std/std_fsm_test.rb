@@ -62,8 +62,16 @@ function update_jumping(context: ptr[Context], state: ActorState) -> void:
     unsafe:
         read(context).updates += 10
 
+function states_equal(left: ActorState, right: ActorState) -> bool:
+    return left == right
+
+
+function events_equal(left: ActorEvent, right: ActorEvent) -> bool:
+    return left == right
+
+
 function main() -> int:
-    var machine = fsm.StateMachine[ActorState, ActorEvent, Context].create(ActorState.idle)
+    var machine = fsm.StateMachine[ActorState, ActorEvent, Context].create(ActorState.idle, states_equal, events_equal)
     defer machine.release()
 
     machine.add_state_hooks(

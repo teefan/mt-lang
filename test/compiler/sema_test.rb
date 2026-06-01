@@ -1589,6 +1589,38 @@ class MilkTeaSemaTest < Minitest::Test
     assert_match(/else block for value must exit control flow/, error.message)
   end
 
+  def test_accepts_let_else_continue_inside_loop
+    source = <<~MT
+      # module demo.loop_continue
+
+      function first_match(values: span[ptr_uint?]) -> ptr_uint:
+          var index: ptr_uint = 0
+          for value in values:
+              let unwrapped = value else:
+                  continue
+              return index
+          return 0
+    MT
+
+    check_program_source(source)
+  end
+
+  def test_accepts_let_else_break_inside_loop
+    source = <<~MT
+      # module demo.loop_break
+
+      function first_match(values: span[ptr_uint?]) -> ptr_uint:
+          var index: ptr_uint = 0
+          for value in values:
+              let unwrapped = value else:
+                  break
+              return index
+          return 0
+    MT
+
+    check_program_source(source)
+  end
+
   def test_type_checks_if_expression
     source = <<~MT
       # module demo.if_expr
