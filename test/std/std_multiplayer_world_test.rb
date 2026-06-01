@@ -304,6 +304,96 @@ function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_world_prepare_snapshot_returns_reusable_header_signature_and_payload
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer as mp
+
+@[mp.replicated(authority = mp.Authority.server)]
+struct PlayerState:
+    @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 0, rate_hz = 20, target = mp.SyncTarget.observers)]
+    health: int
+
+function descriptor() -> mp.StateDescriptor:
+    return mp.state_descriptor[PlayerState]()
+
+function build_registry() -> mp.Registry:
+    var registry = mp.Registry.create()
+    let _ = registry.add_state(descriptor()) else:
+        return registry
+    registry.freeze()
+    return registry
+
+function main() -> int:
+    var registry = build_registry()
+    defer registry.release()
+
+    let source_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.server)
+    match source_world_result:
+        Result.failure as _:
+            return 1
+        Result.success as source_payload:
+            var source_world = source_payload.value
+            defer source_world.release()
+
+            let sink_world_result = mp.World.create(registry, mp.default_config(), mp.WorldRole.client)
+            match sink_world_result:
+                Result.failure as _:
+                    return 2
+                Result.success as sink_payload:
+                    var sink_world = sink_payload.value
+                    defer sink_world.release()
+
+                    let source_entity = source_world.spawn_with_descriptor(descriptor(), PlayerState(health = 44), Option[mp.ConnectionId].none) else:
+                        return 3
+                    let sink_entity = sink_world.spawn_with_descriptor(descriptor(), PlayerState(health = 1), Option[mp.ConnectionId].none) else:
+                        return 4
+                    if source_entity != sink_entity:
+                        return 5
+
+                    var prepared = source_world.prepare_snapshot(50, 12) else:
+                        return 6
+                    defer prepared.release()
+
+                    if prepared.header.tick != 50:
+                        return 7
+                    if prepared.header.baseline_tick != 12:
+                        return 8
+                    if prepared.header.entity_count != 1:
+                        return 9
+                    if prepared.signature.tick != 50:
+                        return 10
+                    if prepared.signature.entity_count != 1:
+                        return 11
+                    if prepared.signature.payload_bytes == 0:
+                        return 12
+                    if prepared.payload.as_span().len == 0:
+                        return 13
+
+                    let applied = sink_world.apply_snapshot_payload(prepared.payload.as_span()) else:
+                        return 14
+                    if applied != 1:
+                        return 15
+
+                    let state = sink_world.state_copy_with_descriptor[PlayerState](sink_entity, descriptor()) else:
+                        return 16
+                    if state.health != 44:
+                        return 17
+
+                    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   def test_world_snapshot_payload_partial_apply_for_mixed_descriptors
     compiler = ENV.fetch("CC", "cc")
     skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)

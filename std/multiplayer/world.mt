@@ -150,6 +150,28 @@ extending World:
         return Result[bytes.Bytes, Error].success(value = bytes.Bytes.copy(output.as_span()))
 
 
+    public function prepare_snapshot(
+        tick: protocol.Tick,
+        baseline_tick: protocol.Tick,
+    ) -> Result[snapshot_runtime.PreparedSnapshot, Error]:
+        let signature = this.snapshot_state_signature(tick)
+        var payload = this.encode_snapshot_payload() else as payload_error:
+            return Result[snapshot_runtime.PreparedSnapshot, Error].failure(error = payload_error)
+
+        let header = protocol.SnapshotPacketHeader(
+            tick = tick,
+            baseline_tick = baseline_tick,
+            entity_count = signature.entity_count
+        )
+        return Result[snapshot_runtime.PreparedSnapshot, Error].success(
+            value = snapshot_runtime.PreparedSnapshot(
+                signature = signature,
+                header = header,
+                payload = payload
+            )
+        )
+
+
     public mutable function apply_snapshot_payload(payload: span[ubyte]) -> Result[ptr_uint, Error]:
         if payload.len < 4:
             return Result[ptr_uint, Error].failure(

@@ -509,28 +509,25 @@ extending Server:
 
         var snapshots_sent: ptr_uint = 0
         if should_send_snapshot:
-            let snapshot_header = mp.SnapshotPacketHeader(
-                tick = tick,
-                baseline_tick = this.outbound_world_signature_baseline.last_applied_tick,
-                entity_count = current_signature.entity_count
-            )
-
-            var world_payload = this.world.encode_snapshot_payload() else as world_payload_error:
-                return Result[mp.TickDispatchReport, mp.Error].failure(error = world_payload_error)
-            defer world_payload.release()
+            var prepared_snapshot = this.world.prepare_snapshot(
+                tick,
+                this.outbound_world_signature_baseline.last_applied_tick,
+            ) else as prepared_error:
+                return Result[mp.TickDispatchReport, mp.Error].failure(error = prepared_error)
+            defer prepared_snapshot.release()
 
             let sent = this.broadcast_snapshot_scheduled_fair(
                 ref_of(snapshot_scheduler),
                 snapshot_channel,
                 snapshot_transfer_mode,
-                snapshot_header,
-                world_payload.as_span()
+                prepared_snapshot.header,
+                prepared_snapshot.payload.as_span()
             ) else as snapshot_error:
                 return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
             snapshots_sent = sent
 
             if snapshots_sent > 0:
-                snapshot_runtime.apply(current_signature, ref_of(this.outbound_world_signature_baseline))
+                snapshot_runtime.apply(prepared_snapshot.signature, ref_of(this.outbound_world_signature_baseline))
 
         var rpc_scheduler = mp.create_tick_scheduler(plan.rpc_bytes)
         rpc_scheduler.begin_tick(tick)

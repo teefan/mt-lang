@@ -215,6 +215,7 @@ extending Server:
         if this.receive_context != null:
             let context = this.receive_context else:
                 fatal(c"ice server receive context unexpectedly missing during answer creation")
+            set_signal_session_id(unsafe: ref_of(read(context)), this.session_id.as_str())
             set_default_sender(unsafe: ref_of(read(context)), this.verified_connection)
 
         var local_sdp = local_description(agent) else as description_error:
@@ -280,6 +281,40 @@ extending Server:
 
     public function pending_session_event_count() -> ptr_uint:
         return this.session_events.len()
+
+
+    public function pending_local_candidate_count() -> ptr_uint:
+        let context = this.receive_context else:
+            return 0
+
+        return unsafe: read(context).local_candidate_sdps.len()
+
+
+    public function pending_local_gathering_done_count() -> ptr_uint:
+        let context = this.receive_context else:
+            return 0
+
+        return unsafe: read(context).pending_local_gathering_done_count
+
+
+    public mutable function pop_local_candidate() -> Result[Option[signal.Candidate], mp.Error]:
+        let context = this.receive_context else:
+            return Result[Option[signal.Candidate], mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "ice server receive context is not initialized"
+            ))
+
+        return pop_local_candidate_signal(unsafe: ref_of(read(context)))
+
+
+    public mutable function pop_local_gathering_done() -> Result[Option[signal.GatheringDone], mp.Error]:
+        let context = this.receive_context else:
+            return Result[Option[signal.GatheringDone], mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "ice server receive context is not initialized"
+            ))
+
+        return pop_local_gathering_done_signal(unsafe: ref_of(read(context)))
 
 
     public function pending_snapshot_count() -> ptr_uint:
@@ -451,6 +486,11 @@ extending Client:
         this.session_id.assign(session_id)
         this.connection_state = ConnectionState.awaiting_remote
 
+        if this.receive_context != null:
+            let context = this.receive_context else:
+                fatal(c"ice client receive context unexpectedly missing during offer creation")
+            set_signal_session_id(unsafe: ref_of(read(context)), this.session_id.as_str())
+
         var local_sdp = local_description(agent) else as description_error:
             return Result[signal.Offer, mp.Error].failure(error = description_error)
 
@@ -503,6 +543,7 @@ extending Client:
         if this.receive_context != null:
             let context = this.receive_context else:
                 fatal(c"ice client receive context unexpectedly missing during answer apply")
+            set_signal_session_id(unsafe: ref_of(read(context)), this.session_id.as_str())
             set_default_sender(unsafe: ref_of(read(context)), this.connection_id_value)
 
         this.connection_state = map_state(juice.get_state(agent))
@@ -602,6 +643,40 @@ extending Client:
 
     public function pending_session_event_count() -> ptr_uint:
         return this.session_events.len()
+
+
+    public function pending_local_candidate_count() -> ptr_uint:
+        let context = this.receive_context else:
+            return 0
+
+        return unsafe: read(context).local_candidate_sdps.len()
+
+
+    public function pending_local_gathering_done_count() -> ptr_uint:
+        let context = this.receive_context else:
+            return 0
+
+        return unsafe: read(context).pending_local_gathering_done_count
+
+
+    public mutable function pop_local_candidate() -> Result[Option[signal.Candidate], mp.Error]:
+        let context = this.receive_context else:
+            return Result[Option[signal.Candidate], mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "ice client receive context is not initialized"
+            ))
+
+        return pop_local_candidate_signal(unsafe: ref_of(read(context)))
+
+
+    public mutable function pop_local_gathering_done() -> Result[Option[signal.GatheringDone], mp.Error]:
+        let context = this.receive_context else:
+            return Result[Option[signal.GatheringDone], mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "ice client receive context is not initialized"
+            ))
+
+        return pop_local_gathering_done_signal(unsafe: ref_of(read(context)))
 
 
     public function pending_snapshot_count() -> ptr_uint:
@@ -709,9 +784,9 @@ function create_agent(ice: IceConfig, user_ptr: ptr[void]) -> Result[juice.Agent
     config.bind_address = ice.bind_address
     config.local_port_range_begin = ice.local_port_range_begin
     config.local_port_range_end = ice.local_port_range_end
-    config.cb_state_changed = noop_state_changed
-    config.cb_candidate = noop_candidate
-    config.cb_gathering_done = noop_gathering_done
+    config.cb_state_changed = ice_state_changed_callback
+    config.cb_candidate = ice_candidate_callback
+    config.cb_gathering_done = ice_gathering_done_callback
     config.cb_recv = ice_recv_callback
     config.user_ptr = user_ptr
 
@@ -1005,6 +1080,9 @@ function ice_recv_callback(agent: juice.Agent, data: cstr, size: ptr_uint, user_
 public struct IceReceiveContext:
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
+    signal_session_id: string.String
+    local_candidate_sdps: vec.Vec[string.String]
+    pending_local_gathering_done_count: ptr_uint
     unknown_packet_count: ptr_uint
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inferred_direction: mp.RpcDirection
@@ -1021,6 +1099,9 @@ function create_receive_context(
         read(context) = IceReceiveContext(
             incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
             incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
+            signal_session_id = string.String.create(),
+            local_candidate_sdps = vec.Vec[string.String].create(),
+            pending_local_gathering_done_count = 0,
             unknown_packet_count = 0,
             inbound_snapshot_baseline = snapshot_runtime.BaselineSet(
                 last_applied_tick = 0,
@@ -1039,6 +1120,8 @@ function release_receive_context(context: ptr[IceReceiveContext]) -> void:
     unsafe:
         snapshot_runtime.release_queue(ref_of(read(context).incoming_snapshots))
         rpc_runtime.release_queue(ref_of(read(context).incoming_rpcs))
+        release_local_candidate_queue(ref_of(read(context).local_candidate_sdps))
+        read(context).signal_session_id.release()
         read(context).sender_routes.release()
     heap.release(context)
 
@@ -1087,6 +1170,65 @@ function set_default_sender(
     read(context).default_sender = sender
 
 
+function set_signal_session_id(context: ref[IceReceiveContext], session_id: str) -> void:
+    read(context).signal_session_id.assign(session_id)
+
+
+function pop_local_candidate_signal(
+    context: ref[IceReceiveContext],
+) -> Result[Option[signal.Candidate], mp.Error]:
+    if read(context).local_candidate_sdps.len() == 0:
+        return Result[Option[signal.Candidate], mp.Error].success(value = Option[signal.Candidate].none)
+
+    let session_id = read(context).signal_session_id.as_str()
+    if session_id.len == 0:
+        return Result[Option[signal.Candidate], mp.Error].failure(error = mp.error(
+            mp.ErrorCode.unsupported,
+            "ice local candidate is not available until session_id is initialized"
+        ))
+
+    match read(context).local_candidate_sdps.remove(0):
+        Option.some as payload:
+            var candidate_sdp = payload.value
+            let candidate = signal.candidate(session_id, candidate_sdp.as_str())
+            candidate_sdp.release()
+            return Result[Option[signal.Candidate], mp.Error].success(
+                value = Option[signal.Candidate].some(value = candidate)
+            )
+        Option.none:
+            return Result[Option[signal.Candidate], mp.Error].success(value = Option[signal.Candidate].none)
+
+
+function pop_local_gathering_done_signal(
+    context: ref[IceReceiveContext],
+) -> Result[Option[signal.GatheringDone], mp.Error]:
+    if read(context).pending_local_gathering_done_count == 0:
+        return Result[Option[signal.GatheringDone], mp.Error].success(value = Option[signal.GatheringDone].none)
+
+    let session_id = read(context).signal_session_id.as_str()
+    if session_id.len == 0:
+        return Result[Option[signal.GatheringDone], mp.Error].failure(error = mp.error(
+            mp.ErrorCode.unsupported,
+            "ice local gathering_done is not available until session_id is initialized"
+        ))
+
+    read(context).pending_local_gathering_done_count -= 1
+    return Result[Option[signal.GatheringDone], mp.Error].success(
+        value = Option[signal.GatheringDone].some(value = signal.gathering_done(session_id))
+    )
+
+
+function release_local_candidate_queue(queue: ref[vec.Vec[string.String]]) -> void:
+    while true:
+        match read(queue).pop():
+            Option.some as payload:
+                var value = payload.value
+                value.release()
+            Option.none:
+                read(queue).release()
+                return
+
+
 function resolve_connection_identity(
     provider: ConnectionIdentityProvider,
     is_server: bool,
@@ -1102,16 +1244,46 @@ function default_connection_identity(is_server: bool, session_id: str) -> Option
     return Option[mp.ConnectionId].none
 
 
-function noop_state_changed(agent: juice.Agent, state: juice.State, user_ptr: ptr[void]) -> void:
-    pass
+function enqueue_local_candidate(context: ref[IceReceiveContext], candidate_sdp: str) -> void:
+    if candidate_sdp.len == 0:
+        return
+
+    read(context).local_candidate_sdps.push(string.String.from_str(candidate_sdp))
 
 
-function noop_candidate(agent: juice.Agent, candidate: cstr, user_ptr: ptr[void]) -> void:
-    pass
+function ice_state_changed_callback(agent: juice.Agent, state: juice.State, user_ptr: ptr[void]) -> void:
+    if agent == zero[juice.Agent]:
+        pass
+    if state == juice.State.JUICE_STATE_FAILED:
+        pass
+    if user_ptr == zero[ptr[void]]:
+        return
 
 
-function noop_gathering_done(agent: juice.Agent, user_ptr: ptr[void]) -> void:
-    pass
+function ice_candidate_callback(agent: juice.Agent, candidate: cstr, user_ptr: ptr[void]) -> void:
+    if agent == zero[juice.Agent]:
+        pass
+    if user_ptr == zero[ptr[void]]:
+        return
+
+    let candidate_text = text.cstr_as_str(candidate)
+    if candidate_text.len == 0:
+        return
+
+    unsafe:
+        let receiver = ptr[IceReceiveContext]<-user_ptr
+        enqueue_local_candidate(ref_of(read(receiver)), candidate_text)
+
+
+function ice_gathering_done_callback(agent: juice.Agent, user_ptr: ptr[void]) -> void:
+    if agent == zero[juice.Agent]:
+        pass
+    if user_ptr == zero[ptr[void]]:
+        return
+
+    unsafe:
+        let receiver = ptr[IceReceiveContext]<-user_ptr
+        read(receiver).pending_local_gathering_done_count += 1
 
 
 function noop_recv(agent: juice.Agent, data: cstr, size: ptr_uint, user_ptr: ptr[void]) -> void:

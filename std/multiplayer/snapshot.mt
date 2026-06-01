@@ -29,6 +29,11 @@ public struct IncomingSnapshotPacket:
     channel: uint
     payload: bytes.Bytes
 
+public struct PreparedSnapshot:
+    signature: Snapshot
+    header: protocol.SnapshotPacketHeader
+    payload: bytes.Bytes
+
 
 public function capture(tick: protocol.Tick, entity_count: ptr_uint) -> Snapshot:
     return Snapshot(
@@ -232,6 +237,11 @@ public function release_queue(queue: ref[vec.Vec[IncomingSnapshotPacket]]) -> vo
 
 
 extending IncomingSnapshotPacket:
+    public mutable function release() -> void:
+        this.payload.release()
+
+
+extending PreparedSnapshot:
     public mutable function release() -> void:
         this.payload.release()
 
