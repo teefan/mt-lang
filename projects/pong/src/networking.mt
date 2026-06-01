@@ -6,8 +6,13 @@ import std.vec as vec
 
 const net_channel_attr: ubyte = 0
 const snapshot_payload_bytes: ptr_uint = 29
+const submit_input_payload_bytes: ptr_uint = 9
 const ball_dir_x_positive_flag: uint = 1
 const ball_dir_y_positive_flag: uint = 2
+
+public struct SubmitInputFrame:
+    tick: mp.Tick
+    input_flags: ubyte
 
 @[mp.replicated(authority = mp.Authority.server)]
 @[mp.sync_defaults(
@@ -36,7 +41,7 @@ public struct PongNetState:
     @[mp.sync]
     ball_dir_y_positive: bool
 
-var pending_submit_input: Option[ubyte] = Option[ubyte].none
+var pending_submit_input: Option[SubmitInputFrame] = Option[SubmitInputFrame].none
 
 
 @[mp.rpc(
@@ -45,8 +50,8 @@ var pending_submit_input: Option[ubyte] = Option[ubyte].none
     channel = net_channel_attr,
     require_owner = false,
 )]
-function submit_pong_input(_context: mp.RpcContext, input_flags: ubyte) -> void:
-    pending_submit_input = Option[ubyte].some(value = input_flags)
+function submit_pong_input(_context: mp.RpcContext, frame: SubmitInputFrame) -> void:
+    pending_submit_input = Option[SubmitInputFrame].some(value = frame)
 
 
 public function install_bindings(builder: ptr[mp.BindingsBuilder]) -> Result[ptr_uint, mp.Error]:
@@ -64,6 +69,21 @@ public function state_descriptor() -> mp.StateDescriptor:
 
 public function submit_input_descriptor() -> mp.RpcDescriptor:
     return mp.rpc_descriptor(callable_of(submit_pong_input))
+
+
+public function encode_submit_input_payload(tick: mp.Tick, input_flags: ubyte) -> array[ubyte, 9]:
+    let encoded_tick = wire.encode_u64_be(tick)
+    return array[ubyte, 9](
+        encoded_tick[0],
+        encoded_tick[1],
+        encoded_tick[2],
+        encoded_tick[3],
+        encoded_tick[4],
+        encoded_tick[5],
+        encoded_tick[6],
+        encoded_tick[7],
+        input_flags,
+    )
 
 
 public function encode_state_snapshot(state: PongNetState) -> Result[bytes.Bytes, mp.Error]:
@@ -109,17 +129,17 @@ public function decode_state_snapshot(payload: span[ubyte], state: ref[PongNetSt
     return Result[bool, mp.Error].success(value = true)
 
 
-public function consume_submit_input() -> Option[ubyte]:
+public function consume_submit_input() -> Option[SubmitInputFrame]:
     match pending_submit_input:
         Option.some as payload:
-            pending_submit_input = Option[ubyte].none
-            return Option[ubyte].some(value = payload.value)
+            pending_submit_input = Option[SubmitInputFrame].none
+            return Option[SubmitInputFrame].some(value = payload.value)
         Option.none:
-            return Option[ubyte].none
+            return Option[SubmitInputFrame].none
 
 
 public function reset_runtime_state() -> void:
-    pending_submit_input = Option[ubyte].none
+    pending_submit_input = Option[SubmitInputFrame].none
 
 
 function dispatch_submit_pong_input(

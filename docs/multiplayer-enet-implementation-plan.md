@@ -1,6 +1,6 @@
 # `std.multiplayer.enet` Implementation Status
 
-Status: finalized (implemented ENet backend)
+Status: implemented ENet backend, plus rollback primitives
 
 This document records the current shipped implementation of `std.multiplayer.enet`.
 It replaces the earlier phase-plan view.
@@ -28,10 +28,12 @@ Implemented in stdlib:
 - `std/multiplayer/protocol.mt`
 - `std/multiplayer/rpc.mt`
 - `std/multiplayer/snapshot.mt`
+- `std/multiplayer/rollback.mt`
 - `std/multiplayer/relevancy.mt`
 - `std/multiplayer/spatial.mt`
 - `std/multiplayer/wire.mt`
 - `std/multiplayer/enet.mt`
+- `std/multiplayer/enet_sync.mt`
 
 ### ENet server/client session backend
 
@@ -108,23 +110,16 @@ Runtime:
 - `test/std/std_multiplayer_enet_scheduled_fair_test.rb`
 - `test/std/std_multiplayer_enet_maturity_soak_test.rb`
 - `test/std/std_multiplayer_enet_stress_test.rb`
+- `test/std/std_multiplayer_ice_test.rb`
+- `test/std/std_multiplayer_signal_test.rb`
+- `test/std/std_multiplayer_rollback_test.rb`
 
 ## Explicitly Not Implemented Here
 
-1. NAT punching orchestration integrated into multiplayer sessions.
+1. Automatic NAT traversal or NAT punching.
 2. Lobby/matchmaking services.
-3. Prediction/rollback netcode.
-
-## libjuice/NAT Punching Status
-
-Current repository state:
-
-- `std.libjuice` exists as imported bindings.
-- `std.c.libjuice` raw binding surface exists.
-- Binding registration tests exist under `test/bindings/*`.
-- `std.multiplayer.ice` and `std.multiplayer.signal` runtime modules are implemented and provide libjuice-backed ICE and signaling primitives.
-
-This means basic ICE and signaling support is available in the runtime; higher-level matchmaking, lobby services, and any broader orchestration remain outside the core multiplayer runtime and require application-level integration.
+3. Full prediction/rollback netcode.
+4. Dedicated built-in relay or discovery services.
 
 ## Remaining Follow-On Work
 
@@ -132,27 +127,51 @@ When prioritized, multiplayer follow-on work should stay additive and explicit, 
 
 Current prioritized plan:
 
-1. ICE signaling ergonomics without hidden orchestration.
-Status: done.
-Work completed:
-- local libjuice candidate and gathering-done callbacks now feed explicit pending queues in `std.multiplayer.ice`
-- server/client expose `pending_local_candidate_count`, `pop_local_candidate`, `pending_local_gathering_done_count`, and `pop_local_gathering_done`
-- runtime ICE coverage now exercises explicit local signal relay instead of relying only on offer/answer
-
-2. Explicit reusable snapshot preparation.
+1. Explicit reusable snapshot preparation.
 Status: done.
 Work completed:
 - `World.prepare_snapshot(tick, baseline_tick)` now returns an owned prepared snapshot with header, signature, and payload
 - ENet world dispatch now uses that explicit prepared snapshot surface internally instead of reassembling header and payload ad hoc
 - focused world runtime coverage validates prepared snapshot reuse and payload round-trip
 
-3. Transport-neutral gameplay session abstraction.
+2. Transport-neutral gameplay session abstraction.
 Status: deferred pending clearer backend convergence.
 Why deferred:
-- ENet is multi-peer and budget-scheduler-oriented
-- ICE is currently single-session and signaling-driven
-- forcing one shared session type now would either erase real capabilities or introduce an oversized optional API surface
+- the runtime intentionally centers ENet as the gameplay/network transport
+- introducing another generic session abstraction without a second truthful backend would only add indirection
 
 Preferred next step when this becomes worth doing:
-- first extract a small common vocabulary around inbound queue draining and explicit snapshot/RPC send operations only
-- only promote that to a shared gameplay-facing session type once both backends can satisfy the same contract honestly
+- only revisit this if another truthful transport backend returns or if dedicated-server/client orchestration needs a smaller common facade
+
+3. Prediction/rollback primitives.
+Status: started.
+Work completed:
+- `std.multiplayer.rollback` now provides explicit rollback history storage for inputs or states
+- history recording enforces nondecreasing ticks unless callers explicitly `discard_after(...)` first
+- `resimulate_from(...)` now rebuilds future state from a known authoritative tick plus recorded inputs and a caller-supplied simulation step
+- multiplayer docs and focused runtime coverage now include a gameplay-style authoritative correction example for replaying predicted player state
+- `std.multiplayer.enet_sync.drain_observer_state_with_info(...)` now preserves the latest authoritative snapshot tick for simple gameplay clients instead of discarding it during decode
+- Pong now retains the latest authoritative snapshot tick through its observer-sync session path, which makes the next rollback gap concrete
+- Pong client input RPCs now carry an explicit simulation tick alongside input flags, and the host preserves monotonic join-input application by ignoring stale input ticks
+- Pong client now keeps explicit local join-paddle prediction history and rewrites that local predicted paddle from authoritative snapshot ticks plus retained input history
+- Pong smoke validation now round-trips both authoritative snapshot ticks and a ticked input RPC through the typed dispatch path
+- focused runtime coverage validates append/replace, lookup, capacity trimming, rollback-boundary trimming, and explicit replay
+
+What is still not implemented:
+- no automatic prediction loop
+- no automatic rollback/resimulation scheduler
+- no authoritative reconciliation policy layered over gameplay state
+- no gameplay path yet reconciles full gameplay state from authoritative snapshots plus retained input history
+
+Preferred next step:
+- stop here for Pong until there is additional client-owned predicted state worth reconciling; in the current game, join-paddle input is the only honest local prediction surface and broader state remains authoritative host simulation
+
+4. Lobby/matchmaking services.
+Status: deferred outside core runtime boundary.
+Why deferred:
+- the repository does not yet contain a truthful service boundary for room discovery, tickets, persistence, or platform identity
+- adding a stdlib lobby surface now would be fake orchestration with no concrete backend contract behind it
+
+Preferred next step when this becomes worth doing:
+- choose one real service boundary first, for example an explicit HTTP service contract or platform SDK adapter
+- keep the boundary additive to ENet-facing runtime modules instead of baking discovery policy into core transport/runtime code

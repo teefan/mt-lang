@@ -1332,26 +1332,6 @@ module MilkTea
           ],
         ),
         Binding.new(
-          name: "libjuice",
-          module_name: "std.c.libjuice",
-          binding_path: root.join("std/c/libjuice.mt"),
-          include_directives: ["juice/juice.h"],
-          link_libraries: ["juice", "pthread"],
-          declaration_name_prefixes: ["juice_", "JUICE_"],
-          tracked_header_paths: [
-            "/usr/include/juice/juice.h",
-            "/usr/local/include/juice/juice.h",
-          ],
-          tracked_header_prefixes: [
-            "/usr/include/juice",
-            "/usr/local/include/juice",
-          ],
-          header_candidates: [
-            "/usr/include/juice/juice.h",
-            "/usr/local/include/juice/juice.h",
-          ],
-        ),
-        Binding.new(
           name: "zstd",
           module_name: "std.c.zstd",
           binding_path: root.join("std/c/zstd.mt"),

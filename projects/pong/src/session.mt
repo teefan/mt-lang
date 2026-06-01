@@ -32,6 +32,17 @@ public function drain_state_snapshots(
     )
 
 
+public function drain_state_snapshots_with_info(
+    client: ref[mp_enet.Client],
+    state: ref[pong_net.PongNetState],
+) -> Result[mp_enet_sync.DrainObserverStateResult, mp.Error]:
+    return mp_enet_sync.drain_observer_state_with_info(
+        client,
+        state,
+        pong_net.decode_state_snapshot,
+    )
+
+
 function snapshot_sync() -> mp_enet_sync.ObserverStateSync[pong_net.PongNetState]:
     return mp_enet_sync.ObserverStateSync[pong_net.PongNetState](
         descriptor = pong_net.state_descriptor(),

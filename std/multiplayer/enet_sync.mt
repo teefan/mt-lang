@@ -7,6 +7,10 @@ public struct ObserverStateSync[T]:
     local_tick_hz: uint
     entity_count: ptr_uint
 
+public struct DrainObserverStateResult:
+    processed: ptr_uint
+    latest_tick: Option[mp.Tick]
+
 
 extending ObserverStateSync[T]:
     public static function create(
@@ -90,22 +94,38 @@ public function drain_observer_state[T](
     state: ref[T],
     decode: fn(payload: span[ubyte], state: ref[T]) -> Result[bool, mp.Error],
 ) -> Result[ptr_uint, mp.Error]:
+    let drained = drain_observer_state_with_info(client, state, decode) else as drain_error:
+        return Result[ptr_uint, mp.Error].failure(error = drain_error)
+
+    return Result[ptr_uint, mp.Error].success(value = drained.processed)
+
+
+public function drain_observer_state_with_info[T](
+    client: ref[mp_enet.Client],
+    state: ref[T],
+    decode: fn(payload: span[ubyte], state: ref[T]) -> Result[bool, mp.Error],
+) -> Result[DrainObserverStateResult, mp.Error]:
     var processed: ptr_uint = 0
+    var latest_tick = Option[mp.Tick].none
     while true:
         var received = read(client).pop_snapshot() else:
-            return Result[ptr_uint, mp.Error].success(value = processed)
+            return Result[DrainObserverStateResult, mp.Error].success(value = DrainObserverStateResult(
+                processed = processed,
+                latest_tick = latest_tick,
+            ))
         defer received.release()
 
         match decode(received.payload.as_span(), state):
             Result.failure as decode_error:
-                return Result[ptr_uint, mp.Error].failure(error = decode_error.error)
+                return Result[DrainObserverStateResult, mp.Error].failure(error = decode_error.error)
             Result.success as decoded:
                 if not decoded.value:
-                    return Result[ptr_uint, mp.Error].failure(error = mp.error(
+                    return Result[DrainObserverStateResult, mp.Error].failure(error = mp.error(
                         mp.ErrorCode.invalid_argument,
                         "snapshot payload was rejected by observer state codec"
                     ))
                 processed += 1
+                latest_tick = Option[mp.Tick].some(value = received.header.tick)
 
 
 function previous_tick(tick: mp.Tick) -> mp.Tick:
