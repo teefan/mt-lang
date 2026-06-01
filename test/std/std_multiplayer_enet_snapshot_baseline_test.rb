@@ -153,7 +153,8 @@ function main() -> int:
         if client.pending_snapshot_count() == 0:
             return 24
 
-        let server_outbound = server.outbound_snapshot_baseline_state()
+        let server_outbound = server.outbound_snapshot_baseline_state(connection) else:
+            return 34
         let client_inbound = client.inbound_snapshot_baseline_state()
         if server_outbound.last_applied_tick != 34:
             return 25

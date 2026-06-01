@@ -26,6 +26,7 @@ const ball_speed_y: int = 3
 const default_port: ushort = 24567
 const connect_timeout_frames: uint = 360
 const join_prediction_history_frames: ptr_uint = 240
+const host_slot_connection_id: mp.ConnectionId = 0xffffffffffffffff
 
 public enum Scene: ubyte
     menu = 0
@@ -47,6 +48,7 @@ public struct App:
     tick: ulong
     remote_seen: bool
     client_was_ready: bool
+    lobby_slots: mp.SlotRoster
     join_wait_frames: uint
     disconnect_message: str
     join_host_input: str_buffer[128]
@@ -80,6 +82,7 @@ function main(args: span[str]) -> int:
         tick = 1,
         remote_seen = false,
         client_was_ready = false,
+        lobby_slots = mp.SlotRoster.create(2),
         join_wait_frames = 0,
         disconnect_message = "",
         join_host_input = zero[str_buffer[128]],
@@ -125,6 +128,7 @@ function has_arg(args: span[str], wanted: str) -> bool:
 
 function release_app(app: ref[App]) -> void:
     shutdown_network(app)
+    app.lobby_slots.release()
     app.join_input_history.release()
     app.join_paddle_history.release()
     app.bindings.release()
@@ -171,6 +175,7 @@ function shutdown_network(app: ref[App]) -> void:
     app.mode = NetMode.none
     app.remote_seen = false
     app.client_was_ready = false
+    app.lobby_slots.clear()
     app.join_wait_frames = 0
     app.last_authoritative_tick = Option[mp.Tick].none
     app.next_join_input_tick = 1
@@ -190,8 +195,12 @@ function host_start(app: ref[App]) -> bool:
         port = default_port
     )
 
-    let server = mp_enet.listen(bind_address, 8, 2, app.bindings.registry, mp.default_config()) else:
+    var server = mp_enet.listen(bind_address, 8, 2, app.bindings.registry, mp.default_config()) else:
         app.status_code = 2
+        return false
+
+    if not initialize_host_lobby_slots(app):
+        server.release()
         return false
 
     app.server = Option[mp_enet.Server].some(value = server)
@@ -430,13 +439,30 @@ function update_host_network(app: ref[App]) -> void:
             mp_enet.SessionEvent.rpc_received:
                 pass
 
+    sync_host_lobby_slots(app, runtime)
+
     app.remote_seen = runtime.verified_peer_count() > 0
     if app.remote_seen:
-        app.disconnect_message = ""
+        if app.state.phase == 0:
+            var ready_to_start = false
+            match app.lobby_slots.can_start_transition(2):
+                Result.success as ready_payload:
+                    ready_to_start = ready_payload.value
+                Result.failure:
+                    app.status_code = 48
+                    app.disconnect_message = "failed to evaluate lobby readiness"
+            if ready_to_start:
+                app.disconnect_message = "Remote input detected. Host can start the match."
+            else:
+                app.disconnect_message = "Remote connected; waiting for first input."
+        else:
+            app.disconnect_message = ""
     if not app.remote_seen and app.state.phase == 1:
         app.state.phase = 0
         app.scene = Scene.lobby
         app.disconnect_message = "Remote player disconnected."
+    if not app.remote_seen and app.state.phase == 0:
+        app.disconnect_message = "Waiting for verified player..."
 
     while runtime.pending_rpc_count() > 0:
         var received = runtime.pop_rpc() else:
@@ -455,6 +481,17 @@ function update_host_network(app: ref[App]) -> void:
 
                 match pong_net.consume_submit_input():
                     Option.some as payload:
+                        if app.state.phase == 0:
+                            match received.context.sender:
+                                Option.some as sender:
+                                    match app.lobby_slots.set_ready(sender.value, true):
+                                        Result.success:
+                                            pass
+                                        Result.failure:
+                                            app.status_code = 41
+                                            app.disconnect_message = "failed to update remote lobby readiness"
+                                Option.none:
+                                    pass
                         if should_apply_join_input(app, payload.value.tick):
                             apply_join_input(ref_of(app.state), payload.value.input_flags)
                             app.last_applied_join_input_tick = Option[mp.Tick].some(value = payload.value.tick)
@@ -727,18 +764,11 @@ function reconcile_join_prediction(app: ref[App], authoritative_tick: mp.Tick) -
         app.join_paddle_history.clear()
         return
 
-    app.join_input_history.discard_before(authoritative_tick)
-    app.join_paddle_history.discard_after(authoritative_tick)
-
-    let _ = app.join_paddle_history.record(authoritative_tick, app.state.paddle_join_y) else:
-        app.status_code = 35
-        app.disconnect_message = "failed to record authoritative join paddle state"
-        return
-
-    let _ = rollback.resimulate_from(
+    let _ = rollback.reconcile_authoritative(
         ref_of(app.join_paddle_history),
         ref_of(app.join_input_history),
         authoritative_tick,
+        app.state.paddle_join_y,
         predict_join_paddle_y,
     ) else:
         app.status_code = 36
@@ -825,21 +855,21 @@ function draw_lobby(app: ref[App]) -> void:
 
     if read(app).mode == NetMode.host:
         rl.draw_text("Mode: HOST", 60, 150, 28, rl.GOLD)
-        if read(app).remote_seen:
-            rl.draw_text("Remote player detected", 60, 190, 24, rl.LIME)
+        var can_start_match = false
+        match read(app).lobby_slots.can_start_transition(2):
+            Result.success as ready_payload:
+                can_start_match = ready_payload.value
+            Result.failure:
+                pass
+        if can_start_match:
+            rl.draw_text("Remote input detected; ready to start", 60, 190, 24, rl.LIME)
+        else if read(app).remote_seen:
+            rl.draw_text("Remote connected; waiting for first input...", 60, 190, 24, rl.ORANGE)
         else:
             rl.draw_text("Waiting for verified player...", 60, 190, 24, rl.ORANGE)
 
         if gui.button(rl.Rectangle(x = 60.0, y = 250.0, width = 250.0, height = 40.0), "Start Match") != 0:
-            if read(app).remote_seen:
-                read(app).state.phase = 1
-                read(app).scene = Scene.game
-                read(app).state.score_host = 0
-                read(app).state.score_join = 0
-                read(app).state.paddle_host_y = arena_top + arena_height / 2 - paddle_height / 2
-                read(app).state.paddle_join_y = arena_top + arena_height / 2 - paddle_height / 2
-                reset_round(ref_of(read(app).state), true)
-                host_broadcast_snapshot(app)
+            start_host_match(app)
 
         if gui.button(rl.Rectangle(x = 340.0, y = 250.0, width = 190.0, height = 40.0), "Fetch Public IP") != 0:
             fetch_public_ip_into_app(app)
@@ -917,11 +947,121 @@ function draw_game(app: ref[App]) -> void:
         rl.draw_text("Waiting for host to start...", 340, 470, 24, rl.ORANGE)
 
 
+function initialize_host_lobby_slots(app: ref[App]) -> bool:
+    app.lobby_slots.clear()
+
+    let claimed = app.lobby_slots.claim_slot(host_slot_connection_id, 0) else:
+        app.status_code = 42
+        app.disconnect_message = "failed to initialize host lobby slot"
+        return false
+    if not claimed:
+        app.status_code = 43
+        app.disconnect_message = "host lobby slot was already occupied"
+        return false
+
+    let host_ready = app.lobby_slots.set_ready(host_slot_connection_id, true) else:
+        app.status_code = 44
+        app.disconnect_message = "failed to arm host lobby readiness"
+        return false
+    if not host_ready:
+        app.status_code = 45
+        app.disconnect_message = "host lobby readiness was not updated"
+        return false
+
+    return true
+
+
+function sync_host_lobby_slots(app: ref[App], runtime: mp_enet.Server) -> void:
+    if app.state.phase != 0:
+        return
+
+    if not app.lobby_slots.has_connection(host_slot_connection_id):
+        if not initialize_host_lobby_slots(app):
+            return
+
+    match runtime.first_verified_connection():
+        Option.some as payload:
+            let remote_connection = payload.value
+            match app.lobby_slots.slot(1):
+                Option.some as slot_payload:
+                    match slot_payload.value.connection:
+                        Option.some as connection_payload:
+                            if connection_payload.value != remote_connection:
+                                let released = app.lobby_slots.release_connection(connection_payload.value)
+                                if not released:
+                                    app.status_code = 49
+                                    app.disconnect_message = "failed to release stale remote lobby slot"
+                                    return
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
+
+            match app.lobby_slots.claim_slot(remote_connection, 1):
+                Result.success:
+                    pass
+                Result.failure:
+                    app.status_code = 46
+                    app.disconnect_message = "failed to claim remote lobby slot"
+        Option.none:
+            match app.lobby_slots.slot(1):
+                Option.some as slot_payload:
+                    match slot_payload.value.connection:
+                        Option.some as connection_payload:
+                            let released = app.lobby_slots.release_connection(connection_payload.value)
+                            if not released:
+                                app.status_code = 50
+                                app.disconnect_message = "failed to release remote lobby slot"
+                        Option.none:
+                            pass
+                Option.none:
+                    pass
+
+
+function start_host_match(app: ref[App]) -> void:
+    let started = app.lobby_slots.begin_transition(2) else:
+        app.status_code = 47
+        app.disconnect_message = "failed to validate lobby transition"
+        return
+
+    match started:
+        Option.none:
+            if app.remote_seen:
+                app.disconnect_message = "Waiting for join player input before starting."
+            else:
+                app.disconnect_message = "Waiting for verified player..."
+            return
+        Option.some:
+            pass
+
+    app.state.phase = 1
+    app.scene = Scene.game
+    app.state.score_host = 0
+    app.state.score_join = 0
+    app.state.paddle_host_y = arena_top + arena_height / 2 - paddle_height / 2
+    app.state.paddle_join_y = arena_top + arena_height / 2 - paddle_height / 2
+    reset_round(ref_of(app.state), true)
+    host_broadcast_snapshot(app)
+
+
 function run_smoke_test() -> int:
     let built_bindings = mp.build_frozen_bindings_with(pong_net.install_bindings) else:
         return 10
     var bindings = built_bindings
     defer bindings.release()
+
+    var smoke_lobby = mp.SlotRoster.create(2)
+    defer smoke_lobby.release()
+
+    let host_claimed = smoke_lobby.claim_slot(host_slot_connection_id, 0) else:
+        return 33
+    if not host_claimed:
+        return 34
+
+    let host_ready = smoke_lobby.set_ready(host_slot_connection_id, true) else:
+        return 35
+    if not host_ready:
+        return 36
 
     let address = enet.Address(
         host = uint<-enet.HOST_ANY,
@@ -940,6 +1080,7 @@ function run_smoke_test() -> int:
     defer client.release()
 
     var smoke_state = default_state()
+    var remote_slot_claimed = false
 
     var rounds: ptr_uint = 0
     while rounds < 100:
@@ -960,6 +1101,23 @@ function run_smoke_test() -> int:
             return 19
 
         if client.protocol_ready():
+            if not remote_slot_claimed:
+                match server.first_verified_connection():
+                    Option.some as verified_payload:
+                        let claimed_remote = smoke_lobby.claim_slot(verified_payload.value, 1) else:
+                            return 37
+                        if not claimed_remote:
+                            return 38
+                        remote_slot_claimed = true
+                    Option.none:
+                        rounds += 1
+                        continue
+
+            let ready_before_input = smoke_lobby.can_start_transition(2) else:
+                return 39
+            if ready_before_input:
+                return 40
+
             let drained = pong_session.drain_state_snapshots_with_info(ref_of(client), ref_of(smoke_state)) else:
                 return 20
             if drained.processed > 0:
@@ -997,6 +1155,29 @@ function run_smoke_test() -> int:
                         if not dispatched.value:
                             return 28
 
+                match received.context.sender:
+                    Option.some as sender:
+                        let remote_ready = smoke_lobby.set_ready(sender.value, true) else:
+                            return 41
+                        if not remote_ready:
+                            return 42
+                    Option.none:
+                        return 43
+
+                let ready_after_input = smoke_lobby.can_start_transition(2) else:
+                    return 44
+                if not ready_after_input:
+                    return 45
+
+                let started = smoke_lobby.begin_transition(2) else:
+                    return 46
+                match started:
+                    Option.some as participant_payload:
+                        if participant_payload.value != 2:
+                            return 47
+                    Option.none:
+                        return 48
+
                 let applied = pong_net.consume_submit_input() else:
                     return 29
                 if applied.tick != 77:
@@ -1008,5 +1189,3 @@ function run_smoke_test() -> int:
         rounds += 1
 
     return 32
-
-    return 23
