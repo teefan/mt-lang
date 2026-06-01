@@ -185,3 +185,19 @@ public function resimulate_from[TState, TInput](
         index += 1
 
     return Result[ptr_uint, Error].success(value = replayed)
+
+
+public function reconcile_authoritative[TState, TInput](
+    states: ref[History[TState]],
+    inputs: ref[History[TInput]],
+    authoritative_tick: Tick,
+    authoritative_state: TState,
+    step: fn(state: TState, input: TInput) -> TState
+) -> Result[ptr_uint, Error]:
+    read(inputs).discard_before(authoritative_tick)
+    read(states).discard_after(authoritative_tick)
+
+    let _ = read(states).record(authoritative_tick, authoritative_state) else as record_error:
+        return Result[ptr_uint, Error].failure(error = record_error)
+
+    return resimulate_from(states, inputs, authoritative_tick, step)

@@ -39,3 +39,4 @@ projects/pong/build/bin/linux/debug/pong --smoke
 - Join target is configurable in the menu host/port fields.
 - Host is authoritative and broadcasts snapshots.
 - Client sends input RPC packets to host.
+- The join client predicts only its own paddle locally; ball, score, and host paddle remain authoritative host state.

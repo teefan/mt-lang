@@ -16,12 +16,11 @@ public struct Server:
     session_events: vec.Vec[SessionEventRecord]
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
+    outbound_peer_snapshots: vec.Vec[PeerSnapshotState]
     unknown_packet_count: ptr_uint
     snapshot_budget_cursor: ptr_uint
     rpc_budget_cursor: ptr_uint
-    outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
-    outbound_world_signature_baseline: snapshot_runtime.BaselineSet
 
 public struct Client:
     host: ptr[enet.Host]?
@@ -45,6 +44,12 @@ public enum SessionEvent: ubyte
 public struct SessionEventRecord:
     kind: SessionEvent
     connection: Option[mp.ConnectionId]
+
+
+public struct PeerSnapshotState:
+    connection: mp.ConnectionId
+    outbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    outbound_world_signature_baseline: snapshot_runtime.BaselineSet
 
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
@@ -140,12 +145,11 @@ extending Server:
         this.session_events.release()
         snapshot_runtime.release_queue(ref_of(this.incoming_snapshots))
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
+        this.outbound_peer_snapshots.release()
         this.unknown_packet_count = 0
         this.snapshot_budget_cursor = 0
         this.rpc_budget_cursor = 0
-        reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
-        reset_snapshot_baseline(ref_of(this.outbound_world_signature_baseline))
         this.world.release()
 
 
@@ -165,8 +169,12 @@ extending Server:
         return this.session_events.len()
 
 
-    public function outbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
-        return this.outbound_snapshot_baseline
+    public function outbound_snapshot_baseline_state(connection: mp.ConnectionId) -> Option[snapshot_runtime.BaselineSet]:
+        return peer_outbound_snapshot_baseline(this.outbound_peer_snapshots.as_span(), connection)
+
+
+    public function outbound_world_signature_baseline_state(connection: mp.ConnectionId) -> Option[snapshot_runtime.BaselineSet]:
+        return peer_outbound_world_signature_baseline(this.outbound_peer_snapshots.as_span(), connection)
 
 
     public function inbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
@@ -261,11 +269,12 @@ extending Server:
             return Result[bool, mp.Error].failure(error = send_error)
 
         if sent:
-            snapshot_runtime.apply_payload(
+            apply_outbound_snapshot_payload_to_verified_peers(
+                host,
+                ref_of(this.outbound_peer_snapshots),
                 header.tick,
                 header.entity_count,
                 payload,
-                ref_of(this.outbound_snapshot_baseline)
             )
 
         return Result[bool, mp.Error].success(value = sent)
@@ -344,6 +353,7 @@ extending Server:
             host,
             scheduler,
             ordered_connections.as_span(),
+            ref_of(this.outbound_peer_snapshots),
             channel,
             transfer_mode,
             header,
@@ -355,12 +365,6 @@ extending Server:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
-            snapshot_runtime.apply_payload(
-                header.tick,
-                header.entity_count,
-                payload,
-                ref_of(this.outbound_snapshot_baseline)
-            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -498,36 +502,51 @@ extending Server:
         rpc_direction: mp.RpcDirection,
         rpc_payload: span[ubyte],
     ) -> Result[mp.TickDispatchReport, mp.Error]:
+        let host = this.host else:
+            return Result[mp.TickDispatchReport, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
+
         let current_signature = this.world.snapshot_state_signature(tick)
-        let should_send_snapshot = snapshot_runtime.should_send_against_baseline(
-            current_signature,
-            this.outbound_world_signature_baseline
-        )
+
+        var connections = vec.Vec[mp.ConnectionId].create()
+        defer connections.release()
+        append_verified_connections(host, ref_of(connections))
+
+        var ordered_connections = vec.Vec[mp.ConnectionId].create()
+        defer ordered_connections.release()
+        if connections.len() > 0:
+            let start_index = this.snapshot_budget_cursor % connections.len()
+            append_rotated_connections(connections.as_span(), start_index, ref_of(ordered_connections))
 
         var snapshot_scheduler = mp.create_tick_scheduler(plan.snapshot_bytes)
         snapshot_scheduler.begin_tick(tick)
 
         var snapshots_sent: ptr_uint = 0
-        if should_send_snapshot:
-            var prepared_snapshot = this.world.prepare_snapshot(
-                tick,
-                this.outbound_world_signature_baseline.last_applied_tick,
-            ) else as prepared_error:
-                return Result[mp.TickDispatchReport, mp.Error].failure(error = prepared_error)
-            defer prepared_snapshot.release()
+        if ordered_connections.len() > 0:
+            var world_payload = this.world.encode_snapshot_payload() else as payload_error:
+                return Result[mp.TickDispatchReport, mp.Error].failure(error = payload_error)
+            defer world_payload.release()
 
-            let sent = this.broadcast_snapshot_scheduled_fair(
+            let sent = send_world_snapshot_scheduled_fair_impl(
+                host,
                 ref_of(snapshot_scheduler),
+                ordered_connections.as_span(),
+                ref_of(this.outbound_peer_snapshots),
                 snapshot_channel,
                 snapshot_transfer_mode,
-                prepared_snapshot.header,
-                prepared_snapshot.payload.as_span()
+                tick,
+                current_signature,
+                world_payload.as_span(),
             ) else as snapshot_error:
                 return Result[mp.TickDispatchReport, mp.Error].failure(error = snapshot_error)
             snapshots_sent = sent
 
-            if snapshots_sent > 0:
-                snapshot_runtime.apply(prepared_snapshot.signature, ref_of(this.outbound_world_signature_baseline))
+            if snapshots_sent == 0:
+                this.snapshot_budget_cursor = (this.snapshot_budget_cursor + 1) % ordered_connections.len()
+            else:
+                this.snapshot_budget_cursor = (this.snapshot_budget_cursor + snapshots_sent) % ordered_connections.len()
 
         var rpc_scheduler = mp.create_tick_scheduler(plan.rpc_bytes)
         rpc_scheduler.begin_tick(tick)
@@ -639,11 +658,12 @@ extending Server:
             return Result[bool, mp.Error].failure(error = send_error)
 
         if sent:
-            snapshot_runtime.apply_payload(
+            apply_outbound_snapshot_payload(
+                ref_of(this.outbound_peer_snapshots),
+                connection,
                 header.tick,
                 header.entity_count,
                 payload,
-                ref_of(this.outbound_snapshot_baseline)
             )
 
         return Result[bool, mp.Error].success(value = sent)
@@ -694,6 +714,7 @@ extending Server:
         let sent = send_snapshots_budgeted_impl(
             host,
             prioritized_connections,
+            ref_of(this.outbound_peer_snapshots),
             channel,
             transfer_mode,
             header,
@@ -701,14 +722,6 @@ extending Server:
             max_bytes
         ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
-
-        if sent > 0:
-            snapshot_runtime.apply_payload(
-                header.tick,
-                header.entity_count,
-                payload,
-                ref_of(this.outbound_snapshot_baseline)
-            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -749,6 +762,7 @@ extending Server:
         let sent = send_snapshots_budgeted_weighted_impl(
             host,
             weighted_connections,
+            ref_of(this.outbound_peer_snapshots),
             channel,
             transfer_mode,
             header,
@@ -756,14 +770,6 @@ extending Server:
             max_bytes
         ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
-
-        if sent > 0:
-            snapshot_runtime.apply_payload(
-                header.tick,
-                header.entity_count,
-                payload,
-                ref_of(this.outbound_snapshot_baseline)
-            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -788,6 +794,7 @@ extending Server:
         let sent = send_snapshots_budgeted_weighted_impl(
             host,
             weighted_connections.as_span(),
+            ref_of(this.outbound_peer_snapshots),
             channel,
             transfer_mode,
             header,
@@ -795,14 +802,6 @@ extending Server:
             max_bytes
         ) else as send_error:
             return Result[ptr_uint, mp.Error].failure(error = send_error)
-
-        if sent > 0:
-            snapshot_runtime.apply_payload(
-                header.tick,
-                header.entity_count,
-                payload,
-                ref_of(this.outbound_snapshot_baseline)
-            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -834,6 +833,7 @@ extending Server:
         let sent = send_snapshots_budgeted_impl(
             host,
             ordered_connections.as_span(),
+            ref_of(this.outbound_peer_snapshots),
             channel,
             transfer_mode,
             header,
@@ -846,12 +846,6 @@ extending Server:
             this.snapshot_budget_cursor = (start_index + 1) % connections.len()
         else:
             this.snapshot_budget_cursor = (start_index + sent) % connections.len()
-            snapshot_runtime.apply_payload(
-                header.tick,
-                header.entity_count,
-                payload,
-                ref_of(this.outbound_snapshot_baseline)
-            )
 
         return Result[ptr_uint, mp.Error].success(value = sent)
 
@@ -860,6 +854,7 @@ extending Server:
         unsafe:
             match read(evt).type_:
                 enet.EventType.ENET_EVENT_TYPE_CONNECT:
+                    remove_peer_snapshot_state(ref_of(this.outbound_peer_snapshots), peer_connection_id(read(evt).peer))
                     enqueue_session_event(
                         ref_of(this.session_events),
                         SessionEvent.connected,
@@ -867,6 +862,7 @@ extending Server:
                     )
                     mark_peer_unverified(read(evt).peer)
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
+                    remove_peer_snapshot_state(ref_of(this.outbound_peer_snapshots), peer_connection_id(read(evt).peer))
                     enqueue_session_event(
                         ref_of(this.session_events),
                         SessionEvent.disconnected,
@@ -898,6 +894,7 @@ extending Server:
                                 enet.peer_disconnect_later(read(evt).peer, 0)
                             else:
                                 mark_peer_verified(read(evt).peer)
+                                ensure_peer_snapshot_state(ref_of(this.outbound_peer_snapshots), connection)
                                 let _ = send_handshake_welcome(read(evt).peer, this.world.protocol_hash(), connection)
                         mp.PacketKind.handshake_welcome:
                             rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
@@ -911,7 +908,6 @@ extending Server:
                                     sender
                                 )
                                 handle_received_packet(
-                                    ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
                                     ref_of(this.inbound_snapshot_baseline),
@@ -927,7 +923,6 @@ extending Server:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(ref_of(this.session_events), SessionEvent.rpc_received, sender)
                                 handle_received_packet(
-                                    ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
                                     ref_of(this.inbound_snapshot_baseline),
@@ -1092,7 +1087,6 @@ extending Client:
                                     this.connection_id_value
                                 )
                                 handle_received_packet(
-                                    ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
                                     ref_of(this.inbound_snapshot_baseline),
@@ -1112,7 +1106,6 @@ extending Client:
                                     this.connection_id_value
                                 )
                                 handle_received_packet(
-                                    ref_of(this.world),
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
                                     ref_of(this.inbound_snapshot_baseline),
@@ -1284,12 +1277,11 @@ public function listen(
         session_events = vec.Vec[SessionEventRecord].create(),
         incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
+        outbound_peer_snapshots = vec.Vec[PeerSnapshotState].create(),
         unknown_packet_count = 0,
         snapshot_budget_cursor = 0,
         rpc_budget_cursor = 0,
-        outbound_snapshot_baseline = empty_snapshot_baseline(),
         inbound_snapshot_baseline = empty_snapshot_baseline(),
-        outbound_world_signature_baseline = empty_snapshot_baseline()
     ))
 
 
@@ -1440,7 +1432,6 @@ function dequeue_session_event(queue: ref[vec.Vec[SessionEventRecord]]) -> Optio
 
 
 function handle_received_packet(
-    world: ref[mp.World],
     incoming_snapshots: ref[vec.Vec[snapshot_runtime.IncomingSnapshotPacket]],
     incoming_rpcs: ref[vec.Vec[rpc_runtime.IncomingRpcPacket]],
     inbound_snapshot_baseline: ref[snapshot_runtime.BaselineSet],
@@ -1778,9 +1769,139 @@ function append_rotated_connections(
         prefix_index += 1
 
 
+function peer_snapshot_state_index(
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    connection: mp.ConnectionId,
+) -> Option[ptr_uint]:
+    return peer_snapshots.find_index(proc(candidate: ptr[PeerSnapshotState]) -> bool:
+        unsafe: read(candidate).connection == connection
+    )
+
+
+function peer_snapshot_state_index_in_span(
+    peer_snapshots: span[PeerSnapshotState],
+    connection: mp.ConnectionId,
+) -> Option[ptr_uint]:
+    var index: ptr_uint = 0
+    while index < peer_snapshots.len:
+        unsafe:
+            if read(peer_snapshots.data + index).connection == connection:
+                return Option[ptr_uint].some(value = index)
+        index += 1
+
+    return Option[ptr_uint].none
+
+
+function ensure_peer_snapshot_state(
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    connection: mp.ConnectionId,
+) -> ptr[PeerSnapshotState]:
+    match peer_snapshot_state_index(peer_snapshots, connection):
+        Option.some as payload:
+            let current = peer_snapshots.get(payload.value) else:
+                fatal(c"peer snapshot state index is missing")
+            return current
+        Option.none:
+            peer_snapshots.push(PeerSnapshotState(
+                connection = connection,
+                outbound_snapshot_baseline = empty_snapshot_baseline(),
+                outbound_world_signature_baseline = empty_snapshot_baseline(),
+            ))
+            let appended = peer_snapshots.get(peer_snapshots.len() - 1) else:
+                fatal(c"peer snapshot state append failed")
+            return appended
+
+
+function remove_peer_snapshot_state(
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    connection: mp.ConnectionId,
+) -> bool:
+    match peer_snapshot_state_index(peer_snapshots, connection):
+        Option.some as payload:
+            let _ = peer_snapshots.remove(payload.value)
+            return true
+        Option.none:
+            return false
+
+
+function peer_outbound_snapshot_baseline(
+    peer_snapshots: span[PeerSnapshotState],
+    connection: mp.ConnectionId,
+) -> Option[snapshot_runtime.BaselineSet]:
+    match peer_snapshot_state_index_in_span(peer_snapshots, connection):
+        Option.some as payload:
+            unsafe:
+                let state = peer_snapshots.data + payload.value
+                return Option[snapshot_runtime.BaselineSet].some(value = read(state).outbound_snapshot_baseline)
+        Option.none:
+            return Option[snapshot_runtime.BaselineSet].none
+
+
+function peer_outbound_world_signature_baseline(
+    peer_snapshots: span[PeerSnapshotState],
+    connection: mp.ConnectionId,
+) -> Option[snapshot_runtime.BaselineSet]:
+    match peer_snapshot_state_index_in_span(peer_snapshots, connection):
+        Option.some as payload:
+            unsafe:
+                let state = peer_snapshots.data + payload.value
+                return Option[snapshot_runtime.BaselineSet].some(value = read(state).outbound_world_signature_baseline)
+        Option.none:
+            return Option[snapshot_runtime.BaselineSet].none
+
+
+function apply_outbound_snapshot_payload(
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    connection: mp.ConnectionId,
+    tick: mp.Tick,
+    entity_count: ptr_uint,
+    payload: span[ubyte],
+) -> void:
+    let state = ensure_peer_snapshot_state(peer_snapshots, connection)
+    var baseline = unsafe: read(state).outbound_snapshot_baseline
+    snapshot_runtime.apply_payload(tick, entity_count, payload, ref_of(baseline))
+    unsafe:
+        read(state).outbound_snapshot_baseline = baseline
+
+
+function apply_outbound_world_signature(
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    connection: mp.ConnectionId,
+    signature: snapshot_runtime.Snapshot,
+) -> void:
+    let state = ensure_peer_snapshot_state(peer_snapshots, connection)
+    var baseline = unsafe: read(state).outbound_world_signature_baseline
+    snapshot_runtime.apply(signature, ref_of(baseline))
+    unsafe:
+        read(state).outbound_world_signature_baseline = baseline
+
+
+function apply_outbound_snapshot_payload_to_verified_peers(
+    host: ptr[enet.Host],
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    tick: mp.Tick,
+    entity_count: ptr_uint,
+    payload: span[ubyte],
+) -> void:
+    var connections = vec.Vec[mp.ConnectionId].create()
+    defer connections.release()
+    append_verified_connections(host, ref_of(connections))
+
+    var index: ptr_uint = 0
+    while index < connections.len():
+        let connection_ptr = connections.get(index)
+        if connection_ptr == null:
+            break
+
+        let connection = unsafe: read(ptr[mp.ConnectionId]<-connection_ptr)
+        apply_outbound_snapshot_payload(peer_snapshots, connection, tick, entity_count, payload)
+        index += 1
+
+
 function send_snapshots_budgeted_impl(
     host: ptr[enet.Host],
     prioritized_connections: span[mp.ConnectionId],
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
     channel: uint,
     transfer_mode: mp.TransferMode,
     header: mp.SnapshotPacketHeader,
@@ -1820,6 +1941,7 @@ function send_snapshots_budgeted_impl(
             ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
+                apply_outbound_snapshot_payload(peer_snapshots, connection, header.tick, header.entity_count, payload)
                 sent_count += 1
                 consumed_bytes += framed_bytes
 
@@ -1832,6 +1954,7 @@ function send_snapshots_scheduled_fair_impl(
     host: ptr[enet.Host],
     scheduler: ref[mp.TickScheduler],
     ordered_connections: span[mp.ConnectionId],
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
     channel: uint,
     transfer_mode: mp.TransferMode,
     header: mp.SnapshotPacketHeader,
@@ -1866,6 +1989,7 @@ function send_snapshots_scheduled_fair_impl(
             ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
+                apply_outbound_snapshot_payload(peer_snapshots, connection, header.tick, header.entity_count, payload)
                 sent_count += 1
 
         index += 1
@@ -1876,6 +2000,7 @@ function send_snapshots_scheduled_fair_impl(
 function send_snapshots_budgeted_weighted_impl(
     host: ptr[enet.Host],
     weighted_connections: span[mp.WeightedConnection],
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
     channel: uint,
     transfer_mode: mp.TransferMode,
     header: mp.SnapshotPacketHeader,
@@ -1932,6 +2057,7 @@ function send_snapshots_budgeted_weighted_impl(
             ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
+                apply_outbound_snapshot_payload(peer_snapshots, candidate.connection, header.tick, header.entity_count, payload)
                 sent_count += 1
                 remaining_budget -= framed_bytes
 
@@ -2006,6 +2132,74 @@ function send_rpcs_scheduled_fair_impl(
             ) else as send_error:
                 return Result[ptr_uint, mp.Error].failure(error = send_error)
             if sent:
+                sent_count += 1
+
+        index += 1
+
+    return Result[ptr_uint, mp.Error].success(value = sent_count)
+
+
+function send_world_snapshot_scheduled_fair_impl(
+    host: ptr[enet.Host],
+    scheduler: ref[mp.TickScheduler],
+    ordered_connections: span[mp.ConnectionId],
+    peer_snapshots: ref[vec.Vec[PeerSnapshotState]],
+    channel: uint,
+    transfer_mode: mp.TransferMode,
+    tick: mp.Tick,
+    signature: snapshot_runtime.Snapshot,
+    payload: span[ubyte],
+) -> Result[ptr_uint, mp.Error]:
+    let framed_bytes = snapshot_wire_bytes(
+        mp.SnapshotPacketHeader(
+            tick = tick,
+            baseline_tick = 0,
+            entity_count = signature.entity_count,
+        ),
+        payload,
+    )
+
+    var sent_count: ptr_uint = 0
+    var index: ptr_uint = 0
+    while index < ordered_connections.len:
+        unsafe:
+            let connection = read(ordered_connections.data + index)
+            let peer = find_verified_peer(host, connection)
+            if peer == null:
+                index += 1
+                continue
+
+            let peer_state = ensure_peer_snapshot_state(peer_snapshots, connection)
+            let world_baseline = read(peer_state).outbound_world_signature_baseline
+            if not snapshot_runtime.should_send_against_baseline(signature, world_baseline):
+                index += 1
+                continue
+
+            match scheduler.reserve(framed_bytes):
+                Option.some:
+                    pass
+                Option.none:
+                    break
+
+            let header = mp.SnapshotPacketHeader(
+                tick = tick,
+                baseline_tick = world_baseline.last_applied_tick,
+                entity_count = signature.entity_count,
+            )
+            var encoded = snapshot_runtime.build_payload(header, payload)
+            defer encoded.release()
+
+            let sent = send_wire_payload(
+                ptr[enet.Peer]<-peer,
+                channel,
+                transfer_mode,
+                mp.PacketKind.snapshot,
+                encoded.as_span()
+            ) else as send_error:
+                return Result[ptr_uint, mp.Error].failure(error = send_error)
+            if sent:
+                apply_outbound_snapshot_payload(peer_snapshots, connection, tick, signature.entity_count, payload)
+                apply_outbound_world_signature(peer_snapshots, connection, signature)
                 sent_count += 1
 
         index += 1

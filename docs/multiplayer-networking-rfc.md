@@ -58,6 +58,7 @@ Root declarations live in `std/multiplayer.mt` and alias runtime modules:
 - `std/multiplayer/protocol.mt`
 - `std/multiplayer/rpc.mt`
 - `std/multiplayer/snapshot.mt`
+- `std/multiplayer/session.mt`
 - `std/multiplayer/relevancy.mt`
 - `std/multiplayer/spatial.mt`
 - `std/multiplayer/wire.mt`
@@ -86,6 +87,7 @@ Rejected boundary (summary):
 1. `@[rpc(...)]` marks inbound dispatch metadata only.
 2. Local calls to RPC-marked functions remain local calls.
 3. Send-side networking remains explicit runtime API in `std.multiplayer.enet`.
+4. Session-orchestration helpers such as `std.multiplayer.session.SlotRoster` are ordinary runtime utilities layered above transport; compiler hooks do not synthesize or manage them.
 
 ## Implemented Coverage
 
@@ -97,9 +99,11 @@ Compiler coverage:
 Runtime coverage includes world/snapshot/relevancy/hooks/enet suites under `test/std/std_multiplayer_*`.
 
 ## Out Of Scope Here
-This RFC does not prescribe matchmaking, lobby, or platform-level orchestration for session discovery.
+This RFC does not prescribe matchmaking, lobby, platform-level orchestration for session discovery, or deterministic lockstep simulation policy.
 
 Current repository boundary:
 
 - `std.multiplayer.enet` is the concrete gameplay/network transport runtime.
+- `std.multiplayer.session` is the current small runtime layer for slot occupancy and ready-state bookkeeping.
 - Higher-level matchmaking, dedicated relay services, and any NAT traversal/punching layer remain outside the core runtime and require application-level integration.
+- Warcraft-style deterministic command-turn simulation is tracked separately in `docs/multiplayer-lockstep-rfc.md`.

@@ -17,6 +17,7 @@ flowchart TD
     rpc[std.multiplayer.rpc]
     snapshot[std.multiplayer.snapshot]
     rollback[std.multiplayer.rollback]
+    session[std.multiplayer.session]
     relevancy[std.multiplayer.relevancy]
     spatial[std.multiplayer.spatial]
     wire[std.multiplayer.wire]
@@ -30,6 +31,7 @@ flowchart TD
     root --> rpc
     root --> snapshot
     root --> rollback
+    root --> session
     root --> relevancy
     root --> spatial
     snapshot --> wire
@@ -62,6 +64,7 @@ Exports include:
 
 - ids and enums (`ConnectionId`, `EntityId`, `Authority`, `TransferMode`, `RpcDirection`, ...)
 - core types (`Config`, `Error`, `Registry`, `World`, descriptor aliases)
+- session helpers (`SlotRoster`, `SlotEntry`)
 - ergonomic binding builder (`BindingsBuilder.create()`, `bind_state[T](...)`, `bind_rpc(...)`, `bind_typed_rpc(...)`)
 - attributes (`replicated`, `sync_defaults`, `sync`, `rpc`)
 - hook surface (`state_descriptor`, `rpc_descriptor`, `state_wire_size`, `rpc_payload_size`)
@@ -104,7 +107,7 @@ Implemented API highlights:
 - `RpcDispatchTable.create()`, `register_route(...)`, `dispatch(...)`
 - `dispatch_with_routes(...)`
 - `dispatch_typed_payload(callable_of(...), context, payload)` compiler-lowered path
-- shared typed inbound queue drain helper used by ENet and ICE session wrappers
+- shared typed inbound queue drain helper used by ENet-facing runtime paths
 - `encode_header(...)`, `decode_header(...)`, `build_payload(...)`
 - incoming queue helpers
 
@@ -123,6 +126,7 @@ Implemented API highlights:
 - `find(tick)`, `oldest()`, `latest()`
 - `discard_before(...)`, `discard_after(...)`
 - `resimulate_from(states, inputs, authoritative_tick, step)` for explicit replay from a known authoritative state
+- `reconcile_authoritative(states, inputs, authoritative_tick, authoritative_state, step)` for the common correction path that trims stale inputs, rewrites the authoritative base frame, and replays retained inputs
 
 This module is intentionally an explicit prediction/rollback toolbox, not a hidden netcode runtime. Callers still choose when to capture input/state, when to discard future prediction, when to replay, and how to step simulation during replay.
 
@@ -150,14 +154,29 @@ let _ = input_history.record(202, 6) else:
 let _ = input_history.record(203, -2) else:
     fatal(c"failed to record input")
 
-# If later prediction already filled future frames, trim them before rewriting an
-# older authoritative tick.
-let _ = state_history.discard_after(201)
-let replayed = rollback.resimulate_from(ref_of(state_history), ref_of(input_history), 201, apply_move) else:
+# If later prediction already filled future frames, rewrite the authoritative
+# base state and replay retained inputs from there.
+let replayed = rollback.reconcile_authoritative(ref_of(state_history), ref_of(input_history), 201, 20, apply_move) else:
     fatal(c"rollback replay failed")
 
 # state_history now contains corrected frames for ticks 202 and 203.
 ```
+
+### `std.multiplayer.session`
+
+Small backend-neutral session-orchestration helpers for slot occupancy and ready-state.
+
+Implemented API highlights:
+
+- `SlotRoster.create(slot_count)`
+- `slot_count()`, `occupied_count()`, `open_slot_count()`, `ready_count()`
+- `slot(index)`, `slot_for_connection(connection)`, `has_connection(connection)`
+- `claim_slot(connection, slot_index)`, `claim_first_open(connection)`
+- `release_connection(connection)`
+- `set_ready(connection, ready)`, `clear_ready()`, `all_occupied_ready()`
+- `can_start_transition(min_players)`, `begin_transition(min_players)`
+
+This module is intentionally narrow. It tracks in-process slot occupancy, ready-state, and the first host-started transition gate only. It does not invent reconnect tokens, persistent player identity, service discovery, matchmaking, or platform presence.
 
 ### `std.multiplayer.relevancy`
 
@@ -227,6 +246,7 @@ This layer is intentionally small. It helps simple observer-style replication wi
 2. Compiler annotations do not rewrite ordinary gameplay calls into network sends.
 3. Protocol compatibility is enforced through registry protocol hash checks.
 4. Session lifecycle is exposed through queued events plus low-level queue accessors.
+5. Session-orchestration helpers manage local slot and ready-state bookkeeping only; they do not replace transport lifecycle or service-layer identity.
 
 ## Internet Play Boundary
 
@@ -238,10 +258,14 @@ Dedicated public servers and manually forwarded host sessions are the supported 
 Current prioritization after the latest cleanup:
 
 1. Done: explicit prepared-snapshot surface for reusable world snapshot encoding.
-2. In progress: explicit rollback history and replay primitives in `std.multiplayer.rollback`.
-3. Deferred by design: transport-neutral session abstractions or internet matchmaking/service layers outside direct ENet runtime concerns.
+2. Done: per-peer outbound snapshot baseline tracking so fair/budgeted dispatch does not let one peer suppress unchanged world state for another.
+3. Done: explicit rollback history, replay, and authoritative-reconciliation primitives in `std.multiplayer.rollback`.
+4. Started: `std.multiplayer.session` now covers slot occupancy, ready-state, and a minimal host-started transition gate; reconnect identity and richer scene-transition policy remain caller-owned until another gameplay package proves the contract.
+5. Deferred by design: transport-neutral session abstractions or internet matchmaking/service layers outside direct ENet runtime concerns.
 
 Lobby/matchmaking remains outside the core runtime boundary. The repo still has no truthful backend/storage/discovery contract to implement against, so stdlib should not pretend to provide a service layer yet.
+
+RTS-style deterministic lockstep is also outside the current stdlib surface. If a Warcraft-like package becomes the target, it likely deserves a dedicated command-turn layer instead of being squeezed into the current snapshot/reconciliation helpers. That path is tracked separately in `docs/multiplayer-lockstep-rfc.md`.
 
 ## Existing Runtime Coverage
 
@@ -260,3 +284,4 @@ Primary coverage files:
 - `test/std/std_multiplayer_enet_maturity_soak_test.rb`
 - `test/std/std_multiplayer_enet_stress_test.rb`
 - `test/std/std_multiplayer_rollback_test.rb`
+- `test/std/std_multiplayer_session_test.rb`

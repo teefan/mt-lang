@@ -295,6 +295,107 @@ function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_reconcile_authoritative_rewrites_base_state_and_replays_retained_inputs
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.multiplayer.rollback as rollback
+
+type PlayerPosition = int
+type MoveInput = int
+
+function apply_move(state: PlayerPosition, input: MoveInput) -> PlayerPosition:
+    return state + input
+
+function main() -> int:
+    var state_history = rollback.History[PlayerPosition].create(8)
+    defer state_history.release()
+    var input_history = rollback.History[MoveInput].create(8)
+    defer input_history.release()
+
+    let state0 = state_history.record(200, 10) else:
+        return 1
+    if not state0:
+        return 2
+
+    let state1 = state_history.record(201, 14) else:
+        return 3
+    if not state1:
+        return 4
+
+    let predicted0 = state_history.record(202, 999) else:
+        return 5
+    if not predicted0:
+        return 6
+
+    let predicted1 = state_history.record(203, 999) else:
+        return 7
+    if not predicted1:
+        return 8
+
+    let input_old = input_history.record(200, 99) else:
+        return 9
+    if not input_old:
+        return 10
+
+    let input0 = input_history.record(202, 6) else:
+        return 11
+    if not input0:
+        return 12
+
+    let input1 = input_history.record(203, -2) else:
+        return 13
+    if not input1:
+        return 14
+
+    let replayed = rollback.reconcile_authoritative(
+        ref_of(state_history),
+        ref_of(input_history),
+        201,
+        20,
+        apply_move,
+    ) else:
+        return 15
+    if replayed != 2:
+        return 16
+
+    let corrected_201 = state_history.find(201) else:
+        return 17
+    if corrected_201.value != 20:
+        return 18
+
+    let corrected_202 = state_history.find(202) else:
+        return 19
+    if corrected_202.value != 26:
+        return 20
+
+    let corrected_203 = state_history.find(203) else:
+        return 21
+    if corrected_203.value != 24:
+        return 22
+
+    match input_history.find(200):
+        Option.some as _:
+            return 23
+        Option.none:
+            pass
+
+    if input_history.len() != 2:
+        return 24
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def run_program(source, compiler:)
