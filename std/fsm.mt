@@ -26,14 +26,8 @@ public struct StateMachine[State, Event, Context]:
     current_state: State
     transitions: vec.Vec[Transition[State, Event, Context]]
     hooks: vec.Vec[StateHooks[State, Context]]
-
-
-function states_equal[State](left: State, right: State) -> bool:
-    return left == right
-
-
-function events_equal[Event](left: Event, right: Event) -> bool:
-    return left == right
+    states_equal: fn(left: State, right: State) -> bool
+    events_equal: fn(left: Event, right: Event) -> bool
 
 
 function always_allow_transition[State, Event, Context](context: ptr[Context], input: Event, current_state: State, next_state: State) -> bool:
@@ -52,7 +46,7 @@ function find_state_hooks[State, Event, Context](machine: ref[StateMachine[State
     for entry in machine.hooks:
         unsafe:
             let current = read(entry)
-            if states_equal[State](current.state, state):
+            if machine.states_equal(current.state, state):
                 return entry
 
     return null
@@ -130,11 +124,17 @@ extending StateHooks[State, Context]:
 
 
 extending StateMachine[State, Event, Context]:
-    public static function create(initial_state: State) -> StateMachine[State, Event, Context]:
+    public static function create(
+        initial_state: State,
+        states_equal: fn(left: State, right: State) -> bool,
+        events_equal: fn(left: Event, right: Event) -> bool
+    ) -> StateMachine[State, Event, Context]:
         return StateMachine[State, Event, Context](
             current_state = initial_state,
             transitions = vec.Vec[Transition[State, Event, Context]].create(),
             hooks = vec.Vec[StateHooks[State, Context]].create(),
+            states_equal = states_equal,
+            events_equal = events_equal,
         )
 
 
@@ -156,7 +156,7 @@ extending StateMachine[State, Event, Context]:
 
 
     public function is_in_state(state: State) -> bool:
-        return states_equal[State](this.current_state, state)
+        return this.states_equal(this.current_state, state)
 
 
     public mutable function add_transition(transition: Transition[State, Event, Context]) -> void:
@@ -185,7 +185,7 @@ extending StateMachine[State, Event, Context]:
 
     public mutable function set_state(context: ref[Context], next_state: State) -> DispatchResult[State]:
         let previous_state = this.current_state
-        if states_equal[State](previous_state, next_state):
+        if this.states_equal(previous_state, next_state):
             return DispatchResult[State](
                 kind = DispatchKind.ignored,
                 previous_state = previous_state,
@@ -217,9 +217,9 @@ extending StateMachine[State, Event, Context]:
         for entry in this.transitions:
             unsafe:
                 let transition = read(entry)
-                if not states_equal[State](transition.from_state, this.current_state):
+                if not this.states_equal(transition.from_state, this.current_state):
                     continue
-                if not events_equal[Event](transition.input, input):
+                if not this.events_equal(transition.input, input):
                     continue
                 if not transition.guard(ptr_of(context), input, transition.from_state, transition.to_state):
                     continue

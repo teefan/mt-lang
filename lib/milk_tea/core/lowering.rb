@@ -11251,7 +11251,15 @@ module MilkTea
         substitutions = infer_receiver_type_substitutions(binding, receiver_type)
         expected_params.each_with_index do |parameter, index|
           argument = arguments.fetch(index)
-          actual_type = infer_expression_type(argument.value, env:)
+          candidate_type = substitute_type(parameter.type, substitutions)
+          expected_argument_type = if callable_type?(candidate_type)
+                                     candidate_type
+                                   elsif contains_type_var?(candidate_type)
+                                     nil
+                                   else
+                                     candidate_type
+                                   end
+          actual_type = infer_expression_type(argument.value, env:, expected_type: expected_argument_type)
           collect_type_substitutions(parameter.type, actual_type, substitutions, binding.name)
         end
 
@@ -11962,6 +11970,28 @@ module MilkTea
 
         type.arguments.first
       end
+
+      def contains_type_var?(type)
+        case type
+        when Types::TypeVar
+          true
+        when Types::Nullable
+          contains_type_var?(type.base)
+        when Types::GenericInstance
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_type_var?(argument) }
+        when Types::Span
+          contains_type_var?(type.element_type)
+        when Types::Task
+          contains_type_var?(type.result_type)
+        when Types::Proc
+          type.params.any? { |param| contains_type_var?(param.type) } || contains_type_var?(type.return_type)
+        when Types::Function
+          type.params.any? { |param| contains_type_var?(param.type) } || contains_type_var?(type.return_type)
+        else
+          false
+        end
+      end
+
 
       def contains_ref_type?(type)
         case type

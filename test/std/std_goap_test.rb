@@ -11,6 +11,7 @@ class MilkTeaStdGoapTest < Minitest::Test
     source = <<~MT
 
 import std.goap as goap
+import std.str as str_mod
 
 enum Goal: ubyte
     craft_item = 0
@@ -22,13 +23,24 @@ struct World:
     item_crafted: bool
 
 struct Context:
-    expensive_shortcut_used: bool
+    unused: int
 
 function is_goal(context: ptr[Context], world: World, goal: Goal) -> bool:
     return world.item_crafted
 
+function worlds_equal(left: World, right: World) -> bool:
+    if left.at_resource != right.at_resource:
+        return false
+    if left.at_workbench != right.at_workbench:
+        return false
+    if left.has_resource != right.has_resource:
+        return false
+    if left.item_crafted != right.item_crafted:
+        return false
+    return true
+
 function heuristic(context: ptr[Context], world: World, goal: Goal) -> float:
-    var score = 0.0
+    var score: float = 0.0
     if not world.has_resource:
         score += 1.0
     if not world.at_workbench:
@@ -86,15 +98,13 @@ function can_buy(context: ptr[Context], world: World) -> bool:
 function buy_shortcut(context: ptr[Context], world: World) -> World:
     var next = world
     next.item_crafted = true
-    unsafe:
-        read(context).expensive_shortcut_used = true
     return next
 
 function expensive_cost(context: ptr[Context], world: World) -> float:
     return 20.0
 
 function main() -> int:
-    var planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic)
+    var planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
     defer planner.release()
 
     planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
@@ -106,7 +116,7 @@ function main() -> int:
     if planner.action_count() != 5:
         return 1
 
-    var context = Context(expensive_shortcut_used = false)
+    var context = Context(unused = 0)
     let initial_world = World(
         at_resource = false,
         at_workbench = false,
@@ -144,19 +154,16 @@ function main() -> int:
             let step3 = plan.step(3) else:
                 return 12
             unsafe:
-                if not read(step0).action_name.equal("move_to_resource"):
+                if not read(step0).action_name.equal(str_mod.cstr_as_str(c"move_to_resource")):
                     return 13
-                if not read(step1).action_name.equal("gather"):
+                if not read(step1).action_name.equal(str_mod.cstr_as_str(c"gather")):
                     return 14
-                if not read(step2).action_name.equal("move_to_workbench"):
+                if not read(step2).action_name.equal(str_mod.cstr_as_str(c"move_to_workbench")):
                     return 15
-                if not read(step3).action_name.equal("craft"):
+                if not read(step3).action_name.equal(str_mod.cstr_as_str(c"craft")):
                     return 16
 
-    if context.expensive_shortcut_used:
-        return 17
-
-    var limited_planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic)
+    var limited_planner = goap.Planner[World, Goal, Context].create(is_goal, heuristic, worlds_equal)
     defer limited_planner.release()
     limited_planner.set_max_iterations(1)
     limited_planner.add_action(goap.Action[World, Context].create("move_to_resource", can_move_to_resource, move_to_resource, move_cost))
@@ -167,9 +174,9 @@ function main() -> int:
     var limited_result = limited_planner.plan(context, initial_world, Goal.craft_item)
     defer limited_result.release()
     if limited_result.status != goap.PlanningStatus.iteration_limit:
-        return 18
+        return 17
     if limited_result.has_plan():
-        return 19
+        return 18
 
     return 0
 

@@ -333,6 +333,64 @@ class MilkTeaCFGTest < Minitest::Test
     assert_equal [10, 20], return_constants.sort
   end
 
+  def test_block_always_terminates_in_loop_recognizes_continue
+    body = function_body(<<~MT)
+      function main() -> int:
+          var index: ptr_uint = 0
+          for entry in zero[array[ptr_uint, 1]]:
+              let value = entry else:
+                  continue
+              index += 1
+          return 0
+    MT
+
+    for_stmt = body.find { |stmt| stmt.is_a?(MilkTea::AST::ForStmt) }
+    let_stmt = for_stmt.body.first
+    else_body = let_stmt.else_body
+
+    refute MilkTea::CFG::Termination.block_always_terminates?(else_body),
+      "plain block_always_terminates? does not understand continue in a let...else: else body"
+    assert MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+      "block_always_terminates_in_loop? must treat continue as terminating"
+  end
+
+  def test_block_always_terminates_in_loop_recognizes_break
+    body = function_body(<<~MT)
+      function main() -> int:
+          var index: ptr_uint = 0
+          for entry in zero[array[ptr_uint, 1]]:
+              let value = entry else:
+                  break
+              index += 1
+          return 0
+    MT
+
+    for_stmt = body.find { |stmt| stmt.is_a?(MilkTea::AST::ForStmt) }
+    let_stmt = for_stmt.body.first
+    else_body = let_stmt.else_body
+
+    assert MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+      "block_always_terminates_in_loop? must treat break as terminating"
+  end
+
+  def test_block_always_terminates_in_loop_rejects_fallthrough
+    body = function_body(<<~MT)
+      function main() -> int:
+          for entry in zero[array[ptr_uint, 1]]:
+              let value = entry else:
+                  var dummy = 1
+              pass
+          return 0
+    MT
+
+    for_stmt = body.find { |stmt| stmt.is_a?(MilkTea::AST::ForStmt) }
+    let_stmt = for_stmt.body.first
+    else_body = let_stmt.else_body
+
+    refute MilkTea::CFG::Termination.block_always_terminates_in_loop?(else_body),
+      "block_always_terminates_in_loop? must reject fall-through else body"
+  end
+
   private
 
   def function_body(source)
