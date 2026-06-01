@@ -288,10 +288,22 @@ extending Server:
         return unsafe: read(context).incoming_snapshots.len()
 
 
+    public mutable function pop_snapshot() -> Option[snapshot_runtime.IncomingSnapshotPacket]:
+        let context = this.receive_context else:
+            return Option[snapshot_runtime.IncomingSnapshotPacket].none
+        return snapshot_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_snapshots))
+
+
     public function pending_rpc_count() -> ptr_uint:
         let context = this.receive_context else:
             return 0
         return unsafe: read(context).incoming_rpcs.len()
+
+
+    public mutable function pop_rpc() -> Option[rpc_runtime.IncomingRpcPacket]:
+        let context = this.receive_context else:
+            return Option[rpc_runtime.IncomingRpcPacket].none
+        return rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs))
 
 
     public function pending_unknown_count() -> ptr_uint:
@@ -598,10 +610,22 @@ extending Client:
         return unsafe: read(context).incoming_snapshots.len()
 
 
+    public mutable function pop_snapshot() -> Option[snapshot_runtime.IncomingSnapshotPacket]:
+        let context = this.receive_context else:
+            return Option[snapshot_runtime.IncomingSnapshotPacket].none
+        return snapshot_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_snapshots))
+
+
     public function pending_rpc_count() -> ptr_uint:
         let context = this.receive_context else:
             return 0
         return unsafe: read(context).incoming_rpcs.len()
+
+
+    public mutable function pop_rpc() -> Option[rpc_runtime.IncomingRpcPacket]:
+        let context = this.receive_context else:
+            return Option[rpc_runtime.IncomingRpcPacket].none
+        return rpc_runtime.dequeue_incoming(unsafe: ref_of(read(context).incoming_rpcs))
 
 
     public function pending_unknown_count() -> ptr_uint:

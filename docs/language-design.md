@@ -1293,7 +1293,7 @@ Callbacks must map directly to C function pointers.
 type LogCallback = fn(level: int, message: cstr, user_data: ptr[void]) -> void
 ```
 
-Capturing closures should not be lowered to hidden heap objects. If user state is needed, pass it explicitly as `user_data`.
+Capturing closures should not be lowered to hidden heap objects. If user state is needed, pass it explicitly as `user_data` at ABI boundaries or allocate explicit local storage such as `std.cell.alloc[T](...)` in ordinary Milk Tea code.
 
 ## Data layout and ABI controls
 
