@@ -154,7 +154,8 @@ Implemented capabilities include:
 - snapshot and RPC incoming queue draining (`process_incoming_snapshots`, `process_incoming_rpcs_typed`) backed by shared world/RPC queue-drain utilities
 - explicit send helpers (`send_snapshot_to`, `send_rpc_to`, `broadcast_snapshot`, `broadcast_rpc`)
 - fair/weighted/budgeted scheduling helpers
-- world-signature-aware tick dispatch (`dispatch_world_tick_fair`, which encodes snapshot bytes from the current world state internally)
+- gameplay-facing fair tick dispatch (`dispatch_tick_fair`, which encodes snapshot bytes from the current world state internally)
+- lower-level pre-encoded fair tick dispatch (`dispatch_preencoded_tick_fair`) for runtimes that already own snapshot headers and payload bytes
 
 ## Behavioral Boundaries (Current)
 

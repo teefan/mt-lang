@@ -132,7 +132,7 @@ function main() -> int:
                 let snapshot_bytes = server.estimate_snapshot_wire_bytes(header, payload)
                 let rpc_bytes = server.estimate_rpc_wire_bytes(1, protocol.RpcDirection.server_to_observers, payload)
                 let plan = mp.create_tick_budget_plan((snapshot_bytes + rpc_bytes) * 2, 55)
-                let report = server.dispatch_tick_fair(
+                let report = server.dispatch_preencoded_tick_fair(
                     tick,
                     plan,
                     0,

@@ -1167,7 +1167,85 @@ function main() -> int:
         assert_match(/retain\(/, generated)
         assert_match(/release\(/, generated)
       end
-      end
+
+  end
+
+  def test_build_with_host_compiler_supports_explicit_cell_backed_proc_state
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    Dir.mktmpdir("milk-tea-build-cell-proc-state") do |dir|
+      source_path = File.join(dir, "cell-proc-state.mt")
+      output_path = File.join(dir, "cell-proc-state")
+
+        source = [
+        "import std.cell as cell",
+        "",
+        "struct Counter:",
+        "    value: int",
+        "",
+        "function plus_one(value: int) -> int:",
+        "    return value + 1",
+        "",
+        "function grow_counter(value: Counter) -> Counter:",
+        "    var next = value",
+        "    next.value += 3",
+        "    return next",
+        "",
+        "function main() -> int:",
+        "    var count = cell.alloc[int](0)",
+        "    defer count.release()",
+        "",
+        "    var counter = cell.alloc[Counter](Counter(value = 1))",
+        "    defer counter.release()",
+        "",
+        "    let bump = proc() -> int:",
+        "        return count.update(plus_one)",
+        "",
+        "    let grow = proc() -> int:",
+        "        let next = counter.update(grow_counter)",
+        "        return next.value",
+        "",
+        "    if bump() != 1:",
+        "        return 1",
+        "",
+        "    if bump() != 2:",
+        "        return 2",
+        "",
+        "    if grow() != 4:",
+        "        return 3",
+        "",
+        "    if grow() != 7:",
+        "        return 4",
+        "",
+        "    if count.get() != 2:",
+        "        return 5",
+        "",
+        "    if counter.get().value != 7:",
+        "        return 6",
+        "",
+        "    unsafe:",
+        "        read(counter.as_ptr()).value += 5",
+        "",
+        "    if counter.get().value != 12:",
+        "        return 7",
+        "",
+        "    return 0",
+        ].join("\n") + "\n"
+        File.write(source_path, source)
+
+      result = MilkTea::Build.build(source_path, output_path:, cc: compiler)
+
+      assert_equal File.expand_path(output_path), result.output_path
+      assert File.exist?(output_path)
+      assert File.executable?(output_path)
+
+      stdout, stderr, status = Open3.capture3(output_path)
+      assert_equal "", stdout
+      assert_equal "", stderr
+      assert_equal 0, status.exitstatus
+    end
+  end
 
   def test_build_with_host_compiler_supports_safe_span_str_main_args
     compiler = ENV.fetch("CC", "cc")

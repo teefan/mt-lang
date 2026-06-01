@@ -128,41 +128,105 @@ function main() -> int:
         break
       rpc_rounds += 1
 
-    let processed_rpcs = server.process_incoming_rpcs_typed(ref_of(bindings.typed_rpcs)) else:
+    let incoming_rpc = server.pop_rpc() else:
       return 19
-    if processed_rpcs != 1:
+    var popped_rpc = incoming_rpc
+    defer popped_rpc.release()
+    if popped_rpc.header.channel != NET_CHANNEL:
       return 20
-    if routed_value != 9:
+    if popped_rpc.header.direction != protocol.RpcDirection.client_to_server:
       return 21
-    if routed_sender != 77:
+    match popped_rpc.context.sender:
+      Option.some as payload:
+        if payload.value != 77:
+          return 22
+      Option.none:
       return 22
-
-    var world_payload = server.world.encode_snapshot_payload() else:
+    if server.pending_rpc_count() != 0:
       return 23
-    defer world_payload.release()
 
-    let snapshot_header = protocol.SnapshotPacketHeader(tick = 300, baseline_tick = 0, entity_count = 0)
-    let snapshot_sent = server.broadcast_snapshot(NET_CHANNEL, protocol.TransferMode.reliable, snapshot_header, world_payload.as_span()) else:
+    let resent_rpc = client.send_rpc(
+      NET_CHANNEL,
+      protocol.TransferMode.reliable,
+      protocol.RpcDirection.client_to_server,
+      rpc_payload,
+    ) else:
       return 24
-    if not snapshot_sent:
+    if not resent_rpc:
       return 25
 
-    var snapshot_rounds: ptr_uint = 0
-    while snapshot_rounds < 480:
+    rpc_rounds = 0
+    while rpc_rounds < 480:
       let _ = server.pump(1) else:
         return 26
       let _ = client.pump(1) else:
         return 27
+
+      if server.pending_rpc_count() > 0:
+        break
+      rpc_rounds += 1
+
+    let processed_rpcs = server.process_incoming_rpcs_typed(ref_of(bindings.typed_rpcs)) else:
+      return 28
+    if processed_rpcs != 1:
+      return 29
+    if routed_value != 9:
+      return 30
+    if routed_sender != 77:
+      return 31
+
+    var world_payload = server.world.encode_snapshot_payload() else:
+      return 32
+    defer world_payload.release()
+
+    let snapshot_header = protocol.SnapshotPacketHeader(tick = 300, baseline_tick = 0, entity_count = 0)
+    let snapshot_sent = server.broadcast_snapshot(NET_CHANNEL, protocol.TransferMode.reliable, snapshot_header, world_payload.as_span()) else:
+      return 33
+    if not snapshot_sent:
+      return 34
+
+    var snapshot_rounds: ptr_uint = 0
+    while snapshot_rounds < 480:
+      let _ = server.pump(1) else:
+        return 35
+      let _ = client.pump(1) else:
+        return 36
+      if client.pending_snapshot_count() > 0:
+        break
+      snapshot_rounds += 1
+
+    let incoming_snapshot = client.pop_snapshot() else:
+      return 37
+    var popped_snapshot = incoming_snapshot
+    defer popped_snapshot.release()
+    if popped_snapshot.header.tick != 300:
+      return 38
+    if popped_snapshot.channel != NET_CHANNEL:
+      return 39
+    if client.pending_snapshot_count() != 0:
+      return 40
+
+    let resent_snapshot = server.broadcast_snapshot(NET_CHANNEL, protocol.TransferMode.reliable, snapshot_header, world_payload.as_span()) else:
+      return 41
+    if not resent_snapshot:
+      return 42
+
+    snapshot_rounds = 0
+    while snapshot_rounds < 480:
+      let _ = server.pump(1) else:
+        return 43
+      let _ = client.pump(1) else:
+        return 44
       if client.pending_snapshot_count() > 0:
         break
       snapshot_rounds += 1
 
     let processed_snapshots = client.process_incoming_snapshots() else:
-      return 28
+      return 45
     if processed_snapshots != 1:
-      return 29
+      return 46
     if client.pending_snapshot_count() != 0:
-      return 30
+      return 47
 
     return 0
 

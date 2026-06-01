@@ -187,6 +187,8 @@ Callable and `ref[...]` rules:
 - Stored callable values may not use `ref[...]` in return types.
 - Stored callable values may not nest `ref[...]` anywhere except direct callable parameter positions.
 - External functions still cannot take `ref[...]` parameters, and ordinary functions still cannot return `ref[...]`.
+- `proc` captures are value captures. A captured local is not a mutable alias back to the outer binding.
+- Shared mutable proc state should use explicit storage such as `std.cell.alloc[T](...)` or other explicit pointer-backed state, not implicit mutable capture.
 
 ## 5. Data Declarations
 

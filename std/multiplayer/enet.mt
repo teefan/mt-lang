@@ -423,7 +423,7 @@ extending Server:
         return Result[ptr_uint, mp.Error].success(value = sent)
 
 
-    public mutable function dispatch_tick_fair(
+    public mutable function dispatch_preencoded_tick_fair(
         tick: mp.Tick,
         plan: mp.TickBudgetPlan,
         snapshot_channel: uint,
@@ -463,6 +463,28 @@ extending Server:
                 rpcs_sent = rpcs_sent,
                 consumed_bytes = snapshot_scheduler.consumed_bytes() + rpc_scheduler.consumed_bytes()
             )
+        )
+
+
+    public mutable function dispatch_tick_fair(
+        tick: mp.Tick,
+        plan: mp.TickBudgetPlan,
+        snapshot_channel: uint,
+        snapshot_transfer_mode: mp.TransferMode,
+        rpc_channel: uint,
+        rpc_transfer_mode: mp.TransferMode,
+        rpc_direction: mp.RpcDirection,
+        rpc_payload: span[ubyte],
+    ) -> Result[mp.TickDispatchReport, mp.Error]:
+        return this.dispatch_world_tick_fair(
+            tick,
+            plan,
+            snapshot_channel,
+            snapshot_transfer_mode,
+            rpc_channel,
+            rpc_transfer_mode,
+            rpc_direction,
+            rpc_payload,
         )
 
 
@@ -1669,15 +1691,7 @@ function find_verified_peer(host: ptr[enet.Host], connection: mp.ConnectionId) -
 
 function verified_peer_count_for_host(host: ptr[enet.Host]) -> ptr_uint:
     var count: ptr_uint = 0
-    unsafe:
-        let peers = read(host).peers
-        let peer_count = read(host).peerCount
-        var index: ptr_uint = 0
-        while index < peer_count:
-            let peer = peers + index
-            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                count += 1
-            index += 1
+    each_verified_peer(host, unsafe: ptr[void]<-ptr_of(count), increment_verified_peer_count)
 
     return count
 
@@ -1687,34 +1701,27 @@ function host_has_verified_connection(host: ptr[enet.Host], connection: mp.Conne
 
 
 function first_verified_connection_for_host(host: ptr[enet.Host]) -> Option[mp.ConnectionId]:
-    unsafe:
-        let peers = read(host).peers
-        let peer_count = read(host).peerCount
-        var index: ptr_uint = 0
-        while index < peer_count:
-            let peer = peers + index
-            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                return Option[mp.ConnectionId].some(value = peer_connection_id(peer))
-            index += 1
+    var connection = Option[mp.ConnectionId].none
+    each_verified_peer(host, unsafe: ptr[void]<-ptr_of(connection), capture_first_verified_connection)
 
-    return Option[mp.ConnectionId].none
+    return connection
 
 
 function append_verified_connections(host: ptr[enet.Host], out_connections: ref[vec.Vec[mp.ConnectionId]]) -> void:
-    unsafe:
-        let peers = read(host).peers
-        let peer_count = read(host).peerCount
-        var index: ptr_uint = 0
-        while index < peer_count:
-            let peer = peers + index
-            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                out_connections.push(peer_connection_id(peer))
-            index += 1
+    each_verified_peer(host, unsafe: ptr[void]<-ptr_of(read(out_connections)), push_verified_connection)
 
 
 function append_weighted_verified_connections(
     host: ptr[enet.Host],
     out_connections: ref[vec.Vec[mp.WeightedConnection]]
+) -> void:
+    each_verified_peer(host, unsafe: ptr[void]<-ptr_of(read(out_connections)), push_weighted_verified_connection)
+
+
+function each_verified_peer(
+    host: ptr[enet.Host],
+    user_data: ptr[void],
+    body: fn(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool,
 ) -> void:
     unsafe:
         let peers = read(host).peers
@@ -1723,8 +1730,34 @@ function append_weighted_verified_connections(
         while index < peer_count:
             let peer = peers + index
             if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
-                out_connections.push(mp.WeightedConnection(connection = peer_connection_id(peer), weight = 1))
+                if not body(user_data, peer):
+                    return
             index += 1
+
+
+function increment_verified_peer_count(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
+    let _ = peer
+    let count = unsafe: ptr[ptr_uint]<-user_data
+    unsafe: read(count) += 1
+    return true
+
+
+function capture_first_verified_connection(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
+    let connection = unsafe: ptr[Option[mp.ConnectionId]]<-user_data
+    unsafe: read(connection) = Option[mp.ConnectionId].some(value = peer_connection_id(peer))
+    return false
+
+
+function push_verified_connection(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
+    let out_connections = unsafe: ptr[vec.Vec[mp.ConnectionId]]<-user_data
+    unsafe: read(out_connections).push(peer_connection_id(peer))
+    return true
+
+
+function push_weighted_verified_connection(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
+    let out_connections = unsafe: ptr[vec.Vec[mp.WeightedConnection]]<-user_data
+    unsafe: read(out_connections).push(mp.WeightedConnection(connection = peer_connection_id(peer), weight = 1))
+    return true
 
 
 function append_rotated_connections(
