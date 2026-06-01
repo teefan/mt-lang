@@ -62,6 +62,7 @@ public struct App:
     last_applied_join_input_tick: Option[mp.Tick]
     join_input_history: rollback.History[ubyte]
     join_paddle_history: rollback.History[int]
+    join_ready_sent: bool
     status_code: int
 
 
@@ -96,6 +97,7 @@ function main(args: span[str]) -> int:
         last_applied_join_input_tick = Option[mp.Tick].none,
         join_input_history = rollback.History[ubyte].create(join_prediction_history_frames),
         join_paddle_history = rollback.History[int].create(join_prediction_history_frames),
+        join_ready_sent = false,
         status_code = 0
     )
     defer release_app(ref_of(app))
@@ -182,6 +184,7 @@ function shutdown_network(app: ref[App]) -> void:
     app.last_applied_join_input_tick = Option[mp.Tick].none
     app.join_input_history.clear()
     app.join_paddle_history.clear()
+    app.join_ready_sent = false
     pong_net.reset_runtime_state()
 
 
@@ -361,6 +364,7 @@ function join_start(app: ref[App]) -> bool:
     app.remote_seen = false
     app.client_was_ready = false
     app.join_wait_frames = 0
+    app.join_ready_sent = false
     app.disconnect_message = f"Connecting to #{host_text}:#{parsed_port}..."
     return true
 
@@ -437,6 +441,10 @@ function update_host_network(app: ref[App]) -> void:
             mp_enet.SessionEvent.snapshot_received:
                 pass
             mp_enet.SessionEvent.rpc_received:
+                pass
+            mp_enet.SessionEvent.lockstep_command_received:
+                pass
+            mp_enet.SessionEvent.lockstep_checksum_received:
                 pass
 
     sync_host_lobby_slots(app, runtime)
@@ -533,6 +541,10 @@ function update_join_network(app: ref[App]) -> void:
             mp_enet.SessionEvent.snapshot_received:
                 pass
             mp_enet.SessionEvent.rpc_received:
+                pass
+            mp_enet.SessionEvent.lockstep_command_received:
+                pass
+            mp_enet.SessionEvent.lockstep_checksum_received:
                 pass
 
     if runtime.pending_unknown_count() > 0 and not ready_now:
@@ -895,6 +907,17 @@ function draw_lobby(app: ref[App]) -> void:
             rl.draw_text("Connected and protocol-ready", 60, 190, 24, rl.LIME)
         else:
             rl.draw_text("Connecting to configured host...", 60, 190, 24, rl.ORANGE)
+
+        if client.protocol_ready() and read(app).state.phase == 0:
+            if not read(app).join_ready_sent:
+                if gui.button(rl.Rectangle(x = 60.0, y = 230.0, width = 250.0, height = 40.0), "I'm Ready") != 0:
+                    join_send_input(read(app))
+                    read(app).join_ready_sent = true
+            else:
+                gui.disable()
+                let _ = gui.button(rl.Rectangle(x = 60.0, y = 230.0, width = 250.0, height = 40.0), "Ready (sent)")
+                gui.enable()
+                rl.draw_text("Ready signal sent. Waiting for host to start the match.", 60, 280, 22, rl.LIME)
 
     if read(app).disconnect_message != "":
         rl.draw_text(read(app).disconnect_message, 60, 360, 22, rl.ORANGE)

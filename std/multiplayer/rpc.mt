@@ -32,6 +32,10 @@ public struct IncomingRpcPacket:
     context: protocol.RpcContext
     payload: bytes.Bytes
 
+public struct ParsedRpc:
+    header: protocol.RpcPacketHeader
+    body: span[ubyte]
+
 
 extending RpcDispatchTable:
     public static function create() -> RpcDispatchTable:
@@ -406,44 +410,59 @@ public function build_payload(header: protocol.RpcPacketHeader, payload: span[ub
     return bytes.Bytes.copy(combined_span)
 
 
-public function enqueue_incoming(
+public function parse_incoming(payload: span[ubyte]) -> Result[ParsedRpc, protocol.Error]:
+    let header = decode_header(payload) else as header_error:
+        return Result[ParsedRpc, protocol.Error].failure(error = header_error)
+
+    var result: Result[ParsedRpc, protocol.Error] = Result[ParsedRpc, protocol.Error].failure(
+        error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size does not match header"),
+    )
+    unsafe:
+        let body_len = payload.len - rpc_header_bytes
+        if header.payload_size == body_len:
+            let body = span[ubyte](data = payload.data + rpc_header_bytes, len = body_len)
+            result = Result[ParsedRpc, protocol.Error].success(value = ParsedRpc(
+                header = header,
+                body = body,
+            ))
+
+    return result
+
+
+public function enqueue_parsed(
     queue: ref[vec.Vec[IncomingRpcPacket]],
     sender: Option[protocol.ConnectionId],
     channel: uint,
-    direction: protocol.RpcDirection,
+    expected_direction: protocol.RpcDirection,
+    current_tick: protocol.Tick,
+    parsed: ParsedRpc,
+) -> bool:
+    if parsed.header.channel != channel:
+        return false
+
+    if parsed.header.direction != expected_direction:
+        return false
+
+    queue.push(IncomingRpcPacket(
+        header = parsed.header,
+        context = protocol.RpcContext(sender = sender, tick = current_tick),
+        payload = bytes.Bytes.copy(parsed.body),
+    ))
+    return true
+
+
+public function parse_and_enqueue(
+    queue: ref[vec.Vec[IncomingRpcPacket]],
+    sender: Option[protocol.ConnectionId],
+    channel: uint,
+    expected_direction: protocol.RpcDirection,
+    current_tick: protocol.Tick,
     payload: span[ubyte],
-) -> Result[bool, protocol.Error]:
-    let header = decode_header(payload) else as header_error:
-        return Result[bool, protocol.Error].failure(error = header_error)
+) -> bool:
+    let parsed = parse_incoming(payload) else:
+        return false
 
-    if header.channel != channel:
-        return Result[bool, protocol.Error].failure(
-            error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc channel does not match transport channel")
-        )
-
-    if header.direction != direction:
-        return Result[bool, protocol.Error].failure(
-            error = protocol.error(
-                protocol.ErrorCode.invalid_argument,
-                "rpc direction does not match transport context"
-            )
-        )
-
-    unsafe:
-        let body_len = payload.len - rpc_header_bytes
-        if header.payload_size != body_len:
-            return Result[bool, protocol.Error].failure(
-                error = protocol.error(protocol.ErrorCode.invalid_argument, "rpc payload size does not match header")
-            )
-
-        let body = span[ubyte](data = payload.data + rpc_header_bytes, len = body_len)
-        queue.push(IncomingRpcPacket(
-            header = header,
-            context = protocol.RpcContext(sender = sender, tick = 0),
-            payload = bytes.Bytes.copy(body)
-        ))
-
-    return Result[bool, protocol.Error].success(value = true)
+    return enqueue_parsed(queue, sender, channel, expected_direction, current_tick, parsed)
 
 
 public function dequeue_incoming(queue: ref[vec.Vec[IncomingRpcPacket]]) -> Option[IncomingRpcPacket]:
