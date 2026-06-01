@@ -30,43 +30,51 @@ This RFC does not define:
 
 ## Proposed Layer Boundary
 
-If implemented, lockstep should be a separate runtime layer that sits above ENet transport and beside snapshot replication rather than inside rollback helpers.
+Lockstep is now a separate runtime layer that sits above ENet transport and beside snapshot replication rather than inside rollback helpers.
 
 Likely shape:
 
 - transport: `std.multiplayer.enet` still carries packets and session events
 - session bookkeeping: `std.multiplayer.session` continues to manage slot occupancy, ready-state, and simple host-started lobby transition gates
-- lockstep layer: future `std.multiplayer.lockstep` manages turn windows, command collection, deterministic checksums, and desync reporting
+- lockstep layer: `std.multiplayer.lockstep` now manages turn collection, sealing, deterministic checksum reporting, and desync detection for one active turn at a time
 
 ## Core Runtime Responsibilities
 
-The future lockstep layer should provide these primitives:
+The current lockstep layer now provides the first truthful subset of these primitives:
 
 1. Turn schedule management.
-Each simulation step belongs to a command turn with an explicit deadline and command budget.
+Each simulation step belongs to a command turn with an explicit command budget. Deadline policy is still caller-owned.
 
 2. Per-player command collection.
 Each participating slot submits zero or more commands for a future turn. The runtime tracks which slots have submitted and which are still pending.
 
 3. Turn sealing.
-When all required slots have submitted, or when a configured deadline policy fires, the turn seals and exposes an ordered command batch for deterministic simulation.
+When all required slots have submitted, callers can seal the turn and expose its ordered command batch for deterministic simulation.
 
 4. Deterministic checksum reporting.
 After applying a sealed turn, peers report a checksum or digest for the resulting simulation frame so desyncs can be detected quickly.
 
 5. Desync diagnostics.
-The runtime reports who diverged, on which turn, and with which checksum mismatch. It should not silently continue as if simulation agreement still exists.
+The runtime reports who diverged, on which turn, and with which checksum mismatch. It does not let the turn advance after a detected checksum mismatch.
 
 ## Likely API Direction
 
-The exact API should be proven by a real gameplay package, but the first honest surface will likely need types in this shape:
+The stdlib API current local proof surface includes:
+
+- fixed-size `CommandEnvelope` values carrying `slot`, `turn_id`, and gameplay payload
+- explicit command kinds for move, harvest, worker training, and militia training
+- queued future-turn submission through `pending_input_turn(...)` and `enqueue_*` helpers
+- deterministic per-turn application through `apply_due_commands(...)`
+- reproducible smoke coverage over the resulting checksum
+
+The first honest runtime surface now stays close to that shape:
 
 - `TurnId`
-- `SlotMask` or equivalent participant set tracking
 - `CommandEnvelope[T]` with `slot`, `turn`, and payload
 - `TurnStatus` for collecting, sealed, applied, and desynced states
 - `ChecksumReport`
-- manager type for turn collection and sealing
+- `DesyncReport`
+- `TurnCollector[T]` for slot submission, sealing, checksum reporting, and safe turn advance
 
 What it should not do initially:
 
@@ -87,18 +95,42 @@ Snapshot replication and rollback remain useful, but not as the primary simulati
 If a Warcraft-style package becomes active work, the order should be:
 
 1. Define deterministic gameplay rules and checksum surface in the game package.
-2. Add a narrow lockstep turn-collection runtime with no discovery or service layer.
+2. Done: add a narrow lockstep turn-collection runtime with no discovery or service layer.
 3. Add desync reporting and replay capture before adding convenience abstractions.
 4. Only then consider rejoin, spectator sync, or partial state snapshots.
 
+## When We Can Start
+
+We can start the Warcraft-style networking implementation now, but only in the right order.
+
+The first honest milestone is not a generic lockstep runtime. It is a deterministic RTS gameplay package with:
+
+- fixed-tick simulation that avoids hidden frame-time dependence
+- integer or otherwise deterministic gameplay state
+- a narrow command surface for unit orders and production
+- a reproducible checksum over gameplay-relevant state
+
+That extracted runtime surface now covers:
+
+- `TurnId`
+- command envelopes for move, harvest, and production orders
+- submission tracking per slot
+- checksum exchange and desync reporting
+
+The next pass should build the ENet-facing command exchange on top of that runtime surface rather than expanding the runtime toward service-layer concerns.
+
+That means networking work can begin now on top of the proven LAN RTS command surface. It should still begin with narrow turn collection and checksum exchange, not with matchmaking, relay services, or a broad generic framework.
+
 ## Current Repository Boundary
 
-Today this repository does not implement lockstep runtime helpers. That is intentional.
+Today this repository implements an initial lockstep runtime helper layer. That is intentional and limited.
 
 The active multiplayer runtime currently ships:
 
 - ENet transport and authoritative snapshot/RPC flow
 - explicit rollback primitives
 - initial session slot, ready-state, and host-started transition-gate helpers
+- initial lockstep turn collection, sealing, checksum reporting, and desync detection in `std.multiplayer.lockstep`
+- raw ENet-facing lockstep command/checksum packet codecs plus incoming queue helpers for deterministic turn transport
 
 The dedicated lockstep path described here exists so future RTS work has a truthful target that does not distort the rest of the multiplayer docs.

@@ -1,6 +1,6 @@
 # Multiplayer Standard Library Design
 
-Status: finalized (implemented)
+Status: implemented, with the current LAN lockstep proving ground validated and broader seamless-recovery/runtime extraction still intentionally narrow
 
 This document describes the current multiplayer standard-library layout as implemented.
 It is no longer a proposal.
@@ -18,6 +18,7 @@ flowchart TD
     snapshot[std.multiplayer.snapshot]
     rollback[std.multiplayer.rollback]
     session[std.multiplayer.session]
+    lockstep[std.multiplayer.lockstep]
     relevancy[std.multiplayer.relevancy]
     spatial[std.multiplayer.spatial]
     wire[std.multiplayer.wire]
@@ -32,6 +33,7 @@ flowchart TD
     root --> snapshot
     root --> rollback
     root --> session
+    root --> lockstep
     root --> relevancy
     root --> spatial
     snapshot --> wire
@@ -65,6 +67,7 @@ Exports include:
 - ids and enums (`ConnectionId`, `EntityId`, `Authority`, `TransferMode`, `RpcDirection`, ...)
 - core types (`Config`, `Error`, `Registry`, `World`, descriptor aliases)
 - session helpers (`SlotRoster`, `SlotEntry`)
+- lockstep vocabulary (`TurnId`, `TurnStatus`, `ChecksumReport`, `DesyncReport`)
 - ergonomic binding builder (`BindingsBuilder.create()`, `bind_state[T](...)`, `bind_rpc(...)`, `bind_typed_rpc(...)`)
 - attributes (`replicated`, `sync_defaults`, `sync`, `rpc`)
 - hook surface (`state_descriptor`, `rpc_descriptor`, `state_wire_size`, `rpc_payload_size`)
@@ -178,6 +181,26 @@ Implemented API highlights:
 
 This module is intentionally narrow. It tracks in-process slot occupancy, ready-state, and the first host-started transition gate only. It does not invent reconnect tokens, persistent player identity, service discovery, matchmaking, or platform presence.
 
+The current LAN RTS proving ground uses these helpers only for a thin host-side occupancy/start gate. Live slot assignment and start messages are still game-owned control flow layered on top of ENet RPC transport, not a finalized generic stdlib session runtime.
+
+### `std.multiplayer.lockstep`
+
+Small RTS-oriented command-turn helpers layered above transport.
+
+Implemented API highlights:
+
+- `TurnCollector[T].create(required_slots, max_commands_per_turn, initial_turn)`
+- `turn_id()`, `status()`, `command_count()`, `command_at(index)`
+- `submit_commands(slot, turn_id, commands)` with per-slot submission tracking
+- `seal_if_ready()`
+- `mark_applied(turn_id)`
+- `report_checksum(slot, turn_id, checksum)`
+- `desync_report()`
+- `advance_turn()`
+- raw command/checksum packet codecs and owned incoming queue helpers for ENet-backed turn transport
+
+This module is intentionally narrow. It does not choose deadline policy or provide matchmaking/discovery. It exists so ENet-backed RTS code can collect one deterministic command turn, exchange raw turn/checksum packets, compare checksums, and refuse to advance after a desync.
+
 ### `std.multiplayer.relevancy`
 
 Implemented policies and checks:
@@ -261,11 +284,12 @@ Current prioritization after the latest cleanup:
 2. Done: per-peer outbound snapshot baseline tracking so fair/budgeted dispatch does not let one peer suppress unchanged world state for another.
 3. Done: explicit rollback history, replay, and authoritative-reconciliation primitives in `std.multiplayer.rollback`.
 4. Started: `std.multiplayer.session` now covers slot occupancy, ready-state, and a minimal host-started transition gate; reconnect identity and richer scene-transition policy remain caller-owned until another gameplay package proves the contract.
-5. Deferred by design: transport-neutral session abstractions or internet matchmaking/service layers outside direct ENet runtime concerns.
+5. Started: `std.multiplayer.lockstep` now covers one-turn command collection, sealing, checksum reporting, and desync detection for deterministic RTS-style simulation.
+6. Deferred by design: transport-neutral session abstractions, deadline policy, or internet matchmaking/service layers outside direct ENet runtime concerns.
 
 Lobby/matchmaking remains outside the core runtime boundary. The repo still has no truthful backend/storage/discovery contract to implement against, so stdlib should not pretend to provide a service layer yet.
 
-RTS-style deterministic lockstep is also outside the current stdlib surface. If a Warcraft-like package becomes the target, it likely deserves a dedicated command-turn layer instead of being squeezed into the current snapshot/reconciliation helpers. That path is tracked separately in `docs/multiplayer-lockstep-rfc.md`.
+RTS-style deterministic lockstep is now partly inside the stdlib surface through `std.multiplayer.lockstep`, including raw ENet-facing command/checksum packet transport helpers. Replay capture and richer deadline policy are still tracked in `docs/multiplayer-lockstep-rfc.md`.
 
 ## Existing Runtime Coverage
 
@@ -285,3 +309,5 @@ Primary coverage files:
 - `test/std/std_multiplayer_enet_stress_test.rb`
 - `test/std/std_multiplayer_rollback_test.rb`
 - `test/std/std_multiplayer_session_test.rb`
+- `test/std/std_multiplayer_lockstep_test.rb`
+- `test/std/std_multiplayer_enet_lockstep_test.rb`

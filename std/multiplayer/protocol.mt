@@ -51,6 +51,8 @@ public enum PacketKind: ubyte
     handshake_reject = 2
     snapshot = 3
     rpc = 4
+    lockstep_commands = 5
+    lockstep_checksum = 6
 
 public struct HandshakeHello:
     protocol_hash: ulong
@@ -224,5 +226,9 @@ public function packet_kind_from_byte(value: ubyte) -> Option[PacketKind]:
         return Option[PacketKind].some(value = PacketKind.snapshot)
     if value == ubyte<-PacketKind.rpc:
         return Option[PacketKind].some(value = PacketKind.rpc)
+    if value == ubyte<-PacketKind.lockstep_commands:
+        return Option[PacketKind].some(value = PacketKind.lockstep_commands)
+    if value == ubyte<-PacketKind.lockstep_checksum:
+        return Option[PacketKind].some(value = PacketKind.lockstep_checksum)
 
     return Option[PacketKind].none

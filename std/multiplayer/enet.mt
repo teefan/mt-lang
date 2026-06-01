@@ -1,5 +1,6 @@
 import std.enet as enet
 import std.multiplayer as mp
+import std.multiplayer.lockstep as lockstep_runtime
 import std.multiplayer.snapshot as snapshot_runtime
 import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.wire as wire
@@ -16,6 +17,8 @@ public struct Server:
     session_events: vec.Vec[SessionEventRecord]
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
+    incoming_lockstep_commands: vec.Vec[lockstep_runtime.IncomingCommandPacket]
+    incoming_lockstep_checksums: vec.Vec[lockstep_runtime.IncomingChecksumPacket]
     outbound_peer_snapshots: vec.Vec[PeerSnapshotState]
     unknown_packet_count: ptr_uint
     snapshot_budget_cursor: ptr_uint
@@ -31,6 +34,8 @@ public struct Client:
     session_events: vec.Vec[SessionEventRecord]
     incoming_snapshots: vec.Vec[snapshot_runtime.IncomingSnapshotPacket]
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
+    incoming_lockstep_commands: vec.Vec[lockstep_runtime.IncomingCommandPacket]
+    incoming_lockstep_checksums: vec.Vec[lockstep_runtime.IncomingChecksumPacket]
     unknown_packet_count: ptr_uint
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
@@ -40,6 +45,8 @@ public enum SessionEvent: ubyte
     disconnected = 1
     snapshot_received = 2
     rpc_received = 3
+    lockstep_command_received = 4
+    lockstep_checksum_received = 5
 
 public struct SessionEventRecord:
     kind: SessionEvent
@@ -145,6 +152,8 @@ extending Server:
         this.session_events.release()
         snapshot_runtime.release_queue(ref_of(this.incoming_snapshots))
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
+        lockstep_runtime.release_command_queue(ref_of(this.incoming_lockstep_commands))
+        lockstep_runtime.release_checksum_queue(ref_of(this.incoming_lockstep_checksums))
         this.outbound_peer_snapshots.release()
         this.unknown_packet_count = 0
         this.snapshot_budget_cursor = 0
@@ -232,6 +241,14 @@ extending Server:
         return rpc_runtime.dequeue_incoming(ref_of(this.incoming_rpcs))
 
 
+    public mutable function pop_lockstep_command() -> Option[lockstep_runtime.IncomingCommandPacket]:
+        return lockstep_runtime.dequeue_incoming_command(ref_of(this.incoming_lockstep_commands))
+
+
+    public mutable function pop_lockstep_checksum() -> Option[lockstep_runtime.IncomingChecksumPacket]:
+        return lockstep_runtime.dequeue_incoming_checksum(ref_of(this.incoming_lockstep_checksums))
+
+
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
         return this.world.drain_incoming_snapshots(
             ref_of(this.incoming_snapshots),
@@ -243,6 +260,14 @@ extending Server:
         table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
+
+
+    public function pending_lockstep_command_count() -> ptr_uint:
+        return this.incoming_lockstep_commands.len()
+
+
+    public function pending_lockstep_checksum_count() -> ptr_uint:
+        return this.incoming_lockstep_checksums.len()
 
 
     public mutable function broadcast_snapshot(
@@ -310,6 +335,51 @@ extending Server:
         payload: span[ubyte]
     ) -> ptr_uint:
         return rpc_wire_bytes(channel, direction, payload)
+
+
+    public function broadcast_lockstep_commands(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: lockstep_runtime.CommandPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
+
+        var encoded = lockstep_runtime.build_command_payload(header, payload)
+        defer encoded.release()
+        return broadcast_wire_payload(
+            host,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_commands,
+            encoded.as_span()
+        )
+
+
+    public function broadcast_lockstep_checksum(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        report: lockstep_runtime.ChecksumReport
+    ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
+
+        var encoded = lockstep_runtime.build_checksum_payload(report)
+        defer encoded.release()
+        return broadcast_wire_payload(
+            host,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_checksum,
+            encoded.as_span()
+        )
 
 
     public mutable function broadcast_snapshot_scheduled(
@@ -595,6 +665,65 @@ extending Server:
         var encoded = rpc_runtime.build_payload(header, payload)
         defer encoded.release()
         return send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span())
+
+
+    public function send_lockstep_commands_to(
+        connection: mp.ConnectionId,
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: lockstep_runtime.CommandPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
+
+        let peer = find_verified_peer(host, connection) else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "verified target connection was not found"
+            ))
+
+        var encoded = lockstep_runtime.build_command_payload(header, payload)
+        defer encoded.release()
+        return send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_commands,
+            encoded.as_span()
+        )
+
+
+    public function send_lockstep_checksum_to(
+        connection: mp.ConnectionId,
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        report: lockstep_runtime.ChecksumReport
+    ) -> Result[bool, mp.Error]:
+        let host = this.host else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "server host is not initialized"
+            ))
+
+        let peer = find_verified_peer(host, connection) else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "verified target connection was not found"
+            ))
+
+        var encoded = lockstep_runtime.build_checksum_payload(report)
+        defer encoded.release()
+        return send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_checksum,
+            encoded.as_span()
+        )
 
 
     public function send_rpc_to_scheduled(
@@ -910,6 +1039,8 @@ extending Server:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
@@ -925,6 +1056,50 @@ extending Server:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
+                                    ref_of(this.inbound_snapshot_baseline),
+                                    ref_of(this.unknown_packet_count),
+                                    read(evt).packet,
+                                    uint<-read(evt).channelID,
+                                    mp.RpcDirection.client_to_server,
+                                    sender
+                                )
+                            else:
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        mp.PacketKind.lockstep_commands:
+                            if is_peer_verified(read(evt).peer):
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.lockstep_command_received,
+                                    sender
+                                )
+                                handle_received_packet(
+                                    ref_of(this.incoming_snapshots),
+                                    ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
+                                    ref_of(this.inbound_snapshot_baseline),
+                                    ref_of(this.unknown_packet_count),
+                                    read(evt).packet,
+                                    uint<-read(evt).channelID,
+                                    mp.RpcDirection.client_to_server,
+                                    sender
+                                )
+                            else:
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        mp.PacketKind.lockstep_checksum:
+                            if is_peer_verified(read(evt).peer):
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.lockstep_checksum_received,
+                                    sender
+                                )
+                                handle_received_packet(
+                                    ref_of(this.incoming_snapshots),
+                                    ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
@@ -1015,6 +1190,8 @@ extending Client:
         this.session_events.release()
         snapshot_runtime.release_queue(ref_of(this.incoming_snapshots))
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
+        lockstep_runtime.release_command_queue(ref_of(this.incoming_lockstep_commands))
+        lockstep_runtime.release_checksum_queue(ref_of(this.incoming_lockstep_checksums))
         this.unknown_packet_count = 0
         reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
@@ -1089,6 +1266,8 @@ extending Client:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
@@ -1108,6 +1287,50 @@ extending Client:
                                 handle_received_packet(
                                     ref_of(this.incoming_snapshots),
                                     ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
+                                    ref_of(this.inbound_snapshot_baseline),
+                                    ref_of(this.unknown_packet_count),
+                                    read(evt).packet,
+                                    uint<-read(evt).channelID,
+                                    mp.RpcDirection.server_to_owner,
+                                    this.connection_id_value
+                                )
+                            else:
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        mp.PacketKind.lockstep_commands:
+                            if this.protocol_verified:
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.lockstep_command_received,
+                                    this.connection_id_value
+                                )
+                                handle_received_packet(
+                                    ref_of(this.incoming_snapshots),
+                                    ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
+                                    ref_of(this.inbound_snapshot_baseline),
+                                    ref_of(this.unknown_packet_count),
+                                    read(evt).packet,
+                                    uint<-read(evt).channelID,
+                                    mp.RpcDirection.server_to_owner,
+                                    this.connection_id_value
+                                )
+                            else:
+                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        mp.PacketKind.lockstep_checksum:
+                            if this.protocol_verified:
+                                enqueue_session_event(
+                                    ref_of(this.session_events),
+                                    SessionEvent.lockstep_checksum_received,
+                                    this.connection_id_value
+                                )
+                                handle_received_packet(
+                                    ref_of(this.incoming_snapshots),
+                                    ref_of(this.incoming_rpcs),
+                                    ref_of(this.incoming_lockstep_commands),
+                                    ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
                                     ref_of(this.unknown_packet_count),
                                     read(evt).packet,
@@ -1163,6 +1386,14 @@ extending Client:
         return rpc_runtime.dequeue_incoming(ref_of(this.incoming_rpcs))
 
 
+    public mutable function pop_lockstep_command() -> Option[lockstep_runtime.IncomingCommandPacket]:
+        return lockstep_runtime.dequeue_incoming_command(ref_of(this.incoming_lockstep_commands))
+
+
+    public mutable function pop_lockstep_checksum() -> Option[lockstep_runtime.IncomingChecksumPacket]:
+        return lockstep_runtime.dequeue_incoming_checksum(ref_of(this.incoming_lockstep_checksums))
+
+
     public mutable function process_incoming_snapshots() -> Result[ptr_uint, mp.Error]:
         return this.world.drain_incoming_snapshots(
             ref_of(this.incoming_snapshots),
@@ -1174,6 +1405,14 @@ extending Client:
         table: ref[rpc_runtime.TypedRpcDispatchTable],
     ) -> Result[ptr_uint, mp.Error]:
         return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
+
+
+    public function pending_lockstep_command_count() -> ptr_uint:
+        return this.incoming_lockstep_commands.len()
+
+
+    public function pending_lockstep_checksum_count() -> ptr_uint:
+        return this.incoming_lockstep_checksums.len()
 
 
     public function protocol_ready() -> bool:
@@ -1248,6 +1487,61 @@ extending Client:
         return send_wire_payload(peer, channel, transfer_mode, mp.PacketKind.rpc, encoded.as_span())
 
 
+    public function send_lockstep_commands(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        header: lockstep_runtime.CommandPacketHeader,
+        payload: span[ubyte]
+    ) -> Result[bool, mp.Error]:
+        let peer = this.peer else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "client peer is not connected"
+            ))
+        if not this.protocol_verified:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "protocol handshake is not complete"
+            ))
+
+        var encoded = lockstep_runtime.build_command_payload(header, payload)
+        defer encoded.release()
+        return send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_commands,
+            encoded.as_span()
+        )
+
+
+    public function send_lockstep_checksum(
+        channel: uint,
+        transfer_mode: mp.TransferMode,
+        report: lockstep_runtime.ChecksumReport
+    ) -> Result[bool, mp.Error]:
+        let peer = this.peer else:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.not_found,
+                "client peer is not connected"
+            ))
+        if not this.protocol_verified:
+            return Result[bool, mp.Error].failure(error = mp.error(
+                mp.ErrorCode.unsupported,
+                "protocol handshake is not complete"
+            ))
+
+        var encoded = lockstep_runtime.build_checksum_payload(report)
+        defer encoded.release()
+        return send_wire_payload(
+            peer,
+            channel,
+            transfer_mode,
+            mp.PacketKind.lockstep_checksum,
+            encoded.as_span()
+        )
+
+
 public function listen(
     address: enet.Address,
     peer_count: ptr_uint,
@@ -1277,6 +1571,8 @@ public function listen(
         session_events = vec.Vec[SessionEventRecord].create(),
         incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
+        incoming_lockstep_commands = vec.Vec[lockstep_runtime.IncomingCommandPacket].create(),
+        incoming_lockstep_checksums = vec.Vec[lockstep_runtime.IncomingChecksumPacket].create(),
         outbound_peer_snapshots = vec.Vec[PeerSnapshotState].create(),
         unknown_packet_count = 0,
         snapshot_budget_cursor = 0,
@@ -1346,6 +1642,8 @@ public function connect(
         session_events = vec.Vec[SessionEventRecord].create(),
         incoming_snapshots = vec.Vec[snapshot_runtime.IncomingSnapshotPacket].create(),
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
+        incoming_lockstep_commands = vec.Vec[lockstep_runtime.IncomingCommandPacket].create(),
+        incoming_lockstep_checksums = vec.Vec[lockstep_runtime.IncomingChecksumPacket].create(),
         unknown_packet_count = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
         inbound_snapshot_baseline = empty_snapshot_baseline()
@@ -1404,6 +1702,10 @@ function packet_kind(packet: ptr[enet.Packet]) -> Option[mp.PacketKind]:
             return Option[mp.PacketKind].some(value = mp.PacketKind.snapshot)
         if first == ubyte<-mp.PacketKind.rpc:
             return Option[mp.PacketKind].some(value = mp.PacketKind.rpc)
+        if first == ubyte<-mp.PacketKind.lockstep_commands:
+            return Option[mp.PacketKind].some(value = mp.PacketKind.lockstep_commands)
+        if first == ubyte<-mp.PacketKind.lockstep_checksum:
+            return Option[mp.PacketKind].some(value = mp.PacketKind.lockstep_checksum)
 
         return Option[mp.PacketKind].none
 
@@ -1434,6 +1736,8 @@ function dequeue_session_event(queue: ref[vec.Vec[SessionEventRecord]]) -> Optio
 function handle_received_packet(
     incoming_snapshots: ref[vec.Vec[snapshot_runtime.IncomingSnapshotPacket]],
     incoming_rpcs: ref[vec.Vec[rpc_runtime.IncomingRpcPacket]],
+    incoming_lockstep_commands: ref[vec.Vec[lockstep_runtime.IncomingCommandPacket]],
+    incoming_lockstep_checksums: ref[vec.Vec[lockstep_runtime.IncomingChecksumPacket]],
     inbound_snapshot_baseline: ref[snapshot_runtime.BaselineSet],
     unknown_packet_count: ref[ptr_uint],
     packet: ptr[enet.Packet],
@@ -1476,6 +1780,30 @@ function handle_received_packet(
                 payload
             )
             match rpc_status:
+                Result.failure:
+                    rpc_runtime.increment_unknown_count(unknown_packet_count)
+                Result.success:
+                    pass
+        mp.PacketKind.lockstep_commands:
+            let command_status = lockstep_runtime.enqueue_incoming_command(
+                incoming_lockstep_commands,
+                sender,
+                channel,
+                payload
+            )
+            match command_status:
+                Result.failure:
+                    rpc_runtime.increment_unknown_count(unknown_packet_count)
+                Result.success:
+                    pass
+        mp.PacketKind.lockstep_checksum:
+            let checksum_status = lockstep_runtime.enqueue_incoming_checksum(
+                incoming_lockstep_checksums,
+                sender,
+                channel,
+                payload
+            )
+            match checksum_status:
                 Result.failure:
                     rpc_runtime.increment_unknown_count(unknown_packet_count)
                 Result.success:
