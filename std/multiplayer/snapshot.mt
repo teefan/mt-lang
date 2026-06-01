@@ -29,6 +29,10 @@ public struct IncomingSnapshotPacket:
     channel: uint
     payload: bytes.Bytes
 
+public struct ParsedSnapshot:
+    header: protocol.SnapshotPacketHeader
+    body: span[ubyte]
+
 public struct PreparedSnapshot:
     signature: Snapshot
     header: protocol.SnapshotPacketHeader
@@ -121,18 +125,48 @@ public function apply_payload(
     apply(snapshot, baselines)
 
 
-public function apply_from_packet(payload: span[ubyte], baselines: ref[BaselineSet]) -> Result[bool, protocol.Error]:
+public function parse_incoming(payload: span[ubyte]) -> Result[ParsedSnapshot, protocol.Error]:
     let header = decode_header(payload) else as header_error:
-        return Result[bool, protocol.Error].failure(error = header_error)
+        return Result[ParsedSnapshot, protocol.Error].failure(error = header_error)
 
     unsafe:
         let body = span[ubyte](
             data = payload.data + snapshot_header_bytes,
             len = payload.len - snapshot_header_bytes
         )
-        apply_payload(header.tick, header.entity_count, body, baselines)
+        return Result[ParsedSnapshot, protocol.Error].success(value = ParsedSnapshot(
+            header = header,
+            body = body,
+        ))
 
-    return Result[bool, protocol.Error].success(value = true)
+
+public function enqueue_parsed(
+    queue: ref[vec.Vec[IncomingSnapshotPacket]],
+    sender: Option[protocol.ConnectionId],
+    channel: uint,
+    parsed: ParsedSnapshot,
+) -> void:
+    queue.push(IncomingSnapshotPacket(
+        header = parsed.header,
+        sender = sender,
+        channel = channel,
+        payload = bytes.Bytes.copy(parsed.body),
+    ))
+
+
+public function parse_and_enqueue(
+    queue: ref[vec.Vec[IncomingSnapshotPacket]],
+    baselines: ref[BaselineSet],
+    sender: Option[protocol.ConnectionId],
+    channel: uint,
+    payload: span[ubyte],
+) -> bool:
+    let parsed = parse_incoming(payload) else:
+        return false
+
+    enqueue_parsed(queue, sender, channel, parsed)
+    apply_payload(parsed.header.tick, parsed.header.entity_count, parsed.body, baselines)
+    return true
 
 
 public function encode_header(header: protocol.SnapshotPacketHeader) -> array[ubyte, 20]:
@@ -188,30 +222,6 @@ public function build_payload(header: protocol.SnapshotPacketHeader, payload: sp
     combined.append_array(encode_header(header))
     combined.append_span(payload)
     return bytes.Bytes.copy(combined.as_span())
-
-
-public function enqueue_incoming(
-    queue: ref[vec.Vec[IncomingSnapshotPacket]],
-    sender: Option[protocol.ConnectionId],
-    channel: uint,
-    payload: span[ubyte],
-) -> Result[bool, protocol.Error]:
-    let header = decode_header(payload) else as header_error:
-        return Result[bool, protocol.Error].failure(error = header_error)
-
-    unsafe:
-        let body = span[ubyte](
-            data = payload.data + snapshot_header_bytes,
-            len = payload.len - snapshot_header_bytes
-        )
-        queue.push(IncomingSnapshotPacket(
-            header = header,
-            sender = sender,
-            channel = channel,
-            payload = bytes.Bytes.copy(body)
-        ))
-
-    return Result[bool, protocol.Error].success(value = true)
 
 
 public function dequeue_incoming(queue: ref[vec.Vec[IncomingSnapshotPacket]]) -> Option[IncomingSnapshotPacket]:

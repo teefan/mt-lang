@@ -24,6 +24,7 @@ public struct Server:
     snapshot_budget_cursor: ptr_uint
     rpc_budget_cursor: ptr_uint
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    current_tick: mp.Tick
 
 public struct Client:
     host: ptr[enet.Host]?
@@ -39,6 +40,7 @@ public struct Client:
     unknown_packet_count: ptr_uint
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
+    current_tick: mp.Tick
 
 public enum SessionEvent: ubyte
     connected = 0
@@ -57,6 +59,15 @@ public struct PeerSnapshotState:
     connection: mp.ConnectionId
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     outbound_world_signature_baseline: snapshot_runtime.BaselineSet
+
+
+public struct FrameReport:
+    events_processed: ptr_uint
+    snapshots_applied: ptr_uint
+    snapshots_pending: ptr_uint
+    rpcs_pending: ptr_uint
+    lockstep_commands_pending: ptr_uint
+    lockstep_checksums_pending: ptr_uint
 
 extending Server:
     public mutable function world_ptr() -> ptr[mp.World]:
@@ -162,11 +173,11 @@ extending Server:
         this.world.release()
 
 
-    public function pending_snapshot_count() -> ptr_uint:
+    public mutable function pending_snapshot_count() -> ptr_uint:
         return this.incoming_snapshots.len()
 
 
-    public function pending_rpc_count() -> ptr_uint:
+    public mutable function pending_rpc_count() -> ptr_uint:
         return this.incoming_rpcs.len()
 
 
@@ -188,6 +199,47 @@ extending Server:
 
     public function inbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
         return this.inbound_snapshot_baseline
+
+
+    public mutable function set_current_tick(tick: mp.Tick) -> void:
+        this.current_tick = tick
+
+
+    public function current_tick() -> mp.Tick:
+        return this.current_tick
+
+
+    public function connection_stats_for(connection: mp.ConnectionId) -> Option[mp.ConnectionStats]:
+        let host = this.host else:
+            return Option[mp.ConnectionStats].none
+
+        let peer = find_verified_peer(host, connection) else:
+            return Option[mp.ConnectionStats].none
+
+        return Option[mp.ConnectionStats].some(value = read_peer_stats(peer))
+
+
+    public function connection_stats() -> vec.Vec[mp.ConnectionStats]:
+        var stats = vec.Vec[mp.ConnectionStats].create()
+        let host = this.host else:
+            return stats
+
+        each_verified_peer(host, unsafe: ptr[void]<-ptr_of(stats), collect_peer_stats)
+
+        return stats
+
+
+    public mutable function frame(timeout_ms: uint) -> Result[FrameReport, mp.Error]:
+        let events_processed = this.pump(timeout_ms)?
+        let snapshots_applied = this.process_incoming_snapshots()?
+        return Result[FrameReport, mp.Error].success(value = FrameReport(
+            events_processed = events_processed,
+            snapshots_applied = snapshots_applied,
+            snapshots_pending = this.pending_snapshot_count(),
+            rpcs_pending = this.pending_rpc_count(),
+            lockstep_commands_pending = this.pending_lockstep_command_count(),
+            lockstep_checksums_pending = this.pending_lockstep_checksum_count(),
+        ))
 
 
     public function connected_peer_count() -> ptr_uint:
@@ -262,11 +314,11 @@ extending Server:
         return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
 
 
-    public function pending_lockstep_command_count() -> ptr_uint:
+    public mutable function pending_lockstep_command_count() -> ptr_uint:
         return this.incoming_lockstep_commands.len()
 
 
-    public function pending_lockstep_checksum_count() -> ptr_uint:
+    public mutable function pending_lockstep_checksum_count() -> ptr_uint:
         return this.incoming_lockstep_checksums.len()
 
 
@@ -1024,6 +1076,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
+                                    this.current_tick,
                                     sender
                                 )
                             else:
@@ -1041,6 +1094,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
+                                    this.current_tick,
                                     sender
                                 )
                             else:
@@ -1062,6 +1116,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
+                                    this.current_tick,
                                     sender
                                 )
                             else:
@@ -1083,6 +1138,7 @@ extending Server:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
+                                    this.current_tick,
                                     sender
                                 )
                             else:
@@ -1251,6 +1307,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
+                                    this.current_tick,
                                     this.connection_id_value
                                 )
                             else:
@@ -1272,6 +1329,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
+                                    this.current_tick,
                                     this.connection_id_value
                                 )
                             else:
@@ -1293,6 +1351,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
+                                    this.current_tick,
                                     this.connection_id_value
                                 )
                             else:
@@ -1314,6 +1373,7 @@ extending Client:
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
+                                    this.current_tick,
                                     this.connection_id_value
                                 )
                             else:
@@ -1324,11 +1384,11 @@ extending Client:
                     pass
 
 
-    public function pending_snapshot_count() -> ptr_uint:
+    public mutable function pending_snapshot_count() -> ptr_uint:
         return this.incoming_snapshots.len()
 
 
-    public function pending_rpc_count() -> ptr_uint:
+    public mutable function pending_rpc_count() -> ptr_uint:
         return this.incoming_rpcs.len()
 
 
@@ -1346,6 +1406,34 @@ extending Client:
 
     public function inbound_snapshot_baseline_state() -> snapshot_runtime.BaselineSet:
         return this.inbound_snapshot_baseline
+
+
+    public mutable function set_current_tick(tick: mp.Tick) -> void:
+        this.current_tick = tick
+
+
+    public function current_tick() -> mp.Tick:
+        return this.current_tick
+
+
+    public function connection_stats() -> Option[mp.ConnectionStats]:
+        let peer = this.peer else:
+            return Option[mp.ConnectionStats].none
+
+        return Option[mp.ConnectionStats].some(value = read_peer_stats(peer))
+
+
+    public mutable function frame(timeout_ms: uint) -> Result[FrameReport, mp.Error]:
+        let events_processed = this.pump(timeout_ms)?
+        let snapshots_applied = this.process_incoming_snapshots()?
+        return Result[FrameReport, mp.Error].success(value = FrameReport(
+            events_processed = events_processed,
+            snapshots_applied = snapshots_applied,
+            snapshots_pending = this.pending_snapshot_count(),
+            rpcs_pending = this.pending_rpc_count(),
+            lockstep_commands_pending = this.pending_lockstep_command_count(),
+            lockstep_checksums_pending = this.pending_lockstep_checksum_count(),
+        ))
 
 
     public function is_connected() -> bool:
@@ -1385,11 +1473,11 @@ extending Client:
         return rpc_runtime.drain_incoming_typed_packets(ref_of(this.incoming_rpcs), table)
 
 
-    public function pending_lockstep_command_count() -> ptr_uint:
+    public mutable function pending_lockstep_command_count() -> ptr_uint:
         return this.incoming_lockstep_commands.len()
 
 
-    public function pending_lockstep_checksum_count() -> ptr_uint:
+    public mutable function pending_lockstep_checksum_count() -> ptr_uint:
         return this.incoming_lockstep_checksums.len()
 
 
@@ -1556,6 +1644,7 @@ public function listen(
         snapshot_budget_cursor = 0,
         rpc_budget_cursor = 0,
         inbound_snapshot_baseline = empty_snapshot_baseline(),
+        current_tick = 0,
     ))
 
 
@@ -1624,7 +1713,8 @@ public function connect(
         incoming_lockstep_checksums = vec.Vec[lockstep_runtime.IncomingChecksumPacket].create(),
         unknown_packet_count = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
-        inbound_snapshot_baseline = empty_snapshot_baseline()
+        inbound_snapshot_baseline = empty_snapshot_baseline(),
+        current_tick = 0,
     ))
 
 
@@ -1721,6 +1811,7 @@ function handle_received_packet(
     packet: ptr[enet.Packet],
     channel: uint,
     inferred_direction: mp.RpcDirection,
+    current_tick: mp.Tick,
     sender: Option[mp.ConnectionId],
 ) -> void:
     let kind = packet_kind(packet) else:
@@ -1730,38 +1821,30 @@ function handle_received_packet(
     let payload = packet_payload_span(packet)
     match kind:
         mp.PacketKind.snapshot:
-            let snapshot_status = snapshot_runtime.enqueue_incoming(
+            let accepted = snapshot_runtime.parse_and_enqueue(
                 incoming_snapshots,
+                inbound_snapshot_baseline,
                 sender,
                 channel,
-                payload
+                payload,
             )
-            match snapshot_status:
-                Result.failure:
-                    rpc_runtime.increment_unknown_count(unknown_packet_count)
-                Result.success:
-                    match snapshot_runtime.apply_from_packet(payload, inbound_snapshot_baseline):
-                        Result.success:
-                            pass
-                        Result.failure:
-                            pass
+            if not accepted:
+                rpc_runtime.increment_unknown_count(unknown_packet_count)
         mp.PacketKind.rpc:
             let rpc_direction = rpc_runtime.infer_inbound_rpc_direction(payload, inferred_direction) else:
                 rpc_runtime.increment_unknown_count(unknown_packet_count)
                 return
 
-            let rpc_status = rpc_runtime.enqueue_incoming(
+            let accepted = rpc_runtime.parse_and_enqueue(
                 incoming_rpcs,
                 sender,
                 channel,
                 rpc_direction,
-                payload
+                current_tick,
+                payload,
             )
-            match rpc_status:
-                Result.failure:
-                    rpc_runtime.increment_unknown_count(unknown_packet_count)
-                Result.success:
-                    pass
+            if not accepted:
+                rpc_runtime.increment_unknown_count(unknown_packet_count)
         mp.PacketKind.lockstep_commands:
             let command_status = lockstep_runtime.enqueue_incoming_command(
                 incoming_lockstep_commands,
@@ -1953,6 +2036,20 @@ function peer_connection_id(peer: ptr[enet.Peer]) -> mp.ConnectionId:
         return mp.ConnectionId<-read(peer).incomingPeerID
 
 
+function read_peer_stats(peer: ptr[enet.Peer]) -> mp.ConnectionStats:
+    unsafe:
+        let source = read(peer)
+        return mp.ConnectionStats(
+            latency_ms = source.roundTripTime,
+            packets_sent = ulong<-source.packetsSent,
+            packets_received = ulong<-source.packetsSent - source.packetsLost,
+            packets_lost = ulong<-source.packetsLost,
+            bytes_sent = ulong<-source.outgoingDataTotal,
+            bytes_received = ulong<-source.incomingDataTotal,
+            round_trip_time_ms = source.roundTripTime,
+        )
+
+
 function is_peer_verified(peer: ptr[enet.Peer]) -> bool:
     unsafe:
         return read(peer).eventData == 1
@@ -2051,6 +2148,12 @@ function push_verified_connection(user_data: ptr[void], peer: ptr[enet.Peer]) ->
 function push_weighted_verified_connection(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
     let out_connections = unsafe: ptr[vec.Vec[mp.WeightedConnection]]<-user_data
     unsafe: read(out_connections).push(mp.WeightedConnection(connection = peer_connection_id(peer), weight = 1))
+    return true
+
+
+function collect_peer_stats(user_data: ptr[void], peer: ptr[enet.Peer]) -> bool:
+    let out_stats = unsafe: ptr[vec.Vec[mp.ConnectionStats]]<-user_data
+    unsafe: read(out_stats).push(read_peer_stats(peer))
     return true
 
 
@@ -2189,19 +2292,15 @@ function apply_outbound_snapshot_payload_to_verified_peers(
     entity_count: ptr_uint,
     payload: span[ubyte],
 ) -> void:
-    var connections = vec.Vec[mp.ConnectionId].create()
-    defer connections.release()
-    append_verified_connections(host, ref_of(connections))
-
-    var index: ptr_uint = 0
-    while index < connections.len():
-        let connection_ptr = connections.get(index)
-        if connection_ptr == null:
-            break
-
-        let connection = unsafe: read(ptr[mp.ConnectionId]<-connection_ptr)
-        apply_outbound_snapshot_payload(peer_snapshots, connection, tick, entity_count, payload)
-        index += 1
+    unsafe:
+        let peers = read(host).peers
+        let peer_count = read(host).peerCount
+        var index: ptr_uint = 0
+        while index < peer_count:
+            let peer = peers + index
+            if read(peer).state == enet.PeerState.ENET_PEER_STATE_CONNECTED and is_peer_verified(peer):
+                apply_outbound_snapshot_payload(peer_snapshots, peer_connection_id(peer), tick, entity_count, payload)
+            index += 1
 
 
 function send_snapshots_budgeted_impl(

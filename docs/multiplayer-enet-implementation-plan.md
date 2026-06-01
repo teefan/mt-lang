@@ -64,6 +64,9 @@ End-to-end coverage is in `test/std/std_multiplayer_enet_lockstep_test.rb`.
 6. Budgeted, weighted, scheduled, and fair-dispatch send APIs.
 7. World-signature-aware dispatch with `dispatch_world_tick_fair(...)`, which encodes snapshot bytes from the current world state internally.
 8. Baseline tracking accessors for snapshot flow.
+9. Per-tick state plumbing: `Server.set_current_tick(tick)` / `Client.set_current_tick(tick)` lets the caller publish the host's authoritative tick, and inbound `RpcContext.tick` is populated from it on every received RPC.
+10. Per-connection telemetry: `Server.connection_stats_for(connection)`, `Server.connection_stats()`, and `Client.connection_stats()` populate `mp.ConnectionStats` directly from ENet peer RTT and counters.
+11. One-call frame: `Server.frame(timeout_ms)` and `Client.frame(timeout_ms)` combine `pump` and `process_incoming_snapshots` into a single call and return a `FrameReport` with pending queue counts.
 
 ## Current Intended Usage
 
@@ -138,7 +141,6 @@ Runtime:
 2. Lobby/matchmaking services.
 3. Full prediction/rollback netcode (explicit `std.multiplayer.rollback` primitives exist; higher-level automatic prediction is still caller-owned).
 4. Dedicated built-in relay or discovery services.
-5. Per-peer `ConnectionStats` exposure (the struct is defined in `std.multiplayer.protocol` but the ENet backend does not yet populate it; peer RTT is available but not wired through).
 
 ## Remaining Follow-On Work
 
@@ -239,12 +241,14 @@ Why this is the right current scope:
 - richer deadline and recovery policy should wait for a second RTS-style gameplay package that proves the contract, rather than baking one application's policy into stdlib
 
 8. Surface and housekeeping cleanups.
-Status: known, low priority.
-Items:
-- `Server.dispatch_tick_fair(...)` is a one-line wrapper around `dispatch_world_tick_fair(...)` and should be removed; the world-snapshot-aware version is the only one callers need
-- inbound snapshots currently decode the header twice: once when `enqueue_incoming` validates the packet, then again in `apply_from_packet`; the receiver path should decode once and reuse the parsed header
-- `RpcContext.tick` is always 0 on inbound RPCs; either populate it from the snapshot tick the server is currently emitting (when the connection has a known baseline) or document the field as caller-reserved
-- `ConnectionStats` is defined in `std.multiplayer.protocol` but the ENet backend never populates it; expose a per-`Server` accessor that fills the struct from ENet peer RTT/loss fields
-- `runtime_ref_count` in `std.multiplayer.enet` is a plain counter; safe in the current single-threaded runtime but should be re-evaluated before any concurrent host/client usage
+Status: addressed.
+Items resolved:
+- `Server.dispatch_tick_fair(...)` removed; `dispatch_world_tick_fair(...)` is the single dispatch entry point
+- inbound snapshots now decode the header once via `parse_and_enqueue`; `parse_and_enqueue` is the only path that adds to `incoming_snapshots`
+- `RpcContext.tick` is now populated from the host's `current_tick` (set by the caller via `Server.set_current_tick` / `Client.set_current_tick`); the receiver path passes the tick directly into `parse_and_enqueue`
+- `ConnectionStats` is now wired through: `Server.connection_stats_for(connection)` returns the per-peer stats and `Server.connection_stats()` returns a `Vec` of all verified peers' stats; `Client.connection_stats()` returns its single peer's stats
+- `apply_outbound_snapshot_payload_to_verified_peers` now walks verified peers in a single pass instead of building a temporary `Vec` of connections
+- `Server.frame(timeout_ms)` and `Client.frame(timeout_ms)` are now available as a single `pump + process_incoming_snapshots` entry point that returns a `FrameReport`
 
-These are intentionally not blocking: they do not change wire compatibility, do not affect the public surface area exposed through `std.multiplayer`, and do not break any covered behavior.
+Still intentionally deferred (not blocking):
+- `runtime_ref_count` in `std.multiplayer.enet` is a plain counter; safe in the current single-threaded runtime but should be re-evaluated before any concurrent host/client usage

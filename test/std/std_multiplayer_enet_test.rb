@@ -67,14 +67,20 @@ function expect_snapshot_roundtrip() -> int:
     var queue = vec.Vec[snapshot.IncomingSnapshotPacket].create()
     defer snapshot.release_queue(ref_of(queue))
 
+    var baselines = snapshot.BaselineSet(
+        last_applied_tick = 0,
+        last_applied_entity_count = 0,
+        last_applied_payload_bytes = 0,
+        last_applied_payload_hash = 0,
+    )
+
     var body = array[ubyte, 3](9, 8, 7)
     var framed = snapshot.build_payload(header, body)
     defer framed.release()
 
-    let queued = snapshot.enqueue_incoming(ref_of(queue), Option[protocol.ConnectionId].none, 5, framed.as_span()) else:
-        return 5
+    let queued = snapshot.parse_and_enqueue(ref_of(queue), ref_of(baselines), Option[protocol.ConnectionId].none, 5, framed.as_span())
     if not queued:
-        return 6
+        return 5
 
     let dequeued_snapshot = snapshot.dequeue_incoming(ref_of(queue)) else:
         return 7
@@ -118,25 +124,28 @@ function expect_rpc_roundtrip() -> int:
     var framed = rpc.build_payload(header, body)
     defer framed.release()
 
-    let queued = rpc.enqueue_incoming(
+    let queued = rpc.parse_and_enqueue(
         ref_of(queue),
         Option[protocol.ConnectionId].none,
         7,
         protocol.RpcDirection.client_to_server,
+        77,
         framed.as_span(),
-    ) else:
-        return 24
+    )
 
     if not queued:
-        return 25
+        return 24
 
     let dequeued_rpc = rpc.dequeue_incoming(ref_of(queue)) else:
-        return 26
+        return 25
     var packet = dequeued_rpc
     if packet.header.channel != 7:
         packet.release()
-        return 27
+        return 26
     if packet.header.direction != protocol.RpcDirection.client_to_server:
+        packet.release()
+        return 27
+    if packet.context.tick != 77:
         packet.release()
         return 28
 
@@ -166,19 +175,21 @@ function expect_rpc_invalid_direction_is_rejected() -> int:
         2,
     )
 
-    match rpc.enqueue_incoming(
+    let parsed = rpc.parse_incoming(invalid_payload) else:
+        return 0
+
+    let accepted = rpc.enqueue_parsed(
         ref_of(queue),
         Option[protocol.ConnectionId].none,
         7,
         protocol.RpcDirection.client_to_server,
-        invalid_payload,
-    ):
-        Result.success as payload:
-            if payload.value:
-                return 40
-            return 41
-        Result.failure as _:
-            return 0
+        0,
+        parsed,
+    )
+    if accepted:
+        return 40
+
+    return 0
 
 
 function expect_rpc_runtime_validation() -> int:
@@ -351,6 +362,15 @@ function expect_loopback_send_receive() -> int:
                         if client.peer == null or not client.protocol_ready():
                             return 57
 
+                        if server.current_tick() != 0:
+                            return 200
+                        if client.current_tick() != 0:
+                            return 201
+
+                        server.set_current_tick(77)
+                        if server.current_tick() != 77:
+                            return 202
+
                         let snapshot_header = protocol.SnapshotPacketHeader(tick = 91, baseline_tick = 90, entity_count = 1)
                         var snapshot_payload = array[ubyte, 3](5, 4, 3)
                         var snapshot_sent = false
@@ -431,12 +451,45 @@ function expect_loopback_send_receive() -> int:
                             return 78
                         if received_rpc.header.direction != protocol.RpcDirection.client_to_server:
                             return 79
+                        if received_rpc.context.tick != 77:
+                            return 210
 
                         let received_rpc_payload = received_rpc.payload.as_span()
                         if received_rpc_payload.len != 3:
                             return 80
                         if received_rpc_payload[0] != 5 or received_rpc_payload[1] != 4 or received_rpc_payload[2] != 3:
                             return 81
+
+                        let verified_connection = server.first_verified_connection() else:
+                            return 134
+
+                        match server.connection_stats_for(verified_connection):
+                            Option.some as stats_payload:
+                                let _stats_check = stats_payload.value
+                            Option.none:
+                                return 220
+
+                        match server.connection_stats_for(999999):
+                            Option.some as _:
+                                return 221
+                            Option.none:
+                                pass
+
+                        var server_stats = server.connection_stats()
+                        defer server_stats.release()
+                        if server_stats.len() != 1:
+                            return 222
+
+                        let _client_stats = client.connection_stats() else:
+                            return 223
+
+                        let _server_frame = server.frame(1) else:
+                            return 224
+
+                        let client_frame = client.frame(1) else:
+                            return 226
+                        if client_frame.snapshots_pending != 0:
+                            return 227
 
                         let server_snapshot_header = protocol.SnapshotPacketHeader(tick = 101, baseline_tick = 100, entity_count = 2)
                         let server_snapshot_send = server.broadcast_snapshot(2, protocol.TransferMode.reliable, server_snapshot_header, snapshot_payload) else:
@@ -455,9 +508,6 @@ function expect_loopback_send_receive() -> int:
                             Result.failure as send_error:
                                 if send_error.error.code != protocol.ErrorCode.invalid_argument:
                                     return 133
-
-                        let verified_connection = server.first_verified_connection() else:
-                            return 134
 
                         let targeted_snapshot_header = protocol.SnapshotPacketHeader(tick = 102, baseline_tick = 101, entity_count = 3)
                         let targeted_snapshot_send = server.send_snapshot_to(verified_connection, 3, protocol.TransferMode.reliable, targeted_snapshot_header, snapshot_payload) else:
