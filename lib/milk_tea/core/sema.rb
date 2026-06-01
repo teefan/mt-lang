@@ -4354,92 +4354,26 @@ module MilkTea
       end
 
       def check_multiplayer_state_descriptor_call(binding, arguments, scopes:)
-        raise_sema_error("state_descriptor does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("state_descriptor expects 0 arguments, got #{arguments.length}") unless arguments.empty?
-        raise_sema_error("state_descriptor requires exactly one type argument") unless binding.type_arguments.length == 1
-
-        state_type = binding.type_arguments.first
-        raise_sema_error("state_descriptor expects a concrete struct type") if state_type.is_a?(Types::StructInstance) || state_type.is_a?(Types::GenericStructDefinition)
-
-        struct_handle = struct_handle_for_type(state_type)
-        raise_sema_error("state_descriptor expects a concrete struct type") unless struct_handle
-        unless multiplayer_attribute_applied?(struct_handle, attribute_name: "replicated")
-          raise_sema_error("state_descriptor expects a @[std.multiplayer.replicated(...)] struct")
-        end
-
-        validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+        validate_multiplayer_state_hook_target!(binding, arguments, hook_name: "state_descriptor")
 
         binding.type.return_type
       end
 
       def check_multiplayer_state_wire_size_call(binding, arguments, scopes:)
-        raise_sema_error("state_wire_size does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("state_wire_size expects 0 arguments, got #{arguments.length}") unless arguments.empty?
-        raise_sema_error("state_wire_size requires exactly one type argument") unless binding.type_arguments.length == 1
-
-        state_type = binding.type_arguments.first
-        raise_sema_error("state_wire_size expects a concrete struct type") if state_type.is_a?(Types::StructInstance) || state_type.is_a?(Types::GenericStructDefinition)
-
-        struct_handle = struct_handle_for_type(state_type)
-        raise_sema_error("state_wire_size expects a concrete struct type") unless struct_handle
-        unless multiplayer_attribute_applied?(struct_handle, attribute_name: "replicated")
-          raise_sema_error("state_wire_size expects a @[std.multiplayer.replicated(...)] struct")
-        end
-
-        validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+        validate_multiplayer_state_hook_target!(binding, arguments, hook_name: "state_wire_size")
 
         binding.type.return_type
       end
 
       def check_multiplayer_rpc_descriptor_call(binding, arguments, scopes:)
-        raise_sema_error("rpc_descriptor does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("rpc_descriptor expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        target_expression = arguments.first.value
-        unless direct_callable_of_expression?(target_expression)
-          raise_sema_error("rpc_descriptor expects callable_of(name) as a direct argument")
-        end
-
-        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
-        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
-          raise_sema_error("rpc_descriptor expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
-        end
-
-        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
-        raise_sema_error("rpc_descriptor expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable") unless callable_kind == :function
-
-        validate_multiplayer_rpc_callable!(callable_binding)
+        validate_multiplayer_rpc_hook_target!(arguments, scopes:, hook_name: "rpc_descriptor")
 
         binding.type.return_type
       end
 
       def check_multiplayer_rpc_payload_size_call(binding, arguments, scopes:)
-        raise_sema_error("rpc_payload_size does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("rpc_payload_size expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        target_expression = arguments.first.value
-        unless direct_callable_of_expression?(target_expression)
-          raise_sema_error("rpc_payload_size expects callable_of(name) as a direct argument")
-        end
-
-        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
-        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
-          raise_sema_error("rpc_payload_size expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
-        end
-
-        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
-        raise_sema_error("rpc_payload_size expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable") unless callable_kind == :function
-
-        validate_multiplayer_rpc_callable!(callable_binding)
-
-        payload_params = callable_binding.type.params.drop(1)
-        unsupported = payload_params.find do |param|
-          multiplayer_typed_rpc_payload_type_error(param.type)
-        end
-        if unsupported
-          reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
-          raise_sema_error("rpc_payload_size does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}")
-        end
+        callable_binding = validate_multiplayer_rpc_hook_target!(arguments, scopes:, hook_name: "rpc_payload_size")
+        validate_multiplayer_typed_rpc_payload_params!(callable_binding, hook_name: "rpc_payload_size")
 
         binding.type.return_type
       end
@@ -4448,31 +4382,8 @@ module MilkTea
         raise_sema_error("dispatch_typed_payload does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("dispatch_typed_payload expects 3 arguments, got #{arguments.length}") unless arguments.length == 3
 
-        target_expression = arguments.first.value
-        unless direct_callable_of_expression?(target_expression)
-          raise_sema_error("dispatch_typed_payload expects callable_of(name) as first argument")
-        end
-
-        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
-        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
-          raise_sema_error("dispatch_typed_payload expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
-        end
-
-        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
-        unless callable_kind == :function
-          raise_sema_error("dispatch_typed_payload expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
-        end
-
-        validate_multiplayer_rpc_callable!(callable_binding)
-
-        payload_params = callable_binding.type.params.drop(1)
-        unsupported = payload_params.find do |param|
-          multiplayer_typed_rpc_payload_type_error(param.type)
-        end
-        if unsupported
-          reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
-          raise_sema_error("dispatch_typed_payload does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}")
-        end
+        callable_binding = validate_multiplayer_rpc_hook_target!(arguments.take(1), scopes:, hook_name: "dispatch_typed_payload", direct_argument_label: "first argument")
+        validate_multiplayer_typed_rpc_payload_params!(callable_binding, hook_name: "dispatch_typed_payload")
 
         context_type = multiplayer_rpc_context_type
         raise_sema_error("dispatch_typed_payload requires std.multiplayer.RpcContext support") unless context_type
@@ -4716,6 +4627,58 @@ module MilkTea
         resolved_attribute_applications_for_target(target).any? do |application|
           application.binding.name == attribute_name && application.binding.module_name == "std.multiplayer"
         end
+      end
+
+      def validate_multiplayer_state_hook_target!(binding, arguments, hook_name:)
+        raise_sema_error("#{hook_name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{hook_name} expects 0 arguments, got #{arguments.length}") unless arguments.empty?
+        raise_sema_error("#{hook_name} requires exactly one type argument") unless binding.type_arguments.length == 1
+
+        state_type = binding.type_arguments.first
+        raise_sema_error("#{hook_name} expects a concrete struct type") if state_type.is_a?(Types::StructInstance) || state_type.is_a?(Types::GenericStructDefinition)
+
+        struct_handle = struct_handle_for_type(state_type)
+        raise_sema_error("#{hook_name} expects a concrete struct type") unless struct_handle
+        unless multiplayer_attribute_applied?(struct_handle, attribute_name: "replicated")
+          raise_sema_error("#{hook_name} expects a @[std.multiplayer.replicated(...)] struct")
+        end
+
+        validate_multiplayer_state_descriptor_target!(state_type, struct_handle)
+        struct_handle
+      end
+
+      def validate_multiplayer_rpc_hook_target!(arguments, scopes:, hook_name:, direct_argument_label: "argument")
+        raise_sema_error("#{hook_name} does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{hook_name} expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        target_expression = arguments.first.value
+        unless direct_callable_of_expression?(target_expression)
+          raise_sema_error("#{hook_name} expects callable_of(name) as a direct #{direct_argument_label}")
+        end
+
+        callable_handle = evaluate_callable_of_call(target_expression.arguments, scopes:)
+        unless multiplayer_attribute_applied?(callable_handle, attribute_name: "rpc")
+          raise_sema_error("#{hook_name} expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        callable_kind, callable_binding, _receiver = resolve_callable(target_expression.arguments.first.value, scopes:)
+        unless callable_kind == :function
+          raise_sema_error("#{hook_name} expects callable_of(name) where name resolves to a top-level @[std.multiplayer.rpc(...)] callable")
+        end
+
+        validate_multiplayer_rpc_callable!(callable_binding)
+        callable_binding
+      end
+
+      def validate_multiplayer_typed_rpc_payload_params!(callable_binding, hook_name:)
+        payload_params = callable_binding.type.params.drop(1)
+        unsupported = payload_params.find do |param|
+          multiplayer_typed_rpc_payload_type_error(param.type)
+        end
+        return unless unsupported
+
+        reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
+        raise_sema_error("#{hook_name} does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}")
       end
 
       def same_attribute_binding?(left, right)

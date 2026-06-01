@@ -9185,18 +9185,11 @@ module MilkTea
           end
         when AST::MemberAccess
           if callee.receiver.is_a?(AST::Identifier) && @imports.key?(callee.receiver.name)
+            if (builtin_resolution = multiplayer_compile_time_builtin_member_resolution(callee))
+              return builtin_resolution
+            end
+
             imported_module = @imports.fetch(callee.receiver.name)
-            if multiplayer_root_import_call?(callee, "rpc_descriptor")
-              return [:compile_time_builtin, "rpc_descriptor", nil, multiplayer_rpc_descriptor_function_type]
-            end
-
-            if multiplayer_root_import_call?(callee, "rpc_payload_size")
-              return [:compile_time_builtin, "rpc_payload_size", nil, multiplayer_rpc_payload_size_function_type]
-            end
-
-            if imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
-              return [:compile_time_builtin, "rpc_dispatch_typed_payload", nil, multiplayer_rpc_typed_dispatch_function_type]
-            end
 
             if imported_module.functions.key?(callee.member)
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
@@ -9328,12 +9321,8 @@ module MilkTea
             return [:compile_time_builtin, "attribute_arg", nil, compile_time_builtin_specialization_function_type(callee)]
           end
 
-          if multiplayer_root_specialization_call?(callee, "state_descriptor")
-            return [:compile_time_builtin, "state_descriptor", nil, multiplayer_state_descriptor_function_type]
-          end
-
-          if multiplayer_root_specialization_call?(callee, "state_wire_size")
-            return [:compile_time_builtin, "state_wire_size", nil, multiplayer_state_wire_size_function_type]
+          if (builtin_resolution = multiplayer_compile_time_builtin_specialization_resolution(callee))
+            return builtin_resolution
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
@@ -10207,64 +10196,8 @@ module MilkTea
       end
 
       def lower_multiplayer_state_descriptor_call(expression, type:)
-        callee = expression.callee
-        raise LoweringError, "state_descriptor requires a specialized call" unless callee.is_a?(AST::Specialization)
-
-        struct_type = resolve_type_ref(callee.arguments.fetch(0).value)
-        struct_handle = struct_handle_for_type(struct_type) || raise(LoweringError, "state_descriptor requires a struct type")
-        analysis = analysis_for_module(struct_handle.struct_type.module_name)
-
-        with_analysis_context(analysis) do
-          replicated_binding = multiplayer_attribute_binding("replicated")
-          sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
-          sync_binding = multiplayer_attribute_binding("sync")
-          replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_descriptor requires a @[std.multiplayer.replicated(...)] struct")
-          replicated_arguments = replicated_application.argument_values
-          sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
-
-          sync_fields = struct_handle.declaration.fields.filter_map do |field_declaration|
-            field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
-            sync_application = find_attribute_application(field_handle, sync_binding)
-            next unless sync_application
-
-            sync_arguments = if sync_application.argument_values.empty?
-                               sync_defaults_application&.argument_values || raise(LoweringError, "state_descriptor sync marker field #{field_declaration.name} requires @[std.multiplayer.sync_defaults(...)] on the struct")
-                             else
-                               sync_application.argument_values
-                             end
-
-            {
-              name: field_declaration.name,
-              type: struct_handle.struct_type.field(field_declaration.name),
-              arguments: sync_arguments,
-            }
-          end
-
-          normalized_sync = nil
-          sync_fields.each do |field_info|
-            current_sync = {
-              mode: field_info.fetch(:arguments).fetch("mode"),
-              channel: field_info.fetch(:arguments).fetch("channel"),
-              rate_hz: field_info.fetch(:arguments).fetch("rate_hz"),
-              target: field_info.fetch(:arguments).fetch("target"),
-            }
-            normalized_sync ||= current_sync
-            next if normalized_sync == current_sync
-
-            raise LoweringError,
-                  "state_descriptor requires sync fields to share mode/channel/rate_hz/target in v1"
-          end
-
-          normalized_sync ||= {
-            mode: 1,
-            channel: 0,
-            rate_hz: 0,
-            target: 0,
-          }
-
-          wire_size = sync_fields.sum do |field_info|
-            multiplayer_typed_rpc_encoded_size(field_info.fetch(:type))
-          end
+        with_multiplayer_state_hook_context(expression, hook_name: "state_descriptor") do |struct_type, struct_handle|
+          metadata = collect_multiplayer_state_hook_metadata!(struct_type, struct_handle, hook_name: "state_descriptor")
 
           encode_full_binding = multiplayer_descriptor_hash("state_encode_full", struct_handle.struct_type.to_s)
           decode_full_binding = multiplayer_descriptor_hash("state_decode_full", struct_handle.struct_type.to_s)
@@ -10274,8 +10207,8 @@ module MilkTea
           schema_hash = multiplayer_descriptor_hash(
             "state",
             struct_handle.struct_type.to_s,
-            "authority=#{replicated_arguments.fetch("authority")}",
-            *sync_fields.flat_map do |field_info|
+            "authority=#{metadata.fetch(:replicated_arguments).fetch("authority")}",
+            *metadata.fetch(:sync_fields).flat_map do |field_info|
               [
                 "field=#{field_info.fetch(:name)}",
                 "type=#{multiplayer_schema_type_name(field_info.fetch(:type))}",
@@ -10291,83 +10224,44 @@ module MilkTea
             type:,
             fields: [
               IR::AggregateField.new(name: "name", value: lower_multiplayer_descriptor_value(struct_handle.struct_type.to_s, type.field("name"))),
-              IR::AggregateField.new(name: "authority", value: lower_multiplayer_descriptor_value(replicated_arguments.fetch("authority"), type.field("authority"))),
+              IR::AggregateField.new(name: "authority", value: lower_multiplayer_descriptor_value(metadata.fetch(:replicated_arguments).fetch("authority"), type.field("authority"))),
               IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
-              IR::AggregateField.new(name: "wire_size", value: lower_multiplayer_descriptor_value(wire_size, type.field("wire_size"))),
+              IR::AggregateField.new(name: "wire_size", value: lower_multiplayer_descriptor_value(metadata.fetch(:wire_size), type.field("wire_size"))),
               IR::AggregateField.new(name: "encode_full_binding", value: lower_multiplayer_descriptor_value(encode_full_binding, type.field("encode_full_binding"))),
               IR::AggregateField.new(name: "decode_full_binding", value: lower_multiplayer_descriptor_value(decode_full_binding, type.field("decode_full_binding"))),
               IR::AggregateField.new(name: "encode_delta_binding", value: lower_multiplayer_descriptor_value(encode_delta_binding, type.field("encode_delta_binding"))),
               IR::AggregateField.new(name: "apply_delta_binding", value: lower_multiplayer_descriptor_value(apply_delta_binding, type.field("apply_delta_binding"))),
-              IR::AggregateField.new(name: "sync_field_count", value: lower_multiplayer_descriptor_value(sync_fields.length, type.field("sync_field_count"))),
-              IR::AggregateField.new(name: "sync_mode", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:mode), type.field("sync_mode"))),
-              IR::AggregateField.new(name: "sync_channel", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:channel), type.field("sync_channel"))),
-              IR::AggregateField.new(name: "sync_rate_hz", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:rate_hz), type.field("sync_rate_hz"))),
-              IR::AggregateField.new(name: "sync_target", value: lower_multiplayer_descriptor_value(normalized_sync.fetch(:target), type.field("sync_target"))),
+              IR::AggregateField.new(name: "sync_field_count", value: lower_multiplayer_descriptor_value(metadata.fetch(:sync_fields).length, type.field("sync_field_count"))),
+              IR::AggregateField.new(name: "sync_mode", value: lower_multiplayer_descriptor_value(metadata.fetch(:normalized_sync).fetch(:mode), type.field("sync_mode"))),
+              IR::AggregateField.new(name: "sync_channel", value: lower_multiplayer_descriptor_value(metadata.fetch(:normalized_sync).fetch(:channel), type.field("sync_channel"))),
+              IR::AggregateField.new(name: "sync_rate_hz", value: lower_multiplayer_descriptor_value(metadata.fetch(:normalized_sync).fetch(:rate_hz), type.field("sync_rate_hz"))),
+              IR::AggregateField.new(name: "sync_target", value: lower_multiplayer_descriptor_value(metadata.fetch(:normalized_sync).fetch(:target), type.field("sync_target"))),
             ],
           )
         end
       end
 
       def lower_multiplayer_state_wire_size_call(expression, type:)
-        callee = expression.callee
-        raise LoweringError, "state_wire_size requires a specialized call" unless callee.is_a?(AST::Specialization)
-
-        struct_type = resolve_type_ref(callee.arguments.fetch(0).value)
-        struct_handle = struct_handle_for_type(struct_type) || raise(LoweringError, "state_wire_size requires a struct type")
-        analysis = analysis_for_module(struct_handle.struct_type.module_name)
-
-        with_analysis_context(analysis) do
-          replicated_binding = multiplayer_attribute_binding("replicated")
-          sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
-          sync_binding = multiplayer_attribute_binding("sync")
-          find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "state_wire_size requires a @[std.multiplayer.replicated(...)] struct")
-          sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
-
-          payload_size = 0
-          struct_handle.declaration.fields.each do |field_declaration|
-            field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
-            sync_application = find_attribute_application(field_handle, sync_binding)
-            next unless sync_application
-
-            if sync_application.argument_values.empty? && !sync_defaults_application
-              raise LoweringError, "state_wire_size sync marker field #{field_declaration.name} requires @[std.multiplayer.sync_defaults(...)] on the struct"
-            end
-
-            payload_size += multiplayer_typed_rpc_encoded_size(struct_handle.struct_type.field(field_declaration.name))
-          end
-
-          return IR::IntegerLiteral.new(value: payload_size, type:)
+        with_multiplayer_state_hook_context(expression, hook_name: "state_wire_size") do |struct_type, struct_handle|
+          metadata = collect_multiplayer_state_hook_metadata!(struct_type, struct_handle, hook_name: "state_wire_size")
+          return IR::IntegerLiteral.new(value: metadata.fetch(:wire_size), type:)
         end
       end
 
       def lower_multiplayer_rpc_descriptor_call(expression, type:)
-        target_expression = expression.arguments.fetch(0).value
-        raise LoweringError, "rpc_descriptor expects callable_of(name)" unless target_expression.is_a?(AST::Call)
-
-        callable_expression = target_expression.arguments.fetch(0).value
-        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "rpc_descriptor expects a top-level callable")
-        analysis = analysis_for_module(rpc_target.fetch(:module_name))
-
-        with_analysis_context(analysis) do
-          rpc_binding = multiplayer_attribute_binding("rpc")
-          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), rpc_target.fetch(:binding).ast)
-          rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "rpc_descriptor expects a @[std.multiplayer.rpc(...)] callable")
-          rpc_arguments = rpc_application.argument_values
-          payload_params = rpc_target.fetch(:binding).type.params.drop(1)
-          payload_size = payload_params.sum do |param|
-            multiplayer_typed_rpc_encoded_size(param.type)
-          end
+        with_multiplayer_rpc_hook_context(expression.arguments.fetch(0).value, hook_name: "rpc_descriptor") do |rpc_target|
+          metadata = collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name: "rpc_descriptor")
           decode_payload_binding = multiplayer_descriptor_hash("rpc_decode_payload", rpc_target.fetch(:qualified_name))
           dispatch_typed_binding = multiplayer_descriptor_hash("rpc_dispatch_typed", rpc_target.fetch(:qualified_name))
 
           schema_hash = multiplayer_descriptor_hash(
             "rpc",
             rpc_target.fetch(:qualified_name),
-            "direction=#{rpc_arguments.fetch("direction")}",
-            "mode=#{rpc_arguments.fetch("mode")}",
-            "channel=#{rpc_arguments.fetch("channel")}",
-            "require_owner=#{rpc_arguments.fetch("require_owner")}",
-            *payload_params.flat_map do |param|
+            "direction=#{metadata.fetch(:rpc_arguments).fetch("direction")}",
+            "mode=#{metadata.fetch(:rpc_arguments).fetch("mode")}",
+            "channel=#{metadata.fetch(:rpc_arguments).fetch("channel")}",
+            "require_owner=#{metadata.fetch(:rpc_arguments).fetch("require_owner")}",
+            *metadata.fetch(:payload_params).flat_map do |param|
               ["param=#{param.name}", "type=#{multiplayer_schema_type_name(param.type)}"]
             end,
           )
@@ -10376,12 +10270,12 @@ module MilkTea
             type:,
             fields: [
               IR::AggregateField.new(name: "name", value: lower_multiplayer_descriptor_value(rpc_target.fetch(:qualified_name), type.field("name"))),
-              IR::AggregateField.new(name: "direction", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("direction"), type.field("direction"))),
-              IR::AggregateField.new(name: "mode", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("mode"), type.field("mode"))),
-              IR::AggregateField.new(name: "channel", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("channel"), type.field("channel"))),
-              IR::AggregateField.new(name: "require_owner", value: lower_multiplayer_descriptor_value(rpc_arguments.fetch("require_owner"), type.field("require_owner"))),
+              IR::AggregateField.new(name: "direction", value: lower_multiplayer_descriptor_value(metadata.fetch(:rpc_arguments).fetch("direction"), type.field("direction"))),
+              IR::AggregateField.new(name: "mode", value: lower_multiplayer_descriptor_value(metadata.fetch(:rpc_arguments).fetch("mode"), type.field("mode"))),
+              IR::AggregateField.new(name: "channel", value: lower_multiplayer_descriptor_value(metadata.fetch(:rpc_arguments).fetch("channel"), type.field("channel"))),
+              IR::AggregateField.new(name: "require_owner", value: lower_multiplayer_descriptor_value(metadata.fetch(:rpc_arguments).fetch("require_owner"), type.field("require_owner"))),
               IR::AggregateField.new(name: "schema_hash", value: lower_multiplayer_descriptor_value(schema_hash, type.field("schema_hash"))),
-              IR::AggregateField.new(name: "payload_size", value: lower_multiplayer_descriptor_value(payload_size, type.field("payload_size"))),
+              IR::AggregateField.new(name: "payload_size", value: lower_multiplayer_descriptor_value(metadata.fetch(:payload_size), type.field("payload_size"))),
               IR::AggregateField.new(name: "decode_payload_binding", value: lower_multiplayer_descriptor_value(decode_payload_binding, type.field("decode_payload_binding"))),
               IR::AggregateField.new(name: "dispatch_typed_binding", value: lower_multiplayer_descriptor_value(dispatch_typed_binding, type.field("dispatch_typed_binding"))),
             ],
@@ -10390,23 +10284,9 @@ module MilkTea
       end
 
       def lower_multiplayer_rpc_payload_size_call(expression, type:)
-        target_expression = expression.arguments.fetch(0).value
-        raise LoweringError, "rpc_payload_size expects callable_of(name)" unless target_expression.is_a?(AST::Call)
-
-        callable_expression = target_expression.arguments.fetch(0).value
-        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "rpc_payload_size expects a top-level callable")
-        analysis = analysis_for_module(rpc_target.fetch(:module_name))
-
-        with_analysis_context(analysis) do
-          rpc_binding = multiplayer_attribute_binding("rpc")
-          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), rpc_target.fetch(:binding).ast)
-          find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "rpc_payload_size expects a @[std.multiplayer.rpc(...)] callable")
-
-          payload_size = rpc_target.fetch(:binding).type.params.drop(1).sum do |param|
-            multiplayer_typed_rpc_encoded_size(param.type)
-          end
-
-          return IR::IntegerLiteral.new(value: payload_size, type:)
+        with_multiplayer_rpc_hook_context(expression.arguments.fetch(0).value, hook_name: "rpc_payload_size") do |rpc_target|
+          metadata = collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name: "rpc_payload_size")
+          return IR::IntegerLiteral.new(value: metadata.fetch(:payload_size), type:)
         end
       end
 
@@ -10415,11 +10295,11 @@ module MilkTea
           raise LoweringError, "dispatch_typed_payload expects positional arguments: callable_of(name), context, payload"
         end
 
-        target_expression = expression.arguments.fetch(0).value
-        raise LoweringError, "dispatch_typed_payload expects callable_of(name) as first argument" unless target_expression.is_a?(AST::Call)
-
-        callable_expression = target_expression.arguments.fetch(0).value
-        rpc_target = resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "dispatch_typed_payload expects a top-level callable")
+        rpc_target = resolve_multiplayer_rpc_hook_target!(
+          expression.arguments.fetch(0).value,
+          hook_name: "dispatch_typed_payload",
+          direct_argument_message: "dispatch_typed_payload expects callable_of(name) as first argument",
+        )
 
         helper_c_name = ensure_multiplayer_rpc_typed_dispatch_helper(rpc_target)
         helper_type = multiplayer_rpc_typed_dispatch_function_type
@@ -10441,21 +10321,10 @@ module MilkTea
 
         helper_c_name = with_analysis_context(rpc_analysis) do
           function_binding = rpc_target.fetch(:binding)
-          rpc_binding = multiplayer_attribute_binding("rpc")
-          callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), function_binding.ast)
-          rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "dispatch_typed_payload expects a @[std.multiplayer.rpc(...)] callable")
-          rpc_arguments = rpc_application.argument_values
-          payload_params = function_binding.type.params.drop(1)
-          unsupported = payload_params.find do |param|
-            multiplayer_typed_rpc_payload_type_error(param.type)
-          end
-          if unsupported
-            reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
-            raise LoweringError,
-                  "dispatch_typed_payload does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}"
-          end
-
-          payload_size = payload_params.sum { |param| multiplayer_typed_rpc_encoded_size(param.type) }
+          metadata = collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name: "dispatch_typed_payload", validate_payload_types: true)
+          rpc_arguments = metadata.fetch(:rpc_arguments)
+          payload_params = metadata.fetch(:payload_params)
+          payload_size = metadata.fetch(:payload_size)
 
           helper_type = multiplayer_rpc_typed_dispatch_function_type
           result_type = helper_type.return_type
@@ -10825,6 +10694,146 @@ module MilkTea
         else
           nil
         end
+      end
+
+      def multiplayer_compile_time_builtin_member_resolution(callee)
+        imported_module = @imports.fetch(callee.receiver.name)
+        if imported_module.name == "std.multiplayer"
+          case callee.member
+          when "rpc_descriptor"
+            return [:compile_time_builtin, "rpc_descriptor", nil, multiplayer_rpc_descriptor_function_type]
+          when "rpc_payload_size"
+            return [:compile_time_builtin, "rpc_payload_size", nil, multiplayer_rpc_payload_size_function_type]
+          end
+        end
+
+        return unless imported_module.name == "std.multiplayer.rpc" && callee.member == "dispatch_typed_payload"
+
+        [:compile_time_builtin, "rpc_dispatch_typed_payload", nil, multiplayer_rpc_typed_dispatch_function_type]
+      end
+
+      def multiplayer_compile_time_builtin_specialization_resolution(callee)
+        return [:compile_time_builtin, "state_descriptor", nil, multiplayer_state_descriptor_function_type] if multiplayer_root_specialization_call?(callee, "state_descriptor")
+        return [:compile_time_builtin, "state_wire_size", nil, multiplayer_state_wire_size_function_type] if multiplayer_root_specialization_call?(callee, "state_wire_size")
+
+        nil
+      end
+
+      def with_multiplayer_state_hook_context(expression, hook_name:)
+        state_type, struct_handle = resolve_multiplayer_state_hook_target!(expression, hook_name:)
+        analysis = analysis_for_module(struct_handle.struct_type.module_name)
+        with_analysis_context(analysis) do
+          yield state_type, struct_handle
+        end
+      end
+
+      def resolve_multiplayer_state_hook_target!(expression, hook_name:)
+        callee = expression.callee
+        raise LoweringError, "#{hook_name} requires a specialized call" unless callee.is_a?(AST::Specialization)
+
+        state_type = resolve_type_ref(callee.arguments.fetch(0).value)
+        struct_handle = struct_handle_for_type(state_type) || raise(LoweringError, "#{hook_name} requires a struct type")
+        [state_type, struct_handle]
+      end
+
+      def collect_multiplayer_state_hook_metadata!(state_type, struct_handle, hook_name:)
+        replicated_binding = multiplayer_attribute_binding("replicated")
+        sync_defaults_binding = multiplayer_attribute_binding("sync_defaults")
+        sync_binding = multiplayer_attribute_binding("sync")
+        replicated_application = find_attribute_application(struct_handle, replicated_binding) || raise(LoweringError, "#{hook_name} requires a @[std.multiplayer.replicated(...)] struct")
+        sync_defaults_application = find_attribute_application(struct_handle, sync_defaults_binding)
+
+        sync_fields = struct_handle.declaration.fields.filter_map do |field_declaration|
+          field_handle = Types::FieldHandle.new(struct_handle, field_declaration.name, field_declaration)
+          sync_application = find_attribute_application(field_handle, sync_binding)
+          next unless sync_application
+
+          sync_arguments = if sync_application.argument_values.empty?
+                             sync_defaults_application&.argument_values || raise(LoweringError, "#{hook_name} sync marker field #{field_declaration.name} requires @[std.multiplayer.sync_defaults(...)] on the struct")
+                           else
+                             sync_application.argument_values
+                           end
+
+          {
+            name: field_declaration.name,
+            type: state_type.field(field_declaration.name),
+            arguments: sync_arguments,
+          }
+        end
+
+        {
+          replicated_arguments: replicated_application.argument_values,
+          sync_fields:,
+          normalized_sync: normalize_multiplayer_sync_fields!(sync_fields, hook_name:),
+          wire_size: sync_fields.sum { |field_info| multiplayer_typed_rpc_encoded_size(field_info.fetch(:type)) },
+        }
+      end
+
+      def normalize_multiplayer_sync_fields!(sync_fields, hook_name:)
+        normalized_sync = nil
+        sync_fields.each do |field_info|
+          current_sync = {
+            mode: field_info.fetch(:arguments).fetch("mode"),
+            channel: field_info.fetch(:arguments).fetch("channel"),
+            rate_hz: field_info.fetch(:arguments).fetch("rate_hz"),
+            target: field_info.fetch(:arguments).fetch("target"),
+          }
+          normalized_sync ||= current_sync
+          next if normalized_sync == current_sync
+
+          raise LoweringError,
+                "#{hook_name} requires sync fields to share mode/channel/rate_hz/target in v1"
+        end
+
+        normalized_sync || {
+          mode: 1,
+          channel: 0,
+          rate_hz: 0,
+          target: 0,
+        }
+      end
+
+      def with_multiplayer_rpc_hook_context(target_expression, hook_name:)
+        rpc_target = resolve_multiplayer_rpc_hook_target!(target_expression, hook_name:)
+        analysis = analysis_for_module(rpc_target.fetch(:module_name))
+        with_analysis_context(analysis) do
+          yield rpc_target
+        end
+      end
+
+      def resolve_multiplayer_rpc_hook_target!(target_expression, hook_name:, direct_argument_message: nil)
+        direct_argument_message ||= "#{hook_name} expects callable_of(name)"
+        unless target_expression.is_a?(AST::Call) && target_expression.callee.is_a?(AST::Identifier) && target_expression.callee.name == "callable_of"
+          raise LoweringError, direct_argument_message
+        end
+
+        callable_expression = target_expression.arguments.fetch(0).value
+        resolve_multiplayer_rpc_target(callable_expression) || raise(LoweringError, "#{hook_name} expects a top-level callable")
+      end
+
+      def collect_multiplayer_rpc_hook_metadata!(rpc_target, hook_name:, validate_payload_types: false)
+        rpc_binding = multiplayer_attribute_binding("rpc")
+        callable_handle = Types::CallableHandle.new(rpc_target.fetch(:qualified_name), rpc_target.fetch(:binding).ast)
+        rpc_application = find_attribute_application(callable_handle, rpc_binding) || raise(LoweringError, "#{hook_name} expects a @[std.multiplayer.rpc(...)] callable")
+        payload_params = rpc_target.fetch(:binding).type.params.drop(1)
+        validate_multiplayer_typed_rpc_payload_params!(payload_params, hook_name:) if validate_payload_types
+
+        {
+          rpc_arguments: rpc_application.argument_values,
+          payload_params:,
+          payload_size: payload_params.sum { |param| multiplayer_typed_rpc_encoded_size(param.type) },
+        }
+      end
+
+      def validate_multiplayer_typed_rpc_payload_params!(payload_params, hook_name:)
+        unsupported = payload_params.find do |param|
+          multiplayer_typed_rpc_payload_type_error(param.type)
+        end
+        return unless unsupported
+
+        reason = multiplayer_typed_rpc_payload_type_error(unsupported.type)
+        raise LoweringError,
+              "#{hook_name} does not support payload parameter #{unsupported.name} of type #{unsupported.type}: #{reason}"
       end
 
       def multiplayer_attribute_binding(name)
