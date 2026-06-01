@@ -60,6 +60,7 @@ Exports include:
 
 - ids and enums (`ConnectionId`, `EntityId`, `Authority`, `TransferMode`, `RpcDirection`, ...)
 - core types (`Config`, `Error`, `Registry`, `World`, descriptor aliases)
+- ergonomic binding builder (`BindingsBuilder.create()`, `bind_state[T](...)`, `bind_rpc(...)`, `bind_typed_rpc(...)`)
 - attributes (`replicated`, `sync_defaults`, `sync`, `rpc`)
 - hook surface (`state_descriptor`, `rpc_descriptor`, `state_wire_size`, `rpc_payload_size`)
 
@@ -74,6 +75,8 @@ Implemented API highlights:
 - `freeze()`
 - `protocol_hash()`
 - descriptor binding checks (`expected_state_*`, `expected_rpc_*`)
+
+For gameplay code that does not want to wire descriptors manually, prefer `std.multiplayer.BindingsBuilder` plus `bind_state`, `bind_rpc`, and `bind_typed_rpc`, then pass `builder.registry` and `builder.typed_rpcs` into the backend/session setup that needs them.
 
 ### `std.multiplayer.world`
 
@@ -98,6 +101,7 @@ Implemented API highlights:
 - `RpcDispatchTable.create()`, `register_route(...)`, `dispatch(...)`
 - `dispatch_with_routes(...)`
 - `dispatch_typed_payload(callable_of(...), context, payload)` compiler-lowered path
+- shared typed inbound queue drain helper used by ENet and ICE session wrappers
 - `encode_header(...)`, `decode_header(...)`, `build_payload(...)`
 - incoming queue helpers
 
@@ -147,10 +151,10 @@ Implemented capabilities include:
 - host/client setup (`listen`, `connect`, localhost helpers)
 - protocol verification handshake
 - event pump/flush/release lifecycle
-- snapshot and RPC incoming queue draining (`process_incoming_snapshots`, `process_incoming_rpcs_typed`)
+- snapshot and RPC incoming queue draining (`process_incoming_snapshots`, `process_incoming_rpcs_typed`) backed by shared world/RPC queue-drain utilities
 - explicit send helpers (`send_snapshot_to`, `send_rpc_to`, `broadcast_snapshot`, `broadcast_rpc`)
 - fair/weighted/budgeted scheduling helpers
-- world-signature-aware tick dispatch (`dispatch_world_tick_fair`)
+- world-signature-aware tick dispatch (`dispatch_world_tick_fair`, which encodes snapshot bytes from the current world state internally)
 
 ## Behavioral Boundaries (Current)
 

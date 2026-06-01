@@ -178,6 +178,16 @@ return Result[Output, Error].success(value= lowered)
 - The enclosing function or proc must return `Result[_, E]` with the same error type `E`.
 - `let _ = expr else:` is still useful when you need an explicit `else` block or `else as error:` binding.
 
+Callable and `ref[...]` rules:
+
+- Plain stored `ref[T]` values are rejected in constants, module variables, struct or union fields, and nested local storage such as arrays or other generic containers.
+- Ordinary local bindings may still hold a direct `ref[T]` value, for example `let handle = ref_of(counter)`.
+- `fn(...)` and `proc(...)` parameter types may use `ref[...]` directly in parameter position.
+- Stored callable values may use `ref[...]` only in direct callable parameter positions. This includes `fn(...)` values and `proc(...)` closure values stored in locals, struct fields, and generic containers such as `array[...]`.
+- Stored callable values may not use `ref[...]` in return types.
+- Stored callable values may not nest `ref[...]` anywhere except direct callable parameter positions.
+- External functions still cannot take `ref[...]` parameters, and ordinary functions still cannot return `ref[...]`.
+
 ## 5. Data Declarations
 
 Examples:

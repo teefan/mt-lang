@@ -3048,11 +3048,19 @@ module MilkTea
     end
 
     def checked_array_index_helper_name(type)
+      return "mt_checked_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && callable_container_element_type?(array_element_type(type))
+
       "mt_checked_index_#{sanitize_identifier(type.to_s)}"
     end
 
     def checked_span_index_helper_name(type)
+      return "mt_checked_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if callable_container_element_type?(type.element_type)
+
       "mt_checked_span_index_#{sanitize_identifier(type.to_s)}"
+    end
+
+    def callable_container_element_type?(type)
+      type.is_a?(Types::Function) || type.is_a?(Types::Proc)
     end
 
     def wrap_member_receiver(expression)

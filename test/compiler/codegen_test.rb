@@ -224,6 +224,82 @@ class MilkTeaCodegenTest < Minitest::Test
     assert_match(/\.channel = 2/, generated)
   end
 
+  def test_generate_c_for_multiplayer_hook_forms_stay_aligned_between_local_and_imported_targets
+    source = <<~MT
+      # module demo.multiplayer_hook_alignment_codegen
+
+      import std.multiplayer as mp
+      import std.multiplayer.rpc as rpc
+      import demo.schema as schema
+
+      @[mp.replicated(authority = mp.Authority.server)]
+      struct LocalState:
+          @[mp.sync(mode = mp.TransferMode.unreliable_ordered, channel = 3, rate_hz = 20, target = mp.SyncTarget.observers)]
+          hp: int
+
+      @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 4, require_owner = false)]
+      function submit_local(context: mp.RpcContext, axis: short) -> void:
+          return
+
+      function main() -> int:
+          let local_state_desc = mp.state_descriptor[LocalState]()
+          let imported_state_desc = mp.state_descriptor[schema.RemoteState]()
+          let local_state_bytes = mp.state_wire_size[LocalState]()
+          let imported_state_bytes = mp.state_wire_size[schema.RemoteState]()
+          let local_rpc_desc = mp.rpc_descriptor(callable_of(submit_local))
+          let imported_rpc_desc = mp.rpc_descriptor(callable_of(schema.submit_remote))
+          let local_rpc_bytes = mp.rpc_payload_size(callable_of(submit_local))
+          let imported_rpc_bytes = mp.rpc_payload_size(callable_of(schema.submit_remote))
+
+          var local_payload = array[ubyte, 2](0, 9)
+          var imported_payload = array[ubyte, 2](0, 7)
+          let context = mp.RpcContext(sender = Option[mp.ConnectionId].none, tick = 9)
+
+          let local_dispatched = rpc.dispatch_typed_payload(callable_of(submit_local), context, local_payload) else:
+              return 1
+          let imported_dispatched = rpc.dispatch_typed_payload(callable_of(schema.submit_remote), context, imported_payload) else:
+              return 2
+
+          if not local_dispatched or not imported_dispatched:
+              return 3
+          if local_state_desc.sync_field_count != 1 or imported_state_desc.sync_field_count != 1:
+              return 4
+          if local_state_bytes != 4 or imported_state_bytes != 4:
+              return 5
+          if local_rpc_desc.channel != 4 or imported_rpc_desc.channel != 6:
+              return 6
+          if local_rpc_bytes != 2 or imported_rpc_bytes != 2:
+              return 7
+          return 0
+    MT
+
+    imported_sources = {
+      "demo/schema.mt" => <<~MT,
+        # module demo.schema
+
+        import std.multiplayer as net
+
+        @[net.replicated(authority = net.Authority.server)]
+        public struct RemoteState:
+            @[net.sync(mode = net.TransferMode.unreliable_ordered, channel = 5, rate_hz = 30, target = net.SyncTarget.observers)]
+            hp: int
+
+        @[net.rpc(direction = net.RpcDirection.client_to_server, mode = net.TransferMode.reliable, channel = 6, require_owner = false)]
+        public function submit_remote(context: net.RpcContext, axis: short) -> void:
+            return
+      MT
+    }
+
+    generated = generate_c_from_program_source(source, imported_sources)
+
+    assert_includes generated, '"demo.multiplayer_hook_alignment_codegen.LocalState"'
+    assert_includes generated, '"demo.schema.RemoteState"'
+    assert_includes generated, '"demo.multiplayer_hook_alignment_codegen.submit_local"'
+    assert_includes generated, '"demo.schema.submit_remote"'
+    assert_match(/submit_local_typed_dispatch_0/, generated)
+    assert_match(/submit_remote_typed_dispatch_1/, generated)
+  end
+
   def test_generate_c_for_multiplayer_typed_rpc_dispatch_helper
     source = <<~MT
       # module demo.multiplayer_typed_dispatch_codegen
@@ -5701,7 +5777,7 @@ function main() -> int:
 
     assert_match(/float \(\*callback\)\(float value\);/, generated)
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\)/, generated)
-    assert_match(/int32_t left = \(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\(1\);/, generated)
+    assert_match(/int32_t left = \(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(1\);/, generated)
     assert_match(/float right = callback\(1\.0f\);/, generated)
   end
 
@@ -5737,7 +5813,74 @@ public function times_two(value: int) -> int:
 
     assert_match(/int32_t \(\*callbacks\[1\]\)\(int32_t value\) = \{ std_ease_times_two \};/, generated)
     assert_match(/\.callback = std_ease_times_two/, generated)
-    assert_match(/return \(\*mt_checked_index_array_fn_1\(&callbacks, 0\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+    assert_match(/return \(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(3\) \+ entry\.callback\(4\);/, generated)
+  end
+
+  def test_generate_c_for_stored_callable_values_with_ref_parameters
+    source = <<~MT
+
+# module demo.ref_callable_values
+
+struct Counter:
+    value: int
+
+struct Entry:
+    callback: fn(arg0: ref[Counter]) -> bool
+
+function increment(counter: ref[Counter]) -> bool:
+    counter.value += 1
+    return true
+
+function main() -> int:
+    var counter = Counter(value = 0)
+    let entry = Entry(callback = increment)
+    let callbacks = array[fn(arg0: ref[Counter]) -> bool, 1](entry.callback)
+    if not callbacks[0](ref_of(counter)):
+        return 1
+    return counter.value
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/bool \(\*callback\)\(demo_ref_callable_values_Counter \*arg0\);/, generated)
+    assert_match(/bool \(\*callbacks\[1\]\)\(demo_ref_callable_values_Counter \*arg0\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_.*_1\(&callbacks, 0\)\)\(&counter\)/, generated)
+  end
+
+  def test_generate_c_for_same_length_function_arrays_with_distinct_signatures
+    source = <<~MT
+
+# module demo.same_length_fn_arrays
+
+struct Counter:
+    value: int
+
+function plus_three(value: int) -> int:
+    return value + 3
+
+function increment(counter: ref[Counter]) -> bool:
+    counter.value += 1
+    return true
+
+function main() -> int:
+    var counter = Counter(value = 0)
+    let callbacks = array[fn(value: int) -> int, 2](plus_three, plus_three)
+    let ref_callbacks = array[fn(arg0: ref[Counter]) -> bool, 2](increment, increment)
+    if callbacks[0](1) != 4:
+        return 1
+    if not ref_callbacks[0](ref_of(counter)):
+        return 2
+    return counter.value
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/static inline int32_t \(\*\*mt_checked_index_array_int32_t_value_int32_t_value_2\(/, generated)
+    assert_match(/static inline bool \(\*\*mt_checked_index_array_bool_value_demo_same_length_fn_arrays_Counter_arg0_2\(/, generated)
+    assert_match(/\(\*mt_checked_index_array_int32_t_value_int32_t_value_2\(&callbacks, 0\)\)\(1\)/, generated)
+    assert_match(/\(\*mt_checked_index_array_bool_value_demo_same_length_fn_arrays_Counter_arg0_2\(&ref_callbacks, 0\)\)\(&counter\)/, generated)
   end
 
   def test_generate_c_for_proc_closure_capture_and_param_calls
@@ -5896,6 +6039,39 @@ function main() -> int:
     assert_match(/__mt_proc_assign_\d+\.retain\(__mt_proc_assign_\d+\.env\)/, generated)
     assert_match(/if \(h\.callback\.invoke\)/, generated)
     assert_match(/h\.callback\.release\(h\.callback\.env\)/, generated)
+  end
+
+  def test_generate_c_for_stored_proc_closure_values_with_ref_parameters
+    source = <<~MT
+
+# module demo.proc_ref_storage_codegen
+
+struct Counter:
+    value: int
+
+struct Entry:
+    callback: proc(arg0: ref[Counter]) -> bool
+
+function main() -> int:
+    let offset = 2
+    let callback = proc(arg0: ref[Counter]) -> bool:
+        arg0.value += offset
+        return true
+    let entry = Entry(callback = callback)
+    let callbacks = array[proc(arg0: ref[Counter]) -> bool, 1](entry.callback)
+    var counter = Counter(value = 0)
+    if not callbacks[0](ref_of(counter)):
+        return 1
+    return counter.value
+
+    MT
+
+    generated = generate_c_from_source(source)
+
+    assert_match(/typedef struct mt_proc_proc_ref_demo_proc_ref_storage_codegen_Counter_bool/, generated)
+    assert_match(/\.invoke = demo_proc_ref_storage_codegen__proc_1__invoke/, generated)
+    assert_match(/entry\.callback\.retain\(entry\.callback\.env\);/, generated)
+    assert_match(/\(\*mt_checked_index_array_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_1\(&callbacks, 0\)\)\.invoke\(\(\*mt_checked_index_array_proc_ref_demo_proc_ref_storage_codegen_Counter_bool_1\(&callbacks, 0\)\)\.env, &counter\)/, generated)
   end
 
   def test_generate_c_for_proc_var_reassign_lifecycle

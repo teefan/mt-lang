@@ -1065,6 +1065,29 @@ class MilkTeaSemaTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("verify")
   end
 
+  def test_type_checks_generic_helper_with_let_else_error_binding
+    source = <<~MT
+      # module demo.generic_status_helper
+
+      function encode(value: int) -> Result[int, int]:
+          return Result[int, int].success(value= value + 1)
+
+      function wrap[T](value: T, body: fn(arg0: T) -> Result[int, int]) -> Result[int, int]:
+          let encoded = body(value) else as error:
+              return Result[int, int].failure(error= error)
+          return Result[int, int].success(value= encoded)
+
+      function main() -> int:
+          let value = wrap[int](4, encode) else:
+              return 1
+          return value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_result_propagation_inside_async_function
     source = <<~MT
       # module demo.status_void_flow
@@ -2897,6 +2920,53 @@ class MilkTeaSemaTest < Minitest::Test
     result = check_source(source)
 
     assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_stored_proc_closure_values_with_ref_parameters
+    source = <<~MT
+      # module demo.proc_ref_storage
+
+      struct Counter:
+          value: int
+
+      struct Entry:
+          callback: proc(arg0: ref[Counter]) -> bool
+
+      function main() -> int:
+          let offset = 2
+          let callback = proc(arg0: ref[Counter]) -> bool:
+              arg0.value += offset
+              return true
+          let entry = Entry(callback = callback)
+          let callbacks = array[proc(arg0: ref[Counter]) -> bool, 1](entry.callback)
+          var counter = Counter(value = 0)
+          if not callbacks[0](ref_of(counter)):
+              return 1
+          return counter.value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.types.key?("Entry")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_stored_proc_values_with_ref_returns
+    source = <<~MT
+      # module demo.bad_proc_ref_storage
+
+      struct Counter:
+          value: int
+
+      struct Entry:
+          callback: proc() -> ref[Counter]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/field Entry\.callback cannot store ref types outside callable parameter positions/, error.message)
   end
 
   def test_type_checks_proc_var_reassign
@@ -7959,6 +8029,52 @@ extending Counter:
     end
 
     assert_match(/function leak cannot return ref types/, return_error.message)
+  end
+
+  def test_allows_stored_function_values_with_ref_parameters
+    source = <<~MT
+      # module demo.ref_callback_storage
+
+      struct Counter:
+          value: int
+
+      struct Entry:
+          callback: fn(arg0: ref[Counter]) -> bool
+
+      function increment(counter: ref[Counter]) -> bool:
+          counter.value += 1
+          return true
+
+      function main() -> int:
+          var counter = Counter(value = 0)
+          let entry = Entry(callback = increment)
+          let callbacks = array[fn(arg0: ref[Counter]) -> bool, 1](entry.callback)
+          if not callbacks[0](ref_of(counter)):
+              return 1
+          return counter.value
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_stored_function_values_with_ref_returns
+    source = <<~MT
+      # module demo.bad_ref_callback_storage
+
+      struct Counter:
+          value: int
+
+      struct Entry:
+          callback: fn() -> ref[Counter]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/field Entry\.callback cannot store ref types outside callable parameter positions/, error.message)
   end
 
   def test_type_checks_ref_arguments_for_by_value_parameters

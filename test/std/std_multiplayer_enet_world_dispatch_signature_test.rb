@@ -75,25 +75,31 @@ function main() -> int:
         let entity = server.world.spawn[PlayerState](PlayerState(x = 1.0, hp = 100), Option[mp.ConnectionId].none) else:
             return 9
 
-        var snapshot_payload = array[ubyte, 4](1, 2, 3, 4)
         var rpc_payload = array[ubyte, 2](8, 9)
         let plan = mp.create_tick_budget_plan(2048, 70)
+
+        var initial_world_payload = server.world.encode_snapshot_payload() else:
+            return 10
+        defer initial_world_payload.release()
 
         let report1 = server.dispatch_world_tick_fair(
             1,
             plan,
             NET_CHANNEL_SNAPSHOT,
             protocol.TransferMode.reliable,
-            snapshot_payload,
             NET_CHANNEL_RPC,
             protocol.TransferMode.reliable,
             protocol.RpcDirection.server_to_all,
             rpc_payload,
         ) else:
-            return 10
+            return 11
 
         if report1.snapshots_sent == 0:
-            return 11
+            return 12
+
+        let outbound_after_first = server.outbound_snapshot_baseline_state()
+        if outbound_after_first.last_applied_payload_bytes != initial_world_payload.as_span().len:
+            return 13
 
         server.flush()
         client.flush()
@@ -101,13 +107,13 @@ function main() -> int:
         var pump_rounds_1: ptr_uint = 0
         while pump_rounds_1 < 64:
             let _ = server.pump(0) else:
-                return 12
+                return 14
             let _ = client.pump(1) else:
-                return 13
+                return 15
             pump_rounds_1 += 1
 
         if client.pending_snapshot_count() == 0:
-            return 14
+            return 16
         while true:
             match client.pop_snapshot():
                 Option.some as payload:
@@ -121,16 +127,15 @@ function main() -> int:
             plan,
             NET_CHANNEL_SNAPSHOT,
             protocol.TransferMode.reliable,
-            snapshot_payload,
             NET_CHANNEL_RPC,
             protocol.TransferMode.reliable,
             protocol.RpcDirection.server_to_all,
             rpc_payload,
         ) else:
-            return 15
+            return 17
 
         if report2.snapshots_sent != 0:
-            return 16
+            return 18
 
         server.flush()
         client.flush()
@@ -138,40 +143,45 @@ function main() -> int:
         var pump_rounds_2: ptr_uint = 0
         while pump_rounds_2 < 64:
             let _ = server.pump(0) else:
-                return 17
+                return 19
             let _ = client.pump(1) else:
-                return 18
+                return 20
             pump_rounds_2 += 1
 
         if client.pending_snapshot_count() != 0:
-            return 19
+            return 21
 
         let state_ptr = server.world.state_ptr[PlayerState](entity) else:
-            return 20
+            return 22
         unsafe:
             read(state_ptr).hp = 80
+
+        var changed_world_payload = server.world.encode_snapshot_payload() else:
+            return 23
+        defer changed_world_payload.release()
 
         let report3 = server.dispatch_world_tick_fair(
             3,
             plan,
             NET_CHANNEL_SNAPSHOT,
             protocol.TransferMode.reliable,
-            snapshot_payload,
             NET_CHANNEL_RPC,
             protocol.TransferMode.reliable,
             protocol.RpcDirection.server_to_all,
             rpc_payload,
         ) else:
-            return 21
+            return 24
 
         if report3.snapshots_sent == 0:
-            return 22
+            return 25
 
         let outbound = server.outbound_snapshot_baseline_state()
         if outbound.last_applied_tick != 3:
-            return 23
+            return 26
         if outbound.last_applied_entity_count != 1:
-            return 24
+            return 27
+        if outbound.last_applied_payload_bytes != changed_world_payload.as_span().len:
+            return 28
 
         return 0
 

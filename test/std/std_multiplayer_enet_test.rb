@@ -28,6 +28,14 @@ function submit_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> v
 function unknown_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> void:
     return
 
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 9, require_owner = false)]
+function typed_route_a(context: mp.RpcContext, value: short) -> void:
+    return
+
+@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 9, require_owner = false)]
+function typed_route_b(context: mp.RpcContext, value: short) -> void:
+    return
+
 function handle_submit_input(message: rpc.IncomingRpc) -> Result[bool, rpc.DispatchError]:
     if message.payload_size != 3:
         return Result[bool, rpc.DispatchError].failure(
@@ -37,6 +45,10 @@ function handle_submit_input(message: rpc.IncomingRpc) -> Result[bool, rpc.Dispa
             ),
         )
     dispatch_invocation_count += 1
+    return Result[bool, rpc.DispatchError].success(value = true)
+
+
+function typed_dispatch_stub(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc.DispatchError]:
     return Result[bool, rpc.DispatchError].success(value = true)
 
 function expect_snapshot_roundtrip() -> int:
@@ -267,6 +279,28 @@ function expect_rpc_runtime_validation() -> int:
         Result.failure as payload:
             if payload.error.code != protocol.ErrorCode.invalid_argument:
                 return 67
+
+    return 0
+
+
+function expect_typed_rpc_wire_identity_collision_is_rejected() -> int:
+    var table = mp.TypedRpcDispatchTable.create()
+    defer table.release()
+
+    let descriptor_a = mp.rpc_descriptor(callable_of(typed_route_a))
+    let descriptor_b = mp.rpc_descriptor(callable_of(typed_route_b))
+
+    let added_a = table.register_route(descriptor_a, typed_dispatch_stub) else:
+        return 68
+    if not added_a:
+        return 69
+
+    match table.register_route(descriptor_b, typed_dispatch_stub):
+        Result.success as _:
+            return 70
+        Result.failure as payload:
+            if payload.error.code != protocol.ErrorCode.already_registered:
+                return 71
 
     return 0
 
@@ -841,6 +875,10 @@ function main() -> int:
     let rpc_runtime_status = expect_rpc_runtime_validation()
     if rpc_runtime_status != 0:
         return rpc_runtime_status
+
+    let typed_collision_status = expect_typed_rpc_wire_identity_collision_is_rejected()
+    if typed_collision_status != 0:
+        return typed_collision_status
 
     let loopback_status = expect_loopback_send_receive()
     if loopback_status != 0:
