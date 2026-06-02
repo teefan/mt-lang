@@ -31,7 +31,6 @@ public type TickScheduler = protocol.TickScheduler
 public type TickBudgetPlan = protocol.TickBudgetPlan
 public type TickDispatchReport = protocol.TickDispatchReport
 public type ConnectionStats = protocol.ConnectionStats
-public type SendOptions = protocol.SendOptions
 public type WeightedConnection = protocol.WeightedConnection
 public type StateDescriptor = registry.StateDescriptor
 public type RpcDescriptor = registry.RpcDescriptor
@@ -40,12 +39,8 @@ public type World = world.World
 public type WorldRole = world.WorldRole
 public type EntityRecord = world.EntityRecord
 public type Ownership = world.Ownership
-public type OutgoingRpc = rpc_runtime.OutgoingRpc
-public type IncomingRpc = rpc_runtime.IncomingRpc
 public type IncomingRpcPacket = rpc_runtime.IncomingRpcPacket
 public type DispatchError = rpc_runtime.DispatchError
-public type RpcDispatchRoute = rpc_runtime.RpcDispatchRoute
-public type RpcDispatchTable = rpc_runtime.RpcDispatchTable
 public type Snapshot = snapshot.Snapshot
 public type DeltaFrame = snapshot.DeltaFrame
 public type BaselineSet = snapshot.BaselineSet
@@ -133,10 +128,6 @@ public function create_tick_scheduler(max_bytes_per_tick: ptr_uint) -> TickSched
 
 public function create_tick_budget_plan(total_bytes: ptr_uint, snapshot_ratio_percent: uint) -> TickBudgetPlan:
     return protocol.create_tick_budget_plan(total_bytes, snapshot_ratio_percent)
-
-
-public function send_defaults() -> SendOptions:
-    return protocol.send_defaults()
 
 
 public function build_bindings_with(installer: BindingsInstaller) -> Result[BindingsBuilder, Error]:

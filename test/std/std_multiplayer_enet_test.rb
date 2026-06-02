@@ -18,16 +18,6 @@ import std.multiplayer.enet as mp_enet
 import std.enet as enet
 import std.vec as vec
 
-var dispatch_invocation_count: int = 0
-
-@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 1, require_owner = true)]
-function submit_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> void:
-    return
-
-@[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 1, require_owner = true)]
-function unknown_input(context: mp.RpcContext, a: ubyte, b: ubyte, c: ubyte) -> void:
-    return
-
 @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 9, require_owner = false)]
 function typed_route_a(context: mp.RpcContext, value: short) -> void:
     return
@@ -35,18 +25,6 @@ function typed_route_a(context: mp.RpcContext, value: short) -> void:
 @[mp.rpc(direction = mp.RpcDirection.client_to_server, mode = mp.TransferMode.reliable, channel = 9, require_owner = false)]
 function typed_route_b(context: mp.RpcContext, value: short) -> void:
     return
-
-function handle_submit_input(message: rpc.IncomingRpc) -> Result[bool, rpc.DispatchError]:
-    if message.payload_size != 3:
-        return Result[bool, rpc.DispatchError].failure(
-            error = rpc.DispatchError(
-                code = protocol.ErrorCode.invalid_argument,
-                message = "unexpected payload size",
-            ),
-        )
-    dispatch_invocation_count += 1
-    return Result[bool, rpc.DispatchError].success(value = true)
-
 
 function typed_dispatch_stub(context: mp.RpcContext, payload: span[ubyte]) -> Result[bool, rpc.DispatchError]:
     return Result[bool, rpc.DispatchError].success(value = true)
@@ -192,108 +170,6 @@ function expect_rpc_invalid_direction_is_rejected() -> int:
     return 0
 
 
-function expect_rpc_runtime_validation() -> int:
-    let descriptor = mp.rpc_descriptor(callable_of(submit_input))
-
-    let outgoing = rpc.OutgoingRpc(
-        descriptor = descriptor,
-        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].none, tick = 11),
-        payload_size = 3,
-    )
-    let encoded = rpc.encode_outgoing(outgoing) else:
-        return 42
-    if encoded.payload_size != 3:
-        return 43
-
-    let invalid_incoming = rpc.IncomingRpc(
-        descriptor = descriptor,
-        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].none, tick = 12),
-        payload_size = 3,
-    )
-    match rpc.decode_incoming(invalid_incoming):
-        Result.success as _:
-            return 44
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.invalid_argument:
-                return 45
-
-    let valid_incoming = rpc.IncomingRpc(
-        descriptor = descriptor,
-        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].some(value = 7), tick = 13),
-        payload_size = 3,
-    )
-    let decoded = rpc.decode_incoming(valid_incoming) else:
-        return 46
-    if decoded.context.tick != 13:
-        return 47
-
-    match rpc.dispatch(valid_incoming):
-        Result.success as _:
-            return 50
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.not_registered:
-                return 51
-
-    var table = rpc.RpcDispatchTable.create()
-    defer table.release()
-
-    let route_registered = table.register_route(descriptor, handle_submit_input) else:
-        return 52
-    if not route_registered:
-        return 53
-
-    let dispatched = table.dispatch(valid_incoming) else:
-        return 54
-    if not dispatched:
-        return 55
-    if dispatch_invocation_count != 1:
-        return 56
-
-    let duplicate = table.register_route(descriptor, handle_submit_input)
-    match duplicate:
-        Result.success as _:
-            return 57
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.already_registered:
-                return 58
-
-    let table_dispatch = rpc.dispatch_with_routes(table.routes.as_span(), valid_incoming) else:
-        return 59
-    if not table_dispatch:
-        return 60
-    if dispatch_invocation_count != 2:
-        return 61
-
-    let unknown_descriptor = mp.rpc_descriptor(callable_of(unknown_input))
-    let unknown_message = rpc.IncomingRpc(
-        descriptor = unknown_descriptor,
-        context = protocol.RpcContext(sender = Option[protocol.ConnectionId].some(value = 7), tick = 14),
-        payload_size = 3,
-    )
-    match table.dispatch(unknown_message):
-        Result.success as _:
-            return 62
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.not_registered:
-                return 63
-
-    match table.dispatch(invalid_incoming):
-        Result.success as _:
-            return 64
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.invalid_argument:
-                return 65
-
-    match rpc.dispatch_with_routes(table.routes.as_span(), invalid_incoming):
-        Result.success as _:
-            return 66
-        Result.failure as payload:
-            if payload.error.code != protocol.ErrorCode.invalid_argument:
-                return 67
-
-    return 0
-
-
 function expect_typed_rpc_wire_identity_collision_is_rejected() -> int:
     var table = mp.TypedRpcDispatchTable.create()
     defer table.release()
@@ -423,7 +299,7 @@ function expect_loopback_send_receive() -> int:
                             return 68
                         if server.pending_rpc_count() != 1:
                             return 69
-                        if server.pending_unknown_count() != 0:
+                        if server.pending_protocol_anomaly_count() != 0:
                             return 70
 
                         let snapshot_packet = server.pop_snapshot() else:
@@ -645,7 +521,7 @@ function expect_loopback_send_receive() -> int:
                             return 88
                         if client.pending_rpc_count() != 5:
                             return 89
-                        if client.pending_unknown_count() != 0:
+                        if client.pending_protocol_anomaly_count() != 0:
                             return 90
 
                         let client_snapshot_packet = client.pop_snapshot() else:
@@ -831,11 +707,11 @@ function expect_loopback_send_receive() -> int:
                                 return 104
                             let _ = client.pump(0) else:
                                 return 105
-                            if server.pending_unknown_count() > 0:
+                            if server.pending_protocol_anomaly_count() > 0:
                                 break
                             malformed_rounds += 1
 
-                        if server.pending_unknown_count() != 1:
+                        if server.pending_protocol_anomaly_count() != 1:
                             return 106
 
                         return 0
@@ -904,7 +780,7 @@ function expect_protocol_mismatch_rejected() -> int:
                             return 119
                         if client.peer != null:
                             return 120
-                        if client.pending_unknown_count() == 0:
+                        if client.pending_protocol_anomaly_count() == 0:
                             return 121
 
                         return 0
@@ -921,10 +797,6 @@ function main() -> int:
     let invalid_rpc_status = expect_rpc_invalid_direction_is_rejected()
     if invalid_rpc_status != 0:
         return invalid_rpc_status
-
-    let rpc_runtime_status = expect_rpc_runtime_validation()
-    if rpc_runtime_status != 0:
-        return rpc_runtime_status
 
     let typed_collision_status = expect_typed_rpc_wire_identity_collision_is_rejected()
     if typed_collision_status != 0:
