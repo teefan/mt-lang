@@ -547,7 +547,7 @@ function update_join_network(app: ref[App]) -> void:
             mp_enet.SessionEvent.lockstep_checksum_received:
                 pass
 
-    if runtime.pending_unknown_count() > 0 and not ready_now:
+    if runtime.pending_protocol_anomaly_count() > 0 and not ready_now:
         app.disconnect_message = "Handshake/protocol mismatch. Ensure both sides use same build."
 
     if not ready_now:

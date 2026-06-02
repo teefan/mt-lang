@@ -173,19 +173,10 @@ extending TickScheduler:
 public struct ConnectionStats:
     latency_ms: uint
     packets_sent: ulong
-    packets_received: ulong
     packets_lost: ulong
     bytes_sent: ulong
     bytes_received: ulong
     round_trip_time_ms: uint
-
-
-public struct SendOptions:
-    scheduler: Option[ptr[TickScheduler]]
-    max_bytes: ptr_uint
-    weighted_connections: span[WeightedConnection]
-    fair_mode: bool
-    fair_start_index: ptr_uint
 
 
 public struct WeightedConnection:
@@ -193,21 +184,10 @@ public struct WeightedConnection:
     weight: uint
 
 
-public function send_defaults() -> SendOptions:
-    return SendOptions(
-        scheduler = Option[ptr[TickScheduler]].none,
-        max_bytes = 0,
-        weighted_connections = span[WeightedConnection](),
-        fair_mode = false,
-        fair_start_index = 0
-    )
-
-
 public function connection_stats_default() -> ConnectionStats:
     return ConnectionStats(
         latency_ms = 0,
         packets_sent = 0,
-        packets_received = 0,
         packets_lost = 0,
         bytes_sent = 0,
         bytes_received = 0,

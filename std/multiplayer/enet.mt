@@ -1,11 +1,21 @@
 import std.enet as enet
 import std.multiplayer as mp
 import std.multiplayer.lockstep as lockstep_runtime
+import std.multiplayer.session as session_runtime
 import std.multiplayer.snapshot as snapshot_runtime
 import std.multiplayer.rpc as rpc_runtime
 import std.multiplayer.wire as wire
 import std.vec as vec
 
+# Threading model:
+#
+# Each `Server` and `Client` instance is single-threaded. The caller is
+# responsible for pumping the host from exactly one OS thread at a time, and
+# must serialize all sends, snapshot/RPC bookkeeping, and SessionBindings
+# helpers on that thread. `runtime_ref_count` is a plain integer that tracks
+# the number of live enet hosts in this process; it is not atomic. If you
+# need to operate multiple servers or clients from different threads,
+# spin up a separate process per thread and use an IPC bridge.
 public type TypedRpcRoute = rpc_runtime.TypedRpcRoute
 public type TypedRpcDispatchTable = rpc_runtime.TypedRpcDispatchTable
 
@@ -20,7 +30,7 @@ public struct Server:
     incoming_lockstep_commands: vec.Vec[lockstep_runtime.IncomingCommandPacket]
     incoming_lockstep_checksums: vec.Vec[lockstep_runtime.IncomingChecksumPacket]
     outbound_peer_snapshots: vec.Vec[PeerSnapshotState]
-    unknown_packet_count: ptr_uint
+    protocol_anomaly_count: ptr_uint
     snapshot_budget_cursor: ptr_uint
     rpc_budget_cursor: ptr_uint
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
@@ -37,7 +47,7 @@ public struct Client:
     incoming_rpcs: vec.Vec[rpc_runtime.IncomingRpcPacket]
     incoming_lockstep_commands: vec.Vec[lockstep_runtime.IncomingCommandPacket]
     incoming_lockstep_checksums: vec.Vec[lockstep_runtime.IncomingChecksumPacket]
-    unknown_packet_count: ptr_uint
+    protocol_anomaly_count: ptr_uint
     outbound_snapshot_baseline: snapshot_runtime.BaselineSet
     inbound_snapshot_baseline: snapshot_runtime.BaselineSet
     current_tick: mp.Tick
@@ -64,6 +74,7 @@ public struct PeerSnapshotState:
 public struct FrameReport:
     events_processed: ptr_uint
     snapshots_applied: ptr_uint
+    rpcs_dispatched: ptr_uint
     snapshots_pending: ptr_uint
     rpcs_pending: ptr_uint
     lockstep_commands_pending: ptr_uint
@@ -166,7 +177,7 @@ extending Server:
         lockstep_runtime.release_command_queue(ref_of(this.incoming_lockstep_commands))
         lockstep_runtime.release_checksum_queue(ref_of(this.incoming_lockstep_checksums))
         this.outbound_peer_snapshots.release()
-        this.unknown_packet_count = 0
+        this.protocol_anomaly_count = 0
         this.snapshot_budget_cursor = 0
         this.rpc_budget_cursor = 0
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
@@ -181,8 +192,8 @@ extending Server:
         return this.incoming_rpcs.len()
 
 
-    public function pending_unknown_count() -> ptr_uint:
-        return this.unknown_packet_count
+    public function pending_protocol_anomaly_count() -> ptr_uint:
+        return this.protocol_anomaly_count
 
 
     public function pending_session_event_count() -> ptr_uint:
@@ -235,10 +246,29 @@ extending Server:
         return Result[FrameReport, mp.Error].success(value = FrameReport(
             events_processed = events_processed,
             snapshots_applied = snapshots_applied,
+            rpcs_dispatched = 0,
             snapshots_pending = this.pending_snapshot_count(),
             rpcs_pending = this.pending_rpc_count(),
             lockstep_commands_pending = this.pending_lockstep_command_count(),
             lockstep_checksums_pending = this.pending_lockstep_checksum_count(),
+        ))
+
+
+    public mutable function frame_with_rpcs(
+        timeout_ms: uint,
+        rpc_table: ref[rpc_runtime.TypedRpcDispatchTable],
+    ) -> Result[FrameReport, mp.Error]:
+        let events_processed = this.pump(timeout_ms)?
+        let snapshots_applied = this.process_incoming_snapshots()?
+        let rpcs_dispatched = this.process_incoming_rpcs_typed(rpc_table)?
+        return Result[FrameReport, mp.Error].success(value = FrameReport(
+            events_processed = events_processed,
+            snapshots_applied = snapshots_applied,
+            rpcs_dispatched = rpcs_dispatched,
+            snapshots_pending = this.pending_snapshot_count(),
+            rpcs_pending = this.pending_rpc_count(),
+            lockstep_commands_pending = this.pending_lockstep_command_count(),
+            lockstep_checksums_pending = this.pending_lockstep_checksum_count()
         ))
 
 
@@ -1009,7 +1039,7 @@ extending Server:
         return Result[ptr_uint, mp.Error].success(value = sent)
 
 
-    public mutable function apply_server_event(evt: ptr[enet.Event]) -> void:
+    mutable function apply_server_event(evt: ptr[enet.Event]) -> void:
         unsafe:
             match read(evt).type_:
                 enet.EventType.ENET_EVENT_TYPE_CONNECT:
@@ -1030,7 +1060,7 @@ extending Server:
                     mark_peer_unverified(read(evt).peer)
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
-                        rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         enet.packet_destroy(read(evt).packet)
                         return
 
@@ -1040,7 +1070,7 @@ extending Server:
                     match kind:
                         mp.PacketKind.handshake_hello:
                             let hello = decode_handshake_hello(payload) else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                                 enet.packet_destroy(read(evt).packet)
                                 return
 
@@ -1056,9 +1086,9 @@ extending Server:
                                 ensure_peer_snapshot_state(ref_of(this.outbound_peer_snapshots), connection)
                                 let _ = send_handshake_welcome(read(evt).peer, this.world.protocol_hash(), connection)
                         mp.PacketKind.handshake_welcome:
-                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.handshake_reject:
-                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.snapshot:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(
@@ -1072,7 +1102,7 @@ extending Server:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
@@ -1080,7 +1110,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.rpc:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(ref_of(this.session_events), SessionEvent.rpc_received, sender)
@@ -1090,7 +1120,7 @@ extending Server:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
@@ -1098,7 +1128,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.lockstep_commands:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(
@@ -1112,7 +1142,7 @@ extending Server:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
@@ -1120,7 +1150,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.lockstep_checksum:
                             if is_peer_verified(read(evt).peer):
                                 enqueue_session_event(
@@ -1134,7 +1164,7 @@ extending Server:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.client_to_server,
@@ -1142,7 +1172,7 @@ extending Server:
                                     sender
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
 
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
@@ -1226,13 +1256,13 @@ extending Client:
         rpc_runtime.release_queue(ref_of(this.incoming_rpcs))
         lockstep_runtime.release_command_queue(ref_of(this.incoming_lockstep_commands))
         lockstep_runtime.release_checksum_queue(ref_of(this.incoming_lockstep_checksums))
-        this.unknown_packet_count = 0
+        this.protocol_anomaly_count = 0
         reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
         reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
         this.world.release()
 
 
-    public mutable function apply_client_event(evt: ptr[enet.Event]) -> void:
+    mutable function apply_client_event(evt: ptr[enet.Event]) -> void:
         unsafe:
             match read(evt).type_:
                 enet.EventType.ENET_EVENT_TYPE_CONNECT:
@@ -1248,7 +1278,7 @@ extending Client:
                         Result.success:
                             pass
                         Result.failure:
-                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                 enet.EventType.ENET_EVENT_TYPE_DISCONNECT:
                     enqueue_session_event(
                         ref_of(this.session_events),
@@ -1262,7 +1292,7 @@ extending Client:
                     reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                 enet.EventType.ENET_EVENT_TYPE_RECEIVE:
                     let kind = packet_kind(read(evt).packet) else:
-                        rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                        rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         enet.packet_destroy(read(evt).packet)
                         return
 
@@ -1270,26 +1300,26 @@ extending Client:
                     match kind:
                         mp.PacketKind.handshake_welcome:
                             let welcome = decode_handshake_welcome(payload) else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                                 enet.packet_destroy(read(evt).packet)
                                 return
 
                             if welcome.protocol_hash != this.world.protocol_hash():
                                 this.protocol_verified = false
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                             else:
                                 this.protocol_verified = true
                                 this.connection_id_value = Option[mp.ConnectionId].some(value = welcome.connection)
                         mp.PacketKind.handshake_reject:
                             this.protocol_verified = false
-                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                             if this.peer != null:
                                 enet.peer_disconnect_now(ptr[enet.Peer]<-this.peer, 0)
                                 this.peer = null
                             reset_snapshot_baseline(ref_of(this.outbound_snapshot_baseline))
                             reset_snapshot_baseline(ref_of(this.inbound_snapshot_baseline))
                         mp.PacketKind.handshake_hello:
-                            rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                            rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.snapshot:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1303,7 +1333,7 @@ extending Client:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
@@ -1311,7 +1341,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.rpc:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1325,7 +1355,7 @@ extending Client:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
@@ -1333,7 +1363,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.lockstep_commands:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1347,7 +1377,7 @@ extending Client:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
@@ -1355,7 +1385,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
                         mp.PacketKind.lockstep_checksum:
                             if this.protocol_verified:
                                 enqueue_session_event(
@@ -1369,7 +1399,7 @@ extending Client:
                                     ref_of(this.incoming_lockstep_commands),
                                     ref_of(this.incoming_lockstep_checksums),
                                     ref_of(this.inbound_snapshot_baseline),
-                                    ref_of(this.unknown_packet_count),
+                                    ref_of(this.protocol_anomaly_count),
                                     read(evt).packet,
                                     uint<-read(evt).channelID,
                                     mp.RpcDirection.server_to_owner,
@@ -1377,7 +1407,7 @@ extending Client:
                                     this.connection_id_value
                                 )
                             else:
-                                rpc_runtime.increment_unknown_count(ref_of(this.unknown_packet_count))
+                                rpc_runtime.increment_protocol_anomaly_count(ref_of(this.protocol_anomaly_count))
 
                     enet.packet_destroy(read(evt).packet)
                 enet.EventType.ENET_EVENT_TYPE_NONE:
@@ -1392,8 +1422,8 @@ extending Client:
         return this.incoming_rpcs.len()
 
 
-    public function pending_unknown_count() -> ptr_uint:
-        return this.unknown_packet_count
+    public function pending_protocol_anomaly_count() -> ptr_uint:
+        return this.protocol_anomaly_count
 
 
     public function pending_session_event_count() -> ptr_uint:
@@ -1429,10 +1459,29 @@ extending Client:
         return Result[FrameReport, mp.Error].success(value = FrameReport(
             events_processed = events_processed,
             snapshots_applied = snapshots_applied,
+            rpcs_dispatched = 0,
             snapshots_pending = this.pending_snapshot_count(),
             rpcs_pending = this.pending_rpc_count(),
             lockstep_commands_pending = this.pending_lockstep_command_count(),
             lockstep_checksums_pending = this.pending_lockstep_checksum_count(),
+        ))
+
+
+    public mutable function frame_with_rpcs(
+        timeout_ms: uint,
+        rpc_table: ref[rpc_runtime.TypedRpcDispatchTable],
+    ) -> Result[FrameReport, mp.Error]:
+        let events_processed = this.pump(timeout_ms)?
+        let snapshots_applied = this.process_incoming_snapshots()?
+        let rpcs_dispatched = this.process_incoming_rpcs_typed(rpc_table)?
+        return Result[FrameReport, mp.Error].success(value = FrameReport(
+            events_processed = events_processed,
+            snapshots_applied = snapshots_applied,
+            rpcs_dispatched = rpcs_dispatched,
+            snapshots_pending = this.pending_snapshot_count(),
+            rpcs_pending = this.pending_rpc_count(),
+            lockstep_commands_pending = this.pending_lockstep_command_count(),
+            lockstep_checksums_pending = this.pending_lockstep_checksum_count()
         ))
 
 
@@ -1608,6 +1657,77 @@ extending Client:
         )
 
 
+public function sync_slot_roster_with_server(
+    server: ref[Server],
+    roster: ref[session_runtime.SlotRoster],
+) -> Result[ptr_uint, mp.Error]:
+    var applied: ptr_uint = 0
+    while true:
+        let evt = server.pop_session_event() else:
+            return Result[ptr_uint, mp.Error].success(value = applied)
+
+        match evt.kind:
+            SessionEvent.connected:
+                let connection = evt.connection else:
+                    continue
+                match roster.claim_first_open(connection):
+                    Result.failure:
+                        pass
+                    Result.success as claim_payload:
+                        match claim_payload.value:
+                            Option.some:
+                                applied += 1
+                            Option.none:
+                                pass
+            SessionEvent.disconnected:
+                let connection = evt.connection else:
+                    continue
+                if roster.release_connection(connection):
+                    applied += 1
+            SessionEvent.snapshot_received:
+                pass
+            SessionEvent.rpc_received:
+                pass
+            SessionEvent.lockstep_command_received:
+                pass
+            SessionEvent.lockstep_checksum_received:
+                pass
+
+
+# Drains pending `SessionEvent.disconnected` events into the roster. Note
+# that `SessionEvent.connected` events fired by the client carry
+# `connection = Option.none` (the connection ID is not assigned until the
+# handshake welcome is processed), so the client helper does not claim a
+# slot on connect. Callers that want the client to own a roster slot must
+# claim it manually before connecting (or read `client.connection_id()`
+# after the handshake completes and call `claim_slot` themselves).
+public function sync_slot_roster_with_client(
+    client: ref[Client],
+    roster: ref[session_runtime.SlotRoster],
+) -> Result[ptr_uint, mp.Error]:
+    var applied: ptr_uint = 0
+    while true:
+        let evt = client.pop_session_event() else:
+            return Result[ptr_uint, mp.Error].success(value = applied)
+
+        match evt.kind:
+            SessionEvent.connected:
+                continue
+            SessionEvent.disconnected:
+                let connection = evt.connection else:
+                    continue
+                if roster.release_connection(connection):
+                    applied += 1
+            SessionEvent.snapshot_received:
+                pass
+            SessionEvent.rpc_received:
+                pass
+            SessionEvent.lockstep_command_received:
+                pass
+            SessionEvent.lockstep_checksum_received:
+                pass
+
+
 public function listen(
     address: enet.Address,
     peer_count: ptr_uint,
@@ -1640,7 +1760,7 @@ public function listen(
         incoming_lockstep_commands = vec.Vec[lockstep_runtime.IncomingCommandPacket].create(),
         incoming_lockstep_checksums = vec.Vec[lockstep_runtime.IncomingChecksumPacket].create(),
         outbound_peer_snapshots = vec.Vec[PeerSnapshotState].create(),
-        unknown_packet_count = 0,
+        protocol_anomaly_count = 0,
         snapshot_budget_cursor = 0,
         rpc_budget_cursor = 0,
         inbound_snapshot_baseline = empty_snapshot_baseline(),
@@ -1711,7 +1831,7 @@ public function connect(
         incoming_rpcs = vec.Vec[rpc_runtime.IncomingRpcPacket].create(),
         incoming_lockstep_commands = vec.Vec[lockstep_runtime.IncomingCommandPacket].create(),
         incoming_lockstep_checksums = vec.Vec[lockstep_runtime.IncomingChecksumPacket].create(),
-        unknown_packet_count = 0,
+        protocol_anomaly_count = 0,
         outbound_snapshot_baseline = empty_snapshot_baseline(),
         inbound_snapshot_baseline = empty_snapshot_baseline(),
         current_tick = 0,
@@ -1807,7 +1927,7 @@ function handle_received_packet(
     incoming_lockstep_commands: ref[vec.Vec[lockstep_runtime.IncomingCommandPacket]],
     incoming_lockstep_checksums: ref[vec.Vec[lockstep_runtime.IncomingChecksumPacket]],
     inbound_snapshot_baseline: ref[snapshot_runtime.BaselineSet],
-    unknown_packet_count: ref[ptr_uint],
+    protocol_anomaly_count: ref[ptr_uint],
     packet: ptr[enet.Packet],
     channel: uint,
     inferred_direction: mp.RpcDirection,
@@ -1815,7 +1935,7 @@ function handle_received_packet(
     sender: Option[mp.ConnectionId],
 ) -> void:
     let kind = packet_kind(packet) else:
-        rpc_runtime.increment_unknown_count(unknown_packet_count)
+        rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
         return
 
     let payload = packet_payload_span(packet)
@@ -1829,10 +1949,10 @@ function handle_received_packet(
                 payload,
             )
             if not accepted:
-                rpc_runtime.increment_unknown_count(unknown_packet_count)
+                rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
         mp.PacketKind.rpc:
             let rpc_direction = rpc_runtime.infer_inbound_rpc_direction(payload, inferred_direction) else:
-                rpc_runtime.increment_unknown_count(unknown_packet_count)
+                rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
                 return
 
             let accepted = rpc_runtime.parse_and_enqueue(
@@ -1844,7 +1964,7 @@ function handle_received_packet(
                 payload,
             )
             if not accepted:
-                rpc_runtime.increment_unknown_count(unknown_packet_count)
+                rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
         mp.PacketKind.lockstep_commands:
             let command_status = lockstep_runtime.enqueue_incoming_command(
                 incoming_lockstep_commands,
@@ -1854,7 +1974,7 @@ function handle_received_packet(
             )
             match command_status:
                 Result.failure:
-                    rpc_runtime.increment_unknown_count(unknown_packet_count)
+                    rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
                 Result.success:
                     pass
         mp.PacketKind.lockstep_checksum:
@@ -1866,15 +1986,15 @@ function handle_received_packet(
             )
             match checksum_status:
                 Result.failure:
-                    rpc_runtime.increment_unknown_count(unknown_packet_count)
+                    rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
                 Result.success:
                     pass
         mp.PacketKind.handshake_hello:
-            rpc_runtime.increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
         mp.PacketKind.handshake_welcome:
-            rpc_runtime.increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
         mp.PacketKind.handshake_reject:
-            rpc_runtime.increment_unknown_count(unknown_packet_count)
+            rpc_runtime.increment_protocol_anomaly_count(protocol_anomaly_count)
 
 
 function acquire_runtime() -> Result[bool, mp.Error]:
@@ -1961,7 +2081,7 @@ function packet_flags_for_transfer_mode(transfer_mode: mp.TransferMode) -> enet.
         mp.TransferMode.reliable:
             return enet.PacketFlag.ENET_PACKET_FLAG_RELIABLE
         mp.TransferMode.unreliable:
-            return enet.PacketFlag<-0
+            return enet.PacketFlag.ENET_PACKET_FLAG_UNSEQUENCED
         mp.TransferMode.unreliable_ordered:
             return enet.PacketFlag<-0
 
@@ -2042,7 +2162,6 @@ function read_peer_stats(peer: ptr[enet.Peer]) -> mp.ConnectionStats:
         return mp.ConnectionStats(
             latency_ms = source.roundTripTime,
             packets_sent = ulong<-source.packetsSent,
-            packets_received = ulong<-source.packetsSent - source.packetsLost,
             packets_lost = ulong<-source.packetsLost,
             bytes_sent = ulong<-source.outgoingDataTotal,
             bytes_received = ulong<-source.incomingDataTotal,
