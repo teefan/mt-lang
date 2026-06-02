@@ -37,11 +37,11 @@ public struct Tree[Context]:
     has_root: bool
 
 
-function default_condition[Context](context: ptr[Context]) -> bool:
+function default_condition[Context](_context: ptr[Context]) -> bool:
     return false
 
 
-function default_action[Context](context: ptr[Context]) -> Status:
+function default_action[Context](_context: ptr[Context]) -> Status:
     return Status.failure
 
 
@@ -261,7 +261,7 @@ extending Node[Context]:
             condition_fn = default_condition[Context],
             action_fn = default_action[Context],
             repeat_limit = 0,
-            children = vec.Vec[ptr_uint].create(),
+            children = vec.Vec[ptr_uint].create()
         )
 
 
@@ -329,7 +329,7 @@ extending Tree[Context]:
             nodes = vec.Vec[Node[Context]].create(),
             runtime = vec.Vec[RuntimeState].create(),
             root = 0,
-            has_root = false,
+            has_root = false
         )
 
 

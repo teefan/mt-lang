@@ -30,19 +30,32 @@ public struct StateMachine[State, Event, Context]:
     events_equal: fn(left: Event, right: Event) -> bool
 
 
-function always_allow_transition[State, Event, Context](context: ptr[Context], input: Event, current_state: State, next_state: State) -> bool:
+function always_allow_transition[State, Event, Context](
+    _context: ptr[Context],
+    _input: Event,
+    _current_state: State,
+    _next_state: State
+) -> bool:
     return true
 
 
-function noop_transition_action[State, Event, Context](context: ptr[Context], input: Event, previous_state: State, next_state: State) -> void:
+function noop_transition_action[State, Event, Context](
+    _context: ptr[Context],
+    _input: Event,
+    _previous_state: State,
+    _next_state: State
+) -> void:
     pass
 
 
-function noop_state_hook[State, Context](context: ptr[Context], state: State) -> void:
+function noop_state_hook[State, Context](_context: ptr[Context], _state: State) -> void:
     pass
 
 
-function find_state_hooks[State, Event, Context](machine: ref[StateMachine[State, Event, Context]], state: State) -> ptr[StateHooks[State, Context]]?:
+function find_state_hooks[State, Event, Context](
+    machine: ref[StateMachine[State, Event, Context]],
+    state: State
+) -> ptr[StateHooks[State, Context]]?:
     for entry in machine.hooks:
         unsafe:
             let current = read(entry)
@@ -70,7 +83,7 @@ extending Transition[State, Event, Context]:
             input = input,
             to_state = to_state,
             guard = guard,
-            action = action,
+            action = action
         )
 
 
@@ -85,17 +98,21 @@ extending Transition[State, Event, Context]:
             input,
             to_state,
             always_allow_transition[State, Event, Context],
-            action,
+            action
         )
 
 
-    public static function simple(from_state: State, input: Event, to_state: State) -> Transition[State, Event, Context]:
+    public static function simple(
+        from_state: State,
+        input: Event,
+        to_state: State
+    ) -> Transition[State, Event, Context]:
         return Transition[State, Event, Context].create(
             from_state,
             input,
             to_state,
             always_allow_transition[State, Event, Context],
-            noop_transition_action[State, Event, Context],
+            noop_transition_action[State, Event, Context]
         )
 
 
@@ -110,7 +127,7 @@ extending StateHooks[State, Context]:
             state = state,
             on_enter = on_enter,
             on_exit = on_exit,
-            on_update = on_update,
+            on_update = on_update
         )
 
 
@@ -119,7 +136,7 @@ extending StateHooks[State, Context]:
             state,
             noop_state_hook[State, Context],
             noop_state_hook[State, Context],
-            noop_state_hook[State, Context],
+            noop_state_hook[State, Context]
         )
 
 
@@ -134,7 +151,7 @@ extending StateMachine[State, Event, Context]:
             transitions = vec.Vec[Transition[State, Event, Context]].create(),
             hooks = vec.Vec[StateHooks[State, Context]].create(),
             states_equal = states_equal,
-            events_equal = events_equal,
+            events_equal = events_equal
         )
 
 
@@ -174,8 +191,7 @@ extending StateMachine[State, Event, Context]:
 
 
     public mutable function tick(context: ref[Context]) -> void:
-        let maybe_hooks = find_state_hooks(ref_of(this), this.current_state)
-        if maybe_hooks == null:
+        let maybe_hooks = find_state_hooks(ref_of(this), this.current_state) else:
             return
 
         unsafe:
@@ -189,7 +205,7 @@ extending StateMachine[State, Event, Context]:
             return DispatchResult[State](
                 kind = DispatchKind.ignored,
                 previous_state = previous_state,
-                current_state = previous_state,
+                current_state = previous_state
             )
 
         let previous_hooks = find_state_hooks(ref_of(this), previous_state)
@@ -209,7 +225,7 @@ extending StateMachine[State, Event, Context]:
         return DispatchResult[State](
             kind = DispatchKind.transitioned,
             previous_state = previous_state,
-            current_state = next_state,
+            current_state = next_state
         )
 
 
@@ -241,11 +257,11 @@ extending StateMachine[State, Event, Context]:
                 return DispatchResult[State](
                     kind = DispatchKind.transitioned,
                     previous_state = previous_state,
-                    current_state = this.current_state,
+                    current_state = this.current_state
                 )
 
         return DispatchResult[State](
             kind = DispatchKind.ignored,
             previous_state = this.current_state,
-            current_state = this.current_state,
+            current_state = this.current_state
         )

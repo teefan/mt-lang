@@ -128,7 +128,7 @@ function build_plan[World, Goal, Context](
             reverse_steps.push(
                 PlanStep(
                     action_index = current.action_index,
-                    action_name = read(action_ptr).name,
+                    action_name = read(action_ptr).name
                 )
             )
             current_index = current.parent_index
@@ -136,7 +136,7 @@ function build_plan[World, Goal, Context](
         var plan = Plan[World](
             steps = vec.Vec[PlanStep].with_capacity(reverse_steps.len()),
             total_cost = goal_node.cost_so_far,
-            final_world = goal_node.world,
+            final_world = goal_node.world
         )
 
         while true:
@@ -160,7 +160,7 @@ extending Action[World, Context]:
             name = name,
             precondition = precondition,
             apply = apply,
-            cost = cost,
+            cost = cost
         )
 
 
@@ -211,7 +211,7 @@ extending Planner[World, Goal, Context]:
             is_goal = is_goal,
             heuristic = heuristic,
             worlds_equal = worlds_equal,
-            max_iterations = 256,
+            max_iterations = 256
         )
 
 
@@ -244,7 +244,7 @@ extending Planner[World, Goal, Context]:
                 has_parent = false,
                 action_index = 0,
                 cost_so_far = 0.0,
-                closed = false,
+                closed = false
             )
         )
         open_list.push(0)
@@ -258,7 +258,7 @@ extending Planner[World, Goal, Context]:
                     status = PlanningStatus.iteration_limit,
                     plan = Option[Plan[World]].none,
                     iterations = iterations,
-                    expanded_nodes = expanded_nodes,
+                    expanded_nodes = expanded_nodes
                 )
 
             let best_open_index = choose_best_open(ref_of(this), ref_of(nodes), ref_of(open_list), context, goal) else:
@@ -284,7 +284,7 @@ extending Planner[World, Goal, Context]:
                                 status = PlanningStatus.found,
                                 plan = Option[Plan[World]].some(value = plan),
                                 iterations = iterations,
-                                expanded_nodes = expanded_nodes,
+                                expanded_nodes = expanded_nodes
                             )
 
                         read(current_ptr).closed = true
@@ -313,7 +313,7 @@ extending Planner[World, Goal, Context]:
                                             has_parent = true,
                                             action_index = action_index,
                                             cost_so_far = next_cost,
-                                            closed = false,
+                                            closed = false
                                         )
                                     )
                                     open_list.push(next_node_index)
@@ -338,5 +338,5 @@ extending Planner[World, Goal, Context]:
             status = PlanningStatus.not_found,
             plan = Option[Plan[World]].none,
             iterations = iterations,
-            expanded_nodes = expanded_nodes,
+            expanded_nodes = expanded_nodes
         )
