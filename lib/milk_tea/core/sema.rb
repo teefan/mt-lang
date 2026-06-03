@@ -165,7 +165,7 @@ module MilkTea
       end
     end
 
-    BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
+    INSTALLABLE_BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
       Option Result Subscription EventError
       struct_handle field_handle callable_handle attribute_handle
     ]).freeze
@@ -232,6 +232,7 @@ module MilkTea
         @identifier_binding_ids = {}
         @declaration_binding_ids = {}
         @mutating_argument_identifier_ids = {}
+        @mutable_lvalue_argument_identifier_ids = {}
         @mutable_receiver_expression_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
@@ -266,26 +267,7 @@ module MilkTea
         check_top_level_static_asserts
         check_functions
 
-        Analysis.new(
-          ast: @ast,
-          module_name: @module_name,
-          module_kind: @module_kind,
-          directives: @ast.directives,
-          imports: @imports,
-          types: @types,
-          interfaces: @interfaces,
-          attributes: snapshot_attributes,
-          attribute_applications: snapshot_attribute_applications,
-          values: @top_level_values,
-          functions: @top_level_functions,
-          methods: snapshot_methods,
-          implemented_interfaces: snapshot_implemented_interfaces,
-          local_completion_frames: @local_completion_frames.dup.freeze,
-          binding_resolution: binding_resolution_snapshot,
-          callable_value_identifier_sites: @callable_value_identifier_sites.dup.freeze,
-          callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
-          required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
-        )
+        build_analysis
       end
 
       # Like check, but collects per-function errors instead of raising at first.
@@ -330,7 +312,15 @@ module MilkTea
 
         check_functions_collecting(errors)
 
-        analysis = Analysis.new(
+        analysis = build_analysis
+
+        { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
+      end
+
+      private
+
+      def build_analysis
+        Analysis.new(
           ast: @ast,
           module_name: @module_name,
           module_kind: @module_kind,
@@ -350,14 +340,10 @@ module MilkTea
           callable_value_member_access_sites: @callable_value_member_access_sites.dup.freeze,
           required_unsafe_lines: @required_unsafe_lines.uniq.freeze,
         )
-
-        { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
       end
 
-      private
-
       def install_builtin_types
-        BUILTIN_TYPE_NAMES.each do |name|
+        INSTALLABLE_BUILTIN_TYPE_NAMES.each do |name|
           @types[name] = case name
                          when "str"
                            Types::StringView.new
@@ -1945,7 +1931,6 @@ module MilkTea
 
         initial_scope = {}
         scopes.each do |scope|
-        @mutable_lvalue_argument_identifier_ids = {}
           scope.each do |name, binding|
             initial_scope[name] = binding.id if binding.respond_to?(:id) && binding.id
           end
