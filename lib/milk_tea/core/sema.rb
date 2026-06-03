@@ -807,7 +807,12 @@ module MilkTea
                 end
 
                 seen_fields << field.name
-                field_types[field.name] = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+                field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+                validate_stored_ref_type!(field_type, "field #{decl.name}.#{arm.name}.#{field.name}")
+                unless proc_storage_supported_type?(field_type)
+                  raise_sema_error("field #{decl.name}.#{arm.name}.#{field.name} uses unsupported proc nesting")
+                end
+                field_types[field.name] = field_type
               end
               arms_hash[arm.name] = field_types
             end
@@ -6319,28 +6324,38 @@ module MilkTea
         Types::GenericInstance.new("const_ptr", [type])
       end
 
-      def contains_ref_type?(type)
+      def contains_ref_type?(type, visited = {})
+        return false unless type
+
+        visit_key = [type.class, type.object_id]
+        return false if visited[visit_key]
+
+        visited[visit_key] = true
         case type
         when Types::Nullable
-          contains_ref_type?(type.base)
+          contains_ref_type?(type.base, visited)
         when Types::GenericInstance
           return true if ref_type?(type)
 
-          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument) }
+          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited) }
         when Types::Span
-          contains_ref_type?(type.element_type)
+          contains_ref_type?(type.element_type, visited)
         when Types::Task
-          contains_ref_type?(type.result_type)
+          contains_ref_type?(type.result_type, visited)
+        when Types::Struct, Types::Union
+          type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited) }
         when Types::StructInstance
-          type.arguments.any? { |argument| contains_ref_type?(argument) }
+          type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
+        when Types::Variant
+          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited) } }
         when Types::VariantInstance
-          type.arguments.any? { |argument| contains_ref_type?(argument) }
+          type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
         when Types::Proc
-          type.params.any? { |param| contains_ref_type?(param.type) } || contains_ref_type?(type.return_type)
+          type.params.any? { |param| contains_ref_type?(param.type, visited) } || contains_ref_type?(type.return_type, visited)
         when Types::Function
-          type.params.any? { |param| contains_ref_type?(param.type) } ||
-            contains_ref_type?(type.return_type) ||
-            (type.receiver_type && contains_ref_type?(type.receiver_type))
+          type.params.any? { |param| contains_ref_type?(param.type, visited) } ||
+            contains_ref_type?(type.return_type, visited) ||
+            (type.receiver_type && contains_ref_type?(type.receiver_type, visited))
         else
           false
         end
