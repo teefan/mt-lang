@@ -443,58 +443,5 @@ module MilkTea
         statements
       end
 
-      def lower_assignment_target(expression, env:)
-        case expression
-        when AST::Identifier
-          binding = lookup_value(expression.name, env)
-          lower_assignment_binding_target(binding)
-        when AST::MemberAccess
-          receiver_type = infer_expression_type(expression.receiver, env:)
-          receiver = lower_expression(expression.receiver, env:)
-          type = infer_expression_type(expression, env:)
-          IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
-        when AST::IndexAccess
-          receiver_type = infer_expression_type(expression.receiver, env:)
-          receiver = lower_expression(expression.receiver, env:)
-          index = lower_expression(expression.index, env:)
-          type = infer_expression_type(expression, env:)
-          if array_type?(receiver_type)
-            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
-          elsif receiver_type.is_a?(Types::Span)
-            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
-          else
-            IR::Index.new(receiver:, index:, type:)
-          end
-        when AST::Call
-          if read_call?(expression)
-            type = infer_expression_type(expression, env:)
-            operand = lower_expression(expression.arguments.first.value, env:)
-            return IR::Unary.new(operator: "*", operand:, type:)
-          end
-
-          raise LoweringError, "unsupported assignment target #{expression.class.name}"
-        else
-          raise LoweringError, "unsupported assignment target #{expression.class.name}"
-        end
-      end
-
-      def lower_assignment_binding_target(binding)
-        storage_type = binding[:storage_type]
-        visible_type = binding[:type]
-        storage_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
-
-        case binding[:projection]
-        when :result_success_value
-          variant_binding_projection_expression(storage_ref, storage_type, "success", "value", visible_type)
-        when :option_some_value
-          variant_binding_projection_expression(storage_ref, storage_type, "some", "value", visible_type)
-        else
-          if visible_type == storage_type || (storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type)
-            IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
-          else
-            storage_ref
-          end
-        end
-      end
   end
 end

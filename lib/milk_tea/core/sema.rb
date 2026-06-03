@@ -8,6 +8,9 @@ require_relative "sema/nullability"
 require_relative "sema/statement_checker"
 require_relative "sema/expression_checker"
 require_relative "sema/call_checker"
+require_relative "sema/context_manager"
+require_relative "sema/type_compatibility"
+require_relative "sema/flow_refinement"
 require_relative "sema/resolve"
 
 module MilkTea

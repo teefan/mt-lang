@@ -125,6 +125,7 @@ module MilkTea
           end
 
           def emit_function(function)
+            @checked_index_alias_stack.clear
             @checked_index_alias_id = 0
             @suppressed_labels = []
             body = compact_generated_statement_sequence(function.body)
@@ -146,6 +147,34 @@ module MilkTea
             end
             lines << "}"
             lines
+          end
+
+          def emit_string_type
+            [
+              "typedef struct mt_str {",
+              "#{INDENT}char* data;",
+              "#{INDENT}uintptr_t len;",
+              "} mt_str;",
+            ]
+          end
+
+          def emit_span_type(type)
+            span_type = span_type_name(type)
+            [
+              "typedef struct #{span_type} {",
+              "#{INDENT}#{c_declaration(pointer_to(type.element_type), 'data')};",
+              "#{INDENT}#{c_declaration(Types::Primitive.new('ptr_uint'), 'len')};",
+              "} #{span_type};",
+            ]
+          end
+
+          def struct_layout_attributes(struct_decl)
+            attributes = []
+            attributes << "packed" if struct_decl.packed
+            attributes << "aligned(#{struct_decl.alignment})" if struct_decl.alignment
+            return "" if attributes.empty?
+
+            " __attribute__((#{attributes.join(', ')}))"
           end
     end
   end

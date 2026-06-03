@@ -382,5 +382,26 @@ module MilkTea
           false
         end
       end
+      def build_proc_noop_release_function(release_c_name)
+        IR::Function.new(
+          name: release_c_name,
+          c_name: release_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [IR::ReturnStmt.new(value: nil)],
+          entry_point: false,
+        )
+      end
+
+      def build_proc_noop_retain_function(retain_c_name)
+        IR::Function.new(
+          name: retain_c_name,
+          c_name: retain_c_name,
+          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+          return_type: @types.fetch("void"),
+          body: [IR::ReturnStmt.new(value: nil)],
+          entry_point: false,
+        )
+      end
   end
 end

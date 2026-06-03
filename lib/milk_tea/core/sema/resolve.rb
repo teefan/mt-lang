@@ -13,6 +13,110 @@ module MilkTea
         @current_type_param_constraints || {}
       end
 
+      def lookup_value(name, scopes)
+        scopes.reverse_each do |scope|
+          return scope[name] if scope.key?(name)
+        end
+
+        @top_level_values[name]
+      end
+
+      def lookup_method(receiver_type, name)
+        method = lookup_method_local_or_imported(receiver_type, name)
+        return method if method
+
+        fallback_owner = specialization_lookup_owner
+        return nil unless fallback_owner
+
+        fallback_owner.send(:lookup_method_local_or_imported, receiver_type, name)
+      end
+
+      def lookup_method_local_or_imported(receiver_type, name)
+        dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
+
+        method = @methods.fetch(receiver_type, {})[name]
+        method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        return method if method
+
+        imported_candidates = []
+
+        @imports.each_value do |module_binding|
+          imported_method = module_binding.methods.fetch(receiver_type, {})[name]
+          if imported_method.nil? && dispatch_receiver_type != receiver_type
+            imported_method = module_binding.methods.fetch(dispatch_receiver_type, {})[name]
+          end
+
+          imported_candidates << [module_binding, imported_method] if imported_method
+        end
+
+        if imported_candidates.empty?
+          owner_module = reachable_module_binding_for_type(receiver_type)
+          return nil unless owner_module
+
+          return module_binding_method(owner_module, receiver_type, dispatch_receiver_type, name)
+        end
+
+        if imported_candidates.length > 1
+          modules = imported_candidates.map { |module_binding, _binding| module_binding.name }.join(", ")
+          raise_sema_error("ambiguous imported method #{receiver_type}.#{name}; found in modules #{modules}")
+        end
+
+        imported_candidates.first.last
+      end
+
+      def module_binding_method(module_binding, receiver_type, dispatch_receiver_type, name)
+        method = module_binding.methods.fetch(receiver_type, {})[name]
+        method ||= module_binding.methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        method
+      end
+
+      def reachable_module_binding_for_type(receiver_type)
+        module_name = receiver_type_module_name(receiver_type)
+        return nil unless module_name
+        return nil if module_name == @module_name
+
+        find_reachable_imported_module(module_name)
+      end
+
+      def receiver_type_module_name(receiver_type)
+        return receiver_type_module_name(receiver_type.base) if receiver_type.is_a?(Types::Nullable)
+        return receiver_type.module_name if receiver_type.respond_to?(:module_name)
+
+        nil
+      end
+
+      def find_reachable_imported_module(module_name)
+        visited = {}
+
+        @imports.each_value do |module_binding|
+          found = find_reachable_imported_module_from(module_binding, module_name, visited)
+          return found if found
+        end
+
+        nil
+      end
+
+      def find_reachable_imported_module_from(module_binding, module_name, visited)
+        return nil unless module_binding
+        return module_binding if module_binding.name == module_name
+        return nil if visited[module_binding.name]
+
+        visited[module_binding.name] = true
+        module_binding.imports.each_value do |imported_module|
+          found = find_reachable_imported_module_from(imported_module, module_name, visited)
+          return found if found
+        end
+
+        nil
+      end
+
+      def specialization_lookup_owner
+        return nil if @current_specialization_owner.nil?
+        return nil if @current_specialization_owner.equal?(self)
+
+        @current_specialization_owner
+      end
+
       def resolve_interface_ref(interface_ref)
         parts = interface_ref.parts
 
@@ -338,459 +442,6 @@ module MilkTea
         end
       end
 
-      def call_argument_compatible?(actual_type, expected_type, scopes:, external:, expression: nil)
-        return true if array_to_span_call_argument_compatible?(actual_type, expected_type, expression:, scopes:)
-        return true if argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:, contextual_int_to_float: !external)
-        return true if implicit_ref_argument_compatible?(actual_type, expected_type, expression, scopes)
-        return true if direct_task_to_proc_argument_compatible?(actual_type, expected_type)
-        return true if direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
-
-        false
-      end
-
-      def implicit_ref_argument_compatible?(actual_type, expected_type, expression, scopes)
-        return false unless expression && scopes
-        return false unless ref_type?(expected_type)
-        return false unless actual_type == referenced_type(expected_type)
-        return false unless safe_reference_source_expression?(expression, scopes:)
-
-        infer_lvalue(expression, scopes:)
-        true
-      rescue SemaError
-        false
-      end
-
-      def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, external_pointer_null: false, contextual_int_to_float: false)
-        return true if error_type?(actual_type) || error_type?(expected_type)
-        return true if actual_type == expected_type
-        return true if null_assignable_to?(actual_type, expected_type)
-        return true if external_pointer_null && external_typed_null_pointer_compatibility?(actual_type, expected_type)
-        return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
-        return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
-        return true if string_literal_cstr_compatibility?(expression, expected_type)
-        return true if exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes:)
-        return true if integer_to_char_compatibility?(actual_type, expected_type)
-        return true if external_numeric && external_numeric_compatibility?(actual_type, expected_type)
-        return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
-        return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
-        return true if actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function) &&
-                      !actual_type.receiver_type && !actual_type.variadic &&
-                      function_type_matches_proc_type?(actual_type, expected_type)
-
-        false
-      end
-
-      def argument_types_compatible?(actual_type, expected_type, external:, expression: nil, scopes: nil, contextual_int_to_float: false)
-        return true if types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric: external, contextual_int_to_float:)
-        return true if external && external_void_pointer_argument_compatibility?(actual_type, expected_type)
-        return true if external && extern_enum_integer_argument_compatibility?(actual_type, expected_type)
-        if external && foreign_mapping_context? && foreign_identity_projection_compatible?(actual_type, expected_type)
-          return false if actual_type == @types.fetch("cstr") && char_pointer_type?(expected_type)
-
-          return true
-        end
-
-        false
-      end
-
-      def direct_function_to_proc_argument_compatible?(actual_type, expected_type, expression, scopes)
-        return false unless expression
-        return false unless actual_type.is_a?(Types::Function) && proc_type?(expected_type)
-        return false unless direct_function_identity_expression?(expression, scopes)
-
-        function_type_matches_proc_type?(actual_type, expected_type)
-      end
-
-      def direct_task_to_proc_argument_compatible?(actual_type, expected_type)
-        return false unless actual_type.is_a?(Types::Task)
-        return false unless task_root_proc_type?(expected_type)
-
-        actual_type == expected_type.return_type
-      end
-
-      def direct_function_identity_expression?(expression, scopes)
-        case expression
-        when AST::Identifier
-          return false if lookup_value(expression.name, scopes)
-          return false unless @top_level_functions.key?(expression.name)
-
-          binding = @top_level_functions.fetch(expression.name)
-          !binding.type_params.any? && !foreign_function_binding?(binding)
-        when AST::MemberAccess
-          return false unless expression.receiver.is_a?(AST::Identifier) && @imports.key?(expression.receiver.name)
-
-          imported_module = @imports.fetch(expression.receiver.name)
-          return false unless imported_module.functions.key?(expression.member)
-
-          binding = imported_module.functions.fetch(expression.member)
-          !binding.type_params.any? && !foreign_function_binding?(binding)
-        when AST::Specialization
-          binding = resolve_specialized_function_binding(expression)
-          binding && !foreign_function_binding?(binding)
-        else
-          false
-        end
-      end
-
-      def external_void_pointer_argument_compatibility?(actual_type, expected_type)
-        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
-          return external_void_pointer_argument_compatibility?(actual_type.base, expected_type.base)
-        end
-
-        return external_void_pointer_argument_compatibility?(actual_type, expected_type.base) if expected_type.is_a?(Types::Nullable)
-        return false if actual_type.is_a?(Types::Nullable)
-        return false unless pointer_type?(actual_type) && pointer_type?(expected_type)
-        return false if const_pointer_type?(actual_type) && mutable_pointer_type?(expected_type)
-
-        actual_pointee = pointee_type(actual_type)
-        expected_pointee = pointee_type(expected_type)
-
-        actual_pointee == @types.fetch("void") || expected_pointee == @types.fetch("void")
-      end
-
-      def exact_compile_time_numeric_compatibility?(actual_type, expression, expected_type, scopes: nil)
-        return false unless expected_type.is_a?(Types::Primitive) && expected_type.numeric?
-        return false if actual_type.is_a?(Types::EnumBase)
-
-        value = evaluate_compile_time_const_value(expression, scopes:)
-        return false unless value.is_a?(Numeric)
-
-        numeric_constant_fits_type?(value, expected_type)
-      end
-
-      def extern_enum_integer_argument_compatibility?(actual_type, expected_type)
-        return unless actual_type.is_a?(Types::EnumBase)
-        return unless expected_type.is_a?(Types::Primitive) && expected_type.integer? && expected_type.fixed_width_integer?
-
-        backing_type = actual_type.backing_type
-        return unless backing_type.is_a?(Types::Primitive) && backing_type.integer? && backing_type.fixed_width_integer?
-
-        backing_type.integer_width == expected_type.integer_width
-      end
-
-      def common_numeric_type(left_type, right_type)
-        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
-        return unless left_type.numeric? && right_type.numeric?
-        return left_type if left_type == right_type
-
-        return common_integer_type(left_type, right_type) if left_type.integer? && right_type.integer?
-        return wider_float_type(left_type, right_type) if left_type.float? && right_type.float?
-
-        float_type, integer_type = left_type.float? ? [left_type, right_type] : [right_type, left_type]
-        return unless integer_type.integer? && integer_type.fixed_width_integer?
-
-        float_type
-      end
-
-      def common_integer_type(left_type, right_type)
-        return unless left_type.is_a?(Types::Primitive) && right_type.is_a?(Types::Primitive)
-        return unless left_type.integer? && right_type.integer?
-        return left_type if left_type == right_type
-        return unless left_type.fixed_width_integer? && right_type.fixed_width_integer?
-        return unless left_type.signed_integer? == right_type.signed_integer?
-
-        left_type.integer_width >= right_type.integer_width ? left_type : right_type
-      end
-
-      def wider_float_type(left_type, right_type)
-        left_type.float_width >= right_type.float_width ? left_type : right_type
-      end
-
-      def with_unsafe
-        @unsafe_depth += 1
-        yield
-      ensure
-        @unsafe_depth -= 1
-      end
-
-      def mark_current_unsafe_required!
-        current_line = @unsafe_statement_lines.last
-        return unless current_line
-
-        @required_unsafe_lines << current_line
-      end
-
-      def require_unsafe!(message, line: nil, column: nil)
-        if unsafe_context?
-          mark_current_unsafe_required!
-          return
-        end
-
-        if line || column
-          raise SemaError.new(message, line:, column:)
-        end
-
-        raise_sema_error(message)
-      end
-
-      def with_foreign_mapping_context
-        @foreign_mapping_depth += 1
-        yield
-      ensure
-        @foreign_mapping_depth -= 1
-      end
-
-      def with_async_function
-        @async_function_depth += 1
-        yield
-      ensure
-        @async_function_depth -= 1
-      end
-
-      def with_loop
-        @loop_depth += 1
-        yield
-      ensure
-        @loop_depth -= 1
-      end
-
-      def with_loop_barrier
-        previous_loop_depth = @loop_depth
-        @loop_depth = 0
-        yield
-      ensure
-        @loop_depth = previous_loop_depth
-      end
-
-      def unsafe_context?
-        @unsafe_depth.positive?
-      end
-
-      def inside_async_function?
-        @async_function_depth.positive?
-      end
-
-      def inside_loop?
-        @loop_depth.positive?
-      end
-
-      def foreign_mapping_context?
-        @foreign_mapping_depth.positive?
-      end
-
-      def validate_async_function_body!(statements)
-        statements.each { |statement| validate_async_statement!(statement) }
-      end
-
-      def validate_async_statement!(statement)
-        case statement
-        when AST::ErrorBlockStmt
-          if statement.header_expression
-            context = case statement.header_type
-                      when :if then "if conditions"
-                      when :while then "while conditions"
-                      end
-            validate_async_expression_support!(statement.header_expression, context:) if context
-          end
-          if statement.header_type == :for
-            Array(statement.header_iterables).each do |iterable|
-              validate_async_expression_support!(iterable, context: "for iterables")
-            end
-          end
-          statement.body.each { |s| validate_async_statement!(s) }
-        when AST::ErrorStmt
-          nil
-        when AST::LocalDecl
-          validate_async_expression_support!(statement.value, context: "local initializer") if statement.value
-          statement.else_body&.each { |s| validate_async_statement!(s) }
-        when AST::Assignment
-          validate_async_expression_support!(statement.target, context: "assignment target")
-          validate_async_expression_support!(statement.value, context: "assignment")
-        when AST::ExpressionStmt
-          validate_async_expression_support!(statement.expression, context: "expression statement")
-        when AST::ReturnStmt
-          return unless statement.value
-
-          validate_async_expression_support!(statement.value, context: "return statement")
-        when AST::IfStmt
-          statement.branches.each do |branch|
-            validate_async_expression_support!(branch.condition, context: "if conditions")
-
-            branch.body.each { |s| validate_async_statement!(s) }
-          end
-          statement.else_body&.each { |s| validate_async_statement!(s) }
-        when AST::WhileStmt
-          validate_async_expression_support!(statement.condition, context: "while conditions")
-
-          statement.body.each { |s| validate_async_statement!(s) }
-        when AST::ForStmt
-          statement.iterables.each do |iterable|
-            validate_async_expression_support!(iterable, context: "for iterables")
-          end
-
-          statement.body.each { |s| validate_async_statement!(s) }
-        when AST::MatchStmt
-          validate_async_expression_support!(statement.expression, context: "match discriminants")
-
-          statement.arms.each { |arm| arm.body.each { |s| validate_async_statement!(s) } }
-        when AST::UnsafeStmt
-          statement.body.each { |s| validate_async_statement!(s) }
-        when AST::DeferStmt
-          validate_async_expression_support!(statement.expression, context: "defer cleanup") if statement.expression
-          statement.body&.each { |s| validate_async_statement!(s) }
-        when AST::BreakStmt, AST::ContinueStmt, AST::StaticAssert, AST::PassStmt
-          nil
-        else
-          raise_sema_error("async functions currently only support straight-line local declarations, assignments, expression statements, and return statements")
-        end
-      end
-
-      def validate_async_expression_support!(expression, context:)
-        unsupported_context = unsupported_async_await_context(expression)
-        return unless unsupported_context
-
-        raise_sema_error("await in async functions is not supported inside #{unsupported_context} yet")
-      end
-
-      def unsupported_async_await_context(expression)
-        case expression
-        when AST::AwaitExpr
-          nil
-        when AST::Call, AST::Specialization
-          unsupported_async_await_context(expression.callee) || expression.arguments.filter_map { |argument| unsupported_async_await_context(argument.value) }.first
-        when AST::UnaryOp
-          unsupported_async_await_context(expression.operand)
-        when AST::BinaryOp
-          unsupported_async_await_context(expression.left) || unsupported_async_await_context(expression.right)
-        when AST::IfExpr
-          unsupported_async_await_context(expression.condition) ||
-            unsupported_async_await_context(expression.then_expression) ||
-            unsupported_async_await_context(expression.else_expression)
-        when AST::MatchExpr
-          unsupported_async_await_context(expression.expression) ||
-            expression.arms.filter_map { |arm| unsupported_async_await_context(arm.pattern) || unsupported_async_await_context(arm.value) }.first
-        when AST::UnsafeExpr
-          unsupported_async_await_context(expression.expression)
-        when AST::MemberAccess
-          unsupported_async_await_context(expression.receiver)
-        when AST::IndexAccess
-          unsupported_async_await_context(expression.receiver) || unsupported_async_await_context(expression.index)
-        when AST::FormatString
-          expression.parts.filter_map do |part|
-            next unless part.is_a?(AST::FormatExprPart)
-
-            unsupported_async_await_context(part.expression)
-          end.first
-        else
-          nil
-        end
-      end
-
-      def statement_contains_await?(statement)
-        case statement
-        when AST::ErrorBlockStmt
-          (statement.header_expression && expression_contains_await?(statement.header_expression)) ||
-            Array(statement.header_iterables).any? { |iterable| expression_contains_await?(iterable) } ||
-            statements_contain_await?(statement.body)
-        when AST::LocalDecl
-          (statement.value && expression_contains_await?(statement.value)) ||
-            (statement.else_body && statements_contain_await?(statement.else_body))
-        when AST::Assignment
-          expression_contains_await?(statement.target) || expression_contains_await?(statement.value)
-        when AST::IfStmt
-          statement.branches.any? { |branch| expression_contains_await?(branch.condition) || statements_contain_await?(branch.body) } ||
-            (statement.else_body && statements_contain_await?(statement.else_body))
-        when AST::MatchStmt
-          expression_contains_await?(statement.expression) || statement.arms.any? { |arm| expression_contains_await?(arm.pattern) || statements_contain_await?(arm.body) }
-        when AST::UnsafeStmt
-          statements_contain_await?(statement.body)
-        when AST::StaticAssert
-          expression_contains_await?(statement.condition) || expression_contains_await?(statement.message)
-        when AST::ForStmt
-          statement.iterables.any? { |iterable| expression_contains_await?(iterable) } || statements_contain_await?(statement.body)
-        when AST::WhileStmt
-          expression_contains_await?(statement.condition) || statements_contain_await?(statement.body)
-        when AST::ReturnStmt
-          statement.value && expression_contains_await?(statement.value)
-        when AST::DeferStmt
-          (statement.expression && expression_contains_await?(statement.expression)) || (statement.body && statements_contain_await?(statement.body))
-        when AST::ExpressionStmt
-          expression_contains_await?(statement.expression)
-        else
-          false
-        end
-      end
-
-      def statements_contain_await?(statements)
-        statements.any? { |statement| statement_contains_await?(statement) }
-      end
-
-      def await_expression?(expression)
-        expression.is_a?(AST::AwaitExpr)
-      end
-
-      def expression_contains_await?(expression)
-        case expression
-        when AST::AwaitExpr
-          true
-        when AST::Call, AST::Specialization
-          expression_contains_await?(expression.callee) || expression.arguments.any? { |argument| expression_contains_await?(argument.value) }
-        when AST::UnaryOp
-          expression_contains_await?(expression.operand)
-        when AST::BinaryOp
-          expression_contains_await?(expression.left) || expression_contains_await?(expression.right)
-        when AST::IfExpr
-          expression_contains_await?(expression.condition) || expression_contains_await?(expression.then_expression) || expression_contains_await?(expression.else_expression)
-        when AST::MatchExpr
-          expression_contains_await?(expression.expression) || expression.arms.any? { |arm| expression_contains_await?(arm.pattern) || expression_contains_await?(arm.value) }
-        when AST::UnsafeExpr
-          expression_contains_await?(expression.expression)
-        when AST::MemberAccess
-          expression_contains_await?(expression.receiver)
-        when AST::IndexAccess
-          expression_contains_await?(expression.receiver) || expression_contains_await?(expression.index)
-        when AST::FormatString
-          expression.parts.any? { |part| part.is_a?(AST::FormatExprPart) && expression_contains_await?(part.expression) }
-        else
-          false
-        end
-      end
-
-      def pointer_arithmetic_result(operator, left_type, right_type)
-        if pointer_type?(left_type) && integer_type?(right_type)
-          require_unsafe!("pointer arithmetic requires unsafe")
-
-          return left_type if operator == "+" || operator == "-"
-        end
-
-        if operator == "+" && integer_type?(left_type) && pointer_type?(right_type)
-          require_unsafe!("pointer arithmetic requires unsafe")
-
-          return right_type
-        end
-
-        nil
-      end
-
-      def pointer_cast?(source_type, target_type)
-        pointer_cast_type?(source_type) && pointer_cast_type?(target_type)
-      end
-
-      def ref_to_pointer_cast?(source_type, target_type)
-        ref_type?(source_type) && pointer_cast_type?(target_type)
-      end
-
-      def pointer_cast_type?(type)
-        return typed_null_target_type?(type.target_type) if type.is_a?(Types::Null)
-        return true if type == @types.fetch("cstr")
-        if type.is_a?(Types::Nullable)
-          return true if function_pointer_type?(type.base)
-
-          return pointer_type?(type.base)
-        end
-
-        return true if function_pointer_type?(type)
-
-        pointer_type?(type)
-      end
-
-      def typed_null_target_type?(type)
-        type == @types.fetch("cstr") || pointer_type?(type) || function_pointer_type?(type)
-      end
-
-      def function_pointer_type?(type)
-        type.is_a?(Types::Function)
-      end
 
       def span_type?(type)
         type.is_a?(Types::Span)
@@ -2292,348 +1943,6 @@ module MilkTea
         @declaration_binding_ids[node.object_id] = binding.id
       end
 
-      def current_actual_scope(scopes)
-        scopes.reverse_each do |scope|
-          return scope unless scope.is_a?(FlowScope)
-        end
-
-        raise_sema_error("missing lexical scope")
-      end
-
-      def apply_continuation_refinements!(scopes, refinements)
-        return if refinements.nil? || refinements.empty?
-
-        scopes.replace(scopes_with_refinements(scopes, refinements))
-      end
-
-      def scopes_with_refinements(scopes, refinements)
-        return scopes if refinements.nil? || refinements.empty?
-
-        base_scopes = scopes.last.is_a?(FlowScope) ? scopes[0...-1] : scopes
-        merged_refinements = if scopes.last.is_a?(FlowScope)
-                               scopes.last.each_with_object({}) do |(name, binding), result|
-                                 result[name] = if name.is_a?(String) && binding.respond_to?(:type)
-                                                  binding.type
-                                                else
-                                                  binding
-                                                end
-                               end
-                             else
-                               {}
-                             end
-        merged_refinements = merge_refinements(merged_refinements, refinements)
-        flow_scope = FlowScope.new
-
-        merged_refinements.each do |name, refined_type|
-          unless name.is_a?(String)
-            flow_scope[name] = refined_type
-            next
-          end
-
-          binding = lookup_value(name, base_scopes)
-          next unless binding
-
-          flow_scope[name] = binding.with_flow_type(refined_type)
-        end
-
-        return base_scopes if flow_scope.empty?
-
-        base_scopes + [flow_scope]
-      end
-
-      def merge_refinements(existing, incoming)
-        merged = existing.dup
-        incoming.each do |name, refined_type|
-          if merged.key?(name) && merged[name] != refined_type
-            merged.delete(name)
-          else
-            merged[name] = refined_type
-          end
-        end
-
-        merged
-      end
-
-      def flow_refinements(expression, truthy:, scopes:)
-        case expression
-        when AST::Call
-          if truthy && has_attribute_refinement_call?(expression)
-            key = attribute_presence_key_from_call(expression, scopes:)
-            return key ? { key => true } : {}
-          end
-        when AST::UnaryOp
-          return flow_refinements(expression.operand, truthy: !truthy, scopes:) if expression.operator == "not"
-        when AST::BinaryOp
-          case expression.operator
-          when "and"
-            if truthy
-              left_truthy = flow_refinements(expression.left, truthy: true, scopes:)
-              right_scopes = scopes_with_refinements(scopes, left_truthy)
-              right_truthy = flow_refinements(expression.right, truthy: true, scopes: right_scopes)
-              return merge_refinements(left_truthy, right_truthy)
-            end
-          when "or"
-            unless truthy
-              left_falsy = flow_refinements(expression.left, truthy: false, scopes:)
-              right_scopes = scopes_with_refinements(scopes, left_falsy)
-              right_falsy = flow_refinements(expression.right, truthy: false, scopes: right_scopes)
-              return merge_refinements(left_falsy, right_falsy)
-            end
-          when "==", "!="
-            return null_test_refinements(expression, truthy:, scopes:)
-          end
-        end
-
-        {}
-      end
-
-      def start_local_completion_frame(binding, scopes)
-        frame = {
-          function_name: binding.name,
-          receiver_type: binding.type.receiver_type,
-          snapshots: [],
-        }
-        @active_local_completion_stack << frame
-        record_local_completion_snapshot(binding.ast.respond_to?(:line) ? binding.ast.line : nil, 0, scopes)
-      end
-
-      def finish_local_completion_frame(binding)
-        return if @active_local_completion_stack.empty?
-
-        frame = @active_local_completion_stack.pop
-        snapshots = frame[:snapshots]
-        if snapshots.empty?
-          return
-        end
-
-        start_line = [binding.ast.respond_to?(:line) ? binding.ast.line : nil, snapshots.first.line].compact.min
-        end_line = snapshots.last.line
-
-        @local_completion_frames << LocalCompletionFrame.new(
-          start_line:,
-          end_line:,
-          function_name: frame[:function_name],
-          receiver_type: frame[:receiver_type],
-          snapshots: snapshots.freeze,
-        )
-      end
-
-      def record_local_completion_snapshot(line, column, scopes)
-        return if @active_local_completion_stack.empty?
-        return if line.nil?
-
-        snapshot = LocalCompletionSnapshot.new(
-          line:,
-          column: (column || 0),
-          bindings: merged_scope_bindings(scopes).freeze,
-        )
-
-        snapshots = @active_local_completion_stack.last[:snapshots]
-        prev = snapshots.last
-        if prev && prev.line == snapshot.line && prev.column == snapshot.column
-          snapshots[-1] = snapshot
-        else
-          snapshots << snapshot
-        end
-      end
-
-      def merged_scope_bindings(scopes)
-        scopes.each_with_object({}) do |scope, bindings|
-          scope.each do |name, binding|
-            next unless name.is_a?(String)
-
-            bindings[name] = binding
-          end
-        end
-      end
-
-      def has_attribute_refinement_call?(expression)
-        expression.callee.is_a?(AST::Identifier) && expression.callee.name == "has_attribute" && expression.arguments.length == 2 && expression.arguments.none?(&:name)
-      end
-
-      def attribute_presence_key_from_call(expression, scopes:)
-        target = resolve_reflection_target_argument(expression.arguments.first.value, scopes:)
-        binding = resolve_attribute_name_argument(expression.arguments[1].value)
-        validate_attribute_target_compatibility!(target, binding)
-        attribute_presence_refinement_key(target, binding)
-      rescue SemaError
-        nil
-      end
-
-      def statement_end_line(statement)
-        return nil unless statement
-
-        lines = [statement.respond_to?(:line) ? statement.line : nil]
-
-        case statement
-        when AST::ErrorBlockStmt
-          lines.concat(statement_list_lines(statement.body))
-        when AST::LocalDecl
-          lines << expression_end_line(statement.value) if statement.value
-          lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
-        when AST::IfStmt
-          statement.branches.each do |branch|
-            lines << expression_end_line(branch.condition)
-            lines.concat(statement_list_lines(branch.body))
-          end
-          lines.concat(statement_list_lines(statement.else_body)) if statement.else_body
-        when AST::UnsafeStmt, AST::ForStmt, AST::WhileStmt
-          lines.concat(statement_list_lines(statement.body))
-        when AST::MatchStmt
-          statement.arms.each do |arm|
-            lines.concat(statement_list_lines(arm.body))
-          end
-        when AST::DeferStmt
-          lines.concat(statement_list_lines(statement.body)) if statement.body
-        when AST::Assignment
-          lines << expression_end_line(statement.value)
-        when AST::ReturnStmt
-          lines << expression_end_line(statement.value)
-        when AST::ExpressionStmt
-          lines << expression_end_line(statement.expression)
-        when AST::StaticAssert
-          lines << expression_end_line(statement.condition)
-        end
-
-        lines.compact.max
-      end
-
-      def statement_list_lines(statements)
-        return [] unless statements
-
-        statements.each_with_object([]) do |stmt, lines|
-          end_line = statement_end_line(stmt)
-          lines << end_line if end_line
-        end
-      end
-
-      def expression_end_line(node)
-        return nil unless node
-
-        lines = [node.respond_to?(:line) ? node.line : nil]
-
-        case node
-        when AST::MemberAccess
-          lines << expression_end_line(node.receiver)
-        when AST::IndexAccess
-          lines << expression_end_line(node.receiver)
-          lines << expression_end_line(node.index)
-        when AST::Specialization
-          lines << expression_end_line(node.callee)
-        when AST::Call
-          lines << expression_end_line(node.callee)
-          node.arguments.each { |argument| lines << expression_end_line(argument.value) }
-        when AST::Argument
-          lines << expression_end_line(node.value)
-        when AST::UnaryOp
-          lines << expression_end_line(node.operand)
-        when AST::BinaryOp
-          lines << expression_end_line(node.left)
-          lines << expression_end_line(node.right)
-        when AST::IfExpr
-          lines << expression_end_line(node.condition)
-          lines << expression_end_line(node.then_expression)
-          lines << expression_end_line(node.else_expression)
-        when AST::MatchExpr
-          lines << expression_end_line(node.expression)
-          node.arms.each do |arm|
-            lines << expression_end_line(arm.pattern)
-            lines << expression_end_line(arm.value)
-          end
-        when AST::AwaitExpr
-          lines << expression_end_line(node.expression)
-        when AST::FormatExprPart
-          lines << expression_end_line(node.expression)
-        end
-
-        lines.compact.max
-      end
-
-      def recovered_for_statement(statement)
-        AST::ForStmt.new(
-          bindings: Array(statement.header_bindings),
-          iterables: Array(statement.header_iterables),
-          body: statement.body,
-          line: statement.line,
-          column: statement.column,
-        )
-      end
-
-      def null_test_refinements(expression, truthy:, scopes:)
-        identifier_expression = nil
-        if expression.left.is_a?(AST::Identifier) && expression.right.is_a?(AST::NullLiteral)
-          identifier_expression = expression.left
-        elsif expression.left.is_a?(AST::NullLiteral) && expression.right.is_a?(AST::Identifier)
-          identifier_expression = expression.right
-        else
-          return {}
-        end
-
-        binding = lookup_value(identifier_expression.name, scopes)
-        return {} unless binding&.storage_type.is_a?(Types::Nullable)
-
-        null_result = expression.operator == "==" ? truthy : !truthy
-        refined_type = null_result ? @null_type : binding.storage_type.base
-        { identifier_expression.name => refined_type }
-      end
-
-      def conditional_common_type(then_type, else_type, then_expression:, else_expression:)
-        return then_type if then_type == else_type
-
-        numeric_type = common_numeric_type(then_type, else_type)
-        return numeric_type if numeric_type
-
-        if (nullable_type = conditional_null_common_type(then_type, else_type))
-          return nullable_type
-        end
-
-        if (nullable_type = conditional_null_common_type(else_type, then_type))
-          return nullable_type
-        end
-
-        return then_type if types_compatible?(else_type, then_type, expression: else_expression)
-        return else_type if types_compatible?(then_type, else_type, expression: then_expression)
-
-        nil
-      end
-
-      def nullable_candidate?(type)
-        return false if ref_type?(type)
-
-        sized_layout_type?(type) || pointer_type?(type) || type.is_a?(Types::Nullable)
-      end
-
-      def conditional_null_common_type(null_type, other_type)
-        return unless null_type.is_a?(Types::Null)
-
-        if other_type.is_a?(Types::Nullable)
-          return other_type if null_type.target_type.nil? || null_type.target_type == other_type.base
-
-          return nil
-        end
-
-        return unless nullable_candidate?(other_type)
-        return if null_type.target_type && null_type.target_type != other_type
-
-        Types::Nullable.new(other_type)
-      end
-
-      def describe_expression(expression)
-        case expression
-        when AST::Identifier
-          expression.name
-        when AST::MemberAccess
-          "#{describe_expression(expression.receiver)}.#{expression.member}"
-        when AST::IndexAccess
-          "#{describe_expression(expression.receiver)}[...]"
-        when AST::Specialization
-          "#{describe_expression(expression.callee)}[...]"
-        when AST::FormatString
-          'f"..."'
-        else
-          expression.class.name.split("::").last
-        end
-      end
 
 
     end

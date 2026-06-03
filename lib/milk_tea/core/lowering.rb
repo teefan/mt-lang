@@ -11,6 +11,7 @@ require_relative "lowering/loops"
 require_relative "lowering/expressions"
 require_relative "lowering/calls"
 require_relative "lowering/foreign_cstr"
+require_relative "lowering/str_buffer"
 require_relative "lowering/resolve"
 require_relative "lowering/utils"
 
@@ -141,6 +142,7 @@ module MilkTea
     include LowererExpressions
     include LowererCalls
     include LowererForeignCstr
+    include LowererStrBuffer
     include LowererResolve
     include LowererUtils
   end

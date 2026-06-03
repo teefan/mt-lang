@@ -220,6 +220,8 @@ module MilkTea
               expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_checked_array_index_types_from_expression(element, array_types) }
+            when IR::VariantLiteral
+              expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
             end
           end
 
@@ -294,6 +296,8 @@ module MilkTea
               expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_checked_span_index_types_from_expression(element, span_types) }
+            when IR::VariantLiteral
+              expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types) }
             end
           end
 
@@ -567,6 +571,9 @@ module MilkTea
               expression.fields.each { |field| collect_proc_types_from_expression(field.value, proc_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_proc_types_from_expression(element, proc_types, visited) }
+            when IR::VariantLiteral
+              collect_proc_type(expression.type, proc_types, visited)
+              expression.fields.each { |field| collect_proc_types_from_expression(field.value, proc_types, visited) }
             end
           end
 
@@ -690,6 +697,9 @@ module MilkTea
               expression.fields.each { |field| collect_task_types_from_expression(field.value, task_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_task_types_from_expression(element, task_types, visited) }
+            when IR::VariantLiteral
+              collect_task_type(expression.type, task_types, visited)
+              expression.fields.each { |field| collect_task_types_from_expression(field.value, task_types, visited) }
             end
           end
 
@@ -848,6 +858,9 @@ module MilkTea
               expression.fields.each { |field| collect_generic_variant_types_from_expression(field.value, generic_variant_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_generic_variant_types_from_expression(element, generic_variant_types, visited) }
+            when IR::VariantLiteral
+              collect_generic_variant_type(expression.type, generic_variant_types, visited)
+              expression.fields.each { |field| collect_generic_variant_types_from_expression(field.value, generic_variant_types, visited) }
             end
           end
 
@@ -1055,6 +1068,9 @@ module MilkTea
               expression.fields.each { |field| collect_str_buffer_types_from_expression(field.value, str_buffer_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_str_buffer_types_from_expression(element, str_buffer_types, visited) }
+            when IR::VariantLiteral
+              collect_str_buffer_type(expression.type, str_buffer_types, visited)
+              expression.fields.each { |field| collect_str_buffer_types_from_expression(field.value, str_buffer_types, visited) }
             end
           end
 
@@ -1173,6 +1189,9 @@ module MilkTea
               expression.fields.each { |field| collect_generic_struct_types_from_expression(field.value, generic_struct_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_generic_struct_types_from_expression(element, generic_struct_types, visited) }
+            when IR::VariantLiteral
+              collect_generic_struct_type(expression.type, generic_struct_types, visited)
+              expression.fields.each { |field| collect_generic_struct_types_from_expression(field.value, generic_struct_types, visited) }
             end
           end
 
@@ -1372,6 +1391,9 @@ module MilkTea
               expression.fields.each { |field| collect_span_types_from_expression(field.value, span_types, visited) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_span_types_from_expression(element, span_types, visited) }
+            when IR::VariantLiteral
+              collect_span_type(expression.type, span_types, visited)
+              expression.fields.each { |field| collect_span_types_from_expression(field.value, span_types, visited) }
             end
           end
 
@@ -1407,25 +1429,6 @@ module MilkTea
                 end
               end
             end
-          end
-
-          def emit_span_type(type)
-            span_type = span_type_name(type)
-            [
-              "typedef struct #{span_type} {",
-              "#{INDENT}#{c_declaration(pointer_to(type.element_type), 'data')};",
-              "#{INDENT}#{c_declaration(Types::Primitive.new('ptr_uint'), 'len')};",
-              "} #{span_type};",
-            ]
-          end
-
-          def struct_layout_attributes(struct_decl)
-            attributes = []
-            attributes << "packed" if struct_decl.packed
-            attributes << "aligned(#{struct_decl.alignment})" if struct_decl.alignment
-            return "" if attributes.empty?
-
-            " __attribute__((#{attributes.join(', ')}))"
           end
 
           def span_type_name(type)

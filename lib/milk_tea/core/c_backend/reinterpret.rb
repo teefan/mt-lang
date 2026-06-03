@@ -91,6 +91,8 @@ module MilkTea
               expression.fields.each { |field| collect_reinterpret_helpers_from_expression(field.value, helpers, seen) }
             when IR::ArrayLiteral
               expression.elements.each { |element| collect_reinterpret_helpers_from_expression(element, helpers, seen) }
+            when IR::VariantLiteral
+              expression.fields.each { |field| collect_reinterpret_helpers_from_expression(field.value, helpers, seen) }
             when IR::ZeroInit, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::Name, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr
               nil
             end
