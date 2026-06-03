@@ -1474,11 +1474,6 @@ module MilkTea
       @tokens[@current + 1]&.type == :identifier
     end
 
-    def check_name_token?(tok)
-      tok.type == :identifier
-    end
-
-
     def parse_and
       parse_left_associative(:parse_bitwise_or, :and)
     end
