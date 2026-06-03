@@ -4213,14 +4213,6 @@ module MilkTea
         false
       end
 
-      def string_builder_type?(type)
-        type.respond_to?(:name) && type.respond_to?(:module_name) && type.name == "String" && type.module_name == "std.string"
-      end
-
-      def string_builder_ref_type?(type)
-        ref_type?(type) && string_builder_type?(referenced_type(type))
-      end
-
       def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
         if arguments.any?(&:name)
           raise_sema_error("#{describe_expression(callee_expression)} does not support named arguments")
@@ -4240,20 +4232,6 @@ module MilkTea
 
         arguments.drop(function_type.params.length).each do |argument|
           infer_expression(argument.value, scopes:)
-        end
-      end
-
-      def call_arity_matches?(function_type, actual_count)
-        return actual_count >= function_type.params.length if function_type.is_a?(Types::Function) && function_type.variadic
-
-        actual_count == function_type.params.length
-      end
-
-      def arity_error_message(function_type, name, actual_count)
-        if function_type.is_a?(Types::Function) && function_type.variadic
-          "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
-        else
-          "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
         end
       end
 
@@ -6141,24 +6119,8 @@ module MilkTea
         type == @types.fetch("cstr") || pointer_type?(type) || function_pointer_type?(type)
       end
 
-      def pointer_type?(type)
-        mutable_pointer_type?(type) || const_pointer_type?(type)
-      end
-
-      def mutable_pointer_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
-      end
-
-      def const_pointer_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
-      end
-
       def function_pointer_type?(type)
         type.is_a?(Types::Function)
-      end
-
-      def ref_type?(type)
-        type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
       end
 
       def span_type?(type)
@@ -6167,10 +6129,6 @@ module MilkTea
 
       def string_view_type?(type)
         type.is_a?(Types::StringView)
-      end
-
-      def task_type?(type)
-        type.is_a?(Types::Task)
       end
 
       def infer_layout_query_type(type_ref, context:)
@@ -6304,61 +6262,8 @@ module MilkTea
         integer_type_argument?(argument) || argument.is_a?(Types::TypeVar)
       end
 
-      def pointee_type(type)
-        return unless pointer_type?(type)
-
-        type.arguments.first
-      end
-
-      def referenced_type(type)
-        return unless ref_type?(type)
-
-        type.arguments.first
-      end
-
       def pointer_to(type)
         Types::GenericInstance.new("ptr", [type])
-      end
-
-      def const_pointer_to(type)
-        Types::GenericInstance.new("const_ptr", [type])
-      end
-
-      def contains_ref_type?(type, visited = {})
-        return false unless type
-
-        visit_key = [type.class, type.object_id]
-        return false if visited[visit_key]
-
-        visited[visit_key] = true
-        case type
-        when Types::Nullable
-          contains_ref_type?(type.base, visited)
-        when Types::GenericInstance
-          return true if ref_type?(type)
-
-          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited) }
-        when Types::Span
-          contains_ref_type?(type.element_type, visited)
-        when Types::Task
-          contains_ref_type?(type.result_type, visited)
-        when Types::Struct, Types::Union
-          type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited) }
-        when Types::StructInstance
-          type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
-        when Types::Variant
-          type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited) } }
-        when Types::VariantInstance
-          type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
-        when Types::Proc
-          type.params.any? { |param| contains_ref_type?(param.type, visited) } || contains_ref_type?(type.return_type, visited)
-        when Types::Function
-          type.params.any? { |param| contains_ref_type?(param.type, visited) } ||
-            contains_ref_type?(type.return_type, visited) ||
-            (type.receiver_type && contains_ref_type?(type.receiver_type, visited))
-        else
-          false
-        end
       end
 
       def contains_type_var?(type)
@@ -6459,10 +6364,6 @@ module MilkTea
 
       def integer_type?(type)
         type.is_a?(Types::Primitive) && type.integer?
-      end
-
-      def range_expr?(expression)
-        expression.is_a?(AST::RangeExpr)
       end
 
       def collection_loop_type(type)
@@ -7149,10 +7050,6 @@ module MilkTea
         type.is_a?(Types::Function) || type.is_a?(Types::Proc)
       end
 
-      def proc_type?(type)
-        type.is_a?(Types::Proc)
-      end
-
       def proc_type_compatible?(actual_type, expected_type)
         return true unless expected_type
         return actual_type == expected_type if proc_type?(expected_type)
@@ -7336,20 +7233,6 @@ module MilkTea
         return if callable_param_ref_supported?(type)
 
         raise_sema_error("parameter #{parameter_name} of #{function_name} cannot nest ref types") if contains_ref_type?(type)
-      end
-
-      def callable_param_ref_supported?(type)
-        case type
-        when Types::Proc
-          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
-            !contains_ref_type?(type.return_type)
-        when Types::Function
-          type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
-            !contains_ref_type?(type.return_type) &&
-            (type.receiver_type.nil? || !contains_ref_type?(type.receiver_type))
-        else
-          false
-        end
       end
 
       def validate_parameter_proc_type!(type, function_name:, parameter_name:, external:, foreign:)
