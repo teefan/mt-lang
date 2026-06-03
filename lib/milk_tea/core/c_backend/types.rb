@@ -1,0 +1,152 @@
+# frozen_string_literal: true
+
+module MilkTea
+  class CBackend
+    module CBackendTypes
+      private
+
+          def emit_forward_declarations(opaque_decls, aggregate_decls)
+            lines = []
+            opaque_decls.uniq { |opaque_decl| opaque_decl.c_name }.each do |opaque_decl|
+              next unless opaque_decl.forward_declarable
+              next unless opaque_decl.c_name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+
+              lines << "typedef struct #{opaque_decl.c_name} #{opaque_decl.c_name};"
+            end
+            aggregate_decls.uniq { |aggregate_decl| [aggregate_decl.class.name, aggregate_decl.c_name] }.each do |aggregate_decl|
+              case aggregate_decl
+              when IR::StructDecl
+                lines << "typedef struct #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+              when IR::UnionDecl
+                lines << "typedef union #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+              when IR::VariantDecl
+                lines << "typedef struct #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+              end
+            end
+            lines
+          end
+
+          def emit_struct(struct_decl)
+            lines = []
+            lines << "struct #{struct_decl.c_name} {"
+            struct_decl.fields.each do |field|
+              lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+            end
+            lines << "}#{struct_layout_attributes(struct_decl)};"
+            lines
+          end
+
+          def emit_union(union_decl)
+            lines = []
+            lines << "union #{union_decl.c_name} {"
+            union_decl.fields.each do |field|
+              lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+            end
+            lines << "};"
+            lines
+          end
+
+          def emit_variant(variant_decl)
+            lines = []
+            outer_c = variant_decl.c_name
+            payload_arms = variant_decl.arms.select { |a| a.fields.any? }
+
+            # Per-arm payload structs
+            payload_arms.each do |arm|
+              lines << "struct #{arm.c_name} {"
+              arm.fields.each do |field|
+                lines << "#{INDENT}#{c_field_declaration(field.type, field.name)};"
+              end
+              lines << "};"
+              lines << "typedef struct #{arm.c_name} #{arm.c_name};"
+            end
+
+            # Kind enum
+            lines << "typedef int32_t #{outer_c}_kind;"
+            unless variant_decl.arms.empty?
+              lines << "enum {"
+              variant_decl.arms.each_with_index do |arm, index|
+                suffix = index == variant_decl.arms.length - 1 ? "" : ","
+                lines << "#{INDENT}#{outer_c}_kind_#{arm.name} = #{index}#{suffix}"
+              end
+              lines << "};"
+            end
+
+            # Data union (only if at least one arm has payload)
+            if payload_arms.any?
+              lines << "union #{outer_c}__data {"
+              payload_arms.each do |arm|
+                lines << "#{INDENT}struct #{arm.c_name} #{arm.name};"
+              end
+              lines << "};"
+            end
+
+            # Outer struct
+            lines << "struct #{outer_c} {"
+            lines << "#{INDENT}#{outer_c}_kind kind;"
+            lines << "#{INDENT}union #{outer_c}__data data;" if payload_arms.any?
+            lines << "};"
+            lines << "typedef struct #{outer_c} #{outer_c};"
+            lines
+          end
+
+          def emit_enum(enum_decl)
+            lines = ["typedef #{c_type(enum_decl.backing_type)} #{enum_decl.c_name};"]
+            return lines if enum_decl.members.empty?
+
+            lines << "enum {"
+            enum_decl.members.each_with_index do |member, index|
+              suffix = index == enum_decl.members.length - 1 ? "" : ","
+              lines << "#{INDENT}#{member.c_name} = #{emit_expression(member.value)}#{suffix}"
+            end
+            lines << "};"
+            lines
+          end
+
+          def emit_function_declarations(functions)
+            functions.map { |function| "#{function_signature(function)};" }
+          end
+
+          def function_signature(function)
+            prefix = function.entry_point ? "" : "static "
+            "#{prefix}#{c_function_declaration(function.return_type, function.c_name, function_params(function))}"
+          end
+
+          def function_params(function)
+            params = []
+            params << array_out_param_declaration(function.return_type, ARRAY_OUT_PARAM_NAME) if array_type?(function.return_type)
+            params.concat(emitted_function_params(function).map { |param| c_declaration(param.pointer ? pointer_to(param.type) : param.type, param.c_name) })
+
+            if params.empty?
+              "void"
+            else
+              params.join(", ")
+            end
+          end
+
+          def emit_function(function)
+            @checked_index_alias_id = 0
+            @suppressed_labels = []
+            body = compact_generated_statement_sequence(function.body)
+            lines = ["#{function_signature(function)} {"]
+            used_labels = collect_used_labels(body)
+            unused_param_lines = emit_unused_param_suppressions(function, INDENT)
+            if body.empty?
+              if unused_param_lines.empty?
+                lines << "#{INDENT}(void)0;"
+              else
+                lines.concat(unused_param_lines)
+              end
+            else
+              lines.concat(unused_param_lines)
+              lines.concat(emit_statement_sequence(body, 1, function:, used_labels:))
+            end
+            if function_returns_value_in_c?(function) && body_needs_fallback_return?(body)
+              lines << "#{INDENT}return #{emit_zero_expression(function.return_type)};"
+            end
+            lines << "}"
+            lines
+          end
+    end
+  end
+end
