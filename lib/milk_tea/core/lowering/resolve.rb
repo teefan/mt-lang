@@ -98,28 +98,6 @@ module MilkTea
         IR::Function.new(name: invoke_c_name, c_name: invoke_c_name, params:, return_type: proc_type.return_type, body:, entry_point: false)
       end
 
-      def build_proc_noop_release_function(release_c_name)
-        IR::Function.new(
-          name: release_c_name,
-          c_name: release_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
-          body: [IR::ReturnStmt.new(value: nil)],
-          entry_point: false,
-        )
-      end
-
-      def build_proc_noop_retain_function(retain_c_name)
-        IR::Function.new(
-          name: retain_c_name,
-          c_name: retain_c_name,
-          params: [IR::Param.new(name: "env", c_name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-          return_type: @types.fetch("void"),
-          body: [IR::ReturnStmt.new(value: nil)],
-          entry_point: false,
-        )
-      end
-
       def lower_array_to_span_expression(expression, target_type)
         IR::AggregateLiteral.new(
           type: target_type,
@@ -411,44 +389,6 @@ module MilkTea
         else
           false
         end
-      end
-
-      def lower_specialization(expression, env:, type:)
-        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
-          return IR::ZeroInit.new(type:)
-        end
-
-        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "default"
-          resolution = resolve_default_specialization(expression, env:)
-          return IR::Call.new(callee: resolution.callee_name, arguments: [], type:) if resolution.binding
-
-          return IR::ZeroInit.new(type:)
-        end
-
-        if (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), type))
-          return literal
-        end
-
-        if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
-          callable_kind, function_binding, = callable_resolution
-          raise LoweringError, "specialized method must be called" if callable_kind == :method
-
-          raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
-
-          if function_binding.external
-            return IR::Name.new(name: function_binding.name, type:, pointer: false)
-          end
-
-          return IR::Name.new(
-            name: function_binding_c_name(function_binding, module_name: function_binding.owner.module_name),
-            type:,
-            pointer: false,
-          )
-        end
-
-        raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
-
-        raise LoweringError, "unsupported specialization #{expression.class.name}"
       end
 
       def resolve_callee(callee, env, arguments: nil)
@@ -2033,6 +1973,114 @@ module MilkTea
         else
           type
         end
+      end
+
+      def analysis_for_module(module_name)
+        @program.analyses_by_module_name.fetch(module_name)
+      end
+
+      def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
+        saved_analysis = @analysis
+        saved_module_name = @module_name
+        saved_module_prefix = @module_prefix
+        saved_imports = @imports
+        saved_types = @types
+        saved_values = @values
+        saved_functions = @functions
+
+        @analysis = analysis
+        @module_name = analysis.module_name
+        @module_prefix = module_c_prefix(@module_name)
+        @imports = analysis.imports
+        @types = analysis.types
+        @values = analysis.values
+        @functions = analysis.functions
+        resolve_type_ref(type_ref, type_params:)
+      ensure
+        @analysis = saved_analysis
+        @module_name = saved_module_name
+        @module_prefix = saved_module_prefix
+        @imports = saved_imports
+        @types = saved_types
+        @values = saved_values
+        @functions = saved_functions
+      end
+
+      def current_type_params
+        @current_type_substitutions || {}
+      end
+
+      def resolve_type_ref(type_ref, type_params: current_type_params)
+        if type_ref.is_a?(AST::FunctionType)
+          params = type_ref.params.map do |param|
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+          end
+          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+        end
+
+        if type_ref.is_a?(AST::ProcType)
+          params = type_ref.params.map do |param|
+            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
+          end
+          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
+        end
+
+        parts = type_ref.name.parts
+        base = if type_ref.arguments.any?
+                 name = parts.join(".")
+                 args = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
+                 if name != "ref" && args.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
+                   raise LoweringError, "ref types cannot be nested inside #{name}"
+                 end
+                 if name == "Task"
+                   validate_generic_type!(name, args)
+                   Types::Task.new(args.fetch(0))
+                 elsif (generic_type = resolve_named_generic_type(parts))
+                   generic_type.instantiate(args)
+                 elsif name == "span"
+                   Types::Span.new(args.fetch(0))
+                 else
+                   validate_generic_type!(name, args)
+                   Types::GenericInstance.new(name, args)
+                 end
+               elsif parts.length == 1 && type_params.key?(parts.first)
+                 type_params.fetch(parts.first)
+               elsif parts.length == 1
+                 type = @types[parts.first]
+                 raise LoweringError, "unknown type #{parts.first}" unless type
+                 raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+
+                 type
+               elsif parts.length == 2 && @imports.key?(parts.first)
+                 imported_module = @imports.fetch(parts.first)
+                 if imported_module.private_type?(parts.last)
+                   raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+                 end
+
+                 type = imported_module.types[parts.last]
+                 raise LoweringError, "unknown type #{type_ref.name}" unless type
+                 raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+
+                 type
+               else
+                 raise LoweringError, "unknown type #{type_ref.name}"
+               end
+
+        raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
+
+        type_ref.nullable ? Types::Nullable.new(base) : base
+      end
+
+      def resolve_named_generic_type(parts)
+        if parts.length == 1
+          type = @types[parts.first]
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+        elsif parts.length == 2 && @imports.key?(parts.first)
+          type = @imports.fetch(parts.first).types[parts.last]
+          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+        end
+
+        nil
       end
   end
 end

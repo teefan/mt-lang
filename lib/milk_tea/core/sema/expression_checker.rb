@@ -1265,42 +1265,6 @@ module MilkTea
         end
       end
 
-      def check_function_call(binding, arguments, scopes:)
-        if arguments.any?(&:name)
-          raise_sema_error("function #{binding.name} does not support named arguments")
-        end
-
-        expected_params = binding.type.params
-        unless call_arity_matches?(binding.type, arguments.length)
-          raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
-        end
-
-        expected_params.each_with_index do |parameter, index|
-          argument = arguments.fetch(index)
-          actual_type = foreign_argument_actual_type(parameter, argument, scopes:, function_name: binding.name, expected_type: parameter.type)
-          record_mutating_argument_identifier(argument, parameter)
-          if foreign_cstr_boundary_parameter?(parameter)
-            unless foreign_cstr_argument_compatible?(actual_type, parameter, expression: foreign_argument_expression(argument))
-              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
-            end
-          else
-            unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
-              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
-            end
-          end
-        end
-
-        arguments.drop(expected_params.length).each do |argument|
-          infer_expression(argument.value, scopes:)
-        end
-      end
-
-      def record_mutating_argument_identifier(argument, parameter)
-        return unless %i[out inout].include?(parameter.passing_mode)
-        return unless argument.value.is_a?(AST::Identifier)
-
-        @mutating_argument_identifier_ids[argument.value.object_id] = true
-      end
 
       def record_mutable_receiver_expression(receiver)
         return unless receiver
@@ -1365,78 +1329,12 @@ module MilkTea
         false
       end
 
-      def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
-        if arguments.any?(&:name)
-          raise_sema_error("#{describe_expression(callee_expression)} does not support named arguments")
-        end
 
-        unless call_arity_matches?(function_type, arguments.length)
-          raise_sema_error(arity_error_message(function_type, describe_expression(callee_expression), arguments.length))
-        end
 
-        function_type.params.each_with_index do |parameter, index|
-          argument = arguments.fetch(index)
-          actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
-          unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: false, expression: argument.value)
-            raise_sema_error("argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}")
-          end
-        end
 
-        arguments.drop(function_type.params.length).each do |argument|
-          infer_expression(argument.value, scopes:)
-        end
-      end
 
-      def check_fatal_call(arguments, scopes:)
-        raise_sema_error("fatal does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("fatal expects 1 argument, got #{arguments.length}") unless arguments.length == 1
 
-        message_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
-        return @types.fetch("void") if string_like_type?(message_type)
 
-        raise_sema_error("fatal expects str or cstr, got #{message_type}")
-      end
-
-      def check_ref_of_call(arguments, scopes:)
-        raise_sema_error("ref_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("ref_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        source_type = infer_addr_source_type(arguments.first.value, scopes:)
-        Types::GenericInstance.new("ref", [source_type])
-      end
-
-      def check_const_ptr_of_call(arguments, scopes:)
-        raise_sema_error("const_ptr_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("const_ptr_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        source_type = infer_ro_addr_source_type(arguments.first.value, scopes:)
-        const_pointer_to(source_type)
-      end
-
-      def check_read_call(arguments, scopes:)
-        validate_read_call_arguments!(arguments)
-
-        infer_reference_value_type(arguments.first.value, scopes:)
-      end
-
-      def check_ptr_of_call(arguments, scopes:)
-        raise_sema_error("ptr_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("ptr_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        source_expression = arguments.first.value
-        source_type = infer_expression(source_expression, scopes:)
-        return pointer_to(referenced_type(source_type)) if ref_type?(source_type)
-
-        pointer_to(infer_addr_source_type(source_expression, scopes:))
-      end
-
-      def check_field_of_call(arguments, scopes:)
-        raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("field_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
-
-        evaluate_field_of_call(arguments, scopes:)
-        builtin_field_handle_type
-      end
 
       def evaluate_field_of_call(arguments, scopes:)
         raise_sema_error("field_of does not support named arguments") if arguments.any?(&:name)
@@ -1450,13 +1348,6 @@ module MilkTea
         Types::FieldHandle.new(struct_handle, field_name, field_decl)
       end
 
-      def check_callable_of_call(arguments, scopes:)
-        raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("callable_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1
-
-        evaluate_callable_of_call(arguments, scopes:)
-        builtin_callable_handle_type
-      end
 
       def evaluate_callable_of_call(arguments, scopes:)
         raise_sema_error("callable_of does not support named arguments") if arguments.any?(&:name)
@@ -1465,66 +1356,8 @@ module MilkTea
         resolve_callable_handle_argument(arguments.first.value, scopes:)
       end
 
-      def check_has_attribute_call(arguments, scopes:)
-        raise_sema_error("has_attribute does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("has_attribute expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
 
-        target = resolve_reflection_target_argument(arguments.first.value, scopes:)
-        binding = resolve_attribute_name_argument(arguments[1].value)
-        validate_attribute_target_compatibility!(target, binding)
 
-        @types.fetch("bool")
-      end
-
-      def check_attribute_of_call(arguments, scopes:)
-        raise_sema_error("attribute_of does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("attribute_of expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
-
-        target = resolve_reflection_target_argument(arguments.first.value, scopes:)
-        binding = resolve_attribute_name_argument(arguments[1].value)
-        validate_attribute_target_compatibility!(target, binding)
-
-        application = find_attribute_application(target, binding)
-        unless application || attribute_presence_guard_active?(scopes, attribute_presence_refinement_key(target, binding))
-          raise_sema_error("attribute #{qualified_attribute_name(binding)} is not applied to #{target}")
-        end
-
-        builtin_attribute_handle_type
-      end
-
-      def check_attribute_arg_call(expected_type, arguments, scopes:)
-        raise_sema_error("attribute_arg does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("attribute_arg expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
-
-        handle_value = evaluate_compile_time_const_value(arguments.first.value, scopes:)
-        parameter_source = if handle_value.is_a?(Types::AttributeHandle)
-          [handle_value.attribute_name, handle_value.params]
-        else
-          handle_type = infer_expression(arguments.first.value, scopes:)
-          raise_sema_error("attribute_arg expects an attribute handle") unless handle_type == builtin_attribute_handle_type
-
-          binding = attribute_binding_for_handle_expression(arguments.first.value)
-          raise_sema_error("attribute_arg expects an attribute handle") unless binding
-
-          [binding.name, binding.params]
-        end
-
-        param_name = reflection_identifier_name(arguments[1].value, context: "attribute_arg")
-        attribute_name, params = parameter_source
-        parameter = params.find { |candidate| candidate.name == param_name }
-        raise_sema_error("attribute #{attribute_name} has no parameter #{param_name}") unless parameter
-        raise_sema_error("attribute_arg[#{expected_type}] does not match declared type #{parameter.type} for #{attribute_name}.#{param_name}") unless parameter.type == expected_type
-
-        expected_type
-      end
-
-      def attribute_binding_for_handle_expression(expression)
-        return unless expression.is_a?(AST::Call)
-        return unless expression.callee.is_a?(AST::Identifier) && expression.callee.name == "attribute_of"
-        return unless expression.arguments.length == 2 && expression.arguments.none?(&:name)
-
-        resolve_attribute_name_argument(expression.arguments[1].value)
-      end
 
       def resolve_struct_handle_argument(expression, scopes:)
         if (type_expr = resolve_type_expression(expression))

@@ -111,113 +111,6 @@ module MilkTea
         str_buffer_capacity(type) + 1
       end
 
-      def str_buffer_method_kind(receiver_type, name)
-        return unless str_buffer_type?(receiver_type)
-
-        case name
-        when "clear"
-          :str_buffer_clear
-        when "assign"
-          :str_buffer_assign
-        when "append"
-          :str_buffer_append
-        when "assign_format"
-          :str_buffer_assign_format
-        when "append_format"
-          :str_buffer_append_format
-        when "len"
-          :str_buffer_len
-        when "capacity"
-          :str_buffer_capacity
-        when "as_str"
-          :str_buffer_as_str
-        when "as_cstr"
-          :str_buffer_as_cstr
-        end
-      end
-
-      def str_buffer_method_type(kind, receiver_type)
-        return_type, params = case kind
-                              when :str_buffer_clear
-                                [@types.fetch("void"), []]
-                              when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
-                                [@types.fetch("void"), [Types::Parameter.new("value", @types.fetch("str"))]]
-                              when :str_buffer_len, :str_buffer_capacity
-                                [@types.fetch("ptr_uint"), []]
-                              when :str_buffer_as_str
-                                [@types.fetch("str"), []]
-                              when :str_buffer_as_cstr
-                                [@types.fetch("cstr"), []]
-                              else
-                                raise LoweringError, "unsupported str_buffer method #{kind}"
-                              end
-
-        Types::Function.new(
-          kind.to_s,
-          params:,
-          return_type:,
-          receiver_type:,
-          receiver_mutable: %i[str_buffer_clear str_buffer_assign str_buffer_append str_buffer_assign_format str_buffer_append_format].include?(kind),
-          external: false,
-        )
-      end
-
-      def lower_char_array_data_pointer(expression, env:)
-        lowered_receiver = lower_expression(expression, env:)
-        IR::AddressOf.new(
-          expression: IR::Index.new(
-            receiver: lowered_receiver,
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
-            type: @types.fetch("char"),
-          ),
-          type: pointer_to(@types.fetch("char")),
-        )
-      end
-
-      def lower_str_buffer_data_pointer(expression, env:)
-        lower_str_buffer_data_pointer_from_lowered(lower_expression(expression, env:))
-      end
-
-      def lower_str_buffer_data_pointer_from_lowered(lowered_receiver)
-        IR::AddressOf.new(
-          expression: IR::Index.new(
-            receiver: IR::Member.new(
-              receiver: lowered_receiver,
-              member: "data",
-              type: Types::GenericInstance.new(
-                "array",
-                [@types.fetch("char"), Types::LiteralTypeArg.new(str_buffer_storage_capacity(lowered_receiver.type))],
-              ),
-            ),
-            index: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
-            type: @types.fetch("char"),
-          ),
-          type: pointer_to(@types.fetch("char")),
-        )
-      end
-
-      def lower_str_buffer_len_pointer(expression, env:)
-        lower_str_buffer_len_pointer_from_lowered(lower_expression(expression, env:))
-      end
-
-      def lower_str_buffer_len_pointer_from_lowered(lowered_receiver)
-        IR::AddressOf.new(
-          expression: IR::Member.new(receiver: lowered_receiver, member: "len", type: @types.fetch("ptr_uint")),
-          type: pointer_to(@types.fetch("ptr_uint")),
-        )
-      end
-
-      def lower_str_buffer_dirty_pointer(expression, env:)
-        lower_str_buffer_dirty_pointer_from_lowered(lower_expression(expression, env:))
-      end
-
-      def lower_str_buffer_dirty_pointer_from_lowered(lowered_receiver)
-        IR::AddressOf.new(
-          expression: IR::Member.new(receiver: lowered_receiver, member: "dirty", type: @types.fetch("bool")),
-          type: pointer_to(@types.fetch("bool")),
-        )
-      end
-
       def addressable_storage_expression?(expression)
         case expression
         when AST::Identifier
@@ -459,10 +352,6 @@ module MilkTea
         Types::GenericInstance.new("ptr", [type])
       end
 
-      def analysis_for_module(module_name)
-        @program.analyses_by_module_name.fetch(module_name)
-      end
-
       def with_analysis_context(analysis)
         saved_analysis = @analysis
         saved_module_name = @module_name
@@ -488,98 +377,6 @@ module MilkTea
         @types = saved_types
         @values = saved_values
         @functions = saved_functions
-      end
-
-      def resolve_type_ref_for_analysis(type_ref, analysis, type_params: current_type_params)
-        saved_analysis = @analysis
-        saved_module_name = @module_name
-        saved_module_prefix = @module_prefix
-        saved_imports = @imports
-        saved_types = @types
-        saved_values = @values
-        saved_functions = @functions
-
-        @analysis = analysis
-        @module_name = analysis.module_name
-        @module_prefix = module_c_prefix(@module_name)
-        @imports = analysis.imports
-        @types = analysis.types
-        @values = analysis.values
-        @functions = analysis.functions
-        resolve_type_ref(type_ref, type_params:)
-      ensure
-        @analysis = saved_analysis
-        @module_name = saved_module_name
-        @module_prefix = saved_module_prefix
-        @imports = saved_imports
-        @types = saved_types
-        @values = saved_values
-        @functions = saved_functions
-      end
-
-      def current_type_params
-        @current_type_substitutions || {}
-      end
-
-      def resolve_type_ref(type_ref, type_params: current_type_params)
-        if type_ref.is_a?(AST::FunctionType)
-          params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
-          end
-          return Types::Function.new(nil, params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
-        end
-
-        if type_ref.is_a?(AST::ProcType)
-          params = type_ref.params.map do |param|
-            Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:))
-          end
-          return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
-        end
-
-        parts = type_ref.name.parts
-        base = if type_ref.arguments.any?
-                 name = parts.join(".")
-                 args = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:) }
-                 if name != "ref" && args.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
-                   raise LoweringError, "ref types cannot be nested inside #{name}"
-                 end
-                 if name == "Task"
-                   validate_generic_type!(name, args)
-                   Types::Task.new(args.fetch(0))
-                 elsif (generic_type = resolve_named_generic_type(parts))
-                   generic_type.instantiate(args)
-                 elsif name == "span"
-                   Types::Span.new(args.fetch(0))
-                 else
-                   validate_generic_type!(name, args)
-                   Types::GenericInstance.new(name, args)
-                 end
-               elsif parts.length == 1 && type_params.key?(parts.first)
-                 type_params.fetch(parts.first)
-               elsif parts.length == 1
-                 type = @types[parts.first]
-                 raise LoweringError, "unknown type #{parts.first}" unless type
-                 raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-
-                 type
-               elsif parts.length == 2 && @imports.key?(parts.first)
-                 imported_module = @imports.fetch(parts.first)
-                 if imported_module.private_type?(parts.last)
-                   raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
-                 end
-
-                 type = imported_module.types[parts.last]
-                 raise LoweringError, "unknown type #{type_ref.name}" unless type
-                 raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-
-                 type
-               else
-                 raise LoweringError, "unknown type #{type_ref.name}"
-               end
-
-        raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
-
-        type_ref.nullable ? Types::Nullable.new(base) : base
       end
 
       def lookup_value(name, env)
@@ -1382,18 +1179,6 @@ module MilkTea
         type.external && opaque_forward_declarable?(type)
       end
 
-      def resolve_named_generic_type(parts)
-        if parts.length == 1
-          type = @types[parts.first]
-          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-        elsif parts.length == 2 && @imports.key?(parts.first)
-          type = @imports.fetch(parts.first).types[parts.last]
-          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-        end
-
-        nil
-      end
-
       def type_ref_from_specialization(expression)
         case expression.callee
         when AST::Identifier
@@ -1531,6 +1316,60 @@ module MilkTea
       def sanitize_identifier(text)
         identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/^_+/, "").sub(/_+$/, "")
         identifier.empty? ? "value" : identifier
+      end
+
+      def lower_assignment_target(expression, env:)
+        case expression
+        when AST::Identifier
+          binding = lookup_value(expression.name, env)
+          lower_assignment_binding_target(binding)
+        when AST::MemberAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
+          receiver = lower_expression(expression.receiver, env:)
+          type = infer_expression_type(expression, env:)
+          IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
+        when AST::IndexAccess
+          receiver_type = infer_expression_type(expression.receiver, env:)
+          receiver = lower_expression(expression.receiver, env:)
+          index = lower_expression(expression.index, env:)
+          type = infer_expression_type(expression, env:)
+          if array_type?(receiver_type)
+            IR::CheckedIndex.new(receiver:, index:, receiver_type:, type:)
+          elsif receiver_type.is_a?(Types::Span)
+            IR::CheckedSpanIndex.new(receiver:, index:, receiver_type:, type:)
+          else
+            IR::Index.new(receiver:, index:, type:)
+          end
+        when AST::Call
+          if read_call?(expression)
+            type = infer_expression_type(expression, env:)
+            operand = lower_expression(expression.arguments.first.value, env:)
+            return IR::Unary.new(operator: "*", operand:, type:)
+          end
+
+          raise LoweringError, "unsupported assignment target #{expression.class.name}"
+        else
+          raise LoweringError, "unsupported assignment target #{expression.class.name}"
+        end
+      end
+
+      def lower_assignment_binding_target(binding)
+        storage_type = binding[:storage_type]
+        visible_type = binding[:type]
+        storage_ref = IR::Name.new(name: binding[:c_name], type: storage_type, pointer: binding[:pointer])
+
+        case binding[:projection]
+        when :result_success_value
+          variant_binding_projection_expression(storage_ref, storage_type, "success", "value", visible_type)
+        when :option_some_value
+          variant_binding_projection_expression(storage_ref, storage_type, "some", "value", visible_type)
+        else
+          if visible_type == storage_type || (storage_type.is_a?(Types::Nullable) && storage_type.base == visible_type)
+            IR::Name.new(name: binding[:c_name], type: visible_type, pointer: binding[:pointer])
+          else
+            storage_ref
+          end
+        end
       end
   end
 end

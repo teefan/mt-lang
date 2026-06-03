@@ -134,14 +134,6 @@ module MilkTea
         expression.is_a?(AST::OffsetofExpr)
       end
 
-      def expression_uses_fatal?(expression)
-        expression_uses_pattern?(expression) { |candidate| fatal_expression?(candidate) }
-      end
-
-      def expression_uses_offsetof?(expression)
-        expression_uses_pattern?(expression) { |candidate| offsetof_expression?(candidate) }
-      end
-
       def expression_uses_pattern?(expression, &predicate)
         return false unless expression
         return true if predicate.call(expression)

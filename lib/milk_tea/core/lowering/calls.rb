@@ -1466,5 +1466,43 @@ module MilkTea
       def temporary_foreign_cstr_expression?(expression)
         expression.is_a?(IR::Call) && expression.callee == "mt_foreign_str_to_cstr_temp"
       end
+
+      def lower_specialization(expression, env:, type:)
+        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "zero"
+          return IR::ZeroInit.new(type:)
+        end
+
+        if expression.callee.is_a?(AST::Identifier) && expression.callee.name == "default"
+          resolution = resolve_default_specialization(expression, env:)
+          return IR::Call.new(callee: resolution.callee_name, arguments: [], type:) if resolution.binding
+
+          return IR::ZeroInit.new(type:)
+        end
+
+        if (literal = lower_compile_time_literal(compile_time_const_value(expression, env:), type))
+          return literal
+        end
+
+        if (callable_resolution = resolve_specialized_callable_binding(expression, env:))
+          callable_kind, function_binding, = callable_resolution
+          raise LoweringError, "specialized method must be called" if callable_kind == :method
+
+          raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
+
+          if function_binding.external
+            return IR::Name.new(name: function_binding.name, type:, pointer: false)
+          end
+
+          return IR::Name.new(
+            name: function_binding_c_name(function_binding, module_name: function_binding.owner.module_name),
+            type:,
+            pointer: false,
+          )
+        end
+
+        raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
+
+        raise LoweringError, "unsupported specialization #{expression.class.name}"
+      end
   end
 end

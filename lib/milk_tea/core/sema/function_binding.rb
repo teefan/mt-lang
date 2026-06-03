@@ -5,47 +5,6 @@ module MilkTea
     class Checker
       private
 
-      def declare_top_level_values
-        @ast.declarations.each do |decl|
-          with_error_node(decl) do
-            case decl
-            when AST::ConstDecl
-              ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
-              type = resolve_type_ref(decl.type)
-              validate_stored_ref_type!(type, "constant #{decl.name}")
-              raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
-              @top_level_values[decl.name] = value_binding(
-                name: decl.name,
-                type: type,
-                mutable: false,
-                kind: :const,
-              )
-            when AST::VarDecl
-              ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
-              raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type
-
-              type = resolve_type_ref(decl.type)
-              validate_stored_ref_type!(type, "module variable #{decl.name}")
-              raise_sema_error("module variable #{decl.name} cannot store proc values") if contains_proc_type?(type)
-              @top_level_values[decl.name] = value_binding(
-                name: decl.name,
-                type: type,
-                mutable: true,
-                kind: :var,
-              )
-            when AST::EventDecl
-              ensure_available_value_name!(decl.name, kind_label: "event", line: decl.line, column: decl.column)
-              @top_level_values[decl.name] = value_binding(
-                name: decl.name,
-                type: resolve_event_decl_type(decl),
-                mutable: false,
-                kind: :event,
-              )
-            end
-          end
-        end
-      end
-
       def validate_attribute_applications
         @ast.declarations.each do |decl|
           with_error_node(decl) do
@@ -416,6 +375,95 @@ module MilkTea
             interfaces: resolved_interfaces.freeze,
           )
         end
+      end
+
+      def check_functions
+        @top_level_functions.each_value do |binding|
+          check_function(binding)
+        end
+
+        @methods.each_value do |method_map|
+          method_map.each_value do |binding|
+            check_function(binding)
+          end
+        end
+      end
+
+      # Per-function error collection used by check_collecting_errors.
+      # Continues past individual function failures, accumulating SemaErrors.
+      def check_functions_collecting(errors)
+        @top_level_functions.each_value do |binding|
+          next if @checked_function_bindings[binding.object_id]
+
+          begin
+            check_function(binding)
+          rescue SemaError => e
+            errors << e
+          end
+        end
+
+        @methods.each_value do |method_map|
+          method_map.each_value do |binding|
+            next if @checked_function_bindings[binding.object_id]
+
+            begin
+              check_function(binding)
+            rescue SemaError => e
+              errors << e
+            end
+          end
+        end
+      end
+
+      def check_function(binding)
+        @local_completion_frames = @local_completion_frames.dup if @local_completion_frames.frozen?
+
+        previous_type_substitutions = @current_type_substitutions
+        previous_specialization_owner = @current_specialization_owner
+        started_check = false
+        return if binding.external || binding.type_params.any?
+        return if @checked_function_bindings[binding.object_id]
+        return if @checking_function_bindings[binding.object_id]
+
+        @checking_function_bindings[binding.object_id] = true
+        started_check = true
+        @current_type_substitutions = binding.type_substitutions
+        @current_specialization_owner = binding.specialization_owner
+        with_scope(binding.body_params) do |scopes|
+          start_local_completion_frame(binding, scopes)
+          if binding.ast.is_a?(AST::ForeignFunctionDecl)
+            record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
+            expression = foreign_mapping_expression(binding.ast)
+            actual_type = with_foreign_mapping_context do
+              infer_expression(expression, scopes:, expected_type: binding.type.return_type)
+            end
+            unless types_compatible?(actual_type, binding.type.return_type, expression:) || foreign_identity_projection_compatible?(actual_type, binding.type.return_type)
+              raise_sema_error("foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}")
+            end
+          else
+            validate_async_function_body!(binding.ast.body) if binding.async
+            preassign_local_binding_ids(binding.ast.body)
+            run_nullability_pre_pass(binding, scopes)
+            if binding.async
+              with_async_function do
+                check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
+              end
+            else
+              check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+            end
+            check_definite_assignment(binding)
+          end
+        end
+        @checked_function_bindings[binding.object_id] = true
+      ensure
+        return unless started_check
+
+        finish_local_completion_frame(binding)
+        @preassigned_local_binding_ids = {}
+        @nullability_flow_result = nil
+        @current_type_substitutions = previous_type_substitutions
+        @current_specialization_owner = previous_specialization_owner
+        @checking_function_bindings.delete(binding.object_id)
       end
 
     end

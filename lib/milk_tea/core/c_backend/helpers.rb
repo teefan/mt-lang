@@ -796,15 +796,6 @@ module MilkTea
             lines
           end
 
-          def emit_string_type
-            [
-              "typedef struct mt_str {",
-              "#{INDENT}char* data;",
-              "#{INDENT}uintptr_t len;",
-              "} mt_str;",
-            ]
-          end
-
           def emit_checked_array_index_helper(type)
             helper_name = checked_array_index_helper_name(type)
             params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')

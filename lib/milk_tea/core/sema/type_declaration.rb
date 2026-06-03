@@ -536,6 +536,47 @@ module MilkTea
         raise_sema_error("#{kind_label} #{name} uses reserved built-in type name #{name}", line:, column:, length:)
       end
 
+      def declare_top_level_values
+        @ast.declarations.each do |decl|
+          with_error_node(decl) do
+            case decl
+            when AST::ConstDecl
+              ensure_available_value_name!(decl.name, kind_label: "constant", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              type = resolve_type_ref(decl.type)
+              validate_stored_ref_type!(type, "constant #{decl.name}")
+              raise_sema_error("constant #{decl.name} cannot store proc values") if contains_proc_type?(type)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: type,
+                mutable: false,
+                kind: :const,
+              )
+            when AST::VarDecl
+              ensure_available_value_name!(decl.name, kind_label: "module variable", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              raise_sema_error("module variable #{decl.name} requires an explicit type") unless decl.type
+
+              type = resolve_type_ref(decl.type)
+              validate_stored_ref_type!(type, "module variable #{decl.name}")
+              raise_sema_error("module variable #{decl.name} cannot store proc values") if contains_proc_type?(type)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: type,
+                mutable: true,
+                kind: :var,
+              )
+            when AST::EventDecl
+              ensure_available_value_name!(decl.name, kind_label: "event", line: decl.line, column: decl.column)
+              @top_level_values[decl.name] = value_binding(
+                name: decl.name,
+                type: resolve_event_decl_type(decl),
+                mutable: false,
+                kind: :event,
+              )
+            end
+          end
+        end
+      end
+
       def ensure_non_reserved_primitive_name!(name, kind_label:, line: nil, column: nil, length: nil)
         ensure_non_reserved_value_type_name!(name, kind_label:, line:, column:, length:)
       end

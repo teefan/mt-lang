@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require_relative "c_backend/reachability"
+require_relative "c_backend/statements"
+require_relative "c_backend/control_flow"
 require_relative "c_backend/helpers"
 require_relative "c_backend/types"
 require_relative "c_backend/expressions"
@@ -173,6 +175,8 @@ module MilkTea
     private
 
     include CBackendReachability
+    include CBackendStatements
+    include CBackendControlFlow
     include CBackendHelpers
     include CBackendTypes
     include CBackendExpressions
