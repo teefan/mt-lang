@@ -313,5 +313,122 @@ module MilkTea
     def opaque_type?(type)
       type.is_a?(Types::Opaque)
     end
+
+    def pointer_type?(type)
+      mutable_pointer_type?(type) || const_pointer_type?(type)
+    end
+
+    def mutable_pointer_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "ptr" && type.arguments.length == 1
+    end
+
+    def const_pointer_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "const_ptr" && type.arguments.length == 1
+    end
+
+    def ref_type?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+    end
+
+    def task_type?(type)
+      type.is_a?(Types::Task)
+    end
+
+    def proc_type?(type)
+      type.is_a?(Types::Proc)
+    end
+
+    def range_expr?(expression)
+      expression.is_a?(AST::RangeExpr)
+    end
+
+    def pointee_type(type)
+      return unless pointer_type?(type)
+
+      type.arguments.first
+    end
+
+    def referenced_type(type)
+      return unless ref_type?(type)
+
+      type.arguments.first
+    end
+
+    def const_pointer_to(type)
+      Types::GenericInstance.new("const_ptr", [type])
+    end
+
+    def call_arity_matches?(function_type, actual_count)
+      return actual_count >= function_type.params.length if function_type.is_a?(Types::Function) && function_type.variadic
+
+      actual_count == function_type.params.length
+    end
+
+    def arity_error_message(function_type, name, actual_count)
+      if function_type.is_a?(Types::Function) && function_type.variadic
+        "function #{name} expects at least #{function_type.params.length} arguments, got #{actual_count}"
+      else
+        "function #{name} expects #{function_type.params.length} arguments, got #{actual_count}"
+      end
+    end
+
+    def string_builder_type?(type)
+      type.respond_to?(:name) && type.respond_to?(:module_name) && type.name == "String" && type.module_name == "std.string"
+    end
+
+    def string_builder_ref_type?(type)
+      ref_type?(type) && string_builder_type?(referenced_type(type))
+    end
+
+    def callable_param_ref_supported?(type)
+      case type
+      when Types::Proc
+        type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+          !contains_ref_type?(type.return_type)
+      when Types::Function
+        type.params.all? { |param| ref_type?(param.type) || !contains_ref_type?(param.type) } &&
+          !contains_ref_type?(type.return_type) &&
+          (type.receiver_type.nil? || !contains_ref_type?(type.receiver_type))
+      else
+        false
+      end
+    end
+
+    def contains_ref_type?(type, visited = {})
+      return false unless type
+
+      visit_key = [type.class, type.object_id]
+      return false if visited[visit_key]
+
+      visited[visit_key] = true
+      case type
+      when Types::Nullable
+        contains_ref_type?(type.base, visited)
+      when Types::GenericInstance
+        return true if ref_type?(type)
+
+        type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited) }
+      when Types::Span
+        contains_ref_type?(type.element_type, visited)
+      when Types::Task
+        contains_ref_type?(type.result_type, visited)
+      when Types::Struct, Types::Union
+        type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited) }
+      when Types::StructInstance
+        type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
+      when Types::Variant
+        type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited) } }
+      when Types::VariantInstance
+        type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
+      when Types::Proc
+        type.params.any? { |param| contains_ref_type?(param.type, visited) } || contains_ref_type?(type.return_type, visited)
+      when Types::Function
+        type.params.any? { |param| contains_ref_type?(param.type, visited) } ||
+          contains_ref_type?(type.return_type, visited) ||
+          (type.receiver_type && contains_ref_type?(type.receiver_type, visited))
+      else
+        false
+      end
+    end
   end
 end
