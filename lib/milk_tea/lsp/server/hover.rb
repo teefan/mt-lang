@@ -1,0 +1,1133 @@
+# frozen_string_literal: true
+
+module MilkTea
+  module LSP
+    class Server
+      module ServerHover
+        private
+
+      def handle_hover(params)
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
+        uri       = params['textDocument']['uri']
+        lsp_line  = params['position']['line']
+        lsp_char  = params['position']['character']
+        token_kind = 'none'
+        result_state = 'miss'
+
+        context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
+        token = context&.fetch(:token, nil)
+        token_kind = token&.type || :none
+        unless token&.type == :identifier
+          result_state = 'not-identifier'
+          return nil
+        end
+
+        info = resolve_hover_info(uri, lsp_line, lsp_char, token: token, tokens: context[:tokens], token_index: context[:token_index], stages: stages)
+        return nil unless info
+
+        result = measure_perf_stage(stages, 'render') do
+          {
+            contents: {
+              kind: 'markdown',
+              value: render_hover_markdown(info)
+            },
+            range: token_to_range(token)
+          }
+        end
+        result_state = 'hit'
+        result
+      rescue StandardError => e
+        result_state = 'error'
+        warn "Error in hover handler: #{e.message}"
+        nil
+      ensure
+        log_request_stage_breakdown('textDocument/hover', total_start, uri: uri, stages: stages, summary: "token=#{token_kind} result=#{result_state}")
+      end
+
+      def resolve_hover_info(uri, lsp_line, lsp_char, token: nil, tokens: nil, token_index: nil, stages: nil)
+        if token.nil?
+          context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
+          return nil unless context
+
+          token = context[:token]
+          tokens = context[:tokens]
+          token_index = context[:token_index]
+        end
+
+        return nil unless token&.type == :identifier
+
+        tokens ||= @workspace.get_tokens(uri) || []
+        token_index = tokens.index(token) if token_index.nil?
+        if token_index
+          module_info = module_declaration_info_at(tokens, token_index)
+          if module_info
+            location = module_definition_location(uri, module_info[:module_name])
+            return {
+              signature: "module #{module_info[:module_name]}",
+              docs: nil,
+              source: hover_source_label_from_location(location),
+              source_uri: hover_source_uri_from_location(location),
+              source_line: hover_source_line_from_location(location),
+            }
+          end
+        end
+
+        if token_index
+          import_info = import_path_info_at(tokens, token_index)
+          if import_info
+            location = module_definition_location(uri, import_info[:module_name])
+            return {
+              signature: "module #{import_info[:module_name]}",
+              docs: nil,
+              source: hover_source_label_from_location(location),
+              source_uri: hover_source_uri_from_location(location),
+              source_line: hover_source_line_from_location(location),
+            }
+          end
+        end
+
+        facts = measure_perf_stage(stages, 'facts') do
+          @workspace.get_facts(uri, allow_last_good_fallback: allow_hover_last_good_fallback?(uri))
+        end
+        return nil unless facts
+
+        if token_index && field_declaration_token?(tokens, token_index)
+          return resolve_field_declaration_hover_info(uri, facts, tokens, token_index)
+        end
+
+        if token_index && named_argument_label_token?(tokens, token_index)
+          return resolve_named_argument_label_hover_info(uri, facts, tokens, token_index)
+        end
+
+        if token_index && (member_hover = resolve_member_access_hover_info(uri, facts, tokens, token_index))
+          return member_hover
+        end
+
+        if token_index && (enum_member_hover = resolve_enum_member_hover_info(uri, facts, tokens, token_index))
+          return enum_member_hover
+        end
+
+        name = token.lexeme
+        signature = nil
+        docs = nil
+        source_location = nil
+
+        if (binding = method_binding_at_token(facts, token))
+          signature = method_signature(binding)
+          source_location = module_member_binding_location(uri, facts.module_name, name, binding)
+        elsif (binding = facts.functions[name])
+          params_str = format_params(binding.type.params)
+          signature = "function #{name}(#{params_str}) -> #{binding.type.return_type}"
+        elsif (binding = facts.interfaces[name])
+          signature = interface_signature(binding)
+          source_location = module_member_definition_location(uri, binding.module_name, name)
+        elsif facts.types.key?(name)
+          type = facts.types[name]
+          signature = type_hover_signature(name, type)
+        elsif (binding = facts.values[name])
+          signature = value_hover_signature(binding)
+        elsif (import_binding = facts.imports[name])
+          signature = "module #{import_binding.name}"
+          source_location = module_definition_location(uri, import_binding.name)
+        else
+          dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+          dot_receiver_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
+          if dot_receiver && (module_binding = facts.imports[dot_receiver])
+            if (fn = module_binding.functions[name])
+              params_str = format_params(fn.type.params)
+              signature = "function #{name}(#{params_str}) -> #{fn.type.return_type}"
+              source_location = module_member_binding_location(uri, module_binding.name, name, fn)
+            elsif (val = module_binding.values[name])
+              signature = value_hover_signature(val)
+            elsif module_binding.types.key?(name)
+              signature = "type #{name}"
+            elsif (binding = module_binding.interfaces[name])
+              signature = interface_signature(binding)
+              source_location = module_member_definition_location(uri, module_binding.name, name)
+            end
+
+            if signature
+              source_location ||= module_member_definition_location(uri, module_binding.name, name)
+              source_location ||= module_definition_location(uri, module_binding.name)
+            end
+          end
+
+          unless signature
+            if (type_method = resolve_static_type_receiver_method(facts, dot_receiver, dot_receiver_path, name))
+              signature = method_signature(type_method[:binding])
+              source_location = module_member_binding_location(uri, type_method[:module_name], name, type_method[:binding])
+              source_location ||= module_member_definition_location(uri, type_method[:module_name], name)
+              source_location ||= module_definition_location(uri, type_method[:module_name])
+            end
+          end
+
+          unless signature
+            if token_index && (builtin_info = builtin_hover_info(name, tokens, token_index))
+              signature = builtin_info[:signature]
+              docs = builtin_info[:docs]
+            end
+          end
+
+          unless signature
+            if token_index && match_arm_binding_token?(tokens, token_index)
+              if (local_binding = resolve_as_binding_declaration_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
+                signature = value_hover_signature(local_binding)
+              end
+            end
+          end
+
+          unless signature
+            if (local_binding = resolve_local_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
+              signature = value_hover_signature(local_binding)
+            end
+          end
+
+          unless signature
+            local_def = @workspace.find_definition_token(
+              uri,
+              name,
+              before_line: lsp_line + 1,
+              before_char: lsp_char + 1,
+            )
+            signature = "local #{name}" if local_def
+          end
+
+          return nil unless signature
+        end
+
+        definition_entry = if source_location
+                             measure_perf_stage(stages, 'definition_entry') { hover_definition_entry_from_location(source_location) }
+                           else
+                             measure_perf_stage(stages, 'global_definition') do
+                               @workspace.find_definition_token_global(
+                                 name,
+                                 preferred_uri: uri,
+                                 before_line: lsp_line + 1,
+                                 before_char: lsp_char + 1,
+                               )
+                             end
+                           end
+
+        source_uri = hover_source_uri_for_definition(definition_entry) || hover_source_uri_from_location(source_location)
+        source_line = hover_source_line_for_definition(definition_entry) || hover_source_line_from_location(source_location)
+
+        {
+          signature: signature,
+          docs: docs || hover_doc_comment_for_definition(definition_entry),
+          doc_comment: hover_doc_comment_data_for_definition(definition_entry),
+          source: hover_source_label_for_definition(definition_entry) || hover_source_label_from_location(source_location),
+          source_uri: source_uri,
+          source_line: source_line,
+        }
+      end
+
+      def token_context_at(uri, lsp_line, lsp_char)
+        tokens = @workspace.get_tokens(uri) || []
+        interpolation_context = fstring_interpolation_token_context(tokens, lsp_line, lsp_char)
+        return interpolation_context if interpolation_context
+
+        token = @workspace.find_token_at(uri, lsp_line, lsp_char)
+        return nil unless token
+
+        {
+          token: token,
+          tokens: tokens,
+          token_index: tokens.index(token),
+        }
+      end
+
+      def fstring_interpolation_token_context(tokens, lsp_line, lsp_char)
+        target_line = lsp_line + 1
+        target_char = lsp_char + 1
+
+        fstring_token = tokens.find do |token|
+          next false unless token.type == :fstring
+
+          token_contains_position?(token, target_line, target_char)
+        end
+        return nil unless fstring_token
+
+        Array(fstring_token.literal).each do |part|
+          next unless part[:kind] == :expr
+          next unless part[:line] == target_line
+
+          expression_tokens = interpolation_expression_tokens(part)
+          token = expression_tokens.find { |candidate| token_contains_position?(candidate, target_line, target_char) }
+          next unless token
+
+          return {
+            token: token,
+            tokens: expression_tokens,
+            token_index: expression_tokens.index(token),
+          }
+        end
+
+        nil
+      end
+
+      def interpolation_expression_tokens(part)
+        source = part[:source]
+        return [] if source.nil? || source.strip.empty?
+
+        MilkTea::Lexer.new(source).lex
+          .reject { |token| [:newline, :indent, :dedent, :eof].include?(token.type) }
+          .map do |token|
+            adjusted_line = part[:line] + token.line - 1
+            adjusted_column = token.line == 1 ? (part[:column] + token.column - 1) : token.column
+
+            token.with(
+              line: adjusted_line,
+              column: adjusted_column,
+              start_offset: nil,
+              end_offset: nil,
+              leading_trivia: [].freeze,
+              trailing_trivia: [].freeze,
+            )
+          end
+      rescue MilkTea::LexError
+        []
+      end
+
+      def token_contains_position?(token, target_line, target_char)
+        segments = token.lexeme.split("\n", -1)
+        end_line = token.line + segments.length - 1
+        return false if target_line < token.line || target_line > end_line
+
+        if segments.length == 1
+          return token.column <= target_char && target_char < (token.column + segments.first.length)
+        end
+
+        if target_line == token.line
+          return token.column <= target_char && target_char <= (token.column + segments.first.length - 1)
+        end
+
+        target_char <= segments.fetch(target_line - token.line).length
+      end
+
+      def render_hover_markdown(info)
+        lines = []
+        lines << "```milk-tea"
+        lines << info[:signature]
+        lines << "```"
+
+        rendered_doc_comment = false
+        if info[:doc_comment].is_a?(Hash)
+          rendered_doc_comment = append_structured_doc_comment_markdown(lines, info[:doc_comment])
+        end
+
+        docs = info[:docs].to_s.strip
+        unless rendered_doc_comment || docs.empty?
+          lines << ""
+          lines << docs
+        end
+
+        source_uri = info[:source_uri]
+        source_line = info[:source_line]
+        source_label = info[:source].to_s.strip
+        unless source_label.empty?
+          lines << ""
+          if source_uri && source_line
+            link_uri = "#{source_uri}#L#{source_line}"
+            lines << "Defined at: [#{source_label}](#{link_uri})"
+          else
+            lines << "Defined at: #{source_label}"
+          end
+        end
+
+        lines.join("\n")
+      end
+
+      def append_structured_doc_comment_markdown(lines, doc_comment)
+        body = doc_comment[:body_markdown].to_s.strip
+        tags = doc_comment.fetch(:tags, {})
+        params = Array(tags[:params]).reject { |entry| entry[:name].to_s.strip.empty? }
+        returns = tags[:returns]
+        throws = Array(tags[:throws]).reject { |entry| entry[:text].to_s.strip.empty? }
+        see_also = Array(tags[:see]).reject { |entry| entry[:text].to_s.strip.empty? }
+
+        wrote = false
+        unless body.empty?
+          lines << ""
+          lines << body
+          wrote = true
+        end
+
+        unless params.empty?
+          lines << ""
+          lines << "**Parameters**"
+          params.each do |entry|
+            description = entry[:text].to_s.strip
+            if description.empty?
+              lines << "- `#{entry[:name]}`"
+            else
+              lines << "- `#{entry[:name]}`: #{description}"
+            end
+          end
+          wrote = true
+        end
+
+        if returns
+          description = returns[:text].to_s.strip
+          unless description.empty?
+            lines << ""
+            lines << "**Returns**"
+            lines << description
+            wrote = true
+          end
+        end
+
+        unless throws.empty?
+          lines << ""
+          lines << "**Throws**"
+          throws.each do |entry|
+            lines << "- #{entry[:text]}"
+          end
+          wrote = true
+        end
+
+        unless see_also.empty?
+          lines << ""
+          lines << "**See Also**"
+          see_also.each do |entry|
+            lines << "- #{entry[:text]}"
+          end
+          wrote = true
+        end
+
+        wrote
+      end
+
+      def hover_doc_comment_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        @workspace.doc_comment_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def hover_doc_comment_data_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def signature_help_doc_comment_for_call(uri, name, lsp_line, lsp_char)
+        definition_entry = @workspace.find_definition_token_global(
+          name,
+          preferred_uri: uri,
+          before_line: lsp_line + 1,
+          before_char: lsp_char + 1,
+        )
+        return nil unless definition_entry
+
+        @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+      end
+
+      def signature_help_markdown_for_doc_comment(doc_comment)
+        return '' unless doc_comment.is_a?(Hash)
+
+        lines = []
+        body = doc_comment[:body_markdown].to_s.strip
+        lines << body unless body.empty?
+
+        returns = doc_tag_return_description(doc_comment)
+        unless returns.empty?
+          lines << '' unless lines.empty?
+          lines << "**Returns**"
+          lines << returns
+        end
+
+        lines.join("\n")
+      end
+
+      def doc_tag_param_descriptions(doc_comment)
+        return {} unless doc_comment.is_a?(Hash)
+
+        Array(doc_comment.dig(:tags, :params)).each_with_object({}) do |entry, docs|
+          name = entry[:name].to_s
+          next if name.empty?
+
+          text = entry[:text].to_s.strip
+          next if text.empty?
+
+          docs[name] = text
+        end
+      end
+
+      def doc_tag_return_description(doc_comment)
+        return '' unless doc_comment.is_a?(Hash)
+
+        doc_comment.dig(:tags, :returns, :text).to_s.strip
+      end
+
+      def completion_function_documentation(uri, name, cache:)
+        key = [uri, name]
+        return cache[key] if cache.key?(key)
+
+        definition_entry = @workspace.find_definition_token_global(name, preferred_uri: uri)
+        unless definition_entry
+          cache[key] = ''
+          return ''
+        end
+
+        doc_comment = @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+        cache[key] = signature_help_markdown_for_doc_comment(doc_comment)
+      end
+
+      def hover_source_label_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        hover_source_label(definition_entry[:uri], definition_entry[:token].line)
+      end
+
+      def hover_source_uri_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        definition_entry[:uri]
+      end
+
+      def hover_source_line_for_definition(definition_entry)
+        return nil unless definition_entry
+
+        definition_entry[:token].line
+      end
+
+      def hover_source_label_from_location(location)
+        return nil unless location
+
+        line = location.dig(:range, :start, :line)
+        hover_source_label(location[:uri], (line || 0) + 1)
+      end
+
+      def hover_source_uri_from_location(location)
+        return nil unless location
+
+        location[:uri]
+      end
+
+      def hover_source_line_from_location(location)
+        return nil unless location
+
+        line = location.dig(:range, :start, :line)
+        (line || 0) + 1
+      end
+
+      def hover_source_label(uri, line)
+        path = uri_to_path(uri)
+        return nil unless path
+
+        display = path
+        if @root_uri
+          root_path = uri_to_path(@root_uri)
+          if root_path
+            begin
+              relative = Pathname.new(path).relative_path_from(Pathname.new(root_path)).to_s
+              display = relative unless relative.start_with?('..')
+            rescue StandardError
+              display = path
+            end
+          end
+        end
+
+        "#{display}:#{line}"
+      end
+
+      def hover_definition_entry_from_location(location)
+        return nil unless location
+
+        start = location.dig(:range, :start)
+        return nil unless start
+
+        token = @workspace.find_token_at(location[:uri], start[:line], start[:character])
+        return nil unless token
+
+        { uri: location[:uri], token: token }
+      end
+
+      def format_params(params)
+        params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
+      end
+
+      def interface_signature(binding)
+        method_lines = binding.methods.values.map do |method|
+          "    #{interface_method_signature(method)}"
+        end
+
+        (["interface #{binding.name}"] + method_lines).join("\n")
+      end
+
+      def interface_method_signature(binding)
+        keyword = binding.kind == :mutable ? 'mutable function' : 'function'
+        keyword = "async #{keyword}" if binding.async
+        "#{keyword} #{binding.name}(#{format_params(binding.params)}) -> #{binding.return_type}"
+      end
+
+      def resolve_dot_receiver_value_type(facts, receiver_name, line, char)
+        local_type = resolve_local_hover_type(facts, receiver_name, line, char)
+        return local_type if local_type
+
+        facts.values[receiver_name]&.type
+      end
+
+      def resolve_member_access_hover_info(current_uri, facts, tokens, token_index)
+        chain = member_access_chain_at(tokens, token_index)
+        return nil unless chain
+
+        hovered_segment = chain[:segments].find { |segment| segment[:token_index] == token_index }
+        return nil unless hovered_segment && hovered_segment[:position].positive?
+
+        current_type = resolve_dot_receiver_value_type(
+          facts,
+          chain[:segments].first[:name],
+          chain[:line],
+          chain[:char],
+        )
+        return nil unless current_type
+
+        chain[:segments][1..hovered_segment[:position]].each do |segment|
+          field_receiver_type = project_field_receiver_type_for_completion(current_type)
+          if field_receiver_type.respond_to?(:field) && (field_type = field_receiver_type.field(segment[:name]))
+            source_location = field_definition_location(current_uri, field_receiver_type, segment[:name])
+
+            if segment[:token_index] == token_index
+              return {
+                signature: field_hover_signature(segment[:name], field_type),
+                docs: nil,
+                source: hover_source_label_from_location(source_location),
+                source_uri: hover_source_uri_from_location(source_location),
+                source_line: hover_source_line_from_location(source_location),
+              }
+            end
+
+            current_type = field_type
+            next
+          end
+
+          next unless segment[:token_index] == token_index
+
+          method_receiver_type = project_method_receiver_type_for_completion(current_type)
+          method_info = member_method_info_for_receiver_type(facts, method_receiver_type, segment[:name])
+          return nil unless method_info
+
+          source_location = module_member_binding_location(current_uri, method_info[:module_name], segment[:name], method_info[:binding])
+          source_location ||= module_member_definition_location(current_uri, method_info[:module_name], segment[:name])
+
+          return {
+            signature: method_signature(method_info[:binding]),
+            docs: nil,
+            source: hover_source_label_from_location(source_location),
+            source_uri: hover_source_uri_from_location(source_location),
+            source_line: hover_source_line_from_location(source_location),
+          }
+        end
+
+        nil
+      end
+
+      def member_method_info_for_receiver_type(facts, receiver_type, method_name)
+        return nil unless receiver_type
+
+        dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
+
+        if (binding = facts.methods.fetch(receiver_type, {})[method_name])
+          return {
+            binding: binding,
+            module_name: facts.module_name,
+          }
+        end
+
+        if dispatch_receiver_type != receiver_type && (binding = facts.methods.fetch(dispatch_receiver_type, {})[method_name])
+          return {
+            binding: binding,
+            module_name: facts.module_name,
+          }
+        end
+
+        facts.imports.each_value do |module_binding|
+          binding = module_binding.methods.fetch(receiver_type, {})[method_name]
+          if binding.nil? && dispatch_receiver_type != receiver_type
+            binding = module_binding.methods.fetch(dispatch_receiver_type, {})[method_name]
+          end
+          next unless binding
+
+          return {
+            binding: binding,
+            module_name: module_binding.name,
+          }
+        end
+
+        nil
+      end
+
+      def resolve_enum_member_hover_info(current_uri, facts, tokens, token_index)
+        member_info = resolve_enum_member_access_info(current_uri, facts, tokens, token_index)
+        return nil unless member_info
+
+        signature = "#{member_info[:member_name]}: #{member_info[:receiver_label]}"
+        signature += " = #{member_info[:value_text]}" if member_info[:value_text]
+
+        {
+          signature: signature,
+          docs: nil,
+          source: hover_source_label_from_location(member_info[:location]),
+          source_uri: hover_source_uri_from_location(member_info[:location]),
+          source_line: hover_source_line_from_location(member_info[:location]),
+        }
+      end
+
+      def resolve_enum_member_definition_location(current_uri, facts, tokens, token_index)
+        resolve_enum_member_access_info(current_uri, facts, tokens, token_index)&.fetch(:location, nil)
+      end
+
+      def resolve_enum_member_access_info(current_uri, facts, tokens, token_index)
+        return nil unless type_name_member_access?(tokens, token_index, facts)
+
+        token = tokens[token_index]
+        token_end_char = token.column - 1 + token.lexeme.length
+        receiver_name = @workspace.find_dot_receiver(current_uri, token.line - 1, token_end_char)
+        receiver_path = @workspace.find_dot_receiver_path(current_uri, token.line - 1, token_end_char)
+        receiver_info = resolve_type_receiver_info(facts, receiver_name, receiver_path)
+        return nil unless receiver_info
+
+        receiver_type = receiver_info[:type]
+        return nil unless receiver_type.is_a?(Types::EnumBase)
+        return nil unless receiver_type.member(token.lexeme)
+
+        owner_module_name = receiver_type.respond_to?(:module_name) ? receiver_type.module_name : receiver_info[:module_name]
+
+        {
+          receiver_label: receiver_info[:label],
+          member_name: token.lexeme,
+          value_text: enum_member_value_text(current_uri, owner_module_name, receiver_type.name, token.lexeme),
+          location: enum_member_definition_location(current_uri, owner_module_name, receiver_type.name, token.lexeme),
+        }
+      end
+
+      def resolve_field_declaration_hover_info(current_uri, facts, tokens, token_index)
+        receiver_info = field_declaration_receiver_info(facts, tokens, token_index)
+        return nil unless receiver_info
+
+        field_name = tokens[token_index].lexeme
+        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+        return nil unless receiver_type.respond_to?(:field)
+
+        field_type = receiver_type.field(field_name)
+        return nil unless field_type
+
+        source_location = field_definition_location(current_uri, receiver_type, field_name)
+
+        {
+          signature: field_hover_signature(field_name, field_type),
+          docs: nil,
+          source: hover_source_label_from_location(source_location),
+          source_uri: hover_source_uri_from_location(source_location),
+          source_line: hover_source_line_from_location(source_location),
+        }
+      end
+
+      def resolve_named_argument_label_hover_info(current_uri, facts, tokens, token_index)
+        receiver_info = named_argument_label_receiver_info(facts, tokens, token_index)
+        return nil unless receiver_info
+
+        field_name = tokens[token_index].lexeme
+        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+        return nil unless receiver_type.respond_to?(:field)
+
+        field_type = receiver_type.field(field_name)
+        return nil unless field_type
+
+        source_location = field_definition_location(current_uri, receiver_type, field_name)
+
+        {
+          signature: field_hover_signature(field_name, field_type),
+          docs: nil,
+          source: hover_source_label_from_location(source_location),
+          source_uri: hover_source_uri_from_location(source_location),
+          source_line: hover_source_line_from_location(source_location),
+        }
+      end
+
+      def field_declaration_receiver_info(facts, tokens, token_index)
+        token = tokens[token_index]
+        return nil unless token
+
+        i = token_index - 1
+        while i >= 0
+          current = tokens[i]
+          i -= 1
+
+          next if [:newline, :indent, :dedent, :eof].include?(current.type)
+          next if current.line == token.line
+          next if current.column >= token.column
+
+          header_line_tokens = non_trivia_tokens_on_line(tokens, current.line)
+          header = header_line_tokens.first
+          return nil unless [:struct, :union].include?(header&.type)
+
+          type_token = header_line_tokens[1]
+          return nil unless type_token&.type == :identifier
+
+          return resolve_type_receiver_info(facts, type_token.lexeme, type_token.lexeme)
+        end
+
+        nil
+      end
+
+      def named_argument_label_receiver_info(facts, tokens, token_index)
+        opener_index = parameter_list_opener_index(tokens, token_index)
+        return nil unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return nil unless head_index
+
+        if tokens[head_index].type == :rbracket
+          lbracket_index = matching_opener_index(tokens, head_index)
+          return nil unless lbracket_index
+
+          head_index = previous_non_trivia_token_index(tokens, lbracket_index)
+          return nil unless head_index
+        end
+
+        head = tokens[head_index]
+        return nil unless head.type == :identifier
+
+        receiver_name = head.lexeme
+        receiver_path = receiver_name
+
+        dot_index = previous_non_trivia_token_index(tokens, head_index)
+        if dot_index && tokens[dot_index].type == :dot
+          module_index = previous_non_trivia_token_index(tokens, dot_index)
+          return nil unless module_index && tokens[module_index].type == :identifier
+
+          receiver_path = "#{tokens[module_index].lexeme}.#{receiver_name}"
+        end
+
+        resolve_type_receiver_info(facts, receiver_name, receiver_path)
+      end
+
+      def member_access_chain_at(tokens, token_index)
+        token = tokens[token_index]
+        return nil unless token&.type == :identifier
+
+        indices = [token_index]
+        current_index = token_index
+
+        loop do
+          dot_index = previous_non_trivia_token_index(tokens, current_index)
+          break unless dot_index && tokens[dot_index].type == :dot && tokens[dot_index].line == token.line
+
+          receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+          break unless receiver_index && tokens[receiver_index].type == :identifier && tokens[receiver_index].line == token.line
+
+          indices.unshift(receiver_index)
+          current_index = receiver_index
+        end
+
+        current_index = token_index
+        loop do
+          dot_index = next_non_trivia_token_index(tokens, current_index + 1)
+          break unless dot_index && tokens[dot_index].type == :dot && tokens[dot_index].line == token.line
+
+          member_index = next_non_trivia_token_index(tokens, dot_index + 1)
+          break unless member_index && tokens[member_index].type == :identifier && tokens[member_index].line == token.line
+
+          indices << member_index
+          current_index = member_index
+        end
+
+        return nil if indices.length < 2
+
+        {
+          line: token.line,
+          char: token.column + token.lexeme.length,
+          segments: indices.each_with_index.map do |index, position|
+            {
+              name: tokens[index].lexeme,
+              token_index: index,
+              position: position,
+            }
+          end,
+        }
+      end
+
+      def method_binding_at_token(facts, token)
+        facts.methods.each_value do |methods|
+          methods.each_value do |binding|
+            next unless binding.name == token.lexeme
+            next unless binding.ast.is_a?(AST::MethodDef)
+            next unless binding.ast.line == token.line
+            next unless binding.ast.respond_to?(:column) && binding.ast.column == token.column
+
+            return binding
+          end
+        end
+
+        nil
+      end
+
+      def method_signature(binding)
+        params_str = format_params(binding.type.params)
+        keyword = case binding.ast.kind
+                  when :mutable
+                    "mutable function"
+                  when :static
+                    "static function"
+                  else
+                    "function"
+                  end
+
+        "#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
+      end
+
+      def type_hover_signature(name, type)
+        rendered_type = type.to_s
+        return "type #{name}" if rendered_type == name
+
+        "type #{name} = #{rendered_type}"
+      end
+
+      def field_hover_signature(name, type)
+        "field #{name}: #{type}"
+      end
+
+      def builtin_hover_info(name, tokens, token_index)
+        specialization_info = builtin_value_specialization_info(name, tokens, token_index)
+        return specialization_info if specialization_info
+
+        specialized_call_info = builtin_specialized_call_hover_info(name, tokens, token_index)
+        return specialized_call_info if specialized_call_info
+
+        type_constructor_info = builtin_type_constructor_hover_info(name, tokens, token_index)
+        return type_constructor_info if type_constructor_info
+
+        builtin_call_hover_info(name, tokens, token_index)
+      end
+
+      def builtin_value_specialization_info(name, tokens, token_index)
+        return nil unless %w[zero default reinterpret].include?(name)
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        target_type = render_builtin_specialization(tokens[(lbracket_index + 1)...rbracket_index])
+        return nil if target_type.empty?
+
+        docs = case name
+               when 'zero'
+                 '`zero[T]` returns the raw zero-initialized value for `T`. It is a value form, not a callable.'
+               when 'default'
+                 '`default[T]` returns the semantic default value for `T` and requires an accessible zero-argument associated function `T.default()` that returns `T`. It is a value form, not a callable.'
+               when 'reinterpret'
+                 '`reinterpret[T](value)` bit-casts a value to `T`; it requires `unsafe` and compatible concrete sized types.'
+               end
+
+        {
+          signature: if name == 'reinterpret'
+                       "builtin #{specialization}(value) -> #{target_type}"
+                     else
+                       "builtin #{specialization} -> #{target_type}"
+                     end,
+          docs: docs,
+        }
+      end
+
+      def builtin_type_constructor_hover_info(name, tokens, token_index)
+        return nil unless %w[array span Option Result].include?(name)
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+
+        if after_bracket_index && tokens[after_bracket_index].type == :lparen
+          docs = if name == 'array'
+                   '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
+                 else
+                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                 end
+
+          return {
+            signature: if name == 'array'
+                         "builtin #{specialization}(...) -> #{specialization}"
+                       else
+                         "builtin #{specialization}(data = ..., len = ...) -> #{specialization}"
+                       end,
+            docs: docs,
+          }
+        end
+
+        docs = case name
+               when 'array'
+                 '`array[T, N]` is the built-in fixed-length array type.'
+               when 'span'
+                 '`span[T]` is the built-in non-owning contiguous view type.'
+               when 'Option'
+                 '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
+               else
+                 '`Result[T, E]` is the built-in success/failure type with `success(value = ...)` and `failure(error = ...)` arms.'
+               end
+
+        {
+          signature: "builtin type #{specialization}",
+          docs: docs,
+        }
+      end
+
+      def builtin_specialized_call_hover_info(name, tokens, token_index)
+        return nil unless BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name) || name == 'attribute_arg'
+
+        lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
+
+        rbracket_index = matching_closer_index(tokens, lbracket_index, :lbracket, :rbracket)
+        return nil unless rbracket_index
+
+        after_bracket_index = next_non_trivia_token_index(tokens, rbracket_index + 1)
+        return nil unless after_bracket_index && tokens[after_bracket_index].type == :lparen
+
+        specialization = render_builtin_specialization(tokens[token_index..rbracket_index])
+        if name == 'attribute_arg'
+          target_type = render_builtin_specialization(tokens[(lbracket_index + 1)...rbracket_index])
+          return nil if target_type.empty?
+
+          return {
+            signature: "builtin #{specialization}(attribute, param_name) -> #{target_type}",
+            docs: '`attribute_arg[T](attribute, param_name)` returns the compile-time argument value for the named attribute parameter; `T` must exactly match the declared parameter type.'
+          }
+        end
+
+        docs = case name
+               when 'hash'
+                 '`hash[T](value)` lowers to `T.hash(value: const_ptr[T]) -> uint` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               when 'equal'
+                 '`equal[T](left, right)` lowers to `T.equal(left: const_ptr[T], right: const_ptr[T]) -> bool` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               when 'order'
+                 '`order[T](left, right)` lowers to `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` after borrowing safe lvalues or forwarding existing refs and pointers.'
+               end
+
+        signature = case name
+                    when 'hash'
+                      "builtin #{specialization}(value) -> uint"
+                    when 'equal'
+                      "builtin #{specialization}(left, right) -> bool"
+                    when 'order'
+                      "builtin #{specialization}(left, right) -> int"
+                    end
+
+        {
+          signature: signature,
+          docs: docs,
+        }
+      end
+
+      def builtin_call_hover_info(name, tokens, token_index)
+        info = BUILTIN_CALL_HOVER_INFO[name]
+        return nil unless info
+
+        next_index = next_non_trivia_token_index(tokens, token_index + 1)
+        return nil unless next_index && tokens[next_index].type == :lparen
+
+        info
+      end
+
+      def render_builtin_specialization(tokens)
+        Array(tokens).map(&:lexeme).join.gsub(',', ', ')
+      end
+
+      def value_hover_signature(binding)
+        case binding.kind
+        when :const
+          "const #{binding.name}: #{binding.type} (immutable)"
+        when :var
+          "var #{binding.name}: #{binding.type} (mutable)"
+        when :let
+          "let #{binding.name}: #{binding.type} (immutable)"
+        when :param
+          "parameter #{binding.name}: #{binding.type} (immutable)"
+        when :local
+          suffix = binding.mutable ? 'mutable' : 'immutable'
+          "local #{binding.name}: #{binding.type} (#{suffix})"
+        else
+          "#{binding.name}: #{binding.type}"
+        end
+      end
+
+      def resolve_local_hover_binding(facts, name, line, char)
+        declared_binding = declared_generic_local_hover_binding(facts, name, line)
+        return declared_binding if declared_binding
+
+        frame = enclosing_completion_frame(facts, line)
+        return nil unless frame
+
+        snapshot = latest_completion_snapshot(frame, line, char)
+        binding = snapshot&.bindings&.dig(name)
+        return binding if binding
+
+        future_snapshot = same_line_future_completion_snapshot(frame, line, char)
+        future_snapshot&.bindings&.dig(name)
+      end
+
+      def resolve_as_binding_declaration_hover_binding(facts, name, line, char)
+        frame = enclosing_completion_frame(facts, line)
+        return nil unless frame
+
+        Array(frame.snapshots).each do |snapshot|
+          next if snapshot.line < line
+          next if snapshot.line == line && snapshot.column <= char
+
+          binding = snapshot.bindings[name]
+          return binding if binding
+        end
+
+        nil
+      end
+
+      def resolve_local_hover_type(facts, name, line, char)
+        resolve_local_hover_binding(facts, name, line, char)&.type
+      end
+
+      def declared_generic_local_hover_binding(facts, name, line)
+        binding = generic_function_binding_for_line(facts, line)
+        return nil unless binding
+
+        binding.body_params.find { |param| param.name == name }
+      end
+
+      def enclosing_completion_frame(facts, line)
+        frames = Array(facts.local_completion_frames)
+        containing = frames.select { |frame| frame.start_line && frame.end_line && frame.start_line <= line && line <= frame.end_line }
+        containing.min_by { |frame| frame.end_line - frame.start_line }
+      end
+
+      def latest_completion_snapshot(frame, line, char)
+        snapshots = Array(frame.snapshots)
+        snapshots.reverse_each do |snapshot|
+          next if snapshot.line > line
+          next if snapshot.line == line && snapshot.column > char
+
+          return snapshot
+        end
+        nil
+      end
+
+      def same_line_future_completion_snapshot(frame, line, char)
+        snapshots = Array(frame.snapshots)
+        snapshots.each do |snapshot|
+          next unless snapshot.line == line
+          next if snapshot.column <= char
+
+          return snapshot
+        end
+        nil
+      end
+      end
+    end
+  end
+end
