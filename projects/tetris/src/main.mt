@@ -124,7 +124,10 @@ function load_packed_runtime_assets(reader: rl_assets.Reader) -> Result[RuntimeA
         rl.unload_texture(tiles)
         return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(error))
 
-    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(
+        tiles = tiles,
+        clear_sound = clear_sound
+    ))
 
 
 function load_directory_runtime_assets() -> Result[RuntimeAssets, RuntimeAssetsError]:
@@ -133,14 +136,23 @@ function load_directory_runtime_assets() -> Result[RuntimeAssets, RuntimeAssetsE
 
     let tiles = rl.load_texture("tetris_tiles.png")
     if not rl.is_texture_valid(tiles):
-        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(rl_assets.Error.invalid_texture))
+        return Result[
+            RuntimeAssets,
+            RuntimeAssetsError
+        ].failure(error= packed_assets_error(rl_assets.Error.invalid_texture))
 
     let clear_sound = rl.load_sound("line_clear.wav")
     if not rl.is_sound_valid(clear_sound):
         rl.unload_texture(tiles)
-        return Result[RuntimeAssets, RuntimeAssetsError].failure(error= packed_assets_error(rl_assets.Error.invalid_sound))
+        return Result[
+            RuntimeAssets,
+            RuntimeAssetsError
+        ].failure(error= packed_assets_error(rl_assets.Error.invalid_sound))
 
-    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(tiles = tiles, clear_sound = clear_sound))
+    return Result[RuntimeAssets, RuntimeAssetsError].success(value= RuntimeAssets(
+        tiles = tiles,
+        clear_sound = clear_sound
+    ))
 
 
 extending TitleScreen:
@@ -160,7 +172,14 @@ extending TitleScreen:
 
     function draw(_texture: rl.Texture2D) -> void:
         rl.clear_background(rl.Color(r = 7, g = 10, b = 18, a = 255))
-        rl.draw_rectangle_gradient_v(0, 0, window_width, window_height, rl.Color(r = 17, g = 28, b = 52, a = 255), rl.Color(r = 6, g = 10, b = 18, a = 255))
+        rl.draw_rectangle_gradient_v(
+            0,
+            0,
+            window_width,
+            window_height,
+            rl.Color(r = 17, g = 28, b = 52, a = 255),
+            rl.Color(r = 6, g = 10, b = 18, a = 255)
+        )
         rl.draw_text("MILK TEA", 148, 168, 58, rl.RAYWHITE)
         rl.draw_text("TETRIS", 214, 236, 58, rl.GOLD)
         rl.draw_text("Stack clean lines and survive the climb.", 108, 334, 24, rl.SKYBLUE)
@@ -183,7 +202,11 @@ extending PausedScreen:
     mutable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
-        if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE) or rl.is_key_pressed(rl.KeyboardKey.KEY_P):
+        if (
+            rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER)
+            or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE)
+            or rl.is_key_pressed(rl.KeyboardKey.KEY_P)
+        ):
             this.resume_requested = true
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ESCAPE):
@@ -193,8 +216,17 @@ extending PausedScreen:
     function draw(texture: rl.Texture2D) -> void:
         this.snapshot.draw(texture)
         rl.draw_rectangle(0, 0, window_width, window_height, rl.Color(r = 6, g = 10, b = 18, a = 164))
-        rl.draw_rectangle_rounded(rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0), 0.12, 10, rl.Color(r = 18, g = 26, b = 44, a = 244))
-        rl.draw_rectangle_lines_ex(rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0), 3.0, rl.Color(r = 87, g = 111, b = 166, a = 255))
+        rl.draw_rectangle_rounded(
+            rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0),
+            0.12,
+            10,
+            rl.Color(r = 18, g = 26, b = 44, a = 244)
+        )
+        rl.draw_rectangle_lines_ex(
+            rl.Rectangle(x = 140.0, y = 170.0, width = 360.0, height = 316.0),
+            3.0,
+            rl.Color(r = 87, g = 111, b = 166, a = 255)
+        )
         rl.draw_text("PAUSED", 236, 212, 54, rl.RAYWHITE)
         rl.draw_text("Frozen board. Same stack, same next piece.", 152, 286, 22, rl.SKYBLUE)
         rl.draw_text(f"Score  #{this.snapshot.score}", 186, 344, 26, rl.GOLD)
@@ -442,13 +474,23 @@ extending Game:
 
     function draw_board(texture: rl.Texture2D) -> void:
         rl.draw_rectangle_rounded(
-            rl.Rectangle(x = float<-(board_left - 12), y = float<-(board_top - 12), width = float<-(board_width * cell_size + 24), height = float<-(board_height * cell_size + 24)),
+            rl.Rectangle(
+                x = float<-(board_left - 12),
+                y = float<-(board_top - 12),
+                width = float<-(board_width * cell_size + 24),
+                height = float<-(board_height * cell_size + 24)
+            ),
             0.08,
             8,
             rl.Color(r = 20, g = 27, b = 43, a = 255),
         )
         rl.draw_rectangle_lines_ex(
-            rl.Rectangle(x = float<-(board_left - 12), y = float<-(board_top - 12), width = float<-(board_width * cell_size + 24), height = float<-(board_height * cell_size + 24)),
+            rl.Rectangle(
+                x = float<-(board_left - 12),
+                y = float<-(board_top - 12),
+                width = float<-(board_width * cell_size + 24),
+                height = float<-(board_height * cell_size + 24)
+            ),
             3.0,
             rl.Color(r = 72, g = 92, b = 138, a = 255),
         )
@@ -516,7 +558,14 @@ extending Game:
 
     function draw(texture: rl.Texture2D) -> void:
         rl.clear_background(rl.Color(r = 7, g = 10, b = 18, a = 255))
-        rl.draw_rectangle_gradient_v(0, 0, window_width, window_height, rl.Color(r = 17, g = 28, b = 52, a = 255), rl.Color(r = 6, g = 10, b = 18, a = 255))
+        rl.draw_rectangle_gradient_v(
+            0,
+            0,
+            window_width,
+            window_height,
+            rl.Color(r = 17, g = 28, b = 52, a = 255),
+            rl.Color(r = 6, g = 10, b = 18, a = 255)
+        )
         this.draw_board(texture)
         this.draw_preview(texture)
         this.draw_sidebar()
