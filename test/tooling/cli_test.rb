@@ -753,6 +753,7 @@ class MilkTeaCliTest < Minitest::Test
       platform: :wasm,
       bundle_root: nil,
       archive_path: nil,
+      cached: false,
     )
 
     runner = lambda do |_path, **kwargs|
@@ -4115,6 +4116,7 @@ class MilkTeaCliTest < Minitest::Test
         platform: nil,
         bundle_root: nil,
         archive_path: nil,
+        cached: false,
       )
       fake_graph = Struct.new(:source_roots).new([File.join(dir, "src")])
       runner = lambda do |path, **kwargs|

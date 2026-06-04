@@ -10,6 +10,43 @@ class LSPServerTest < Minitest::Test
   HOVER_LATENCY_BUDGET_MS = 250.0
   SEMANTIC_TOKENS_LATENCY_BUDGET_MS = 450.0
 
+  ROOT_DIR = File.expand_path("../../..", __dir__).freeze
+  LIB_DIR = File.join(ROOT_DIR, "lib").freeze
+
+  class << self
+    attr_accessor :_shared_client, :_shared_pid
+  end
+
+  def self.ensure_shared_server!
+    return if self._shared_client
+
+    stdin_read, stdin_write = IO.pipe
+    stdout_read, stdout_write = IO.pipe
+
+    pid = spawn(
+      RbConfig.ruby, "-I", LIB_DIR,
+      "-e", "require 'milk_tea'; MilkTea::LSP::Server.new.run",
+      in: stdin_read, out: stdout_write, err: File::NULL
+    )
+
+    stdin_read.close
+    stdout_write.close
+
+    client = LSPClient.new(stdin_write, stdout_read)
+    client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+    client.send_notification("initialized", {})
+
+    self._shared_client = client
+    self._shared_pid = pid
+
+    Minitest.after_run do
+      stdin_write&.close rescue nil
+      stdout_read&.close rescue nil
+      Process.kill("TERM", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+
   def teardown
     ObjectSpace.each_object(MilkTea::LSP::Server) do |server|
       server.send(:handle_shutdown, nil)
@@ -124,6 +161,24 @@ class LSPServerTest < Minitest::Test
       return nil if content_length.nil? || content_length <= 0
 
       JSON.parse(@stdout.read(content_length))
+    end
+  end
+
+  class SharedLSPClient
+    def initialize(delegate)
+      @delegate = delegate
+    end
+
+    def send_request(method, params = {})
+      return @delegate.send_request(method, params) unless method == "initialize"
+
+      {}
+    end
+
+    def send_notification(method, params = {})
+      return if method == "initialized"
+
+      @delegate.send_notification(method, params)
     end
   end
 
@@ -764,7 +819,7 @@ function main(value: int) -> int:
   end
 
   def test_document_symbol_and_hover_work_after_open
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -807,7 +862,7 @@ function main(value: int) -> int:
           reloaded.emit()
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_event_symbols_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -867,7 +922,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_returns_interface_info_for_local_implements_clause
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
 
       uri = "file:///tmp/lsp_hover_interface_local.mt"
@@ -974,7 +1029,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1005,7 +1060,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1079,7 +1134,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1113,7 +1168,7 @@ function main(value: int) -> int:
           return answer + score
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1164,7 +1219,7 @@ function main(value: int) -> int:
           return 0
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1192,7 +1247,7 @@ function main(value: int) -> int:
   def test_hover_shows_builtin_default_value_signature
     source = SOURCE_WITH_FUNCTION_VALUE_AND_ZERO_SEMANTICS
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1237,7 +1292,7 @@ function main(value: int) -> int:
   def test_hover_shows_builtin_callable_signatures
     source = SOURCE_WITH_BUILTIN_CALLABLE_HOVER
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1295,7 +1350,7 @@ function main(value: int) -> int:
   def test_hover_shows_builtin_associated_hook_signatures
     source = SOURCE_WITH_ASSOCIATED_HOOK_BUILTINS
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1397,7 +1452,7 @@ function main(value: int) -> int:
           return 0
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1433,7 +1488,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_response_stays_within_latency_budget
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1462,7 +1517,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_ignores_plain_hash_comments_for_docs
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1488,7 +1543,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_doc_block_requires_no_blank_line_before_definition
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1547,7 +1602,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_renders_structured_doc_tag_sections
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       client.send_notification("initialized", {})
 
@@ -1681,7 +1736,7 @@ function main(value: int) -> int:
   end
 
   def test_references_finds_all_occurrences_of_a_name
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_refs_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1788,7 +1843,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_references_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1810,7 +1865,7 @@ function main(value: int) -> int:
   end
 
   def test_document_highlight_returns_all_occurrences_in_file
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_highlight_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1837,7 +1892,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_highlight_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1858,7 +1913,7 @@ function main(value: int) -> int:
   end
 
   def test_signature_help_returns_function_signature_at_call_site
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1880,7 +1935,7 @@ function main(value: int) -> int:
   end
 
   def test_signature_help_tracks_active_parameter_by_comma_count
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel2_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1897,7 +1952,7 @@ function main(value: int) -> int:
   end
 
   def test_signature_help_includes_doc_comment_and_parameter_docs
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_sighel_structured_docs_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1924,7 +1979,7 @@ function main(value: int) -> int:
   end
 
   def test_prepare_rename_returns_range_and_placeholder
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_prep_rename_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1942,7 +1997,7 @@ function main(value: int) -> int:
   end
 
   def test_rename_produces_workspace_edit_for_all_occurrences
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -1971,7 +2026,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_shadowed_local.mt"
       client.send_notification("textDocument/didOpen", {
@@ -2007,7 +2062,7 @@ function main(value: int) -> int:
           return value
     MT
 
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_rename_shadowed_local_usage.mt"
       client.send_notification("textDocument/didOpen", {
@@ -2898,7 +2953,7 @@ function main(value: int) -> int:
   end
 
   def test_did_save_republishes_diagnostics
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_save_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3196,7 +3251,7 @@ function main(value: int) -> int:
   end
 
   def test_document_symbol_captures_opaque_declarations
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_opaque_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3209,7 +3264,7 @@ function main(value: int) -> int:
   end
 
   def test_document_symbol_captures_interface_declarations_with_interface_kind
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_symbol_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3225,7 +3280,7 @@ function main(value: int) -> int:
   end
 
   def test_implementation_on_interface_returns_implementing_type_locations
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_implementation_test.mt"
       source = SOURCE_WITH_LOCAL_INTERFACES
@@ -3255,7 +3310,7 @@ function main(value: int) -> int:
   end
 
   def test_implementation_on_interface_method_returns_implementing_method_locations
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_interface_method_implementation_test.mt"
       source = SOURCE_WITH_LOCAL_INTERFACES
@@ -3348,7 +3403,7 @@ function main(value: int) -> int:
   end
 
   def test_range_formatting_returns_text_edits
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_range_fmt_test.mt"
       source = "function add(a:int,b:int)->int:\n    return a+b\n"
@@ -3373,7 +3428,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_returns_source_fixall_action
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_code_action_test.mt"
       source = "function main() -> int:\n    var x = 1\n    return x\n"
@@ -3401,7 +3456,7 @@ function main(value: int) -> int:
   end
 
   def test_source_fixall_preserves_required_match_bindings
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_fixall_match_bindings.mt"
       source = <<~MT
@@ -3646,7 +3701,7 @@ function main(value: int) -> int:
   end
 
   def test_inlay_hint_returns_parameter_name_hints_for_call_arguments
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_inlay_hint_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3673,7 +3728,7 @@ function main(value: int) -> int:
   end
 
   def test_inlay_hint_respects_requested_range
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_inlay_hint_range_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3789,7 +3844,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_returns_full_report
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3813,7 +3868,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_reports_syntax_errors
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_err_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -3837,7 +3892,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_returns_unchanged_when_previous_result_matches
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_unchanged_test.mt"
       source = "function add(a: int, b: int) -> int:\n    return a + b\n"
@@ -3868,7 +3923,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_returns_full_after_content_changes
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_doc_diag_change_test.mt"
       source = "function add(a: int, b: int) -> int:\n    return a + b\n"
@@ -4009,7 +4064,7 @@ function main(value: int) -> int:
   end
 
   def test_declaration_and_type_definition_delegate_to_definition_location
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_decl_type_def_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6451,7 +6506,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_returns_function_names
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6471,7 +6526,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_returns_method_names_after_dot
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_method_completion_test.mt"
       # Open valid source so analysis succeeds and is cached as last-good.
@@ -6556,7 +6611,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_returns_fields_and_methods_for_local_value_receiver
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_local_value_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6590,7 +6645,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_lexical_scope_for_shadowed_value_receiver
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_shadow_value_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6618,7 +6673,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_flow_refined_type_for_nullable_receiver
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_nullable_flow_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6645,7 +6700,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_ref_receiver_type_for_fields
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_ref_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6673,7 +6728,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_pointer_receiver_type_for_fields
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_ptr_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6701,7 +6756,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_top_level_value_receiver_type
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_top_level_value_receiver_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6730,7 +6785,7 @@ function main(value: int) -> int:
   end
 
   def test_completion_uses_enclosing_receiver_for_this_in_editable_method
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_editable_this_completion_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6758,7 +6813,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_returns_method_info_for_method_name
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_method_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6776,7 +6831,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_formats_builtin_type_without_redundant_alias
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_builtin_type_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6794,7 +6849,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_returns_field_info_for_field_declarations
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_field_declaration_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6820,7 +6875,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_returns_field_info_for_member_chain_segments
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_member_chain_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -6844,7 +6899,7 @@ function main(value: int) -> int:
   end
 
   def test_definition_returns_field_declaration_for_member_access_segments
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_member_chain_definition_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -7062,7 +7117,7 @@ function main(value: int) -> int:
   end
 
   def test_hover_returns_field_info_for_named_constructor_labels
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_named_constructor_label_hover_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -7126,7 +7181,7 @@ function main(value: int) -> int:
   end
 
   def test_code_lens_returns_empty_when_disabled
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_codelens_test.mt"
       client.send_notification("textDocument/didOpen", {
@@ -7142,7 +7197,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_collects_errors_from_multiple_functions
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_multi_err_test.mt"
       source = <<~MT
@@ -7165,7 +7220,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_sema_errors_have_accurate_line_numbers
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_err_line_test.mt"
       source = <<~MT
@@ -7192,7 +7247,7 @@ function main(value: int) -> int:
   end
 
   def test_document_diagnostic_reports_attribute_target_errors_at_attribute_name
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_attribute_target_error_test.mt"
       source = <<~MT
@@ -9010,7 +9065,7 @@ function main(value: int) -> int:
   public
 
   def test_code_action_quickfix_prefer_let
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_let.mt"
       source = <<~MT
@@ -9046,7 +9101,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_reserved_primitive_name
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_reserved_primitive_name.mt"
       source = <<~MT
@@ -9081,7 +9136,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_redundant_else
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_else.mt"
       source = <<~MT
@@ -9121,7 +9176,7 @@ function main(value: int) -> int:
 
 
   def test_code_action_quickfix_redundant_return
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_return.mt"
       source = <<~MT
@@ -9351,7 +9406,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_redundant_ignored_match_binding
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_ignored_match_binding.mt"
       source = <<~MT
@@ -9393,7 +9448,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_prefer_let_else
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_let_else.mt"
       source = <<~MT
@@ -9433,7 +9488,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_prefer_var_else
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_prefer_var_else.mt"
       source = <<~MT
@@ -9473,7 +9528,7 @@ function main(value: int) -> int:
   end
 
   def test_code_action_quickfix_redundant_bool_compare
-    with_server do |client|
+    with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_quickfix_redundant_bool_compare.mt"
       source = <<~MT
@@ -9639,16 +9694,22 @@ function main(value: int) -> int:
     end or flunk("expected semantic token entry for #{lexeme.inspect} on line #{line}")
   end
 
+  def with_shared_server
+    self.class.ensure_shared_server!
+    client = SharedLSPClient.new(self.class._shared_client)
+    yield client
+  end
+
   def with_server
     stdin_read, stdin_write = IO.pipe
     stdout_read, stdout_write = IO.pipe
 
     pid = spawn(
-      'bundle exec ruby -Ilib -e "require \'milk_tea\'; MilkTea::LSP::Server.new.run"',
+      RbConfig.ruby, "-I", LIB_DIR,
+      "-e", "require 'milk_tea'; MilkTea::LSP::Server.new.run",
       in: stdin_read,
       out: stdout_write,
       err: File::NULL,
-      chdir: File.expand_path("../../..", __dir__)
     )
 
     stdin_read.close

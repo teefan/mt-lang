@@ -16,7 +16,7 @@ function compute_value() -> int:
     return 7
 
 async function child() -> int:
-    return await aio.sleep(1) + await aio.work(compute_value) + 30
+    return await aio.sleep(0) + await aio.work(compute_value) + 30
 
 async function main() -> int:
     return await child() + await aio.work(compute_value)
@@ -59,8 +59,8 @@ async function main() -> int:
 import std.async as aio
 
 async function main() -> void:
-    await aio.sleep(1)
-    await aio.sleep(1)
+    await aio.sleep(0)
+    await aio.sleep(0)
     return
 
     MT
@@ -82,8 +82,8 @@ async function main() -> void:
 import std.async as aio
 
 async function run_once() -> void:
-    await aio.sleep(1)
-    await aio.sleep(1)
+    await aio.sleep(0)
+    await aio.sleep(0)
     return
 
 function main() -> int:
@@ -109,7 +109,7 @@ function main() -> int:
 import std.async as aio
 
 async function app() -> int:
-    return await aio.sleep(1) + 42
+    return await aio.sleep(0) + 42
 
 function main() -> int:
     return aio.wait(app)
@@ -133,7 +133,7 @@ function main() -> int:
 import std.async as aio
 
 async function child(bonus: int) -> int:
-    return await aio.sleep(1) + bonus
+    return await aio.sleep(0) + bonus
 
 function main() -> int:
     let bonus = 42
@@ -198,7 +198,7 @@ async function main() -> int:
     if true:
         defer:
             total += 2
-        await aio.sleep(1)
+        await aio.sleep(0)
         total += 40
     return total
 
@@ -224,7 +224,7 @@ async function main() -> int:
     var total = 0
     if true:
         defer:
-            total += await aio.sleep(1)
+            total += await aio.sleep(0)
             total += 2
         total += 40
     return total
@@ -248,7 +248,7 @@ async function main() -> int:
 import std.async as aio
 
 async function maybe_value(flag: bool, handle: ptr[int]?) -> ptr[int]?:
-    await aio.sleep(1)
+    await aio.sleep(0)
     if flag:
         return handle
     return null[ptr[int]]
@@ -315,7 +315,7 @@ async function main() -> int:
     let items = array[int, 3](10, 20, 30)
     var total = 0
     for item in items:
-        total += await aio.sleep(1)
+        total += await aio.sleep(0)
         total += item
     return total
 
@@ -342,7 +342,7 @@ async function main() -> int:
     let rights = array[int, 3](1, 2, 3)
     var total = 0
     for left, right in lefts, rights:
-        total += await aio.sleep(1)
+        total += await aio.sleep(0)
         total += left + right
     return total
 
