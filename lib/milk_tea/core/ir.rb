@@ -8,9 +8,15 @@ module MilkTea
     Include = Data.define(:header)
     Constant = Data.define(:name, :c_name, :type, :value)
     Global = Data.define(:name, :c_name, :type, :value)
-    OpaqueDecl = Data.define(:name, :c_name, :forward_declarable)
-    StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment)
-    UnionDecl = Data.define(:name, :c_name, :fields)
+    OpaqueDecl = Data.define(:name, :c_name, :forward_declarable, :source_module) do
+      def initialize(name:, c_name:, forward_declarable:, source_module: nil) = super
+    end
+    StructDecl = Data.define(:name, :c_name, :fields, :packed, :alignment, :source_module) do
+      def initialize(name:, c_name:, fields:, packed:, alignment:, source_module: nil) = super
+    end
+    UnionDecl = Data.define(:name, :c_name, :fields, :source_module) do
+      def initialize(name:, c_name:, fields:, source_module: nil) = super
+    end
     EnumDecl = Data.define(:name, :c_name, :backing_type, :members, :flags)
     EnumMember = Data.define(:name, :c_name, :value)
     Field = Data.define(:name, :type)
@@ -68,7 +74,9 @@ module MilkTea
     AggregateLiteral = Data.define(:type, :fields)
     AggregateField = Data.define(:name, :value)
     ArrayLiteral = Data.define(:type, :elements)
-    VariantDecl = Data.define(:name, :c_name, :arms)
+    VariantDecl = Data.define(:name, :c_name, :arms, :source_module) do
+      def initialize(name:, c_name:, arms:, source_module: nil) = super
+    end
     VariantArm = Data.define(:name, :c_name, :fields)
     VariantLiteral = Data.define(:type, :arm_name, :fields)
   end

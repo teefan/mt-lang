@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 module MilkTea
   class CBackend
     module CBackendReachability
@@ -77,7 +79,176 @@ module MilkTea
           end
 
           def all_emitted_top_level_values
-            emitted_constants + @program.globals
+            emitted_constants + emitted_globals
+          end
+
+          def collect_active_module_names
+            active = Set.new
+            active << @program.module_name
+            prefix_set = collect_reachable_module_prefixes
+            (@program.structs + @program.unions + @program.variants).each do |decl|
+              next unless decl.source_module
+              active << decl.source_module if prefix_set.include?(module_c_prefix(decl.source_module) + "_")
+            end
+
+            collect_type_referenced_module_names.each { |mod| active << mod }
+
+            active
+          end
+
+          def collect_type_referenced_module_names
+            modules = Set.new
+            emitted_functions.each do |fn|
+              fn.params.each { |p| add_type_module(p.type, modules) }
+              add_type_module(fn.return_type, modules)
+              fn.body.each { |stmt| add_statement_type_modules(stmt, modules) }
+            end
+            modules
+          end
+
+          def add_statement_type_modules(stmt, modules)
+            case stmt
+            when IR::LocalDecl
+              add_type_module(stmt.type, modules)
+            when IR::ExpressionStmt
+              add_expr_type_module(stmt.expression, modules)
+            when IR::Assignment
+              add_expr_type_module(stmt.value, modules)
+            when IR::ReturnStmt
+              add_expr_type_module(stmt.value, modules) if stmt.value
+            when IR::IfStmt
+              stmt.then_body.each { |s| add_statement_type_modules(s, modules) }
+              stmt.else_body&.each { |s| add_statement_type_modules(s, modules) }
+            when IR::WhileStmt
+              stmt.body.each { |s| add_statement_type_modules(s, modules) }
+            when IR::ForStmt
+              stmt.body.each { |s| add_statement_type_modules(s, modules) }
+            end
+          end
+
+          def add_expr_type_module(expr, modules)
+            return unless expr
+            add_type_module(expr.type, modules) if expr.respond_to?(:type)
+            case expr
+            when IR::Call
+              expr.arguments.each { |a| add_expr_type_module(a, modules) }
+            when IR::Binary
+              add_expr_type_module(expr.left, modules)
+              add_expr_type_module(expr.right, modules)
+            when IR::AggregateLiteral
+              expr.fields.each { |f| add_expr_type_module(f.value, modules) }
+            when IR::VariantLiteral
+              expr.fields.each { |f| add_expr_type_module(f.value, modules) }
+            when IR::Conditional
+              add_expr_type_module(expr.then_expression, modules)
+              add_expr_type_module(expr.else_expression, modules)
+            when IR::Cast, IR::ReinterpretExpr, IR::AddressOf
+              add_expr_type_module(expr.expression, modules)
+            end
+          end
+
+          def add_type_module(type, modules)
+            return unless type
+            modules << type.module_name if type.respond_to?(:module_name) && type.module_name
+
+            case type
+            when Types::Nullable
+              add_type_module(type.base, modules)
+            when Types::Span
+              add_type_module(type.element_type, modules)
+            when Types::GenericInstance
+              type.arguments.each { |a| add_type_module(a, modules) unless a.is_a?(Types::LiteralTypeArg) }
+            when Types::Task
+              add_type_module(type.result_type, modules)
+            end
+          end
+
+          def collect_reachable_module_prefixes
+            prefixes = Set.new
+            emitted_functions.each do |fn|
+              parts = fn.c_name.split("_")
+              parts.each_index do |i|
+                prefixes << parts[0..i].join("_") + "_"
+              end
+            end
+            prefixes
+          end
+
+          def emitted_aggregate_structs
+            @emitted_aggregate_structs ||= filter_by_type_reachability(@program.structs)
+          end
+
+          def emitted_aggregate_unions
+            @emitted_aggregate_unions ||= filter_by_type_reachability(@program.unions)
+          end
+
+          def emitted_aggregate_variants
+            @emitted_aggregate_variants ||= filter_by_type_reachability(@program.variants)
+          end
+
+          def filter_by_type_reachability(decls)
+            return decls if decls.empty?
+            return decls if decls.all? { |d| d.source_module.nil? }
+
+            active_modules = collect_active_module_names
+            by_c_name = decls.each_with_object({}) { |d, h| h[d.c_name] = d }
+
+            reachable = Set.new
+            decls.each do |decl|
+              next unless decl.source_module.nil? || active_modules.include?(decl.source_module)
+              reachable << decl.c_name
+            end
+
+            worklist = reachable.to_a
+            until worklist.empty?
+              c_name = worklist.shift
+              decl = by_c_name[c_name]
+              next unless decl
+
+              deps = aggregate_decl_dependencies(decl)
+              deps.each do |dep_name|
+                next unless by_c_name.key?(dep_name)
+                next if reachable.include?(dep_name)
+                reachable << dep_name
+                worklist << dep_name
+              end
+            end
+
+            decls.select { |d| reachable.include?(d.c_name) }
+          end
+
+          def emitted_globals
+            @emitted_globals ||= begin
+              root_module_prefix = "#{module_c_prefix(@program.module_name)}_"
+              reachable_names = {}
+              @program.globals.select { |g| g.c_name.start_with?(root_module_prefix) }.each { |g| reachable_names[g.c_name] = true }
+
+              emitted_functions.each do |function|
+                traverse_ir_statements(function.body) do |expression|
+                  next unless expression.is_a?(IR::Name)
+                  global = @program.globals.find { |g| g.c_name == expression.name }
+                  next unless global
+                  next if reachable_names[global.c_name]
+                  reachable_names[global.c_name] = true
+                  traverse_ir_expression(global.value) do |inner|
+                    next unless inner.is_a?(IR::Name)
+                    dep = @program.globals.find { |g| g.c_name == inner.name }
+                    reachable_names[dep.c_name] = true if dep
+                  end
+                end
+              end
+
+              @program.globals.each do |global|
+                next unless reachable_names[global.c_name]
+                traverse_ir_expression(global.value) do |inner|
+                  next unless inner.is_a?(IR::Name)
+                  dep = @program.globals.find { |g| g.c_name == inner.name }
+                  reachable_names[dep.c_name] = true if dep
+                end
+              end
+
+              @program.globals.select { |g| reachable_names[g.c_name] }
+            end
           end
 
           def collect_called_function_names_from_statements(statements, functions_by_name, reachable_names, worklist)

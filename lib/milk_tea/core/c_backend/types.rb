@@ -86,7 +86,6 @@ module MilkTea
             lines << "#{INDENT}#{outer_c}_kind kind;"
             lines << "#{INDENT}union #{outer_c}__data data;" if payload_arms.any?
             lines << "};"
-            lines << "typedef struct #{outer_c} #{outer_c};"
             lines
           end
 
