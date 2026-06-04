@@ -18,6 +18,7 @@ class MilkTeaRunTest < Minitest::Test
       platform: :linux,
       bundle_root: nil,
       archive_path: nil,
+      cached: false,
     )
     observed_chdir = nil
 
@@ -2365,6 +2366,7 @@ function main() -> int:
       platform: :windows,
       bundle_root: nil,
       archive_path: nil,
+      cached: false,
     )
 
     with_singleton_method_override(MilkTea::Build, :build, ->(_path, **_kwargs) { build_result }) do
@@ -2383,6 +2385,7 @@ function main() -> int:
       platform: :linux,
       bundle_root: nil,
       archive_path: nil,
+      cached: false,
     )
 
     with_singleton_method_override(MilkTea::Build, :build, ->(_path, **_kwargs) { build_result }) do
@@ -2465,6 +2468,7 @@ function main() -> int:
       platform: :wasm,
       bundle_root: nil,
       archive_path: nil,
+      cached: false,
     )
 
     error = assert_raises(RuntimeError) { runner.send(:run_wasm_preview, build_result) }

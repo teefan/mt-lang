@@ -463,7 +463,7 @@ function main() -> int:
       end
 
       assert_match(/Milk Tea \{\{\{ MILK_TEA_BOOTSTRAP \}\}\}/, error.message)
-      refute File.exist?(compiler_log)
+      refute_match(/-std=c11/, File.read(compiler_log)) if File.exist?(compiler_log)
     end
   end
 

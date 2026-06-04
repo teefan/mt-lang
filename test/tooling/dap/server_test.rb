@@ -6,6 +6,8 @@ require "timeout"
 require_relative "../../test_helper"
 
 class DAPServerTest < Minitest::Test
+  LIB_DIR = File.expand_path("../../../lib", __dir__).freeze
+
   class DAPClient
     def initialize(stdin_write, stdout_read)
       @stdin = stdin_write
@@ -2794,16 +2796,13 @@ function main() -> int:
     RUBY
 
     pid = spawn(
-      "bundle",
-      "exec",
-      "ruby",
-      "-Ilib",
+      RbConfig.ruby,
+      "-I", LIB_DIR,
       "-e",
       server_script,
       in: stdin_read,
       out: stdout_write,
       err: File::NULL,
-      chdir: File.expand_path("../../..", __dir__)
     )
 
     stdin_read.close
