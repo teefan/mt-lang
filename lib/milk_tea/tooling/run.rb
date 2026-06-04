@@ -208,7 +208,7 @@ module MilkTea
       end
     end
 
-    Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path)
+    Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path, :cached)
 
     def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
       new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:).run
@@ -289,6 +289,7 @@ module MilkTea
         platform: build_result.platform,
         bundle_root: build_result.bundle_root,
         archive_path: build_result.archive_path,
+        cached: build_result.cached,
       )
     rescue Errno::ENOENT
       raise RunError, "built program not found: #{binary_path}"
@@ -321,6 +322,7 @@ module MilkTea
         platform: build_result.platform,
         bundle_root: build_result.bundle_root,
         archive_path: build_result.archive_path,
+        cached: build_result.cached,
       )
     rescue StandardError
       preview_server&.stop if preview_server&.respond_to?(:stop)

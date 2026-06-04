@@ -510,19 +510,19 @@ module MilkTea
       end
 
       def async_collection_iterable_field_key(statement, index = 0)
-        "__async_for_iterable_#{statement.object_id}_#{index}"
+        "__async_for_iterable_#{statement.line}_#{index}"
       end
 
       def async_collection_iterable_field_name(statement, index = 0)
-        "for_iterable_#{statement.object_id}_#{index}"
+        "for_iterable_#{statement.line}_#{index}"
       end
 
       def async_collection_index_field_key(statement)
-        "__async_for_index_#{statement.object_id}"
+        "__async_for_index_#{statement.line}"
       end
 
       def async_collection_index_field_name(statement)
-        "for_index_#{statement.object_id}"
+        "for_index_#{statement.line}"
       end
 
       def build_async_await_field_info(await_expression, await_counter, env:, param_fields:, local_fields:)
@@ -1081,16 +1081,16 @@ module MilkTea
               current_actual_scope(for_env[:scopes])[binding.name] = local_binding(type: binding_type, c_name: binding.name, mutable: false, pointer: false)
             end
             body = normalize_async_statements(statement.body, counter, for_env, return_type:)
-            return iterable_setups + [AST::ForStmt.new(bindings: statement.bindings, iterables: normalized_iterables, body:)]
+            return iterable_setups + [AST::ForStmt.new(bindings: statement.bindings, iterables: normalized_iterables, body:, line: statement.line, column: statement.column)]
           end
 
           iterable_setup, iterable = normalize_async_expression(statement.iterable, counter, env:)
           current_actual_scope(for_env[:scopes])[statement.name] = local_binding(type: loop_type, c_name: statement.name, mutable: false, pointer: false)
           body = normalize_async_statements(statement.body, counter, for_env, return_type:)
-          iterable_setup + [AST::ForStmt.new(bindings: statement.bindings, iterables: [iterable], body:)]
+          iterable_setup + [AST::ForStmt.new(bindings: statement.bindings, iterables: [iterable], body:, line: statement.line, column: statement.column)]
         when AST::UnsafeStmt
           unsafe_env = duplicate_env(env)
-          [AST::UnsafeStmt.new(body: normalize_async_statements(statement.body, counter, unsafe_env, return_type:))]
+          [AST::UnsafeStmt.new(body: normalize_async_statements(statement.body, counter, unsafe_env, return_type:), line: statement.line, column: statement.column, length: statement.length)]
         when AST::DeferStmt
           cleanup_env = duplicate_env(env)
           cleanup_env[:return_context] = cleanup_env[:return_context]&.merge(allow_return: false)

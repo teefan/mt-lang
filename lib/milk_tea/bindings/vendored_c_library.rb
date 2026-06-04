@@ -144,7 +144,7 @@ module MilkTea
       def build_object(source, cc:, cxx:, force_rebuild:)
         source_path = source_root.join(source)
         object_path = build_root.join(source.sub(/\.(?:c|cc|cpp|cxx)\z/, ".o"))
-        if !force_rebuild && File.exist?(object_path) && File.mtime(object_path) >= File.mtime(source_path)
+        if !force_rebuild && File.exist?(object_path) && File.size?(object_path) && File.mtime(object_path) >= File.mtime(source_path)
           return object_path.to_s
         end
 
@@ -164,6 +164,7 @@ module MilkTea
         ]
         stdout, stderr, status = Open3.capture3(*command)
         unless status.success?
+          FileUtils.rm_f(object_path)
           raise Error, command_error("failed to compile vendored #{name} source #{source}", stdout, stderr)
         end
 

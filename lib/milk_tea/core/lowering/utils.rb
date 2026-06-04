@@ -887,13 +887,13 @@ module MilkTea
       def async_local_decl_field_key(statement)
         return statement.name unless let_else_discard_binding_syntax?(statement)
 
-        "__let_else_discard_#{statement.object_id}"
+        "__let_else_discard_#{statement.line}"
       end
 
       def async_local_decl_field_name(statement)
         return "local_#{statement.name}" unless let_else_discard_binding_syntax?(statement)
 
-        "local_let_else_discard_#{statement.object_id}"
+        "local_let_else_discard_#{statement.line}"
       end
 
       def let_else_storage_c_name(statement, env)
