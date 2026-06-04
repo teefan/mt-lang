@@ -37,6 +37,7 @@ module MilkTea
         OPENGL_TYPED_ALPHA_STEMS = %w[
           array
           attrib
+          block
           boolean
           buffer
           double
@@ -61,6 +62,7 @@ module MilkTea
           subroutines
           sync
           uniform
+          uniforms
         ].freeze
         OPENGL_TYPED_QUERY_BASES = %w[boolean double float integer].freeze
         OPENGL_NUMERIC_SUFFIX_CONTEXTS = %w[
@@ -69,6 +71,7 @@ module MilkTea
           double
           feedback
           float
+          indexed
           int
           integer
           integer64

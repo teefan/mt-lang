@@ -1592,9 +1592,9 @@ public foreign function get_active_subroutine_uniform_name(program: uint, shader
 public foreign function get_active_subroutine_uniform_int_values(program: uint, shadertype: uint, index: uint, pname: uint, values: ptr[GLint]) -> void = c.glGetActiveSubroutineUniformiv
 public foreign function get_active_uniform(program: uint, index: uint, buf_size: int, length: ptr[GLsizei], size: ptr[GLint], type_: ptr[GLenum], name: ptr[GLchar]) -> void = c.glGetActiveUniform
 public foreign function get_active_uniform_block_name(program: uint, uniform_block_index: uint, buf_size: int, length: ptr[GLsizei], uniform_block_name: ptr[GLchar]) -> void = c.glGetActiveUniformBlockName
-public foreign function get_active_uniform_blockiv(program: uint, uniform_block_index: uint, pname: uint, params: ptr[GLint]) -> void = c.glGetActiveUniformBlockiv
+public foreign function get_active_uniform_block_int_values(program: uint, uniform_block_index: uint, pname: uint, params: ptr[GLint]) -> void = c.glGetActiveUniformBlockiv
 public foreign function get_active_uniform_name(program: uint, uniform_index: uint, buf_size: int, length: ptr[GLsizei], uniform_name: ptr[GLchar]) -> void = c.glGetActiveUniformName
-public foreign function get_active_uniformsiv(program: uint, uniform_count: int, uniform_indices: const_ptr[GLuint], pname: uint, params: ptr[GLint]) -> void = c.glGetActiveUniformsiv
+public foreign function get_active_uniforms_int_values(program: uint, uniform_count: int, uniform_indices: const_ptr[GLuint], pname: uint, params: ptr[GLint]) -> void = c.glGetActiveUniformsiv
 public foreign function get_attached_shader_short(program: uint, max_count: int, count: ptr[GLsizei], shaders: ptr[GLuint]) -> void = c.glGetAttachedShaders
 public foreign function get_attrib_location(program: uint, name: const_ptr[GLchar]) -> GLint = c.glGetAttribLocation
 public foreign function get_boolean_indexed_values(target: uint, index: uint, data: ptr[GLboolean]) -> void = c.glGetBooleani_v
@@ -1697,7 +1697,7 @@ public foreign function get_uniform_double_values(program: uint, location: int, 
 public foreign function get_uniform_float_values(program: uint, location: int, params: ptr[GLfloat]) -> void = c.glGetUniformfv
 public foreign function get_uniform_int_values(program: uint, location: int, params: ptr[GLint]) -> void = c.glGetUniformiv
 public foreign function get_uniform_uint_values(program: uint, location: int, params: ptr[GLuint]) -> void = c.glGetUniformuiv
-public foreign function get_vertex_array_indexed_64iv(vaobj: uint, index: uint, pname: uint, param: ptr[GLint64]) -> void = c.glGetVertexArrayIndexed64iv
+public foreign function get_vertex_array_indexed_64_int_values(vaobj: uint, index: uint, pname: uint, param: ptr[GLint64]) -> void = c.glGetVertexArrayIndexed64iv
 public foreign function get_vertex_array_indexed_int_values(vaobj: uint, index: uint, pname: uint, param: ptr[GLint]) -> void = c.glGetVertexArrayIndexediv
 public foreign function get_vertex_array_int_values(vaobj: uint, pname: uint, param: ptr[GLint]) -> void = c.glGetVertexArrayiv
 public foreign function get_vertex_attrib_integer_int_values(index: uint, pname: uint, params: ptr[GLint]) -> void = c.glGetVertexAttribIiv
