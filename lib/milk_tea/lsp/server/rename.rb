@@ -73,13 +73,36 @@ module MilkTea
 
       def lexical_rename_changes_in_document(uri, name, new_name)
         tokens = @workspace.get_tokens(uri) || []
-        edits = tokens.filter_map do |tok|
-          next unless name_like_token?(tok) && tok.lexeme == name
+        edits = tokens.flat_map do |tok|
+          result = []
 
-          {
-            range: token_to_range(tok),
-            newText: new_name,
-          }
+          if tok.type == :fstring && tok.literal.is_a?(Array)
+            tok.literal.each do |part|
+              next unless part.is_a?(Hash) && part[:kind] == :expr
+              next unless part[:line] && part[:column]
+
+              expr_tokens = MilkTea::Lexer.lex(part[:source], path: uri_to_path(uri))
+              expr_tokens.each do |etok|
+                next unless name_like_token?(etok) && etok.lexeme == name
+
+                result << {
+                  range: {
+                    start: { line: part[:line] - 1, character: part[:column] + etok.column - 2 },
+                    end:   { line: part[:line] - 1, character: part[:column] + etok.column - 2 + etok.lexeme.length },
+                  },
+                  newText: new_name,
+                }
+              end
+            rescue MilkTea::LexError
+              nil
+            end
+          end
+
+          if name_like_token?(tok) && tok.lexeme == name
+            result << { range: token_to_range(tok), newText: new_name }
+          end
+
+          result
         end
 
         return nil if edits.empty?

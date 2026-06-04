@@ -2455,6 +2455,40 @@ function main(value: int) -> int:
     end
   end
 
+  def test_rename_local_includes_fstring_interpolation
+    source = <<~'MT'
+      function main() -> int:
+          let value = 42
+          let msg = f"result #{value} and #{value + 1}"
+          return value
+    MT
+
+    with_shared_server do |client|
+      client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
+      uri = "file:///tmp/lsp_rename_fstring_test.mt"
+      client.send_notification("textDocument/didOpen", {
+        "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
+      })
+
+      response = client.send_request("textDocument/rename", {
+        "textDocument" => { "uri" => uri },
+        "position"     => { "line" => 1, "character" => 8 },
+        "newName"      => "count"
+      })
+
+      changes = response.dig("result", "changes", uri)
+      assert_kind_of Array, changes
+      assert_equal 4, changes.length, "expected 4 edits (decl + usage + 2 interpolation refs), got #{changes.length}"
+
+      starts = changes.map { |edit| [edit.dig("range", "start", "line"), edit.dig("range", "start", "character")] }
+      assert_includes starts, [1, 8], "missing declaration edit"
+      assert_includes starts, [3, 11], "missing return usage edit"
+      assert_includes starts, [2, 25], "missing first interpolation edit"
+      assert_includes starts, [2, 38], "missing second interpolation edit"
+      changes.each { |edit| assert_equal "count", edit["newText"] }
+    end
+  end
+
   def test_rename_matrix_updates_semantic_tokens_for_common_symbol_kinds
     cases = [
       {

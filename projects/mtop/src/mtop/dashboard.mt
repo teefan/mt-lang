@@ -1323,19 +1323,19 @@ public function run(config: Config) -> int:
                             )
                             last_event.assign("timer refresh")
                     Option.some as event_payload:
-                        let event = event_payload.value
-                        if event.kind == terminal.EventKind.resize:
-                            current_size = event.size
-                            last_event.assign_format(f"resize #{event.size.width}x#{event.size.height}")
-                        else if event.kind == terminal.EventKind.mouse:
-                            var mouse_message = describe_mouse_event(event.mouse)
+                        let ev = event_payload.value
+                        if ev.kind == terminal.EventKind.resize:
+                            current_size = ev.size
+                            last_event.assign_format(f"resize #{ev.size.width}x#{ev.size.height}")
+                        else if ev.kind == terminal.EventKind.mouse:
+                            var mouse_message = describe_mouse_event(ev.mouse)
                             last_event.assign(mouse_message.as_str())
 
                             if (
-                                event.mouse.action == terminal.MouseAction.press
-                                and event.mouse.button == terminal.MouseButton.left
+                                ev.mouse.action == terminal.MouseAction.press
+                                and ev.mouse.button == terminal.MouseButton.left
                             ):
-                                match tab_hit_test(event.mouse.column, event.mouse.row):
+                                match tab_hit_test(ev.mouse.column, ev.mouse.row):
                                     Option.some as tab_payload:
                                         active_tab = tab_payload.value
                                         mouse_message.release()
@@ -1348,8 +1348,8 @@ public function run(config: Config) -> int:
                                         match process_selection_from_mouse(
                                             overview_process_panel(current_size),
                                             snapshot.process_table.as_str(),
-                                            event.mouse.column,
-                                            event.mouse.row,
+                                            ev.mouse.column,
+                                            ev.mouse.row,
                                         ):
                                             Option.some as selection_payload:
                                                 selected_process_index = selection_payload.value
@@ -1362,8 +1362,8 @@ public function run(config: Config) -> int:
                                         match process_selection_from_mouse(
                                             processes_main_panel(current_size),
                                             snapshot.process_table.as_str(),
-                                            event.mouse.column,
-                                            event.mouse.row,
+                                            ev.mouse.column,
+                                            ev.mouse.row,
                                         ):
                                             Option.some as selection_payload:
                                                 selected_process_index = selection_payload.value
@@ -1373,29 +1373,29 @@ public function run(config: Config) -> int:
                                                 pass
 
                             mouse_message.release()
-                        else if event.kind == terminal.EventKind.key:
-                            var key_message = describe_key_event(event.key)
+                        else if ev.kind == terminal.EventKind.key:
+                            var key_message = describe_key_event(ev.key)
                             last_event.assign(key_message.as_str())
 
-                            if event.key.code == terminal.KeyCode.tab or event.key.code == terminal.KeyCode.right:
+                            if ev.key.code == terminal.KeyCode.tab or ev.key.code == terminal.KeyCode.right:
                                 active_tab = next_tab(active_tab)
                                 key_message.release()
                                 continue
 
-                            if event.key.code == terminal.KeyCode.shift_tab or event.key.code == terminal.KeyCode.left:
+                            if ev.key.code == terminal.KeyCode.shift_tab or ev.key.code == terminal.KeyCode.left:
                                 active_tab = previous_tab(active_tab)
                                 key_message.release()
                                 continue
 
                             if (
-                                event.key.code == terminal.KeyCode.escape
-                                or (event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-99)
+                                ev.key.code == terminal.KeyCode.escape
+                                or (ev.key.ctrl and ev.key.has_byte and ev.key.input_byte == ubyte<-99)
                             ):
                                 key_message.release()
                                 running = false
                                 continue
 
-                            if event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-114:
+                            if ev.key.ctrl and ev.key.has_byte and ev.key.input_byte == ubyte<-114:
                                 var next_snapshot = collect_snapshot(refresh_count + 1)
                                 snapshot.release()
                                 snapshot = next_snapshot
@@ -1407,17 +1407,17 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-112:
+                            if ev.key.ctrl and ev.key.has_byte and ev.key.input_byte == ubyte<-112:
                                 paused = not paused
                                 key_message.release()
                                 continue
 
-                            if event.key.ctrl and event.key.has_byte and event.key.input_byte == ubyte<-110:
+                            if ev.key.ctrl and ev.key.has_byte and ev.key.input_byte == ubyte<-110:
                                 echo.restart()
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.up:
+                            if active_tab == DashboardTab.processes and ev.key.code == terminal.KeyCode.up:
                                 selected_process_index = clamp_process_selection(
                                     snapshot.process_table.as_str(),
                                     selected_process_index - 1,
@@ -1425,7 +1425,7 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.down:
+                            if active_tab == DashboardTab.processes and ev.key.code == terminal.KeyCode.down:
                                 selected_process_index = clamp_process_selection(
                                     snapshot.process_table.as_str(),
                                     selected_process_index + 1,
@@ -1433,12 +1433,12 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.home:
+                            if active_tab == DashboardTab.processes and ev.key.code == terminal.KeyCode.home:
                                 selected_process_index = 0
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.processes and event.key.code == terminal.KeyCode.end:
+                            if active_tab == DashboardTab.processes and ev.key.code == terminal.KeyCode.end:
                                 selected_process_index = clamp_process_selection(
                                     snapshot.process_table.as_str(),
                                     process_entry_count(snapshot.process_table.as_str()) - 1,
@@ -1446,26 +1446,26 @@ public function run(config: Config) -> int:
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.echo and event.key.code == terminal.KeyCode.enter:
+                            if active_tab == DashboardTab.echo and ev.key.code == terminal.KeyCode.enter:
                                 echo.submit()
                                 key_message.release()
                                 continue
 
-                            if active_tab == DashboardTab.echo and event.key.code == terminal.KeyCode.backspace:
+                            if active_tab == DashboardTab.echo and ev.key.code == terminal.KeyCode.backspace:
                                 echo.pop_input_byte()
                                 key_message.release()
                                 continue
 
                             if (
                                 active_tab == DashboardTab.echo
-                                and event.key.code == terminal.KeyCode.character
-                                and event.key.has_byte
-                                and not event.key.ctrl
-                                and not event.key.alt
-                                and event.key.input_byte >= 32
-                                and event.key.input_byte < 127
+                                and ev.key.code == terminal.KeyCode.character
+                                and ev.key.has_byte
+                                and not ev.key.ctrl
+                                and not ev.key.alt
+                                and ev.key.input_byte >= 32
+                                and ev.key.input_byte < 127
                             ):
-                                echo.push_input_byte(event.key.input_byte)
+                                echo.push_input_byte(ev.key.input_byte)
 
                             key_message.release()
 
