@@ -1314,7 +1314,7 @@ module MilkTea
       end
 
       def sanitize_identifier(text)
-        identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/^_+/, "").sub(/_+$/, "")
+        identifier = text.gsub(/[^A-Za-z0-9_]+/, "_").gsub(/_+/, "_").sub(/_+$/, "").sub(/^_{2,}/, "_")
         identifier.empty? ? "value" : identifier
       end
 

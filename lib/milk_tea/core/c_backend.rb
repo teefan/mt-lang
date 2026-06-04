@@ -79,9 +79,9 @@ module MilkTea
 
       opaque_decls = @program.opaques
       aggregate_decls = sort_aggregate_decls(
-        @program.structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_buffer_decls,
-        @program.unions,
-        @program.variants + collect_generic_variant_decls,
+        emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_buffer_decls,
+        emitted_aggregate_unions,
+        emitted_aggregate_variants + collect_generic_variant_decls,
       )
 
       forward_declarations = emit_forward_declarations(opaque_decls, aggregate_decls)
@@ -137,6 +137,7 @@ module MilkTea
         lines << "#{constant_storage(constant.type)} #{c_declaration(constant.type, constant.c_name)} = #{emit_initializer(constant.value)};"
       end
       @program.globals.each do |global|
+        next unless emitted_globals.include?(global)
         lines << "#{global_storage(global.type)} #{c_declaration(global.type, global.c_name)} = #{emit_initializer(global.value)};"
       end
       lines << "" unless constants.empty? && @program.globals.empty?

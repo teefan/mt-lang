@@ -35,6 +35,7 @@ module MilkTea
             name: decl.name,
             c_name: opaque_c_type_name(opaque_type),
             forward_declarable: opaque_forward_declarable?(opaque_type),
+            source_module: @module_name,
           )
         end
       end
@@ -47,7 +48,7 @@ module MilkTea
             opaque_type = analysis.types.fetch(decl.name)
             next unless forward_declarable_external_opaque?(opaque_type)
 
-            IR::OpaqueDecl.new(name: decl.name, c_name: opaque_c_type_name(opaque_type), forward_declarable: true)
+            IR::OpaqueDecl.new(name: decl.name, c_name: opaque_c_type_name(opaque_type), forward_declarable: true, source_module: analysis.module_name)
           end
         end.uniq { |decl| decl.c_name }
       end
@@ -81,7 +82,7 @@ module MilkTea
             ensure_event_runtime(event_type)
             fields << IR::Field.new(name: event_type.hidden_field_name, type: event_type)
           end
-          IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment)
+          IR::StructDecl.new(name: decl.name, c_name: c_type_name(struct_type), fields:, packed: decl.packed, alignment: decl.alignment, source_module: @module_name)
         end
       end
 
@@ -91,7 +92,7 @@ module MilkTea
           fields = decl.fields.map do |field|
             IR::Field.new(name: field.name, type: union_type.field(field.name))
           end
-          IR::UnionDecl.new(name: decl.name, c_name: c_type_name(union_type), fields:)
+          IR::UnionDecl.new(name: decl.name, c_name: c_type_name(union_type), fields:, source_module: @module_name)
         end
       end
 
@@ -133,7 +134,7 @@ module MilkTea
             end
             IR::VariantArm.new(name: arm.name, c_name: arm_c, fields:)
           end
-          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:)
+          IR::VariantDecl.new(name: decl.name, c_name: outer_c, arms:, source_module: @module_name)
         end
       end
   end
