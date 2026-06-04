@@ -12,12 +12,17 @@ module MilkTea
         lsp_char = params['position']['character']
 
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
-        return nil unless token&.type == :identifier
+        return nil unless name_like_token?(token)
 
         { range: token_to_range(token), placeholder: token.lexeme }
       rescue StandardError => e
         warn "Error in prepareRename handler: #{e.message}"
         nil
+      end
+
+      def name_like_token?(tok)
+        return false if tok.nil?
+        tok.type == :identifier || Token::KEYWORDS.value?(tok.type)
       end
 
       def allow_hover_last_good_fallback?(uri)
@@ -38,7 +43,7 @@ module MilkTea
         new_name = params['newName'].to_s
 
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
-        return nil unless token&.type == :identifier
+        return nil unless name_like_token?(token)
 
         import_alias_changes = import_alias_rename_changes(uri, token, lsp_line, lsp_char, nil, new_name)
         return { changes: import_alias_changes } if import_alias_changes
@@ -69,7 +74,7 @@ module MilkTea
       def lexical_rename_changes_in_document(uri, name, new_name)
         tokens = @workspace.get_tokens(uri) || []
         edits = tokens.filter_map do |tok|
-          next unless tok.type == :identifier && tok.lexeme == name
+          next unless name_like_token?(tok) && tok.lexeme == name
 
           {
             range: token_to_range(tok),
@@ -101,7 +106,7 @@ module MilkTea
           next if tokens.empty?
 
           edits = tokens.filter_map do |candidate|
-            next unless candidate.type == :identifier && candidate.lexeme == token.lexeme
+            next unless name_like_token?(candidate) && candidate.lexeme == token.lexeme
 
             candidate_location = resolve_definition_location({
               'textDocument' => { 'uri' => related_uri },

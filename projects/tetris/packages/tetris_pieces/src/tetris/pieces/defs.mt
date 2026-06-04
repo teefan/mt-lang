@@ -16,25 +16,121 @@ public struct Piece:
     x: int
     y: int
 
-const cells_i_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 3, y = 1))
-const cells_i_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 2, y = 1), Cell(x = 2, y = 2), Cell(x = 2, y = 3))
-const cells_j_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_j_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_j_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 2, y = 2))
-const cells_j_3: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 0, y = 2), Cell(x = 1, y = 2))
-const cells_l_0: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_l_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2), Cell(x = 2, y = 2))
-const cells_l_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 0, y = 2))
-const cells_l_3: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_o: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_s_0: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 2, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1))
-const cells_s_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 2, y = 2))
-const cells_t_0: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_t_1: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
-const cells_t_2: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
-const cells_t_3: array[Cell, 4] = array[Cell, 4](Cell(x = 1, y = 0), Cell(x = 0, y = 1), Cell(x = 1, y = 1), Cell(x = 1, y = 2))
-const cells_z_0: array[Cell, 4] = array[Cell, 4](Cell(x = 0, y = 0), Cell(x = 1, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1))
-const cells_z_1: array[Cell, 4] = array[Cell, 4](Cell(x = 2, y = 0), Cell(x = 1, y = 1), Cell(x = 2, y = 1), Cell(x = 1, y = 2))
+const cells_i_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 3, y = 1)
+)
+const cells_i_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 2, y = 0),
+    Cell(x = 2, y = 1),
+    Cell(x = 2, y = 2),
+    Cell(x = 2, y = 3)
+)
+const cells_j_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 0),
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1)
+)
+const cells_j_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 2, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 1, y = 2)
+)
+const cells_j_2: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 2, y = 2)
+)
+const cells_j_3: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 0, y = 2),
+    Cell(x = 1, y = 2)
+)
+const cells_l_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 2, y = 0),
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1)
+)
+const cells_l_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 1, y = 2),
+    Cell(x = 2, y = 2)
+)
+const cells_l_2: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 0, y = 2)
+)
+const cells_l_3: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 0),
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 1, y = 2)
+)
+const cells_o: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 2, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1)
+)
+const cells_s_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 2, y = 0),
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1)
+)
+const cells_s_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 2, y = 2)
+)
+const cells_t_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1)
+)
+const cells_t_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 1, y = 2)
+)
+const cells_t_2: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 1, y = 2)
+)
+const cells_t_3: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 1, y = 0),
+    Cell(x = 0, y = 1),
+    Cell(x = 1, y = 1),
+    Cell(x = 1, y = 2)
+)
+const cells_z_0: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 0, y = 0),
+    Cell(x = 1, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1)
+)
+const cells_z_1: array[Cell, 4] = array[Cell, 4](
+    Cell(x = 2, y = 0),
+    Cell(x = 1, y = 1),
+    Cell(x = 2, y = 1),
+    Cell(x = 1, y = 2)
+)
+
 
 public function shape_cells(kind: int, rotation: int) -> array[Cell, 4]:
     let spin = rotation % 4

@@ -457,6 +457,7 @@ function clipped_line_text(value: str, width: int) -> str:
 
     return value.slice(0, end)
 
+
 function render_plain_line_at(
     app_terminal: ref[terminal.Terminal],
     column: int,
@@ -479,6 +480,7 @@ function render_plain_line(app_terminal: ref[terminal.Terminal], size: terminal.
 
     return render_plain_line_at(app_terminal, 1, row, size.width, value)
 
+
 function render_heading_line_at(
     app_terminal: ref[terminal.Terminal],
     column: int,
@@ -500,6 +502,7 @@ function render_heading_line_at(
         return false
     return terminal_bool_ok(terminal.reset_style())
 
+
 function render_heading_line(
     app_terminal: ref[terminal.Terminal],
     size: terminal.Size,
@@ -511,6 +514,7 @@ function render_heading_line(
         return true
 
     return render_heading_line_at(app_terminal, 1, row, size.width, color, value)
+
 
 function render_text_block_at(
     app_terminal: ref[terminal.Terminal],
@@ -543,6 +547,7 @@ function render_text_block_at(
 
     return true
 
+
 function render_text_block(
     app_terminal: ref[terminal.Terminal],
     size: terminal.Size,
@@ -572,6 +577,7 @@ function render_text_block(
 
     return row
 
+
 function render_heading_block(
     app_terminal: ref[terminal.Terminal],
     size: terminal.Size,
@@ -592,6 +598,7 @@ function panel_inner_rect(panel: Rect) -> Rect:
         width = max_int(panel.width - 4, 0),
         height = max_int(panel.height - 3, 0),
     )
+
 
 function render_panel_frame(
     app_terminal: ref[terminal.Terminal],
@@ -630,6 +637,7 @@ function render_panel_frame(
 
     return render_heading_line_at(app_terminal, panel.left + 2, panel.top + 1, panel.width - 4, color, title)
 
+
 function render_panel(
     app_terminal: ref[terminal.Terminal],
     panel: Rect,
@@ -643,6 +651,7 @@ function render_panel(
 
     let inner = panel_inner_rect(panel)
     return render_text_block_at(app_terminal, inner.left, inner.top, inner.width, inner.height, body)
+
 
 function render_process_table_panel(
     app_terminal: ref[terminal.Terminal],
@@ -711,6 +720,7 @@ function render_process_table_panel(
 
     return true
 
+
 function render_footer(
     app_terminal: ref[terminal.Terminal],
     size: terminal.Size,
@@ -742,6 +752,7 @@ function render_footer(
 
     return render_plain_line(app_terminal, size, size.height, status_line.as_str())
 
+
 function render_tab_button(
     app_terminal: ref[terminal.Terminal],
     column: int,
@@ -770,6 +781,7 @@ function render_tab_bar(app_terminal: ref[terminal.Terminal], active_tab: Dashbo
         return false
     column = render_tab_button(app_terminal, column, 2, "[Echo]", active_tab == DashboardTab.echo)
     return column >= 0
+
 
 function render_small_dashboard(
     app_terminal: ref[terminal.Terminal],
@@ -815,6 +827,7 @@ function render_small_dashboard(
         return false
 
     return terminal_bool_ok(app_terminal.flush())
+
 
 function render_dashboard(
     app_terminal: ref[terminal.Terminal],
