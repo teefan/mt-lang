@@ -1,0 +1,737 @@
+## Milk Tea Language Baseline
+##
+## This file exercises the language surface documented in README.md
+## and docs/language-manual.md.  It is structured as a single ordinary
+## module that parses, type-checks, and lowers to C without errors.
+##
+## Each section exercises a group of features.
+
+# ---------------------------------------------------------------------------
+# 1  Module imports
+# ---------------------------------------------------------------------------
+
+import std.async as aio
+
+# ---------------------------------------------------------------------------
+# 2  Literals
+# ---------------------------------------------------------------------------
+
+# --- integer literals (decimal, hex, binary, underscore separators)
+const DECIMAL: int = 42
+const HEX_LITERAL: uint = 0xff
+const BIN_LITERAL: int = 0b1010
+const SEPARATED: ulong = 1_000_000
+
+# --- float literals (including exponent notation)
+const PI: float = 3.14
+const SMALL: double = 1.1920929E-7
+const EXPONENT: float = 1.2e-3
+
+# --- boolean literals
+const YES: bool = true
+const NO: bool = false
+
+# --- string literal  (type is str)
+public const GREETING: str = "hello"
+
+# --- cstring literal  (type is cstr)
+const C_GREETING: cstr = c"hello from C"
+
+# --- heredoc string
+const SHADER: cstr = c<<-GLSL
+    #version 330
+    void main() {
+        gl_Position = vec4(0.0);
+    }
+GLSL
+
+# --- heredoc format string (exercised in function body)
+function heredoc_fmt_demo() -> void:
+    let _rendered = f<<-SQL
+    SELECT * FROM items
+    WHERE count = #{42}
+SQL
+    return
+
+# --- null and typed null
+const VOID_PTR: ptr[char]? = null
+const TYPED_NULL: ptr[int]? = null[ptr[int]]
+
+# ---------------------------------------------------------------------------
+# 3  Data declarations: type, struct, union, variant, enum, flags, opaque
+# ---------------------------------------------------------------------------
+
+# --- type aliases (plain, callable)
+type Seconds = float
+public type IntCallback = fn(value: int) -> void
+
+# --- plain struct with fields
+struct Vec2:
+    x: float
+    y: float
+
+# --- struct with attribute application  (@[packed], @[align])
+@[packed]
+struct Header:
+    tag: ubyte
+
+@[align(16)]
+struct Mat4:
+    data: array[float, 16]
+
+# --- union
+union Number:
+    i: int
+    f: float
+
+# --- enum (explicit backing type)
+enum State: ubyte
+    idle = 0
+    running = 1
+
+# --- flags (bitmask, composite alias referencing earlier member)
+flags Mask: uint
+    a = 1 << 0
+    b = 1 << 1
+    both = Mask.a | Mask.b
+
+# --- opaque
+opaque RawHandle
+
+# --- generic struct
+public struct Pair[A, B]:
+    first: A
+    second: B
+
+# --- custom variant (tagged union)
+public variant TokenKind:
+    ident(name: str)
+    number(value: int)
+    eof
+
+# ---------------------------------------------------------------------------
+# 4  Interfaces, methods, implements
+# ---------------------------------------------------------------------------
+
+interface Damageable:
+    mutable function take_damage(amount: int) -> void
+    function is_alive() -> bool
+    static function max_hp() -> int
+
+interface Named:
+    function name() -> str
+
+struct NPC implements Damageable, Named:
+    hp: int
+
+extending NPC:
+    mutable function take_damage(amount: int) -> void:
+        this.hp = this.hp - amount
+
+    function is_alive() -> bool:
+        return this.hp > 0
+
+    function name() -> str:
+        return "npc"
+
+    static function default() -> NPC:
+        return NPC(hp = 100)
+
+    static function max_hp() -> int:
+        return 100
+
+# --- generic function with implements constraint
+function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
+    if target.is_alive():
+        target.take_damage(amount)
+
+# --- generic function with multiple implements constraints
+function describe[T implements Damageable and Named](target: ref[T]) -> str:
+    if target.is_alive():
+        return target.name()
+    return "dead"
+
+# --- generic function without constraint (relies on default[T])
+function make_default[T]() -> T:
+    return default[T]
+
+# ---------------------------------------------------------------------------
+# 5  Custom attributes and compile-time reflection
+# ---------------------------------------------------------------------------
+
+attribute[field] rename(name: str)
+attribute[callable] traced(tag: str)
+
+struct Labeled:
+    @[rename("my_field")]
+    value: int
+
+@[traced("identity")]
+function identity(x: int) -> int:
+    return x
+
+static_assert(
+    has_attribute(field_of(Labeled, value), rename),
+    "rename attribute missing on field"
+)
+static_assert(
+    has_attribute(callable_of(identity), traced),
+    "traced attribute missing on identity"
+)
+
+const SIZEOF_LABELED: ptr_uint = size_of(Labeled)
+const ALIGNOF_LABELED: ptr_uint = align_of(Labeled)
+const OFFSET_VALUE: ptr_uint = offset_of(Labeled, value)
+
+# ---------------------------------------------------------------------------
+# 6  Top-level const, var, events
+# ---------------------------------------------------------------------------
+
+const WIDTH: int = 640
+public var global_counter: int = 0
+var scratch_buffer: array[ubyte, 256]
+
+# --- event (no payload)
+public event ready[4]
+
+# --- event with payload
+public event updated[8](Seconds)
+
+# ---------------------------------------------------------------------------
+# 7  Functions, externals
+# ---------------------------------------------------------------------------
+
+function void_returning() -> void:
+    return
+
+function simple_noop():
+    pass
+
+function add(a: int, b: int) -> int:
+    return a + b
+
+# --- generic function (explicit specialization at call site)
+function first_pair[T](pair: Pair[T, int]) -> T:
+    return pair.first
+
+# --- generic function with ref parameter
+function read_into[T](source: T, target: ref[T]) -> void:
+    read(target) = source
+
+# --- external function (simple manual ABI bridge; no call needed)
+external function atoi(input: cstr) -> int
+
+# ---------------------------------------------------------------------------
+# 8  Statements: local declarations, guards, Result propagation
+# ---------------------------------------------------------------------------
+
+function statements_demo() -> int:
+    # --- let / var locals with type inference
+    let x = 10
+    var y = 20
+    y += 1
+
+    # --- typed local without initializer (zero-initialized)
+    var result: int
+
+    # --- char literal and usage
+    var nl: char = char<-10
+    var letter: char = char<-65
+    let _nl = nl
+    let _letter = letter
+
+    # --- if / else if / else
+    if x + y > 30:
+        result = 1
+    else if x > 0:
+        result = 2
+    else:
+        result = 3
+
+    # --- while
+    var count: int = 3
+    while count > 0:
+        count -= 1
+
+    # --- for over range
+    for i in 0..4:
+        result += 1
+
+    # --- for over array
+    var values: array[int, 3]
+    values[0] = 10
+    values[1] = 20
+    values[2] = 30
+    for item in values:
+        result += item
+
+    # --- for over span
+    let sp = span[int](data = ptr_of(values[0]), len = 3)
+    for item in sp:
+        result += item
+
+    # --- parallel for
+    var a: array[int, 3]
+    var b: array[int, 3]
+    a[0] = 1
+    a[1] = 2
+    a[2] = 3
+    b[0] = 4
+    b[1] = 5
+    b[2] = 6
+    for left, right in a, b:
+        result += left + right
+
+    # --- range index assignment
+    values[0..2] = (1, 2)
+
+    # --- pass
+    if true:
+        pass
+
+    # --- break / continue
+    var i: int = 0
+    while i < 5:
+        i += 1
+        if i == 2:
+            continue
+        if i == 4:
+            break
+
+    # --- match over enum
+    let st = State.running
+    match st:
+        State.idle:
+            result += 0
+        State.running:
+            result += 1
+
+    # --- match over variant (built-in Option)
+    let opt = Option[int].some(value = 42)
+    match opt:
+        Option[int].some as s:
+            result += s.value
+        Option[int].none:
+            result += 0
+
+    # --- match over custom variant
+    let tk = TokenKind.ident(name = "hello")
+    match tk:
+        TokenKind.ident as iden:
+            result += 1
+        TokenKind.number as n:
+            result += n.value
+        TokenKind.eof:
+            result += 0
+
+    # --- match over integer
+    match result:
+        0:
+            result = 0
+        1:
+            result = 1
+        _:
+            result = -1
+
+    # --- defer (block form)
+    defer:
+        global_counter += result
+
+    defer:
+        global_counter += 1
+        global_counter += 2
+
+    return result
+
+# ---------------------------------------------------------------------------
+# 8b   Guards: let ... else: / var ... else: / else as error:
+# ---------------------------------------------------------------------------
+
+enum GuardError: ubyte
+    missing = 1
+    timeout = 2
+
+function guard_demo() -> Result[int, GuardError]:
+    # --- let ... else: over nullable
+    let known_ptr: ptr[int]? = null[ptr[int]]
+    let safe = known_ptr else:
+        return Result[int, GuardError].failure(error = GuardError.missing)
+
+    # --- let ... else as error: over Result
+    let value = Result[int, GuardError].success(value = 7) else as error:
+        return Result[int, GuardError].failure(error = error)
+
+    # --- var ... else: over Option
+    var maybe: Option[int]? = Option[int].some(value = 3)
+    var bound = maybe else:
+        return Result[int, GuardError].failure(error = GuardError.missing)
+
+    # --- let _ = ... else: (discard success)
+    let _ = Result[int, GuardError].success(value = 1) else:
+        return Result[int, GuardError].failure(error = GuardError.missing)
+
+    # --- postfix Result propagation (expr?)
+    let parsed = Result[int, GuardError].success(value = 5)?
+    let v = parsed
+    return Result[int, GuardError].success(value = v + unsafe: safe[0])
+
+# ---------------------------------------------------------------------------
+# 9  Expressions and operators
+# ---------------------------------------------------------------------------
+
+function expressions_demo(x: int, y: int) -> int:
+    # --- arithmetic
+    let a = x + y
+    let b = x - y
+    let c = x * y
+    let d = x / y
+    let e = x % y
+
+    # --- bitwise
+    let f = a & b
+    let g = a | b
+    let h = a ^ b
+    let i = ~a
+    let j = a << 2
+    let k = a >> 2
+
+    # --- comparison
+    let eq = x == y
+    let ne = x != y
+    let lt = x < y
+    let le = x <= y
+    let gt = x > y
+    let ge = x >= y
+
+    # --- boolean
+    let and_val = eq and lt
+    let or_val = eq or lt
+    let not_val = not eq
+
+    # --- compound assignment operators
+    var acc: int = x
+    acc += y
+    acc -= y
+    acc *= y
+    acc /= y
+    acc %= y
+    acc &= y
+    acc |= y
+    acc ^= y
+    acc <<= 1
+    acc >>= 1
+
+    # --- if expression
+    let chosen = if x > y: x else: y
+
+    # --- member access and indexing
+    let v = Vec2(x = 1.0, y = 2.0)
+    let vx_val = int<-(v.x)
+    var buf: array[int, 4]
+    let elem = buf[0]
+
+    # --- specialization expression
+    let pair = Pair[int, float](first = 10, second = 3.0)
+
+    # --- parenthesized expression (wrapped with delimiter)
+    let wrapped = (
+        x
+        + y
+        - acc
+    )
+
+    # --- operator-led continuation
+    let continued = x +
+        y -
+        acc
+
+    let expr_result = wrapped + continued + chosen + vx_val + elem + pair.first
+    return expr_result
+
+# ---------------------------------------------------------------------------
+# 10  Built-in callable surface
+# ---------------------------------------------------------------------------
+
+function builtins_demo() -> int:
+    var counter: int = 0
+
+    # --- ref_of: mutable borrow
+    let handle = ref_of(counter)
+    read(handle) = 42
+
+    # --- const_ptr_of: read-only pointer
+    let const_p = const_ptr_of(counter)
+
+    # --- ptr_of: writable raw pointer from safe ref
+    let raw_p = ptr_of(handle)
+
+    # --- read through ref and pointer
+    let val_ref = read(handle)
+    let val_ptr = unsafe: read(raw_p)
+
+    # --- T<-value: explicit cast
+    let as_long = long<-counter
+    let as_int = int<-as_long
+
+    # --- zero[T]: zero initialization
+    let zeroed = zero[int]
+
+    # --- default[T] (via associated function)
+    let default_npc = default[NPC]
+
+    # --- fatal (compile-time recognized)
+    if counter != 42:
+        fatal(c"unexpected counter value")
+
+    # --- array[T, N]() literal construction
+    var arr: array[int, 4] = array[int, 4](1, 2, 3, 4)
+    let size = size_of(int)
+    let align = align_of(int)
+
+    # --- reinterpret requires unsafe
+    let bits = unsafe: reinterpret[uint](counter)
+    let _bits_val = bits
+
+    # --- span[T] construction
+    let sp = span[int](data = ptr_of(arr[0]), len = 4)
+    let _sp_copy = sp
+
+    # --- auto-deref ref
+    read(handle) = read(handle) + 1
+    var _rd: array[int, 4] = arr
+
+    return val_ref + val_ptr + zeroed + default_npc.hp
+
+# ---------------------------------------------------------------------------
+# 11  unsafe blocks
+# ---------------------------------------------------------------------------
+
+function unsafe_demo() -> void:
+    var counter: int = 42
+    let raw_p = ptr_of(counter)
+
+    # --- unsafe expression
+    let val = unsafe: read(raw_p)
+    let _v = val
+
+    # --- unsafe block
+    unsafe:
+        raw_p[0] = 99
+        let deref = read(raw_p)
+        raw_p[0] = deref + 1
+
+    # --- pointer arithmetic in unsafe
+    let adjusted = unsafe: raw_p + 1
+    let _a = adjusted
+    return
+
+# ---------------------------------------------------------------------------
+# 12  proc expressions
+# ---------------------------------------------------------------------------
+
+function proc_demo() -> int:
+    # --- expression-bodied proc
+    let triple = proc(x: int) -> int: x * 3
+
+    # --- block-bodied proc
+    let accumulate = proc(seed: int, count: int) -> int:
+        var sum = seed
+        var i: int = 0
+        while i < count:
+            sum += i
+            i += 1
+        return sum
+
+    let result = triple(5) + accumulate(0, 3)
+    return result
+
+# ---------------------------------------------------------------------------
+# 13  events usage (within declaring module)
+# ---------------------------------------------------------------------------
+
+function emit_ready() -> void:
+    ready.emit()
+
+function on_ready_callback() -> void:
+    global_counter += 1
+
+function on_ready_once() -> void:
+    global_counter += 1
+
+function schedule_ready_callback() -> void:
+    var _h_sub = ready.subscribe(on_ready_callback)
+    var _h_once = ready.subscribe_once(on_ready_once)
+    # unsubscribe handled in test of emitted patterns
+
+# ---------------------------------------------------------------------------
+# 14  format strings
+# ---------------------------------------------------------------------------
+
+function format_demo() -> str:
+    let count = 42
+    let label = "items"
+    global_counter = 0
+
+    # --- basic interpolation
+    let text = f"count=#{count} label=#{label}"
+
+    # --- format specs: hex, octal, binary
+    let hex = f"hex=#{count:x} hex_upper=#{count:X}"
+    let oct = f"oct=#{count:o} oct_upper=#{count:O}"
+    let bin = f"bin=#{count:b} bin_upper=#{count:B}"
+
+    # --- float precision
+    let dist: float = 3.14
+    let precise = f"dist=#{dist:.2}"
+
+    let _h = hex
+    let _o = oct
+    let _b = bin
+    let _p = precise
+
+    return text
+
+# ---------------------------------------------------------------------------
+# 15  Generic struct usage
+# ---------------------------------------------------------------------------
+
+function generics_demo() -> int:
+    # --- generic struct specialization
+    let pair = Pair[int, bool](first = 10, second = true)
+    let fisth = pair.first
+
+    # --- generic variant construction (built-in Option)
+    let some_opt = Option[float].some(value = 3.14)
+    let none_opt = Option[float].none
+
+    # --- generic variant match with different specializations
+    match some_opt:
+        Option[float].some as s:
+            return int<-(s.value)
+        Option[float].none:
+            return 0
+
+    return fisth
+
+# ---------------------------------------------------------------------------
+# 16  Async functions
+# ---------------------------------------------------------------------------
+
+async function async_child() -> int:
+    return 41
+
+async function async_demo() -> int:
+    let v = await async_child()
+
+    # --- await inside if expression
+    let w = if v > 40: await async_child() else: 0
+
+    # --- await inside while condition
+    var i: int = 0
+    while (await async_child()) > 0 and i < 2:
+        i += 1
+
+    # --- defer with await in async function
+    defer:
+        global_counter += i
+
+    return v + w + i
+
+# ---------------------------------------------------------------------------
+# 17  Interface method and callable type projections
+# ---------------------------------------------------------------------------
+
+function interface_demo(target: ref[NPC]) -> int:
+    # --- methods via type projection (mutable function)
+    target.take_damage(10)
+
+    # --- method via value receiver
+    let alive = target.is_alive()
+
+    # --- static function via type projection
+    let max_hp = NPC.max_hp()
+    let _m = max_hp
+
+    # --- generic constrained function call (single constraint)
+    damage_one[NPC](target, 5)
+
+    # --- generic constrained function call (multiple constraints)
+    let label = describe[NPC](target)
+    let _l = label
+
+    if alive:
+        return 1
+    return 0
+
+# ---------------------------------------------------------------------------
+# 18  static_assert
+# ---------------------------------------------------------------------------
+
+static_assert(size_of(int) == 4, "int must be 4 bytes")
+static_assert(true, "static_assert true check")
+
+# ---------------------------------------------------------------------------
+# 19  str_buffer[N] usage
+# ---------------------------------------------------------------------------
+
+function str_buffer_demo() -> bool:
+    var buffer: str_buffer[64]
+
+    buffer.assign("hello")
+    buffer.append(" world")
+    buffer.assign_format(f"count=#{42}")
+
+    let s = buffer.as_str()
+    let c = buffer.as_cstr()
+
+    let length = buffer.len()
+    let capacity = buffer.capacity()
+
+    buffer.clear()
+
+    return length + capacity > 0
+
+# ---------------------------------------------------------------------------
+# 20  Nullability
+# ---------------------------------------------------------------------------
+
+function nullability_demo() -> int:
+    # --- nullable pointers and null checks
+    let ptr: ptr[int]? = null
+    let cstr_ptr: cstr? = null
+
+    # --- flow narrowing nullable pointer
+    if ptr == null:
+        return 0
+
+    # ptr is non-null here after flow narrowing
+    if cstr_ptr != null:
+        return 0
+
+    return 1
+
+# ---------------------------------------------------------------------------
+# 21  Entrypoint
+# ---------------------------------------------------------------------------
+
+function main() -> int:
+    var total: int = 0
+
+    total += statements_demo()
+    total += expressions_demo(3, 2)
+    total += builtins_demo()
+    total += proc_demo()
+    total += generics_demo()
+
+    unsafe_demo()
+    emit_ready()
+    schedule_ready_callback()
+    format_demo()
+    heredoc_fmt_demo()
+    str_buffer_demo()
+
+    var npc = NPC.default()
+    interface_demo(ref_of(npc))
+    nullability_demo()
+
+    return total
