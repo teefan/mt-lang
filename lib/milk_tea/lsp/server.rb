@@ -177,7 +177,7 @@ module MilkTea
       def run
         if perf_logging?
           mode = perf_verbose? ? 'verbose' : 'threshold'
-          warn "[LSP perf] enabled mode=#{mode} threshold_ms=#{PERF_LOG_THRESHOLD_MS}"
+          warn "[LSP perf] enabled mode=#{mode} threshold_ms=#{Workspace::PERF_LOG_THRESHOLD_MS}"
         end
 
         loop do
@@ -291,7 +291,7 @@ module MilkTea
           t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           result = handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
-          if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+          if perf_logging? && (perf_verbose? || elapsed_ms > Workspace::PERF_LOG_THRESHOLD_MS)
             detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] req #{method_name} #{elapsed_ms}ms id=#{id}#{detail}"
           end
@@ -319,7 +319,7 @@ module MilkTea
           t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           handler.call(params)
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)
-          if perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+          if perf_logging? && (perf_verbose? || elapsed_ms > Workspace::PERF_LOG_THRESHOLD_MS)
             detail = perf_log_context(method_name, params, verbose: perf_verbose?)
             warn "[LSP perf] ntf #{method_name} #{elapsed_ms}ms#{detail}"
           end

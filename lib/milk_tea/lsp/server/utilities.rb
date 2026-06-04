@@ -15,7 +15,7 @@ module MilkTea
       end
 
       def perf_breakdown_logging?(elapsed_ms)
-        perf_logging? && (perf_verbose? || elapsed_ms > PERF_LOG_THRESHOLD_MS)
+        perf_logging? && (perf_verbose? || elapsed_ms > Workspace::PERF_LOG_THRESHOLD_MS)
       end
 
       def monotonic_time
