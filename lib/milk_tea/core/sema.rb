@@ -15,13 +15,14 @@ require_relative "sema/resolve"
 
 module MilkTea
   class SemaError < StandardError
-    attr_reader :line, :column, :length
+    attr_reader :line, :column, :length, :path
 
-    def initialize(msg = nil, line: nil, column: nil, length: nil)
+    def initialize(msg = nil, line: nil, column: nil, length: nil, path: nil)
       super(msg)
       @line = line
       @column = column
       @length = length
+      @path = path
     end
 
     def to_diagnostic(path: nil)
@@ -183,23 +184,22 @@ module MilkTea
       struct_handle field_handle callable_handle attribute_handle
     ]).freeze
 
-    def self.check(ast, imported_modules: {}, allow_missing_imports: false)
-      Checker.new(ast, imported_modules:, allow_missing_imports:).check
+    def self.check(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
+      Checker.new(ast, imported_modules:, allow_missing_imports:, path:).check
     end
 
-    # LSP-oriented entry point: runs all sema phases and collects errors from
-    # each function/method individually instead of stopping at the first one.
+    # LSP-oriented entry point: runs all sema phases and collects every error
+    # instead of stopping at the first one.  Structural phases collect per-
+    # declaration, and function-body phases collect per function/method.
     # Returns { analysis: Analysis|nil, errors: [SemaError] }.
-    # Structural errors (bad imports, unknown types) still abort early with a
-    # single error; only function-body errors are collected in bulk.
-    def self.check_collecting_errors(ast, imported_modules: {}, allow_missing_imports: false)
-      Checker.new(ast, imported_modules:, allow_missing_imports:).check_collecting_errors
+    def self.check_collecting_errors(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
+      Checker.new(ast, imported_modules:, allow_missing_imports:, path:).check_collecting_errors
     rescue SemaError => e
       { analysis: nil, errors: [e] }
     end
 
     def self.tooling_snapshot(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
-      result = check_collecting_errors(ast, imported_modules:, allow_missing_imports:)
+      result = check_collecting_errors(ast, imported_modules:, allow_missing_imports:, path:)
       diagnostics = Array(result[:errors]).map { |error| error.to_diagnostic(path:) }.freeze
 
       ToolingSnapshot.new(facts: result[:analysis], diagnostics:)
@@ -210,8 +210,9 @@ module MilkTea
 
       attr_reader :module_name
 
-      def initialize(ast, imported_modules: {}, allow_missing_imports: false)
+      def initialize(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
         @ast = ast
+        @path = path
         @imported_modules = imported_modules
         @allow_missing_imports = allow_missing_imports
         @module_name = ast.module_name&.to_s
@@ -284,26 +285,31 @@ module MilkTea
       end
 
       # Like check, but collects per-function errors instead of raising at first.
-      # Structural phases (imports, type resolution, declaration) still raise; only
-      # the value-checking and function-body phases collect errors individually.
+      # Structural phases (imports, type resolution, declaration) collect errors per
+      # declaration so that the maximum number of diagnostics are surfaced.
       # Returns { analysis: Analysis, errors: [SemaError] }.
       def check_collecting_errors
-        install_builtin_types
-        install_builtin_attributes
-        install_imports
-        declare_named_types
-        resolve_generic_type_param_constraints
-        resolve_type_aliases
-        declare_attributes
-        resolve_aggregate_fields
-        resolve_enum_members
-        resolve_variant_arms
-        declare_top_level_values
-        validate_attribute_applications
-        declare_functions
-        check_interface_conformances
+        @collecting_errors = true
+        @structural_errors = []
 
-        errors = []
+        catch_structural { install_builtin_types }
+        catch_structural { install_builtin_attributes }
+        catch_structural { install_imports }
+        catch_structural { declare_named_types }
+        catch_structural { resolve_generic_type_param_constraints }
+        catch_structural { resolve_type_aliases }
+        catch_structural { declare_attributes }
+        catch_structural { resolve_aggregate_fields }
+        catch_structural { resolve_enum_members }
+        catch_structural { resolve_variant_arms }
+        catch_structural { declare_top_level_values }
+        catch_structural { validate_attribute_applications }
+        catch_structural { declare_functions }
+        catch_structural { check_interface_conformances }
+
+        errors = @structural_errors.dup
+
+        return { analysis: nil, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } } unless errors.empty?
 
         begin
           check_top_level_values
@@ -328,6 +334,18 @@ module MilkTea
         analysis = build_analysis
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
+      end
+
+      def catch_structural
+        yield
+      rescue SemaError => e
+        @structural_errors << e
+      end
+
+      def collect_structural_error(error)
+        raise error unless @collecting_errors
+
+        @structural_errors << error
       end
 
 

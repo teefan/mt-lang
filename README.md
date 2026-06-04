@@ -706,7 +706,42 @@ Current v1 rejects:
 - external functions that are generic, async, or array-taking / array-returning
 - ordinary truthy or falsy conditions on integers and pointers
 
-## 17. Minimal Example
+## 17. CLI Commands
+
+The `mtc` CLI is the primary tool for checking, building, and running Milk Tea programs.
+
+Essential commands:
+
+```
+mtc check <file.mt>           # Type-check + lint; reports all diagnostics sorted by line
+mtc run   <file.mt>           # Build and execute
+mtc build <file.mt>           # Build only (emit C, compile, link)
+mtc lex   <file.mt>           # Print lexer token stream
+mtc parse <file.mt>           # Print parsed AST
+mtc lower <file.mt>           # Print lowered IR
+```
+
+Diagnostic output uses standard compiler format (file:line:column with source context and caret highlighting):
+
+```
+error: unknown type floa
+  --> file.mt:65:16
+   |
+   65 | type Seconds = floa
+     |                ^~~~
+```
+
+`mtc check` surfaces both errors and linter warnings:
+
+| Severity | Label | Meaning |
+|---|---|---|
+| `error:` | red | semantic errors, linter errors |
+| `warning:` | yellow | linter warnings (dead-assignment, etc.) |
+| `hint:` | cyan | style suggestions (prefer-let, etc.) |
+
+Exit code is 0 on success, 1 when errors are present (warnings/hints alone do not fail).
+
+## 18. Minimal Example
 
 ```mt
 struct Counter:

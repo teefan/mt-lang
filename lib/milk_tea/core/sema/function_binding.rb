@@ -185,21 +185,27 @@ module MilkTea
               dispatch_receiver_type, receiver_type, receiver_type_param_names, receiver_type_param_constraints = resolve_methods_receiver_target(decl.type_name)
 
               decl.methods.each do |method|
-                binding = with_error_node(method) do
-                  declare_function_binding(
-                    method,
-                    receiver_type:,
-                    declared_receiver_type: receiver_type,
-                    receiver_type_param_names:,
-                    receiver_type_param_constraints:,
-                  )
-                end
-                raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
+                begin
+                  binding = with_error_node(method) do
+                    declare_function_binding(
+                      method,
+                      receiver_type:,
+                      declared_receiver_type: receiver_type,
+                      receiver_type_param_names:,
+                      receiver_type_param_constraints:,
+                    )
+                  end
+                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
 
-                @methods[dispatch_receiver_type][binding.name] = binding
+                  @methods[dispatch_receiver_type][binding.name] = binding
+                rescue SemaError => e
+                  collect_structural_error(e)
+                end
               end
             end
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -238,47 +244,51 @@ module MilkTea
 
         public_params = []
         decl.params.each do |param|
-          ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
-          type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
-          validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
-          validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
-          raise_sema_error("parameter #{param.name} of #{decl.name} must pass event storage through ref[...] or pointers, got #{type}") if noncopyable_event_storage_type?(type)
+          begin
+            ensure_non_reserved_primitive_name!(param.name, kind_label: "parameter", line: param.respond_to?(:line) ? param.line : decl.line, column: param.respond_to?(:column) ? param.column : nil)
+            type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
+            validate_parameter_ref_type!(type, function_name: decl.name, parameter_name: param.name, external:)
+            validate_parameter_proc_type!(type, function_name: decl.name, parameter_name: param.name, external:, foreign:)
+            raise_sema_error("parameter #{param.name} of #{decl.name} must pass event storage through ref[...] or pointers, got #{type}") if noncopyable_event_storage_type?(type)
 
-          if external && array_type?(type)
-            raise_sema_error("external function #{decl.name} cannot take array parameters")
-          end
+            if external && array_type?(type)
+              raise_sema_error("external function #{decl.name} cannot take array parameters")
+            end
 
-          if param.is_a?(AST::ForeignParam)
-            if external
-              raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `as`") if param.boundary_type
-              unless %i[plain out inout].include?(param.mode)
-                raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `#{param.mode}`")
+            if param.is_a?(AST::ForeignParam)
+              if external
+                raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `as`") if param.boundary_type
+                unless %i[plain out inout].include?(param.mode)
+                  raise_sema_error("external parameter #{param.name} of #{decl.name} cannot use `#{param.mode}`")
+                end
+              elsif foreign
+                raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
+                validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
               end
-            elsif foreign
-              raise_sema_error("foreign parameter #{param.name} cannot use `as` with #{param.mode}") if ![:plain, :in].include?(param.mode) && param.boundary_type
-              validate_consuming_foreign_parameter!(type, function_name: decl.name, parameter_name: param.name) if param.mode == :consuming
-            end
 
-            boundary_type = foreign_parameter_boundary_type(param, type, type_params:, type_param_constraints:)
-            validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.boundary_type && param.mode != :in
-            validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.mode == :in
-            param_binding = value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
-            body_params << param_binding
-            record_declaration_binding(param, param_binding)
-            if foreign && param.boundary_type
-              body_params << value_binding(
-                name: foreign_mapping_public_alias_name(param.name),
-                type:,
-                mutable: false,
-                kind: :param,
-              )
+              boundary_type = foreign_parameter_boundary_type(param, type, type_params:, type_param_constraints:)
+              validate_foreign_boundary_type!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.boundary_type && param.mode != :in
+              validate_in_foreign_parameter!(type, boundary_type, function_name: decl.name, parameter_name: param.name) if foreign && param.mode == :in
+              param_binding = value_binding(name: param.name, type: boundary_type || type, mutable: false, kind: :param)
+              body_params << param_binding
+              record_declaration_binding(param, param_binding)
+              if foreign && param.boundary_type
+                body_params << value_binding(
+                  name: foreign_mapping_public_alias_name(param.name),
+                  type:,
+                  mutable: false,
+                  kind: :param,
+                )
+              end
+              public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
+            else
+              param_binding = value_binding(name: param.name, type:, mutable: false, kind: :param)
+              body_params << param_binding
+              record_declaration_binding(param, param_binding)
+              public_params << Types::Parameter.new(param.name, type) if external
             end
-            public_params << Types::Parameter.new(param.name, type, passing_mode: param.mode, boundary_type: boundary_type)
-          else
-            param_binding = value_binding(name: param.name, type:, mutable: false, kind: :param)
-            body_params << param_binding
-            record_declaration_binding(param, param_binding)
-            public_params << Types::Parameter.new(param.name, type) if external
+          rescue SemaError => e
+            collect_structural_error(e)
           end
         end
 
@@ -429,29 +439,31 @@ module MilkTea
         started_check = true
         @current_type_substitutions = binding.type_substitutions
         @current_specialization_owner = binding.specialization_owner
-        with_scope(binding.body_params) do |scopes|
-          start_local_completion_frame(binding, scopes)
-          if binding.ast.is_a?(AST::ForeignFunctionDecl)
-            record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
-            expression = foreign_mapping_expression(binding.ast)
-            actual_type = with_foreign_mapping_context do
-              infer_expression(expression, scopes:, expected_type: binding.type.return_type)
-            end
-            unless types_compatible?(actual_type, binding.type.return_type, expression:) || foreign_identity_projection_compatible?(actual_type, binding.type.return_type)
-              raise_sema_error("foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}")
-            end
-          else
-            validate_async_function_body!(binding.ast.body) if binding.async
-            preassign_local_binding_ids(binding.ast.body)
-            run_nullability_pre_pass(binding, scopes)
-            if binding.async
-              with_async_function do
-                check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
+        with_error_node(binding.ast) do
+          with_scope(binding.body_params) do |scopes|
+            start_local_completion_frame(binding, scopes)
+            if binding.ast.is_a?(AST::ForeignFunctionDecl)
+              record_callable_value_expression_site(binding.ast.mapping) unless binding.ast.mapping.is_a?(AST::Call)
+              expression = foreign_mapping_expression(binding.ast)
+              actual_type = with_foreign_mapping_context do
+                infer_expression(expression, scopes:, expected_type: binding.type.return_type)
+              end
+              unless types_compatible?(actual_type, binding.type.return_type, expression:) || foreign_identity_projection_compatible?(actual_type, binding.type.return_type)
+                raise_sema_error("foreign mapping #{binding.name} expects #{binding.type.return_type}, got #{actual_type}")
               end
             else
-              check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+              validate_async_function_body!(binding.ast.body) if binding.async
+              preassign_local_binding_ids(binding.ast.body)
+              run_nullability_pre_pass(binding, scopes)
+              if binding.async
+                with_async_function do
+                  check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
+                end
+              else
+                check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+              end
+              check_definite_assignment(binding)
             end
-            check_definite_assignment(binding)
           end
         end
         @checked_function_bindings[binding.object_id] = true
