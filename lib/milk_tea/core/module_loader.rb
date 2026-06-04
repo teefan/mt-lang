@@ -213,7 +213,7 @@ module MilkTea
       ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
-      analysis = Sema.check(ast, imported_modules:)
+      analysis = Sema.check(ast, imported_modules:, path: resolved_path)
       @analysis_cache[resolved_path] = analysis
 
       if use_shared_cache?
@@ -254,7 +254,7 @@ module MilkTea
       @checking_paths << resolved_path
       ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast_collecting_errors(ast, importer_path: resolved_path).modules
-      result = Sema.check_collecting_errors(ast, imported_modules:)
+      result = Sema.check_collecting_errors(ast, imported_modules:, path: resolved_path)
       analysis = result[:analysis]
       raise(result[:errors].first || ModuleLoadError.new("module analysis unavailable", path: resolved_path)) unless analysis
 

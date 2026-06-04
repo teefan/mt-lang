@@ -197,6 +197,8 @@ module MilkTea
               @interfaces[decl.name] = declare_interface_binding(decl)
             end
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -215,6 +217,8 @@ module MilkTea
         @ast.declarations.grep(AST::TypeAliasDecl).each do |decl|
           ensure_available_type_name!(decl.name)
           @types[decl.name] = resolve_type_ref(decl.target)
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -363,12 +367,16 @@ module MilkTea
                 )
               end
 
-              field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
-              validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
-              unless proc_storage_supported_type?(field_type)
-                raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
+              begin
+                field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+                validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
+                unless proc_storage_supported_type?(field_type)
+                  raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
+                end
+                fields[field.name] = field_type
+              rescue SemaError => e
+                collect_structural_error(e)
               end
-              fields[field.name] = field_type
             end
 
             if decl.is_a?(AST::StructDecl)
@@ -384,18 +392,24 @@ module MilkTea
                   )
                 end
 
-                events[event_decl.name] = resolve_event_decl_type(
-                  event_decl,
-                  type_params:,
-                  type_param_constraints:,
-                  owner_type_name: decl.name,
-                )
+                begin
+                  events[event_decl.name] = resolve_event_decl_type(
+                    event_decl,
+                    type_params:,
+                    type_param_constraints:,
+                    owner_type_name: decl.name,
+                  )
+                rescue SemaError => e
+                  collect_structural_error(e)
+                end
               end
             end
 
             struct_type.define_fields(fields)
             struct_type.define_events(events) if struct_type.respond_to?(:define_events)
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -430,20 +444,26 @@ module MilkTea
             member_values = {}
 
             decl.members.each do |member|
-              actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
-              const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
+              begin
+                actual_type = infer_expression(member.value, scopes: [], expected_type: backing_type)
+                const_value = evaluate_enum_member_const_value(member.value, enum_type:, member_values:)
 
-              compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
-              compatible ||= const_value.is_a?(Integer) && numeric_constant_fits_type?(const_value, backing_type)
-              raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}") unless compatible
+                compatible = types_compatible?(actual_type, backing_type, expression: member.value, scopes: [])
+                compatible ||= const_value.is_a?(Integer) && numeric_constant_fits_type?(const_value, backing_type)
+                raise_sema_error("member #{decl.name}.#{member.name} expects #{backing_type}, got #{actual_type}") unless compatible
 
-              raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant") unless const_value.is_a?(Integer)
+                raise_sema_error("member #{decl.name}.#{member.name} must be a compile-time integer constant") unless const_value.is_a?(Integer)
 
-              member_values[member.name] = const_value
+                member_values[member.name] = const_value
+              rescue SemaError => e
+                collect_structural_error(e)
+              end
             end
 
             enum_type.define_member_values(member_values)
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -468,43 +488,53 @@ module MilkTea
             seen_arms = []
             arms_hash = {}
             decl.arms.each do |arm|
-              raise_sema_error("duplicate arm #{decl.name}.#{arm.name}") if seen_arms.include?(arm.name)
-              unless raw_module?
-                ensure_non_reserved_type_binding_name!(
-                  arm.name,
-                  kind_label: "arm #{decl.name}",
-                  line: arm.respond_to?(:line) ? arm.line : decl.line,
-                  column: arm.respond_to?(:column) ? arm.column : nil,
-                )
-              end
-
-              seen_arms << arm.name
-              field_types = {}
-              seen_fields = []
-              arm.fields.each do |field|
-                raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
+              begin
+                raise_sema_error("duplicate arm #{decl.name}.#{arm.name}") if seen_arms.include?(arm.name)
                 unless raw_module?
                   ensure_non_reserved_type_binding_name!(
-                    field.name,
-                    kind_label: "field #{decl.name}.#{arm.name}",
-                    line: field.respond_to?(:line) ? field.line : decl.line,
-                    column: field.respond_to?(:column) ? field.column : nil,
+                    arm.name,
+                    kind_label: "arm #{decl.name}",
+                    line: arm.respond_to?(:line) ? arm.line : decl.line,
+                    column: arm.respond_to?(:column) ? arm.column : nil,
                   )
                 end
 
-                seen_fields << field.name
-                field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
-                validate_stored_ref_type!(field_type, "field #{decl.name}.#{arm.name}.#{field.name}")
-                unless proc_storage_supported_type?(field_type)
-                  raise_sema_error("field #{decl.name}.#{arm.name}.#{field.name} uses unsupported proc nesting")
+                seen_arms << arm.name
+                field_types = {}
+                seen_fields = []
+                arm.fields.each do |field|
+                  begin
+                    raise_sema_error("duplicate field #{arm.name}.#{field.name}") if seen_fields.include?(field.name)
+                    unless raw_module?
+                      ensure_non_reserved_type_binding_name!(
+                        field.name,
+                        kind_label: "field #{decl.name}.#{arm.name}",
+                        line: field.respond_to?(:line) ? field.line : decl.line,
+                        column: field.respond_to?(:column) ? field.column : nil,
+                      )
+                    end
+
+                    seen_fields << field.name
+                    field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+                    validate_stored_ref_type!(field_type, "field #{decl.name}.#{arm.name}.#{field.name}")
+                    unless proc_storage_supported_type?(field_type)
+                      raise_sema_error("field #{decl.name}.#{arm.name}.#{field.name} uses unsupported proc nesting")
+                    end
+                    field_types[field.name] = field_type
+                  rescue SemaError => e
+                    collect_structural_error(e)
+                  end
                 end
-                field_types[field.name] = field_type
+                arms_hash[arm.name] = field_types
+              rescue SemaError => e
+                collect_structural_error(e)
               end
-              arms_hash[arm.name] = field_types
             end
 
             variant_type.define_arms(arms_hash)
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 
@@ -574,6 +604,8 @@ module MilkTea
               )
             end
           end
+        rescue SemaError => e
+          collect_structural_error(e)
         end
       end
 

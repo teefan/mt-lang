@@ -385,7 +385,7 @@ module MilkTea
       value = if match(:equal)
                 parse_expression
               else
-                raise ParseError, "module variable without initializer requires a type" unless var_type
+                raise error(peek, "module variable without initializer requires a type") unless var_type
 
                 nil
               end
@@ -852,6 +852,7 @@ module MilkTea
       return parse_function_type_ref if match(:fn)
       return parse_proc_type_ref if match(:proc)
 
+      first_token = peek
       name = parse_qualified_name
       arguments = []
       if match(:lbracket)
@@ -862,7 +863,9 @@ module MilkTea
       end
 
       nullable = match(:question)
-      AST::TypeRef.new(name:, arguments:, nullable:)
+      type_name = name.to_s
+      length = type_name.length + (nullable ? 1 : 0)
+      AST::TypeRef.new(name:, arguments:, nullable:, line: first_token.line, column: first_token.column, length:)
     end
 
     def parse_function_type_ref
@@ -1080,7 +1083,7 @@ module MilkTea
           consume_end_of_statement unless block_expression?(value)
         end
       else
-        raise ParseError, "local declaration without initializer requires a type" unless var_type
+        raise error(name_token, "local declaration without initializer requires a type") unless var_type
 
         consume_end_of_statement
       end

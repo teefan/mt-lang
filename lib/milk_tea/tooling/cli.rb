@@ -75,7 +75,7 @@ module MilkTea
     rescue StandardError => e
       raise unless handled_cli_error?(e)
 
-      @err.puts(e.message)
+      @err.puts(ErrorFormatter.format(e, color: @err.tty?))
       1
     end
 
@@ -468,12 +468,67 @@ module MilkTea
 
       ensure_current_lockfiles!(paths) if resolution[:frozen]
 
+      all_diagnostics = []
       paths.each do |path|
-        result = make_module_loader(path, locked: resolution[:locked]).check_file(path)
-        module_name = result.module_name || "(anonymous)"
-        @out.puts("checked #{path} as #{module_name}")
+        diagnostics = check_single_reporting_all(path, locked: resolution[:locked])
+        next unless diagnostics.any?
+
+        diagnostics = sort_by_location(diagnostics)
+        source = read_source_file(path)
+        diagnostics.each { |d| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?)) }
+        all_diagnostics.concat(diagnostics)
       end
-      0
+
+      return 0 if all_diagnostics.empty?
+
+      error_count = all_diagnostics.count { |d| !d.respond_to?(:severity) || d.severity == :error }
+      warning_count = all_diagnostics.count { |d| d.respond_to?(:severity) && d.severity == :warning }
+      info_count = all_diagnostics.count { |d| d.respond_to?(:severity) && (d.severity == :info || d.severity == :hint) }
+
+      @err.puts
+      parts = []
+      parts << "#{error_count} error(s)" if error_count > 0
+      parts << "#{warning_count} warning(s)" if warning_count > 0
+      parts << "#{info_count} note(s)" if info_count > 0
+      @err.puts("#{parts.join(', ')} found")
+      error_count > 0 ? 1 : 0
+    end
+
+    def check_single_reporting_all(path, locked: false)
+      loader = make_module_loader(path, locked:)
+      resolved_path = File.expand_path(path)
+      ast = loader.load_file(resolved_path)
+
+      import_result = loader.send(:imported_modules_for_ast_collecting_errors, ast, importer_path: resolved_path)
+      errors = import_result.errors.dup
+
+      analysis = nil
+      begin
+        result = Sema.check_collecting_errors(ast, imported_modules: import_result.modules, path: resolved_path)
+        errors.concat(result[:errors])
+        analysis = result[:analysis]
+      rescue SemaError => e
+        errors << e
+      end
+
+      if analysis && errors.empty?
+        source = read_source_file(path)
+        warnings = Linter.lint_source(source, path: resolved_path, sema_facts: analysis, lint_tier: :full)
+        errors.concat(warnings)
+      end
+
+      errors
+    rescue ModuleLoadError, PackageLockError, SemaError => e
+      [e]
+    end
+
+    def sort_by_location(errors)
+      errors.sort_by do |e|
+        actual = e.respond_to?(:error) ? e.error : e
+        line = actual.respond_to?(:line) ? actual.line.to_i : 0
+        column = actual.respond_to?(:column) ? actual.column.to_i : 0
+        [line, column]
+      end
     end
 
     def lower_command

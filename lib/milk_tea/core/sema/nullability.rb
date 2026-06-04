@@ -81,6 +81,7 @@ module MilkTea
           line: first_issue.line,
           column: first_issue.column,
           length: first_issue.length || name.to_s.length,
+          path: @path,
         )
       end
 

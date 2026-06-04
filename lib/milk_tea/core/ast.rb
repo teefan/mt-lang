@@ -16,7 +16,9 @@ module MilkTea
       def initialize(name:, constraints: [], line: nil, column: nil, length: nil) = super
     end
     TypeArgument = Data.define(:value)
-    class TypeRef < Data.define(:name, :arguments, :nullable)
+    class TypeRef < Data.define(:name, :arguments, :nullable, :line, :column, :length)
+      def initialize(name:, arguments:, nullable:, line: nil, column: nil, length: nil) = super
+
       def to_s
         text = name.to_s
         unless arguments.empty?

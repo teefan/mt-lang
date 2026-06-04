@@ -26,7 +26,7 @@ module MilkTea
         end
 
         if line || column
-          raise SemaError.new(message, line:, column:)
+          raise SemaError.new(message, line:, column:, path: @path)
         end
 
         raise_sema_error(message)

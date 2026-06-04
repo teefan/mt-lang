@@ -190,7 +190,7 @@ module MilkTea
         base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:)
         return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType)
 
-        raise_sema_error("ref types are non-null and cannot be nullable") if type_ref.nullable && ref_type?(base)
+        raise_sema_error("ref types are non-null and cannot be nullable", type_ref) if type_ref.nullable && ref_type?(base)
 
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
@@ -217,7 +217,7 @@ module MilkTea
           arguments = type_ref.arguments.map { |argument| resolve_type_argument(argument.value, type_params:, type_param_constraints:) }
 
           if name != "ref" && arguments.any? { |argument| contains_ref_type?(argument) && !stored_ref_supported_type?(argument) }
-            raise_sema_error("ref types cannot be nested inside #{name}")
+            raise_sema_error("ref types cannot be nested inside #{name}", type_ref)
           end
 
           if name == "Task"
@@ -244,8 +244,8 @@ module MilkTea
           return type_params.fetch(parts.first) if type_params.key?(parts.first)
 
           type = @types[parts.first]
-          raise_sema_error("unknown type #{parts.first}") unless type
-          raise_sema_error("generic type #{parts.first} requires type arguments") if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          raise_sema_error("unknown type #{parts.first}", type_ref) unless type
+          raise_sema_error("generic type #{parts.first} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
@@ -254,15 +254,15 @@ module MilkTea
           imported_module = @imports.fetch(parts.first)
           type = imported_module.types[parts.last]
           if imported_module.private_type?(parts.last)
-            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
+            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}", type_ref)
           end
-          raise_sema_error("unknown type #{type_ref.name}") unless type
-          raise_sema_error("generic type #{type_ref.name} requires type arguments") if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          raise_sema_error("unknown type #{type_ref.name}", type_ref) unless type
+          raise_sema_error("generic type #{type_ref.name} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
         end
 
-        raise_sema_error("unknown type #{type_ref.name}")
+        raise_sema_error("unknown type #{type_ref.name}", type_ref)
       end
 
       def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
@@ -341,13 +341,13 @@ module MilkTea
         line ||= source_line(expression)
         column ||= source_column(expression)
 
-        raise SemaError.new(message, line:, column:) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
+        raise SemaError.new(message, line:, column:, path: @path) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
       end
 
       def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil, scopes: nil)
         line = source_line(expression)
         column = source_column(expression)
-        raise SemaError.new(message, line:, column:) unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
+        raise SemaError.new(message, line:, column:, path: @path) unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
       end
 
       def with_error_node(node)
@@ -377,7 +377,7 @@ module MilkTea
         line ||= source_line(target)
         column ||= source_column(target)
         length ||= source_length(target)
-        raise SemaError.new(message, line:, column:, length:)
+        raise SemaError.new(message, line:, column:, length:, path: @path)
       end
 
       def source_line(node)
