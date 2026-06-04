@@ -33,14 +33,6 @@ pnpm-debug.log*
 # Ignore Byebug command history file.
 .byebug_history
 
-## Specific to RubyMotion:
-.dat*
-.repl_history
-build/
-*.bridgesupport
-build-iPhoneOS/
-build-iPhoneSimulator/
-
 ## Specific to RubyMotion (use of CocoaPods):
 #
 # We recommend against adding the Pods directory to your .gitignore. However
@@ -85,3 +77,5 @@ coverage.json
 AGENTS.md
 examples/**/*.bmp
 third_party/**/*
+projects/**/build
+projects/**/tmp

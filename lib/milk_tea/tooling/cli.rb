@@ -66,6 +66,8 @@ module MilkTea
         deps_command
       when "bindgen"
         bindgen_command
+      when "cache"
+        cache_command
       else
         print_usage(@err)
         1
@@ -561,12 +563,13 @@ module MilkTea
       bundle = options[:bundle]
       package_graph = package_graph_for(path, locked:)
       result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend: @build_frontend, **options)
+      cache_annotation = result.cached ? " (cached)" : ""
       if bundle
-        @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
+        @out.puts("built #{path} -> #{File.dirname(result.output_path)}#{cache_annotation}")
         @out.puts("entry executable #{result.output_path}")
         @out.puts("archive #{result.archive_path}") if result.archive_path
       else
-        @out.puts("built #{path} -> #{result.output_path}")
+        @out.puts("built #{path} -> #{result.output_path}#{cache_annotation}")
       end
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
@@ -611,7 +614,9 @@ module MilkTea
         **options
       )
       @out.write(result.stdout) unless preview_notice_emitted
+      @out.flush if @out.respond_to?(:flush)
       @err.write(result.stderr)
+      @err.puts("(cached)") if result.cached
       result.exit_status
     end
 
@@ -660,6 +665,47 @@ module MilkTea
 
     def bindgen_command
       BindgenCLI.start(@argv, out: @out, err: @err, help_printer: method(:print_bindgen_help))
+    end
+
+    def cache_command
+      subcommand = @argv.shift
+      unless subcommand
+        @err.puts("missing cache subcommand")
+        print_command_help("cache", @err)
+        return 1
+      end
+
+      cache_root = MilkTea.root.join("tmp", "mtc-cache")
+
+      case subcommand
+      when "purge"
+        if File.directory?(cache_root)
+          FileUtils.rm_rf(cache_root)
+          @out.puts("purged #{cache_root}")
+        else
+          @out.puts("cache is already empty")
+        end
+        0
+      when "status"
+        unless File.directory?(cache_root)
+          @out.puts("cache directory does not exist: #{cache_root}")
+          return 0
+        end
+        program_dirs = Dir.glob(File.join(cache_root, "programs", "*", "*")).select { |d| File.directory?(d) }
+        binary_files = Dir.glob(File.join(cache_root, "binaries", "*", "*", "binary")).select { |f| File.file?(f) }
+        total_size = (program_dirs + binary_files).sum { |p|
+          File.file?(p) ? File.size(p) : Dir.glob(File.join(p, "**", "*")).sum { |f| File.file?(f) ? File.size(f) : 0 }
+        }
+        @out.puts("cache root   #{cache_root}")
+        @out.puts("cached programs  #{program_dirs.length}")
+        @out.puts("cached binaries  #{binary_files.length}")
+        @out.puts("total size       #{format_size(total_size)}")
+        0
+      else
+        @err.puts("unknown cache subcommand #{subcommand}")
+        print_command_help("cache", @err)
+        1
+      end
     end
 
     def parse_build_options(allow_clean: false)
@@ -1106,7 +1152,25 @@ module MilkTea
             --clang PATH           Clang binary to use (default: $CLANG or clang).
             --clang-arg ARG        Extra argument to pass to clang (repeatable).
         HELP
+      "cache"           => <<~HELP,
+        Usage: mtc cache SUBCOMMAND
+
+          Inspect and manage the build cache.
+
+          Subcommands:
+            purge        Remove the entire build cache.
+            status       Show cache directory, entry counts, and total size.
+        HELP
     }.freeze
+
+    def format_size(bytes)
+      return "0 B" if bytes.zero?
+
+      units = %w[B KiB MiB GiB]
+      exp = (Math.log(bytes) / Math.log(1024)).to_i
+      exp = units.length - 1 if exp >= units.length
+      format("%.1f %s", bytes.to_f / (1024**exp), units[exp])
+    end
 
     def print_command_help(command, io)
       text = COMMAND_HELP[command]
@@ -1127,6 +1191,10 @@ module MilkTea
 
     def print_bindgen_help(io)
       print_command_help("bindgen", io)
+    end
+
+    def print_cache_help(io)
+      print_command_help("cache", io)
     end
 
     def print_usage(io)
@@ -1152,6 +1220,7 @@ module MilkTea
       io.puts("       mtc deps publish [PATH_OR_PACKAGE] [--upstream]")
       io.puts("       mtc deps fetch [PATH_OR_PACKAGE]")
       io.puts("       mtc bindgen MODULE HEADER [-o OUTPUT] [--nullable-report PATH] [--link LIB] [--include HEADER] [--clang PATH] [--clang-arg ARG]")
+      io.puts("       mtc cache purge|status")
     end
   end
 end

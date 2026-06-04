@@ -6,6 +6,7 @@ require "tempfile"
 require "zlib"
 
 require_relative "asset_pack"
+require_relative "build_cache"
 require_relative "debug_map"
 
 module MilkTea
@@ -66,7 +67,7 @@ module MilkTea
       </script>
     HTML
 
-    Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path)
+    Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path, :cached)
 
     def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
       raw_bindings ||= default_raw_bindings
@@ -207,6 +208,64 @@ module MilkTea
     def build
       ensure_compiler_available!
       ensure_supported_backend!
+
+      if @frontend.is_a?(RubyFrontend)
+        build_cached
+      else
+        build_uncached
+      end
+    end
+
+    private
+
+    def build_cached
+      cache = BuildCache.new(root: MilkTea.root)
+      emit_line_directives = line_directives_required?
+      @cached = true
+
+      program = load_program_with_cache(cache)
+
+      compiled_c, frontend_modules, debug_map_source = compile_frontend(program, cache, emit_line_directives)
+
+      prepare_bindings(frontend_modules)
+      compiler_flags = collect_compiler_flags(frontend_modules)
+      link_flags = collect_link_flags(frontend_modules)
+      debug_map_path = DebugMap.sidecar_path_for(@output_path)
+
+      FileUtils.mkdir_p(File.dirname(@output_path))
+
+      saved_c = compile_frontend_saved_c(compiled_c, emit_line_directives)
+
+      if @keep_c_path
+        saved_c ||= compiled_c unless emit_line_directives
+        if emit_line_directives && saved_c.nil?
+          saved_c = CBackend.emit(Lowering.lower(program), emit_line_directives: false)
+        end
+        raise BuildError, "frontend did not provide saved C output for --keep-c debug build" if saved_c.nil?
+
+        write_c_file(@keep_c_path, saved_c)
+        compile_and_link_cached(compiled_c, compiler_flags, link_flags, cache)
+        if debug_map_source
+          DebugMap.from_ir(debug_map_source, binary_path: @output_path).write(debug_map_path)
+        end
+        stage_runtime_assets
+        archive_path = write_bundle_archive
+        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:, cached: @cached)
+      end
+
+      compile_and_link_cached(compiled_c, compiler_flags, link_flags, cache)
+
+      if debug_map_source
+        debug_map = debug_map_source.is_a?(IR::Program) ? DebugMap.from_ir(debug_map_source, binary_path: @output_path) : debug_map_source
+        debug_map.write(debug_map_path)
+      end
+      stage_runtime_assets
+      archive_path = write_bundle_archive
+
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:, cached: @cached)
+    end
+
+    def build_uncached
       emit_line_directives = line_directives_required?
       artifacts = @frontend.compile(
         path: @resolved_source_path,
@@ -242,7 +301,7 @@ module MilkTea
         debug_map.write(debug_map_path)
         stage_runtime_assets
         archive_path = write_bundle_archive
-        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:)
+        return Result.new(output_path: @output_path, c_path: @keep_c_path, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:, cached: false)
       end
 
       compile_generated_c(compiled_c, compiler_flags, link_flags)
@@ -251,10 +310,8 @@ module MilkTea
       stage_runtime_assets
       archive_path = write_bundle_archive
 
-      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:)
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: @bundle_root, archive_path:, cached: false)
     end
-
-    private
 
     def clean_target_path
       if @package_build && !@explicit_output_path && @manifest_output_path.nil?
@@ -275,6 +332,59 @@ module MilkTea
       raise BuildError, "bundle mode is supported only for native package builds" if target_wasm?
     end
 
+    def load_program_with_cache(cache)
+      loader = ModuleLoader.new(
+        module_roots: @module_roots,
+        package_graph: @package_graph,
+        shared_cache: cache.shared_analysis_cache,
+        platform: @platform,
+      )
+      loader.check_program(@resolved_source_path)
+    end
+
+    def compile_frontend(program, cache, emit_line_directives)
+      source_files = program.analyses_by_path.keys.each_with_object({}) do |path, hash|
+        hash[path] = File.read(path, mode: "rb")
+      end
+      key = cache.program_key(source_files: source_files.to_a)
+
+      cached = cache.fetch_program(key)
+      if cached
+        return [cached.c_source, cached.frontend_modules, nil]
+      end
+
+      @cached = false
+      ir_program = Lowering.lower(program)
+      Build.ensure_program_has_entrypoint!(program, ir_program)
+      compiled_c = CBackend.emit(ir_program, emit_line_directives:)
+
+      frontend_modules = Build.send(:frontend_modules, program)
+
+      cache.store_program(key, c_source: compiled_c, frontend_modules:)
+
+      [compiled_c, frontend_modules, ir_program]
+    end
+
+    def compile_frontend_saved_c(compiled_c, emit_line_directives)
+      return nil if emit_line_directives
+
+      compiled_c
+    end
+
+    def compile_and_link_cached(compiled_c, compiler_flags, link_flags, cache)
+      binary_key = cache.binary_key(c_source: compiled_c, cc: @cc, compiler_flags:, link_flags:)
+      cached_binary = cache.fetch_binary(binary_key)
+
+      if cached_binary
+        FileUtils.cp(cached_binary, @output_path)
+        return
+      end
+
+      @cached = false
+      compile_generated_c(compiled_c, compiler_flags, link_flags)
+      cache.store_binary(binary_key, @output_path)
+    end
+
     def self.ensure_program_has_entrypoint!(program, ir_program)
       return if ir_program.functions.any?(&:entry_point)
       return if program.is_a?(IR::Program)
@@ -285,7 +395,6 @@ module MilkTea
 
       raise BuildError, "no executable entrypoint found; define `main` with one of the supported executable signatures"
     end
-    private_class_method :ensure_program_has_entrypoint!
 
     def package_manifest_required_for?(path)
       expanded_path = File.expand_path(path)

@@ -68,8 +68,8 @@ class MilkTeaVendoredCLibraryTest < Minitest::Test
       object_path = File.join(build_root, "helper.o")
       archive_path = File.join(build_root, "libsample.a")
       File.write(source_path, "int helper(void) { return 1; }\n")
-      File.write(object_path, "")
-      File.write(archive_path, "")
+      File.write(object_path, "\x7fELF")
+      File.write(archive_path, "\x00")
 
       source_time = Time.now - 3
       object_time = Time.now - 2
@@ -98,6 +98,57 @@ class MilkTeaVendoredCLibraryTest < Minitest::Test
       end
 
       assert_equal [["ar-custom", "s", archive_path]], commands
+    end
+  end
+
+  def test_archive_rejects_zero_byte_object_files
+    Dir.mktmpdir("milk-tea-vendored-c-library") do |dir|
+      source_root = File.join(dir, "src")
+      build_root = File.join(dir, "build")
+      FileUtils.mkdir_p(source_root)
+      FileUtils.mkdir_p(build_root)
+
+      source_path = File.join(source_root, "helper.c")
+      object_path = File.join(build_root, "helper.o")
+      archive_path = File.join(build_root, "libsample.a")
+      File.write(source_path, "int helper(void) { return 1; }\n")
+      File.write(object_path, "")
+      File.write(archive_path, "\x00")
+
+      source_time = Time.now - 3
+      object_time = Time.now - 2
+      archive_time = Time.now - 1
+      File.utime(source_time, source_time, source_path)
+      File.utime(object_time, object_time, object_path)
+      File.utime(archive_time, archive_time, archive_path)
+
+      archive = MilkTea::VendoredCLibrary::Archive.new(
+        name: "sample",
+        source_root:,
+        build_root:,
+        archive_name: "libsample.a",
+        sources: ["helper.c"],
+        include_roots: [source_root],
+      )
+      signature = archive.send(:configuration_signature, cc: "cc-custom", cxx: "cxx-custom", ar: "ar-custom")
+      File.write(File.join(build_root, ".milk-tea-signature"), signature)
+
+      commands = []
+      with_singleton_method_override(Open3, :capture3, lambda { |*args|
+        cmd = args.dup
+        commands << cmd
+        output_index = cmd.index("-o")
+        if output_index
+          output_path = cmd[output_index + 1]
+          FileUtils.mkdir_p(File.dirname(output_path))
+          File.write(output_path, "compiled")
+        end
+        ["", "", success_status]
+      }) do
+        archive.prepare!(env: { "AR" => "ar-custom" }, cc: "cc-custom", cxx: "cxx-custom")
+      end
+
+      refute commands.none? { |cmd| cmd.include?("-c") }, "expected a compilation command for the zero-byte object"
     end
   end
 
