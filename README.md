@@ -93,7 +93,7 @@ Common punctuation and operators:
 
 Supported top-level declarations:
 
-- `const`
+- `const` (expression form and block-bodied form with `->`)
 - `var`
 - `type`
 - `attribute`
@@ -111,6 +111,7 @@ Supported top-level declarations:
 - `foreign function`
 - `event`
 - `static_assert(...)`
+- `when` (compile-time conditional; may appear at module level or inside function bodies)
 
 File-kind note:
 
@@ -127,7 +128,7 @@ Visibility:
 
 ## 4. Variables And Guards
 
-- `const` requires an explicit type and initializer.
+- `const` requires an explicit type and initializer. A block-bodied form `const NAME -> TYPE:` followed by an indented block is also supported; the block is evaluated at compile time and must end with a `return`.
 - Top-level `var` requires an explicit type. Its initializer is optional but must be static-storage-safe when present.
 - Local `let` is immutable.
 - Local `var` is mutable.
@@ -349,6 +350,10 @@ Supported statements:
 - `static_assert`
 - `for`
 - `while`
+- `when` — compile-time conditional; only the chosen branch is type-checked and emitted
+- `inline for` — loop over a compile-time-known array, unrolled at compile time
+- `inline while` — loop with a compile-time-known condition, unrolled at compile time
+- `inline match` — match with a compile-time-known scrutinee, unrolled at compile time
 - `pass`
 - `break`
 - `continue`
@@ -408,6 +413,43 @@ Rules:
 - The bounds must be integer literals.
 - The range is start-inclusive and end-exclusive.
 - The right-hand side must be an expression list with exactly matching width.
+
+Compile-time control flow:
+
+`when` evaluates its discriminant at compile time and emits only the chosen branch:
+
+```mt
+when TARGET_OS:
+    TargetOs.linux:
+        return open_linux(path)
+    TargetOs.windows:
+        return open_windows(path)
+```
+
+- The discriminant must be a compile-time constant.
+- Only the chosen branch is type-checked and lowered.
+- An `else` branch is required unless the discriminant is an enum and every member is covered.
+- `when` may appear at module level to conditionally include declarations.
+
+`inline for` unrolls a loop over a compile-time-known array:
+
+```mt
+inline for field in fields_of(Particle):
+    static_assert(field.type == float, "Particle fields must be float")
+```
+
+- The iterable must be a compile-time-known array (from reflection builtins or a literal array).
+
+`inline while` unrolls a loop with a compile-time-known condition:
+
+```mt
+inline while n < 1024:
+    n = n * 2
+```
+
+- The condition must be a compile-time constant. The loop unrolls to a fixed number of iterations.
+
+`inline match` unrolls a match with a compile-time-known scrutinee; only the chosen arm emits code. It is not required to be exhaustive.
 
 ## 9. Expressions And Operators
 
@@ -491,6 +533,8 @@ Generics:
 - Multiple interface constraints are joined with `and`.
 - There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)`, `equal[T](...)`, or `order[T](...)` rely on specialization-time checking of the canonical associated functions.
 - Current type parameters can be used as type expressions for associated function calls in generic bodies, for example `T.default()` or `T.tag()`.
+- Generic value parameters use the form `[N: int]` to declare a compile-time integer usable in expressions. The call site specializes with a literal: `int_with_bits[64]`.
+- `type` is a built-in type name representing the type of types. A function may return `type` to pick a type at compile time from its value parameters.
 
 ## 11. Built-In Callable Surface
 
@@ -521,6 +565,20 @@ Reference and pointer notes:
 - `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` returns a negative value when `left < right`, `0` when equal, and a positive value when `left > right`.
 - There are no separate `hashes` or `equates` constraints; the builtins themselves force those hook requirements at specialization time.
 - There is no separate `defaults` constraint. A generic body that uses `default[T]` relies on specialization-time checking that `T.default()` exists.
+
+Compile-time reflection builtins:
+
+- `field_of(T, name)` — returns a `field_handle` for the named field of `T`.
+- `callable_of(T, name)` — returns a `callable_handle` for the named callable of `T`.
+- `attribute_of(T, name)` — returns an `attribute_handle` for the named attribute on `T`.
+- `has_attribute(T, name)` — returns `bool`; true if `T` has the named attribute applied.
+- `attribute_arg[T]` — returns the `T`-typed argument of a resolved attribute handle.
+- `fields_of(T)` — returns `array[field_handle, N]` of all fields of struct `T`, in declaration order.
+- `members_of(E)` — returns `array[member_handle, N]` of all members of enum or variant `E`.
+- `attributes_of(T)` — returns `array[attribute_handle, N]` of all attributes on `T`.
+- `attributes_of(T, name)` — returns `array[attribute_handle, N]` of attributes whose kind matches `name`.
+
+Handle types expose: `field_handle` has `.name` and `.type`; `member_handle` has `.name` and optionally `.value`; `attribute_handle` provides access to attribute arguments.
 
 ### Current Std Collections
 

@@ -57,10 +57,10 @@ const ROUNDED_UP -> int:                # block form (new)
 The `->` reuses the same arrow mt uses for function return types. For a function, `->` says "this function produces a value of this type at runtime." For a `const`, the same arrow says "this `const` has a body that produces a value of this type at compile time." The `:` after the type is the block-introducer, the same colon `function` uses for its block body.
 
 - The block is a pure function. No IO, no runtime calls, no observable state.
-- Allowed inside the block: literals, names of other `const` values, arithmetic, control flow (`if`/`else if`/`else`, `while`, `match`), `let` and `var` declarations, calls to other compile-time functions, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
+- Allowed inside the block: literals, names of other `const` values, arithmetic, control flow (`if`/`else if`/`else`, `while`, `for`), `let` and `var` declarations, calls to other compile-time functions, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
 - Forbidden inside the block: ordinary function calls, foreign-function calls, IO, heap allocation that escapes the block, mutation of any `var` outside the block, `defer`, and `async`/`await`.
 - The block must end with a `return` (or contain a `return` on every code path). The return type is checked against the `const` declaration.
-- The body is type-checked and evaluated once. The result is memoized by content; identical block bodies in different translation units evaluate to the same constant.
+- The body is type-checked and evaluated once when the constant is first resolved.
 
 A block body may also be used for a `type`-returning function (see below). The block's rules are the same in both positions.
 
@@ -215,8 +215,7 @@ The compile error for any of these is direct: the parser or checker rejects the 
 
 ### Soft Restrictions
 
-- A compile-time block has a bounded evaluation budget. The compiler enforces a depth limit (default 64) and a total reduction limit (default 10,000). Exceeding either is a compile error, not a hang.
-- A compile-time function's result is memoized by structural content. Two block-bodied consts with identical bodies and inputs produce the same constant; the compiler evaluates one and reuses the result.
+- A compile-time block has a bounded evaluation budget. `while` loops and `inline while` loops enforce an iteration cap (default 10,000). Exceeding it is a compile error, not a hang.
 - The interpreter is a restricted mt evaluator, not a full implementation. It supports the constructs listed in section 1 and nothing else. A construct the interpreter cannot evaluate is a compile error at the compile-time lexical position.
 
 ### Cross-Compilation
@@ -355,8 +354,7 @@ static int64_t game_scale_wide(int32_t x) {
 The compiler is implemented in Ruby. Compile-time evaluation runs as a tree-walking interpreter over a restricted subset of Milk Tea, written in the host language. Three pragmatic decisions follow from this:
 
 - The interpreter is a **whitelist**, not a sandbox. The set of constructs allowed inside a compile-time context is enumerated explicitly. Anything outside the whitelist is a compile error at the lexical position, not a runtime exception.
-- Compile-time evaluation is **bounded** by depth and reduction count. A runaway block becomes a hard compile error, never a hang.
-- Compile-time results are **memoized** by structural content. Two block-bodied consts with identical bodies and inputs share an evaluation.
+- Compile-time evaluation is **bounded** by an iteration cap on loops. A runaway block becomes a hard compile error, never a hang.
 
 The interpreter does not need to support `defer`, `async`/`await`, foreign calls, runtime allocation, or `unsafe`. Removing those from the allowed set cuts the implementation surface substantially. The whitelist approach is simpler to reason about than a full interpreter that happens to be safe by construction.
 
