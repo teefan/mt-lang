@@ -123,6 +123,13 @@ module MilkTea
           raw_module_name: "std.c.steamworks",
           policy_path: root.join("bindings/imported/steamworks.binding.json"),
         ),
+        Binding.new(
+          name: "miniaudio",
+          module_name: "std.miniaudio",
+          binding_path: root.join("std/miniaudio.mt"),
+          raw_module_name: "std.c.miniaudio",
+          policy_path: root.join("bindings/imported/miniaudio.binding.json"),
+        ),
       ]
     end
 

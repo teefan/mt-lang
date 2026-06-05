@@ -1,0 +1,18 @@
+{
+  "module_name": "std.miniaudio",
+  "raw_module_name": "std.c.miniaudio",
+  "raw_import_alias": "c",
+  "types": {
+    "include_prefixes": ["ma_"],
+    "include": ["va_list"],
+    "strip_prefix": "ma_"
+  },
+  "constants": {
+    "include_prefixes": ["MA_"],
+    "strip_prefix": "MA_"
+  },
+  "functions": {
+    "include_prefixes": ["ma_"],
+    "strip_prefix": "ma_"
+  }
+}
