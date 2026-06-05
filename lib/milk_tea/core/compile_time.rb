@@ -61,7 +61,19 @@ module MilkTea
           return @variables[expression.name] if @variables.key?(expression.name)
           @checker.send(:evaluate_compile_time_const_value, expression, scopes:)
         else
-          @checker.send(:evaluate_compile_time_const_value, expression, scopes:)
+          CompileTime.evaluate(
+            expression,
+            resolve_identifier: ->(id_expr) {
+              return @variables[id_expr.name] if @variables.key?(id_expr.name)
+              @checker.send(:evaluate_compile_time_const_value, id_expr, scopes:)
+            },
+            resolve_member_access: ->(ma_expr) {
+              @checker.send(:evaluate_compile_time_const_value, ma_expr, scopes:)
+            },
+            resolve_call: ->(call_expr) {
+              @checker.send(:evaluate_compile_time_const_value, call_expr, scopes:)
+            },
+          )
         end
       end
 
@@ -214,6 +226,8 @@ module MilkTea
         case expression
         when AST::ErrorExpr
           nil
+        when AST::ExpressionList
+          expression.elements.filter_map { |element| evaluate(element) }
         when AST::IntegerLiteral, AST::FloatLiteral, AST::BooleanLiteral
           expression.value
         when AST::StringLiteral
