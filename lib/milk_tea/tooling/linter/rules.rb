@@ -74,6 +74,12 @@ module MilkTea
             infinite_while_without_break?(stmt)
           when AST::MatchStmt
             stmt.arms.any? && stmt.arms.all? { |arm| always_returns?(arm.body) }
+          when AST::WhenStmt
+            all_branches = stmt.branches.map(&:body)
+            all_branches << stmt.else_body if stmt.else_body && !stmt.else_body.empty?
+            all_branches.any? && all_branches.all? { |b| always_returns?(b) }
+          when AST::StaticAssert
+            stmt.condition.is_a?(AST::BooleanLiteral) && stmt.condition.value == false
           when AST::UnsafeStmt
             always_returns?(stmt.body)
           else
@@ -101,12 +107,20 @@ module MilkTea
       def terminating_expression?(expression)
         case expression
         when AST::Call
-          terminating_callee?(expression.callee)
+          terminating_callee?(expression.callee) || static_assert_false?(expression)
         when AST::Specialization
-          terminating_callee?(expression.callee)
+          terminating_callee?(expression.callee) || static_assert_false?(expression)
         else
           false
         end
+      end
+
+      def static_assert_false?(expression)
+        return false unless expression.callee.is_a?(AST::Identifier)
+        return false unless expression.callee.name == "static_assert"
+
+        first_arg = expression.arguments.first
+        first_arg.is_a?(AST::BooleanLiteral) && first_arg.value == false
       end
   
       def terminating_callee?(callee)

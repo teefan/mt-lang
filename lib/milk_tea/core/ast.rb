@@ -15,6 +15,9 @@ module MilkTea
     TypeParam = Data.define(:name, :constraints, :line, :column, :length) do
       def initialize(name:, constraints: [], line: nil, column: nil, length: nil) = super
     end
+    ValueTypeParam = Data.define(:name, :type, :line, :column, :length) do
+      def initialize(name:, type:, line: nil, column: nil, length: nil) = super
+    end
     TypeArgument = Data.define(:value)
     class TypeRef < Data.define(:name, :arguments, :nullable, :line, :column, :length)
       def initialize(name:, arguments:, nullable:, line: nil, column: nil, length: nil) = super
@@ -42,8 +45,8 @@ module MilkTea
     LinkDirective = Data.define(:value)
     IncludeDirective = Data.define(:value)
     CompilerFlagDirective = Data.define(:value)
-    ConstDecl = Data.define(:name, :type, :value, :visibility, :line) do
-      def initialize(name:, type:, value:, visibility:, line: nil) = super
+    ConstDecl = Data.define(:name, :type, :value, :block_body, :visibility, :line) do
+      def initialize(name:, type:, value:, block_body: nil, visibility:, line: nil) = super
     end
     VarDecl = Data.define(:name, :type, :value, :visibility, :line) do
       def initialize(name:, type:, value:, visibility:, line: nil) = super
@@ -123,11 +126,17 @@ module MilkTea
     MatchArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
       def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
     end
-    MatchStmt = Data.define(:expression, :arms, :line, :column, :length) do
-      def initialize(expression:, arms:, line: nil, column: nil, length: nil) = super
+    MatchStmt = Data.define(:expression, :arms, :inline, :line, :column, :length) do
+      def initialize(expression:, arms:, inline: false, line: nil, column: nil, length: nil) = super
     end
     MatchExprArm = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :value) do
       def initialize(pattern:, binding_name:, value:, binding_line: nil, binding_column: nil) = super
+    end
+    WhenBranch = Data.define(:pattern, :binding_name, :binding_line, :binding_column, :body) do
+      def initialize(pattern:, binding_name:, body:, binding_line: nil, binding_column: nil) = super
+    end
+    WhenStmt = Data.define(:discriminant, :branches, :else_body, :line, :column, :length) do
+      def initialize(discriminant:, branches:, else_body:, line: nil, column: nil, length: nil) = super
     end
     UnsafeStmt = Data.define(:body, :line, :column, :length) do
       def initialize(body:, line: nil, column: nil, length: nil) = super
@@ -138,16 +147,16 @@ module MilkTea
     ForBinding = Data.define(:name, :line, :column) do
       def initialize(name:, line: nil, column: nil) = super
     end
-    ForStmt = Data.define(:bindings, :iterables, :body, :line, :column) do
-      def initialize(bindings:, iterables:, body:, line: nil, column: nil) = super
+    ForStmt = Data.define(:bindings, :iterables, :body, :inline, :line, :column) do
+      def initialize(bindings:, iterables:, body:, inline: false, line: nil, column: nil) = super
       def name = bindings.first.name
       def names = bindings.map(&:name)
       def binding = bindings.first
       def iterable = iterables.first
       def parallel? = bindings.length > 1 || iterables.length > 1
     end
-    WhileStmt = Data.define(:condition, :body, :line, :column, :length) do
-      def initialize(condition:, body:, line: nil, column: nil, length: nil) = super
+    WhileStmt = Data.define(:condition, :body, :inline, :line, :column, :length) do
+      def initialize(condition:, body:, inline: false, line: nil, column: nil, length: nil) = super
     end
     BreakStmt = Data.define(:line, :column, :length) do
       def initialize(line: nil, column: nil, length: nil) = super

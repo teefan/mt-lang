@@ -369,7 +369,8 @@ module MilkTea
         each_ast_node(ast) do |node|
           next unless node.is_a?(AST::Identifier)
           next unless node.name == name
-          next unless node.line == line && node.column == char
+          next unless node.line == line
+          next unless char >= node.column && char < node.column + name.length
 
           return node
         end
@@ -382,7 +383,8 @@ module MilkTea
           range = declaration_name_range(node)
           next unless range
           next unless range[:name] == name
-          next unless range[:line] == line && range[:column] == char
+          next unless range[:line] == line
+          next unless char >= range[:column] && char < range[:column] + range[:length]
 
           return node
         end
@@ -403,7 +405,7 @@ module MilkTea
         end
 
         return nil unless node.respond_to?(:name) && node.respond_to?(:line) && node.respond_to?(:column)
-        return nil unless node.name && node.line && node.column
+        return nil unless node.name.is_a?(String) && node.line && node.column
 
         ast_name_range(node.name, node.line, node.column)
       end

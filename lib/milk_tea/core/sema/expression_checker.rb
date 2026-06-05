@@ -202,7 +202,16 @@ module MilkTea
           when AST::RangeExpr
             raise_sema_error("range expression can only be used as a for-loop iterable or range index target")
           when AST::ExpressionList
-            raise_sema_error("expression list can only be used as the right-hand side of a range index assignment")
+            if expected_type && expected_type.is_a?(Types::GenericInstance) && expected_type.name == "array"
+              element_type = expected_type.arguments.first
+              expression.elements.each do |element|
+                actual = infer_expression(element, scopes:, expected_type: element_type)
+                ensure_assignable!(actual, element_type, "array element type mismatch: expected #{element_type}, got #{actual}", expression: element)
+              end
+              expected_type
+            else
+              raise_sema_error("expression list can only be used as the right-hand side of a range index assignment")
+            end
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
           end
@@ -260,7 +269,9 @@ module MilkTea
         end
 
         raise_sema_error("module #{expression.name} cannot be used as a value") if @imports.key?(expression.name)
-        raise_sema_error("type #{expression.name} cannot be used as a value") if @types.key?(expression.name)
+        if @types.key?(expression.name)
+          return @types.fetch(expression.name)
+        end
 
         raise_sema_error("unknown name #{expression.name}")
       end
@@ -327,6 +338,12 @@ module MilkTea
         end
 
         unless aggregate_type?(field_receiver_type)
+          if field_receiver_type == builtin_field_handle_type
+            return infer_field_handle_member(expression, scopes:)
+          end
+          if field_receiver_type == builtin_member_handle_type
+            return infer_member_handle_member(expression)
+          end
           raise_sema_error("cannot access member #{expression.member} of #{field_receiver_type}")
         end
 
@@ -1450,6 +1467,30 @@ module MilkTea
         end
       end
 
+      def infer_field_handle_member(expression, scopes:)
+        case expression.member
+        when "name"
+          @types.fetch("str")
+        when "type"
+          handle = evaluate_compile_time_const_value(expression.receiver, scopes:)
+          return @error_type unless handle.is_a?(Types::FieldHandle)
+
+          resolve_type_ref(handle.field_declaration.type)
+        else
+          raise_sema_error("unknown member #{expression.member} of field_handle")
+        end
+      end
+
+      def infer_member_handle_member(expression)
+        case expression.member
+        when "name"
+          @types.fetch("str")
+        when "value"
+          @types.fetch("int")
+        else
+          raise_sema_error("unknown member #{expression.member} of member_handle")
+        end
+      end
     end
   end
 end

@@ -3,11 +3,12 @@
 module MilkTea
   module ErrorFormatter
     def self.format(error, path: nil, source: nil, color: true)
-      return error.message unless error.respond_to?(:line) && error.line
-      return error.message unless error.respond_to?(:column) && error.column
+      error_message = error.respond_to?(:message) ? error.message : error.to_s
+      return error_message unless error.respond_to?(:line) && error.line
+      return error_message unless error.respond_to?(:column) && error.column
 
       path ||= error.respond_to?(:path) ? error.path : nil
-      return error.message unless path
+      return error_message unless path
 
       line = error.line.to_i
       column = error.column.to_i
@@ -16,7 +17,7 @@ module MilkTea
       code = error.respond_to?(:code) ? error.code : nil
 
       source ||= read_source(path)
-      return "#{severity_label(severity)}: #{error.message} at #{path}:#{line}:#{column}" unless source
+      return "#{severity_label(severity)}: #{error_message} at #{path}:#{line}:#{column}" unless source
 
       source_lines = source.split("\n", -1)
       source_line = source_lines[line - 1] || ""
@@ -45,7 +46,7 @@ module MilkTea
       code_text = code ? " #{cyan}[#{code}]#{reset}" : ""
 
       [
-        "#{sev_color}#{sev_text}#{code_text}#{reset}: #{error.message}",
+        "#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
         "  #{bold}-->#{reset} #{path}:#{line}:#{column}",
         "   #{bold}|#{reset}",
         "#{line.to_s.rjust(5)} #{bold}|#{reset} #{stripped}",

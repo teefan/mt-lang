@@ -91,6 +91,7 @@ function open(path: str) -> File:
 - `else` is required when the discriminant is not a finite type. `else` is optional only when the discriminant is an enum and every member is covered.
 - The discriminant must be resolvable at the `when`'s lexical position. A `when` whose discriminant depends on a runtime value is a compile error.
 - Arm patterns use the same qualified form as `match` arms (`EnumName.member`, not the unqualified `.member` shorthand). This is consistent with the rest of the language.
+- `when` may appear at module level to conditionally include declarations, imports, or type definitions. Only the chosen branch's declarations are visible in the module scope. The discriminant rules are the same as for statement-level `when`.
 
 A `when` is a block of statements. There is no `when` expression form. The `if` expression form handles the runtime case. The two keywords are distinct so the choice is explicit in source.
 
@@ -111,7 +112,7 @@ inline for field in fields_of(Particle):
     static_assert(field.type == float, "Particle fields must be float")
 
 # inline while: a compile-time-bounded step
-const ROUNDED_UP -> int:
+const NEXT_POW2 -> int:
     var n: int = 1
     inline while n < 1024:
         n = n * 2
@@ -142,6 +143,10 @@ function draw(item: Item):
 - Arm and loop bodies always use the block form (indented statements under `:`), consistent with the rest of the language.
 - `inline` is **only** a compile-time control-flow modifier. It does not mean "inline at the C level" (the C compiler already does that). It does not apply to `if`. It does not apply to declarations.
 
+`inline for`, `inline while`, and `inline match` can appear in any scope — top-level, inside ordinary runtime functions, or inside compile-time blocks. The restriction is on the operand (iterable, condition, or scrutinee), not the enclosing context.
+
+Unlike an `inline while`, a plain `while` inside a block-bodied `const` is interpreter-evaluated: the condition is checked at each iteration, and the total step count need not be known statically. An `inline while` requires the condition to be a compile-time constant and unrolls the body a fixed number of times. Use `inline while` when you want the unrolled structure preserved in the generated output (e.g. unrolled field processing in a runtime function). Use `while` when you only need the result, not the unrolled structure.
+
 ### 4. `type` as a Return Type
 
 A function may return a type when its return value is a compile-time type expression. The return type `type` is a single new built-in name.
@@ -159,8 +164,8 @@ function int_with_bits[N: int]() -> type:
     else:
         static_assert(false, "unsupported bit width")
 
-const Wide = int_with_bits[64]
-const WidePtr = ptr[Wide]
+const Wide: type = int_with_bits[64]
+const WidePtr: type = ptr[Wide]
 ```
 
 - The `type` keyword names the "type of types." It exists only in compile-time contexts.
@@ -176,14 +181,15 @@ Three new builtins, each returning a compile-time-known array of the same handle
 ```mt
 fields_of(T)                      -> array[field_handle, N]
 members_of(E)                     -> array[member_handle, N]      # enums and variants
-attributes_of(T, name?: str)      -> array[attribute_handle, N]
+attributes_of(T)                   -> array[attribute_handle, N]
+attributes_of(T, name)             -> array[attribute_handle, N]
 ```
 
 These extend the existing `field_of(T, name)`, `callable_of(...)`, and `attribute_of(...)` builtins. The one-element form (`field_of(T, "x")`) is the limit of the iterable form. There is one reflection surface, not two.
 
 - `fields_of(T)` returns one `field_handle` per declared field of `T`, in declaration order. The handle exposes `.name` and `.type`. Field-level attributes reachable through `attributes_of(T, name)` are available when needed.
-- `members_of(E)` returns one `member_handle` per enum member or variant arm. The handle exposes `.name`, the enum value (when applicable), and the payload shape (for variants).
-- `attributes_of(T, name?)` returns the attributes on `T`. Without `name`, all attributes. With `name`, only attributes of that kind.
+- `members_of(E)` returns one `member_handle` per enum member or variant arm. The handle exposes `.name` (always), `.value` (for enum members with explicit values), and `.payload_type` (for variant arms with a payload). For enum-only members without payload, only `.name` is set.
+- `attributes_of(T)` returns every attribute on `T`. `attributes_of(T, name)` returns only attributes whose kind matches `name`.
 - The array length `N` is part of the return type. Iteration over a struct of `N` fields is unrolled `N` times by `inline for`.
 - Reflection works on user-defined types and on imported types. It does not work on raw `external` ABI types that are not projected — those are part of the C side, not the Milk Tea side.
 
@@ -225,14 +231,14 @@ A `when` discriminant, an `inline match` scrutinee, and any compile-time express
 | `field_of`, `callable_of`, `attribute_of`, `attribute_arg[T]` | Stay. The new iterable builtins (`fields_of`, `members_of`, `attributes_of`) return the same handle types. One reflection surface. |
 | Generics `[T]` and `[N]` | A generic body can use `when`, `inline for`, `inline match`, and `type`-returning functions. The generic type parameter `T` is in scope as a compile-time type, and the reflection builtins work on it. |
 | `implements` constraints | Orthogonal. Nominal constraints stay the right tool for polymorphism. Reflection and `inline for` are the right tool for ad-hoc structural checks. The two compose inside a generic body. |
-| `static_assert` | Becomes natural inside `when` and `inline for` to express compile-time failure at the right lexical position. |
+| `static_assert` | Becomes natural inside `when`, `inline for`, block-bodied `const`, and `type`-returning functions to express compile-time failure at the right lexical position. |
 | `size_of`, `align_of`, `offset_of` | Already compile-time. Naturally usable inside block-bodied consts and as `when` discriminants. |
 | `defer` | Stays runtime-only. A `defer` inside a block-bodied `const` is a compile error. |
 | `unsafe` | Stays runtime-only. An `unsafe` inside a block-bodied `const` is a compile error. |
 | Foreign functions | Stay runtime-only. A foreign function call inside a compile-time context is a compile error. |
 | `async` and `await` | Stay runtime-only. Compile-time code does not produce `Task[T]` values. |
 | Generated C | `when` emits one branch. `inline for` unrolls. `inline while` unrolls. `inline match` emits one arm. Block-bodied consts reduce to C literals. The generated C stays clean. |
-| `cstr` and `str` | Stay. There is no compile-time string manipulation that produces a `cstr`. A `c"..."` or `"..."` literal inside a block-bodied `const` is a `str` value usable in compile-time string operations (concatenation, length, byte indexing) — but the result is a `str`, not a `cstr`, and cannot be passed to a foreign function. |
+| `cstr` and `str` | Stay. There is no compile-time string manipulation that produces a `cstr`. A `"..."` literal inside a block-bodied `const` is a `str` value usable in compile-time string operations (concatenation, length, byte indexing). A `c"..."` literal produces a `cstr` and is not usable in compile-time string operations. Neither result can be passed to a foreign function. |
 | `match` exhaustiveness | An ordinary runtime `match` on an enum is still required to be exhaustive. `inline match` is not: the unchosen arms are dead code that the compiler drops. |
 | Generic value parameters `[N: int]` | New. Extends mt's existing generic-parameter surface so a generic int can be used in expressions, not just literal slots. Specialization stays a literal at the call site. |
 
@@ -314,7 +320,7 @@ The loop runs once at compile time. The result is a single constant in the outpu
 Milk Tea:
 
 ```mt
-const Wide = int_with_bits[64]
+const Wide: type = int_with_bits[64]
 
 function scale_wide(x: int) -> Wide:
     return Wide(x) * Wide(2)

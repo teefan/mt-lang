@@ -356,6 +356,17 @@ module MilkTea
 
       def resolve_type_param_constraints(type_params)
         type_params.each_with_object({}) do |type_param, constraints|
+          if type_param.is_a?(AST::ValueTypeParam)
+            ensure_non_reserved_type_binding_name!(
+              type_param.name,
+              kind_label: "type parameter",
+              line: type_param.line,
+              column: type_param.column,
+              length: type_param.length,
+            )
+            next
+          end
+
           ensure_non_reserved_type_binding_name!(
             type_param.name,
             kind_label: "type parameter",

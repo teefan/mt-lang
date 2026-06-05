@@ -470,13 +470,16 @@ module MilkTea
 
       all_diagnostics = []
       paths.each do |path|
-        diagnostics = check_single_reporting_all(path, locked: resolution[:locked])
-        next unless diagnostics.any?
+        diagnostics, module_name = check_single_reporting_all(path, locked: resolution[:locked])
 
-        diagnostics = sort_by_location(diagnostics)
-        source = read_source_file(path)
-        diagnostics.each { |d| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?)) }
-        all_diagnostics.concat(diagnostics)
+        if diagnostics.any?
+          diagnostics = sort_by_location(diagnostics)
+          source = read_source_file(path)
+          diagnostics.each { |d| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?)) }
+          all_diagnostics.concat(diagnostics)
+        elsif module_name
+          @out.puts("checked #{path} as #{module_name}")
+        end
       end
 
       return 0 if all_diagnostics.empty?
@@ -498,6 +501,7 @@ module MilkTea
       loader = make_module_loader(path, locked:)
       resolved_path = File.expand_path(path)
       ast = loader.load_file(resolved_path)
+      module_name = ast.module_name.to_s
 
       import_result = loader.send(:imported_modules_for_ast_collecting_errors, ast, importer_path: resolved_path)
       errors = import_result.errors.dup
@@ -517,9 +521,9 @@ module MilkTea
         errors.concat(warnings)
       end
 
-      errors
+      [errors, module_name]
     rescue ModuleLoadError, PackageLockError, SemaError => e
-      [e]
+      [[e], nil]
     end
 
     def sort_by_location(errors)

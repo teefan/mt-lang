@@ -166,7 +166,7 @@ module MilkTea
       end
 
       def cast_numeric_type(type)
-        return type if type.is_a?(Types::Primitive) && type.numeric?
+        return type if type.is_a?(Types::Primitive) && (type.numeric? || type.name == "bool")
         return type.backing_type if type.is_a?(Types::EnumBase) && type.backing_type.numeric?
         return type if char_type?(type)
         return type.backing_type if type.is_a?(Types::EnumBase) && char_type?(type.backing_type)

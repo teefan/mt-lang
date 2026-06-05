@@ -47,9 +47,13 @@ module MilkTea
                            builtin_field_handle_type
                          when "callable_handle"
                            builtin_callable_handle_type
-                         when "attribute_handle"
-                           builtin_attribute_handle_type
-                         else
+                          when "attribute_handle"
+                            builtin_attribute_handle_type
+                          when "member_handle"
+                            builtin_member_handle_type
+                          when "type"
+                            builtin_type_meta_type
+                          else
                            Types::Primitive.new(name)
                          end
         end
@@ -85,6 +89,14 @@ module MilkTea
 
       def builtin_attribute_handle_type
         Types::BUILTIN_ATTRIBUTE_HANDLE_TYPE
+      end
+
+      def builtin_member_handle_type
+        Types::BUILTIN_MEMBER_HANDLE_TYPE
+      end
+
+      def builtin_type_meta_type
+        Types::BUILTIN_TYPE_META_TYPE
       end
 
       def install_builtin_attributes
