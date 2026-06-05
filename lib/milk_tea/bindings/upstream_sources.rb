@@ -160,6 +160,15 @@ module MilkTea
             public/steam/steam_gameserver.h
           ],
         ),
+        Source.new(
+          name: "miniaudio",
+          checkout_root: root.join("third_party/miniaudio-upstream"),
+          repository_url: "https://github.com/mackron/miniaudio.git",
+          revision: "9634bedb5b5a2ca38c1ee7108a9358a4e233f14d",
+          sentinel_paths: %w[
+            miniaudio.h
+          ],
+        ),
       ]
     end
 

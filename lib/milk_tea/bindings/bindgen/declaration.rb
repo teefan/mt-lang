@@ -8,6 +8,7 @@ module MilkTea
 
         def select_record_declarations(nodes)
           selected = {}
+          type_aliases = []
 
           nodes.each_with_index do |node, index|
             record_node, original_name = case node["kind"]
@@ -19,6 +20,16 @@ module MilkTea
 
               record_node = @referenceable_record_declarations_by_id[target[:id]] || @referenceable_record_declarations[target[:name]]
               next unless record_node
+
+              primary_alias = @record_aliases[target[:id]]
+              if primary_alias && primary_alias != node["name"] && allowed_declaration_name?(node["name"])
+                type_alias_name = visible_type_name(node["name"])
+                type_alias_target = visible_type_name(primary_alias)
+                unless type_aliases.any? { |ta| ta[:name] == type_alias_name }
+                  type_aliases << { index:, kind: "type_alias", name: type_alias_name, mapped_type: type_alias_target }
+                end
+                next
+              end
 
               [record_node, node["name"]]
             else
@@ -46,6 +57,8 @@ module MilkTea
             end
           end
 
+          declarations = selected.values + type_aliases
+
           @record_visible_names = {}
           selected.each_value do |declaration|
             tag_name = declaration[:node]["name"]
@@ -53,7 +66,7 @@ module MilkTea
             @record_visible_names[declaration[:name]] = declaration[:name]
             @aggregate_declarations[declaration[:name]] = declaration[:node] if %w[struct union].include?(declaration[:kind])
           end
-          selected.values
+          declarations
         end
 
         def record_complete_definition?(node)

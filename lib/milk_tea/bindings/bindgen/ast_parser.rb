@@ -186,10 +186,12 @@ module MilkTea
             node = queue.shift
             next unless node.is_a?(Hash)
 
-            if node["kind"] == "RecordDecl" && %w[struct union].include?(node["tagUsed"]) && node["name"]
-              existing = indexed[node["name"]]
-              if existing.nil? || (!record_complete_definition?(existing) && record_complete_definition?(node))
-                indexed[node["name"]] = node
+            if node["kind"] == "RecordDecl" && %w[struct union].include?(node["tagUsed"])
+              if node["name"] && !node["name"].empty?
+                existing = indexed[node["name"]]
+                if existing.nil? || (!record_complete_definition?(existing) && record_complete_definition?(node))
+                  indexed[node["name"]] = node
+                end
               end
               indexed_by_id[node["id"]] = node if node["id"]
             end

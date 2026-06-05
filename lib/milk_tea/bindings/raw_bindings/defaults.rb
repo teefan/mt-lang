@@ -1175,6 +1175,19 @@ module MilkTea
             MilkTea::Steamworks.prepare!(root:, env:)
           end,
         ),
+        Binding.new(
+          name: "miniaudio",
+          module_name: "std.c.miniaudio",
+          binding_path: root.join("std/c/miniaudio.mt"),
+          include_directives: ["miniaudio.h"],
+          bindgen_defines: ["MA_NO_FLAC", "MA_NO_MP3"],
+          implementation_defines: ["MINIAUDIO_IMPLEMENTATION", "MA_NO_FLAC", "MA_NO_MP3"],
+          link_libraries: ["dl", "pthread", "m"],
+          declaration_name_prefixes: ["ma_", "MA_"],
+          header_candidates: [
+            root.join("third_party/miniaudio-upstream/miniaudio.h").to_s,
+          ],
+        ),
       ]
     end
   end
