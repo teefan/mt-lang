@@ -353,8 +353,38 @@ module MilkTea
           return nil unless func
           return nil unless func.body_return_type == builtin_type_meta_type
 
+          if type_args && func.ast
+            value = evaluate_type_returning_function_body(func, type_args)
+            return value if value
+          end
+
           builtin_type_meta_type
         end
+      end
+
+      def evaluate_type_returning_function_body(func, type_args)
+        value_params = func.ast.type_params.select { |p| p.is_a?(AST::ValueTypeParam) }
+        return nil if value_params.empty?
+
+        initial_vars = {}
+        value_params.zip(type_args).each do |param, arg|
+          arg_value = arg.value
+          case arg_value
+          when AST::IntegerLiteral
+            initial_vars[param.name] = arg_value.value
+          when AST::TypeRef
+            initial_vars[param.name] = resolve_type_ref(arg_value)
+          else
+            return nil
+          end
+        end
+
+        ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
+        ctx.evaluate_block(func.ast.body, scopes: nil)
+      rescue CompileTime::ReturnValue => e
+        e.value
+      rescue CompileTime::Error => e
+        raise_sema_error(e.message)
       end
 
       def evaluate_has_attribute_call(arguments, scopes:)

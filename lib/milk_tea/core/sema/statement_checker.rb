@@ -753,6 +753,8 @@ module MilkTea
           check_block(chosen_branch.body, scopes:, return_type:, allow_return:)
         elsif statement.else_body
           check_block(statement.else_body, scopes:, return_type:, allow_return:)
+        else
+          raise_sema_error("when discriminant value #{discriminant_value} does not match any branch and no else is provided")
         end
       end
 
