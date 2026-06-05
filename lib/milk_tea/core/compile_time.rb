@@ -18,9 +18,9 @@ module MilkTea
     class BlockContext
       attr_reader :checker
 
-      def initialize(checker)
+      def initialize(checker, initial_variables: nil)
         @checker = checker
-        @variables = {}
+        @variables = initial_variables || {}
       end
 
       def evaluate_block(statements, scopes: nil)
