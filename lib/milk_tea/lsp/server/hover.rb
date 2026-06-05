@@ -170,6 +170,12 @@ module MilkTea
           end
 
           unless signature
+            if token_index && (for_binding_info = resolve_for_binding_hover_info(tokens, token_index))
+              signature = for_binding_info[:signature]
+            end
+          end
+
+          unless signature
             if token_index && match_arm_binding_token?(tokens, token_index)
               if (local_binding = resolve_as_binding_declaration_hover_binding(facts, name, lsp_line + 1, lsp_char + 1))
                 signature = value_hover_signature(local_binding)
@@ -190,7 +196,9 @@ module MilkTea
               before_line: lsp_line + 1,
               before_char: lsp_char + 1,
             )
-            signature = "local #{name}" if local_def
+            if local_def
+              signature = resolve_lexical_local_hover_signature(local_def[:uri], name, local_def[:token])
+            end
           end
 
           return nil unless signature
@@ -861,21 +869,45 @@ module MilkTea
           end
         end
 
+        facts.interfaces.each_value do |interface_binding|
+          interface_binding.methods.each_value do |method_binding|
+            next unless method_binding.name == token.lexeme
+            next unless method_binding.ast.respond_to?(:line) && method_binding.ast.line == token.line
+            next unless method_binding.ast.respond_to?(:column) && method_binding.ast.column == token.column
+
+            return method_binding
+          end
+        end
+
         nil
       end
 
       def method_signature(binding)
-        params_str = format_params(binding.type.params)
-        keyword = case binding.ast.kind
-                  when :mutable
-                    "mutable function"
-                  when :static
-                    "static function"
-                  else
-                    "function"
-                  end
+        if binding.respond_to?(:type) && binding.type
+          params_str = format_params(binding.type.params)
+          keyword = case binding.ast.kind
+                    when :mutable
+                      "mutable function"
+                    when :static
+                      "static function"
+                    else
+                      "function"
+                    end
 
-        "#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
+          "#{keyword} #{binding.name}(#{params_str}) -> #{binding.type.return_type}"
+        else
+          params_str = binding.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
+          keyword = case binding.kind
+                    when :mutable
+                      "mutable function"
+                    when :static
+                      "static function"
+                    else
+                      "function"
+                    end
+
+          "#{keyword} #{binding.name}(#{params_str}) -> #{binding.return_type}"
+        end
       end
 
       def type_hover_signature(name, type)
@@ -1126,6 +1158,109 @@ module MilkTea
           return snapshot
         end
         nil
+      end
+
+      def resolve_for_binding_hover_info(tokens, token_index)
+        tok = tokens[token_index]
+        return nil unless tok&.type == :identifier
+
+        binding_info = for_binding_context_at(tokens, token_index)
+        return nil unless binding_info
+
+        binding_name = binding_info[:name]
+        iterable_text = binding_info[:iterable_text] || "collection"
+
+        {
+          signature: "for binding #{binding_name} (iterating over #{iterable_text})",
+          docs: nil,
+        }
+      end
+
+      def for_binding_context_at(tokens, token_index)
+        return nil unless token_index
+
+        i = token_index - 1
+        passed_in = false
+
+        while i >= 0
+          current = tokens[i]
+          break if current.type == :newline && current.line != tokens[token_index].line
+
+          if current.type == :identifier
+            case current.lexeme
+            when "in"
+              passed_in = true
+            when "for"
+              if passed_in
+                ie = token_index + 1
+                while ie < tokens.length
+                  nt = tokens[ie]
+                  break if nt.type == :newline || nt.type == :colon
+
+                  ie += 1
+                end
+                iterable_text = tokens[(token_index + 1)...ie].map(&:lexeme).join(" ")
+                iterable_text = iterable_text.gsub(/\s+/, " ").strip
+                return {
+                  name: tokens[token_index].lexeme,
+                  iterable_text: iterable_text.empty? ? nil : iterable_text,
+                }
+              end
+            end
+          end
+
+          i -= 1
+        end
+
+        nil
+      end
+
+      def resolve_lexical_local_hover_signature(definition_uri, name, definition_token)
+        kind = nil
+        type_str = nil
+
+        tokens = @workspace.get_tokens(definition_uri)
+        if tokens
+          def_index = tokens.index(definition_token)
+          if def_index
+            prev = previous_non_trivia_token_index(tokens, def_index)
+            if prev && tokens[prev].type == :identifier
+              case tokens[prev].lexeme
+              when "let" then kind = :let
+              when "var" then kind = :var
+              when "const" then kind = :const
+              end
+            end
+
+            if kind
+              next_idx = next_non_trivia_token_index(tokens, def_index + 1)
+              if next_idx && tokens[next_idx].type == :colon
+                type_start = next_non_trivia_token_index(tokens, next_idx + 1)
+                if type_start && tokens[type_start].type == :identifier
+                  type_str = tokens[type_start].lexeme
+                  type_end = type_start
+                  loop do
+                    next_tok_idx = next_non_trivia_token_index(tokens, type_end + 1)
+                    break unless next_tok_idx && %i[identifier lbracket rbracket integer comma].include?(tokens[next_tok_idx].type)
+
+                    type_str += tokens[next_tok_idx].lexeme
+                    type_end = next_tok_idx
+                    break if tokens[type_end].type == :equal
+                  end
+                  type_str = type_str.sub(/\s*=.*/, "").strip
+                end
+              end
+            end
+          end
+        end
+
+        kind ||= :let
+        mutability = kind == :var ? "mutable" : "immutable"
+        if type_str && !type_str.empty?
+          "#{kind} #{name}: #{type_str} (#{mutability})"
+        else
+          "#{kind} #{name} (#{mutability})"
+        end
       end
       end
     end
