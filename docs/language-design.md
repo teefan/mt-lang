@@ -78,7 +78,7 @@ The intended reductions are deliberate:
 
 If a new feature introduces a second ordinary way to express the same concept, the language should delete one of them instead of documenting both.
 
-Declaration metadata should follow the same rule. The declaration-attribute system is described in [Declaration Attributes](declaration-attributes.md). The built-in event system is described in [Event Declarations](event-declarations.md).
+The compile-time evaluation surface is described in [Compile-Time Evaluation](compile-time.md).
 
 ## Overall shape
 
@@ -638,7 +638,7 @@ type FileHandle = ptr[libc.FILE]
 
 ### Generics
 
-Generics are useful, but they must stay boring.
+Generics are useful, but they must stay boring. The compile-time surface is documented in [Compile-Time Evaluation](compile-time.md); generic bodies participate in that surface by using `when`, `inline for`, `inline match`, `type`-returning functions, and block-bodied `const` initializers (`const X -> T: ...`) at the lexical positions where the compile-time rules allow them.
 
 Allowed in v1:
 
@@ -651,9 +651,7 @@ Allowed in v1:
 
 Not allowed in v1:
 
-- structural or inferred generic constraints
-- type-level computation
-- arbitrary compile-time execution
+- structural or inferred generic constraints (use `implements` for nominal constraints; use reflection and `inline for` for ad-hoc structural checks)
 
 Example:
 
