@@ -711,7 +711,122 @@ function nullability_demo() -> int:
     return 1
 
 # ---------------------------------------------------------------------------
-# 21  Entrypoint
+# 21  Compile-time evaluation
+# ---------------------------------------------------------------------------
+
+# --- 21a: block-bodied const with `->`
+# The block body is a sequence of statements evaluated at compile time.
+# The block's `return` produces the const value.
+const NEXT_POW2_ABOVE_1000 -> int:
+    var n: int = 1
+    while n < 1024:
+        n = n * 2
+    return n
+
+# --- 21b: FNV-1a hash of a constant byte array, computed at compile time
+const FNV_OFFSET: uint = 0x811c9dc5
+const FNV_PRIME: uint = 0x01000193
+
+const HELLO: array[ubyte, 5] = (0x68, 0x65, 0x6c, 0x6c, 0x6f)
+const FNV_HASH -> uint:
+    var h = FNV_OFFSET
+    for b in HELLO:
+        h = (h ^ b) * FNV_PRIME
+    return h
+
+# --- 21c: when for compile-time dispatch
+enum TargetBackend: ubyte
+    gl = 1
+    metal = 2
+    vulkan = 3
+
+const TARGET: TargetBackend = TargetBackend.gl
+
+function backend_label() -> str:
+    when TARGET:
+        TargetBackend.gl:
+            return "OpenGL"
+        TargetBackend.metal:
+            return "Metal"
+        TargetBackend.vulkan:
+            return "Vulkan"
+
+# --- 21d: enum used by inline match and members_of below
+enum Palette: ubyte
+    red = 1
+    green = 2
+    blue = 3
+
+# --- 21e: inline match for compile-time dispatch (alternative to when)
+const FAVORITE_COLOR: Palette = Palette.red
+
+function favorite_label() -> str:
+    inline match FAVORITE_COLOR:
+        Palette.red:
+            return "warm"
+        Palette.green:
+            return "cool"
+        Palette.blue:
+            return "cool"
+
+# --- 21f: inline for over a struct's fields (reflection: fields_of)
+struct Particle:
+    x: float
+    y: float
+    z: float
+
+function all_fields_floats() -> bool:
+    inline for field in fields_of(Particle):
+        if field.type != float:
+            return false
+    return true
+
+# --- 21g: inline while with a compile-time-bounded step
+const ROUNDED_UP -> int:
+    var n: int = 1
+    inline while n < 1024:
+        n = n * 2
+    return n
+
+# --- 21h: members_of over an enum (reflection: members_of)
+function color_count() -> int:
+    var count: int = 0
+    inline for member in members_of(Palette):
+        let _name = member.name
+        count += 1
+    return count
+
+# --- 21i: type as a return type (picking a primitive by width)
+function int_with_bits[N: int]() -> type:
+    if N == 8:
+        return byte
+    else if N == 16:
+        return short
+    else if N == 32:
+        return int
+    else if N == 64:
+        return long
+    else:
+        static_assert(false, "unsupported bit width")
+
+const Wide: type = int_with_bits[64]
+const WidePtr: type = ptr[Wide]
+
+# --- 21j: comptime demo function called from main
+function comptime_demo() -> int:
+    let pow2 = NEXT_POW2_ABOVE_1000
+    let hash = FNV_HASH
+    let label = backend_label()
+    let all_float = all_fields_floats()
+    let rounded = ROUNDED_UP
+    let fav = favorite_label()
+    let colors = color_count()
+    let _label = label
+    let _fav = fav
+    return pow2 + int<-hash + int<-(all_float) + rounded + colors
+
+# ---------------------------------------------------------------------------
+# 22  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -722,6 +837,7 @@ function main() -> int:
     total += builtins_demo()
     total += proc_demo()
     total += generics_demo()
+    total += comptime_demo()
 
     unsafe_demo()
     emit_ready()

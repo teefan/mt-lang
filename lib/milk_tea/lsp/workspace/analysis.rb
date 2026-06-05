@@ -134,16 +134,20 @@ module MilkTea
           nil
         end
 
-        def analyze_document(uri)
-          path = uri_to_path(uri)
-          snapshot = if path && File.file?(path)
-                     parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
-                     ast = parse_result.ast
-                     # Fall back to the last successful facts so completions/hover still
-                     # work when the user is mid-edit and the file does not parse/check.
-                     return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+         def analyze_document(uri)
+           path = uri_to_path(uri)
+           snapshot = if path && File.file?(path)
+                      parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
+                      ast = parse_result.ast
+                      # Fall back to the last successful facts so completions/hover still
+                      # work when the user is mid-edit and the file does not parse/check.
+                      return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                     resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
+                      # Store the AST so that get_ast returns the same AST used for
+                      # binding resolution, ensuring object_id-based lookups match.
+                      @ast_cache[uri] = ast
+
+                      resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
                      return nil unless resolution.ok?
                      effective_platform = effective_platform_for_path(path)
                      ensure_root_platform_compatible!(path, effective_platform)

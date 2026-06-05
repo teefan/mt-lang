@@ -273,6 +273,9 @@ module MilkTea
               local_env[:scopes] = scopes_with_refinements(local_env[:scopes], false_refinements)
             end
           when AST::MatchStmt
+            if statement.inline
+              # inline match - skip lowering
+            else
             scrutinee_type = infer_expression_type(statement.expression, env: local_env)
             expression_setup, prepared_expression, expression_cleanups = prepare_expression_with_cleanups(
               statement.expression,
@@ -346,12 +349,22 @@ module MilkTea
               lowered << IR::SwitchStmt.new(expression:, cases:, exhaustive: true)
             end
             lowered.concat(expression_cleanups.flat_map(&:itself))
+            end
           when AST::StaticAssert
             lowered << lower_static_assert(statement, env: local_env)
           when AST::ForStmt
-            lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
+            if statement.inline
+              # inline for - body was already type-checked; skip lowering
+              # the unrolled results are inlined by the sema phase
+            else
+              lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
+            end
           when AST::WhileStmt
-            lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
+            if statement.inline
+              # inline while - skip
+            else
+              lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
+            end
           when AST::PassStmt
             nil
           when AST::BreakStmt
@@ -438,6 +451,31 @@ module MilkTea
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             else
               lowered.concat(prepared_cleanups.flat_map(&:itself))
+            end
+          when AST::WhenStmt
+            discriminant = compile_time_const_value(statement.discriminant)
+            chosen_branch = statement.branches.find do |branch|
+              discriminant == compile_time_const_value(branch.pattern)
+            end
+
+            if chosen_branch
+              lowered.concat(lower_block(
+                chosen_branch.body,
+                env: local_env,
+                active_defers:,
+                return_type:,
+                loop_flow:,
+                allow_return:,
+              ))
+            elsif statement.else_body
+              lowered.concat(lower_block(
+                statement.else_body,
+                env: local_env,
+                active_defers:,
+                return_type:,
+                loop_flow:,
+                allow_return:,
+              ))
             end
           else
             raise LoweringError, "unsupported statement #{statement.class.name}"

@@ -76,7 +76,11 @@ module MilkTea
             check_block(statement.else_body, scopes: scopes_with_refinements(scopes, false_refinements), return_type:, allow_return:) if statement.else_body
             return false_refinements if statement.else_body.nil? && branch_bodies_terminate.all?
           when AST::MatchStmt
-            check_match_stmt(statement, scopes:, return_type:, allow_return:)
+            if statement.inline
+              check_inline_match_stmt(statement, scopes:, return_type:, allow_return:)
+            else
+              check_match_stmt(statement, scopes:, return_type:, allow_return:)
+            end
           when AST::UnsafeStmt
             @unsafe_statement_lines << statement.line
             begin
@@ -89,9 +93,15 @@ module MilkTea
           when AST::StaticAssert
             check_static_assert(statement, scopes:)
           when AST::ForStmt
-            check_for_stmt(statement, scopes:, return_type:, allow_return:)
+            if statement.inline
+              check_inline_for_stmt(statement, scopes:, return_type:, allow_return:)
+            else
+              check_for_stmt(statement, scopes:, return_type:, allow_return:)
+            end
           when AST::WhileStmt
-            if statement.condition.is_a?(AST::ErrorExpr)
+            if statement.inline
+              check_inline_while_stmt(statement, scopes:, return_type:, allow_return:)
+            elsif statement.condition.is_a?(AST::ErrorExpr)
               with_loop do
                 check_block(statement.body, scopes:, return_type:, allow_return:)
               end
@@ -141,6 +151,8 @@ module MilkTea
               infer_expression(statement.expression, scopes:)
             end
             return consuming_foreign_call_refinements(statement.expression, scopes:)
+          when AST::WhenStmt
+            check_when_stmt(statement, scopes:, return_type:, allow_return:)
           else
             raise_sema_error("unsupported statement #{statement.class.name}")
           end
@@ -727,6 +739,87 @@ module MilkTea
         raise_sema_error("range bounds must use matching integer types, got #{start_type} and #{stop_type}") unless start_type == stop_type
 
         start_type
+      end
+
+      def check_when_stmt(statement, scopes:, return_type:, allow_return:)
+        discriminant_value = evaluate_when_discriminant(statement.discriminant)
+
+        chosen_branch = statement.branches.find do |branch|
+          pattern_value = evaluate_compile_time_const_value(branch.pattern, scopes:)
+          discriminant_value == pattern_value
+        end
+
+        if chosen_branch
+          check_block(chosen_branch.body, scopes:, return_type:, allow_return:)
+        elsif statement.else_body
+          check_block(statement.else_body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def evaluate_when_discriminant(expression)
+        value = evaluate_compile_time_const_value(expression, scopes: [])
+        raise_sema_error("when discriminant must be a compile-time constant", expression:) if value.nil?
+
+        value
+      end
+
+      def check_inline_for_stmt(statement, scopes:, return_type:, allow_return:)
+        iterable = evaluate_compile_time_const_value(statement.iterables.first, scopes:)
+        raise_sema_error("inline for iterable must be a compile-time constant") unless iterable.is_a?(Array)
+        raise_sema_error("inline for iterable is empty") if iterable.empty?
+
+        loop_var_name = statement.bindings.first.name
+        element = iterable.first
+        element_type = if element.is_a?(Types::FieldHandle)
+                         builtin_field_handle_type
+                       elsif element.is_a?(Types::CallableHandle)
+                         builtin_callable_handle_type
+                       elsif element.is_a?(Types::AttributeHandle)
+                         builtin_attribute_handle_type
+                       elsif element.is_a?(Types::MemberHandle)
+                         builtin_member_handle_type
+                       elsif element.is_a?(Types::StructHandle)
+                         builtin_struct_handle_type
+                       else
+                         @types.fetch("int")
+                       end
+
+        with_nested_scope(scopes) do |loop_scopes|
+          ensure_non_reserved_primitive_name!(loop_var_name, kind_label: "for binding", line: statement.bindings.first.line, column: statement.bindings.first.column)
+          current_actual_scope(loop_scopes)[loop_var_name] = value_binding(
+            name: loop_var_name,
+            type: element_type,
+            mutable: false,
+            kind: :let,
+            id: @preassigned_local_binding_ids[statement.bindings.first.object_id],
+          )
+          with_loop do
+            check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
+          end
+        end
+      end
+
+      def check_inline_while_stmt(statement, scopes:, return_type:, allow_return:)
+        condition = evaluate_compile_time_const_value(statement.condition, scopes:)
+        raise_sema_error("inline while condition must be a compile-time constant") if condition.nil?
+
+        with_loop do
+          check_block(statement.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_inline_match_stmt(statement, scopes:, return_type:, allow_return:)
+        scrutinee = evaluate_compile_time_const_value(statement.expression, scopes:)
+        raise_sema_error("inline match scrutinee must be a compile-time constant") if scrutinee.nil?
+
+        chosen_arm = statement.arms.find do |arm|
+          pattern_value = evaluate_compile_time_const_value(arm.pattern, scopes:)
+          scrutinee == pattern_value
+        end
+
+        if chosen_arm
+          check_block(chosen_arm.body, scopes:, return_type:, allow_return:)
+        end
       end
 
     end

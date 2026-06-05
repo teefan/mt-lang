@@ -6,10 +6,37 @@ module MilkTea
 
 
       def lower_constants
-        @analysis.ast.declarations.grep(AST::ConstDecl).map do |decl|
+        @analysis.ast.declarations.grep(AST::ConstDecl).filter_map do |decl|
           type = @values.fetch(decl.name).type
-          value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+          const_value = @values.fetch(decl.name).const_value
+
+          next if type == Types::BUILTIN_TYPE_META_TYPE
+
+          needs_direct_literal = decl.block_body || decl.value.is_a?(AST::ExpressionList)
+
+          value = if needs_direct_literal && const_value
+                    lower_const_value_literal(type, const_value)
+                  elsif needs_direct_literal
+                    IR::IntegerLiteral.new(value: 0, type:)
+                  else
+                    lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+                  end
           IR::Constant.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
+        end
+      end
+
+      def lower_const_value_literal(type, const_value)
+        case const_value
+        when Integer
+          IR::IntegerLiteral.new(value: const_value, type:)
+        when Float
+          IR::FloatLiteral.new(value: const_value, type:)
+        when String
+          IR::StringLiteral.new(value: const_value, type:, cstring: false)
+        when TrueClass, FalseClass
+          IR::BooleanLiteral.new(value: const_value, type:)
+        else
+          IR::IntegerLiteral.new(value: 0, type:)
         end
       end
 

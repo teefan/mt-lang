@@ -10,17 +10,11 @@ module MilkTea
           with_error_node(decl) do
             case decl
             when AST::ConstDecl
-              binding = @top_level_values.fetch(decl.name)
-              validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
-              validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
-              actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
-              ensure_assignable!(
-                actual_type,
-                binding.type,
-                "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
-                expression: decl.value,
-                line: decl.line,
-              )
+              if decl.block_body
+                check_block_body_const(decl)
+              else
+                check_expr_const(decl)
+              end
             when AST::VarDecl
               binding = @top_level_values.fetch(decl.name)
               if decl.value
@@ -40,6 +34,35 @@ module MilkTea
               end
             end
           end
+        end
+      end
+
+      def check_expr_const(decl)
+        binding = @top_level_values.fetch(decl.name)
+        validate_consuming_foreign_expression!(decl.value, scopes: [], root_allowed: false)
+        validate_hoistable_foreign_expression!(decl.value, scopes: [], root_hoistable: false)
+
+        if binding.type == builtin_type_meta_type
+          evaluate_compile_time_const_value(decl.value)
+          return
+        end
+
+        actual_type = infer_expression(decl.value, scopes: [], expected_type: binding.type)
+        ensure_assignable!(
+          actual_type,
+          binding.type,
+          "cannot assign #{actual_type} to constant #{decl.name}: expected #{binding.type}",
+          expression: decl.value,
+          line: decl.line,
+        )
+      end
+
+      def check_block_body_const(decl)
+        return unless decl.block_body
+
+        last_stmt = decl.block_body.last
+        unless last_stmt.is_a?(AST::ReturnStmt) && last_stmt.value
+          raise_sema_error("block-bodied const must end with a return statement")
         end
       end
 
@@ -76,6 +99,8 @@ module MilkTea
           validate_static_storage_initializer!(expression.else_expression, scopes:)
         when AST::UnsafeExpr
           validate_static_storage_initializer!(expression.expression, scopes:)
+        when AST::ExpressionList
+          expression.elements.each { |element| validate_static_storage_initializer!(element, scopes:) }
         when AST::Specialization
           if expression.callee.is_a?(AST::Identifier)
             return if expression.callee.name == "zero"
@@ -161,6 +186,10 @@ module MilkTea
         raise_sema_error("cyclic constant value dependency involving #{name}") if @evaluating_const_values.include?(name)
 
         decl = @const_declarations.fetch(name)
+        if decl.block_body
+          return evaluate_block_body_const(decl, name)
+        end
+
         if decl.value.is_a?(AST::ErrorExpr)
           @evaluated_const_values[name] = true
           return nil
@@ -170,6 +199,19 @@ module MilkTea
         value = evaluate_compile_time_const_value(decl.value)
         @evaluating_const_values.pop
 
+        set_const_value(name, value)
+        value
+      end
+
+      def evaluate_block_body_const(decl, name)
+        @evaluating_const_values << name
+        value = evaluate_compile_time_block(decl.block_body)
+        @evaluating_const_values.pop
+        set_const_value(name, value)
+        value
+      end
+
+      def set_const_value(name, value)
         binding = @top_level_values.fetch(name)
         @top_level_values[name] = ValueBinding.new(
           id: binding.id,
@@ -181,7 +223,16 @@ module MilkTea
           const_value: value,
         )
         @evaluated_const_values[name] = true
-        value
+      end
+
+      def evaluate_compile_time_block(statements, scopes: nil)
+        ctx = CompileTime::BlockContext.new(self)
+        result = ctx.evaluate_block(statements, scopes:)
+        result
+      rescue CompileTime::ReturnValue => e
+        e.value
+      rescue CompileTime::Error => e
+        raise_sema_error(e.message)
       end
 
       def evaluate_compile_time_const_value(expression, scopes: nil)
@@ -219,21 +270,90 @@ module MilkTea
           case expression.callee.name
           when "field_of"
             evaluate_field_of_call(expression.arguments, scopes: scopes || [])
+          when "fields_of"
+            evaluate_fields_of_call(expression.arguments)
           when "callable_of"
             evaluate_callable_of_call(expression.arguments, scopes: scopes || [])
           when "has_attribute"
             evaluate_has_attribute_call(expression.arguments, scopes: scopes || [])
           when "attribute_of"
             evaluate_attribute_of_call(expression.arguments, scopes: scopes || [])
+          when "members_of"
+            evaluate_members_of_call(expression.arguments)
+          when "attributes_of"
+            evaluate_attributes_of_call(expression.arguments)
           else
-            nil
+            evaluate_type_returning_call(expression, scopes:)
           end
         when AST::Specialization
           if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
             evaluate_attribute_arg_call(expression.arguments, scopes: scopes || [])
+          else
+            evaluate_type_returning_call(expression, scopes:)
           end
         else
           nil
+        end
+      end
+
+      def evaluate_type_returning_call(expression, scopes:)
+        callee_name = nil
+        type_args = nil
+
+        if expression.is_a?(AST::Call)
+          if expression.callee.is_a?(AST::Identifier)
+            callee_name = expression.callee.name
+          end
+        elsif expression.is_a?(AST::Specialization)
+          if expression.callee.is_a?(AST::Identifier)
+            callee_name = expression.callee.name
+            type_args = expression.arguments
+          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
+            callee_name = expression.callee.callee.name
+            type_args = expression.callee.arguments
+          end
+        end
+
+        return nil unless callee_name
+
+        case callee_name
+        when "ptr", "const_ptr", "ref", "span", "array", "str_buffer", "Task"
+          evaluated_args = (type_args || []).map do |arg|
+            value = arg.value
+            if value.is_a?(AST::Identifier)
+              evaluate_compile_time_const_value(value, scopes:)
+            elsif value.is_a?(AST::TypeRef)
+              resolve_type_ref(value)
+            elsif value.is_a?(AST::IntegerLiteral)
+              Types::LiteralTypeArg.new(value.value)
+            else
+              nil
+            end
+          end
+          return nil if evaluated_args.any?(&:nil?)
+
+          case callee_name
+          when "ptr"
+            pointer_to(evaluated_args.first)
+          when "const_ptr"
+            const_pointer_to(evaluated_args.first)
+          when "ref"
+            reference_to(evaluated_args.first)
+          when "span"
+            Types::Span.new(evaluated_args.first)
+          when "array"
+            Types::GenericInstance.new("array", evaluated_args)
+          when "str_buffer"
+            Types::GenericInstance.new("str_buffer", evaluated_args)
+          when "Task"
+            Types::Task.new(evaluated_args.first)
+          end
+        else
+          func = @top_level_functions[callee_name]
+          return nil unless func
+          return nil unless func.body_return_type == builtin_type_meta_type
+
+          builtin_type_meta_type
         end
       end
 
@@ -281,6 +401,65 @@ module MilkTea
         return value if value.is_a?(Types::FieldHandle) || value.is_a?(Types::CallableHandle)
 
         nil
+      end
+
+      def evaluate_fields_of_call(arguments)
+        raise_sema_error("fields_of expects 1 argument") unless arguments.length == 1
+
+        type = resolve_type_expression(arguments.first.value)
+        raise_sema_error("fields_of requires a type argument") unless type
+
+        handle = struct_handle_for_type(type)
+        raise_sema_error("fields_of requires a struct type, got #{type}") unless handle
+
+        handle.declaration.fields.map do |field|
+          Types::FieldHandle.new(handle, field.name, field)
+        end
+      end
+
+      def evaluate_members_of_call(arguments)
+        raise_sema_error("members_of expects 1 argument") unless arguments.length == 1
+
+        type = resolve_type_expression(arguments.first.value)
+        raise_sema_error("members_of requires a type argument") unless type
+
+        unless type.is_a?(Types::Enum) || type.is_a?(Types::Flags)
+          raise_sema_error("members_of requires an enum or flags type, got #{type}")
+        end
+
+        type.members.map do |member_name, member_value|
+          Types::MemberHandle.new(nil, member_name, member_value)
+        end
+      end
+
+      def evaluate_attributes_of_call(arguments)
+        raise_sema_error("attributes_of expects 1 or 2 arguments") unless (1..2).include?(arguments.length)
+
+        target = evaluate_reflection_target_argument(arguments.first.value, [])
+
+        if arguments.length == 2
+          attribute_binding = resolve_attribute_name_argument(arguments[1].value)
+          application = find_attribute_application(target, attribute_binding)
+          return [] unless application
+
+          [Types::AttributeHandle.new(
+            attribute_binding.name,
+            attribute_binding.module_name,
+            target,
+            attribute_binding.params,
+            application.argument_values,
+          )]
+        else
+          resolved_attribute_applications_for_target(target).map do |application|
+            Types::AttributeHandle.new(
+              application.binding.name,
+              application.binding.module_name,
+              target,
+              application.binding.params,
+              application.argument_values,
+            )
+          end
+        end
       end
 
       def evaluate_enum_member_const_value(expression, enum_type:, member_values:)

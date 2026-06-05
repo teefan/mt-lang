@@ -208,6 +208,12 @@ module MilkTea
         raise error(visibility_token, "public is not allowed on static_assert") if visibility == :public
 
         parse_static_assert
+      elsif check_when_start?
+        reject_attributes!(attributes)
+        raise error(visibility_token, "public is not allowed on when") if visibility == :public
+
+        advance
+        parse_when_stmt
       else
         message = visibility == :public ? "expected exportable declaration after public" : "expected declaration"
         raise error(peek, message)
@@ -335,6 +341,10 @@ module MilkTea
       elsif match(:external)
         reject_attributes!(attributes)
         parse_extern_decl(attributes:)
+      elsif check_when_start?
+        reject_attributes!(attributes)
+        advance
+        parse_when_stmt
       else
         raise error(peek, raw_module_declaration_error_message(peek))
       end
@@ -362,6 +372,12 @@ module MilkTea
       name = nil
       type = nil
       name = consume_name("expected constant name").lexeme
+      if match(:arrow)
+        type = parse_type_ref
+        body = parse_block
+        return AST::ConstDecl.new(name:, type:, value: nil, block_body: body, visibility:, line:)
+      end
+
       consume(:colon, "expected ':' after constant name")
       type = parse_type_ref
       consume(:equal, "expected '=' after constant type")
@@ -440,7 +456,7 @@ module MilkTea
         end
       end
       consume(:rbracket, "expected ']' after attribute targets")
-      name_token = consume_name("expected attribute name")
+      name_token = consume_name_allowing_keywords("expected attribute name")
       params = check(:lparen) ? parse_signature_params : []
       consume_end_of_statement
       AST::AttributeDecl.new(name: name_token.lexeme, targets:, params:, visibility:, line:, column: name_token.column)
@@ -803,7 +819,7 @@ module MilkTea
     end
 
     def consume_attribute_name_component(message)
-      consume_name(message)
+      consume_name_allowing_keywords(message)
     end
 
     def parse_struct_layout_attributes(attributes)
@@ -916,14 +932,25 @@ module MilkTea
       params = parse_comma_separated_until(:rbracket) do
         name_token = consume_name("expected type parameter name")
         name = name_token.lexeme
-        constraints = parse_type_param_constraints
-        AST::TypeParam.new(
-          name:,
-          constraints:,
-          line: name_token.line,
-          column: name_token.column,
-          length: name.length,
-        )
+        if match(:colon)
+          value_type = parse_type_ref
+          AST::ValueTypeParam.new(
+            name:,
+            type: value_type,
+            line: name_token.line,
+            column: name_token.column,
+            length: name.length,
+          )
+        else
+          constraints = parse_type_param_constraints
+          AST::TypeParam.new(
+            name:,
+            constraints:,
+            line: name_token.line,
+            column: name_token.column,
+            length: name.length,
+          )
+        end
       end
 
       consume(:rbracket, "expected ']' after type parameters")
@@ -1050,6 +1077,12 @@ module MilkTea
         parse_return_stmt
       elsif match(:defer)
         parse_defer_stmt
+      elsif check_inline_stmt_start?
+        advance
+        parse_inline_stmt
+      elsif check_when_start?
+        advance
+        parse_when_stmt
       else
         parse_assignment_or_expression_stmt
       end
@@ -1376,6 +1409,102 @@ module MilkTea
       end
     end
 
+    def parse_when_stmt
+      token = previous
+      line = token.line
+      discriminant = parse_expression
+      branches = parse_match_arms([])
+      else_body = if check(:else)
+        if check_next(:newline) || check_next(:indent)
+          parse_else_branch_body
+        end
+      end
+      AST::WhenStmt.new(discriminant:, branches:, else_body:, line:, column: token.column, length: token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(e, recovered_body, header_type: :when) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_inline_stmt
+      token = previous
+      if match(:for)
+        parse_inline_for_stmt(token)
+      elsif match(:while)
+        parse_inline_while_stmt(token)
+      elsif match(:match)
+        parse_inline_match_stmt(token)
+      else
+        raise error(peek, "expected for, while, or match after inline")
+      end
+    end
+
+    def parse_inline_for_stmt(_inline_token)
+      line = previous.line
+      bindings = []
+      iterables = nil
+      loop do
+        name_token = consume_name("expected loop variable name")
+        bindings << AST::ForBinding.new(name: name_token.lexeme, line: name_token.line, column: name_token.column)
+        break unless match(:comma)
+      end
+      consume(:in, "expected 'in' in for loop")
+      iterables = [parse_expression]
+      iterables << parse_expression while match(:comma)
+      body = parse_block
+      AST::ForStmt.new(bindings:, iterables:, body:, inline: true, line:, column: bindings.first.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return recovery_error_block_stmt(e, recovered_body, header_type: :for) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_inline_while_stmt(inline_token)
+      line = inline_token.line
+      condition = parse_expression
+      body = parse_block
+      AST::WhileStmt.new(condition:, body:, inline: true, line:, column: inline_token.column, length: inline_token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_body = synchronize_to_statement_boundary
+      return AST::WhileStmt.new(
+        condition: condition || recovery_error_expr(e),
+        body: recovered_body,
+        line:,
+        column: inline_token.column,
+        length: inline_token.lexeme.length,
+      ) if recovered_body
+
+      recovery_error_stmt(e)
+    end
+
+    def parse_inline_match_stmt(inline_token)
+      token = previous
+      line = token.line
+      arms = []
+      expression = parse_expression
+      arms = parse_match_arms(arms)
+      AST::MatchStmt.new(expression:, arms:, inline: true, line:, column: token.column, length: token.lexeme.length)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      recovered_arms = synchronize_to_match_arm_boundary
+      return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, inline: true, line:, column: token.column, length: token.lexeme.length) if recovered_arms
+
+      recovery_error_stmt(e)
+    end
+
     def parse_assignment_or_expression_stmt
       line = peek.line
       expression = parse_expression
@@ -1575,7 +1704,7 @@ module MilkTea
 
       loop do
         if match(:dot)
-          member_token = consume_name("expected member name after '.'")
+          member_token = consume_name_allowing_keywords("expected member name after '.'")
           expression = AST::MemberAccess.new(
             receiver: expression,
             member: member_token.lexeme,
@@ -2057,8 +2186,32 @@ module MilkTea
       consume(:identifier, message)
     end
 
+    def consume_name_allowing_keywords(message)
+      if check(:identifier)
+        advance
+      elsif keyword_token?(peek)
+        advance
+      else
+        raise error(peek, message)
+      end
+    end
+
     def keyword_token?(token)
       token && Token::KEYWORDS.key?(token.lexeme)
+    end
+
+    def check_inline_stmt_start?
+      return false unless check(:identifier) && peek.lexeme == "inline"
+
+      next_idx = @current + 1
+      return false if next_idx >= @tokens.length
+
+      next_token = @tokens[next_idx]
+      %i[for while match].include?(next_token.type)
+    end
+
+    def check_when_start?
+      check(:identifier) && peek.lexeme == "when"
     end
 
     def check(type)
@@ -2086,7 +2239,7 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array reinterpret span zero].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr ref].include?(expression.name)
     end
 
     def parse_diagnostic_hint?(error)

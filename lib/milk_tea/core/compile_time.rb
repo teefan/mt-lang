@@ -4,6 +4,179 @@ require_relative "compile_time/layout"
 
 module MilkTea
   module CompileTime
+    class ReturnValue < StandardError
+      attr_reader :value
+
+      def initialize(value)
+        @value = value
+        super("return #{value.inspect}")
+      end
+    end
+
+    class Error < StandardError; end
+
+    class BlockContext
+      attr_reader :checker
+
+      def initialize(checker)
+        @checker = checker
+        @variables = {}
+      end
+
+      def evaluate_block(statements, scopes: nil)
+        result = nil
+
+        statements.each do |statement|
+          case statement
+          when AST::LocalDecl
+            result = evaluate_local_decl(statement, scopes:)
+          when AST::ReturnStmt
+            value = statement.value ? evaluate_expression(statement.value, scopes:) : nil
+            raise ReturnValue.new(value)
+          when AST::WhileStmt
+            result = evaluate_while(statement, scopes:)
+          when AST::ForStmt
+            result = evaluate_for(statement, scopes:)
+          when AST::Assignment
+            result = evaluate_assignment(statement, scopes:)
+          when AST::IfStmt
+            result = evaluate_if(statement, scopes:)
+          when AST::ExpressionStmt
+            evaluate_expression(statement.expression, scopes:)
+          when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
+            # no-op at compile time
+          else
+            result = nil
+          end
+        end
+
+        result
+      end
+
+      private
+
+      def evaluate_expression(expression, scopes:)
+        case expression
+        when AST::Identifier
+          return @variables[expression.name] if @variables.key?(expression.name)
+          @checker.send(:evaluate_compile_time_const_value, expression, scopes:)
+        else
+          @checker.send(:evaluate_compile_time_const_value, expression, scopes:)
+        end
+      end
+
+      def evaluate_local_decl(decl, scopes:)
+        return nil unless decl.value
+
+        value = evaluate_expression(decl.value, scopes:)
+        @variables[decl.name] = value
+        value
+      end
+
+      def evaluate_assignment(assignment, scopes:)
+        value = evaluate_expression(assignment.value, scopes:)
+        case assignment.target
+        when AST::Identifier
+          @variables[assignment.target.name] = value
+        end
+        value
+      end
+
+      def evaluate_while(statement, scopes:)
+        result = nil
+        iterations = 0
+        max_iterations = 10_000
+
+        while iterations < max_iterations
+          condition = evaluate_expression(statement.condition, scopes:)
+          break unless condition
+          break unless CompileTime.boolean_value?(condition)
+
+          statement.body.each do |body_stmt|
+            case body_stmt
+            when AST::ReturnStmt
+              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
+              raise ReturnValue.new(value)
+            when AST::Assignment
+              evaluate_assignment(body_stmt, scopes:)
+            when AST::ExpressionStmt
+              evaluate_expression(body_stmt.expression, scopes:)
+            end
+          end
+          iterations += 1
+        end
+
+        raise Error, "compile-time while loop exceeded iteration limit" if iterations >= max_iterations
+
+        result
+      end
+
+      def evaluate_for(statement, scopes:)
+        iterable = evaluate_expression(statement.iterable, scopes:)
+        return nil unless iterable.is_a?(Array)
+
+        result = nil
+        loop_var_name = statement.binding.name
+
+        iterable.each do |element|
+          @variables[loop_var_name] = element
+          statement.body.each do |body_stmt|
+            case body_stmt
+            when AST::ReturnStmt
+              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
+              raise ReturnValue.new(value)
+            when AST::Assignment
+              evaluate_assignment(body_stmt, scopes:)
+            when AST::ExpressionStmt
+              evaluate_expression(body_stmt.expression, scopes:)
+            when AST::IfStmt
+              result = evaluate_if(body_stmt, scopes:)
+            when AST::WhileStmt
+              result = evaluate_while(body_stmt, scopes:)
+            end
+          end
+        end
+
+        result
+      end
+
+      def evaluate_if(statement, scopes:)
+        statement.branches.each do |branch|
+          condition = evaluate_expression(branch.condition, scopes:)
+          if condition && (condition == true || condition.is_a?(Numeric) && condition != 0)
+            branch.body.each do |body_stmt|
+              case body_stmt
+              when AST::ReturnStmt
+                value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
+                raise ReturnValue.new(value)
+              when AST::Assignment
+                evaluate_assignment(body_stmt, scopes:)
+              when AST::ExpressionStmt
+                evaluate_expression(body_stmt.expression, scopes:)
+              end
+            end
+            return condition
+          end
+        end
+
+        if statement.else_body
+          statement.else_body.each do |body_stmt|
+            case body_stmt
+            when AST::ReturnStmt
+              value = body_stmt.value ? evaluate_expression(body_stmt.value, scopes:) : nil
+              raise ReturnValue.new(value)
+            when AST::Assignment
+              evaluate_assignment(body_stmt, scopes:)
+            when AST::ExpressionStmt
+              evaluate_expression(body_stmt.expression, scopes:)
+            end
+          end
+        end
+
+        nil
+      end
+    end
+
     module_function
 
     def evaluate(expression, resolve_identifier:, resolve_member_access:, resolve_type_ref: nil, resolve_call: nil)
@@ -50,6 +223,8 @@ module MilkTea
         when AST::MemberAccess
           @resolve_member_access&.call(expression)
         when AST::Call
+          @resolve_call&.call(expression)
+        when AST::Specialization
           @resolve_call&.call(expression)
         when AST::SizeofExpr
           type = resolve_layout_type(expression.type)

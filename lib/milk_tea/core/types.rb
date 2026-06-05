@@ -15,7 +15,7 @@ module MilkTea
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
       ptr const_ptr ref span array str_buffer Task Option Result
-      struct_handle field_handle callable_handle attribute_handle
+      struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
 
@@ -140,6 +140,29 @@ module MilkTea
     BUILTIN_FIELD_HANDLE_TYPE = ReflectionHandleType.new("field_handle")
     BUILTIN_CALLABLE_HANDLE_TYPE = ReflectionHandleType.new("callable_handle")
     BUILTIN_ATTRIBUTE_HANDLE_TYPE = ReflectionHandleType.new("attribute_handle")
+    BUILTIN_MEMBER_HANDLE_TYPE = ReflectionHandleType.new("member_handle")
+
+    class TypeType < Base
+      def initialize
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(TypeType)
+      end
+
+      alias == eql?
+
+      def hash
+        self.class.hash
+      end
+
+      def to_s
+        "type"
+      end
+    end
+
+    BUILTIN_TYPE_META_TYPE = TypeType.new
 
     class Primitive < Base
       POINTER_INTEGER_WIDTH = Fiddle::SIZEOF_VOIDP * 8
@@ -373,6 +396,39 @@ module MilkTea
       def to_s
         qualifier = attribute_module_name ? "#{attribute_module_name}." : ""
         "attribute_of(#{target}, #{qualifier}#{attribute_name})"
+      end
+    end
+
+    class MemberHandle < Base
+      attr_reader :enum_handle, :member_name, :member_value
+
+      def initialize(enum_handle, member_name, member_value)
+        @enum_handle = enum_handle
+        @member_name = member_name
+        @member_value = member_value
+        freeze
+      end
+
+      def name
+        member_name
+      end
+
+      def value
+        member_value
+      end
+
+      def eql?(other)
+        other.is_a?(MemberHandle) && other.member_name == member_name && other.enum_handle == enum_handle
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, enum_handle, member_name].hash
+      end
+
+      def to_s
+        "member_of(#{enum_handle}, #{member_name})"
       end
     end
 

@@ -16,6 +16,7 @@ module MilkTea
             case decl
             when AST::FunctionDef
               binding = @functions.fetch(decl.name)
+              next if binding.body_return_type == Types::BUILTIN_TYPE_META_TYPE
               if binding.type_params.any?
                 binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                   c_name = function_binding_c_name(instance, module_name: @module_name)

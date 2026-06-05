@@ -181,7 +181,7 @@ module MilkTea
 
     INSTALLABLE_BUILTIN_TYPE_NAMES = (Types::BUILTIN_PRIMITIVE_NAMES + %w[
       Option Result Subscription EventError
-      struct_handle field_handle callable_handle attribute_handle
+      struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
 
     def self.check(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
