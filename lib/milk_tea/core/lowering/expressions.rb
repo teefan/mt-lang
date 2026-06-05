@@ -1296,9 +1296,36 @@ module MilkTea
           return IR::Name.new(name: imported_value_c_name(imported_module, expression.member), type:, pointer: false)
         end
 
-        receiver_type = infer_expression_type(expression.receiver, env:)
+         receiver_type = infer_expression_type(expression.receiver, env:)
+
+        if receiver_type == @types["field_handle"]
+          handle = compile_time_const_value(expression.receiver, env:)
+          return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::FieldHandle)
+        end
+        if receiver_type == @types["member_handle"]
+          handle = compile_time_const_value(expression.receiver, env:)
+          return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::MemberHandle)
+        end
+
         receiver = lower_expression(expression.receiver, env:)
         IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
+      end
+
+      def lower_compile_time_handle_member(handle, member, type)
+        case handle
+        when Types::FieldHandle
+          case member
+          when "name" then IR::StringLiteral.new(value: handle.field_name, type: @types["str"], cstring: false)
+          when "type" then nil # handled via compile_time_const_value before lowering
+          end
+        when Types::MemberHandle
+          case member
+          when "name" then IR::StringLiteral.new(value: handle.member_name, type: @types["str"], cstring: false)
+          when "value"
+            value_type = @types["int"]
+            IR::IntegerLiteral.new(value: handle.member_value || 0, type: value_type)
+          end
+        end
       end
 
       def member_c_name(receiver_type, member)
