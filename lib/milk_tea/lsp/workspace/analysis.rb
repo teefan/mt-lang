@@ -134,57 +134,54 @@ module MilkTea
           nil
         end
 
-         def analyze_document(uri)
-           path = uri_to_path(uri)
-           snapshot = if path && File.file?(path)
-                      parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
-                      ast = parse_result.ast
-                      # Fall back to the last successful facts so completions/hover still
-                      # work when the user is mid-edit and the file does not parse/check.
-                      return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+          def analyze_document(uri)
+            path = uri_to_path(uri)
+            snapshot = if path && File.file?(path)
+                         parse_result = MilkTea::Parser.parse_collecting_errors(get_content(uri), path: uri)
+                         ast = parse_result.ast
+                         return @last_good_tooling_snapshot_cache[uri] if ast.nil?
 
-                      # Store the AST so that get_ast returns the same AST used for
-                      # binding resolution, ensuring object_id-based lookups match.
-                      @ast_cache[uri] = ast
+                         @ast_cache[uri] = ast
 
-                      resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
-                     return nil unless resolution.ok?
-                     effective_platform = effective_platform_for_path(path)
-                     ensure_root_platform_compatible!(path, effective_platform)
+                         resolution = DependencyResolution.resolve(path, mode: @dependency_resolution_mode)
+                         return nil unless resolution.ok?
 
-                     loader = MilkTea::ModuleLoader.new(
-                       module_roots: module_roots_for_path(path, locked: resolution.locked),
-                       package_graph: package_graph_for_path(path, locked: resolution.locked),
-                       shared_cache: @shared_module_cache,
-                       source_overrides: file_backed_source_overrides,
-                       platform: effective_platform,
-                     )
-                     ast = with_inferred_module_name(ast, loader:, path:)
-                     import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
-                     MilkTea::Sema.tooling_snapshot(
-                       ast,
-                       imported_modules: import_resolution.modules,
-                       allow_missing_imports: true,
-                       path: path,
-                     )
-                   else
-                     ast = get_ast(uri)
-                     return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+                         effective_platform = effective_platform_for_path(path)
+                         ensure_root_platform_compatible!(path, effective_platform)
 
-                     facts = MilkTea::Sema.check(ast)
-                     MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: [].freeze)
-                   end
-          if snapshot&.facts
-            @last_good_tooling_snapshot_cache[uri] = snapshot
-            @last_good_facts_cache[uri] = snapshot.facts
+                         loader = MilkTea::ModuleLoader.new(
+                           module_roots: module_roots_for_path(path, locked: resolution.locked),
+                           package_graph: package_graph_for_path(path, locked: resolution.locked),
+                           shared_cache: @shared_module_cache,
+                           source_overrides: file_backed_source_overrides,
+                           platform: effective_platform,
+                         )
+                         ast = with_inferred_module_name(ast, loader:, path:)
+                         import_resolution = loader.imported_modules_for_ast_collecting_errors(ast, importer_path: path)
+                         MilkTea::Sema.tooling_snapshot(
+                           ast,
+                           imported_modules: import_resolution.modules,
+                           allow_missing_imports: true,
+                           path: path,
+                         )
+                       else
+                         ast = get_ast(uri)
+                         return @last_good_tooling_snapshot_cache[uri] if ast.nil?
+
+                         facts = MilkTea::Sema.check(ast)
+                         MilkTea::Sema::ToolingSnapshot.new(facts:, diagnostics: [].freeze)
+                       end
+            if snapshot&.facts
+              @last_good_tooling_snapshot_cache[uri] = snapshot
+              @last_good_facts_cache[uri] = snapshot.facts
+            end
+            snapshot
+          rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
+            @last_good_tooling_snapshot_cache[uri]
+          rescue StandardError => e
+            warn "LSP sema error #{uri}: #{e.message}"
+            @last_good_tooling_snapshot_cache[uri]
           end
-          snapshot
-        rescue MilkTea::LexError, MilkTea::SemaError, ModuleLoadError, PackageLockError
-          @last_good_tooling_snapshot_cache[uri]
-        rescue StandardError => e
-          warn "LSP sema error #{uri}: #{e.message}"
-          @last_good_tooling_snapshot_cache[uri]
-        end
 
         def package_graph_for_path(path, locked: false)
           PackageGraph.load(path, locked:)
