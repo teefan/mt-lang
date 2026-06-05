@@ -28,13 +28,30 @@ module MilkTea
       def lower_const_value_literal(type, const_value)
         case const_value
         when Integer
-          IR::IntegerLiteral.new(value: const_value, type:)
+          value = if type.respond_to?(:integer_width) && (width = type.integer_width) && width < 64
+                    mask = (1 << width) - 1
+                    masked = const_value & mask
+                    if type.respond_to?(:unsigned_integer?) && !type.unsigned_integer? && masked >= (1 << (width - 1))
+                      masked - (1 << width)
+                    else
+                      masked
+                    end
+                  else
+                    const_value
+                  end
+          IR::IntegerLiteral.new(value:, type:)
         when Float
           IR::FloatLiteral.new(value: const_value, type:)
         when String
           IR::StringLiteral.new(value: const_value, type:, cstring: false)
         when TrueClass, FalseClass
           IR::BooleanLiteral.new(value: const_value, type:)
+        when Array
+          element_type = type.respond_to?(:arguments) ? type.arguments.first : @types["int"]
+          elements = const_value.map do |element|
+            lower_const_value_literal(element_type, element)
+          end
+          IR::ArrayLiteral.new(type:, elements:)
         else
           IR::IntegerLiteral.new(value: 0, type:)
         end
