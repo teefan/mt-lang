@@ -274,7 +274,7 @@ module MilkTea
             end
           when AST::MatchStmt
             if statement.inline
-              # inline match - skip lowering
+              lowered.concat(lower_inline_match_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
             else
             scrutinee_type = infer_expression_type(statement.expression, env: local_env)
             expression_setup, prepared_expression, expression_cleanups = prepare_expression_with_cleanups(
@@ -354,14 +354,13 @@ module MilkTea
             lowered << lower_static_assert(statement, env: local_env)
           when AST::ForStmt
             if statement.inline
-              # inline for - body was already type-checked; skip lowering
-              # the unrolled results are inlined by the sema phase
+              lowered.concat(lower_inline_for_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
             else
               lowered << lower_for_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
             end
           when AST::WhileStmt
             if statement.inline
-              # inline while - skip
+              lowered.concat(lower_inline_while_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
             else
               lowered << lower_while_stmt(statement, env: local_env, active_defers: active_defers + local_defers, return_type:, allow_return:)
             end
@@ -564,6 +563,78 @@ module MilkTea
             ],
           ),
         ]
+      end
+
+      def lower_inline_for_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        iterable = compile_time_const_value(statement.iterables.first, env:)
+        return [] unless iterable.is_a?(Array) && !iterable.empty?
+
+        loop_var_name = statement.bindings.first.name
+        loop_var_type = inline_loop_element_type(iterable.first)
+        lowered = []
+
+        iterable.each do |element|
+          iter_env = duplicate_env(env)
+          current_actual_scope(iter_env[:scopes])[loop_var_name] = local_binding(
+            type: loop_var_type,
+            c_name: c_local_name(loop_var_name),
+            mutable: false,
+            pointer: false,
+            const_value: element,
+          )
+          begin
+            lowered.concat(lower_block(statement.body, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:))
+          rescue LoweringError
+            # compile-time expression in body cannot be lowered — skip
+          end
+        end
+
+        lowered
+      end
+
+      def lower_inline_while_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        condition = compile_time_const_value(statement.condition, env:)
+        return [] unless condition
+
+        iterations = 0
+        max_iterations = 10_000
+        lowered = []
+
+        while compile_time_const_value(statement.condition, env:) && iterations < max_iterations
+          lowered.concat(lower_block(statement.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:))
+          iterations += 1
+        end
+
+        lowered
+      end
+
+      def lower_inline_match_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        scrutinee = compile_time_const_value(statement.expression, env:)
+        return [] unless scrutinee
+
+        chosen_arm = statement.arms.find do |arm|
+          scrutinee == compile_time_const_value(arm.pattern, env:)
+        end
+
+        return [] unless chosen_arm
+
+        lower_block(chosen_arm.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
+      end
+
+      def inline_loop_element_type(element)
+        if element.is_a?(Types::FieldHandle)
+          @types.fetch("field_handle")
+        elsif element.is_a?(Types::CallableHandle)
+          @types.fetch("callable_handle")
+        elsif element.is_a?(Types::AttributeHandle)
+          @types.fetch("attribute_handle")
+        elsif element.is_a?(Types::MemberHandle)
+          @types.fetch("member_handle")
+        elsif element.is_a?(Types::StructHandle)
+          @types.fetch("struct_handle")
+        else
+          @types.fetch("int")
+        end
       end
   end
 end

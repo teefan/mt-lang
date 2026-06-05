@@ -660,8 +660,15 @@ module MilkTea
           if (event_type = event_member_from_owner_type(receiver_type, expression.member))
             return event_type
           end
-          return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
 
+          if receiver_type == @types["field_handle"]
+            return infer_field_handle_member_type(expression)
+          end
+          if receiver_type == @types["member_handle"]
+            return infer_member_handle_member_type(expression)
+          end
+
+          return receiver_type.field(expression.member) if receiver_type.respond_to?(:field)
           raise LoweringError, "unknown member #{expression.member}"
         when AST::IndexAccess
           receiver_type = infer_expression_type(expression.receiver, env:)
@@ -1316,6 +1323,33 @@ module MilkTea
             resolve_current_module_const_value(identifier_expression.name)
           end,
           resolve_member_access: lambda do |member_access_expression|
+            if (receiver_value = CompileTime.evaluate(
+                  member_access_expression.receiver,
+                  resolve_identifier: lambda do |identifier_expression|
+                    if env
+                      binding = lookup_value(identifier_expression.name, env)
+                      return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
+                    end
+                    resolve_current_module_const_value(identifier_expression.name)
+                  end,
+                  resolve_member_access: lambda { |ma| nil },
+                  resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
+                  resolve_call: lambda { |ce| evaluate_compile_time_call(ce, env:) },
+                ))
+              case receiver_value
+              when Types::FieldHandle
+                case member_access_expression.member
+                when "name" then next receiver_value.field_name
+                when "type" then next resolve_type_ref(receiver_value.field_declaration.type)
+                end
+              when Types::MemberHandle
+                case member_access_expression.member
+                when "name" then next receiver_value.member_name
+                when "value" then next receiver_value.member_value
+                end
+              end
+            end
+
             value = if member_access_expression.receiver.is_a?(AST::Identifier)
                       resolve_imported_module_const_value(member_access_expression.receiver.name, member_access_expression.member)
                     end
@@ -1338,12 +1372,18 @@ module MilkTea
           case expression.callee.name
           when "field_of"
             evaluate_field_of_call(expression.arguments, env:)
+          when "fields_of"
+            evaluate_fields_of_call(expression.arguments, env:)
           when "callable_of"
             evaluate_callable_of_call(expression.arguments)
           when "has_attribute"
             evaluate_has_attribute_call(expression.arguments, env:)
           when "attribute_of"
             evaluate_attribute_of_call(expression.arguments, env:)
+          when "members_of"
+            evaluate_members_of_call(expression.arguments, env:)
+          when "attributes_of"
+            evaluate_attributes_of_call(expression.arguments, env:)
           else
             nil
           end
@@ -1369,6 +1409,61 @@ module MilkTea
         return nil unless field_declaration
 
         Types::FieldHandle.new(struct_handle, field_name, field_declaration)
+      end
+
+      def evaluate_fields_of_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 1)
+
+        struct_handle = resolve_struct_handle_argument(arguments.first.value, env:)
+        return nil unless struct_handle
+
+        struct_handle.declaration.fields.map do |field|
+          Types::FieldHandle.new(struct_handle, field.name, field)
+        end
+      end
+
+      def evaluate_members_of_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 1)
+
+        type = resolve_type_expression(arguments.first.value)
+        return nil unless type
+
+        return nil unless type.is_a?(Types::Enum) || type.is_a?(Types::Flags)
+
+        type.members.map do |member_name, member_value|
+          Types::MemberHandle.new(nil, member_name, member_value)
+        end
+      end
+
+      def evaluate_attributes_of_call(arguments, env:)
+        return nil unless reflection_positional_arguments?(arguments, 1) || reflection_positional_arguments?(arguments, 2)
+
+        target = evaluate_reflection_target_argument(arguments.first.value, env:)
+        return nil unless target
+
+        if arguments.length == 2
+          attribute_binding = resolve_attribute_name_argument(arguments[1].value)
+          application = find_attribute_application(target, attribute_binding)
+          return [] unless application
+
+          [Types::AttributeHandle.new(
+            attribute_binding.name,
+            attribute_binding.module_name,
+            target,
+            attribute_binding.params,
+            application.argument_values,
+          )]
+        else
+          resolved_attribute_applications_for_target(target).map do |application|
+            Types::AttributeHandle.new(
+              application.binding.name,
+              application.binding.module_name,
+              target,
+              application.binding.params,
+              application.argument_values,
+            )
+          end
+        end
       end
 
       def evaluate_callable_of_call(arguments)
@@ -2081,6 +2176,27 @@ module MilkTea
         end
 
         nil
+      end
+
+      def infer_field_handle_member_type(expression)
+        case expression.member
+        when "name" then @types["str"]
+        when "type"
+          handle = compile_time_const_value(expression.receiver, env: nil)
+          return @error_type unless handle.is_a?(Types::FieldHandle)
+
+          resolve_type_ref(handle.field_declaration.type)
+        else
+          @error_type
+        end
+      end
+
+      def infer_member_handle_member_type(expression)
+        case expression.member
+        when "name" then @types["str"]
+        when "value" then @types["int"]
+        else @error_type
+        end
       end
   end
 end
