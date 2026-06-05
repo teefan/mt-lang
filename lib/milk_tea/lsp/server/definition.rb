@@ -90,6 +90,19 @@ module MilkTea
               location = module_member_binding_location(uri, type_method[:module_name], token.lexeme, type_method[:binding]) ||
                 module_member_definition_location(uri, type_method[:module_name], token.lexeme) ||
                 module_definition_location(uri, type_method[:module_name])
+            elsif (binding = method_binding_at_token(facts, token))
+              location = module_member_binding_location(uri, facts.module_name, token.lexeme, binding)
+              location ||= module_member_definition_location(uri, facts.module_name, token.lexeme)
+            elsif (binding = facts.functions[token.lexeme])
+              location = module_member_binding_location(uri, facts.module_name, token.lexeme, binding)
+              location ||= module_member_definition_location(uri, facts.module_name, token.lexeme)
+            elsif facts.interfaces[token.lexeme]
+              location = module_member_definition_location(uri, facts.module_name, token.lexeme)
+            elsif facts.types.key?(token.lexeme)
+              location = module_member_definition_location(uri, facts.module_name, token.lexeme)
+            elsif (binding = facts.values[token.lexeme])
+              location = module_member_binding_location(uri, facts.module_name, token.lexeme, binding)
+              location ||= module_member_definition_location(uri, facts.module_name, token.lexeme)
             else
               if imported_module_name
                 location = module_member_definition_location(uri, imported_module_name, token.lexeme) || module_definition_location(uri, imported_module_name)
@@ -106,6 +119,27 @@ module MilkTea
           end
 
           return facts_location if facts_location
+        end
+
+        if facts && token_index && !facts_location
+          local_location = measure_perf_stage(stages, 'local_binding') do
+            name = token.lexeme
+            line = lsp_line + 1
+            char = lsp_char + 1
+            local_binding = resolve_local_hover_binding(facts, name, line, char)
+            next nil unless local_binding
+
+            if local_binding.ast&.line && local_binding.ast.respond_to?(:column) && local_binding.ast.column
+              {
+                uri: uri,
+                range: {
+                  start: { line: local_binding.ast.line - 1, character: local_binding.ast.column - 1 },
+                  end: { line: local_binding.ast.line - 1, character: local_binding.ast.column - 1 + name.length }
+                }
+              }
+            end
+          end
+          return local_location if local_location
         end
 
         found = measure_perf_stage(stages, 'global_lookup') do
