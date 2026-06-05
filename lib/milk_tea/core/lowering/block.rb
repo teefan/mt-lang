@@ -583,7 +583,8 @@ module MilkTea
             const_value: element,
           )
           begin
-            lowered.concat(lower_block(statement.body, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:))
+            body = lower_block(statement.body, env: iter_env, active_defers:, return_type:, loop_flow: nil, allow_return:)
+            lowered << IR::BlockStmt.new(body:) unless body.empty?
           rescue LoweringError
             # compile-time expression in body cannot be lowered — skip
           end
@@ -601,7 +602,8 @@ module MilkTea
         lowered = []
 
         while compile_time_const_value(statement.condition, env:) && iterations < max_iterations
-          lowered.concat(lower_block(statement.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:))
+          body = lower_block(statement.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
+          lowered << IR::BlockStmt.new(body:) unless body.empty?
           iterations += 1
         end
 
