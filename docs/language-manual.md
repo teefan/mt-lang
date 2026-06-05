@@ -182,9 +182,22 @@ var counter: int = 0
 var scratch: array[ubyte, 256]
 ```
 
+Block-bodied `const` uses `->` instead of `:`:
+
+```mt
+const NEXT_POW2 -> int:
+    var n: int = 1
+    while n < 1024:
+        n = n * 2
+    return n
+```
+
+The block body is evaluated at compile time. Allowed inside the block: literals, names of other `const` values, arithmetic, control flow (`if`/`else if`/`else`, `while`, `for`), `let` and `var` declarations, calls to other compile-time functions, and calls to whitelisted builtins (`size_of`, `align_of`, `offset_of`, `fields_of`, `members_of`, `attributes_of`).
+
 Rules:
 
 - `const` requires explicit type and initializer.
+- A block-bodied form `const NAME -> TYPE:` followed by an indented block is also supported. The block is evaluated at compile time and must end with a `return` on every code path.
 - Top-level `var` requires explicit type; initializer is optional.
 - Top-level `var` initializer must be static-storage-safe.
 - Local declarations:
@@ -455,6 +468,10 @@ Supported statements:
 - assignment
 - `if` / `else if` / `else`
 - `match`
+- `when` — compile-time conditional; only the chosen branch is type-checked and emitted
+- `inline for` — loop over a compile-time-known array, unrolled at compile time
+- `inline while` — loop with a compile-time-known condition, unrolled at compile time
+- `inline match` — match with a compile-time-known scrutinee, unrolled at compile time
 - `unsafe`
 - `static_assert`
 - `for`
@@ -600,6 +617,67 @@ Rules:
 - the right-hand side must be an expression list whose length exactly matches the range width
 - each element must be assignable to the indexed element type
 
+### 4.7 When (compile-time conditional)
+
+```mt
+when TARGET_OS:
+    TargetOs.linux:
+        return open_linux(path)
+    TargetOs.windows:
+        return open_windows(path)
+```
+
+Rules:
+
+- The discriminant must be a compile-time constant.
+- Only the chosen branch is type-checked and emitted. The other branches are not checked.
+- `else` is required when the discriminant is not a finite type. `else` is optional only when the discriminant is an enum and every member is covered.
+- `when` may appear at module level to conditionally include declarations, imports, or type definitions.
+- There is no `when` expression form.
+
+### 4.8 Inline for
+
+```mt
+inline for field in fields_of(Particle):
+    static_assert(field.type == float, "Particle fields must be float")
+```
+
+Rules:
+
+- The iterable must be a compile-time-known array. The most common source is a reflection builtin (`fields_of`, `members_of`, `attributes_of`). A literal array is also accepted.
+- The loop is unrolled once per element at compile time.
+
+### 4.9 Inline while
+
+```mt
+inline while n < 1024:
+    n = n * 2
+```
+
+Rules:
+
+- The condition must be a compile-time constant.
+- The loop unrolls to a fixed number of iterations, capped at 10,000.
+- A non-terminating `inline while` is a compile error.
+
+### 4.10 Inline match
+
+```mt
+inline match TARGET_BACKEND:
+    Backend.gl:
+        gl_draw(item)
+    Backend.metal:
+        metal_draw(item)
+    Backend.vulkan:
+        vk_draw(item)
+```
+
+Rules:
+
+- The scrutinee must be a compile-time constant.
+- Only the chosen arm is type-checked and emitted.
+- An `inline match` is not required to be exhaustive; unchosen arms are dropped.
+
 ## 5. Expressions
 
 ### 5.1 Primary
@@ -709,6 +787,26 @@ Type arguments can be:
 - integer literals
 - named integer constants
 
+Generic value parameters use the form `[N: int]` to declare a compile-time integer usable in expressions within the generic body:
+
+```mt
+function int_with_bits[N: int]() -> type:
+    if N == 8:
+        return byte
+    else if N == 16:
+        return short
+    else if N == 32:
+        return int
+    else if N == 64:
+        return long
+    else:
+        static_assert(false, "unsupported bit width")
+```
+
+The call site specializes with a literal: `int_with_bits[64]`.
+
+`type` is a built-in type name representing the type of types. A function may declare `-> type` as its return type to select and return a type expression at compile time. Such functions may only be called from compile-time contexts (block-bodied `const`, `when` discriminants, `inline for` bodies, generic bodies, or other `type`-returning functions). The body follows the same restrictions as a block-bodied `const`.
+
 ## 7. Built-In Callable Surface
 
 Special recognized callables:
@@ -744,6 +842,22 @@ For recoverable failures, use `Result[T, E]`. Its `.success(...)` and `.failure(
 For repeated pointer-plus-length span construction, use the built-in `span[T](data = ..., len = ...)` form directly. If the pattern repeats often in one codebase, define a small local helper in your own module instead of depending on a standard helper module.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly through the existing boundary coercion rules. There is no separate `array.as_span()` method surface.
+
+### 7.0 Compile-time reflection builtins
+
+Compile-time reflection builtins return handle values that represent type structure:
+
+- `field_of(T, name)` — returns a `field_handle` for the named field of `T`.
+- `callable_of(T, name)` — returns a `callable_handle` for the named callable of `T`.
+- `attribute_of(T, name)` — returns an `attribute_handle` for the named attribute on `T`.
+- `has_attribute(T, name)` — returns `bool`; true if `T` has the named attribute applied.
+- `attribute_arg[T]` — returns the `T`-typed argument of a resolved attribute handle.
+- `fields_of(T)` — returns `array[field_handle, N]` of all fields of struct `T`, in declaration order.
+- `members_of(E)` — returns `array[member_handle, N]` of all members of enum or variant `E`.
+- `attributes_of(T)` — returns `array[attribute_handle, N]` of all attributes on `T`.
+- `attributes_of(T, name)` — returns `array[attribute_handle, N]` of attributes whose kind matches `name`.
+
+Handle field access: `field_handle` exposes `.name` (`str`) and `.type` (the field's type). `member_handle` exposes `.name` (`str`) and, for enum members with explicit values, `.value` (an integer). `attribute_handle` provides access to attribute arguments via `attribute_arg[T]`.
 
 `read(r)` still explicitly projects a `ref[T]` to its referent value, but ordinary member access and method calls auto-dereference `ref[T]` receivers. That means `handle.field`, `handle.edit_method()`, and `handle.read()` are accepted without writing `read(handle)` first. Calls in the other direction are also lighter now: if a function expects `ref[T]`, passing a mutable addressable `T` borrows it implicitly.
 
