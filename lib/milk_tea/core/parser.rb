@@ -69,7 +69,7 @@ module MilkTea
 
     TOP_LEVEL_RECOVERY_START_TYPES = %i[
       module import at public attribute const var type struct union enum flags variant interface
-      opaque extending foreign async function external static_assert link include compiler_flag
+      opaque extending foreign async function event external static_assert link include compiler_flag
     ].freeze
 
     BUILTIN_ATTRIBUTE_NAME_LEXEMES = %w[packed align].freeze

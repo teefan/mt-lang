@@ -318,7 +318,7 @@
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link)\\b"
     },
 
     "keyword-operator": {
@@ -402,7 +402,7 @@
         },
         {
           "comment": "Field declaration type annotation after colon",
-          "match": "(^\\s*(?!(?:if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|then|module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|methods|type|const|let|var|external|foreign|static|static_assert|compiler_flag|include|link|equates|hashes|public|async|editable)\\b)[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*)([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)(?=\\s*(?:$|#))",
+          "match": "(^\\s*(?!(?:if|else|for|in|while|break|continue|pass|return|match|defer|unsafe|await|module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|public|async|editable)\\b)[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*)([a-zA-Z_][a-zA-Z0-9_.]*(?:\\[[^\\]]*\\])?(?:\\*|\\?)?)(?=\\s*(?:$|#))",
           "captures": {
             "2": { "name": "entity.name.type.milk-tea" }
           }

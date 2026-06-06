@@ -19,7 +19,7 @@ module MilkTea
             warn_reserved_primitive_name(declaration.name, line: declaration.line, column: declaration.column, kind_label: "function")
             visit_function(declaration)
           when AST::ExtendingBlock
-            generic_context = methods_block_generic?(declaration)
+            generic_context = extending_block_generic?(declaration)
             declaration.methods.each do |method|
               warn_reserved_primitive_name(method.name, line: method.line, column: method.column, kind_label: "function")
               visit_function(method, generic_context:)
@@ -71,7 +71,7 @@ module MilkTea
           )
         end
       end
-      def methods_block_generic?(declaration)
+      def extending_block_generic?(declaration)
         declaration.type_name.respond_to?(:arguments) && declaration.type_name.arguments.any?
       end
       def declared_callable_names(source_file)
