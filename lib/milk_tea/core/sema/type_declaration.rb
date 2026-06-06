@@ -53,8 +53,26 @@ module MilkTea
                             builtin_member_handle_type
                           when "type"
                             builtin_type_meta_type
+                          when "vec2"
+                            Types::Vector.new("vec2", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 2)
+                          when "vec3"
+                            Types::Vector.new("vec3", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 3)
+                          when "vec4"
+                            Types::Vector.new("vec4", element_type: Types::BUILTIN_VECTOR_ELEMENT, width: 4)
+                          when "ivec2"
+                            Types::Vector.new("ivec2", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 2)
+                          when "ivec3"
+                            Types::Vector.new("ivec3", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 3)
+                          when "ivec4"
+                            Types::Vector.new("ivec4", element_type: Types::BUILTIN_IVECTOR_ELEMENT, width: 4)
+                          when "mat3"
+                            Types::Matrix.new("mat3", dim: 3)
+                          when "mat4"
+                            Types::Matrix.new("mat4", dim: 4)
+                          when "quat"
+                            Types::Quaternion.new("quat")
                           else
-                           Types::Primitive.new(name)
+                            Types::Primitive.new(name)
                          end
         end
       end

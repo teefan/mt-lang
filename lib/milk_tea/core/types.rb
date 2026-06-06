@@ -6,6 +6,7 @@ module MilkTea
   module Types
     BUILTIN_PRIMITIVE_NAMES = %w[
       bool byte ubyte char short ushort int uint long ulong ptr_int ptr_uint float double void str cstr
+      vec2 vec3 vec4 ivec2 ivec3 ivec4 mat3 mat4 quat
     ].freeze
     RESERVED_VALUE_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
       Option Result
@@ -1311,6 +1312,131 @@ module MilkTea
 
       def to_s
         "proc(#{params.map(&:type).join(', ')}) -> #{return_type}"
+      end
+    end
+
+    BUILTIN_VECTOR_ELEMENT = Primitive.new("float")
+    BUILTIN_IVECTOR_ELEMENT = Primitive.new("int")
+
+    class Vector < Base
+      attr_reader :name, :element_type, :width
+
+      FIELD_NAMES = %w[x y z w].freeze
+
+      def initialize(name, element_type:, width:)
+        @name = name
+        @element_type = element_type
+        @width = width
+        @fields = FIELD_NAMES.first(width).each_with_object({}) do |fname, h|
+          h[fname] = element_type
+        end.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Vector) && other.name == name && other.element_type == element_type
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name, element_type].hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def numeric?
+        true
+      end
+
+      def to_s
+        name
+      end
+    end
+
+    class Matrix < Base
+      attr_reader :name, :dim
+
+      def initialize(name, dim:)
+        @name = name
+        @dim = dim
+        col_type = Vector.new("vec#{dim}", element_type: BUILTIN_VECTOR_ELEMENT, width: dim)
+        @fields = (0...dim).each_with_object({}) do |i, h|
+          h["col#{i}"] = col_type
+        end.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Matrix) && other.name == name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name].hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def numeric?
+        true
+      end
+
+      def to_s
+        name
+      end
+    end
+
+    class Quaternion < Base
+      attr_reader :name
+
+      FIELD_NAMES = %w[x y z w].freeze
+
+      def initialize(name)
+        @name = name
+        @fields = FIELD_NAMES.each_with_object({}) do |fname, h|
+          h[fname] = BUILTIN_VECTOR_ELEMENT
+        end.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Quaternion) && other.name == name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, name].hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def numeric?
+        true
+      end
+
+      def to_s
+        name
       end
     end
 

@@ -1235,7 +1235,11 @@ module MilkTea
         when AST::UnaryOp
           raise LoweringError, "propagation expressions must be prepared before direct lowering" if expression.operator == "?"
 
-          IR::Unary.new(operator: expression.operator, operand: lower_expression(expression.operand, env:, expected_type: type), type:)
+          operand = lower_expression(expression.operand, env:, expected_type: type)
+          expanded = lower_vector_unary_op(expression.operator, operand, type)
+          return expanded if expanded
+
+          IR::Unary.new(operator: expression.operator, operand:, type:)
         when AST::BinaryOp
           right_env = binary_right_env(expression, env)
           left_type, right_type = infer_binary_operand_types(expression, env:, expected_type: type)
@@ -1244,6 +1248,10 @@ module MilkTea
           right = lower_expression(expression.right, env: right_env, expected_type: operand_type || left.type)
           left = cast_expression(left, operand_type) if operand_type
           right = cast_expression(right, operand_type) if operand_type
+
+          expanded = lower_vector_binary_op(expression.operator, left, left_type, right, right_type, type)
+          return expanded if expanded
+
           IR::Binary.new(operator: expression.operator, left:, right:, type:)
         when AST::IfExpr
           then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
@@ -1326,6 +1334,64 @@ module MilkTea
             IR::IntegerLiteral.new(value: handle.member_value || 0, type: value_type)
           end
         end
+      end
+
+      def lower_vector_binary_op(operator, left, left_type, right, right_type, result_type)
+        return nil unless result_type.is_a?(Types::Vector) || result_type.is_a?(Types::Matrix) || result_type.is_a?(Types::Quaternion)
+
+        if result_type.is_a?(Types::Vector)
+          return lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+        end
+
+        return lower_aggregate_binary_op(operator, left, right, result_type) unless operator == "*"
+
+        nil
+      end
+
+      def lower_vector_unary_op(operator, operand, result_type)
+        return nil unless result_type.is_a?(Types::Vector) || result_type.is_a?(Types::Matrix) || result_type.is_a?(Types::Quaternion)
+        return nil unless operator == "+" || operator == "-"
+
+        fields = result_type.fields.map do |fname, ftype|
+          field_expr = IR::Member.new(receiver: operand, member: fname, type: ftype)
+          value = IR::Unary.new(operator:, operand: field_expr, type: ftype)
+          IR::AggregateField.new(name: fname, value:)
+        end
+        IR::AggregateLiteral.new(fields:, type: result_type)
+      end
+
+    private
+
+      def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
+        return lower_aggregate_binary_op(operator, left, right, result_type) if right_type.is_a?(Types::Vector)
+
+        return nil unless operator == "*" || operator == "/"
+
+        scalar_is_left = !left_type.is_a?(Types::Vector)
+        vector_expr = scalar_is_left ? right : left
+        scalar_expr = scalar_is_left ? left : right
+
+        fields = result_type.fields.map do |fname, ftype|
+          field_expr = IR::Member.new(receiver: vector_expr, member: fname, type: ftype)
+          left_expr = scalar_is_left ? scalar_expr : field_expr
+          right_expr = scalar_is_left ? field_expr : scalar_expr
+          value = IR::Binary.new(operator:, left: left_expr, right: right_expr, type: ftype)
+          IR::AggregateField.new(name: fname, value:)
+        end
+        IR::AggregateLiteral.new(fields:, type: result_type)
+      end
+
+      def lower_aggregate_binary_op(operator, left, right, result_type)
+        fields = result_type.fields.map do |fname, ftype|
+          value = IR::Binary.new(
+            operator:,
+            left: IR::Member.new(receiver: left, member: fname, type: ftype),
+            right: IR::Member.new(receiver: right, member: fname, type: ftype),
+            type: ftype,
+          )
+          IR::AggregateField.new(name: fname, value:)
+        end
+        IR::AggregateLiteral.new(fields:, type: result_type)
       end
 
       def member_c_name(receiver_type, member)

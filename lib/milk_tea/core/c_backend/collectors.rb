@@ -118,6 +118,15 @@ module MilkTea
                 base = type.c_name || named_type_c_name(type)
                 pointer ? "#{base}**" : "#{base}*"
               end
+            when Types::Vector
+              base = "mt_#{type.name}"
+              pointer ? "#{base}*" : base
+            when Types::Matrix
+              base = "mt_#{type.name}"
+              pointer ? "#{base}*" : base
+            when Types::Quaternion
+              base = "mt_#{type.name}"
+              pointer ? "#{base}*" : base
             else
               raise LoweringError, "unsupported C type #{type.class.name}"
             end
