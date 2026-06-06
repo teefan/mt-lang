@@ -190,9 +190,9 @@ module MilkTea
           end
 
           unless signature
-            local_def = @workspace.find_definition_token(
-              uri,
+            local_def = @workspace.find_definition_token_global(
               name,
+              preferred_uri: uri,
               before_line: lsp_line + 1,
               before_char: lsp_char + 1,
             )

@@ -555,6 +555,7 @@ Special recognized callables:
 - `order[T](left, right)`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
+- `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
 
 Reference and pointer notes:
 
@@ -673,6 +674,8 @@ Heredoc notes:
 - Bitwise operators require matching integer or flags types.
 - Shift operators require integer operands.
 - Safe array indexing requires an addressable array value.
+- Safe indexing (`arr[i]`) is bounds-checked and calls `fatal` on out-of-bounds access.
+- Use `get(arr, i)` for recoverable indexing that returns `ptr[T]?` (null on out-of-bounds) instead of aborting.
 - Pointer indexing requires `unsafe`.
 - `read(ptr)` requires `unsafe`.
 - Pointer casts require `unsafe`.

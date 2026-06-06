@@ -361,6 +361,12 @@ function guard_demo() -> Result[int, GuardError]:
     let value = Result[int, GuardError].success(value = 7) else as error:
         return Result[int, GuardError].failure(error = error)
 
+    # --- let ... else: over get() (recoverable array index)
+    var guarded_arr: array[int, 3] = array[int, 3](10, 20, 30)
+    let third = get(guarded_arr, 2) else:
+        return Result[int, GuardError].failure(error = GuardError.missing)
+    let _third = unsafe: read(third)
+
     # --- var ... else: over Option
     var maybe: Option[int]? = Option[int].some(value = 3)
     var bound = maybe else:
@@ -495,6 +501,16 @@ function builtins_demo() -> int:
     # --- span[T] construction
     let sp = span[int](data = ptr_of(arr[0]), len = 4)
     let _sp_copy = sp
+
+    # --- get(coll, index): recoverable array/span indexing (returns ptr[T]?)
+    let elem_ptr = get(arr, 1) else:
+        fatal(c"get: array index out of bounds")
+    unsafe:
+        read(elem_ptr) = 99
+
+    let sp_elem = get(sp, 0) else:
+        fatal(c"get: span index out of bounds")
+    let _sp_val = unsafe: read(sp_elem)
 
     # --- auto-deref ref
     read(handle) = read(handle) + 1

@@ -826,6 +826,7 @@ Special recognized callables:
 - `order[T](left, right)`
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
+- `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
 
 `default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.
 
@@ -972,6 +973,8 @@ Custom formatting hook notes:
 - bitwise operators require matching integer/flags types
 - shift operators require integer operands
 - safe array indexing requires an addressable array value
+- safe indexing (`arr[i]`) is bounds-checked and calls `fatal` on out-of-bounds access
+- use `get(arr, i)` for recoverable indexing that returns `ptr[T]?` (null on out-of-bounds) instead of aborting
 - pointer indexing requires `unsafe`
 - `read(...)` of raw pointer requires `unsafe`
 - pointer casts require `unsafe`
