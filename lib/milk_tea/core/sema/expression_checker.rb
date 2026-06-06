@@ -876,6 +876,8 @@ module MilkTea
           check_attribute_of_call(expression.arguments, scopes:)
         when :has_attribute
           check_has_attribute_call(expression.arguments, scopes:)
+        when :get
+          check_get_call(expression.arguments, scopes:)
         when :attribute_arg
           check_attribute_arg_call(callable, expression.arguments, scopes:)
         else
@@ -1123,6 +1125,7 @@ module MilkTea
           return [:callable_of, nil, nil] if callee.name == "callable_of"
           return [:attribute_of, nil, nil] if callee.name == "attribute_of"
           return [:has_attribute, nil, nil] if callee.name == "has_attribute"
+          return [:get, nil, nil] if callee.name == "get"
 
           type = @types[callee.name]
           return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)

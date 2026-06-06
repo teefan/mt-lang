@@ -27,6 +27,10 @@ module MilkTea
               else
                 "(*#{checked_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)}))"
               end
+            when IR::NullableIndex
+              "#{nullable_array_index_helper_name(expression.receiver_type)}(#{emit_address_of_operand(expression.receiver)}, #{emit_expression(expression.index)})"
+            when IR::NullableSpanIndex
+              "#{nullable_span_index_helper_name(expression.receiver_type)}(#{emit_expression(expression.receiver)}, #{emit_expression(expression.index)})"
             when IR::Call
               raise LoweringError, "array-return call must be materialized before C emission" if array_type?(expression.type)
 
@@ -292,7 +296,7 @@ module MilkTea
 
           def emit_cast_operand(expression)
             case expression
-            when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr, IR::AddressOf, IR::Cast, IR::Unary
+            when IR::Name, IR::IntegerLiteral, IR::FloatLiteral, IR::StringLiteral, IR::BooleanLiteral, IR::NullLiteral, IR::ZeroInit, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex, IR::Call, IR::AggregateLiteral, IR::ArrayLiteral, IR::ReinterpretExpr, IR::SizeofExpr, IR::AlignofExpr, IR::OffsetofExpr, IR::AddressOf, IR::Cast, IR::Unary
               emit_expression(expression)
             else
               "(#{emit_expression(expression)})"
@@ -301,7 +305,7 @@ module MilkTea
 
           def emit_call_callee(expression)
             case expression
-            when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::Call
+            when IR::Name, IR::Member, IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex, IR::Call
               emit_expression(expression)
             else
               wrap_expression(expression)

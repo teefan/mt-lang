@@ -198,6 +198,10 @@ module MilkTea
               array_types << expression.receiver_type
               collect_checked_array_index_types_from_expression(expression.receiver, array_types)
               collect_checked_array_index_types_from_expression(expression.index, array_types)
+            when IR::NullableIndex
+              array_types << expression.receiver_type
+              collect_checked_array_index_types_from_expression(expression.receiver, array_types)
+              collect_checked_array_index_types_from_expression(expression.index, array_types)
             when IR::Call
               collect_checked_array_index_types_from_expression(expression.callee, array_types) unless expression.callee.is_a?(String)
               expression.arguments.each { |argument| collect_checked_array_index_types_from_expression(argument, array_types) }
@@ -267,10 +271,14 @@ module MilkTea
             case expression
             when IR::Member
               collect_checked_span_index_types_from_expression(expression.receiver, span_types)
-            when IR::Index, IR::CheckedIndex
+            when IR::Index, IR::CheckedIndex, IR::NullableIndex
               collect_checked_span_index_types_from_expression(expression.receiver, span_types)
               collect_checked_span_index_types_from_expression(expression.index, span_types)
             when IR::CheckedSpanIndex
+              span_types << expression.receiver_type
+              collect_checked_span_index_types_from_expression(expression.receiver, span_types)
+              collect_checked_span_index_types_from_expression(expression.index, span_types)
+            when IR::NullableSpanIndex
               span_types << expression.receiver_type
               collect_checked_span_index_types_from_expression(expression.receiver, span_types)
               collect_checked_span_index_types_from_expression(expression.index, span_types)
@@ -542,7 +550,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_proc_types_from_expression(expression.receiver, proc_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_proc_types_from_expression(expression.receiver, proc_types, visited)
               collect_proc_types_from_expression(expression.index, proc_types, visited)
             when IR::Call
@@ -668,7 +676,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_task_types_from_expression(expression.receiver, task_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_task_types_from_expression(expression.receiver, task_types, visited)
               collect_task_types_from_expression(expression.index, task_types, visited)
             when IR::Call
@@ -829,7 +837,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_generic_variant_types_from_expression(expression.receiver, generic_variant_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_generic_variant_types_from_expression(expression.receiver, generic_variant_types, visited)
               collect_generic_variant_types_from_expression(expression.index, generic_variant_types, visited)
             when IR::Call
@@ -1039,7 +1047,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_str_buffer_types_from_expression(expression.receiver, str_buffer_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_str_buffer_types_from_expression(expression.receiver, str_buffer_types, visited)
               collect_str_buffer_types_from_expression(expression.index, str_buffer_types, visited)
             when IR::Call
@@ -1158,7 +1166,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_generic_struct_types_from_expression(expression.receiver, generic_struct_types, visited)
               collect_generic_struct_types_from_expression(expression.index, generic_struct_types, visited)
             when IR::Call
@@ -1360,7 +1368,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_span_types_from_expression(expression.receiver, span_types, visited)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_span_types_from_expression(expression.receiver, span_types, visited)
               collect_span_types_from_expression(expression.index, span_types, visited)
             when IR::Call

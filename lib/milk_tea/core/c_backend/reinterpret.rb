@@ -59,7 +59,7 @@ module MilkTea
             case expression
             when IR::Member
               collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               collect_reinterpret_helpers_from_expression(expression.receiver, helpers, seen)
               collect_reinterpret_helpers_from_expression(expression.index, helpers, seen)
             when IR::Call
@@ -139,6 +139,18 @@ module MilkTea
             "mt_checked_span_index_#{sanitize_identifier(type.to_s)}"
           end
 
+          def nullable_array_index_helper_name(type)
+            return "mt_nullable_index_array_#{sanitize_identifier(c_declaration(array_element_type(type), 'value'))}_#{array_length(type)}" if array_type?(type) && callable_container_element_type?(array_element_type(type))
+
+            "mt_nullable_index_#{sanitize_identifier(type.to_s)}"
+          end
+
+          def nullable_span_index_helper_name(type)
+            return "mt_nullable_span_index_#{sanitize_identifier(c_declaration(type.element_type, 'value'))}" if callable_container_element_type?(type.element_type)
+
+            "mt_nullable_span_index_#{sanitize_identifier(type.to_s)}"
+          end
+
           def callable_container_element_type?(type)
             type.is_a?(Types::Function) || type.is_a?(Types::Proc)
           end
@@ -151,7 +163,7 @@ module MilkTea
               else
                 "(#{emit_expression(expression)})"
               end
-            when IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               checked_index_alias(expression) || emit_expression(expression)
             when IR::Name, IR::Member, IR::Index
               emit_expression(expression)
@@ -170,7 +182,7 @@ module MilkTea
 
           def wrap_pointer_member_receiver(expression)
             case expression
-            when IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               checked_index_alias(expression) || emit_expression(expression)
             when IR::Name, IR::Member, IR::Index, IR::Call
               emit_expression(expression)
@@ -181,7 +193,7 @@ module MilkTea
 
           def wrap_index_receiver(expression)
             case expression
-            when IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               if (alias_name = checked_index_alias(expression))
                 "(*#{alias_name})"
               else

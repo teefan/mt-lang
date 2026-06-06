@@ -990,6 +990,10 @@ module MilkTea
           "checked_index<#{expression.receiver_type}>(#{render_expression(expression.receiver)}, #{render_expression(expression.index)})"
         when IR::CheckedSpanIndex
           "checked_span_index<#{expression.receiver_type}>(#{render_expression(expression.receiver)}, #{render_expression(expression.index)})"
+        when IR::NullableIndex
+          "nullable_index<#{expression.receiver_type}>(#{render_expression(expression.receiver)}, #{render_expression(expression.index)})"
+        when IR::NullableSpanIndex
+          "nullable_span_index<#{expression.receiver_type}>(#{render_expression(expression.receiver)}, #{render_expression(expression.index)})"
         when IR::Call
           wrap("#{expression.callee}(#{expression.arguments.map { |argument| render_expression(argument) }.join(', ')})", parent_precedence, POSTFIX_PRECEDENCE)
         when IR::Unary

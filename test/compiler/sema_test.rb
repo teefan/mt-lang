@@ -8650,6 +8650,125 @@ extending Counter:
     assert_match(/emit is only available inside module demo\.publisher/, error.message)
   end
 
+  def test_type_checks_get_array_indexing
+    source = <<~MT
+      # module demo.get_array
+
+      function main() -> int:
+          var arr = array[int, 4](10, 20, 30, 40)
+          let p = get(arr, 2) else:
+              return 1
+          return 0
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_get_span_indexing
+    source = <<~MT
+      # module demo.get_span
+
+      function main() -> int:
+          var value = 42
+          let sp = span[int](data = ptr_of(value), len = 1)
+          let p = get(sp, 0) else:
+              return 1
+          unsafe:
+              read(p) = 99
+          return value
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_get_returns_nullable_pointer_type
+    source = <<~MT
+      # module demo.get_nullable
+
+      function main() -> int:
+          var arr = array[int, 2](1, 2)
+          let p = get(arr, 0) else:
+              return 1
+          unsafe:
+              read(p) = 99
+          return arr[0]
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_rejects_get_on_non_array_non_span
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            let x = 42
+            let p = get(x, 0) else:
+                return 1
+            return 0
+      MT
+    end
+
+    assert_match(/get expects an array or span/, error.message)
+  end
+
+  def test_rejects_get_with_non_integer_index
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            var arr = array[int, 2](1, 2)
+            let p = get(arr, true) else:
+                return 1
+            return 0
+      MT
+    end
+
+    assert_match(/get index must be an integer type/, error.message)
+  end
+
+  def test_rejects_get_with_named_arguments
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            var arr = array[int, 2](1, 2)
+            let p = get(array = arr, index = 0) else:
+                return 1
+            return 0
+      MT
+    end
+
+    assert_match(/get does not support named arguments/, error.message)
+  end
+
+  def test_rejects_get_with_wrong_argument_count
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            var arr = array[int, 2](1, 2)
+            let p = get(arr, 0, 1) else:
+                return 1
+            return 0
+      MT
+    end
+
+    assert_match(/get expects 2 arguments/, error.message)
+  end
+
+  def test_rejects_get_on_temporary_array_value
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(<<~MT)
+        function main() -> int:
+            let p = get(array[int, 3](1, 2, 3), 0) else:
+                return 1
+            return 0
+      MT
+    end
+
+    assert_match(/get requires an addressable array value/, error.message)
+  end
+
   private
 
   def source_relative_path(source, default: File.join("demo", "main.mt"))

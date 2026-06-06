@@ -817,6 +817,28 @@ module MilkTea
               "}",
             ]
           end
+
+          def emit_nullable_array_index_helper(type)
+            helper_name = nullable_array_index_helper_name(type)
+            params = [c_declaration(type, '(*array)'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            [
+              "static inline #{c_function_declaration(pointer_to(array_element_type(type)), helper_name, params)} {",
+              "#{INDENT}if (index >= #{array_length(type)}) return NULL;",
+              "#{INDENT}return &(*array)[index];",
+              "}",
+            ]
+          end
+
+          def emit_nullable_span_index_helper(type)
+            helper_name = nullable_span_index_helper_name(type)
+            params = [c_declaration(type, 'span'), c_declaration(Types::Primitive.new('ptr_uint'), 'index')].join(', ')
+            [
+              "static inline #{c_function_declaration(pointer_to(type.element_type), helper_name, params)} {",
+              "#{INDENT}if (index >= span.len) return NULL;",
+              "#{INDENT}return &span.data[index];",
+              "}",
+            ]
+          end
     end
   end
 end

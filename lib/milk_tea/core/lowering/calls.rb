@@ -287,6 +287,19 @@ module MilkTea
           message_type = infer_expression_type(argument.value, env:)
           callee = message_type == @types.fetch("cstr") ? "mt_fatal" : "mt_fatal_str"
           IR::Call.new(callee:, arguments: [lower_expression(argument.value, env:, expected_type: message_type)], type:)
+        when :get
+          receiver_arg = expression.arguments.fetch(0)
+          index_arg = expression.arguments.fetch(1)
+          receiver_type = infer_expression_type(receiver_arg.value, env:)
+          receiver = lower_expression(receiver_arg.value, env:)
+          index = lower_expression(index_arg.value, env:)
+          if array_type?(receiver_type)
+            IR::NullableIndex.new(receiver:, index:, receiver_type:, type:)
+          elsif receiver_type.is_a?(Types::Span)
+            IR::NullableSpanIndex.new(receiver:, index:, receiver_type:, type:)
+          else
+            raise LoweringError, "get expects an array or span, got #{receiver_type}"
+          end
         when :ref_of
           argument = expression.arguments.fetch(0)
           lower_addr_expression(argument.value, env:, target_type: type)
