@@ -1819,12 +1819,7 @@ struct EcsScriptMethod:
     vector_callbacks: array[ecs_vector_function_callback_t, 18]
     ctx: ptr[void]
 
-struct EcsScriptFunction = c"EcsScriptMethod":
-    return_type: ptr_uint
-    params: ecs_vec_t
-    callback: fn(arg0: const_ptr[ecs_function_ctx_t], arg1: int, arg2: const_ptr[ecs_value_t], arg3: ptr[ecs_value_t]) -> void
-    vector_callbacks: array[ecs_vector_function_callback_t, 18]
-    ctx: ptr[void]
+type EcsScriptFunction = EcsScriptMethod
 
 struct ecs_script_eval_desc_t:
     vars: ptr[ecs_script_vars_t]

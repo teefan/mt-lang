@@ -55,15 +55,17 @@ module MilkTea
           scoped_changes = scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
           return { changes: scoped_changes } if scoped_changes
 
-          module_symbol_changes = module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
-          return { changes: module_symbol_changes } if module_symbol_changes
-
           enum_member_changes = enum_member_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
           return { changes: enum_member_changes } if enum_member_changes
         end
 
         workspace_symbol_changes = workspace_symbol_identity_rename_changes(uri, token, lsp_line, lsp_char, new_name)
         return { changes: workspace_symbol_changes } if workspace_symbol_changes
+
+        if (facts = @workspace.get_facts(uri))
+          module_symbol_changes = module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: module_symbol_changes } if module_symbol_changes
+        end
 
         lexical_changes = lexical_rename_changes_in_document(uri, token.lexeme, new_name)
         return { changes: lexical_changes } if lexical_changes
@@ -440,6 +442,7 @@ module MilkTea
 
         if node.respond_to?(:members)
           node.members.each do |member|
+            next unless member.is_a?(Symbol)
             each_ast_node(node.public_send(member), &block)
           end
         end
