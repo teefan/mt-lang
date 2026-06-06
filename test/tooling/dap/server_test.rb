@@ -829,6 +829,22 @@ class DAPServerTest < Minitest::Test
     end
   end
 
+  def test_step_in_and_step_out_return_error_in_process_backend
+    with_server do |client|
+      _init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
+      _launch_response, _launch_events = client.send_request("launch", { "program" => "/usr/bin/true", "stopOnEntry" => true })
+      _conf_response, _conf_events = client.send_request("configurationDone", {})
+
+      step_in_response, _step_in_events = client.send_request("stepIn", { "threadId" => 1 })
+      assert_equal false, step_in_response["success"]
+      assert_match(/not supported/, step_in_response["message"])
+
+      step_out_response, _step_out_events = client.send_request("stepOut", { "threadId" => 1 })
+      assert_equal false, step_out_response["success"]
+      assert_match(/not supported/, step_out_response["message"])
+    end
+  end
+
   def test_launch_requires_program_argument
     with_server do |client|
       _init_response, _init_events = client.send_request("initialize", { "adapterID" => "milk-tea" })
@@ -2759,6 +2775,68 @@ function main() -> int:
         assert_includes terminate_event_names, "terminated"
       end
     end
+  end
+
+  def test_lldb_backend_emits_pause_diagnostic_on_pause
+    incoming = [
+      { "seq" => 1, "type" => "request", "command" => "initialize", "arguments" => { "adapterID" => "milk-tea" } },
+      { "seq" => 2, "type" => "request", "command" => "launch", "arguments" => { "backend" => "lldb-dap", "program" => "/usr/bin/true", "stopOnEntry" => true } },
+      { "seq" => 3, "type" => "request", "command" => "configurationDone", "arguments" => {} },
+      { "seq" => 4, "type" => "request", "command" => "pause", "arguments" => { "threadId" => 77 } },
+      { "seq" => 5, "type" => "request", "command" => "disconnect", "arguments" => {} }
+    ]
+    protocol = InMemoryProtocol.new(incoming)
+
+    server = MilkTea::DAP::Server.new(
+      protocol: protocol,
+      backend_factory: lambda do |_adapter_command, on_event, on_request|
+        Class.new do
+          def initialize(on_event, on_request)
+            @on_event = on_event
+            @on_request = on_request
+          end
+
+          def start! = true
+          def stop! = true
+
+          def request(command, _arguments, timeout: 5)
+            case command
+            when "initialize"
+              { "success" => true, "body" => { "supportsConfigurationDoneRequest" => true } }
+            when "launch", "configurationDone"
+              { "success" => true, "body" => {} }
+            when "pause"
+              @on_event.call({
+                "type" => "event",
+                "event" => "stopped",
+                "body" => { "reason" => "pause", "threadId" => 77, "allThreadsStopped" => true }
+              })
+              { "success" => true, "body" => {} }
+            when "stackTrace"
+              { "success" => true, "body" => { "stackFrames" => [{ "id" => 1, "name" => "my_function", "line" => 42, "column" => 0, "source" => { "name" => "demo.mt", "path" => "/tmp/demo.mt" } }], "totalFrames" => 1 } }
+            when "disconnect"
+              @on_event.call({ "type" => "event", "event" => "terminated" })
+              @on_event.call({ "type" => "event", "event" => "exited", "body" => { "exitCode" => 0 } })
+              { "success" => true, "body" => {} }
+            else
+              { "success" => true, "body" => {} }
+            end
+          end
+        end.new(on_event, on_request)
+      end
+    )
+
+    server.run
+
+    output_events = protocol.written.select { |msg| (msg[:type] || msg["type"]) == "event" && (msg[:event] || msg["event"]) == "output" }
+    refute_empty output_events, "expected output diagnostic events for pause"
+
+    output_text = output_events.flat_map { |e|
+      body = e[:body] || e["body"]
+      body.is_a?(Hash) ? [body[:output] || body["output"]].compact : []
+    }.join
+    assert_match(/my_function/, output_text)
+    assert_match(/pause focus/, output_text)
   end
 
   private
