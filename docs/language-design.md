@@ -527,6 +527,7 @@ Notes:
 
 - Fixed-array indexing is bounds-checked and safe by default.
 - Safe array indexing requires an addressable array value; bind temporaries before indexing them.
+- Safe indexing (`arr[i]`) aborts on out-of-bounds via `fatal`. Use `get(arr, i)` for recoverable bounds-checked access that returns `ptr[T]?`.
 - When a `span[T]` boundary is expected, addressable `array[T, N]` values coerce directly; this keeps array-to-span usage on the existing boundary-conversion surface instead of adding a parallel `array.as_span()` method family.
 - `array[char, N]` and `span[char]` are the ordinary source-level forms for raw writable character storage and byte-oriented foreign buffers. They are not alternate text objects and should not grow a parallel everyday text API.
 - `str_buffer[N]` is the one source-level mutable UTF-8 text type. It owns `N` writable text bytes plus an implementation-managed trailing NUL slot, tracks current text length, and refreshes that length when a writable buffer alias mutates the underlying storage.
@@ -927,6 +928,7 @@ Exceptions do not belong here.
 Preferred strategy:
 
 - `Result[T, E]` for recoverable failures
+- `get(arr, i)` for recoverable bounds-checked array/span indexing that returns `ptr[T]?` (null on OOB)
 - `fatal("message")` for programmer errors and impossible states
 - explicit status codes for imported foreign APIs when that matches the C API better
 
