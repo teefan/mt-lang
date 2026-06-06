@@ -806,6 +806,26 @@ module MilkTea
 
         raise_sema_error("fatal expects str or cstr, got #{message_type}")
       end
+      def check_get_call(arguments, scopes:)
+        raise_sema_error("get does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("get expects 2 arguments, got #{arguments.length}") unless arguments.length == 2
+
+        source_expr = arguments.first.value
+        index_expr = arguments[1].value
+        source_type = infer_expression(source_expr, scopes:)
+        index_type = infer_expression(index_expr, scopes:)
+        raise_sema_error("get index must be an integer type, got #{index_type}") unless integer_type?(index_type)
+
+        if array_type?(source_type)
+          raise_sema_error("get requires an addressable array value") unless addressable_storage_expression?(source_expr, scopes:)
+
+          Types::Nullable.new(pointer_to(array_element_type(source_type)))
+        elsif source_type.is_a?(Types::Span)
+          Types::Nullable.new(pointer_to(source_type.element_type))
+        else
+          raise_sema_error("get expects an array or span, got #{source_type}")
+        end
+      end
       def check_ref_of_call(arguments, scopes:)
         raise_sema_error("ref_of does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("ref_of expects 1 argument, got #{arguments.length}") unless arguments.length == 1

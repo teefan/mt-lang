@@ -165,6 +165,18 @@ module MilkTea
         lines << ""
       end
 
+      nullable_array_index_types = checked_array_index_types
+      nullable_array_index_types.each do |type|
+        lines.concat(emit_nullable_array_index_helper(type))
+        lines << ""
+      end
+
+      nullable_span_index_types = checked_span_index_types
+      nullable_span_index_types.each do |type|
+        lines.concat(emit_nullable_span_index_helper(type))
+        lines << ""
+      end
+
       emitted_functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""

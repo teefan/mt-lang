@@ -426,6 +426,8 @@ module MilkTea
             [:compile_time_builtin, "has_attribute", nil, compile_time_builtin_function_type("has_attribute", arguments, env)]
           elsif callee.name == "attribute_of"
             [:compile_time_builtin, "attribute_of", nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
+          elsif callee.name == "get"
+            [:get, nil, nil, nil]
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
             [ :struct_literal, nil, nil, type ]
           else
@@ -772,6 +774,14 @@ module MilkTea
             end
           when :fatal
             @types.fetch("void")
+          when :get
+            receiver_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
+            elem_type = if array_type?(receiver_type)
+                          array_element_type(receiver_type)
+                        else
+                          receiver_type.element_type
+                        end
+            Types::Nullable.new(Types::GenericInstance.new("ptr", [elem_type]))
           else
             raise LoweringError, "unsupported call kind #{kind}"
           end

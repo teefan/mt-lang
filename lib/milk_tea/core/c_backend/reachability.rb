@@ -353,7 +353,7 @@ module MilkTea
             case expression
             when IR::Member
               traverse_ir_expression(expression.receiver, &expression_visitor)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               traverse_ir_expression(expression.receiver, &expression_visitor)
               traverse_ir_expression(expression.index, &expression_visitor)
             when IR::Call
@@ -625,7 +625,7 @@ module MilkTea
                 expression.arguments.any? { |argument| expression_uses_named_call?(argument, callees) }
             when IR::Member
               expression_uses_named_call?(expression.receiver, callees)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               expression_uses_named_call?(expression.receiver, callees) || expression_uses_named_call?(expression.index, callees)
             when IR::Unary
               expression_uses_named_call?(expression.operand, callees)
@@ -654,7 +654,7 @@ module MilkTea
               (!expression.callee.is_a?(String) && expression_uses_str_equality?(expression.callee)) || expression.arguments.any? { |argument| expression_uses_str_equality?(argument) }
             when IR::Member
               expression_uses_str_equality?(expression.receiver)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               expression_uses_str_equality?(expression.receiver) || expression_uses_str_equality?(expression.index)
             when IR::Unary
               expression_uses_str_equality?(expression.operand)

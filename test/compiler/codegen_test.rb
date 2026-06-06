@@ -6391,6 +6391,43 @@ async function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_generate_c_for_nullable_array_indexing
+    source = <<~MT
+      # module demo.nullable_array
+
+      function main() -> int:
+          var arr = array[int, 4](10, 20, 30, 40)
+          let p = get(arr, 1) else:
+              return 1
+          unsafe:
+              return read(p)
+    MT
+
+    result = generate_c_from_source(source)
+
+    assert_match(/static inline int\d*_t \*mt_nullable_index_array_int_4\(int\d*_t \(\*array\)\[4\], uintptr_t index\)/, result)
+    assert_match(/if \(index >= 4\) return NULL/, result)
+  end
+
+  def test_generate_c_for_nullable_span_indexing
+    source = <<~MT
+      # module demo.nullable_span
+
+      function main() -> int:
+          var value = 7
+          let sp = span[int](data = ptr_of(value), len = 1)
+          let p = get(sp, 0) else:
+              return 1
+          unsafe:
+              return read(p)
+    MT
+
+    result = generate_c_from_source(source)
+
+    assert_match(/static inline int\d*_t \*mt_nullable_span_index_span_int\(mt_span_int span, uintptr_t index\)/, result)
+    assert_match(/if \(index >= span\.len\) return NULL/, result)
+  end
+
   private
 
   def source_relative_path(source, default: "program.mt")

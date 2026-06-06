@@ -315,7 +315,7 @@ module MilkTea
               expression.name == name ? 1 : 0
             when IR::Member
               name_reference_count_in_expression(expression.receiver, name)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               name_reference_count_in_expression(expression.receiver, name) + name_reference_count_in_expression(expression.index, name)
             when IR::Call
               callee_count = expression.callee.is_a?(String) ? 0 : name_reference_count_in_expression(expression.callee, name)
@@ -386,7 +386,7 @@ module MilkTea
             when IR::Index
               collect_checked_index_alias_candidates(expression.receiver, counts, order)
               collect_checked_index_alias_candidates(expression.index, counts, order)
-            when IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               order << expression unless counts.key?(expression)
               counts[expression] += 1
               collect_checked_index_alias_candidates(expression.receiver, counts, order)
@@ -424,7 +424,7 @@ module MilkTea
               true
             when IR::Member
               side_effect_free_expression?(expression.receiver)
-            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
               side_effect_free_expression?(expression.receiver) && side_effect_free_expression?(expression.index)
             when IR::Unary
               side_effect_free_expression?(expression.operand)

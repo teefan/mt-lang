@@ -154,7 +154,7 @@ module MilkTea
           inlineable_foreign_argument_expression?(expression.receiver)
         when IR::Index
           inlineable_foreign_argument_expression?(expression.receiver) && inlineable_foreign_argument_expression?(expression.index)
-        when IR::CheckedIndex, IR::CheckedSpanIndex
+        when IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
           inlineable_foreign_argument_expression?(expression.receiver) && inlineable_foreign_argument_expression?(expression.index)
         when IR::Unary
           inlineable_foreign_argument_expression?(expression.operand)
