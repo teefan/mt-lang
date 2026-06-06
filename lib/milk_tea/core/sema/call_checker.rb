@@ -359,7 +359,7 @@ module MilkTea
       end
 
       def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
-        method = lookup_method(target_type, method_name)
+        method = lookup_static_method(target_type, method_name)
         if method
           raise_sema_error(requirement_message) unless method.type.receiver_type.nil?
 

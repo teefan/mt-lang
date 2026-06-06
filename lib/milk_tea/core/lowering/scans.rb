@@ -185,7 +185,8 @@ module MilkTea
           analysis.ast.declarations.grep(AST::ExtendingBlock).each do |extending_block|
             receiver_type = resolve_extending_receiver_type(analysis, extending_block.type_name)
             extending_block.methods.each do |method|
-              definitions[[receiver_type, method.name]] = [analysis, method]
+              method_key = method.kind == :static ? "static:#{method.name}" : method.name
+              definitions[[receiver_type, method_key]] = [analysis, method]
             end
           end
         end

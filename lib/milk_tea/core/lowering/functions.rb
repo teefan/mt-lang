@@ -43,7 +43,7 @@ module MilkTea
             when AST::ExtendingBlock
               receiver_type = resolve_extending_receiver_type(@analysis, decl.type_name)
               decl.methods.each do |method|
-                binding = @analysis.methods.fetch(receiver_type).fetch(method.name)
+                binding = @analysis.methods.fetch(receiver_type).fetch(method.kind == :static ? "static:#{method.name}" : method.name)
                 if binding.type_params.any?
                   binding.instances.values.sort_by { |instance| instance.type_arguments.map(&:to_s).join(",") }.each do |instance|
                     c_name = function_binding_c_name(instance, module_name: @module_name, receiver_type:)
