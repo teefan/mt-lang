@@ -17,7 +17,7 @@ foreign function easy_setopt_followlocation(curl_handle: ptr[c.CURL], follow: pt
 
 
 function write_response_chunk(data: ptr[char], size: ptr_uint, count: ptr_uint, user_data: ptr[void]) -> ptr_uint:
-    if size != 0 and count > heap.ptr_uint_max() / size:
+    if size != 0 and count > heap.ptr_uint_max / size:
         return 0
 
     let total = size * count
@@ -37,7 +37,7 @@ public function code_message(code: curl.Code) -> str:
 
 
 public function get_bytes(url: str) -> Result[bytes.Bytes, curl.Code]:
-    if url.len == heap.ptr_uint_max():
+    if url.len == heap.ptr_uint_max:
         return Result[bytes.Bytes, curl.Code].failure(error= curl.Code<-CURLE_URL_MALFORMAT_CODE)
 
     var scratch = arena.create(url.len + 1)

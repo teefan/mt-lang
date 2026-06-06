@@ -488,7 +488,7 @@ function parse_octal_field(input: span[ubyte], offset: ptr_uint, field_len: ptr_
                     Error
                 ].failure(error = error_message("tar numeric field contains non-octal digits"))
             let digit = ptr_uint<-(current - ubyte<-48)
-            if value > (heap.ptr_uint_max() - digit) / 8:
+            if value > (heap.ptr_uint_max - digit) / 8:
                 return Result[
                     ptr_uint,
                     Error
@@ -737,7 +737,7 @@ public function extract(archive: span[ubyte], destination_root: str) -> Result[b
                                     pass
 
                 let entry_payload_size = padded_size(entry.size)
-                if offset > heap.ptr_uint_max() - block_size - entry_payload_size:
+                if offset > heap.ptr_uint_max - block_size - entry_payload_size:
                     return Result[bool, Error].failure(error = error_message("tar archive offset overflow"))
 
                 offset += block_size + entry_payload_size

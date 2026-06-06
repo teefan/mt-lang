@@ -133,8 +133,12 @@ extending Reader:
 
 function valid_magic(header: ptr[ubyte]) -> bool:
     unsafe:
-        return read(header + 0) == MAGIC_M and read(header + 1) == MAGIC_T and read(header + 2) == MAGIC_A and read(header + 3) == MAGIC_P
-
+        return (
+            read(header + 0) == MAGIC_M and
+            read(header + 1) == MAGIC_T and
+            read(header + 2) == MAGIC_A and
+            read(header + 3) == MAGIC_P
+        )
 
 function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
     var prefix = zero[array[ubyte, 32]]
@@ -230,17 +234,21 @@ function decode_u16_le(bytes: ptr[ubyte]) -> uint:
 
 function decode_u32_le(bytes: ptr[ubyte]) -> uint:
     unsafe:
-        return uint<-read(bytes + 0) |            (uint<-read(bytes + 1) << 8) |            (uint<-read(bytes + 2) << 16) |            (uint<-read(bytes + 3) << 24)
-
+        return (
+            uint<-read(bytes + 0) |
+            uint<-read(bytes + 1) << 8 |
+            uint<-read(bytes + 2) << 16 |
+            uint<-read(bytes + 3) << 24
+        )
 
 function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
     if ptr_uint<-size_of(ptr[void]) < 8:
-        unsafe:
-            var upper_index: ptr_uint = 4
-            while upper_index < 8:
+        var upper_index: ptr_uint = 4
+        while upper_index < 8:
+            unsafe:
                 if read(bytes + upper_index) != 0:
                     return Result[ptr_uint, Error].failure(error= Error.range)
-                upper_index += 1
+            upper_index += 1
 
     let word_bytes = ptr_uint<-size_of(ptr[void])
     var count = word_bytes

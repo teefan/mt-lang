@@ -133,179 +133,179 @@ module MilkTea
             "static"
           end
 
-          def collect_checked_array_index_types
+          def collect_checked_array_index_types(nullable_only: false)
             array_types = []
             emitted_functions.each do |function|
-              collect_checked_array_index_types_from_statements(function.body, array_types)
+              collect_checked_array_index_types_from_statements(function.body, array_types, nullable_only:)
             end
             array_types.uniq
           end
 
-          def collect_checked_span_index_types
+          def collect_checked_span_index_types(nullable_only: false)
             span_types = []
             emitted_functions.each do |function|
-              collect_checked_span_index_types_from_statements(function.body, span_types)
+              collect_checked_span_index_types_from_statements(function.body, span_types, nullable_only:)
             end
             span_types.uniq
           end
 
-          def collect_checked_array_index_types_from_statements(statements, array_types)
+          def collect_checked_array_index_types_from_statements(statements, array_types, nullable_only: false)
             statements.each do |statement|
               case statement
               when IR::LocalDecl
-                collect_checked_array_index_types_from_expression(statement.value, array_types)
+                collect_checked_array_index_types_from_expression(statement.value, array_types, nullable_only:)
               when IR::Assignment
-                collect_checked_array_index_types_from_expression(statement.target, array_types)
-                collect_checked_array_index_types_from_expression(statement.value, array_types)
+                collect_checked_array_index_types_from_expression(statement.target, array_types, nullable_only:)
+                collect_checked_array_index_types_from_expression(statement.value, array_types, nullable_only:)
               when IR::BlockStmt
-                collect_checked_array_index_types_from_statements(statement.body, array_types)
+                collect_checked_array_index_types_from_statements(statement.body, array_types, nullable_only:)
               when IR::WhileStmt
-                collect_checked_array_index_types_from_expression(statement.condition, array_types)
-                collect_checked_array_index_types_from_statements(statement.body, array_types)
+                collect_checked_array_index_types_from_expression(statement.condition, array_types, nullable_only:)
+                collect_checked_array_index_types_from_statements(statement.body, array_types, nullable_only:)
               when IR::ForStmt
-                collect_checked_array_index_types_from_statements([statement.init], array_types)
-                collect_checked_array_index_types_from_expression(statement.condition, array_types)
-                collect_checked_array_index_types_from_statements(statement.body, array_types)
-                collect_checked_array_index_types_from_statements([statement.post], array_types)
+                collect_checked_array_index_types_from_statements([statement.init], array_types, nullable_only:)
+                collect_checked_array_index_types_from_expression(statement.condition, array_types, nullable_only:)
+                collect_checked_array_index_types_from_statements(statement.body, array_types, nullable_only:)
+                collect_checked_array_index_types_from_statements([statement.post], array_types, nullable_only:)
               when IR::IfStmt
-                collect_checked_array_index_types_from_expression(statement.condition, array_types)
-                collect_checked_array_index_types_from_statements(statement.then_body, array_types)
-                collect_checked_array_index_types_from_statements(statement.else_body, array_types) if statement.else_body
+                collect_checked_array_index_types_from_expression(statement.condition, array_types, nullable_only:)
+                collect_checked_array_index_types_from_statements(statement.then_body, array_types, nullable_only:)
+                collect_checked_array_index_types_from_statements(statement.else_body, array_types, nullable_only:) if statement.else_body
               when IR::SwitchStmt
-                collect_checked_array_index_types_from_expression(statement.expression, array_types)
+                collect_checked_array_index_types_from_expression(statement.expression, array_types, nullable_only:)
                 statement.cases.each do |switch_case|
-                  collect_checked_array_index_types_from_statements(switch_case.body, array_types)
+                  collect_checked_array_index_types_from_statements(switch_case.body, array_types, nullable_only:)
                 end
               when IR::StaticAssert
-                collect_checked_array_index_types_from_expression(statement.condition, array_types)
-                collect_checked_array_index_types_from_expression(statement.message, array_types)
+                collect_checked_array_index_types_from_expression(statement.condition, array_types, nullable_only:)
+                collect_checked_array_index_types_from_expression(statement.message, array_types, nullable_only:)
               when IR::ReturnStmt
-                collect_checked_array_index_types_from_expression(statement.value, array_types) if statement.value
+                collect_checked_array_index_types_from_expression(statement.value, array_types, nullable_only:) if statement.value
               when IR::ExpressionStmt
-                collect_checked_array_index_types_from_expression(statement.expression, array_types)
+                collect_checked_array_index_types_from_expression(statement.expression, array_types, nullable_only:)
               end
             end
           end
 
-          def collect_checked_array_index_types_from_expression(expression, array_types)
+          def collect_checked_array_index_types_from_expression(expression, array_types, nullable_only: false)
             case expression
             when IR::Member
-              collect_checked_array_index_types_from_expression(expression.receiver, array_types)
+              collect_checked_array_index_types_from_expression(expression.receiver, array_types, nullable_only:)
             when IR::Index
-              collect_checked_array_index_types_from_expression(expression.receiver, array_types)
-              collect_checked_array_index_types_from_expression(expression.index, array_types)
+              collect_checked_array_index_types_from_expression(expression.receiver, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.index, array_types, nullable_only:)
             when IR::CheckedIndex
-              array_types << expression.receiver_type
-              collect_checked_array_index_types_from_expression(expression.receiver, array_types)
-              collect_checked_array_index_types_from_expression(expression.index, array_types)
+              array_types << expression.receiver_type unless nullable_only
+              collect_checked_array_index_types_from_expression(expression.receiver, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.index, array_types, nullable_only:)
             when IR::NullableIndex
               array_types << expression.receiver_type
-              collect_checked_array_index_types_from_expression(expression.receiver, array_types)
-              collect_checked_array_index_types_from_expression(expression.index, array_types)
+              collect_checked_array_index_types_from_expression(expression.receiver, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.index, array_types, nullable_only:)
             when IR::Call
-              collect_checked_array_index_types_from_expression(expression.callee, array_types) unless expression.callee.is_a?(String)
-              expression.arguments.each { |argument| collect_checked_array_index_types_from_expression(argument, array_types) }
+              collect_checked_array_index_types_from_expression(expression.callee, array_types, nullable_only:) unless expression.callee.is_a?(String)
+              expression.arguments.each { |argument| collect_checked_array_index_types_from_expression(argument, array_types, nullable_only:) }
             when IR::Unary
-              collect_checked_array_index_types_from_expression(expression.operand, array_types)
+              collect_checked_array_index_types_from_expression(expression.operand, array_types, nullable_only:)
             when IR::Binary
-              collect_checked_array_index_types_from_expression(expression.left, array_types)
-              collect_checked_array_index_types_from_expression(expression.right, array_types)
+              collect_checked_array_index_types_from_expression(expression.left, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.right, array_types, nullable_only:)
             when IR::Conditional
-              collect_checked_array_index_types_from_expression(expression.condition, array_types)
-              collect_checked_array_index_types_from_expression(expression.then_expression, array_types)
-              collect_checked_array_index_types_from_expression(expression.else_expression, array_types)
+              collect_checked_array_index_types_from_expression(expression.condition, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.then_expression, array_types, nullable_only:)
+              collect_checked_array_index_types_from_expression(expression.else_expression, array_types, nullable_only:)
             when IR::ReinterpretExpr
-              collect_checked_array_index_types_from_expression(expression.expression, array_types)
+              collect_checked_array_index_types_from_expression(expression.expression, array_types, nullable_only:)
             when IR::AddressOf
-              collect_checked_array_index_types_from_expression(expression.expression, array_types)
+              collect_checked_array_index_types_from_expression(expression.expression, array_types, nullable_only:)
             when IR::Cast
-              collect_checked_array_index_types_from_expression(expression.expression, array_types)
+              collect_checked_array_index_types_from_expression(expression.expression, array_types, nullable_only:)
             when IR::AggregateLiteral
-              expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
+              expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types, nullable_only:) }
             when IR::ArrayLiteral
-              expression.elements.each { |element| collect_checked_array_index_types_from_expression(element, array_types) }
+              expression.elements.each { |element| collect_checked_array_index_types_from_expression(element, array_types, nullable_only:) }
             when IR::VariantLiteral
-              expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types) }
+              expression.fields.each { |field| collect_checked_array_index_types_from_expression(field.value, array_types, nullable_only:) }
             end
           end
 
-          def collect_checked_span_index_types_from_statements(statements, span_types)
+          def collect_checked_span_index_types_from_statements(statements, span_types, nullable_only: false)
             statements.each do |statement|
               case statement
               when IR::LocalDecl
-                collect_checked_span_index_types_from_expression(statement.value, span_types)
+                collect_checked_span_index_types_from_expression(statement.value, span_types, nullable_only:)
               when IR::Assignment
-                collect_checked_span_index_types_from_expression(statement.target, span_types)
-                collect_checked_span_index_types_from_expression(statement.value, span_types)
+                collect_checked_span_index_types_from_expression(statement.target, span_types, nullable_only:)
+                collect_checked_span_index_types_from_expression(statement.value, span_types, nullable_only:)
               when IR::BlockStmt
-                collect_checked_span_index_types_from_statements(statement.body, span_types)
+                collect_checked_span_index_types_from_statements(statement.body, span_types, nullable_only:)
               when IR::WhileStmt
-                collect_checked_span_index_types_from_expression(statement.condition, span_types)
-                collect_checked_span_index_types_from_statements(statement.body, span_types)
+                collect_checked_span_index_types_from_expression(statement.condition, span_types, nullable_only:)
+                collect_checked_span_index_types_from_statements(statement.body, span_types, nullable_only:)
               when IR::ForStmt
-                collect_checked_span_index_types_from_statements([statement.init], span_types)
-                collect_checked_span_index_types_from_expression(statement.condition, span_types)
-                collect_checked_span_index_types_from_statements(statement.body, span_types)
-                collect_checked_span_index_types_from_statements([statement.post], span_types)
+                collect_checked_span_index_types_from_statements([statement.init], span_types, nullable_only:)
+                collect_checked_span_index_types_from_expression(statement.condition, span_types, nullable_only:)
+                collect_checked_span_index_types_from_statements(statement.body, span_types, nullable_only:)
+                collect_checked_span_index_types_from_statements([statement.post], span_types, nullable_only:)
               when IR::IfStmt
-                collect_checked_span_index_types_from_expression(statement.condition, span_types)
-                collect_checked_span_index_types_from_statements(statement.then_body, span_types)
-                collect_checked_span_index_types_from_statements(statement.else_body, span_types) if statement.else_body
+                collect_checked_span_index_types_from_expression(statement.condition, span_types, nullable_only:)
+                collect_checked_span_index_types_from_statements(statement.then_body, span_types, nullable_only:)
+                collect_checked_span_index_types_from_statements(statement.else_body, span_types, nullable_only:) if statement.else_body
               when IR::SwitchStmt
-                collect_checked_span_index_types_from_expression(statement.expression, span_types)
+                collect_checked_span_index_types_from_expression(statement.expression, span_types, nullable_only:)
                 statement.cases.each do |switch_case|
-                  collect_checked_span_index_types_from_statements(switch_case.body, span_types)
+                  collect_checked_span_index_types_from_statements(switch_case.body, span_types, nullable_only:)
                 end
               when IR::StaticAssert
-                collect_checked_span_index_types_from_expression(statement.condition, span_types)
-                collect_checked_span_index_types_from_expression(statement.message, span_types)
+                collect_checked_span_index_types_from_expression(statement.condition, span_types, nullable_only:)
+                collect_checked_span_index_types_from_expression(statement.message, span_types, nullable_only:)
               when IR::ReturnStmt
-                collect_checked_span_index_types_from_expression(statement.value, span_types) if statement.value
+                collect_checked_span_index_types_from_expression(statement.value, span_types, nullable_only:) if statement.value
               when IR::ExpressionStmt
-                collect_checked_span_index_types_from_expression(statement.expression, span_types)
+                collect_checked_span_index_types_from_expression(statement.expression, span_types, nullable_only:)
               end
             end
           end
 
-          def collect_checked_span_index_types_from_expression(expression, span_types)
+          def collect_checked_span_index_types_from_expression(expression, span_types, nullable_only: false)
             case expression
             when IR::Member
-              collect_checked_span_index_types_from_expression(expression.receiver, span_types)
+              collect_checked_span_index_types_from_expression(expression.receiver, span_types, nullable_only:)
             when IR::Index, IR::CheckedIndex, IR::NullableIndex
-              collect_checked_span_index_types_from_expression(expression.receiver, span_types)
-              collect_checked_span_index_types_from_expression(expression.index, span_types)
+              collect_checked_span_index_types_from_expression(expression.receiver, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.index, span_types, nullable_only:)
             when IR::CheckedSpanIndex
-              span_types << expression.receiver_type
-              collect_checked_span_index_types_from_expression(expression.receiver, span_types)
-              collect_checked_span_index_types_from_expression(expression.index, span_types)
+              span_types << expression.receiver_type unless nullable_only
+              collect_checked_span_index_types_from_expression(expression.receiver, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.index, span_types, nullable_only:)
             when IR::NullableSpanIndex
               span_types << expression.receiver_type
-              collect_checked_span_index_types_from_expression(expression.receiver, span_types)
-              collect_checked_span_index_types_from_expression(expression.index, span_types)
+              collect_checked_span_index_types_from_expression(expression.receiver, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.index, span_types, nullable_only:)
             when IR::Call
-              collect_checked_span_index_types_from_expression(expression.callee, span_types) unless expression.callee.is_a?(String)
-              expression.arguments.each { |argument| collect_checked_span_index_types_from_expression(argument, span_types) }
+              collect_checked_span_index_types_from_expression(expression.callee, span_types, nullable_only:) unless expression.callee.is_a?(String)
+              expression.arguments.each { |argument| collect_checked_span_index_types_from_expression(argument, span_types, nullable_only:) }
             when IR::Unary
-              collect_checked_span_index_types_from_expression(expression.operand, span_types)
+              collect_checked_span_index_types_from_expression(expression.operand, span_types, nullable_only:)
             when IR::Binary
-              collect_checked_span_index_types_from_expression(expression.left, span_types)
-              collect_checked_span_index_types_from_expression(expression.right, span_types)
+              collect_checked_span_index_types_from_expression(expression.left, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.right, span_types, nullable_only:)
             when IR::Conditional
-              collect_checked_span_index_types_from_expression(expression.condition, span_types)
-              collect_checked_span_index_types_from_expression(expression.then_expression, span_types)
-              collect_checked_span_index_types_from_expression(expression.else_expression, span_types)
+              collect_checked_span_index_types_from_expression(expression.condition, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.then_expression, span_types, nullable_only:)
+              collect_checked_span_index_types_from_expression(expression.else_expression, span_types, nullable_only:)
             when IR::ReinterpretExpr
-              collect_checked_span_index_types_from_expression(expression.expression, span_types)
+              collect_checked_span_index_types_from_expression(expression.expression, span_types, nullable_only:)
             when IR::AddressOf
-              collect_checked_span_index_types_from_expression(expression.expression, span_types)
+              collect_checked_span_index_types_from_expression(expression.expression, span_types, nullable_only:)
             when IR::Cast
-              collect_checked_span_index_types_from_expression(expression.expression, span_types)
+              collect_checked_span_index_types_from_expression(expression.expression, span_types, nullable_only:)
             when IR::AggregateLiteral
-              expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types) }
+              expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types, nullable_only:) }
             when IR::ArrayLiteral
-              expression.elements.each { |element| collect_checked_span_index_types_from_expression(element, span_types) }
+              expression.elements.each { |element| collect_checked_span_index_types_from_expression(element, span_types, nullable_only:) }
             when IR::VariantLiteral
-              expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types) }
+              expression.fields.each { |field| collect_checked_span_index_types_from_expression(field.value, span_types, nullable_only:) }
             end
           end
 

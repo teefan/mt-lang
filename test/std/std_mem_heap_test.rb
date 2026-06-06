@@ -162,7 +162,7 @@ function main() -> int:
       import std.mem.heap as heap
 
       function main() -> int:
-          let _ = heap.must_alloc[long](heap.ptr_uint_max())
+          let _ = heap.must_alloc[long](heap.ptr_uint_max)
           return 0
 
     MT

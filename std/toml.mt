@@ -499,7 +499,7 @@ function parser_peek_byte(parser: ref[Parser]) -> Option[ubyte]:
 
 
 function parser_peek_offset_byte(parser: ref[Parser], offset: ptr_uint) -> Option[ubyte]:
-    if offset > heap.ptr_uint_max() - parser.index:
+    if offset > heap.ptr_uint_max - parser.index:
         return Option[ubyte].none
 
     let index = parser.index + offset

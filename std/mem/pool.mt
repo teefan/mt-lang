@@ -11,6 +11,7 @@ function slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> 
 
     return alignment
 
+
 public struct Pool:
     memory: ptr[ubyte]?
     occupancy: ptr[bool]?
@@ -67,7 +68,7 @@ public function slot_size_for[T]() -> ptr_uint:
     let size = ptr_uint<-size_of(T)
     let alignment = ptr_uint<-align_of(T)
     let mask = alignment - 1
-    if size > heap.ptr_uint_max() - mask:
+    if size > heap.ptr_uint_max - mask:
         fatal(c"pool.slot_size_for overflow")
 
     return (size + mask) & ~mask
@@ -105,7 +106,7 @@ extending Pool:
         let size = ptr_uint<-size_of(T)
         let alignment = ptr_uint<-align_of(T)
         let mask = alignment - 1
-        if size > heap.ptr_uint_max() - mask:
+        if size > heap.ptr_uint_max - mask:
             return null
 
         let slot_size = (size + mask) & ~mask

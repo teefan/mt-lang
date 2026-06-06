@@ -1,5 +1,8 @@
 import std.c.libc as libc
 
+public const ptr_uint_max: ptr_uint = ~0
+public const minimum_alignment: ptr_uint = size_of(ptr[void])
+
 
 function valid_alignment(alignment: ptr_uint) -> bool:
     if alignment == 0:
@@ -8,19 +11,11 @@ function valid_alignment(alignment: ptr_uint) -> bool:
     return (alignment & (alignment - 1)) == 0
 
 
-public function ptr_uint_max() -> ptr_uint:
-    return ~0
-
-
-public function minimum_alignment() -> ptr_uint:
-    return size_of(ptr[void])
-
-
 public function normalize_alignment(alignment: ptr_uint) -> ptr_uint:
     if not valid_alignment(alignment):
         return 0
 
-    let minimum = minimum_alignment()
+    let minimum = minimum_alignment
     if alignment < minimum:
         return minimum
 
@@ -28,7 +23,7 @@ public function normalize_alignment(alignment: ptr_uint) -> ptr_uint:
 
 
 public function mul_overflows(left: ptr_uint, right: ptr_uint) -> bool:
-    if left != 0 and right > ptr_uint_max() / left:
+    if left != 0 and right > ptr_uint_max / left:
         return true
 
     return false
@@ -60,7 +55,7 @@ public function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -
         return null
 
     let mask = normalized_alignment - 1
-    if size_bytes > ptr_uint_max() - mask:
+    if size_bytes > ptr_uint_max - mask:
         return null
 
     let rounded_size = (size_bytes + mask) & ~mask
@@ -139,7 +134,7 @@ public function release_bytes(memory: ptr[void]?) -> void:
 
 public function alloc[T](count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
-    if alignment > minimum_alignment():
+    if alignment > minimum_alignment:
         return null
 
     let element_size = ptr_uint<-size_of(T)
@@ -156,7 +151,7 @@ public function must_alloc[T](count: ptr_uint) -> ptr[T]:
     if count == 0:
         fatal(c"heap.must_alloc requires count > 0")
 
-    if ptr_uint<-align_of(T) > minimum_alignment():
+    if ptr_uint<-align_of(T) > minimum_alignment:
         fatal(c"heap.must_alloc does not support over-aligned types")
 
     let element_size = ptr_uint<-size_of(T)
@@ -196,7 +191,7 @@ public function must_alloc_aligned[T](count: ptr_uint) -> ptr[T]:
 
 public function alloc_zeroed[T](count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
-    if alignment > minimum_alignment():
+    if alignment > minimum_alignment:
         return null
 
     let memory = alloc_zeroed_bytes(count, size_of(T)) else:
@@ -209,7 +204,7 @@ public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
     if count == 0:
         fatal(c"heap.must_alloc_zeroed requires count > 0")
 
-    if ptr_uint<-align_of(T) > minimum_alignment():
+    if ptr_uint<-align_of(T) > minimum_alignment:
         fatal(c"heap.must_alloc_zeroed does not support over-aligned types")
 
     let element_size = ptr_uint<-size_of(T)
@@ -224,7 +219,7 @@ public function must_alloc_zeroed[T](count: ptr_uint) -> ptr[T]:
 
 public function resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]?:
     let alignment = ptr_uint<-align_of(T)
-    if alignment > minimum_alignment():
+    if alignment > minimum_alignment:
         return null
 
     let element_size = ptr_uint<-size_of(T)
@@ -248,7 +243,7 @@ public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
     if count == 0:
         fatal(c"heap.must_resize requires count > 0")
 
-    if ptr_uint<-align_of(T) > minimum_alignment():
+    if ptr_uint<-align_of(T) > minimum_alignment:
         fatal(c"heap.must_resize does not support over-aligned types")
 
     let element_size = ptr_uint<-size_of(T)
@@ -262,8 +257,4 @@ public function must_resize[T](memory: ptr[T]?, count: ptr_uint) -> ptr[T]:
 
 
 public function release[T](memory: ptr[T]?) -> void:
-    if memory == null:
-        release_bytes(null)
-        return
-
     unsafe: release_bytes(ptr[void]<-memory)

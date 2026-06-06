@@ -91,12 +91,12 @@ extending Counter[T]:
             unsafe:
                 return read(stored)
 
-        if this.total > heap.ptr_uint_max() - amount:
+        if this.total > heap.ptr_uint_max - amount:
             fatal(c"counter.Counter.add total count overflow")
 
         let current = this.values.get_or_insert(value, ptr_uint<-0)
         unsafe:
-            if read(current) > heap.ptr_uint_max() - amount:
+            if read(current) > heap.ptr_uint_max - amount:
                 fatal(c"counter.Counter.add entry count overflow")
             read(current) += amount
 

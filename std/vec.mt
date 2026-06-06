@@ -97,7 +97,7 @@ extending Vec[T]:
             new_capacity = 4
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max() / 2:
+            if new_capacity > heap.ptr_uint_max / 2:
                 new_capacity = min_capacity
             else:
                 new_capacity *= 2
@@ -114,7 +114,7 @@ extending Vec[T]:
             return
 
         let current_len = this.len
-        if values.len > heap.ptr_uint_max() - current_len:
+        if values.len > heap.ptr_uint_max - current_len:
             fatal(c"vec.append_span size overflow")
 
         let new_len = current_len + values.len

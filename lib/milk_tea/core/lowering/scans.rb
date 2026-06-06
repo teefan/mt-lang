@@ -18,11 +18,9 @@ module MilkTea
       end
 
       def collect_includes
-        headers = ["<stdbool.h>", "<stdint.h>", "<stdlib.h>", "<string.h>"]
+        headers = ["<stdbool.h>", "<stdint.h>", "<string.h>"]
         headers << "<stddef.h>" if program_uses_offsetof?
-        if program_uses_fatal?
-          headers << "<stdio.h>"
-        end
+        headers << "<stdio.h>" if program_uses_fatal?
 
         @program.analyses_by_module_name.each_value do |analysis|
           next unless analysis.module_kind == :raw_module

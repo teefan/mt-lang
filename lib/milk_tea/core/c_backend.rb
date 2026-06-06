@@ -42,15 +42,18 @@ module MilkTea
       if uses_fatal_helper? || uses_format_helpers?
         headers << "<stdio.h>"
       end
-      headers << "<stdlib.h>" if uses_fatal_helper?
-      headers << "<stdlib.h>" if uses_async_memory_helpers?
+      if uses_fatal_helper? || uses_format_helpers? || uses_async_memory_helpers? || uses_foreign_temp_cstr_helpers?
+        headers << "<stdlib.h>"
+      end
       headers.uniq.each do |header|
         lines << "#include #{header}"
       end
       lines << ""
 
-      lines.concat(emit_string_type)
-      lines << ""
+      if uses_string_view?
+        lines.concat(emit_string_type)
+        lines << ""
+      end
 
       if uses_fatal_helper?
         lines.concat(emit_fatal_helper)
@@ -165,13 +168,13 @@ module MilkTea
         lines << ""
       end
 
-      nullable_array_index_types = checked_array_index_types
+      nullable_array_index_types = collect_checked_array_index_types(nullable_only: true)
       nullable_array_index_types.each do |type|
         lines.concat(emit_nullable_array_index_helper(type))
         lines << ""
       end
 
-      nullable_span_index_types = checked_span_index_types
+      nullable_span_index_types = collect_checked_span_index_types(nullable_only: true)
       nullable_span_index_types.each do |type|
         lines.concat(emit_nullable_span_index_helper(type))
         lines << ""

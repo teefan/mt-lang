@@ -88,14 +88,14 @@ function total_storage_bytes(command: span[str], cwd: Option[str], env: span[Env
     var index: ptr_uint = 0
     while index < command.len:
         let value = unsafe: read(command.data + index)
-        if total > heap.ptr_uint_max() - (value.len + 1):
+        if total > heap.ptr_uint_max - (value.len + 1):
             fatal(c"process command storage overflow")
         total += value.len + 1
         index += 1
 
     match cwd:
         Option.some as payload:
-            if total > heap.ptr_uint_max() - (payload.value.len + 1):
+            if total > heap.ptr_uint_max - (payload.value.len + 1):
                 fatal(c"process cwd storage overflow")
             total += payload.value.len + 1
         Option.none:
@@ -104,10 +104,10 @@ function total_storage_bytes(command: span[str], cwd: Option[str], env: span[Env
     index = 0
     while index < env.len:
         let entry = unsafe: read(env.data + index)
-        if total > heap.ptr_uint_max() - (entry.name.len + 1):
+        if total > heap.ptr_uint_max - (entry.name.len + 1):
             fatal(c"process env storage overflow")
         total += entry.name.len + 1
-        if total > heap.ptr_uint_max() - (entry.value.len + 1):
+        if total > heap.ptr_uint_max - (entry.value.len + 1):
             fatal(c"process env storage overflow")
         total += entry.value.len + 1
         index += 1
