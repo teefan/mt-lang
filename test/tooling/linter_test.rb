@@ -1444,7 +1444,7 @@ class MilkTeaLinterTest < Minitest::Test
 
   # ── ExtendingBlock linting ──────────────────────────────────────────────
 
-  def test_lints_methods_inside_methods_block
+  def test_lints_methods_inside_extending_block
     warnings = MilkTea::Linter.lint_source(<<~MT, path: "demo.mt")
       struct Counter:
           value: int

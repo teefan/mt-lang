@@ -185,9 +185,9 @@ class MilkTeaParserTest < Minitest::Test
 
     assert_instance_of MilkTea::AST::VarDecl, ast.declarations[1]
 
-    methods_block = ast.declarations[4]
-    assert_equal :public, methods_block.methods[0].visibility
-    assert_equal :private, methods_block.methods[1].visibility
+    extending_block = ast.declarations[4]
+    assert_equal :public, extending_block.methods[0].visibility
+    assert_equal :private, extending_block.methods[1].visibility
   end
 
   def test_parses_interfaces_implements_and_constrained_type_params
@@ -361,7 +361,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal 1, ast.declarations.length
   end
 
-  def test_rejects_pub_on_methods_block
+  def test_rejects_pub_on_extending_block
     source = <<~MT
       public extending Counter:
           function read() -> int:
@@ -1738,7 +1738,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/interface method create cannot be generic/, error.message)
   end
 
-  def test_parses_generic_methods_block_targets
+  def test_parses_generic_extending_block_targets
     source = <<~MT
       struct Box[T]:
           value: T
@@ -2033,7 +2033,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_match(/include directives must appear before external declarations/, error.message)
   end
 
-  def test_rejects_methods_blocks_in_raw_modules
+  def test_rejects_extending_blocks_in_raw_modules
     source = <<~MT
       external
 

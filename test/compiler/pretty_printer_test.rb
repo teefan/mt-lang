@@ -130,7 +130,7 @@ function main(ptr: ptr[int]) -> int:
     assert_equal source, MilkTea::PrettyPrinter.format_ast(ast)
   end
 
-  def test_formats_generic_methods_block_targets_like_source
+  def test_formats_generic_extending_block_targets_like_source
     source = <<~MT
       struct Box[T]:
           value: T
