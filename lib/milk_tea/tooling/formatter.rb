@@ -96,7 +96,7 @@ module MilkTea
       source
     end
 
-    def self.build_long_line_wrap_fix(source, line_index, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil, tokens: nil, tokens_by_line: nil)
+    def self.build_long_line_wrap_fix(source, line_index, max_line_length: DEFAULT_MAX_LINE_LENGTH, path: nil, tokens: nil, tokens_by_line: nil, validate: true)
       return nil unless max_line_length.to_i.positive?
 
       lines = source.lines
@@ -132,7 +132,7 @@ module MilkTea
 
             updated_lines = lines.dup
             updated_lines[line_index..line_index] = [new_text]
-            Parser.parse(updated_lines.join, path:)
+            Parser.parse(updated_lines.join, path:) if validate
 
             return {
               start_line_idx: line_index,
@@ -140,7 +140,7 @@ module MilkTea
               new_text:,
             }
           rescue StandardError
-            next
+            next if validate
           end
       end
 
@@ -151,6 +151,7 @@ module MilkTea
         line_tokens,
         line_terminator:,
         path:,
+        validate:,
       )
       return logical_chain_fix if logical_chain_fix
 
@@ -169,7 +170,7 @@ module MilkTea
       new_text
     end
 
-    def self.build_wrapped_logical_chain_fix(lines, line_index, line, line_tokens, line_terminator:, path:)
+    def self.build_wrapped_logical_chain_fix(lines, line_index, line, line_tokens, line_terminator:, path:, validate: true)
       candidate = logical_chain_wrap_candidate(line_tokens, line)
       return nil unless candidate
 
@@ -186,7 +187,7 @@ module MilkTea
 
       updated_lines = lines.dup
       updated_lines[line_index..line_index] = [new_text]
-      Parser.parse(updated_lines.join, path:)
+      Parser.parse(updated_lines.join, path:) if validate
 
       {
         start_line_idx: line_index,

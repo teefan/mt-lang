@@ -214,9 +214,13 @@ module MilkTea
       end
 
       def self.load_package_graph(path, locked: false)
-        PackageGraph.load(path, locked:)
+        @pkg_graph_cache ||= {}
+        cache_key = [path, locked]
+        return @pkg_graph_cache[cache_key] if @pkg_graph_cache.key?(cache_key)
+
+        @pkg_graph_cache[cache_key] = PackageGraph.load(path, locked:)
       rescue PackageManifestError
-        nil
+        @pkg_graph_cache[cache_key] = nil
       end
       private_class_method :load_package_graph
 
