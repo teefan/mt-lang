@@ -8,7 +8,7 @@ class MilkTeaRawBindingsTest < Minitest::Test
   def test_default_registry_exposes_known_checked_in_bindings
     registry = MilkTea::RawBindings.default_registry
 
-    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet zstd sqlite3 curl pcre2 steamworks], registry.map(&:name)
+    assert_equal %w[raylib raymath raygui rlgl libc ctype errno math string sdl3 glfw gl box2d cjson flecs libuv enet zstd sqlite3 curl pcre2 steamworks miniaudio], registry.map(&:name)
     assert_equal "std.c.raylib", registry.fetch("raylib").module_name
     assert_includes registry.fetch("raylib").header_candidates.first, "third_party/raylib-upstream/src/raylib.h"
     assert_includes registry.fetch("raylib").link_flags, "-lglfw"

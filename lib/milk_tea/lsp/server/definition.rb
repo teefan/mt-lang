@@ -195,6 +195,7 @@ module MilkTea
 
         if node.respond_to?(:members)
           node.members.each do |member|
+            next unless member.is_a?(Symbol)
             return true if find_local_decl_node(node.public_send(member), name, before_line, &block)
           end
         end
@@ -326,7 +327,7 @@ module MilkTea
         path = module_path_for_name(current_uri, module_name)
         return nil unless path
 
-        ast = binding&.ast
+        ast = binding.respond_to?(:ast) ? binding.ast : nil
         if ast&.line && ast.respond_to?(:column) && ast.column
           start_line = ast.line - 1
           start_char = ast.column - 1
