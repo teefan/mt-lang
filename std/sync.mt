@@ -79,12 +79,12 @@ public function create_semaphore(initial_value: uint) -> Result[Semaphore, Error
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Mutex:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 
@@ -105,7 +105,7 @@ extending Mutex:
 
 
 extending Condition:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 
@@ -126,7 +126,7 @@ extending Condition:
 
 
 extending Semaphore:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 

@@ -20,7 +20,7 @@ const horizontal_repeat_delay: float = 0.16
 const horizontal_repeat_interval: float = 0.05
 
 interface ScreenState:
-    mutable function update(effect: rl.Sound) -> void
+    editable function update(effect: rl.Sound) -> void
     function draw(texture: rl.Texture2D) -> void
 
 struct TitleScreen implements ScreenState:
@@ -163,7 +163,7 @@ extending TitleScreen:
         )
 
 
-    mutable function update(_effect: rl.Sound):
+    editable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ENTER) or rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE):
@@ -193,13 +193,13 @@ extending TitleScreen:
 
 
 extending RuntimeAssets:
-    mutable function release():
+    editable function release():
         rl.unload_texture(this.tiles)
         rl.unload_sound(this.clear_sound)
 
 
 extending PausedScreen:
-    mutable function update(_effect: rl.Sound):
+    editable function update(_effect: rl.Sound):
         this.blink_timer += rl.get_frame_time()
 
         if (
@@ -261,7 +261,7 @@ extending Game:
         return game
 
 
-    mutable function reset():
+    editable function reset():
         this.board = zero[array[int, 200]]
         this.next_kind = random_kind()
         this.score = 0
@@ -277,7 +277,7 @@ extending Game:
         this.spawn_next_piece()
 
 
-    mutable function spawn_next_piece():
+    editable function spawn_next_piece():
         this.active = pieces.Piece(kind = this.next_kind, rotation = 0, x = 3, y = 0)
         this.next_kind = random_kind()
         this.drop_timer = 0.0
@@ -290,7 +290,7 @@ extending Game:
             this.game_over = true
 
 
-    mutable function collides(piece: pieces.Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
+    editable function collides(piece: pieces.Piece, move_x: int, move_y: int, next_rotation: int) -> bool:
         let cells = pieces.shape_cells(piece.kind, next_rotation)
 
         for i in 0..4:
@@ -310,7 +310,7 @@ extending Game:
         return false
 
 
-    mutable function try_move(delta_x: int, delta_y: int) -> bool:
+    editable function try_move(delta_x: int, delta_y: int) -> bool:
         if this.collides(this.active, delta_x, delta_y, this.active.rotation):
             return false
 
@@ -319,7 +319,7 @@ extending Game:
         return true
 
 
-    mutable function try_rotate(delta: int) -> bool:
+    editable function try_rotate(delta: int) -> bool:
         let next_rotation = (this.active.rotation + delta + 4) % 4
         if not this.collides(this.active, 0, 0, next_rotation):
             this.active.rotation = next_rotation
@@ -338,7 +338,7 @@ extending Game:
         return false
 
 
-    mutable function lock_piece(effect: rl.Sound):
+    editable function lock_piece(effect: rl.Sound):
         let cells = pieces.shape_cells(this.active.kind, this.active.rotation)
 
         for i in 0..4:
@@ -361,7 +361,7 @@ extending Game:
         this.spawn_next_piece()
 
 
-    mutable function clear_full_rows() -> int:
+    editable function clear_full_rows() -> int:
         var cleared = 0
         var y = board_height
 
@@ -391,14 +391,14 @@ extending Game:
         return cleared
 
 
-    mutable function hard_drop(effect: rl.Sound):
+    editable function hard_drop(effect: rl.Sound):
         while this.try_move(0, 1):
             this.score += 2
 
         this.lock_piece(effect)
 
 
-    mutable function update(effect: rl.Sound):
+    editable function update(effect: rl.Sound):
         let frame_time = rl.get_frame_time()
         this.pause_requested = false
         this.exit_requested = false

@@ -82,7 +82,7 @@ extending PackedMusic:
         return rl.get_music_time_played(this.music)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         if rl.is_music_valid(this.music):
             rl.unload_music_stream(this.music)
 

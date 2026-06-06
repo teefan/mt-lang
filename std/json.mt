@@ -423,7 +423,7 @@ public function render_pretty(value: Value) -> Result[string.String, Error]:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
@@ -453,7 +453,7 @@ extending Value:
 
 
 extending Entry:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.key.release()
         release_value(this.value)
 
@@ -523,7 +523,7 @@ extending Object:
             return value_as_object(read(entry).value)
 
 
-    public mutable function set(key: str, value: Value) -> void:
+    public editable function set(key: str, value: Value) -> void:
         let entry = Object.find_entry(this, key)
         if entry != null:
             unsafe:
@@ -534,7 +534,7 @@ extending Object:
         this.entries.push(Entry(key = string.String.from_str(key), value = value))
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.entries.len():
             let entry = this.entries.get(index) else:
@@ -601,11 +601,11 @@ extending Array:
             return value_as_object(read(value_ptr))
 
 
-    public mutable function push(value: Value) -> void:
+    public editable function push(value: Value) -> void:
         this.values.push(value)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.values.len():
             let value_ptr = this.values.get(index) else:

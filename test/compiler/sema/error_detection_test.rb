@@ -1536,7 +1536,7 @@ class ErrorDetectionTest < Minitest::Test
           value: int
 
       extending Counter:
-          mutable function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
       function main() -> int:
@@ -1551,7 +1551,7 @@ class ErrorDetectionTest < Minitest::Test
       check_source(source)
     end
 
-    assert_match(/cannot call mutable method add on an immutable receiver/, error.message)
+    assert_match(/cannot call editable method add on an immutable receiver/, error.message)
   end
 
   def test_rejects_safe_indexing_of_temporary_array_values

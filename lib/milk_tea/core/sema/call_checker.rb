@@ -338,7 +338,7 @@ module MilkTea
         requirement_message = "#{context} requires method #{target_type}.format_len() -> ptr_uint"
         resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method|
           raise_sema_error("#{context} requires #{target_type}.format_len() to take 0 arguments") unless method.type.params.empty?
-          raise_sema_error("#{context} requires #{target_type}.format_len() to be non-mutable") if method.type.receiver_mutable
+          raise_sema_error("#{context} requires #{target_type}.format_len() to be non-editable") if method.type.receiver_editable
           unless method.type.return_type == @types.fetch("ptr_uint")
             raise_sema_error("#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method.type.return_type}")
           end
@@ -348,7 +348,7 @@ module MilkTea
       def resolve_explicit_format_append_binding(target_type, context:)
         requirement_message = "#{context} requires method #{target_type}.append_format(output: ref[std.string.String]) -> void"
         resolve_explicit_instance_binding(target_type, "append_format", requirement_message:) do |method|
-          raise_sema_error("#{context} requires #{target_type}.append_format() to be non-mutable") if method.type.receiver_mutable
+          raise_sema_error("#{context} requires #{target_type}.append_format() to be non-editable") if method.type.receiver_editable
           unless method.type.params.length == 1 && string_builder_ref_type?(method.type.params.first.type)
             raise_sema_error("#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void")
           end
@@ -452,13 +452,13 @@ module MilkTea
 
         case kind
         when :str_buffer_clear
-          record_mutable_receiver_expression(receiver)
-          raise_sema_error("cannot call mutable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          record_editable_receiver_expression(receiver)
+          raise_sema_error("cannot call editable method #{receiver_type}.clear on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           @types.fetch("void")
         when :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format
-          record_mutable_receiver_expression(receiver)
-          raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
+          record_editable_receiver_expression(receiver)
+          raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless assignable_receiver?(receiver, scopes)
 
           actual_type = infer_expression(arguments.first.value, scopes:, expected_type: @types.fetch("str"))
           ensure_argument_assignable!(
@@ -491,7 +491,7 @@ module MilkTea
         raise_sema_error("unknown method #{receiver_type}.#{method_name}") unless event_type?(receiver_type)
 
         raise_sema_error("#{method_name} does not support named arguments") if arguments.any?(&:name)
-        raise_sema_error("cannot call mutable method #{receiver_type}.#{method_name} on an immutable receiver") unless event_receiver_mutable?(receiver, scopes:)
+        raise_sema_error("cannot call editable method #{receiver_type}.#{method_name} on an immutable receiver") unless event_receiver_mutable?(receiver, scopes:)
         if kind == :event_emit
           raise_sema_error("#{receiver_type}.emit is only available inside module #{receiver_type.module_name}") unless receiver_type.module_name == @module_name
         end

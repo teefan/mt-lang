@@ -321,17 +321,17 @@ extending OrderedMap[K, V]:
         return this.get(key) != null
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         OrderedMap[K, V].release_subtree(this.root)
         this.root = null
         this.len = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.clear()
 
 
-    public mutable function set(key: K, value: V) -> Option[V]:
+    public editable function set(key: K, value: V) -> Option[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
             let node = location.node else:
@@ -370,7 +370,7 @@ extending OrderedMap[K, V]:
         return Option[V].none
 
 
-    public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
+    public editable function get_or_insert(key: K, value: V) -> ptr[V]:
         let location = OrderedMap[K, V].locate(this, key)
         if location.found:
             let node = location.node else:
@@ -408,7 +408,7 @@ extending OrderedMap[K, V]:
             return ptr_of(read(node).value)
 
 
-    public mutable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
+    public editable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
         let location = OrderedMap[K, V].locate(this, key)
         if not location.found:
             return Option[RemovedEntry[K, V]].none
@@ -424,7 +424,7 @@ extending OrderedMap[K, V]:
         return Option[RemovedEntry[K, V]].some(value = removed)
 
 
-    public mutable function remove(key: K) -> Option[V]:
+    public editable function remove(key: K) -> Option[V]:
         let removed = this.remove_entry(key)
         match removed:
             Option.none:
@@ -438,7 +438,7 @@ extending Keys[K, V]:
         return this
 
 
-    public mutable function next() -> const_ptr[K]?:
+    public editable function next() -> const_ptr[K]?:
         let current = this.node else:
             return null
 
@@ -453,7 +453,7 @@ extending Values[K, V]:
         return this
 
 
-    public mutable function next() -> ptr[V]?:
+    public editable function next() -> ptr[V]?:
         let current = this.node else:
             return null
 
@@ -468,7 +468,7 @@ extending Entries[K, V]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         let current = this.node else:
             return false
 

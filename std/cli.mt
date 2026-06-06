@@ -647,7 +647,7 @@ public function render_command_help(app: AppSpec, command_name: str) -> Result[s
 
 
 extending OptionMatch:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.name.release()
         this.value.release()
 
@@ -698,7 +698,7 @@ extending Match:
             return Option[str].some(value= read(value).as_str())
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.command_name.release()
 
         var option_index: ptr_uint = 0
@@ -729,5 +729,5 @@ extending Match:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()

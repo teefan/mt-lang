@@ -114,7 +114,7 @@ public variant TokenKind:
 # ---------------------------------------------------------------------------
 
 interface Damageable:
-    mutable function take_damage(amount: int) -> void
+    editable function take_damage(amount: int) -> void
     function is_alive() -> bool
     static function max_hp() -> int
 
@@ -125,7 +125,7 @@ struct NPC implements Damageable, Named:
     hp: int
 
 extending NPC:
-    mutable function take_damage(amount: int) -> void:
+    editable function take_damage(amount: int) -> void:
         this.hp = this.hp - amount
 
     function is_alive() -> bool:
@@ -658,7 +658,7 @@ async function async_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function interface_demo(target: ref[NPC]) -> int:
-    # --- methods via type projection (mutable function)
+    # --- methods via type projection (editable function)
     target.take_damage(10)
 
     # --- method via value receiver

@@ -56,7 +56,7 @@ module MilkTea
       :identifier_binding_ids,
       :declaration_binding_ids,
       :mutating_argument_identifier_ids,
-      :mutable_receiver_expression_ids,
+      :editable_receiver_expression_ids,
       :mutable_lvalue_argument_identifier_ids,
       :binding_types,
     )
@@ -247,7 +247,7 @@ module MilkTea
         @declaration_binding_ids = {}
         @mutating_argument_identifier_ids = {}
         @mutable_lvalue_argument_identifier_ids = {}
-        @mutable_receiver_expression_ids = {}
+        @editable_receiver_expression_ids = {}
         @preassigned_local_binding_ids = {}
         @nullability_flow_result = nil
         @unsafe_statement_lines = []

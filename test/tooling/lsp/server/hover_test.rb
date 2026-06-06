@@ -71,7 +71,7 @@ class HoverTest < Minitest::Test
 
       hover_value = hover_response.dig("result", "contents", "value")
       assert_includes hover_value, "interface ScreenState"
-      assert_includes hover_value, "mutable function update(effect: int) -> void"
+      assert_includes hover_value, "editable function update(effect: int) -> void"
       assert_includes hover_value, "function draw(texture: int) -> void"
       assert_includes hover_value, "Shared gameplay contract."
       refute_includes hover_value, "local ScreenState"
@@ -86,7 +86,7 @@ class HoverTest < Minitest::Test
       contracts_source = <<~MT
         ## Damage contract.
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
         import std.contracts as contracts
@@ -95,7 +95,7 @@ class HoverTest < Minitest::Test
             hp: int
 
         extending NPC:
-            mutable function take_damage(amount: int):
+            editable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -131,7 +131,7 @@ class HoverTest < Minitest::Test
         })
         hover_value = hover.dig("result", "contents", "value")
         assert_includes hover_value, "interface Damageable"
-        assert_includes hover_value, "mutable function take_damage(amount: int) -> void"
+        assert_includes hover_value, "editable function take_damage(amount: int) -> void"
         assert_includes hover_value, "Damage contract."
         assert_includes hover_value, "Defined at: [std/contracts.mt:#{definition_line + 1}](#{contracts_uri}#L#{definition_line + 1})"
 
@@ -1839,7 +1839,7 @@ class HoverTest < Minitest::Test
             value: V
 
         extending Bucket[K, V]:
-            public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
+            public editable function get_or_insert(key: K, value: V) -> ptr[V]:
                 let _ = key
                 this.value = value
                 return ptr_of(this.value)
@@ -1852,7 +1852,7 @@ class HoverTest < Minitest::Test
             values: foo.Bucket[T, ptr_uint]
 
         extending Counter[T]:
-            mutable function add(value: T) -> ptr_uint:
+            editable function add(value: T) -> ptr_uint:
                 let current = this.values.get_or_insert(value, 0)
                 unsafe:
                     return read(current)
@@ -1901,7 +1901,7 @@ class HoverTest < Minitest::Test
           "position" => { "line" => access_line, "character" => method_char }
         })
         method_hover_value = method_hover.dig("result", "contents", "value")
-        assert_includes method_hover_value, "mutable function get_or_insert(key: K, value: V) -> ptr[V]"
+        assert_includes method_hover_value, "editable function get_or_insert(key: K, value: V) -> ptr[V]"
         assert_includes method_hover_value, "Defined at: [std/foo.mt:#{method_definition_line + 1}](#{foo_uri}#L#{method_definition_line + 1})"
 
         values_definition = client.send_request("textDocument/definition", {
@@ -1997,7 +1997,7 @@ class HoverTest < Minitest::Test
       })
       hover_value = hover.dig("result", "contents", "value")
 
-      assert_includes hover_value, "mutable function reset() -> void"
+      assert_includes hover_value, "editable function reset() -> void"
       refute_includes hover_value, "local reset"
     end
   end

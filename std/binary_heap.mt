@@ -115,24 +115,24 @@ extending BinaryHeap[T]:
             return const_ptr_of(read(ptr[T]<-current))
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.values.clear()
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.values.release()
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
 
 
-    public mutable function push(value: T) -> void:
+    public editable function push(value: T) -> void:
         this.values.push(value)
         BinaryHeap[T].sift_up(this, this.values.len() - 1)
 
 
-    public mutable function pop() -> Option[T]:
+    public editable function pop() -> Option[T]:
         let removed = this.values.swap_remove(0)
         match removed:
             Option.none:
@@ -148,7 +148,7 @@ extending Iter[T]:
         return this
 
 
-    public mutable function next() -> const_ptr[T]?:
+    public editable function next() -> const_ptr[T]?:
         if this.index >= this.len:
             return null
 

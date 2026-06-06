@@ -291,7 +291,7 @@ function main() -> int:
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
       extending NumbersIter:
-          public mutable function next() -> ptr[int]?:
+          public editable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -332,7 +332,7 @@ function main() -> int:
               return NumbersIter(index = 0, stop = this.stop)
 
       extending NumbersIter:
-          public mutable function next() -> bool:
+          public editable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -1277,7 +1277,7 @@ function main() -> int:
         public foreign function update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
 
         extending Camera:
-            public mutable function update(mode: CameraMode) -> void:
+            public editable function update(mode: CameraMode) -> void:
                 update_camera(this, mode)
       MT
     }

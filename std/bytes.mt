@@ -21,7 +21,7 @@ extending Bytes:
         return Bytes(data = data, len = source.len)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0

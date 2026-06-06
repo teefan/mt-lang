@@ -106,7 +106,7 @@ class MilkTeaFormatterTest < Minitest::Test
           value: int
 
       extending Worker:
-          public async mutable function tick() -> int:
+          public async editable function tick() -> int:
               return await next()
     MT
 
@@ -522,14 +522,14 @@ class MilkTeaFormatterTest < Minitest::Test
       interface ScreenState:
 
 
-          mutable function update(effect: rl.Sound) -> void
+          editable function update(effect: rl.Sound) -> void
           function draw(texture: rl.Texture2D) -> void
     MT
 
     formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
 
-    assert_includes formatted, "interface ScreenState:\n    mutable function update(effect: rl.Sound) -> void"
-    refute_includes formatted, "interface ScreenState:\n\n    mutable function update(effect: rl.Sound) -> void"
+    assert_includes formatted, "interface ScreenState:\n    editable function update(effect: rl.Sound) -> void"
+    refute_includes formatted, "interface ScreenState:\n\n    editable function update(effect: rl.Sound) -> void"
   end
 
   def test_tidy_mode_inserts_two_blank_lines_before_extending_block

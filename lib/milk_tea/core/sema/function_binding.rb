@@ -239,7 +239,7 @@ module MilkTea
           body_params << value_binding(
             name: "this",
             type: receiver_type,
-            mutable: method_kind == :mutable,
+            mutable: method_kind == :editable,
             kind: :param,
           )
         end
@@ -294,11 +294,11 @@ module MilkTea
           end
         end
 
-        receiver_mutable = false
+        receiver_editable = false
         call_params = body_params
         function_receiver_type = nil
         if instance_method
-          receiver_mutable = method_kind == :mutable
+          receiver_editable = method_kind == :editable
           call_params = body_params.drop(1)
           function_receiver_type = receiver_type
         end
@@ -332,7 +332,7 @@ module MilkTea
           params: (foreign || external) ? call_params : call_params.map { |param| Types::Parameter.new(param.name, param.type) },
           return_type: function_return_type,
           receiver_type: function_receiver_type,
-          receiver_mutable:,
+          receiver_editable:,
           variadic: decl.respond_to?(:variadic) ? decl.variadic : false,
           external:,
         )

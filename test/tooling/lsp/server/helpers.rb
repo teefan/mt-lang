@@ -219,7 +219,7 @@ module LSPServerTestHelpers
         value: int
 
     extending Counter:
-        mutable function reset():
+        editable function reset():
             this.value = 0
   MT
 
@@ -280,7 +280,7 @@ module LSPServerTestHelpers
   SOURCE_WITH_LOCAL_INTERFACES = <<~MT
     ## Shared gameplay contract.
     interface ScreenState:
-        mutable function update(effect: int) -> void
+        editable function update(effect: int) -> void
         function draw(texture: int) -> void
 
     struct TitleScreen implements ScreenState:
@@ -290,14 +290,14 @@ module LSPServerTestHelpers
         ticks: int
 
     extending TitleScreen:
-        mutable function update(effect: int):
+        editable function update(effect: int):
             this.ticks += effect
 
         function draw(texture: int) -> void:
             let sink = texture
 
     extending PauseScreen:
-        mutable function update(effect: int):
+        editable function update(effect: int):
             this.ticks += effect
 
         function draw(texture: int) -> void:

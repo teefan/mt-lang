@@ -200,7 +200,7 @@ public function create(worker_count: ptr_uint) -> Result[Pool, Error]:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
@@ -218,7 +218,7 @@ extending WorkItem:
 
 
 extending Pool:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let state = this.state else:
             return
 

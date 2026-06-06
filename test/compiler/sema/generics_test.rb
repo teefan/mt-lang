@@ -308,7 +308,7 @@ function main() -> int:
           function get() -> T:
               return this.value
 
-          mutable function set(value: T) -> void:
+          editable function set(value: T) -> void:
               this.value = value
 
           static function zero() -> Box[T]:
@@ -550,7 +550,7 @@ function main() -> int:
             heap.release(node)
             return
 
-        public mutable function release() -> void:
+        public editable function release() -> void:
             OrderedSet[T].probe(unsafe: ptr[Node[T]]<-this.root)
             this.root = null
             return

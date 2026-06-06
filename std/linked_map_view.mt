@@ -20,7 +20,7 @@ extending SnapshotValues[K, V]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         return this.values.next()
 
 
@@ -39,7 +39,7 @@ extending SnapshotEntries[K, V]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         return this.values.next()
 
 

@@ -59,10 +59,10 @@ module MilkTea
         else
           raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: method kind does not match") if method.type.receiver_type.nil?
 
-          expected_mutable = interface_method.kind == :mutable
-          actual_mutable = method.type.receiver_mutable
-          if actual_mutable != expected_mutable
-            raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver mutability does not match")
+          expected_editable = interface_method.kind == :editable
+          actual_editable = method.type.receiver_editable
+          if actual_editable != expected_editable
+            raise_sema_error("type #{receiver_type} method #{method.name} does not satisfy interface #{interface.name}: receiver editability does not match")
           end
         end
 

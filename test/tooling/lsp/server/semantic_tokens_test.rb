@@ -720,7 +720,7 @@ class SemanticTokensTest < Minitest::Test
 
       contracts_source = <<~MT
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
       MT
       main_source = <<~MT
         import std.contracts as contracts
@@ -729,7 +729,7 @@ class SemanticTokensTest < Minitest::Test
             hp: int
 
         extending NPC:
-            mutable function take_damage(amount: int):
+            editable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -999,7 +999,7 @@ class SemanticTokensTest < Minitest::Test
         entries = decode_semantic_token_entries(response.fetch("result").fetch("data"), legend)
 
         header_line = source.lines.index { |line| line == "extending OrderedMap[K, V]:\n" } or flunk("expected OrderedMap extending header")
-        set_line = source.lines.index { |line| line.include?("public mutable function set(key: K, value: V) -> Option[V]:") } or flunk("expected OrderedMap.set declaration")
+        set_line = source.lines.index { |line| line.include?("public editable function set(key: K, value: V) -> Option[V]:") } or flunk("expected OrderedMap.set declaration")
         entries_line = source.lines.index { |line| line.include?("return this.entries()") } or flunk("expected OrderedMap.iter body")
         next_line = source.lines.index { |line| line.include?("if not this.started:") } or flunk("expected Entries.next guard")
         current_line = source.lines.index { |line| line.include?("public function current() -> Entry[K, V]:") } or flunk("expected Entries.current declaration")

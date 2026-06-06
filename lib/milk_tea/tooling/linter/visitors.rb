@@ -381,7 +381,7 @@ module MilkTea
       def editable_receiver_expression?(expression)
         return true unless @sema_facts
   
-        @sema_facts&.binding_resolution&.mutable_receiver_expression_ids&.key?(expression.object_id)
+        @sema_facts&.binding_resolution&.editable_receiver_expression_ids&.key?(expression.object_id)
       end
       def with_scope
         @scopes << {}

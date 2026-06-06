@@ -357,8 +357,8 @@ module MilkTea
       def render_function_signature(function, prefix: "")
         signature_prefix = if function.is_a?(AST::MethodDef)
                              case function.kind
-                             when :mutable
-                               "mutable function "
+                             when :editable
+                               "editable function "
                              when :static
                                "static function "
                              else
@@ -457,8 +457,8 @@ module MilkTea
         prefix = +""
         prefix << "async " if method.async
         prefix << case method.kind
-                  when :mutable
-                    "mutable function "
+                  when :editable
+                    "editable function "
                   else
                     "function "
                   end

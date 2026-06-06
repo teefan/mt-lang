@@ -87,7 +87,7 @@ public function open(path: str) -> Result[Reader, Error]:
 
 
 extending Reader:
-    public mutable function close() -> void:
+    public editable function close() -> void:
         if this.file != null:
             stdio.close(this.file)
 

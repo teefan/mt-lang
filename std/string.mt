@@ -38,17 +38,17 @@ extending String:
         return this.len == 0
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.len = 0
 
 
-    public mutable function truncate(new_len: ptr_uint) -> void:
+    public editable function truncate(new_len: ptr_uint) -> void:
         if new_len > this.len:
             fatal(c"string.truncate new length exceeds current length")
         this.len = new_len
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         if this.owns_storage:
             heap.release(this.data)
 
@@ -81,7 +81,7 @@ extending String:
             return left_view.as_str().equal(right_view.as_str())
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -105,7 +105,7 @@ extending String:
         this.capacity = new_capacity
 
 
-    public mutable function push_byte(value: ubyte) -> void:
+    public editable function push_byte(value: ubyte) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -118,7 +118,7 @@ extending String:
         this.len += 1
 
 
-    public mutable function append(suffix: str) -> void:
+    public editable function append(suffix: str) -> void:
         if suffix.len == 0:
             return
 
@@ -150,16 +150,16 @@ extending String:
         this.len = new_len
 
 
-    public mutable function append_format(text: str) -> void:
+    public editable function append_format(text: str) -> void:
         this.append(text)
 
 
-    public mutable function assign(value_text: str) -> void:
+    public editable function assign(value_text: str) -> void:
         this.clear()
         this.append(value_text)
 
 
-    public mutable function assign_format(text: str) -> void:
+    public editable function assign_format(text: str) -> void:
         this.assign(text)
 
 

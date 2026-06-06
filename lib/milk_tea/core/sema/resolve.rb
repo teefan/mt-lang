@@ -726,8 +726,8 @@ module MilkTea
         unless iter_method.type.params.empty?
           raise_sema_error("for iterator #{type}.iter expects 0 arguments")
         end
-        if iter_method.type.receiver_mutable
-          raise_sema_error("for iterator #{type}.iter cannot be a mutable method")
+        if iter_method.type.receiver_editable
+          raise_sema_error("for iterator #{type}.iter cannot be an editable method")
         end
 
         iterator_type = iter_method.type.return_type
@@ -1365,7 +1365,7 @@ module MilkTea
             end,
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_mutable: type.receiver_mutable,
+            receiver_editable: type.receiver_editable,
             variadic: type.variadic,
             external: type.external,
           )
@@ -1903,7 +1903,7 @@ module MilkTea
           identifier_binding_ids: @identifier_binding_ids.dup.freeze,
           declaration_binding_ids: @declaration_binding_ids.dup.freeze,
           mutating_argument_identifier_ids: @mutating_argument_identifier_ids.dup.freeze,
-          mutable_receiver_expression_ids: @mutable_receiver_expression_ids.dup.freeze,
+          editable_receiver_expression_ids: @editable_receiver_expression_ids.dup.freeze,
           mutable_lvalue_argument_identifier_ids: @mutable_lvalue_argument_identifier_ids.dup.freeze,
           binding_types: @binding_type_by_id.dup.freeze,
         )

@@ -69,21 +69,21 @@ extending Counter[T]:
         return Entries[T](values = linked_map_view.SnapshotEntries[T, ptr_uint].create(this.values.entries()))
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.values.clear()
         this.total = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.values.release()
         this.total = 0
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
 
 
-    public mutable function add(value: T, amount: ptr_uint) -> ptr_uint:
+    public editable function add(value: T, amount: ptr_uint) -> ptr_uint:
         if amount == 0:
             let stored = this.values.get(value) else:
                 return 0
@@ -105,11 +105,11 @@ extending Counter[T]:
             return read(current)
 
 
-    public mutable function increment(value: T) -> ptr_uint:
+    public editable function increment(value: T) -> ptr_uint:
         return this.add(value, 1)
 
 
-    public mutable function remove_one(value: T) -> bool:
+    public editable function remove_one(value: T) -> bool:
         let current = this.values.get(value) else:
             return false
 
@@ -134,7 +134,7 @@ extending Counter[T]:
         return true
 
 
-    public mutable function remove(value: T) -> Option[ptr_uint]:
+    public editable function remove(value: T) -> Option[ptr_uint]:
         let removed = this.values.remove(value)
         match removed:
             Option.none:
@@ -151,7 +151,7 @@ extending Entries[T]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         return this.values.next()
 
 

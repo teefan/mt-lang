@@ -189,7 +189,7 @@ module MilkTea
         raise error(visibility_token, "public is not allowed on extending blocks") if visibility == :public
 
         parse_extending_block
-      elsif check(:mutable) || check(:static)
+      elsif check(:editable) || check(:static)
         reject_attributes!(attributes)
         raise error(peek, "#{peek.lexeme} function is only allowed inside extending blocks")
       elsif match(:foreign)
@@ -663,7 +663,7 @@ module MilkTea
     end
 
     def parse_method_kind
-      return :mutable if match(:mutable)
+      return :editable if match(:editable)
       return :static if match(:static)
 
       :plain

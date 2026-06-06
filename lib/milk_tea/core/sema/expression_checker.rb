@@ -828,8 +828,8 @@ module MilkTea
             scopes:,
             receiver_type: infer_method_receiver_type(receiver, scopes:, member_name: expression.callee.member),
           ) if callable.type_params.any?
-          record_mutable_receiver_expression(receiver) if callable.type.receiver_mutable
-          raise_sema_error("cannot call mutable method #{callable.name} on an immutable receiver") if callable.type.receiver_mutable && !assignable_receiver?(receiver, scopes)
+          record_editable_receiver_expression(receiver) if callable.type.receiver_editable
+          raise_sema_error("cannot call editable method #{callable.name} on an immutable receiver") if callable.type.receiver_editable && !assignable_receiver?(receiver, scopes)
 
           check_function_call(callable, expression.arguments, scopes:)
           callable.owner.send(:check_function, callable) unless callable.type_arguments.empty?
@@ -1287,10 +1287,10 @@ module MilkTea
       end
 
 
-      def record_mutable_receiver_expression(receiver)
+      def record_editable_receiver_expression(receiver)
         return unless receiver
 
-        @mutable_receiver_expression_ids[receiver.object_id] = true
+        @editable_receiver_expression_ids[receiver.object_id] = true
       end
 
       def record_mutable_lvalue_argument_identifier(expression)

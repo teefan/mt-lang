@@ -866,7 +866,7 @@ module MilkTea
           when nil
             :instance
           when "inout"
-            :mutable
+            :editable
           else
             raise Error, "method generation for #{raw_name} in #{@policy_path} cannot use receiver mode #{first_param["mode"].inspect}"
           end
@@ -890,8 +890,8 @@ module MilkTea
           signature << case kind
                        when :static
                          "static function "
-                       when :mutable
-                         "mutable function "
+                       when :editable
+                         "editable function "
                        else
                          "function "
                        end

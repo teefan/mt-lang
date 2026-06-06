@@ -38,14 +38,14 @@ class InterfaceImportTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          mutable function take_damage(amount: int) -> void
+          editable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
           hp: int
 
       extending NPC:
-          mutable function take_damage(amount: int):
+          editable function take_damage(amount: int):
               this.hp -= amount
 
           function is_alive() -> bool:
@@ -71,14 +71,14 @@ class InterfaceImportTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          mutable function take_damage(amount: int) -> void
+          editable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC:
           hp: int
 
       extending NPC:
-          mutable function take_damage(amount: int):
+          editable function take_damage(amount: int):
               this.hp -= amount
 
           function is_alive() -> bool:
@@ -106,14 +106,14 @@ class InterfaceImportTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          mutable function take_damage(amount: int) -> void
+          editable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
           hp: int
 
       extending NPC:
-          mutable function take_damage(amount: int):
+          editable function take_damage(amount: int):
               this.hp -= amount
 
       function main() -> int:
@@ -154,7 +154,7 @@ class InterfaceImportTest < Minitest::Test
       # module demo.interfaces
 
       interface Damageable:
-          mutable function take_damage(amount: int) -> void
+          editable function take_damage(amount: int) -> void
 
       interface Named:
           function name() -> str
@@ -164,7 +164,7 @@ class InterfaceImportTest < Minitest::Test
           hp: int
 
       extending NPC:
-          mutable function take_damage(amount: int):
+          editable function take_damage(amount: int):
               this.hp -= amount
 
           function name() -> str:
@@ -289,14 +289,14 @@ class InterfaceImportTest < Minitest::Test
         # module std.sample
 
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
             function is_alive() -> bool
 
         public struct NPC implements Damageable:
             hp: int
 
         extending NPC:
-            public mutable function take_damage(amount: int):
+            public editable function take_damage(amount: int):
                 this.hp -= amount
 
             public function is_alive() -> bool:
@@ -331,7 +331,7 @@ class InterfaceImportTest < Minitest::Test
         # module std.contracts
 
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
@@ -343,7 +343,7 @@ class InterfaceImportTest < Minitest::Test
             hp: int
 
         extending NPC:
-            public mutable function take_damage(amount: int):
+            public editable function take_damage(amount: int):
                 this.hp -= amount
 
             public function is_alive() -> bool:
@@ -378,7 +378,7 @@ class InterfaceImportTest < Minitest::Test
         # module std.contracts
 
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
             function is_alive() -> bool
       MT
       "std/entities.mt" => <<~MT,
@@ -390,7 +390,7 @@ class InterfaceImportTest < Minitest::Test
             hp: int
 
         extending NPC:
-            mutable function take_damage(amount: int):
+            editable function take_damage(amount: int):
                 this.hp -= amount
 
             function is_alive() -> bool:

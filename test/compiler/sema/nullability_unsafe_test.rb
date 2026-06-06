@@ -187,7 +187,7 @@ class NullabilityUnsafeTest < Minitest::Test
               return NumbersIter(index = this.stop)
 
       extending NumbersIter:
-          public mutable function next() -> ptr[int]:
+          public editable function next() -> ptr[int]:
               unsafe:
                   return ptr_of(this.index)
 
@@ -628,7 +628,7 @@ class NullabilityUnsafeTest < Minitest::Test
           value: int
 
       extending Counter:
-          mutable function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
           function read() -> int:

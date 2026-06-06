@@ -51,6 +51,6 @@ extending Cell[T]:
         return this.storage == null
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.storage)
         this.storage = null

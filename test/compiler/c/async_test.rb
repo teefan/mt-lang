@@ -41,7 +41,7 @@ class AsyncTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async mutable function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
 
       async function main() -> int:

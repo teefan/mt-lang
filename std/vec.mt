@@ -77,18 +77,18 @@ extending Vec[T]:
         return iter.position(predicate)
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.len = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.len = 0
         this.capacity = 0
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -109,7 +109,7 @@ extending Vec[T]:
         this.capacity = new_capacity
 
 
-    public mutable function append_span(values: span[T]) -> void:
+    public editable function append_span(values: span[T]) -> void:
         if values.len == 0:
             return
 
@@ -153,12 +153,12 @@ extending Vec[T]:
         this.len = new_len
 
 
-    public mutable function append_array[N](values: array[T, N]) -> void:
+    public editable function append_array[N](values: array[T, N]) -> void:
         var local_values = values
         this.append_span(local_values)
 
 
-    public mutable function insert(index: ptr_uint, value: T) -> bool:
+    public editable function insert(index: ptr_uint, value: T) -> bool:
         if index > this.len:
             return false
 
@@ -181,7 +181,7 @@ extending Vec[T]:
         return true
 
 
-    public mutable function push(value: T) -> void:
+    public editable function push(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -195,7 +195,7 @@ extending Vec[T]:
         this.len += 1
 
 
-    public mutable function pop() -> Option[T]:
+    public editable function pop() -> Option[T]:
         if this.len == 0:
             return Option[T].none
 
@@ -210,7 +210,7 @@ extending Vec[T]:
             return Option[T].some(value = value)
 
 
-    public mutable function remove(index: ptr_uint) -> Option[T]:
+    public editable function remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
             return Option[T].none
 
@@ -230,7 +230,7 @@ extending Vec[T]:
             return Option[T].some(value = removed)
 
 
-    public mutable function swap_remove(index: ptr_uint) -> Option[T]:
+    public editable function swap_remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
             return Option[T].none
 
@@ -252,7 +252,7 @@ extending Iter[T]:
         return this
 
 
-    public mutable function next() -> ptr[T]?:
+    public editable function next() -> ptr[T]?:
         if this.index >= this.len:
             return null
 
@@ -264,7 +264,7 @@ extending Iter[T]:
         return unsafe: ptr[T]<-data + current_index
 
 
-    public mutable function find(predicate: proc(value: ptr[T]) -> bool) -> ptr[T]?:
+    public editable function find(predicate: proc(value: ptr[T]) -> bool) -> ptr[T]?:
         while true:
             let current = this.next() else:
                 return null
@@ -273,7 +273,7 @@ extending Iter[T]:
                 return current
 
 
-    public mutable function position(predicate: proc(value: ptr[T]) -> bool) -> Option[ptr_uint]:
+    public editable function position(predicate: proc(value: ptr[T]) -> bool) -> Option[ptr_uint]:
         while true:
             let current_index = this.index
             let current = this.next() else:
@@ -283,11 +283,11 @@ extending Iter[T]:
                 return Option[ptr_uint].some(value = current_index)
 
 
-    public mutable function any(predicate: proc(value: ptr[T]) -> bool) -> bool:
+    public editable function any(predicate: proc(value: ptr[T]) -> bool) -> bool:
         return this.find(predicate) != null
 
 
-    public mutable function all(predicate: proc(value: ptr[T]) -> bool) -> bool:
+    public editable function all(predicate: proc(value: ptr[T]) -> bool) -> bool:
         while true:
             let current = this.next() else:
                 return true
@@ -296,7 +296,7 @@ extending Iter[T]:
                 return false
 
 
-    public mutable function count(predicate: proc(value: ptr[T]) -> bool) -> ptr_uint:
+    public editable function count(predicate: proc(value: ptr[T]) -> bool) -> ptr_uint:
         var total: ptr_uint = 0
         while true:
             let current = this.next() else:

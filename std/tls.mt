@@ -594,12 +594,12 @@ public function client(host: str, transport: net.TcpStream) -> Task[Result[Strea
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Stream:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let state = this.state else:
             return
 

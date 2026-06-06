@@ -34,7 +34,7 @@ class MilkTeaLoweringTest < Minitest::Test
               public static function create() -> Buffer:
                   return Buffer(value = 0)
 
-              public mutable function release() -> void:
+              public editable function release() -> void:
                   this.value = 0
         MT
       },

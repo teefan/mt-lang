@@ -120,12 +120,12 @@ public function wrap(stream: net.TcpStream, max_packet_bytes: ptr_uint) -> Strea
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Stream:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.stream.release()
 
 
@@ -198,7 +198,7 @@ extending Stream:
 
 
 extending Listener:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.listener.release()
 
 

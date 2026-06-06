@@ -111,7 +111,7 @@ struct Player:
 	radius: float
 
 extending Player:
-	mutable function update(dt: float):
+	editable function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 
@@ -246,7 +246,7 @@ struct Camera:
 	zoom: float
 
 extending Camera:
-	mutable function move_by(delta: Vec2):
+	editable function move_by(delta: Vec2):
 		this.position.x += delta.x
 		this.position.y += delta.y
 
@@ -266,7 +266,7 @@ Lowering rule, in emitted C:
 Receiver rule:
 
 - Plain `function` inside `extending T:` means an implicit `this: T` value receiver.
-- `mutable function` inside `extending T:` means an implicit writable `this` receiver and requires an addressable receiver.
+- `editable function` inside `extending T:` means an implicit writable `this` receiver and requires an addressable receiver.
 - `static function` inside `extending T:` means there is no receiver.
 - There is no hidden dynamic dispatch, vtable lookup, or heap allocation.
 
@@ -281,7 +281,7 @@ They do not introduce inheritance, hidden dispatch, or a second object model.
 
 ```mt
 interface Damageable:
-	mutable function take_damage(amount: int) -> void
+	editable function take_damage(amount: int) -> void
 	function is_alive() -> bool
 
 struct NPC implements Damageable:
@@ -289,7 +289,7 @@ struct NPC implements Damageable:
 	hp: int
 
 extending NPC:
-	mutable function take_damage(amount: int):
+	editable function take_damage(amount: int):
 		this.hp -= amount
 
 	function is_alive() -> bool:
@@ -301,7 +301,7 @@ That keeps the contract visible at the owning type and avoids import-sensitive s
 
 Rules for interfaces in v1:
 
-- `interface` bodies contain `function`, `mutable function`, or `static function` signatures.
+- `interface` bodies contain `function`, `editable function`, or `static function` signatures.
 - Interface declarations themselves are not generic in v1.
 - Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance in v1.
 - Interface methods may not be generic or async in v1.
@@ -309,7 +309,7 @@ Rules for interfaces in v1:
 - Multiple interfaces are allowed: `struct Boss implements Damageable, Drawable:`.
 - A type implements an interface only when its declaration says so explicitly.
 - Conformance matching uses method kind, receiver mutability when applicable, parameter types, return type, and asyncness.
-- An `mutable function` requirement must be satisfied by an mutable method exactly.
+- An `editable function` requirement must be satisfied by an editable method exactly.
 - If two interfaces require the same method with the same signature, one implementation satisfies both. If the signatures differ, the declaration is rejected.
 - Interface conformance is a compile-time fact, not a storage type.
 
@@ -347,7 +347,7 @@ If Milk Tea later grows runtime polymorphic interface values, that surface must 
 
 Because fixed arrays copy by value, mutating interface-constrained collection code should usually take `span[T]` or `ref[array[T, N]]` rather than `array[T, N]` by value.
 
-Iteration stays structural in v1 rather than going through a nominal `Iterator[T]` or `Iterable[T]` interface. Arrays, spans, and ranges keep their built-in behavior, and custom iterables participate by exposing the same method shape the compiler already recognizes: a non-mutable `iter()` method on the iterable, then either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()` on the iterator.
+Iteration stays structural in v1 rather than going through a nominal `Iterator[T]` or `Iterable[T]` interface. Arrays, spans, and ranges keep their built-in behavior, and custom iterables participate by exposing the same method shape the compiler already recognizes: a non-editable `iter()` method on the iterable, then either `next() ->` nullable pointer-like item or `next() -> bool` together with `current()` on the iterator.
 
 This is deliberate. Interfaces are compile-time-only nominal contracts and are not generic today, so introducing a central iterator interface hierarchy now would either erase the item type or duplicate type-specific interfaces. The standard library should instead standardize on one iterator convention:
 
@@ -391,7 +391,7 @@ Rules:
 - `match` must be exhaustive for enums.
 - `break` and `continue` use ordinary loop control semantics.
 - Single-form `for` accepts `start..stop`, `array[T, N]`, `span[T]`, and custom structural iterables.
-- A custom structural iterable must expose non-mutable `iter()` with no arguments, and its iterator must expose either `next() ->` nullable pointer-like item or `next() -> bool` plus `current()`.
+- A custom structural iterable must expose non-editable `iter()` with no arguments, and its iterator must expose either `next() ->` nullable pointer-like item or `next() -> bool` plus `current()`.
 - Parallel `for` accepts multiple array/span iterables and binds them in lockstep.
 - Parallel `for` does not accept ranges, and iterable lengths must match.
 
@@ -865,7 +865,7 @@ Rules for raw pointers:
 References are separate from methods:
 
 - plain methods still receive values.
-- `mutable methods` use the writable implicit receiver and require an addressable call target.
+- `editable methods` use the writable implicit receiver and require an addressable call target.
 - `static function` methods receive nothing.
 - `ref[T]` is for explicit aliasing in APIs, not hidden receiver lowering.
 
@@ -1346,7 +1346,7 @@ struct Player:
 	velocity: Vec2
 
 extending Player:
-	mutable function update(dt: float):
+	editable function update(dt: float):
 		this.position.x += this.velocity.x * dt
 		this.position.y += this.velocity.y * dt
 ```

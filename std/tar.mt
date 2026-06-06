@@ -619,12 +619,12 @@ function checked_destination_path(destination_root: str, relative_path: str) -> 
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending ParsedEntry:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.path.release()
 
 

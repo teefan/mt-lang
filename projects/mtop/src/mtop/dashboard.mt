@@ -1088,7 +1088,7 @@ function render_snapshot_text(snapshot: Snapshot) -> string.String:
 
 
 extending Snapshot:
-    mutable function release() -> void:
+    editable function release() -> void:
         this.collected_at.release()
         this.kernel.release()
         this.uptime.release()
@@ -1108,7 +1108,7 @@ extending EchoSession:
         return session
 
 
-    mutable function restart() -> void:
+    editable function restart() -> void:
         this.shutdown()
 
         var command = vec.Vec[str].create()
@@ -1128,7 +1128,7 @@ extending EchoSession:
                 append_transcript(ref_of(this.transcript), "[child connected]\n")
 
 
-    mutable function shutdown() -> void:
+    editable function shutdown() -> void:
         if this.child.stdin_fd >= 0:
             match this.child.close_stdin():
                 Result.failure as payload:
@@ -1165,7 +1165,7 @@ extending EchoSession:
         this.active = false
 
 
-    mutable function pump() -> void:
+    editable function pump() -> void:
         if not this.active:
             return
 
@@ -1200,11 +1200,11 @@ extending EchoSession:
             attempts += 1
 
 
-    mutable function push_input_byte(value: ubyte) -> void:
+    editable function push_input_byte(value: ubyte) -> void:
         this.input.push(value)
 
 
-    mutable function pop_input_byte() -> void:
+    editable function pop_input_byte() -> void:
         match this.input.pop():
             Option.some:
                 pass
@@ -1212,7 +1212,7 @@ extending EchoSession:
                 pass
 
 
-    mutable function submit() -> void:
+    editable function submit() -> void:
         if not this.active:
             this.restart()
             if not this.active:
@@ -1237,7 +1237,7 @@ extending EchoSession:
         this.input.clear()
 
 
-    mutable function release() -> void:
+    editable function release() -> void:
         this.shutdown()
         this.transcript.release()
         this.input.release()
