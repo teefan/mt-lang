@@ -28,36 +28,37 @@ module MilkTea
           return diagnostics if diagnostics
 
           lock_wait_start = total_start ? monotonic_time : nil
-          @facts_state_mutex.synchronize do
-            lock_wait_ms = elapsed_ms(lock_wait_start) if lock_wait_start
-            @facts_cache_mutex.synchronize do
-              generation = @facts_generation[uri]
-              cached_snapshot = @tooling_snapshot_cache[uri]
-              entry = @diagnostics_cache[uri]
-              if entry && entry[:content_hash] == hash && entry[:lint_tier] == normalized_lint_tier
-                cache_state = 'hit'
-                diagnostics = entry[:diagnostics]
-              end
+          @facts_cache_mutex.synchronize do
+            generation = @facts_generation[uri]
+            cached_snapshot = @tooling_snapshot_cache[uri]
+            entry = @diagnostics_cache[uri]
+            if entry && entry[:content_hash] == hash && entry[:lint_tier] == normalized_lint_tier
+              cache_state = 'hit'
+              diagnostics = entry[:diagnostics]
             end
+          end
 
-            unless diagnostics
-              collect_start = total_start ? monotonic_time : nil
-              result = Diagnostics.collect(
-                uri,
-                content,
-                shared_module_cache: @shared_module_cache,
-                source_overrides: file_backed_source_overrides,
-                workspace_root_path: @workspace_root_path,
-                dependency_resolution_mode: @dependency_resolution_mode,
-                platform_override: @platform_override,
-                sema_snapshot: cached_snapshot,
-                strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
-                lint_tier: normalized_lint_tier,
-              )
-              collect_ms = elapsed_ms(collect_start) if collect_start
-              diagnostics = result[:diagnostics]
-              facts = result[:facts]
-              snapshot = result[:sema_snapshot]
+          unless diagnostics
+            collect_start = total_start ? monotonic_time : nil
+            result = Diagnostics.collect(
+              uri,
+              content,
+              shared_module_cache: @shared_module_cache,
+              source_overrides: file_backed_source_overrides,
+              workspace_root_path: @workspace_root_path,
+              dependency_resolution_mode: @dependency_resolution_mode,
+              platform_override: @platform_override,
+              sema_snapshot: cached_snapshot,
+              strict_current_root_diagnostics: @strict_current_root_diagnostics_enabled,
+              lint_tier: normalized_lint_tier,
+            )
+            collect_ms = elapsed_ms(collect_start) if collect_start
+            diagnostics = result[:diagnostics]
+            facts = result[:facts]
+            snapshot = result[:sema_snapshot]
+            lock_wait_st = total_start ? monotonic_time : nil
+            @facts_state_mutex.synchronize do
+              lock_wait_ms = elapsed_ms(lock_wait_st) if lock_wait_st
               @facts_cache_mutex.synchronize do
                 if @facts_generation[uri] == generation
                   @tooling_snapshot_cache[uri] = snapshot if snapshot

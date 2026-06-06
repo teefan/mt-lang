@@ -22,6 +22,7 @@ module MilkTea
             path: @path,
             tokens: @tokens,
             tokens_by_line: @tokens_by_line,
+            validate: false,
           )
           message = "line exceeds max length of #{@max_line_length} columns (#{line.length})"
           message << "; wrap the expression" if fix
