@@ -55,6 +55,9 @@ module MilkTea
           scoped_changes = scoped_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
           return { changes: scoped_changes } if scoped_changes
 
+          module_symbol_changes = module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+          return { changes: module_symbol_changes } if module_symbol_changes
+
           enum_member_changes = enum_member_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
           return { changes: enum_member_changes } if enum_member_changes
         end
@@ -187,6 +190,14 @@ module MilkTea
         end
 
         { uri => edits }
+      end
+
+      def module_level_symbol_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)
+        name = token.lexeme
+        module_level = facts.functions.key?(name) || facts.values.key?(name) || facts.types.key?(name)
+        return nil unless module_level
+
+        lexical_rename_changes_in_document(uri, name, new_name)
       end
 
       def import_alias_rename_changes(uri, token, lsp_line, lsp_char, facts, new_name)

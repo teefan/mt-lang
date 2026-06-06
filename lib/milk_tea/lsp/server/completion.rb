@@ -251,15 +251,17 @@ module MilkTea
       def completion_items_for_type_receiver(facts, receiver_type, prefix)
         methods_for_receiver_type(facts, receiver_type).filter_map do |mname, binding|
           next unless binding.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
-          next unless prefix.empty? || mname.start_with?(prefix)
+
+          display_name = mname.delete_prefix("static:")
+          next unless prefix.empty? || display_name.start_with?(prefix)
 
           params_str = format_params(binding.type.params)
           {
-            label:      mname,
+            label:      display_name,
             kind:       2,  # Method
-            detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
-            insertText: mname,
-            sortText:   "0_#{mname}"
+            detail:     "#{display_name}(#{params_str}) -> #{binding.type.return_type}",
+            insertText: display_name,
+            sortText:   "0_#{display_name}"
           }
         end
       end
@@ -296,7 +298,8 @@ module MilkTea
       end
 
       def static_method_binding_for_receiver(facts, receiver_type, method_name)
-        binding = methods_for_receiver_type(facts, receiver_type)[method_name]
+        methods = methods_for_receiver_type(facts, receiver_type)
+        binding = methods[method_name] || methods["static:#{method_name}"]
         return nil unless binding&.ast.is_a?(AST::MethodDef) && binding.ast.kind == :static
 
         binding

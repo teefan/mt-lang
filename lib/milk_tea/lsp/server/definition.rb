@@ -129,14 +129,26 @@ module MilkTea
             local_binding = resolve_local_hover_binding(facts, name, line, char)
             next nil unless local_binding
 
-            if local_binding.ast&.line && local_binding.ast.respond_to?(:column) && local_binding.ast.column
+            ast_node = local_binding.respond_to?(:ast) ? local_binding.ast : nil
+            if ast_node&.line && ast_node.respond_to?(:column) && ast_node.column
               {
                 uri: uri,
                 range: {
-                  start: { line: local_binding.ast.line - 1, character: local_binding.ast.column - 1 },
-                  end: { line: local_binding.ast.line - 1, character: local_binding.ast.column - 1 + name.length }
+                  start: { line: ast_node.line - 1, character: ast_node.column - 1 },
+                  end: { line: ast_node.line - 1, character: ast_node.column - 1 + name.length }
                 }
               }
+            else
+              declaration_node = find_local_declaration_ast_node(uri, name, line)
+              if declaration_node
+                {
+                  uri: uri,
+                  range: {
+                    start: { line: declaration_node.line - 1, character: declaration_node.column - 1 },
+                    end: { line: declaration_node.line - 1, character: declaration_node.column - 1 + name.length }
+                  }
+                }
+              end
             end
           end
           return local_location if local_location
@@ -156,6 +168,38 @@ module MilkTea
           uri: found[:uri],
           range: token_to_range(found[:token])
         }
+      end
+
+      def find_local_declaration_ast_node(uri, name, before_line)
+        ast = @workspace.get_ast(uri)
+        return nil unless ast
+
+        result = nil
+        find_local_decl_node(ast, name, before_line) { |node| result = node; true }
+        result
+      end
+
+      def find_local_decl_node(node, name, before_line, &block)
+        return false if node.nil?
+
+        if node.is_a?(AST::LocalDecl) && node.name == name && node.line && node.line < before_line
+          return true if yield node
+        end
+
+        if node.is_a?(Array)
+          node.each { |item| return true if find_local_decl_node(item, name, before_line, &block) }
+          return false
+        end
+
+        return false unless node.class.name&.start_with?("MilkTea::AST::")
+
+        if node.respond_to?(:members)
+          node.members.each do |member|
+            return true if find_local_decl_node(node.public_send(member), name, before_line, &block)
+          end
+        end
+
+        false
       end
 
       def resolve_field_member_definition_location(current_uri, facts, tokens, token_index)
