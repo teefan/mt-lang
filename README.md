@@ -254,13 +254,13 @@ Interface example:
 
 ```mt
 public interface Damageable:
-    mutable function take_damage(amount: int) -> void
+    editable function take_damage(amount: int) -> void
     function is_alive() -> bool
 ```
 
 Interface rules:
 
-- Interface bodies contain `function`, `mutable function`, or `static function` signatures.
+- Interface bodies contain `function`, `editable function`, or `static function` signatures.
 - Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
@@ -270,7 +270,7 @@ Interface rules:
 Method kinds:
 
 - `function` -> value receiver
-- `mutable function` -> mutable receiver
+- `editable function` -> editable receiver
 - `static function` -> no receiver
 
 Method notes:
@@ -383,7 +383,7 @@ Loop forms:
 
 - `for i in 0..count:` for exclusive integer ranges
 - `for item in items:` for arrays, spans, and custom iterables
-- Custom iterable protocol: `items.iter()` must take no arguments, be a non-mutable method, and return the iterator value.
+- Custom iterable protocol: `items.iter()` must take no arguments, be a non-editable method, and return the iterator value.
 - Iterator forms: either `next() ->` nullable pointer-like item, or `next() -> bool` together with `current() -> T`.
 - `for left, right in xs, ys:` for parallel array/span iteration
 - Parallel `for` does not accept ranges.
@@ -809,7 +809,7 @@ struct Counter:
     value: int
 
 extending Counter:
-    mutable function bump() -> void:
+    editable function bump() -> void:
         this.value += 1
 
     function read() -> int:

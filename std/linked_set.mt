@@ -89,19 +89,19 @@ extending LinkedSet[T]:
         return result
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.values.clear()
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.values.release()
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
 
 
-    public mutable function insert(value: T) -> bool:
+    public editable function insert(value: T) -> bool:
         let previous = this.values.set(value, true)
         match previous:
             Option.none:
@@ -110,7 +110,7 @@ extending LinkedSet[T]:
                 return false
 
 
-    public mutable function remove(value: T) -> bool:
+    public editable function remove(value: T) -> bool:
         let removed = this.values.remove(value)
         match removed:
             Option.none:

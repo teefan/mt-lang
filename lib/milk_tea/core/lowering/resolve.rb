@@ -888,7 +888,7 @@ module MilkTea
       end
 
       def pointer_lowered_method_receiver?(callee_type, callee_binding)
-        return true if callee_type.receiver_mutable
+        return true if callee_type.receiver_editable
 
         receiver_type_uses_pointer_lowering?(callee_type.receiver_type) && !callee_binding&.async
       end
@@ -1163,7 +1163,7 @@ module MilkTea
         requirement_message = "#{context} requires method #{target_type}.format_len() -> ptr_uint"
         resolve_explicit_instance_binding(target_type, "format_len", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
           raise LoweringError, "#{context} requires #{target_type}.format_len() to take 0 arguments" unless method_binding.type.params.empty?
-          raise LoweringError, "#{context} requires #{target_type}.format_len() to be non-mutable" if method_binding.type.receiver_mutable
+          raise LoweringError, "#{context} requires #{target_type}.format_len() to be non-editable" if method_binding.type.receiver_editable
           unless method_binding.type.return_type == @types.fetch("ptr_uint")
             raise LoweringError, "#{context} requires #{target_type}.format_len() -> ptr_uint, got #{method_binding.type.return_type}"
           end
@@ -1173,7 +1173,7 @@ module MilkTea
       def resolve_explicit_format_append_binding(target_type, context:)
         requirement_message = "#{context} requires method #{target_type}.append_format(output: ref[std.string.String]) -> void"
         resolve_explicit_instance_binding(target_type, "append_format", requirement_message:) do |method_binding, _method_analysis, _method_entry_receiver_type|
-          raise LoweringError, "#{context} requires #{target_type}.append_format() to be non-mutable" if method_binding.type.receiver_mutable
+          raise LoweringError, "#{context} requires #{target_type}.append_format() to be non-editable" if method_binding.type.receiver_editable
           unless method_binding.type.params.length == 1 && string_builder_ref_type?(method_binding.type.params.first.type)
             raise LoweringError, "#{context} requires #{target_type}.append_format(output: ref[std.string.String]) -> void"
           end
@@ -2083,7 +2083,7 @@ module MilkTea
             end,
             return_type: substitute_type(type.return_type, substitutions),
             receiver_type: type.receiver_type ? substitute_type(type.receiver_type, substitutions) : nil,
-            receiver_mutable: type.receiver_mutable,
+            receiver_editable: type.receiver_editable,
             variadic: type.variadic,
             external: type.external,
           )

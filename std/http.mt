@@ -1108,18 +1108,18 @@ async function request_with_transport(parsed: ParsedUrl, request_bytes: span[uby
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Header:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.name.release()
         this.value.release()
 
 
 extending Response:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.reason.release()
 
         var index: ptr_uint = 0
@@ -1151,14 +1151,14 @@ extending Response:
 
 
 extending ParsedUrl:
-    mutable function release() -> void:
+    editable function release() -> void:
         this.host.release()
         this.authority.release()
         this.target.release()
 
 
 extending ResponseHead:
-    mutable function release() -> void:
+    editable function release() -> void:
         this.reason.release()
 
         var index: ptr_uint = 0

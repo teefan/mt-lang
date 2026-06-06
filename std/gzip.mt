@@ -43,7 +43,7 @@ function static_error(message: str) -> Error:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 

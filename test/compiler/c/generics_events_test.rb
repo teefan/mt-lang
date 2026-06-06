@@ -297,14 +297,14 @@ function main() -> int:
 # module demo.interface_codegen
 
 interface Damageable:
-    mutable function take_damage(amount: int) -> void
+    editable function take_damage(amount: int) -> void
     function is_alive() -> bool
 
 struct NPC implements Damageable:
     hp: int
 
 extending NPC:
-    mutable function take_damage(amount: int):
+    editable function take_damage(amount: int):
         this.hp -= amount
 
     function is_alive() -> bool:

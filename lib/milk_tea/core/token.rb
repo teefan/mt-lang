@@ -17,7 +17,7 @@ module MilkTea
       "continue" => :continue,
       "function" => :function,
       "defer" => :defer,
-      "mutable" => :mutable,
+      "editable" => :editable,
       "enum" => :enum,
       "else" => :else,
       "event" => :event,

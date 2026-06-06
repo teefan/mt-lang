@@ -273,7 +273,7 @@ module MilkTea
         await_counter = 0
 
         binding.body_params.each do |param_binding|
-          pointer = binding.type.receiver_type && binding.type.receiver_mutable && param_binding.name == "this"
+          pointer = binding.type.receiver_type && binding.type.receiver_editable && param_binding.name == "this"
           field_type = pointer ? pointer_to(param_binding.type) : param_binding.type
           field_name = "param_#{param_binding.name}"
           param_fields[param_binding.name] = {

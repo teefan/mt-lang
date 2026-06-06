@@ -851,7 +851,7 @@ extending Terminal:
             )
 
 
-    public mutable function refresh_size() -> Result[Size, Error]:
+    public editable function refresh_size() -> Result[Size, Error]:
         match get_size_internal():
             Result.failure as payload:
                 return Result[Size, Error].failure(error= payload.error)
@@ -864,23 +864,23 @@ extending Terminal:
         return this.size
 
 
-    public mutable function write(text: str) -> Result[ptr_uint, Error]:
+    public editable function write(text: str) -> Result[ptr_uint, Error]:
         return write_stdout(text)
 
 
-    public mutable function write_error(text: str) -> Result[ptr_uint, Error]:
+    public editable function write_error(text: str) -> Result[ptr_uint, Error]:
         return write_stderr(text)
 
 
-    public mutable function flush() -> Result[bool, Error]:
+    public editable function flush() -> Result[bool, Error]:
         return flush_stdout_internal()
 
 
-    public mutable function flush_error() -> Result[bool, Error]:
+    public editable function flush_error() -> Result[bool, Error]:
         return flush_stderr_internal()
 
 
-    public mutable function enter_raw_mode() -> Result[bool, Error]:
+    public editable function enter_raw_mode() -> Result[bool, Error]:
         if this.raw_mode:
             return Result[bool, Error].success(value= true)
 
@@ -892,7 +892,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= true)
 
 
-    public mutable function leave_raw_mode() -> Result[bool, Error]:
+    public editable function leave_raw_mode() -> Result[bool, Error]:
         if not this.raw_mode:
             return Result[bool, Error].success(value= true)
 
@@ -904,7 +904,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= payload.value)
 
 
-    public mutable function enter_alternate_screen() -> Result[bool, Error]:
+    public editable function enter_alternate_screen() -> Result[bool, Error]:
         if this.alternate_screen:
             return Result[bool, Error].success(value= true)
 
@@ -916,7 +916,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= true)
 
 
-    public mutable function leave_alternate_screen() -> Result[bool, Error]:
+    public editable function leave_alternate_screen() -> Result[bool, Error]:
         if not this.alternate_screen:
             return Result[bool, Error].success(value= true)
 
@@ -928,7 +928,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= payload.value)
 
 
-    public mutable function hide_cursor() -> Result[bool, Error]:
+    public editable function hide_cursor() -> Result[bool, Error]:
         if this.cursor_hidden:
             return Result[bool, Error].success(value= true)
 
@@ -940,7 +940,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= true)
 
 
-    public mutable function show_cursor() -> Result[bool, Error]:
+    public editable function show_cursor() -> Result[bool, Error]:
         if not this.cursor_hidden:
             return Result[bool, Error].success(value= true)
 
@@ -952,7 +952,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= payload.value)
 
 
-    public mutable function enable_mouse() -> Result[bool, Error]:
+    public editable function enable_mouse() -> Result[bool, Error]:
         if this.mouse_enabled:
             return Result[bool, Error].success(value= true)
 
@@ -964,7 +964,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= true)
 
 
-    public mutable function disable_mouse() -> Result[bool, Error]:
+    public editable function disable_mouse() -> Result[bool, Error]:
         if not this.mouse_enabled:
             return Result[bool, Error].success(value= true)
 
@@ -976,7 +976,7 @@ extending Terminal:
                 return Result[bool, Error].success(value= payload.value)
 
 
-    public mutable function poll_event(timeout_ms: int) -> Result[Option[Event], Error]:
+    public editable function poll_event(timeout_ms: int) -> Result[Option[Event], Error]:
         if stdout_is_tty():
             match get_size_internal():
                 Result.failure as payload:
@@ -1012,7 +1012,7 @@ extending Terminal:
                 return Result[Option[Event], Error].success(value= Option[Event].none)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         if this.mouse_enabled:
             match disable_mouse():
                 Result.failure as payload:
@@ -1053,5 +1053,5 @@ extending Terminal:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()

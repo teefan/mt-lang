@@ -2625,12 +2625,12 @@ function listen_on_impl(runtime: aio.Runtime, address: SocketAddress, backlog: i
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending SocketAddress:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.storage)
         this.storage = null
         this.len = 0
@@ -2665,13 +2665,13 @@ extending SocketAddress:
 
 
 extending UdpDatagram:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.data.release()
         this.source.release()
 
 
 extending TcpStream:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 
@@ -2708,7 +2708,7 @@ extending TcpStream:
 
 
 extending TcpListener:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 
@@ -2738,7 +2738,7 @@ extending TcpListener:
 
 
 extending UdpSocket:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 

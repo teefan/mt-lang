@@ -125,7 +125,7 @@ extending Map[K, V]:
         return this.get(key) != null
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         if this.len == 0:
             return
 
@@ -148,14 +148,14 @@ extending Map[K, V]:
         this.len = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.clear()
         heap.release(this.buckets)
         this.buckets = null
         this.capacity = 0
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -194,7 +194,7 @@ extending Map[K, V]:
         this.capacity = new_capacity
 
 
-    public mutable function set(key: K, value: V) -> Option[V]:
+    public editable function set(key: K, value: V) -> Option[V]:
         let key_hash = hash[K](key)
         let existing = Map[K, V].find_node(this, key, key_hash)
         if existing != null:
@@ -227,7 +227,7 @@ extending Map[K, V]:
         return Option[V].none
 
 
-    public mutable function get_or_insert(key: K, value: V) -> ptr[V]:
+    public editable function get_or_insert(key: K, value: V) -> ptr[V]:
         let key_hash = hash[K](key)
         let existing = Map[K, V].find_node(this, key, key_hash)
         if existing != null:
@@ -245,7 +245,7 @@ extending Map[K, V]:
                 fatal(c"map.Map.get_or_insert replaced unexpectedly")
 
 
-    public mutable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
+    public editable function remove_entry(key: K) -> Option[RemovedEntry[K, V]]:
         if this.len == 0:
             return Option[RemovedEntry[K, V]].none
 
@@ -280,7 +280,7 @@ extending Map[K, V]:
         return Option[RemovedEntry[K, V]].none
 
 
-    public mutable function remove(key: K) -> Option[V]:
+    public editable function remove(key: K) -> Option[V]:
         let removed = this.remove_entry(key)
         match removed:
             Option.none:
@@ -294,7 +294,7 @@ extending Keys[K, V]:
         return this
 
 
-    public mutable function next() -> const_ptr[K]?:
+    public editable function next() -> const_ptr[K]?:
         let current_node = this.node
         if current_node != null:
             unsafe:
@@ -329,7 +329,7 @@ extending Values[K, V]:
         return this
 
 
-    public mutable function next() -> ptr[V]?:
+    public editable function next() -> ptr[V]?:
         let current_node = this.node
         if current_node != null:
             unsafe:
@@ -364,7 +364,7 @@ extending Entries[K, V]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         let current_node = this.node
         if current_node != null:
             unsafe:

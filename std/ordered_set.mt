@@ -276,17 +276,17 @@ extending OrderedSet[T]:
         return Iter[T](node = OrderedSet[T].minimum(this.root))
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         OrderedSet[T].release_subtree(this.root)
         this.root = null
         this.len = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.clear()
 
 
-    public mutable function insert(value: T) -> bool:
+    public editable function insert(value: T) -> bool:
         let location = OrderedSet[T].locate(this, value)
         if location.found:
             return false
@@ -311,7 +311,7 @@ extending OrderedSet[T]:
         return true
 
 
-    public mutable function remove(value: T) -> bool:
+    public editable function remove(value: T) -> bool:
         let location = OrderedSet[T].locate(this, value)
         if not location.found:
             return false
@@ -330,7 +330,7 @@ extending Iter[T]:
         return this
 
 
-    public mutable function next() -> const_ptr[T]?:
+    public editable function next() -> const_ptr[T]?:
         let current = this.node else:
             return null
 

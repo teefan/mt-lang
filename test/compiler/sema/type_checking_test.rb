@@ -224,7 +224,7 @@ class TypeCheckingTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop, current = 0)
 
       extending NumbersIter:
-          public mutable function next() -> ptr[int]?:
+          public editable function next() -> ptr[int]?:
               if this.index >= this.stop:
                   return null[ptr[int]]
               this.current = this.index
@@ -261,7 +261,7 @@ class TypeCheckingTest < Minitest::Test
               return NumbersIter(index = 0, stop = this.stop)
 
       extending NumbersIter:
-          public mutable function next() -> bool:
+          public editable function next() -> bool:
               if this.index >= this.stop:
                   return false
               this.index += 1
@@ -499,7 +499,7 @@ class TypeCheckingTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async mutable function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
 
       async function main() -> int:
@@ -3273,7 +3273,7 @@ class TypeCheckingTest < Minitest::Test
           value: int
 
       extending Counter:
-          mutable function add(delta: int):
+          editable function add(delta: int):
               this.value += delta
 
           function read() -> int:

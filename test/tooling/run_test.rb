@@ -443,7 +443,7 @@ struct Counter:
     value: int
 
 extending Counter:
-    mutable function add(delta: int):
+    editable function add(delta: int):
         this.value += delta
 
     function read() -> int:
@@ -492,7 +492,7 @@ struct Counter:
     value: int
 
 extending Counter:
-    mutable function add(delta: int):
+    editable function add(delta: int):
         this.value += delta
 
     function read() -> int:

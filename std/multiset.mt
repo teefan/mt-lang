@@ -149,31 +149,31 @@ extending MultiSet[T]:
         return result
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.values.clear()
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.values.release()
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
 
 
-    public mutable function insert(value: T) -> ptr_uint:
+    public editable function insert(value: T) -> ptr_uint:
         return this.values.increment(value)
 
 
-    public mutable function add(value: T, amount: ptr_uint) -> ptr_uint:
+    public editable function add(value: T, amount: ptr_uint) -> ptr_uint:
         return this.values.add(value, amount)
 
 
-    public mutable function remove_one(value: T) -> bool:
+    public editable function remove_one(value: T) -> bool:
         return this.values.remove_one(value)
 
 
-    public mutable function remove_all(value: T) -> Option[ptr_uint]:
+    public editable function remove_all(value: T) -> Option[ptr_uint]:
         return this.values.remove(value)
 
 
@@ -182,7 +182,7 @@ extending Entries[T]:
         return this
 
 
-    public mutable function next() -> bool:
+    public editable function next() -> bool:
         return this.values.next()
 
 

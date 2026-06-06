@@ -475,7 +475,7 @@ extending CaptureResult:
         return safe_text_view(this.stderr)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.stdout.release()
         this.stderr.release()
 
@@ -489,7 +489,7 @@ extending ReadResult:
         return this.data.len != 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.data.release()
 
 
@@ -506,7 +506,7 @@ extending ChildProcess:
         return write_fd_internal(this.stdin_fd, value)
 
 
-    public mutable function close_stdin() -> Result[bool, ProcessError]:
+    public editable function close_stdin() -> Result[bool, ProcessError]:
         match close_fd_checked(this.stdin_fd):
             Result.failure as payload:
                 return Result[bool, ProcessError].failure(error= payload.error)
@@ -515,7 +515,7 @@ extending ChildProcess:
                 return Result[bool, ProcessError].success(value= payload.value)
 
 
-    public mutable function close_stdout() -> Result[bool, ProcessError]:
+    public editable function close_stdout() -> Result[bool, ProcessError]:
         match close_fd_checked(this.stdout_fd):
             Result.failure as payload:
                 return Result[bool, ProcessError].failure(error= payload.error)
@@ -524,7 +524,7 @@ extending ChildProcess:
                 return Result[bool, ProcessError].success(value= payload.value)
 
 
-    public mutable function close_stderr() -> Result[bool, ProcessError]:
+    public editable function close_stderr() -> Result[bool, ProcessError]:
         match close_fd_checked(this.stderr_fd):
             Result.failure as payload:
                 return Result[bool, ProcessError].failure(error= payload.error)
@@ -533,7 +533,7 @@ extending ChildProcess:
                 return Result[bool, ProcessError].success(value= payload.value)
 
 
-    public mutable function wait() -> Result[ExitStatus, ProcessError]:
+    public editable function wait() -> Result[ExitStatus, ProcessError]:
         let wait_result = wait_internal(this.pid, false)
         match wait_result:
             Result.failure as payload:
@@ -550,7 +550,7 @@ extending ChildProcess:
                         ].failure(error= simple_process_error("process wait returned no status"))
 
 
-    public mutable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
+    public editable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
         let wait_result = wait_internal(this.pid, true)
         match wait_result:
             Result.failure as payload:
@@ -571,7 +571,7 @@ extending ChildProcess:
         return kill_internal(this.pid, signal)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         close_fd_quiet(this.stdin_fd)
         close_fd_quiet(this.stdout_fd)
         close_fd_quiet(this.stderr_fd)
@@ -593,7 +593,7 @@ extending PtyProcess:
         return resize_pty_internal(this.master_fd, columns, rows)
 
 
-    public mutable function close() -> Result[bool, ProcessError]:
+    public editable function close() -> Result[bool, ProcessError]:
         match close_fd_checked(this.master_fd):
             Result.failure as payload:
                 return Result[bool, ProcessError].failure(error= payload.error)
@@ -602,7 +602,7 @@ extending PtyProcess:
                 return Result[bool, ProcessError].success(value= payload.value)
 
 
-    public mutable function wait() -> Result[ExitStatus, ProcessError]:
+    public editable function wait() -> Result[ExitStatus, ProcessError]:
         let wait_result = wait_internal(this.pid, false)
         match wait_result:
             Result.failure as payload:
@@ -619,7 +619,7 @@ extending PtyProcess:
                         ].failure(error= simple_process_error("process wait returned no status"))
 
 
-    public mutable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
+    public editable function try_wait() -> Result[Option[ExitStatus], ProcessError]:
         let wait_result = wait_internal(this.pid, true)
         match wait_result:
             Result.failure as payload:
@@ -640,18 +640,18 @@ extending PtyProcess:
         return kill_internal(this.pid, signal)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         close_fd_quiet(this.master_fd)
         this.master_fd = -1
 
 
 extending ProcessError:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending PreparedCommand:
-    mutable function release() -> void:
+    editable function release() -> void:
         this.storage.release()
 
 

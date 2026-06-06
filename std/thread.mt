@@ -77,12 +77,12 @@ public function spawn(run: fn() -> void) -> Result[Thread, Error]:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Thread:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let handle = this.handle else:
             return
 
@@ -98,7 +98,7 @@ extending Thread:
         return this.handle != null[ptr[NativeThreadHandle]]
 
 
-    public mutable function join() -> Result[bool, Error]:
+    public editable function join() -> Result[bool, Error]:
         let handle = this.handle else:
             return Result[bool, Error].failure(error = Error(
                 code = -1,
@@ -114,7 +114,7 @@ extending Thread:
         return Result[bool, Error].success(value = true)
 
 
-    public mutable function detach() -> Result[bool, Error]:
+    public editable function detach() -> Result[bool, Error]:
         let handle = this.handle else:
             return Result[bool, Error].failure(error = Error(
                 code = -1,

@@ -35,21 +35,21 @@ extending Queue[T]:
         return this.values.first()
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.values.clear()
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.values.release()
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         this.values.reserve(min_capacity)
 
 
-    public mutable function enqueue(value: T) -> void:
+    public editable function enqueue(value: T) -> void:
         this.values.push_back(value)
 
 
-    public mutable function dequeue() -> Option[T]:
+    public editable function dequeue() -> Option[T]:
         return this.values.pop_front()

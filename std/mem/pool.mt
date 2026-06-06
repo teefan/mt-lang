@@ -83,7 +83,7 @@ extending Pool:
         return this.slot_count - this.used_count
 
 
-    public mutable function alloc_bytes() -> ptr[ubyte]?:
+    public editable function alloc_bytes() -> ptr[ubyte]?:
         let memory = this.memory else:
             return null
         let occupancy = this.occupancy else:
@@ -102,7 +102,7 @@ extending Pool:
         return null
 
 
-    public mutable function alloc[T]() -> ptr[T]?:
+    public editable function alloc[T]() -> ptr[T]?:
         let size = ptr_uint<-size_of(T)
         let alignment = ptr_uint<-align_of(T)
         let mask = alignment - 1
@@ -121,7 +121,7 @@ extending Pool:
         return unsafe: ptr[T]<-memory
 
 
-    public mutable function release_bytes(slot: ptr[ubyte]?) -> bool:
+    public editable function release_bytes(slot: ptr[ubyte]?) -> bool:
         if slot == null:
             return false
 
@@ -147,14 +147,14 @@ extending Pool:
         return false
 
 
-    public mutable function release_slot[T](slot: ptr[T]?) -> bool:
+    public editable function release_slot[T](slot: ptr[T]?) -> bool:
         if slot == null:
             return false
 
         return unsafe: this.release_bytes(ptr[ubyte]<-slot)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.memory)
         heap.release(this.occupancy)
         this.memory = null

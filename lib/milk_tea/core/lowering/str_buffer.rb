@@ -51,7 +51,7 @@ module MilkTea
           params:,
           return_type:,
           receiver_type:,
-          receiver_mutable: %i[str_buffer_clear str_buffer_assign str_buffer_append str_buffer_assign_format str_buffer_append_format].include?(kind),
+          receiver_editable: %i[str_buffer_clear str_buffer_assign str_buffer_append str_buffer_assign_format str_buffer_append_format].include?(kind),
           external: false,
         )
       end

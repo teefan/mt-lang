@@ -23,7 +23,7 @@ extending Stack:
         return this.arena.mark()
 
 
-    public mutable function reset(mark: Mark) -> void:
+    public editable function reset(mark: Mark) -> void:
         this.arena.reset(mark)
 
 
@@ -31,17 +31,17 @@ extending Stack:
         return this.arena.remaining_bytes()
 
 
-    public mutable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
+    public editable function alloc_bytes(size_bytes: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes(size_bytes)
 
 
-    public mutable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
+    public editable function alloc_bytes_aligned(size_bytes: ptr_uint, alignment: ptr_uint) -> ptr[ubyte]?:
         return this.arena.alloc_bytes_aligned(size_bytes, alignment)
 
 
-    public mutable function alloc[T](count: ptr_uint) -> ptr[T]?:
+    public editable function alloc[T](count: ptr_uint) -> ptr[T]?:
         return this.arena.alloc[T](count)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.arena.release()

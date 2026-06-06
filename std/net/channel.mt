@@ -433,7 +433,7 @@ public function listen(local_address: net.SocketAddress, config: Config) -> Resu
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
@@ -447,18 +447,18 @@ extending Config:
 
 
 extending Message:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.payload.release()
 
 
 extending HostMessage:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.payload.release()
         this.source.release()
 
 
 extending Channel:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         release_protocol_state(protocol)
         this.socket.release()
@@ -476,7 +476,7 @@ extending Channel:
         return this.protocol.pending_reliable.len()
 
 
-    public async mutable function send(content: span[ubyte]) -> Result[uint, Error]:
+    public async editable function send(content: span[ubyte]) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
             return Result[uint, Error].failure(error = channel_error(
                 -2,
@@ -494,7 +494,7 @@ extending Channel:
                 return Result[uint, Error].success(value = sequence)
 
 
-    public async mutable function send_reliable(content: span[ubyte], frame: uint) -> Result[uint, Error]:
+    public async editable function send_reliable(content: span[ubyte], frame: uint) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
             return Result[uint, Error].failure(error = channel_error(
                 -2,
@@ -521,7 +521,7 @@ extending Channel:
                 return Result[uint, Error].success(value = sequence)
 
 
-    public async mutable function recv() -> Result[Option[Message], Error]:
+    public async editable function recv() -> Result[Option[Message], Error]:
         let recv_result = await this.socket.recv(this.config.max_payload_bytes + header_bytes)
         match recv_result:
             Result.failure as error_payload:
@@ -561,7 +561,7 @@ extending Channel:
                             )))
 
 
-    public async mutable function tick(frame: uint) -> Result[ptr_uint, Error]:
+    public async editable function tick(frame: uint) -> Result[ptr_uint, Error]:
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         var resent: ptr_uint = 0
         var index: ptr_uint = 0
@@ -599,7 +599,7 @@ extending Channel:
 
 
 extending Host:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         while true:
             let removed = this.peers.pop()
             match removed:
@@ -636,7 +636,7 @@ extending Host:
         return total
 
 
-    public async mutable function send(destination: net.SocketAddress, content: span[ubyte]) -> Result[uint, Error]:
+    public async editable function send(destination: net.SocketAddress, content: span[ubyte]) -> Result[uint, Error]:
         if content.len > this.config.max_payload_bytes:
             return Result[uint, Error].failure(error = channel_error(
                 -2,
@@ -667,7 +667,7 @@ extending Host:
                         return Result[uint, Error].success(value = sequence)
 
 
-    public async mutable function send_reliable(
+    public async editable function send_reliable(
         destination: net.SocketAddress,
         content: span[ubyte],
         frame: uint
@@ -711,7 +711,7 @@ extending Host:
                         return Result[uint, Error].success(value = sequence)
 
 
-    public async mutable function recv() -> Result[Option[HostMessage], Error]:
+    public async editable function recv() -> Result[Option[HostMessage], Error]:
         let recv_result = await this.socket.recv_from(this.config.max_payload_bytes + header_bytes)
         match recv_result:
             Result.failure as error_payload:
@@ -767,7 +767,7 @@ extending Host:
                                     )))
 
 
-    public async mutable function tick(frame: uint) -> Result[ptr_uint, Error]:
+    public async editable function tick(frame: uint) -> Result[ptr_uint, Error]:
         var resent: ptr_uint = 0
         var peer_index: ptr_uint = 0
         while peer_index < this.peers.len():

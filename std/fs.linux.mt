@@ -107,7 +107,7 @@ function metadata_kind(raw_kind: int) -> MetadataKind:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
@@ -139,7 +139,7 @@ extending Entries:
         return false
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         release_string_values(ref_of(this.values))
 
 

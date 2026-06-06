@@ -259,7 +259,7 @@ module MilkTea
           identifier_binding_ids: identifier_binding_ids,
           declaration_binding_ids: declaration_binding_ids,
           mutating_argument_identifier_ids: {},
-          mutable_receiver_expression_ids: {},
+          editable_receiver_expression_ids: {},
           mutable_lvalue_argument_identifier_ids: {},
           binding_types: {},
         )

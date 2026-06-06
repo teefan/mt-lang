@@ -515,7 +515,7 @@ class MilkTeaLinterTest < Minitest::Test
           value: int
 
       extending Counter:
-          mutable function bump():
+          editable function bump():
               this.value += 1
 
       function main() -> int:
@@ -539,7 +539,7 @@ class MilkTeaLinterTest < Minitest::Test
           value: int
 
       extending Counter:
-          mutable function bump() -> void:
+          editable function bump() -> void:
               this.value += 1
 
       function main() -> int:
@@ -569,7 +569,7 @@ class MilkTeaLinterTest < Minitest::Test
           value: T
 
       extending Box[T]:
-          mutable function set(value: T):
+          editable function set(value: T):
               this.value = value
 
           static function build(value: T) -> Box[T]:
@@ -2377,7 +2377,7 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
           node: ptr[Node[T]]?
 
       extending Values[T]:
-          public mutable function next() -> const_ptr[T]?:
+          public editable function next() -> const_ptr[T]?:
               let current = this.node
               if current == null:
                   return null
@@ -2404,7 +2404,7 @@ class MilkTeaLinterPreferLetElseTest < Minitest::Test
           node: ptr[Node[T]]?
 
       extending Values[T]:
-          public mutable function next() -> const_ptr[T]?:
+          public editable function next() -> const_ptr[T]?:
               let current = this.node
               if current == null:
                   return null

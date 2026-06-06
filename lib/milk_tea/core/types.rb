@@ -58,7 +58,7 @@ module MilkTea
           end,
           return_type: substitute_type_variables(type.return_type, substitutions),
           receiver_type: type.receiver_type ? substitute_type_variables(type.receiver_type, substitutions) : nil,
-          receiver_mutable: type.receiver_mutable,
+          receiver_editable: type.receiver_editable,
           external: type.external,
         )
       when Event
@@ -1254,14 +1254,14 @@ module MilkTea
     end
 
     class Function < Base
-      attr_reader :name, :params, :return_type, :receiver_type, :receiver_mutable, :variadic, :external
+      attr_reader :name, :params, :return_type, :receiver_type, :receiver_editable, :variadic, :external
 
-      def initialize(name, params:, return_type:, receiver_type: nil, receiver_mutable: false, variadic: false, external: false)
+      def initialize(name, params:, return_type:, receiver_type: nil, receiver_editable: false, variadic: false, external: false)
         @name = name
         @params = params.freeze
         @return_type = return_type
         @receiver_type = receiver_type
-        @receiver_mutable = receiver_mutable
+        @receiver_editable = receiver_editable
         @variadic = variadic
         @external = external
         freeze
@@ -1272,14 +1272,14 @@ module MilkTea
           other.params == params &&
           other.return_type == return_type &&
           other.receiver_type == receiver_type &&
-          other.receiver_mutable == receiver_mutable &&
+          other.receiver_editable == receiver_editable &&
           other.variadic == variadic
       end
 
       alias == eql?
 
       def hash
-        [self.class, params, return_type, receiver_type, receiver_mutable, variadic].hash
+        [self.class, params, return_type, receiver_type, receiver_editable, variadic].hash
       end
 
       def to_s

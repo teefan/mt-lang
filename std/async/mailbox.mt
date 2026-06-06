@@ -114,12 +114,12 @@ public function create[T]() -> Result[Mailbox[T], Error]:
 
 
 extending Error:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Mailbox[T]:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         let state = this.state else:
             return
 

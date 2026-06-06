@@ -44,11 +44,11 @@ class DefinitionTest < Minitest::Test
         "textDocument" => { "uri" => uri, "languageId" => "milk-tea", "version" => 1, "text" => source }
       })
 
-      interface_line = source.lines.index { |line| line.include?("mutable function update(effect: int) -> void") }
+      interface_line = source.lines.index { |line| line.include?("editable function update(effect: int) -> void") }
       interface_char = source.lines[interface_line].index("update") + 1
 
       update_lines = source.lines.each_index.select do |index|
-        source.lines[index].include?("mutable function update(effect: int):")
+        source.lines[index].include?("editable function update(effect: int):")
       end
       title_line, pause_line = update_lines
       title_char = source.lines[title_line].index("update")
@@ -75,7 +75,7 @@ class DefinitionTest < Minitest::Test
 
       contracts_source = <<~MT
         public interface Damageable:
-            mutable function take_damage(amount: int) -> void
+            editable function take_damage(amount: int) -> void
       MT
       entities_source = <<~MT
         import std.contracts as contracts
@@ -84,7 +84,7 @@ class DefinitionTest < Minitest::Test
             hp: int
 
         extending NPC:
-            public mutable function take_damage(amount: int):
+            public editable function take_damage(amount: int):
                 this.hp -= amount
       MT
 
@@ -111,7 +111,7 @@ class DefinitionTest < Minitest::Test
 
         interface_line = contracts_source.lines.index { |line| line.include?("take_damage") }
         interface_char = contracts_source.lines[interface_line].index("take_damage") + 1
-        method_line = entities_source.lines.index { |line| line.include?("mutable function take_damage") }
+        method_line = entities_source.lines.index { |line| line.include?("editable function take_damage") }
         method_char = entities_source.lines[method_line].index("take_damage")
 
         implementation = client.send_request("textDocument/implementation", {

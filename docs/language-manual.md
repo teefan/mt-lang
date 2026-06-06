@@ -341,13 +341,13 @@ The current C backend lowers `packed` / `align(...)` attributes with GNU-style `
 
 ```mt
 public interface Damageable:
-    mutable function take_damage(amount: int) -> void
+    editable function take_damage(amount: int) -> void
     function is_alive() -> bool
 ```
 
 Rules:
 
-- Interface bodies contain `function`, `mutable function`, or `static function` signatures.
+- Interface bodies contain `function`, `editable function`, or `static function` signatures.
 - Interface declarations are not generic in v1.
 - Interface methods may not be `async` or generic.
 - Interface methods do not have bodies.
@@ -361,7 +361,7 @@ extending Counter:
     function read() -> int:
         return this.value
 
-    mutable function bump() -> void:
+    editable function bump() -> void:
         this.value += 1
 
     static function zero() -> Counter:
@@ -371,7 +371,7 @@ extending Counter:
 Kinds:
 
 - `function` (value receiver)
-- `mutable function` (mutable receiver)
+- `editable function` (editable receiver)
 - `static function` (no receiver)
 
 Names such as `init` and `default` are ordinary static functions. There is no constructor keyword or hidden initializer syntax.
@@ -538,7 +538,7 @@ Single-form `for` supports:
 - `start..stop` — exclusive integer range via range expression
 - `array[T, N]`
 - `span[T]`
-- custom structural iterables with a non-mutable zero-argument `iter()` method
+- custom structural iterables with a non-editable zero-argument `iter()` method
 
 Iterator protocol for custom structural iterables:
 
@@ -959,7 +959,7 @@ The following standard library functions receive special lowering for format str
 Custom formatting hook notes:
 
 - The hook pair is compiler-known; it is not declared through a separate interface.
-- `format_len()` and `append_format(...)` must both be present, non-mutable, and use the exact signatures above.
+- `format_len()` and `append_format(...)` must both be present, non-editable, and use the exact signatures above.
 - Direct `string.String` sinks call the custom `append_format(...)` hook directly.
 - Plain `f"..."` expressions and `str_buffer` sinks still need a raw `str` result, so the compiler passes each custom part a borrowed `string.String` view onto the destination slice.
 - For those borrowed-slice paths, `append_format(...)` must write exactly `format_len()` bytes; writing fewer or more bytes raises a runtime error.
@@ -1176,7 +1176,7 @@ struct Counter:
     value: int
 
 extending Counter:
-    mutable function bump() -> void:
+    editable function bump() -> void:
         this.value += 1
 
     function read() -> int:

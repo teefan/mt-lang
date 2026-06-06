@@ -193,7 +193,7 @@ class MilkTeaParserTest < Minitest::Test
   def test_parses_interfaces_implements_and_constrained_type_params
     source = <<~MT
       public interface Damageable:
-          mutable function take_damage(amount: int) -> void
+          editable function take_damage(amount: int) -> void
           function is_alive() -> bool
 
       struct NPC implements Damageable:
@@ -212,7 +212,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::InterfaceDecl, interface_decl
     assert_equal :public, interface_decl.visibility
     assert_equal %w[take_damage is_alive], interface_decl.methods.map(&:name)
-    assert_equal :mutable, interface_decl.methods.first.kind
+    assert_equal :editable, interface_decl.methods.first.kind
 
     assert_instance_of MilkTea::AST::StructDecl, struct_decl
     assert_equal ["Damageable"], struct_decl.implements.map(&:to_s)
@@ -1698,7 +1698,7 @@ class MilkTeaParserTest < Minitest::Test
           async function read() -> int:
               return this.value
 
-          async mutable function bump() -> void:
+          async editable function bump() -> void:
               this.value += 1
     MT
 
@@ -1709,7 +1709,7 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal true, methods.methods[0].async
     assert_equal :plain, methods.methods[0].kind
     assert_equal true, methods.methods[1].async
-    assert_equal :mutable, methods.methods[1].kind
+    assert_equal :editable, methods.methods[1].kind
   end
 
   def test_rejects_public_interface_methods

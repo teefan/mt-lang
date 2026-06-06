@@ -84,12 +84,12 @@ extending Deque[T]:
         return this.get(this.len - 1)
 
 
-    public mutable function clear() -> void:
+    public editable function clear() -> void:
         this.head = 0
         this.len = 0
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         heap.release(this.data)
         this.data = null
         this.head = 0
@@ -97,7 +97,7 @@ extending Deque[T]:
         this.capacity = 0
 
 
-    public mutable function reserve(min_capacity: ptr_uint) -> void:
+    public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
 
@@ -132,7 +132,7 @@ extending Deque[T]:
         this.capacity = new_capacity
 
 
-    public mutable function push_back(value: T) -> void:
+    public editable function push_back(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -147,7 +147,7 @@ extending Deque[T]:
         this.len += 1
 
 
-    public mutable function push_front(value: T) -> void:
+    public editable function push_front(value: T) -> void:
         if this.len == this.capacity:
             this.reserve(this.len + 1)
 
@@ -166,7 +166,7 @@ extending Deque[T]:
         this.len += 1
 
 
-    public mutable function insert(index: ptr_uint, value: T) -> bool:
+    public editable function insert(index: ptr_uint, value: T) -> bool:
         if index > this.len:
             return false
 
@@ -211,7 +211,7 @@ extending Deque[T]:
         return true
 
 
-    public mutable function pop_back() -> Option[T]:
+    public editable function pop_back() -> Option[T]:
         if this.len == 0:
             return Option[T].none
 
@@ -230,7 +230,7 @@ extending Deque[T]:
             return Option[T].some(value = value)
 
 
-    public mutable function pop_front() -> Option[T]:
+    public editable function pop_front() -> Option[T]:
         if this.len == 0:
             return Option[T].none
 
@@ -249,7 +249,7 @@ extending Deque[T]:
             return Option[T].some(value = value)
 
 
-    public mutable function remove(index: ptr_uint) -> Option[T]:
+    public editable function remove(index: ptr_uint) -> Option[T]:
         if index >= this.len:
             return Option[T].none
 
@@ -287,7 +287,7 @@ extending Deque[T]:
             return Option[T].some(value = removed)
 
 
-    public mutable function rotate_left(amount: ptr_uint) -> void:
+    public editable function rotate_left(amount: ptr_uint) -> void:
         if this.len <= 1:
             return
 
@@ -310,7 +310,7 @@ extending Deque[T]:
             remaining -= 1
 
 
-    public mutable function rotate_right(amount: ptr_uint) -> void:
+    public editable function rotate_right(amount: ptr_uint) -> void:
         if this.len <= 1:
             return
 
@@ -338,7 +338,7 @@ extending Iter[T]:
         return this
 
 
-    public mutable function next() -> ptr[T]?:
+    public editable function next() -> ptr[T]?:
         if this.index >= this.len:
             return null
 

@@ -319,7 +319,7 @@ extending Node[Context]:
         return Node[Context].create(NodeKind.until_failure)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.children.release()
 
 
@@ -333,7 +333,7 @@ extending Tree[Context]:
         )
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         for node_ptr in this.nodes:
             unsafe:
                 read(node_ptr).release()
@@ -343,7 +343,7 @@ extending Tree[Context]:
         this.has_root = false
 
 
-    public mutable function reset() -> void:
+    public editable function reset() -> void:
         for entry in this.runtime:
             reset_runtime_state(unsafe: ptr[RuntimeState]<-entry)
 
@@ -359,14 +359,14 @@ extending Tree[Context]:
         return Option[ptr_uint].some(value = this.root)
 
 
-    public mutable function add_node(node: Node[Context]) -> ptr_uint:
+    public editable function add_node(node: Node[Context]) -> ptr_uint:
         let node_id = this.nodes.len()
         this.nodes.push(node)
         this.runtime.push(create_runtime_state())
         return node_id
 
 
-    public mutable function set_root(node_id: ptr_uint) -> bool:
+    public editable function set_root(node_id: ptr_uint) -> bool:
         if not child_exists(ref_of(this), node_id):
             return false
 
@@ -375,7 +375,7 @@ extending Tree[Context]:
         return true
 
 
-    public mutable function add_child(parent_id: ptr_uint, child_id: ptr_uint) -> bool:
+    public editable function add_child(parent_id: ptr_uint, child_id: ptr_uint) -> bool:
         if not child_exists(ref_of(this), parent_id):
             return false
         if not child_exists(ref_of(this), child_id):
@@ -389,7 +389,7 @@ extending Tree[Context]:
         return true
 
 
-    public mutable function tick(context: ref[Context]) -> Status:
+    public editable function tick(context: ref[Context]) -> Status:
         if not this.has_root:
             return Status.failure
 

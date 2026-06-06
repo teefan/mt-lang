@@ -561,7 +561,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
     assert_match(/extending Color:.*?public function alpha\(alpha: float\) -> Color:\n\s+return color_alpha\(this, alpha\)/m, source)
     assert_match(/extending Color:.*?public static function from_hsv\(hue: float, saturation: float, value: float\) -> Color:\n\s+return color_from_hsv\(hue, saturation, value\)/m, source)
     assert_match(/extending Image:.*?public static function text\(text: str, font_size: int, color: Color\) -> Image:\n\s+return image_text\(text, font_size, color\)/m, source)
-    assert_match(/extending Image:.*?public mutable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
+    assert_match(/extending Image:.*?public editable function mipmaps\(\) -> void:\n\s+image_mipmaps\(this\)/m, source)
     assert_match(/extending Wave:.*?public function copy\(\) -> Wave:\n\s+return wave_copy\(this\)/m, source)
     assert_match(/extending ptr\[Wave\]:.*?public function crop\(init_frame: int, final_frame: int\) -> void:\n\s+wave_crop\(this, init_frame, final_frame\).*?public function format\(sample_rate: int, sample_size: int, channels: int\) -> void:\n\s+wave_format\(this, sample_rate, sample_size, channels\)/m, source)
     assert_match(/extending Vector2:.*?public static function zero\(\) -> Vector2:\n\s+return math\.vector2_zero\(\).*?public function add\(v2: Vector2\) -> Vector2:\n\s+return math\.vector2_add\(this, v2\)/m, source)

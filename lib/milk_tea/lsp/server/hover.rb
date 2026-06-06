@@ -564,7 +564,7 @@ module MilkTea
       end
 
       def interface_method_signature(binding)
-        keyword = binding.kind == :mutable ? 'mutable function' : 'function'
+        keyword = binding.kind == :editable ? 'editable function' : 'function'
         keyword = "async #{keyword}" if binding.async
         "#{keyword} #{binding.name}(#{format_params(binding.params)}) -> #{binding.return_type}"
       end
@@ -886,8 +886,8 @@ module MilkTea
         if binding.respond_to?(:type) && binding.type
           params_str = format_params(binding.type.params)
           keyword = case binding.ast.kind
-                    when :mutable
-                      "mutable function"
+                    when :editable
+                      "editable function"
                     when :static
                       "static function"
                     else
@@ -898,8 +898,8 @@ module MilkTea
         else
           params_str = binding.params.map { |p| "#{p.name}: #{p.type}" }.join(', ')
           keyword = case binding.kind
-                    when :mutable
-                      "mutable function"
+                    when :editable
+                      "editable function"
                     when :static
                       "static function"
                     else

@@ -190,12 +190,12 @@ function value_as_object(value: Value) -> ptr[Object]?:
 
 
 extending ParseError:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.message.release()
 
 
 extending Entry:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.key.release()
         release_value(this.value)
 
@@ -253,7 +253,7 @@ extending Object:
             return value_as_object(read(entry).value)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.entries.len():
             let entry = this.entries.get(index) else:
@@ -316,7 +316,7 @@ extending Array:
             return value_as_object(read(value_ptr))
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         var index: ptr_uint = 0
         while index < this.values.len():
             let value_ptr = this.values.get(index) else:
@@ -351,7 +351,7 @@ extending Table:
         return this.entries.get_object(key)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.name.release()
         this.entries.release()
 
@@ -365,7 +365,7 @@ extending ArrayTable:
         return this.tables.get(index)
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.name.release()
 
         var index: ptr_uint = 0
@@ -440,7 +440,7 @@ extending Document:
         return null
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.root.release()
 
         var table_index: ptr_uint = 0

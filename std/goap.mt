@@ -165,7 +165,7 @@ extending Action[World, Context]:
 
 
 extending Plan[World]:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.steps.release()
 
 
@@ -182,7 +182,7 @@ extending Plan[World]:
 
 
 extending PlanningResult[World]:
-    public mutable function release() -> void:
+    public editable function release() -> void:
         match this.plan:
             Option.none:
                 pass
@@ -215,7 +215,7 @@ extending Planner[World, Goal, Context]:
         )
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.actions.release()
 
 
@@ -223,15 +223,15 @@ extending Planner[World, Goal, Context]:
         return this.actions.len()
 
 
-    public mutable function add_action(action: Action[World, Context]) -> void:
+    public editable function add_action(action: Action[World, Context]) -> void:
         this.actions.push(action)
 
 
-    public mutable function set_max_iterations(limit: ptr_uint) -> void:
+    public editable function set_max_iterations(limit: ptr_uint) -> void:
         this.max_iterations = limit
 
 
-    public mutable function plan(context: ref[Context], initial_world: World, goal: Goal) -> PlanningResult[World]:
+    public editable function plan(context: ref[Context], initial_world: World, goal: Goal) -> PlanningResult[World]:
         var nodes = vec.Vec[SearchNode[World]].create()
         defer nodes.release()
         var open_list = vec.Vec[ptr_uint].create()

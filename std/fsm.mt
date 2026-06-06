@@ -155,7 +155,7 @@ extending StateMachine[State, Event, Context]:
         )
 
 
-    public mutable function release() -> void:
+    public editable function release() -> void:
         this.transitions.release()
         this.hooks.release()
 
@@ -176,11 +176,11 @@ extending StateMachine[State, Event, Context]:
         return this.states_equal(this.current_state, state)
 
 
-    public mutable function add_transition(transition: Transition[State, Event, Context]) -> void:
+    public editable function add_transition(transition: Transition[State, Event, Context]) -> void:
         this.transitions.push(transition)
 
 
-    public mutable function add_state_hooks(hooks: StateHooks[State, Context]) -> void:
+    public editable function add_state_hooks(hooks: StateHooks[State, Context]) -> void:
         let existing = find_state_hooks(ref_of(this), hooks.state)
         if existing != null:
             unsafe:
@@ -190,7 +190,7 @@ extending StateMachine[State, Event, Context]:
         this.hooks.push(hooks)
 
 
-    public mutable function tick(context: ref[Context]) -> void:
+    public editable function tick(context: ref[Context]) -> void:
         let maybe_hooks = find_state_hooks(ref_of(this), this.current_state) else:
             return
 
@@ -199,7 +199,7 @@ extending StateMachine[State, Event, Context]:
             hooks.on_update(ptr_of(context), this.current_state)
 
 
-    public mutable function set_state(context: ref[Context], next_state: State) -> DispatchResult[State]:
+    public editable function set_state(context: ref[Context], next_state: State) -> DispatchResult[State]:
         let previous_state = this.current_state
         if this.states_equal(previous_state, next_state):
             return DispatchResult[State](
@@ -229,7 +229,7 @@ extending StateMachine[State, Event, Context]:
         )
 
 
-    public mutable function dispatch(context: ref[Context], input: Event) -> DispatchResult[State]:
+    public editable function dispatch(context: ref[Context], input: Event) -> DispatchResult[State]:
         for entry in this.transitions:
             unsafe:
                 let transition = read(entry)

@@ -328,7 +328,7 @@
 
     "keyword-modifier": {
       "name": "storage.modifier.milk-tea",
-      "match": "\\b(public|async|mutable)\\b"
+      "match": "\\b(public|async|editable)\\b"
     },
 
     "keyword-builtin": {
