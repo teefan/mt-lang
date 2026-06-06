@@ -552,9 +552,9 @@ function main() -> int:
     generated = generate_c_from_program_source(source)
 
     assert_match(/demo_generic_methods_codegen_Box_echo_int/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_int/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_static_int/, generated)
     assert_match(/int32_t a = demo_generic_methods_codegen_Box_echo_int\(3\);/, generated)
-    assert_match(/demo_generic_methods_codegen_Box_make_int\(4\)/, generated)
+    assert_match(/demo_generic_methods_codegen_Box_make_static_int\(4\)/, generated)
   end
 
   def test_generate_c_for_generic_receiver_methods
@@ -584,10 +584,10 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static_int/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_get_int/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_echo_int_bool/, generated)
-    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_methods_codegen_Box_zero_static_int\(\)/, generated)
     assert_match(/demo_generic_receiver_methods_codegen_Box_get_int\(box\)/, generated)
     assert_match(/if \(demo_generic_receiver_methods_codegen_Box_echo_int_bool\(true\)\) \{/, generated)
   end
@@ -613,10 +613,10 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_int/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_int/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_int\(\)/, generated)
-    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static_int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static_int/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_create_static_int\(\)/, generated)
+    assert_match(/demo_generic_receiver_static_self_call_codegen_Box_with_default_static_int\(\)/, generated)
   end
 
   def test_generate_c_keeps_omitted_receiver_wrapper_for_side_effectful_receiver_expression
@@ -641,8 +641,8 @@ function main() -> int:
 
     generated = generate_c_from_program_source(source)
 
-    assert_match(/demo_side_effectful_receiver_codegen_Box_build\(\)/, generated)
-    assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build\(\), demo_side_effectful_receiver_codegen_Box_echo_bool\(true\)\)\) \{/, generated)
+    assert_match(/demo_side_effectful_receiver_codegen_Box_build_static\(\)/, generated)
+    assert_match(/if \(\(\(void\)demo_side_effectful_receiver_codegen_Box_build_static\(\), demo_side_effectful_receiver_codegen_Box_echo_bool\(true\)\)\) \{/, generated)
   end
 
   def test_generate_c_suppresses_unused_emitted_parameters
@@ -699,9 +699,9 @@ function main() -> int:
     generated = generate_c_from_program_source(source)
 
     assert_match(/static demo_default_codegen_Player demo_default_codegen_make_default_demo_default_codegen_Player\(void\)/, generated)
-    assert_match(/return demo_default_codegen_Player_default\(\);/, generated)
+    assert_match(/return demo_default_codegen_Player_default_static\(\);/, generated)
     assert_match(/static demo_default_codegen_Plain demo_default_codegen_make_default_demo_default_codegen_Plain\(void\)/, generated)
-    assert_match(/return demo_default_codegen_Plain_default\(\);/, generated)
+    assert_match(/return demo_default_codegen_Plain_default_static\(\);/, generated)
   end
 
   def test_generate_c_for_async_with_control_flow
@@ -3161,9 +3161,9 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t demo_static_interface_codegen_Counter_tag\(void\)/, generated)
+    assert_match(/static int32_t demo_static_interface_codegen_Counter_tag_static\(void\)/, generated)
     assert_match(/static int32_t demo_static_interface_codegen_tag_of_demo_static_interface_codegen_Counter\(void\)/, generated)
-    assert_match(/return demo_static_interface_codegen_Counter_tag\(\);/, generated)
+    assert_match(/return demo_static_interface_codegen_Counter_tag_static\(\);/, generated)
   end
 
   def test_generate_c_for_hash_and_equal_builtins_with_canonical_hooks
@@ -3193,10 +3193,10 @@ function main() -> bool:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static uint32_t demo_hash_equal_codegen_Key_hash\(const demo_hash_equal_codegen_Key\* value\)/, generated)
-    assert_match(/static bool demo_hash_equal_codegen_Key_equal\(const demo_hash_equal_codegen_Key\* left, const demo_hash_equal_codegen_Key\* right\)/, generated)
-    assert_match(/demo_hash_equal_codegen_Key_hash\(&left\)/, generated)
-    assert_match(/demo_hash_equal_codegen_Key_equal\(&left, &right\)/, generated)
+    assert_match(/static uint32_t demo_hash_equal_codegen_Key_hash_static\(const demo_hash_equal_codegen_Key\* value\)/, generated)
+    assert_match(/static bool demo_hash_equal_codegen_Key_equal_static\(const demo_hash_equal_codegen_Key\* left, const demo_hash_equal_codegen_Key\* right\)/, generated)
+    assert_match(/demo_hash_equal_codegen_Key_hash_static\(&left\)/, generated)
+    assert_match(/demo_hash_equal_codegen_Key_equal_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_transitive_hash_and_equal_builtins
@@ -3232,8 +3232,8 @@ function main() -> bool:
     assert_match(/static bool demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
     assert_match(/static bool demo_hash_transitive_codegen_outer_demo_hash_transitive_codegen_Key\(demo_hash_transitive_codegen_Key left, demo_hash_transitive_codegen_Key right\)/, generated)
     assert_match(/return demo_hash_transitive_codegen_inner_demo_hash_transitive_codegen_Key\(left, right\);/, generated)
-    assert_match(/demo_hash_transitive_codegen_Key_hash\(&left\)/, generated)
-    assert_match(/demo_hash_transitive_codegen_Key_equal\(&left, &right\)/, generated)
+    assert_match(/demo_hash_transitive_codegen_Key_hash_static\(&left\)/, generated)
+    assert_match(/demo_hash_transitive_codegen_Key_equal_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_hash_and_equal_builtins_in_imported_generic_functions
@@ -3272,8 +3272,8 @@ function main() -> bool:
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_match(/static bool demo_hash_tools_same_key_demo_hash_equal_imported_codegen_main_Key\(demo_hash_equal_imported_codegen_main_Key left, demo_hash_equal_imported_codegen_main_Key right\)/, generated)
-    assert_match(/demo_hash_equal_imported_codegen_main_Key_hash\(&left\)/, generated)
-    assert_match(/demo_hash_equal_imported_codegen_main_Key_equal\(&left, &right\)/, generated)
+    assert_match(/demo_hash_equal_imported_codegen_main_Key_hash_static\(&left\)/, generated)
+    assert_match(/demo_hash_equal_imported_codegen_main_Key_equal_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_order_builtin_with_canonical_hook
@@ -3307,8 +3307,8 @@ function main() -> int:
 
     generated = generate_c_from_source(source)
 
-    assert_match(/static int32_t demo_order_codegen_Key_order\(const demo_order_codegen_Key\* left, const demo_order_codegen_Key\* right\)/, generated)
-    assert_match(/demo_order_codegen_Key_order\(&left, &right\)/, generated)
+    assert_match(/static int32_t demo_order_codegen_Key_order_static\(const demo_order_codegen_Key\* left, const demo_order_codegen_Key\* right\)/, generated)
+    assert_match(/demo_order_codegen_Key_order_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_order_builtin_in_imported_generic_functions
@@ -3351,7 +3351,7 @@ function main() -> int:
     generated = generate_c_from_program_source(source, imported_sources)
 
     assert_match(/static int32_t demo_order_tools_compare_demo_order_imported_codegen_main_Key\(demo_order_imported_codegen_main_Key left, demo_order_imported_codegen_main_Key right\)/, generated)
-    assert_match(/demo_order_imported_codegen_main_Key_order\(&left, &right\)/, generated)
+    assert_match(/demo_order_imported_codegen_main_Key_order_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_order_builtin_used_in_binary_comparison
@@ -3380,7 +3380,7 @@ function main() -> bool:
     generated = generate_c_from_source(source)
 
     assert_match(/static bool demo_order_compare_codegen_ordered_before_or_equal_demo_order_compare_codegen_Key\(demo_order_compare_codegen_Key left, demo_order_compare_codegen_Key right\)/, generated)
-    assert_match(/demo_order_compare_codegen_Key_order\(&left, &right\)/, generated)
+    assert_match(/demo_order_compare_codegen_Key_order_static\(&left, &right\)/, generated)
   end
 
   def test_generate_c_for_generic_functions_with_explicit_type_arguments_and_layout_queries
@@ -4487,8 +4487,8 @@ function main() -> int:
       program = MilkTea::ModuleLoader.new(module_roots: [dir]).check_program(source_path)
       generated = MilkTea::Codegen.generate_c(program)
 
-      assert_match(/static demo_math_RawVec demo_math_RawVec_zero\(void\)/, generated)
-      assert_match(/demo_math_RawVec value = demo_math_RawVec_zero\(\);/, generated)
+      assert_match(/static demo_math_RawVec demo_math_RawVec_zero_static\(void\)/, generated)
+      assert_match(/demo_math_RawVec value = demo_math_RawVec_zero_static\(\);/, generated)
       assert_match(/return value\.x;/, generated)
     end
   end
@@ -5039,7 +5039,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     assert_match(/static int32_t demo_default_call_interface_codegen_make_and_read_demo_default_call_interface_codegen_Counter\(void\)/, generated)
-    assert_match(/demo_default_call_interface_codegen_Counter item = demo_default_call_interface_codegen_Counter_default\(\);/, generated)
+    assert_match(/demo_default_call_interface_codegen_Counter item = demo_default_call_interface_codegen_Counter_default_static\(\);/, generated)
     assert_match(/return demo_default_call_interface_codegen_Counter_value\(item\);/, generated)
   end
 

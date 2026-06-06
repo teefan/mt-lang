@@ -43,6 +43,9 @@ module MilkTea
 
         method = @methods.fetch(receiver_type, {})[name]
         method ||= @methods.fetch(dispatch_receiver_type, {})[name] unless dispatch_receiver_type == receiver_type
+        static_name = "static:#{name}"
+        method ||= @methods.fetch(receiver_type, {})[static_name]
+        method ||= @methods.fetch(dispatch_receiver_type, {})[static_name] unless dispatch_receiver_type == receiver_type
         method
       end
 

@@ -297,7 +297,7 @@ class MilkTeaSemaTest < Minitest::Test
     counter_type = result.types.fetch("Counter")
     methods = result.methods.fetch(counter_type)
 
-    assert_nil methods.fetch("tag").type.receiver_type
+    assert_nil methods.fetch("static:tag").type.receiver_type
     assert_equal true, result.functions.key?("main")
   end
 
@@ -4245,7 +4245,7 @@ function main() -> int:
 
     box_type = result.types.fetch("Box")
     echo_binding = result.methods.fetch(box_type).fetch("echo")
-    make_binding = result.methods.fetch(box_type).fetch("make")
+    make_binding = result.methods.fetch(box_type).fetch("static:make")
 
     assert_equal ["T"], echo_binding.type_params
     assert_equal ["T"], make_binding.type_params
@@ -4287,7 +4287,7 @@ function main() -> int:
     methods = result.methods.fetch(box_type)
 
     assert_equal "demo.generic_receiver_methods.Box[T]", methods.fetch("get").declared_receiver_type.to_s
-    assert_equal ["T"], methods.fetch("zero").type_params
+    assert_equal ["T"], methods.fetch("static:zero").type_params
     assert_equal ["T", "U"], methods.fetch("echo").type_params
     assert_equal true, result.functions.key?("main")
     end
@@ -4316,8 +4316,8 @@ function main() -> int:
     box_type = result.types.fetch("Box")
     methods = result.methods.fetch(box_type)
 
-    assert_equal ["T"], methods.fetch("create").type_params
-    assert_equal ["T"], methods.fetch("with_default").type_params
+    assert_equal ["T"], methods.fetch("static:create").type_params
+    assert_equal ["T"], methods.fetch("static:with_default").type_params
     assert_equal true, result.functions.key?("main")
   end
 
@@ -6132,7 +6132,7 @@ extending Counter:
     vec_type = result.types.fetch("Vec")
     methods = result.methods.fetch(vec_type)
 
-    assert_nil methods.fetch("zero").type.receiver_type
+    assert_nil methods.fetch("static:zero").type.receiver_type
     assert_equal vec_type, methods.fetch("add").type.receiver_type
     assert_equal true, result.functions.key?("main")
   end

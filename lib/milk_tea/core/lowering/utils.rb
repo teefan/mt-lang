@@ -142,7 +142,7 @@ module MilkTea
 
         if pointer_type?(receiver_type)
           dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
-          return receiver_type if member_name && (@method_definitions.key?([receiver_type, member_name]) || @method_definitions.key?([dispatch_receiver_type, member_name]))
+          return receiver_type if member_name && (@method_definitions.key?([receiver_type, member_name]) || @method_definitions.key?([dispatch_receiver_type, member_name]) || @method_definitions.key?([receiver_type, "static:#{member_name}"]) || @method_definitions.key?([dispatch_receiver_type, "static:#{member_name}"]))
 
           return pointee_type(receiver_type)
         end
@@ -1250,6 +1250,7 @@ module MilkTea
         end
         if receiver_type
           base = "#{c_type_name(receiver_type)}_#{binding.name}"
+          base = "#{base}_static" if binding.type.receiver_type.nil?
           return binding.type_arguments.empty? ? base : "#{base}_#{sanitize_identifier(binding.type_arguments.join('_'))}"
         end
 

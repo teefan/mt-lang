@@ -31,6 +31,17 @@ module MilkTea
         fallback_owner.send(:lookup_method_local_or_imported, receiver_type, name)
       end
 
+      def lookup_static_method(receiver_type, name)
+        static_name = "static:#{name}"
+        method = lookup_method_local_or_imported(receiver_type, static_name)
+        return method if method
+
+        fallback_owner = specialization_lookup_owner
+        return nil unless fallback_owner
+
+        fallback_owner.send(:lookup_method_local_or_imported, receiver_type, static_name)
+      end
+
       def lookup_method_local_or_imported(receiver_type, name)
         dispatch_receiver_type = method_dispatch_receiver_type(receiver_type)
 
@@ -58,7 +69,8 @@ module MilkTea
 
         if imported_candidates.length > 1
           modules = imported_candidates.map { |module_binding, _binding| module_binding.name }.join(", ")
-          raise_sema_error("ambiguous imported method #{receiver_type}.#{name}; found in modules #{modules}")
+          display_name = name.delete_prefix("static:")
+          raise_sema_error("ambiguous imported method #{receiver_type}.#{display_name}; found in modules #{modules}")
         end
 
         imported_candidates.first.last

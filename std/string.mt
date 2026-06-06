@@ -42,6 +42,12 @@ extending String:
         this.len = 0
 
 
+    public mutable function truncate(new_len: ptr_uint) -> void:
+        if new_len > this.len:
+            fatal(c"string.truncate new length exceeds current length")
+        this.len = new_len
+
+
     public mutable function release() -> void:
         if this.owns_storage:
             heap.release(this.data)
@@ -50,6 +56,29 @@ extending String:
         this.len = 0
         this.capacity = 0
         this.owns_storage = true
+
+
+    public static function hash(value: const_ptr[String]) -> uint:
+        let fnv_offset: uint = 0x811C9DC5
+        let fnv_prime: uint = 0x01000193
+
+        unsafe:
+            let view = read(value)
+            var result = fnv_offset
+            let raw = view.as_str()
+            var index: ptr_uint = 0
+            while index < raw.len:
+                let byte_value = uint<-raw.byte_at(index)
+                result = (result ^ byte_value) * fnv_prime
+                index += 1
+            return result
+
+
+    public static function equal(left: const_ptr[String], right: const_ptr[String]) -> bool:
+        unsafe:
+            let left_view = read(left)
+            let right_view = read(right)
+            return left_view.as_str().equal(right_view.as_str())
 
 
     public mutable function reserve(min_capacity: ptr_uint) -> void:

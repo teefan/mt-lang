@@ -1164,6 +1164,7 @@ module MilkTea
             end
 
             method = lookup_method(type_expr, callee.member)
+            method ||= lookup_static_method(type_expr, callee.member)
             return [:function, method, nil] if method && method.type.receiver_type.nil?
 
             raise_sema_error("unknown associated function #{type_expr}.#{callee.member}")

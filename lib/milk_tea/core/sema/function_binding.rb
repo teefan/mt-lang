@@ -195,9 +195,11 @@ module MilkTea
                       receiver_type_param_constraints:,
                     )
                   end
-                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(binding.name)
+                  instance_method = receiver_type && method.kind != :static
+                  method_key = instance_method ? binding.name : "static:#{binding.name}"
+                  raise_sema_error("duplicate method #{decl.type_name}.#{binding.name}") if @methods[dispatch_receiver_type].key?(method_key)
 
-                  @methods[dispatch_receiver_type][binding.name] = binding
+                  @methods[dispatch_receiver_type][method_key] = binding
                 rescue SemaError => e
                   collect_structural_error(e)
                 end

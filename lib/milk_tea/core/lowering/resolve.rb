@@ -461,13 +461,15 @@ module MilkTea
             dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
             method_entry_receiver_type = type_expr
             method_entry = @method_definitions[[type_expr, callee.member]]
+            method_entry ||= @method_definitions[[type_expr, "static:#{callee.member}"]]
             unless method_entry || dispatch_receiver_type == type_expr
               method_entry_receiver_type = dispatch_receiver_type
               method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
+              method_entry ||= @method_definitions[[dispatch_receiver_type, "static:#{callee.member}"]]
             end
             if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
               if method_binding.type.receiver_type.nil?
                 method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: type_expr) if method_binding.type_params.any?
                 return [:associated_method, function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type), nil, method_binding.type, method_binding]
@@ -486,8 +488,9 @@ module MilkTea
             method_entry = @method_definitions[[dispatch_receiver_type, callee.member]]
           end
           if method_entry
-            method_analysis, method_ast = method_entry
-            method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        method_analysis, method_ast = method_entry
+        method_analysis_key = method_ast.kind == :static ? "static:#{method_ast.name}" : method_ast.name
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key)
             method_binding = specialize_function_binding(method_binding, arguments, env, receiver_type: resolved_receiver_type)
             return [
               :method,
@@ -641,13 +644,15 @@ module MilkTea
             dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
             method_entry_receiver_type = type_expr
             method_entry = @method_definitions[[type_expr, expression.member]]
+            method_entry ||= @method_definitions[[type_expr, "static:#{expression.member}"]]
             unless method_entry || dispatch_receiver_type == type_expr
               method_entry_receiver_type = dispatch_receiver_type
               method_entry = @method_definitions[[dispatch_receiver_type, expression.member]]
+              method_entry ||= @method_definitions[[dispatch_receiver_type, "static:#{expression.member}"]]
             end
             if method_entry
               method_analysis, method_ast = method_entry
-              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+              method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
               return method_binding.type if method_binding.type.receiver_type.nil?
             end
           end
@@ -1007,13 +1012,15 @@ module MilkTea
                       dispatch_receiver_type = method_dispatch_receiver_type(type_expr)
                       method_entry_receiver_type = type_expr
                       method_entry = @method_definitions[[type_expr, expression.callee.member]]
+                      method_entry ||= @method_definitions[[type_expr, "static:#{expression.callee.member}"]]
                       unless method_entry || dispatch_receiver_type == type_expr
                         method_entry_receiver_type = dispatch_receiver_type
                         method_entry = @method_definitions[[dispatch_receiver_type, expression.callee.member]]
+                        method_entry ||= @method_definitions[[dispatch_receiver_type, "static:#{expression.callee.member}"]]
                       end
                       if method_entry
                         method_analysis, method_ast = method_entry
-                        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+                        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
                         if method_binding.type.receiver_type.nil?
                           receiver_type = type_expr
                           method_binding
@@ -1033,7 +1040,7 @@ module MilkTea
                         callable_kind = :method
                         receiver = expression.callee.receiver
                         receiver_type = resolved_receiver_type
-                        method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+                        method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
                       end
                     end
                   end
@@ -1166,18 +1173,23 @@ module MilkTea
         end
       end
 
+      def method_analysis_key(method_ast)
+        method_ast.kind == :static ? "static:#{method_ast.name}" : method_ast.name
+      end
+
       def resolve_explicit_associated_binding(target_type, method_name, requirement_message:)
         dispatch_receiver_type = method_dispatch_receiver_type(target_type)
         method_entry_receiver_type = target_type
-        method_entry = @method_definitions[[target_type, method_name]]
+        static_method_name = "static:#{method_name}"
+        method_entry = @method_definitions[[target_type, static_method_name]]
         unless method_entry || dispatch_receiver_type == target_type
           method_entry_receiver_type = dispatch_receiver_type
-          method_entry = @method_definitions[[dispatch_receiver_type, method_name]]
+          method_entry = @method_definitions[[dispatch_receiver_type, static_method_name]]
         end
         return nil unless method_entry
 
         method_analysis, method_ast = method_entry
-        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
         raise LoweringError, requirement_message unless method_binding.type.receiver_type.nil?
 
         method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?
@@ -1214,7 +1226,7 @@ module MilkTea
         return nil unless method_entry
 
         method_analysis, method_ast = method_entry
-        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_ast.name)
+        method_binding = method_analysis.methods.fetch(method_entry_receiver_type).fetch(method_analysis_key(method_ast))
         raise LoweringError, requirement_message if method_binding.type.receiver_type.nil?
 
         method_binding = instantiate_function_binding_with_receiver(method_binding, [], receiver_type: target_type) if method_binding.type_params.any?

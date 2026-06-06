@@ -215,5 +215,78 @@ extending str:
         return unsafe: str(data = this.data + start, len = len)
 
 
+    public function find_substring(needle: str) -> Option[ptr_uint]:
+        if needle.len == 0:
+            return Option[ptr_uint].some(value= 0)
+        if needle.len > this.len:
+            return Option[ptr_uint].none
+
+        let limit = this.len - needle.len
+        var offset: ptr_uint = 0
+        while offset <= limit:
+            var matched = true
+            var index: ptr_uint = 0
+            while index < needle.len:
+                if this.byte_at(offset + index) != needle.byte_at(index):
+                    matched = false
+                    break
+                index += 1
+            if matched:
+                return Option[ptr_uint].some(value= offset)
+            offset += 1
+
+        return Option[ptr_uint].none
+
+
+    public function contains_substring(needle: str) -> bool:
+        let found = this.find_substring(needle)
+        match found:
+            Option.some:
+                return true
+            Option.none:
+                return false
+
+
+    public static function hash(value: const_ptr[str]) -> uint:
+        let fnv_offset: uint = 0x811C9DC5
+        let fnv_prime: uint = 0x01000193
+
+        var result = fnv_offset
+        unsafe:
+            let view = read(value)
+            var index: ptr_uint = 0
+            while index < view.len:
+                let byte_value = uint<-view.byte_at(index)
+                result = (result ^ byte_value) * fnv_prime
+                index += 1
+        return result
+
+
+    public static function equal(left: const_ptr[str], right: const_ptr[str]) -> bool:
+        unsafe:
+            return read(left).equal(read(right))
+
+
+    public static function order(left: const_ptr[str], right: const_ptr[str]) -> int:
+        unsafe:
+            let left_view = read(left)
+            let right_view = read(right)
+            var min_len = left_view.len
+            if right_view.len < min_len:
+                min_len = right_view.len
+
+            var index: ptr_uint = 0
+            while index < min_len:
+                let lb = int<-left_view.byte_at(index)
+                let rb = int<-right_view.byte_at(index)
+                if lb != rb:
+                    return lb - rb
+                index += 1
+
+            let left_len = int<-left_view.len
+            let right_len = int<-right_view.len
+            return left_len - right_len
+
+
     public function to_cstr(space: ref[arena.Arena]) -> cstr:
         return space.to_cstr(this)
