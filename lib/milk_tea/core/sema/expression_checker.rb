@@ -482,6 +482,9 @@ module MilkTea
           pointer_result = pointer_arithmetic_result(expression.operator, left_type, right_type)
           return pointer_result if pointer_result
 
+          vector_result = vector_arithmetic_result(expression.operator, left_type, right_type)
+          return vector_result if vector_result
+
           result_type = common_numeric_type(left_type, right_type)
           unless result_type
             raise_sema_error("operator #{expression.operator} requires compatible numeric types, got #{left_type} and #{right_type}")

@@ -412,6 +412,58 @@ module MilkTea
             end
           end
 
+          def uses_vector_math_types?
+            return @uses_vector_math_types if defined?(@uses_vector_math_types)
+            @uses_vector_math_types = begin
+              emitted_functions.any? do |function|
+                type_contains_vector_math?(function.return_type) ||
+                  function.params.any? { |param| type_contains_vector_math?(param.type) } ||
+                  function.body.any? { |stmt| statement_uses_vector_math?(stmt) }
+              end ||
+                emitted_aggregate_structs.any? { |s| s.fields.any? { |f| type_contains_vector_math?(f.type) } } ||
+                emitted_aggregate_unions.any? { |u| u.fields.any? { |f| type_contains_vector_math?(f.type) } } ||
+                emitted_aggregate_variants.any? { |v| v.arms.any? { |a| a.fields.any? { |f| type_contains_vector_math?(f.type) } } } ||
+                emitted_constants.any? { |c| type_contains_vector_math?(c.type) } ||
+                emitted_globals.any? { |g| type_contains_vector_math?(g.type) }
+            end
+            @uses_vector_math_types
+          end
+
+          def statement_uses_vector_math?(stmt)
+            case stmt
+            when IR::LocalDecl
+              type_contains_vector_math?(stmt.type)
+            when IR::BlockStmt
+              stmt.body.any? { |s| statement_uses_vector_math?(s) }
+            when IR::WhileStmt
+              stmt.body.any? { |s| statement_uses_vector_math?(s) }
+            when IR::ForStmt
+              stmt.body.any? { |s| statement_uses_vector_math?(s) }
+            when IR::IfStmt
+              stmt.then_body.any? { |s| statement_uses_vector_math?(s) } ||
+                (stmt.else_body && stmt.else_body.any? { |s| statement_uses_vector_math?(s) })
+            when IR::SwitchStmt
+              stmt.cases.any? { |c| c.body.any? { |s| statement_uses_vector_math?(s) } }
+            else
+              false
+            end
+          end
+
+          def type_contains_vector_math?(type)
+            return false unless type
+            return true if type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
+            case type
+            when Types::Nullable
+              type_contains_vector_math?(type.base)
+            when Types::Span
+              type_contains_vector_math?(type.element_type)
+            when Types::GenericInstance
+              type.arguments.any? { |a| type_contains_vector_math?(a) }
+            else
+              false
+            end
+          end
+
           def uses_fatal_helper?
             uses_mt_fatal_helper? || uses_mt_fatal_str_helper?
           end

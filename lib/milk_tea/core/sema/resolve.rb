@@ -517,6 +517,9 @@ module MilkTea
         return true if type.is_a?(Types::Opaque) && !type.external
         return true if array_type?(type)
         return true if str_buffer_type?(type)
+        return true if vector_type?(type)
+        return true if matrix_type?(type)
+        return true if quaternion_type?(type)
 
         raise_sema_error("#{operation} does not support type #{type}")
       end
@@ -530,7 +533,19 @@ module MilkTea
       end
 
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || task_type?(type)
+        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || task_type?(type) || vector_type?(type) || matrix_type?(type) || quaternion_type?(type)
+      end
+
+      def vector_type?(type)
+        type.is_a?(Types::Vector)
+      end
+
+      def matrix_type?(type)
+        type.is_a?(Types::Matrix)
+      end
+
+      def quaternion_type?(type)
+        type.is_a?(Types::Quaternion)
       end
 
       def array_type?(type)

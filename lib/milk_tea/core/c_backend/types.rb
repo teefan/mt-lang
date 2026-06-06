@@ -175,6 +175,21 @@ module MilkTea
 
             " __attribute__((#{attributes.join(', ')}))"
           end
+
+          def emit_vector_math_types
+            lines = []
+            lines << "typedef struct mt_vec2 { float x; float y; } mt_vec2;"
+            lines << "typedef struct mt_vec3 { float x; float y; float z; } mt_vec3;"
+            lines << "typedef struct mt_vec4 { float x; float y; float z; float w; } mt_vec4;"
+            lines << "typedef struct mt_ivec2 { int32_t x; int32_t y; } mt_ivec2;"
+            lines << "typedef struct mt_ivec3 { int32_t x; int32_t y; int32_t z; } mt_ivec3;"
+            lines << "typedef struct mt_ivec4 { int32_t x; int32_t y; int32_t z; int32_t w; } mt_ivec4;"
+            lines << ""
+            lines << "typedef struct mt_mat3 { mt_vec3 col0; mt_vec3 col1; mt_vec3 col2; } mt_mat3;"
+            lines << "typedef struct mt_mat4 { mt_vec4 col0; mt_vec4 col1; mt_vec4 col2; mt_vec4 col3; } mt_mat4;"
+            lines << "typedef struct mt_quat { float x; float y; float z; float w; } mt_quat;"
+            lines
+          end
     end
   end
 end

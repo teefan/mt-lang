@@ -55,6 +55,11 @@ module MilkTea
         lines << ""
       end
 
+      if uses_vector_math_types?
+        lines.concat(emit_vector_math_types)
+        lines << ""
+      end
+
       if uses_fatal_helper?
         lines.concat(emit_fatal_helper)
         lines << ""

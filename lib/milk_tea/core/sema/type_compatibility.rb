@@ -179,6 +179,63 @@ module MilkTea
         nil
       end
 
+      def vector_arithmetic_result(operator, left_type, right_type)
+        return vector_op_result(operator, left_type, right_type) if vector_type?(left_type) || vector_type?(right_type)
+        return matrix_op_result(operator, left_type, right_type) if matrix_type?(left_type) || matrix_type?(right_type)
+        return quaternion_op_result(operator, left_type, right_type) if quaternion_type?(left_type) || quaternion_type?(right_type)
+
+        nil
+      end
+
+    private
+
+      def vector_op_result(operator, left_type, right_type)
+        if vector_type?(left_type) && vector_type?(right_type) && left_type.element_type == right_type.element_type
+          return left_type if operator == "+" || operator == "-"
+          return left_type if operator == "*"
+        end
+
+        if vector_type?(left_type) && right_type.numeric?
+          return left_type if operator == "*" || operator == "/"
+        end
+
+        if left_type.numeric? && vector_type?(right_type) && operator == "*"
+          return right_type
+        end
+
+        nil
+      end
+
+      def matrix_op_result(operator, left_type, right_type)
+        if matrix_type?(left_type) && matrix_type?(right_type) && left_type.dim == right_type.dim
+          return left_type if operator == "+" || operator == "-"
+          return left_type if operator == "*"
+        end
+
+        if matrix_type?(left_type) && vector_type?(right_type) && left_type.dim == right_type.width && right_type.element_type == Types::BUILTIN_VECTOR_ELEMENT
+          return Types::Vector.new(right_type.name, element_type: right_type.element_type, width: right_type.width) if operator == "*"
+        end
+
+        if matrix_type?(left_type) && right_type.numeric?
+          return left_type if operator == "*" || operator == "/"
+        end
+
+        nil
+      end
+
+      def quaternion_op_result(operator, left_type, right_type)
+        if quaternion_type?(left_type) && quaternion_type?(right_type)
+          return left_type if operator == "+" || operator == "-"
+          return left_type if operator == "*"
+        end
+
+        if quaternion_type?(left_type) && vector_type?(right_type) && right_type.width == 3 && right_type.element_type == Types::BUILTIN_VECTOR_ELEMENT
+          return right_type if operator == "*"
+        end
+
+        nil
+      end
+
       def pointer_cast?(source_type, target_type)
         pointer_cast_type?(source_type) && pointer_cast_type?(target_type)
       end
