@@ -379,6 +379,39 @@ module MilkTea
             end
           end
 
+          def uses_string_view?
+            return @uses_string_view if defined?(@uses_string_view)
+            @uses_string_view = begin
+              uses_fatal_helper? || uses_format_helpers? || uses_str_buffer_helpers? ||
+                uses_entrypoint_argv_helpers? || uses_str_equality_helper? ||
+                uses_foreign_temp_cstr_helpers? ||
+                emitted_functions.any? do |function|
+                  type_contains_string_view?(function.return_type) ||
+                    function.params.any? { |param| type_contains_string_view?(param.type) }
+                end ||
+                emitted_aggregate_structs.any? { |s| s.fields.any? { |f| type_contains_string_view?(f.type) } } ||
+                emitted_aggregate_unions.any? { |u| u.fields.any? { |f| type_contains_string_view?(f.type) } } ||
+                emitted_aggregate_variants.any? { |v| v.arms.any? { |a| a.fields.any? { |f| type_contains_string_view?(f.type) } } } ||
+                emitted_constants.any? { |c| type_contains_string_view?(c.type) } ||
+                emitted_globals.any? { |g| type_contains_string_view?(g.type) }
+            end
+          end
+
+          def type_contains_string_view?(type)
+            return false unless type
+            return true if type.is_a?(Types::StringView)
+            case type
+            when Types::Nullable
+              type_contains_string_view?(type.base)
+            when Types::Span
+              type_contains_string_view?(type.element_type)
+            when Types::GenericInstance
+              type.arguments.any? { |a| type_contains_string_view?(a) }
+            else
+              false
+            end
+          end
+
           def uses_fatal_helper?
             uses_mt_fatal_helper? || uses_mt_fatal_str_helper?
           end

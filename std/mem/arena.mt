@@ -76,7 +76,7 @@ extending Arena:
             return null
 
         let mask = alignment - 1
-        if this.offset > heap.ptr_uint_max() - mask:
+        if this.offset > heap.ptr_uint_max - mask:
             return null
 
         let aligned_offset = (this.offset + mask) & ~mask
@@ -103,7 +103,7 @@ extending Arena:
 
 
     public mutable function try_to_cstr(text: str) -> cstr?:
-        if text.len == heap.ptr_uint_max():
+        if text.len == heap.ptr_uint_max:
             return null
 
         let memory = this.alloc_bytes(text.len + 1) else:
@@ -117,7 +117,7 @@ extending Arena:
 
 
     public mutable function to_cstr(text: str) -> cstr:
-        if text.len == heap.ptr_uint_max():
+        if text.len == heap.ptr_uint_max:
             fatal(c"arena.to_cstr size overflow")
 
         let memory = this.alloc_bytes(text.len + 1) else:

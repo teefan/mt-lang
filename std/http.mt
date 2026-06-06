@@ -141,7 +141,7 @@ function parse_decimal(text_value: str) -> Option[ptr_uint]:
             return Option[ptr_uint].none
 
         let digit = ptr_uint<-(current - ubyte<-48)
-        if value > (heap.ptr_uint_max() - digit) / 10:
+        if value > (heap.ptr_uint_max - digit) / 10:
             return Option[ptr_uint].none
 
         value = value * 10 + digit
@@ -511,7 +511,7 @@ function parse_hexadecimal(text_value: str) -> Option[ptr_uint]:
         let digit = hexadecimal_digit_value(current) else:
             return Option[ptr_uint].none
 
-        if value > (heap.ptr_uint_max() - digit) / 16:
+        if value > (heap.ptr_uint_max - digit) / 16:
             return Option[ptr_uint].none
 
         value = value * 16 + digit

@@ -93,7 +93,7 @@ extending String:
             new_capacity = 4
 
         while new_capacity < min_capacity:
-            if new_capacity > heap.ptr_uint_max() / 2:
+            if new_capacity > heap.ptr_uint_max / 2:
                 new_capacity = min_capacity
             else:
                 new_capacity *= 2
@@ -123,7 +123,7 @@ extending String:
             return
 
         let current_len = this.len
-        if suffix.len > heap.ptr_uint_max() - current_len:
+        if suffix.len > heap.ptr_uint_max - current_len:
             fatal(c"string.append size overflow")
 
         let new_len = current_len + suffix.len
