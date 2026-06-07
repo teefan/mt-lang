@@ -334,8 +334,10 @@ module MilkTea
         :windows
       when "wasm", "web", "html5", "browser"
         :wasm
+      when "darwin", "macos", "osx"
+        :darwin
       else
-        raise PackageManifestError, "unknown platform #{value}; expected linux|windows|wasm"
+        raise PackageManifestError, "unknown platform #{value}; expected linux|windows|wasm|darwin"
       end
     end
   end

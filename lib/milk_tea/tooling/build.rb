@@ -447,8 +447,10 @@ module MilkTea
         :windows
       when "wasm", "web", "html5", "browser"
         :wasm
+      when "darwin", "macos", "osx"
+        :darwin
       else
-        raise BuildError, "unknown platform #{value}; expected linux|windows|wasm"
+        raise BuildError, "unknown platform #{value}; expected linux|windows|wasm|darwin"
       end
     end
 
@@ -578,7 +580,7 @@ module MilkTea
     end
 
     def host_platform
-      /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
+      MilkTea.host_platform
     end
 
     def clean_output_artifacts(target_path)

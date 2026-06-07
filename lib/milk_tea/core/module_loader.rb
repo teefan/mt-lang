@@ -37,8 +37,10 @@ module MilkTea
         :windows
       when "wasm", "web", "html5", "browser"
         :wasm
+      when "darwin", "macos", "osx"
+        :darwin
       else
-        raise ArgumentError, "unknown platform #{value}; expected linux|windows|wasm"
+        raise ArgumentError, "unknown platform #{value}; expected linux|windows|wasm|darwin"
       end
     end
 
@@ -85,7 +87,7 @@ module MilkTea
     end
 
     def self.default_host_platform
-      /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
+      MilkTea.host_platform
     end
 
     def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil, platform: nil)
