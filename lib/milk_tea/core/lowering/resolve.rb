@@ -698,7 +698,7 @@ module MilkTea
           when "and", "or", "<", "<=", ">", ">=", "==", "!="
             @types.fetch("bool")
           when "+", "-", "*", "/"
-            pointer_arithmetic_result_type(expression.operator, left_type, right_type) || common_numeric_type(left_type, right_type) || left_type
+            aggregate_arithmetic_result_type(expression.operator, left_type, right_type) || pointer_arithmetic_result_type(expression.operator, left_type, right_type) || common_numeric_type(left_type, right_type) || left_type
           when "%"
             common_integer_type(left_type, right_type) || left_type
           else
@@ -963,6 +963,37 @@ module MilkTea
 
       def wider_float_type(left_type, right_type)
         left_type.float_width >= right_type.float_width ? left_type : right_type
+      end
+
+      def aggregate_arithmetic_result_type(operator, left_type, right_type)
+        if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector) && left_type.name == right_type.name
+          return left_type
+        end
+        if left_type.is_a?(Types::Matrix) && right_type.is_a?(Types::Matrix) && left_type.name == right_type.name
+          return left_type
+        end
+        if left_type.is_a?(Types::Quaternion) && right_type.is_a?(Types::Quaternion)
+          return left_type
+        end
+
+        scalar_result = aggregate_scalar_result(left_type, right_type)
+        return scalar_result if scalar_result
+
+        case operator
+        when "+", "-"
+          nil
+        when "*", "/"
+          aggregate_scalar_result(right_type, left_type)
+        else
+          nil
+        end
+      end
+
+      def aggregate_scalar_result(aggregate_type, scalar_type)
+        return nil unless aggregate_type.is_a?(Types::Vector) || aggregate_type.is_a?(Types::Matrix)
+        return nil unless scalar_type.is_a?(Types::Primitive) && scalar_type.numeric?
+
+        aggregate_type
       end
 
       def pointer_arithmetic_result_type(operator, left_type, right_type)
@@ -2154,9 +2185,12 @@ module MilkTea
                    Types::Task.new(args.fetch(0))
                  elsif (generic_type = resolve_named_generic_type(parts))
                    generic_type.instantiate(args)
-                 elsif name == "span"
-                   Types::Span.new(args.fetch(0))
-                 else
+                  elsif name == "span"
+                    Types::Span.new(args.fetch(0))
+                  elsif name == "SoA"
+                    validate_generic_type!(name, args)
+                    Types::SoA.new(args.fetch(0), count: args.fetch(1).value)
+                  else
                    validate_generic_type!(name, args)
                    Types::GenericInstance.new(name, args)
                  end

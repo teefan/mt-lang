@@ -842,7 +842,135 @@ function comptime_demo() -> int:
     return pow2 + int<-hash + int<-(all_float) + rounded + colors
 
 # ---------------------------------------------------------------------------
-# 22  Entrypoint
+# 22  Native vector types (vec2, vec3, vec4, ivec2, ivec3, ivec4)
+# ---------------------------------------------------------------------------
+
+function vector_demo() -> float:
+    # --- zero-initialized vectors
+    let v2 = zero[vec2]
+    let v3 = zero[vec3]
+    let v4 = zero[vec4]
+
+    # --- integer vectors
+    let iv2 = zero[ivec2]
+    let iv3 = zero[ivec3]
+
+    # --- field access
+    let v2x = v2.x
+    let v2y = v2.y
+    let v3z = v3.z
+    let v4w = v4.w
+    let iv2x = iv2.x
+
+    # --- component-wise arithmetic (same type)
+    let vsum = v3 + v3      # vec3 + vec3
+    let vdiff = v3 - v3     # vec3 - vec3
+    let vmul = v3 * v3      # vec3 * vec3 (component-wise)
+    let vneg = -v3          # unary negation
+
+    # --- scalar arithmetic
+    let v_scaled = v3 * 2.0     # vec3 * scalar
+    let sv_scaled = 3.0 * v3    # scalar * vec3
+    let v_divided = v3 / 2.0    # vec3 / scalar
+
+    # --- integer vector arithmetic
+    let isum = iv3 + iv3        # ivec3 + ivec3
+    let iscaled = iv3 * 3       # ivec3 * scalar
+    let ineg = -iv3             # unary negation
+
+    # --- extending block method on native vector type
+    let squared = v3.squared_len()
+
+    let _v2 = v2
+    let _v4 = v4
+    let _iv3 = iv3
+
+    let result_a = vsum.x + vdiff.x
+    let result_b = vmul.x + vneg.x
+    let result_c = v_scaled.x + sv_scaled.x + v_divided.x
+    let result_d = float<-(isum.x) + float<-(iscaled.x) + float<-(ineg.x)
+    return v2x + v2y + v3z + v4w + float<-(iv2x) + result_a + result_b + result_c + result_d + squared
+
+extending vec3:
+    function squared_len() -> float:
+        return this.x * this.x + this.y * this.y + this.z * this.z
+
+# ---------------------------------------------------------------------------
+# 23  Native matrix types (mat3, mat4)
+# ---------------------------------------------------------------------------
+
+function matrix_demo() -> float:
+    let m4 = zero[mat4]
+    let m3 = zero[mat3]
+
+    # --- field access (column vectors)
+    let col0 = m4.col0
+    let col0x = m4.col0.x
+
+    # --- component-wise arithmetic
+    let msum = m4 + m4       # mat4 + mat4
+    let mdif = m4 - m4       # mat4 - mat4
+    let mscaled = m4 * 2.0   # mat4 * scalar
+    let mneg = -m4           # unary negation
+
+    let _m3 = m3
+    let _col0 = col0
+
+    return msum.col0.x + mdif.col0.x + mscaled.col0.x + mneg.col0.x + col0x
+
+# ---------------------------------------------------------------------------
+# 24  Native quaternion type (quat)
+# ---------------------------------------------------------------------------
+
+function quat_demo() -> float:
+    let q = zero[quat]
+
+    # --- field access
+    let qx = q.x
+    let qy = q.y
+    let qz = q.z
+    let qw = q.w
+
+    # --- component-wise arithmetic
+    let qsum = q + q         # quat + quat
+    let qdiff = q - q        # quat - quat
+    let qmul = q * q         # quat * quat (component-wise)
+    let qneg = -q            # unary negation
+
+    let _qdiff = qdiff
+    let _qmul = qmul
+
+    return qsum.x + qneg.x + qx + qy + qz + qw
+
+# ---------------------------------------------------------------------------
+# 25  SoA (Structure-of-Arrays) type constructor
+# ---------------------------------------------------------------------------
+
+struct Point:
+    x: float
+    y: float
+    z: float
+
+function soa_demo() -> float:
+    var particles: SoA[Point, 4]
+
+    # --- indexed field access (each field is an independent array)
+    particles[0].x = 1.0
+    particles[0].y = 5.0
+    particles[1].x = 2.0
+    particles[1].y = 6.0
+    particles[2].x = 3.0
+    particles[3].x = 4.0
+
+    # --- reading back via SoA index
+    let first_x = particles[0].x
+    let second_x = particles[1].x
+    let first_y = particles[0].y
+
+    return first_x + second_x + first_y
+
+# ---------------------------------------------------------------------------
+# 26  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -854,6 +982,11 @@ function main() -> int:
     total += proc_demo()
     total += generics_demo()
     total += comptime_demo()
+
+    total += int<-(vector_demo())
+    total += int<-(matrix_demo())
+    total += int<-(quat_demo())
+    total += int<-(soa_demo())
 
     unsafe_demo()
     emit_ready()
