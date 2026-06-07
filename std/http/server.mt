@@ -249,20 +249,14 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
             var body = string.String.with_capacity(4096)
             defer body.release()
 
-            var url_prefix_normalized = url_prefix
-            if not url_prefix.ends_with("/"):
-                url_prefix_normalized = url_prefix
-            else:
-                url_prefix_normalized = url_prefix
-
-            let escaped_path = html_escape(url_prefix_normalized)
+            let escaped_path = html_escape(url_prefix)
             body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
             body.append(escaped_path)
             body.append("</title></head>\n<body>\n<h1>Index of ")
             body.append(escaped_path)
             body.append("</h1>\n<hr>\n<pre>\n")
 
-            if url_prefix_normalized.len > 0 and url_prefix_normalized != "/":
+            if url_prefix.len > 0 and url_prefix != "/":
                 body.append("<a href=\"../\">../</a>\n")
 
             index = 0
