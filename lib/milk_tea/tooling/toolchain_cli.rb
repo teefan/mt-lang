@@ -125,7 +125,7 @@ module MilkTea
     end
 
     def executable_available?(program)
-      return File.executable?(program) if program.include?(File::SEPARATOR)
+      return File.file?(program) && File.executable?(program) if program.include?(File::SEPARATOR)
 
       ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |entry|
         candidate = File.join(entry, program)
