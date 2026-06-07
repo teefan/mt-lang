@@ -3444,7 +3444,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc parse PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc format PATH\|DIR \[PATH\|DIR \.\.\.\] \[--check\|--write\] \[--safe\|--canonical\|--preserve\|--tidy\] \[--max-line-length N\]/, err.string)
     assert_match(/mtc lint PATH\|DIR .*\[-I PATH\]/, err.string)
-    assert_match(/mtc check PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
+    assert_match(/mtc check PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-Werror\] \[-I PATH\]/, err.string)
     assert_match(/mtc lower PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc emit-c PATH\|DIR \[PATH\|DIR \.\.\.\] \[--locked\] \[--frozen\] \[-I PATH\]/, err.string)
     assert_match(/mtc build \[PATH_OR_PACKAGE\]/, err.string)

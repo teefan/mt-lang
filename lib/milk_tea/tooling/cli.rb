@@ -534,7 +534,7 @@ module MilkTea
         if diagnostics.any?
           diagnostics = sort_by_location(diagnostics)
           source = read_source_file(path)
-          diagnostics.each { |d| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?)) }
+          diagnostics.each_with_index { |d, i| @err.puts(ErrorFormatter.format(d, source:, color: @err.tty?, index: i + 1)) }
           all_diagnostics.concat(diagnostics)
         elsif module_name
           @out.puts("checked #{path} as #{module_name}")
@@ -548,12 +548,14 @@ module MilkTea
       info_count = all_diagnostics.count { |d| d.respond_to?(:severity) && (d.severity == :info || d.severity == :hint) }
 
       @err.puts
-      parts = []
-      parts << "#{error_count} error(s)" if error_count > 0
-      parts << "#{warning_count} warning(s)" if warning_count > 0
-      parts << "#{info_count} note(s)" if info_count > 0
-      @err.puts("#{parts.join(', ')} found")
-      error_count > 0 ? 1 : 0
+      if error_count > 0
+        @err.puts("error: could not check due to #{error_count} previous #{error_count == 1 ? 'error' : 'errors'}")
+      elsif warning_count > 0
+        @err.puts("#{warning_count} warning(s) found")
+      end
+      @err.puts("#{info_count} note(s)") if info_count > 0 && error_count == 0
+      final_error_count = error_count + (resolution[:warnings_as_errors] ? warning_count : 0)
+      final_error_count > 0 ? 1 : 0
     end
 
     def check_single_reporting_all(path, locked: false)
@@ -1126,6 +1128,7 @@ module MilkTea
     def extract_resolution_flags!
       locked = false
       frozen = false
+      warnings_as_errors = false
       remaining = []
 
       @argv.each do |arg|
@@ -1134,13 +1137,15 @@ module MilkTea
         elsif arg == "--frozen"
           locked = true
           frozen = true
+        elsif arg == "-Werror" || arg == "--warnings-as-errors"
+          warnings_as_errors = true
         else
           remaining << arg
         end
       end
 
       @argv = remaining
-      { locked:, frozen: }
+      { locked:, frozen:, warnings_as_errors: }
     end
 
     def ensure_no_extra_arguments!(command)
@@ -1257,7 +1262,7 @@ module MilkTea
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
         HELP
-      "check"           => "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Run semantic analysis on one or more source files and report errors.",
+      "check"           => "Usage: mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror]\n\n  Run semantic analysis on one or more source files and report errors.",
       "lower"           => "Usage: mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Lower one or more source files to IR and print it.",
       "emit-c"          => "Usage: mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]\n\n  Compile one or more source files to C and print the output.",
       "build"           => <<~HELP,
@@ -1413,7 +1418,7 @@ module MilkTea
       io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--profile]")
       io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--ignore-generated] [--profile] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
-      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
