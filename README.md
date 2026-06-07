@@ -605,47 +605,21 @@ Compile-time reflection builtins:
 
 Handle types expose: `field_handle` has `.name` and `.type`; `member_handle` has `.name` and optionally `.value`; `attribute_handle` provides access to attribute arguments.
 
-### Current Std Collections
+### Standard library
 
-Current collection modules in `std` are:
+Core modules in `std/`:
 
-- `std.vec.Vec[T]`: contiguous growable storage with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `as_span`, `get`, `first`, `last`, `find`, `find_index`, `reserve`, `clear`, `release`, `append_span`, `append_array`, `insert`, `push`, `pop`, `remove`, and `swap_remove`.
-- `std.deque.Deque[T]`: growable ring buffer with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `get`, `first`, `last`, `reserve`, `clear`, `release`, `push_front`, `push_back`, `insert`, `pop_front`, `pop_back`, `remove`, `rotate_left`, and `rotate_right`.
-- `std.binary_heap.BinaryHeap[T]`: max-heap keyed by the canonical `order[T](...)` hook, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `push`, and `pop`.
-- `std.priority_queue.PriorityQueue[T]`: task-oriented facade over `BinaryHeap[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `reserve`, `clear`, `release`, `enqueue`, and `dequeue`.
-- `std.ordered_set.OrderedSet[T]`: AVL-backed unique sorted set keyed by the canonical `order[T](...)` hook, with `create`, `len`, `is_empty`, `get`, `contains`, `iter`, `clear`, `release`, `insert`, and `remove`.
-- `std.ordered_map.OrderedMap[K, V]`: AVL-backed ordered map keyed by the canonical `order[K](...)` hook, with `create`, `len`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
-- `std.map.Map[K, V]`: hash table keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `set`, `get_or_insert`, `remove_entry`, and `remove` (`iter()` is the same traversal as `entries()`).
-- `std.set.Set[T]`: hash set built on `Map[T, bool]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `contains`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `clear`, `release`, `reserve`, `insert`, and `remove`. Set union is spelled `union_with` because `union` is a reserved keyword.
-- `std.linked_map.LinkedMap[K, V]`: insertion-ordered hash map keyed by the canonical `hash[K](...)` and `equal[K](...)` hooks, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `get_key`, `contains`, `keys`, `values`, `entries`, `iter`, `clear`, `release`, `reserve`, `set`, `get_or_insert`, `remove_entry`, and `remove`.
-- `std.linked_set.LinkedSet[T]`: insertion-ordered hash set built on `LinkedMap[T, bool]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `get`, `contains`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `clear`, `release`, `reserve`, `insert`, and `remove`.
-- `std.counter.Counter[T]`: insertion-ordered frequency table built on `LinkedMap[T, ptr_uint]`, with `create`, `with_capacity`, `len`, `total_count`, `capacity`, `is_empty`, `count`, `contains`, `keys`, `counts`, `entries`, `iter`, `clear`, `release`, `reserve`, `add`, `increment`, `remove_one`, and `remove`.
-- `std.multiset.MultiSet[T]`: insertion-ordered bag built on `Counter[T]`, with `create`, `with_capacity`, `len`, `total_count`, `distinct_len`, `capacity`, `is_empty`, `count`, `contains`, `values`, `entries`, `iter`, `is_subset`, `union_with`, `intersection`, `difference`, `symmetric_difference`, `clear`, `release`, `reserve`, `insert`, `add`, `remove_one`, and `remove_all`.
-- `std.queue.Queue[T]`: FIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `enqueue`, and `dequeue`.
-- `std.stack.Stack[T]`: LIFO facade over `Deque[T]`, with `create`, `with_capacity`, `len`, `capacity`, `is_empty`, `iter`, `peek`, `clear`, `release`, `reserve`, `push`, and `pop`.
-- `std.linked_map_view.SnapshotValues[K, V]`: read-only snapshot view over `LinkedMap` values in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
-- `std.linked_map_view.SnapshotEntries[K, V]`: read-only snapshot view over `LinkedMap` entries in insertion order, with `create(values: linked_map.Entries[K, V])` and `iter`.
+- `std.linalg` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
+- `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
+- `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
+- `std.string.String` — growable owned UTF-8 text
+- `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack` — allocators
+- `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)
+- `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]` — generic collections
 
-Iterator notes for the collection modules:
-
-- `Vec.iter()` and `Deque.iter()` use the pointer-returning iterator form.
-- `BinaryHeap.iter()` uses the pointer-returning iterator form with read-only element pointers, and `peek()` is also read-only because arbitrary element mutation would violate the heap invariant.
-- `PriorityQueue.iter()` uses the same read-only pointer-returning iterator form as `BinaryHeap.iter()`.
-- `OrderedSet.iter()` uses the pointer-returning iterator form with read-only element pointers so in-place mutation cannot violate the sorted uniqueness invariant.
-- `OrderedMap.keys()` uses the pointer-returning iterator form with read-only key pointers, `OrderedMap.values()` returns mutable value pointers in key order, and `OrderedMap.entries()` / `OrderedMap.iter()` use the `next() -> bool` plus `current()` iterator form in key order.
-- `Map.keys()` and `Set.iter()` use the pointer-returning iterator form with read-only key pointers.
-- `Map.values()` returns mutable value pointers during iteration.
-- `Map.entries()` and `Map.iter()` use the `next() -> bool` plus `current()` iterator form.
-- `LinkedMap.keys()` and `LinkedSet.iter()` use the pointer-returning iterator form with read-only key pointers in insertion order.
-- `LinkedMap.values()` returns mutable value pointers in insertion order.
-- `LinkedMap.entries()` and `LinkedMap.iter()` use the `next() -> bool` plus `current()` iterator form in insertion order.
-- `Counter.keys()` uses the pointer-returning iterator form with read-only key pointers in first-seen order.
-- `Counter.counts()` uses the `next() -> bool` plus `current()` iterator form and yields copied `ptr_uint` counts so totals cannot be mutated out of sync.
-- `Counter.entries()` and `Counter.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ key, count }` snapshots.
-- `MultiSet.values()` uses the pointer-returning iterator form with read-only value pointers in first-seen order.
-- `MultiSet.entries()` and `MultiSet.iter()` use the `next() -> bool` plus `current()` iterator form and yield immutable `{ value, count }` snapshots.
-- `Queue.iter()` and `Stack.iter()` use the same mutable pointer-returning iterator form as `Deque.iter()`, and `peek()` returns a mutable element pointer because changing an element value does not violate FIFO/LIFO ordering invariants.
-- `SnapshotValues.iter()` and `SnapshotEntries.iter()` use the `next() -> bool` plus `current()` iterator form in insertion order.
+See module source for full method surface. Iterator forms:
+- Pointer-returning (`next() -> nullable ptr[T]`): `Vec`, `Deque`, `BinaryHeap`/`PriorityQueue`/`OrderedSet` (read-only), `OrderedMap.keys`/`Map.keys`/`Set`/`LinkedMap.keys`/`LinkedSet`/`Counter.keys`/`MultiSet.values`, `Queue`/`Stack` (mutable)
+- `next() -> bool` + `current()`: `OrderedMap.entries`/`iter`, `Map.entries`/`iter`, `LinkedMap.entries`/`iter`, `Counter.counts`/`entries`/`iter`, `MultiSet.entries`/`iter`, `SnapshotValues`/`SnapshotEntries`
 
 ## 12. Strings, Text, And Builders
 
