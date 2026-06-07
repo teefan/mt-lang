@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const BUFFER_SIZE: int = 4096
@@ -73,7 +72,13 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
 
-        rl.draw_text(text.cstr_as_str(rl.text_format("sine frequency: %i", sine_frequency)), SCREEN_WIDTH - 220, 10, 20, rl.RED)
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("sine frequency: %i", sine_frequency)),
+            SCREEN_WIDTH - 220,
+            10,
+            20,
+            rl.RED
+        )
         rl.draw_text(text.cstr_as_str(rl.text_format("pan: %.2f", pan)), SCREEN_WIDTH - 220, 30, 20, rl.RED)
         rl.draw_text("Up/down to change frequency", 10, 10, 20, rl.DARKGRAY)
         rl.draw_text("Left/right to pan", 10, 30, 20, rl.DARKGRAY)
@@ -86,8 +91,14 @@ function main() -> int:
         while index < SCREEN_WIDTH:
             let t0 = window_start + index * window_size / SCREEN_WIDTH
             let t1 = window_start + (index + 1) * window_size / SCREEN_WIDTH
-            let start_pos = rl.Vector2(x = float<-index, y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t0 / float<-wavelength))))
-            let end_pos = rl.Vector2(x = float<-(index + 1), y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t1 / float<-wavelength))))
+            let start_pos = rl.Vector2(
+                x = float<-index,
+                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t0 / float<-wavelength)))
+            )
+            let end_pos = rl.Vector2(
+                x = float<-(index + 1),
+                y = float<-(250.0 + 50.0 * math.sin(double<-(TWO_PI * float<-t1 / float<-wavelength)))
+            )
             rl.draw_line_v(start_pos, end_pos, rl.RED)
             index += 1
 

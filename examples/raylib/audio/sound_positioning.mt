@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -47,7 +46,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 60.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     rl.disable_cursor()
@@ -60,7 +59,7 @@ function main() -> int:
         let sphere_pos = rl.Vector3(
             x = 5.0 * float<-math.cos(th),
             y = 0.0,
-            z = 5.0 * float<-math.sin(th),
+            z = 5.0 * float<-math.sin(th)
         )
 
         set_sound_position(camera, sound, sphere_pos, 1.0)

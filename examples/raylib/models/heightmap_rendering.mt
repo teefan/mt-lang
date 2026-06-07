@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -18,7 +17,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let image = rl.load_image("heightmap.png")
@@ -26,7 +25,7 @@ function main() -> int:
     let texture = rl.load_texture_from_image(image)
     defer rl.unload_texture(texture)
 
-    var model = rl.load_model_from_mesh(rl.gen_mesh_heightmap(image, rl.Vector3(x = 16.0, y = 8.0, z = 16.0)))
+    let model = rl.load_model_from_mesh(rl.gen_mesh_heightmap(image, rl.Vector3(x = 16.0, y = 8.0, z = 16.0)))
     defer rl.unload_model(model)
     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)
 

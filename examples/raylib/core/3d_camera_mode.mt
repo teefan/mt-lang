@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -14,7 +13,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let cube_position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 

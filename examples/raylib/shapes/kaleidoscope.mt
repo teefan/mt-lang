@@ -3,17 +3,14 @@ import std.raylib as rl
 import std.raymath as math
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_DRAW_LINES: int = 8192
 const DEG_TO_RAD: float = rl.PI / 180.0
 
-
 struct Line:
     start: rl.Vector2
     end: rl.Vector2
-
 
 var lines: array[Line, MAX_DRAW_LINES] = zero[array[Line, MAX_DRAW_LINES]]
 
@@ -26,8 +23,18 @@ function main() -> int:
     let angle: float = 360.0 / float<-symmetry
     let thickness: float = 3.0
     let reset_button_rec = rl.Rectangle(x = float<-SCREEN_WIDTH - 55.0, y = 5.0, width = 50.0, height = 25.0)
-    let back_button_rec = rl.Rectangle(x = float<-SCREEN_WIDTH - 55.0, y = float<-SCREEN_HEIGHT - 30.0, width = 25.0, height = 25.0)
-    let next_button_rec = rl.Rectangle(x = float<-SCREEN_WIDTH - 30.0, y = float<-SCREEN_HEIGHT - 30.0, width = 25.0, height = 25.0)
+    let back_button_rec = rl.Rectangle(
+        x = float<-SCREEN_WIDTH - 55.0,
+        y = float<-SCREEN_HEIGHT - 30.0,
+        width = 25.0,
+        height = 25.0
+    )
+    let next_button_rec = rl.Rectangle(
+        x = float<-SCREEN_WIDTH - 30.0,
+        y = float<-SCREEN_HEIGHT - 30.0,
+        width = 25.0,
+        height = 25.0
+    )
     var mouse_pos: rl.Vector2 = zero[rl.Vector2]
     var prev_mouse_pos: rl.Vector2 = zero[rl.Vector2]
     let scale_vector = rl.Vector2(x = 1.0, y = -1.0)
@@ -37,7 +44,7 @@ function main() -> int:
         target = zero[rl.Vector2],
         offset = offset,
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     var current_line_counter = 0
@@ -55,7 +62,13 @@ function main() -> int:
         var line_start = math.vector2_subtract(mouse_pos, offset)
         var line_end = math.vector2_subtract(prev_mouse_pos, offset)
 
-        if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and not rl.check_collision_point_rec(mouse_pos, reset_button_rec) and not rl.check_collision_point_rec(mouse_pos, back_button_rec) and not rl.check_collision_point_rec(mouse_pos, next_button_rec):
+        if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and not rl.check_collision_point_rec(
+            mouse_pos,
+            reset_button_rec
+        ) and not rl.check_collision_point_rec(
+            mouse_pos,
+            back_button_rec
+        ) and not rl.check_collision_point_rec(mouse_pos, next_button_rec):
             var symmetry_index = 0
             while symmetry_index < symmetry and total_line_counter < (MAX_DRAW_LINES - 1):
                 line_start = math.vector2_rotate(line_start, angle * DEG_TO_RAD)
@@ -78,7 +91,11 @@ function main() -> int:
         if back_button_clicked and current_line_counter > 0:
             current_line_counter -= 1
 
-        if next_button_clicked and current_line_counter < MAX_DRAW_LINES and (current_line_counter + 1) <= total_line_counter:
+        if (
+            next_button_clicked
+            and current_line_counter < MAX_DRAW_LINES
+            and (current_line_counter + 1) <= total_line_counter
+        ):
             current_line_counter += 1
 
         rl.begin_drawing()
@@ -106,7 +123,13 @@ function main() -> int:
 
         reset_button_clicked = gui.button(reset_button_rec, "Reset") != 0
 
-        rl.draw_text(text.cstr_as_str(rl.text_format("LINES: %i/%i", current_line_counter, MAX_DRAW_LINES)), 10, SCREEN_HEIGHT - 30, 20, rl.MAROON)
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("LINES: %i/%i", current_line_counter, MAX_DRAW_LINES)),
+            10,
+            SCREEN_HEIGHT - 30,
+            20,
+            rl.MAROON
+        )
         rl.draw_fps(10, 10)
         rl.end_drawing()
 

@@ -2,13 +2,19 @@ import std.math as math
 import std.raylib as rl
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RECT_POINT_COUNT: int = 12
 
 
-function draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: float, roundness_right: float, segments: int, left: rl.Color, right: rl.Color) -> void:
+function draw_rectangle_rounded_gradient_h(
+    rec: rl.Rectangle,
+    roundness_left: float,
+    roundness_right: float,
+    segments: int,
+    left: rl.Color,
+    right: rl.Color
+) -> void:
     if (roundness_left <= 0.0 and roundness_right <= 0.0) or rec.width < 1.0 or rec.height < 1.0:
         rl.draw_rectangle_gradient_ex(rec, left, left, right, right)
         return
@@ -45,7 +51,7 @@ function draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: fl
         rl.Vector2(x = rec.x + radius_left, y = rec.y + radius_left),
         rl.Vector2(x = rec.x + rec.width - radius_right, y = rec.y + radius_right),
         rl.Vector2(x = rec.x + rec.width - radius_right, y = rec.y + rec.height - radius_right),
-        rl.Vector2(x = rec.x + radius_left, y = rec.y + rec.height - radius_left),
+        rl.Vector2(x = rec.x + radius_left, y = rec.y + rec.height - radius_left)
     )
 
     let centers = array[rl.Vector2, 4](point[8], point[9], point[10], point[11])
@@ -66,11 +72,11 @@ function draw_rectangle_rounded_gradient_h(rec: rl.Rectangle, roundness_left: fl
             rlgl.vertex2f(center.x, center.y)
             rlgl.vertex2f(
                 float<-(center.x + float<-math.cos(double<-((angle + step_length) * rl.PI / 180.0)) * radius),
-                float<-(center.y + float<-math.sin(double<-((angle + step_length) * rl.PI / 180.0)) * radius),
+                float<-(center.y + float<-math.sin(double<-((angle + step_length) * rl.PI / 180.0)) * radius)
             )
             rlgl.vertex2f(
                 float<-(center.x + float<-math.cos(double<-(angle * rl.PI / 180.0)) * radius),
-                float<-(center.y + float<-math.sin(double<-(angle * rl.PI / 180.0)) * radius),
+                float<-(center.y + float<-math.sin(double<-(angle * rl.PI / 180.0)) * radius)
             )
             angle += step_length
             segment += 1
@@ -141,7 +147,7 @@ function main() -> int:
             x = float<-rl.get_screen_width() / 2.0 - width / 2.0,
             y = float<-rl.get_screen_height() / 2.0 - 5.0 * (height / 2.0),
             width = width,
-            height = height,
+            height = height
         )
 
         rl.begin_drawing()

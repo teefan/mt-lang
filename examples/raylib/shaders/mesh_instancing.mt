@@ -3,18 +3,15 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_INSTANCES: int = 10000
 const GLSL_VERSION: int = 330
 const DEG_TO_RAD: float = float<-(math.PI / 180.0)
 
-
 enum LightType: int
     LIGHT_DIRECTIONAL = 0
     LIGHT_POINT = 1
-
 
 struct Light:
     kind: int
@@ -29,7 +26,14 @@ struct Light:
     color_loc: int
 
 
-function create_light(slot: int, light_type: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light:
+function create_light(
+    slot: int,
+    light_type: int,
+    position: rl.Vector3,
+    target: rl.Vector3,
+    color: rl.Color,
+    shader: rl.Shader
+) -> Light:
     let light = Light(
         kind = light_type,
         enabled = true,
@@ -40,7 +44,7 @@ function create_light(slot: int, light_type: int, position: rl.Vector3, target: 
         type_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].type", slot)),
         position_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].position", slot)),
         target_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].target", slot)),
-        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot)),
+        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot))
     )
     update_light_values(shader, light)
     return light
@@ -57,7 +61,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
         float<-light.color.r / 255.0,
         float<-light.color.g / 255.0,
         float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0,
+        float<-light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.position_loc, position_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
     rl.set_shader_value(shader, light.target_loc, target_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
@@ -76,7 +80,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let cube = rl.gen_mesh_cube(1.0, 1.0, 1.0)
@@ -88,14 +92,14 @@ function main() -> int:
         let translation = rm.matrix_translate(
             float<-rl.get_random_value(-50, 50),
             float<-rl.get_random_value(-50, 50),
-            float<-rl.get_random_value(-50, 50),
+            float<-rl.get_random_value(-50, 50)
         )
         let axis = rm.vector3_normalize(
             rl.Vector3(
                 x = float<-rl.get_random_value(0, 360),
                 y = float<-rl.get_random_value(0, 360),
-                z = float<-rl.get_random_value(0, 360),
-            ),
+                z = float<-rl.get_random_value(0, 360)
+            )
         )
         let angle = float<-rl.get_random_value(0, 180) * DEG_TO_RAD
         let rotation = rm.matrix_rotate(axis, angle)
@@ -104,7 +108,7 @@ function main() -> int:
 
     var shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/lighting_instancing.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/lighting.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/lighting.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shader)
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_MVP] = rl.get_shader_location(shader, "mvp")
@@ -113,7 +117,14 @@ function main() -> int:
     let ambient_location = rl.get_shader_location(shader, "ambient")
     let ambient = array[float, 4](0.2, 0.2, 0.2, 1.0)
     rl.set_shader_value(shader, ambient_location, ambient, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    create_light(0, int<-LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, shader)
+    create_light(
+        0,
+        int<-LightType.LIGHT_DIRECTIONAL,
+        rl.Vector3(x = 50.0, y = 50.0, z = 0.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.WHITE,
+        shader
+    )
 
     var instanced_material = rl.load_material_default()
     unsafe: instanced_material.shader = shader
@@ -131,7 +142,7 @@ function main() -> int:
             shader,
             unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW],
             camera_position,
-            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
         )
 
         rl.begin_drawing()

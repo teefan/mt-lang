@@ -1,13 +1,17 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_TEXTURES: int = 3
 
 
-function selected_texture(current_texture: int, texture45: rl.Texture2D, texture90: rl.Texture2D, texture_neg90: rl.Texture2D) -> rl.Texture2D:
+function selected_texture(
+    current_texture: int,
+    texture45: rl.Texture2D,
+    texture90: rl.Texture2D,
+    texture_neg90: rl.Texture2D
+) -> rl.Texture2D:
     if current_texture == 0:
         return texture45
     if current_texture == 1:

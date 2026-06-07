@@ -1,13 +1,11 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_TEXT_PARTICLES: int = 100
 const FONT_SIZE: int = 30
 const INITIAL_TEXT: str = "raylib => fun videogames programming!"
-
 
 struct TextParticle:
     text: str_buffer[100]
@@ -27,7 +25,7 @@ function random_particle_color() -> rl.Color:
         r = ubyte<-rl.get_random_value(0, 255),
         g = ubyte<-rl.get_random_value(0, 255),
         b = ubyte<-rl.get_random_value(0, 255),
-        a = 255,
+        a = 255
     )
 
 
@@ -42,7 +40,7 @@ function create_text_particle(source_text: str, x: float, y: float, color: rl.Co
         friction = 0.99,
         elasticity = 0.9,
         color = color,
-        grabbed = false,
+        grabbed = false
     )
 
     particle.text.assign(source_text)
@@ -51,12 +49,25 @@ function create_text_particle(source_text: str, x: float, y: float, color: rl.Co
     return particle
 
 
-function prepare_first_text_particle(source_text: str, particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]], particle_count: ref[int]) -> void:
-    read(particles)[0] = create_text_particle(source_text, float<-SCREEN_WIDTH / 2.0, float<-SCREEN_HEIGHT / 2.0, rl.RAYWHITE)
+function prepare_first_text_particle(
+    source_text: str,
+    particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]],
+    particle_count: ref[int]
+) -> void:
+    read(particles)[0] = create_text_particle(
+        source_text,
+        float<-SCREEN_WIDTH / 2.0,
+        float<-SCREEN_HEIGHT / 2.0,
+        rl.RAYWHITE
+    )
     unsafe: read(particle_count) = 1
 
 
-function reallocate_text_particles(particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]], particle_pos: int, particle_count: ref[int]) -> void:
+function reallocate_text_particles(
+    particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]],
+    particle_pos: int,
+    particle_count: ref[int]
+) -> void:
     var index = particle_pos + 1
     while index < read(particle_count):
         read(particles)[index - 1] = read(particles)[index]
@@ -64,7 +75,12 @@ function reallocate_text_particles(particles: ref[array[TextParticle, MAX_TEXT_P
     unsafe: read(particle_count) -= 1
 
 
-function slice_text_particle(particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]], particle_pos: int, slice_length: int, particle_count: ref[int]) -> void:
+function slice_text_particle(
+    particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]],
+    particle_pos: int,
+    slice_length: int,
+    particle_count: ref[int]
+) -> void:
     let source_text = read(particles)[particle_pos].text.as_str()
     let length = int<-rl.text_length(source_text)
 
@@ -79,7 +95,7 @@ function slice_text_particle(particles: ref[array[TextParticle, MAX_TEXT_PARTICL
                 piece_text,
                 read(particles)[particle_pos].rect.x + float<-index * read(particles)[particle_pos].rect.width / float<-length,
                 read(particles)[particle_pos].rect.y,
-                random_particle_color(),
+                random_particle_color()
             )
             unsafe: read(particle_count) += 1
             index += slice_length
@@ -87,7 +103,11 @@ function slice_text_particle(particles: ref[array[TextParticle, MAX_TEXT_PARTICL
         reallocate_text_particles(particles, particle_pos, particle_count)
 
 
-function slice_text_particle_by_char(particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]], char_to_slice: char, particle_count: ref[int]) -> void:
+function slice_text_particle_by_char(
+    particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]],
+    char_to_slice: char,
+    particle_count: ref[int]
+) -> void:
     let particle = read(particles)[0]
     let source_text = particle.text.as_str()
     var token_count = 0
@@ -109,7 +129,7 @@ function slice_text_particle_by_char(particles: ref[array[TextParticle, MAX_TEXT
                 source_text.slice(ptr_uint<-index, ptr_uint<-advance),
                 particle.rect.x + float<-index * particle.rect.width / float<-length,
                 particle.rect.y,
-                random_particle_color(),
+                random_particle_color()
             )
             unsafe: read(particle_count) += 1
         index += advance
@@ -123,7 +143,7 @@ function slice_text_particle_by_char(particles: ref[array[TextParticle, MAX_TEXT
             token_text,
             particle.rect.x + float<-index * particle.rect.width / float<-effective_length,
             particle.rect.y,
-            random_particle_color(),
+            random_particle_color()
         )
         unsafe: read(particle_count) += 1
         index += 1
@@ -131,8 +151,18 @@ function slice_text_particle_by_char(particles: ref[array[TextParticle, MAX_TEXT
     reallocate_text_particles(particles, 0, particle_count)
 
 
-function glue_text_particles(particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]], grabbed_index: int, target_index: int, particle_count: ref[int]) -> int:
-    if grabbed_index < 0 or target_index < 0 or grabbed_index >= read(particle_count) or target_index >= read(particle_count):
+function glue_text_particles(
+    particles: ref[array[TextParticle, MAX_TEXT_PARTICLES]],
+    grabbed_index: int,
+    target_index: int,
+    particle_count: ref[int]
+) -> int:
+    if (
+        grabbed_index < 0
+        or target_index < 0
+        or grabbed_index >= read(particle_count)
+        or target_index >= read(particle_count)
+    ):
         return grabbed_index
 
     var merged_text = zero[str_buffer[100]]
@@ -143,7 +173,7 @@ function glue_text_particles(particles: ref[array[TextParticle, MAX_TEXT_PARTICL
         merged_text.as_str(),
         read(particles)[grabbed_index].rect.x,
         read(particles)[grabbed_index].rect.y,
-        rl.RAYWHITE,
+        rl.RAYWHITE
     )
     particle.grabbed = true
     read(particles)[read(particle_count)] = particle
@@ -209,26 +239,49 @@ function main() -> int:
             var index = 0
             while index < particle_count:
                 if not text_particles[index].grabbed:
-                    text_particles[index].vel = rl.Vector2(x = float<-rl.get_random_value(-2000, 2000), y = float<-rl.get_random_value(-2000, 2000))
+                    text_particles[index].vel = rl.Vector2(
+                        x = float<-rl.get_random_value(-2000, 2000),
+                        y = float<-rl.get_random_value(-2000, 2000)
+                    )
                 index += 1
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_ONE):
             prepare_first_text_particle(INITIAL_TEXT, ref_of(text_particles), ref_of(particle_count))
             grabbed_index = -1
         if rl.is_key_pressed(rl.KeyboardKey.KEY_TWO):
-            prepare_first_text_particle(text.chars_as_str(rl.text_to_upper_ptr(INITIAL_TEXT)), ref_of(text_particles), ref_of(particle_count))
+            prepare_first_text_particle(
+                text.chars_as_str(rl.text_to_upper_ptr(INITIAL_TEXT)),
+                ref_of(text_particles),
+                ref_of(particle_count)
+            )
             grabbed_index = -1
         if rl.is_key_pressed(rl.KeyboardKey.KEY_THREE):
-            prepare_first_text_particle(text.chars_as_str(rl.text_to_lower_ptr(INITIAL_TEXT)), ref_of(text_particles), ref_of(particle_count))
+            prepare_first_text_particle(
+                text.chars_as_str(rl.text_to_lower_ptr(INITIAL_TEXT)),
+                ref_of(text_particles),
+                ref_of(particle_count)
+            )
             grabbed_index = -1
         if rl.is_key_pressed(rl.KeyboardKey.KEY_FOUR):
-            prepare_first_text_particle(text.chars_as_str(rl.text_to_pascal_ptr("raylib_fun_videogames_programming")), ref_of(text_particles), ref_of(particle_count))
+            prepare_first_text_particle(
+                text.chars_as_str(rl.text_to_pascal_ptr("raylib_fun_videogames_programming")),
+                ref_of(text_particles),
+                ref_of(particle_count)
+            )
             grabbed_index = -1
         if rl.is_key_pressed(rl.KeyboardKey.KEY_FIVE):
-            prepare_first_text_particle(text.chars_as_str(rl.text_to_snake_ptr("RaylibFunVideogamesProgramming")), ref_of(text_particles), ref_of(particle_count))
+            prepare_first_text_particle(
+                text.chars_as_str(rl.text_to_snake_ptr("RaylibFunVideogamesProgramming")),
+                ref_of(text_particles),
+                ref_of(particle_count)
+            )
             grabbed_index = -1
         if rl.is_key_pressed(rl.KeyboardKey.KEY_SIX):
-            prepare_first_text_particle(text.chars_as_str(rl.text_to_camel_ptr("raylib_fun_videogames_programming")), ref_of(text_particles), ref_of(particle_count))
+            prepare_first_text_particle(
+                text.chars_as_str(rl.text_to_camel_ptr("raylib_fun_videogames_programming")),
+                ref_of(text_particles),
+                ref_of(particle_count)
+            )
             grabbed_index = -1
 
         let char_pressed = rl.get_char_pressed()
@@ -270,8 +323,16 @@ function main() -> int:
                 if rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and grabbed_index == index:
                     var other = 0
                     while other < particle_count:
-                        if other != grabbed_index and text_particles[grabbed_index].grabbed and rl.check_collision_recs(text_particles[grabbed_index].rect, text_particles[other].rect):
-                            grabbed_index = glue_text_particles(ref_of(text_particles), grabbed_index, other, ref_of(particle_count))
+                        if other != grabbed_index and text_particles[grabbed_index].grabbed and rl.check_collision_recs(
+                            text_particles[grabbed_index].rect,
+                            text_particles[other].rect
+                        ):
+                            grabbed_index = glue_text_particles(
+                                ref_of(text_particles),
+                                grabbed_index,
+                                other,
+                                ref_of(particle_count)
+                            )
                             break
                         other += 1
             index += 1
@@ -287,20 +348,44 @@ function main() -> int:
                     x = particle.rect.x - particle.border_width,
                     y = particle.rect.y - particle.border_width,
                     width = particle.rect.width + particle.border_width * 2.0,
-                    height = particle.rect.height + particle.border_width * 2.0,
+                    height = particle.rect.height + particle.border_width * 2.0
                 ),
-                rl.BLACK,
+                rl.BLACK
             )
             rl.draw_rectangle_rec(particle.rect, particle.color)
-            rl.draw_text(particle.text.as_str(), int<-(particle.rect.x + particle.padding), int<-(particle.rect.y + particle.padding), FONT_SIZE, rl.BLACK)
+            rl.draw_text(
+                particle.text.as_str(),
+                int<-(particle.rect.x + particle.padding),
+                int<-(particle.rect.y + particle.padding),
+                FONT_SIZE,
+                rl.BLACK
+            )
             index += 1
 
-        rl.draw_text("grab a text particle by pressing with the mouse and throw it by releasing", 10, 10, 10, rl.DARKGRAY)
+        rl.draw_text(
+            "grab a text particle by pressing with the mouse and throw it by releasing",
+            10,
+            10,
+            10,
+            rl.DARKGRAY
+        )
         rl.draw_text("slice a text particle by pressing it with the mouse right button", 10, 30, 10, rl.DARKGRAY)
-        rl.draw_text("shatter a text particle keeping left shift pressed and pressing it with the mouse right button", 10, 50, 10, rl.DARKGRAY)
+        rl.draw_text(
+            "shatter a text particle keeping left shift pressed and pressing it with the mouse right button",
+            10,
+            50,
+            10,
+            rl.DARKGRAY
+        )
         rl.draw_text("glue text particles by grabbing than and keeping left control pressed", 10, 70, 10, rl.DARKGRAY)
         rl.draw_text("1 to 6 to reset", 10, 90, 10, rl.DARKGRAY)
-        rl.draw_text("when you have only one text particle, you can slice it by pressing a char", 10, 110, 10, rl.DARKGRAY)
+        rl.draw_text(
+            "when you have only one text particle, you can slice it by pressing a char",
+            10,
+            110,
+            10,
+            rl.DARKGRAY
+        )
         let particle_count_text = rl.text_format("TEXT PARTICLE COUNT: %d", particle_count)
         rl.draw_text(particle_count_text, 10, rl.get_screen_height() - 30, 20, rl.BLACK)
 

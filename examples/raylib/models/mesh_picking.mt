@@ -1,8 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
-import std.str as text
-
 
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
@@ -21,7 +19,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 8.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.6, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var ray = zero[rl.Ray]
@@ -111,8 +109,18 @@ function main() -> int:
 
         let hit_object_text = rl.text_format("Hit Object: %s", hit_object_name)
         let distance_text = rl.text_format("Distance: %3.2f", collision.distance)
-        let hit_pos_text = rl.text_format("Hit Pos: %3.2f %3.2f %3.2f", collision.point.x, collision.point.y, collision.point.z)
-        let hit_norm_text = rl.text_format("Hit Norm: %3.2f %3.2f %3.2f", collision.normal.x, collision.normal.y, collision.normal.z)
+        let hit_pos_text = rl.text_format(
+            "Hit Pos: %3.2f %3.2f %3.2f",
+            collision.point.x,
+            collision.point.y,
+            collision.point.z
+        )
+        let hit_norm_text = rl.text_format(
+            "Hit Norm: %3.2f %3.2f %3.2f",
+            collision.normal.x,
+            collision.normal.y,
+            collision.normal.z
+        )
         let barycenter_text = rl.text_format("Barycenter: %3.2f %3.2f %3.2f", bary.x, bary.y, bary.z)
 
         rl.begin_drawing()
@@ -134,7 +142,7 @@ function main() -> int:
             let normal_end = rl.Vector3(
                 x = collision.point.x + collision.normal.x,
                 y = collision.point.y + collision.normal.y,
-                z = collision.point.z + collision.normal.z,
+                z = collision.point.z + collision.normal.z
             )
             rl.draw_line_3d(collision.point, normal_end, rl.RED)
 

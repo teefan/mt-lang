@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SUN_RADIUS: float = 4.0
@@ -33,33 +32,33 @@ function draw_sphere_basic(color: rl.Color) -> void:
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle0) * math.sin(double<-slice0)),
                 float<-math.sin(double<-angle0),
-                float<-(math.cos(double<-angle0) * math.cos(double<-slice0)),
+                float<-(math.cos(double<-angle0) * math.cos(double<-slice0))
             )
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle1) * math.sin(double<-slice1)),
                 float<-math.sin(double<-angle1),
-                float<-(math.cos(double<-angle1) * math.cos(double<-slice1)),
+                float<-(math.cos(double<-angle1) * math.cos(double<-slice1))
             )
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle1) * math.sin(double<-slice0)),
                 float<-math.sin(double<-angle1),
-                float<-(math.cos(double<-angle1) * math.cos(double<-slice0)),
+                float<-(math.cos(double<-angle1) * math.cos(double<-slice0))
             )
 
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle0) * math.sin(double<-slice0)),
                 float<-math.sin(double<-angle0),
-                float<-(math.cos(double<-angle0) * math.cos(double<-slice0)),
+                float<-(math.cos(double<-angle0) * math.cos(double<-slice0))
             )
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle0) * math.sin(double<-slice1)),
                 float<-math.sin(double<-angle0),
-                float<-(math.cos(double<-angle0) * math.cos(double<-slice1)),
+                float<-(math.cos(double<-angle0) * math.cos(double<-slice1))
             )
             rlgl.vertex3f(
                 float<-(math.cos(double<-angle1) * math.sin(double<-slice1)),
                 float<-math.sin(double<-angle1),
-                float<-(math.cos(double<-angle1) * math.cos(double<-slice1)),
+                float<-(math.cos(double<-angle1) * math.cos(double<-slice1))
             )
 
             slice += 1
@@ -77,7 +76,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let rotation_speed = float<-0.2
@@ -126,7 +125,7 @@ function main() -> int:
             EARTH_ORBIT_RADIUS,
             rl.Vector3(x = 1.0, y = 0.0, z = 0.0),
             90.0,
-            rl.fade(rl.RED, 0.5),
+            rl.fade(rl.RED, 0.5)
         )
         rl.draw_grid(20, 1.0)
 

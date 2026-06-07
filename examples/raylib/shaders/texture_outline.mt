@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -28,7 +27,12 @@ function main() -> int:
     let texture_size_location = rl.get_shader_location(shader, "textureSize")
 
     rl.set_shader_value(shader, outline_size_location, outline_size, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-    rl.set_shader_value(shader, outline_color_location, outline_color, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.set_shader_value(
+        shader,
+        outline_color_location,
+        outline_color,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4
+    )
     rl.set_shader_value(shader, texture_size_location, texture_size, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
     rl.set_target_fps(60)
@@ -37,7 +41,12 @@ function main() -> int:
         outline_size += rl.get_mouse_wheel_move()
         if outline_size < 1.0:
             outline_size = 1.0
-        rl.set_shader_value(shader, outline_size_location, outline_size, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.set_shader_value(
+            shader,
+            outline_size_location,
+            outline_size,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
+        )
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

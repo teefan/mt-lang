@@ -3,7 +3,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -29,7 +28,14 @@ function main() -> int:
         rl.draw_rectangle(500, 0, rl.get_screen_width() - 500, rl.get_screen_height(), rl.fade(rl.LIGHTGRAY, 0.3))
 
         rl.draw_circle_sector(center, outer_radius, start_angle, end_angle, int<-segments, rl.fade(rl.MAROON, 0.3))
-        rl.draw_circle_sector_lines(center, outer_radius, start_angle, end_angle, int<-segments, rl.fade(rl.MAROON, 0.6))
+        rl.draw_circle_sector_lines(
+            center,
+            outer_radius,
+            start_angle,
+            end_angle,
+            int<-segments,
+            rl.fade(rl.MAROON, 0.6)
+        )
 
         gui.slider_bar(
             rl.Rectangle(x = 600.0, y = 40.0, width = 120.0, height = 20.0),
@@ -37,7 +43,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", start_angle)),
             start_angle,
             0.0,
-            720.0,
+            720.0
         )
         gui.slider_bar(
             rl.Rectangle(x = 600.0, y = 70.0, width = 120.0, height = 20.0),
@@ -45,7 +51,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", end_angle)),
             end_angle,
             0.0,
-            720.0,
+            720.0
         )
         gui.slider_bar(
             rl.Rectangle(x = 600.0, y = 140.0, width = 120.0, height = 20.0),
@@ -53,7 +59,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", outer_radius)),
             outer_radius,
             0.0,
-            200.0,
+            200.0
         )
         gui.slider_bar(
             rl.Rectangle(x = 600.0, y = 170.0, width = 120.0, height = 20.0),
@@ -61,7 +67,7 @@ function main() -> int:
             text.cstr_as_str(rl.text_format("%.2f", segments)),
             segments,
             0.0,
-            100.0,
+            100.0
         )
 
         min_segments = float<-math.ceil(double<-((end_angle - start_angle) / 90.0))

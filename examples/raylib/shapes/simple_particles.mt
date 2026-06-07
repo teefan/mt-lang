@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_PARTICLES: int = 3000
@@ -10,7 +9,6 @@ const WATER: int = 0
 const SMOKE: int = 1
 const FIRE: int = 2
 const DEG_TO_RAD: float = rl.PI / 180.0
-
 
 struct Particle:
     particle_type: int
@@ -20,7 +18,6 @@ struct Particle:
     color: rl.Color
     life_time: float
     alive: bool
-
 
 var particles: array[Particle, MAX_PARTICLES] = zero[array[Particle, MAX_PARTICLES]]
 
@@ -69,7 +66,7 @@ function emit_particle(head: ref[int], tail: int, emitter_position: rl.Vector2, 
     let direction = float<-rl.get_random_value(0, 359)
     particles[particle_index].velocity = rl.Vector2(
         x = speed * float<-math.cos(double<-(direction * DEG_TO_RAD)),
-        y = speed * float<-math.sin(double<-(direction * DEG_TO_RAD)),
+        y = speed * float<-math.sin(double<-(direction * DEG_TO_RAD))
     )
 
 
@@ -190,7 +187,7 @@ function main() -> int:
                 rl.text_format(
                     "Particles every %d frames | Type: %s",
                     -emission_rate,
-                    particle_type_name(current_type),
+                    particle_type_name(current_type)
                 )
             )
         else:
@@ -198,7 +195,7 @@ function main() -> int:
                 rl.text_format(
                     "%d Particles per frame | Type: %s",
                     emission_rate + 1,
-                    particle_type_name(current_type),
+                    particle_type_name(current_type)
                 )
             )
         rl.draw_text(particle_status, 15, 95, 10, rl.DARKGRAY)

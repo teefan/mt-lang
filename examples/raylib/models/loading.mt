@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -19,7 +18,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 12.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var model = rl.load_model("models/obj/castle.obj")
@@ -44,7 +43,16 @@ function main() -> int:
             if dropped_files.count == uint<-1:
                 let dropped_path = unsafe: text.chars_as_str(read(dropped_files.paths))
 
-                if rl.is_file_extension(dropped_path, ".obj") or rl.is_file_extension(dropped_path, ".gltf") or rl.is_file_extension(dropped_path, ".glb") or rl.is_file_extension(dropped_path, ".vox") or rl.is_file_extension(dropped_path, ".iqm") or rl.is_file_extension(dropped_path, ".m3d"):
+                if rl.is_file_extension(dropped_path, ".obj") or rl.is_file_extension(
+                    dropped_path,
+                    ".gltf"
+                ) or rl.is_file_extension(
+                    dropped_path,
+                    ".glb"
+                ) or rl.is_file_extension(
+                    dropped_path,
+                    ".vox"
+                ) or rl.is_file_extension(dropped_path, ".iqm") or rl.is_file_extension(dropped_path, ".m3d"):
                     rl.unload_model(model)
                     model = rl.load_model(dropped_path)
                     rl.set_material_texture(model.materials, int<-rl.MaterialMapIndex.MATERIAL_MAP_ALBEDO, texture)

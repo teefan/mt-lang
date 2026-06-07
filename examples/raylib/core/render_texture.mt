@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RENDER_TEXTURE_WIDTH: int = 300
@@ -17,7 +16,7 @@ function main() -> int:
 
     var ball_position = rl.Vector2(
         x = (float<-RENDER_TEXTURE_WIDTH) / 2.0,
-        y = (float<-RENDER_TEXTURE_HEIGHT) / 2.0,
+        y = (float<-RENDER_TEXTURE_HEIGHT) / 2.0
     )
     var ball_speed = rl.Vector2(x = 5.0, y = 4.0)
     var rotation: float = 0.0
@@ -48,17 +47,17 @@ function main() -> int:
             x = 0.0,
             y = 0.0,
             width = float<-target.texture.width,
-            height = -(float<-target.texture.height),
+            height = -(float<-target.texture.height)
         )
         let destination = rl.Rectangle(
             x = (float<-SCREEN_WIDTH) / 2.0,
             y = (float<-SCREEN_HEIGHT) / 2.0,
             width = float<-target.texture.width,
-            height = float<-target.texture.height,
+            height = float<-target.texture.height
         )
         let origin = rl.Vector2(
             x = (float<-target.texture.width) / 2.0,
-            y = (float<-target.texture.height) / 2.0,
+            y = (float<-target.texture.height) / 2.0
         )
         rl.draw_texture_pro(target.texture, source, destination, origin, rotation, rl.WHITE)
 

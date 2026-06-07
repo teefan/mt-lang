@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -19,7 +18,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.5, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let cube = rl.gen_mesh_cube(1.0, 1.0, 1.0)
@@ -34,7 +33,12 @@ function main() -> int:
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/tiling.fs", GLSL_VERSION))
     defer rl.unload_shader(shader)
     rl.set_texture_wrap(texture, int<-rl.TextureWrap.TEXTURE_WRAP_REPEAT)
-    rl.set_shader_value(shader, rl.get_shader_location(shader, "tiling"), tiling, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+    rl.set_shader_value(
+        shader,
+        rl.get_shader_location(shader, "tiling"),
+        tiling,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
     unsafe: model.materials[0].shader = shader
 
     rl.disable_cursor()

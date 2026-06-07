@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SIMULATION_STEPS: int = 30
@@ -13,11 +12,16 @@ const RAD_TO_DEG: float = 180.0 / rl.PI
 function calculate_pendulum_end_point(length: float, theta: float) -> rl.Vector2:
     return rl.Vector2(
         x = float<-(10.0 * length * float<-math.sin(double<-theta)),
-        y = float<-(10.0 * length * float<-math.cos(double<-theta)),
+        y = float<-(10.0 * length * float<-math.cos(double<-theta))
     )
 
 
-function calculate_double_pendulum_end_point(length1: float, theta1: float, length2: float, theta2: float) -> rl.Vector2:
+function calculate_double_pendulum_end_point(
+    length1: float,
+    theta1: float,
+    length2: float,
+    theta2: float
+) -> rl.Vector2:
     let endpoint1 = calculate_pendulum_end_point(length1, theta1)
     let endpoint2 = calculate_pendulum_end_point(length2, theta2)
     return rl.Vector2(x = float<-(endpoint1.x + endpoint2.x), y = float<-(endpoint1.y + endpoint2.y))
@@ -28,12 +32,12 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - double pendulum")
     defer rl.close_window()
 
-    var length1: float = 15.0
-    var mass1: float = 0.2
+    let length1: float = 15.0
+    let mass1: float = 0.2
     var theta1: float = DEG_TO_RAD * 170.0
     var velocity1: float = 0.0
-    var length2: float = 15.0
-    var mass2: float = 0.1
+    let length2: float = 15.0
+    let mass2: float = 0.1
     var theta2: float = 0.0
     var velocity2: float = 0.0
     let length_scaler: float = 0.1
@@ -107,14 +111,19 @@ function main() -> int:
             target.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
 
         rl.draw_rectangle_pro(
-            rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0 - 100.0, width = 10.0 * length1, height = line_thickness),
+            rl.Rectangle(
+                x = float<-SCREEN_WIDTH / 2.0,
+                y = float<-SCREEN_HEIGHT / 2.0 - 100.0,
+                width = 10.0 * length1,
+                height = line_thickness
+            ),
             rl.Vector2(x = 0.0, y = line_thickness * 0.5),
             90.0 - RAD_TO_DEG * theta1,
-            rl.RAYWHITE,
+            rl.RAYWHITE
         )
 
         let endpoint1 = calculate_pendulum_end_point(length1, theta1)
@@ -123,11 +132,11 @@ function main() -> int:
                 x = float<-(float<-SCREEN_WIDTH / 2.0 + endpoint1.x),
                 y = float<-(float<-SCREEN_HEIGHT / 2.0 - 100.0 + endpoint1.y),
                 width = 10.0 * length2,
-                height = line_thickness,
+                height = line_thickness
             ),
             rl.Vector2(x = 0.0, y = line_thickness * 0.5),
             90.0 - RAD_TO_DEG * theta2,
-            rl.RAYWHITE,
+            rl.RAYWHITE
         )
 
         rl.end_drawing()

@@ -1,7 +1,6 @@
 import examples.raylib.text.boxed_text as boxed
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -22,8 +21,18 @@ function main() -> int:
 
     var resizing = false
     var word_wrap = true
-    var container = rl.Rectangle(x = 25.0, y = 25.0, width = float<-SCREEN_WIDTH - 50.0, height = float<-SCREEN_HEIGHT - 250.0)
-    var resizer = rl.Rectangle(x = container.x + container.width - 17.0, y = container.y + container.height - 17.0, width = 14.0, height = 14.0)
+    var container = rl.Rectangle(
+        x = 25.0,
+        y = 25.0,
+        width = float<-SCREEN_WIDTH - 50.0,
+        height = float<-SCREEN_HEIGHT - 250.0
+    )
+    var resizer = rl.Rectangle(
+        x = container.x + container.width - 17.0,
+        y = container.y + container.height - 17.0,
+        width = 14.0,
+        height = 14.0
+    )
 
     let min_width = 60.0
     let min_height = 60.0
@@ -53,7 +62,10 @@ function main() -> int:
 
             container.width = clamp_float(container.width + (mouse.x - last_mouse.x), min_width, max_width)
             container.height = clamp_float(container.height + (mouse.y - last_mouse.y), min_height, max_height)
-        else if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and rl.check_collision_point_rec(mouse, resizer):
+        else if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) and rl.check_collision_point_rec(
+            mouse,
+            resizer
+        ):
             resizing = true
 
         resizer.x = container.x + container.width - 17.0
@@ -64,11 +76,27 @@ function main() -> int:
         rl.clear_background(rl.RAYWHITE)
 
         rl.draw_rectangle_lines_ex(container, 3.0, border_color)
-        boxed.draw_text_boxed(font, body_text, rl.Rectangle(x = container.x + 4.0, y = container.y + 4.0, width = container.width - 4.0, height = container.height - 4.0), 20.0, 2.0, word_wrap, rl.GRAY)
+        boxed.draw_text_boxed(
+            font,
+            body_text,
+            rl.Rectangle(
+                x = container.x + 4.0,
+                y = container.y + 4.0,
+                width = container.width - 4.0,
+                height = container.height - 4.0
+            ),
+            20.0,
+            2.0,
+            word_wrap,
+            rl.GRAY
+        )
         rl.draw_rectangle_rec(resizer, border_color)
 
         rl.draw_rectangle(0, SCREEN_HEIGHT - 54, SCREEN_WIDTH, 54, rl.GRAY)
-        rl.draw_rectangle_rec(rl.Rectangle(x = 382.0, y = float<-SCREEN_HEIGHT - 34.0, width = 12.0, height = 12.0), rl.MAROON)
+        rl.draw_rectangle_rec(
+            rl.Rectangle(x = 382.0, y = float<-SCREEN_HEIGHT - 34.0, width = 12.0, height = 12.0),
+            rl.MAROON
+        )
         rl.draw_text("Word Wrap: ", 313, SCREEN_HEIGHT - 115, 20, rl.BLACK)
         if word_wrap:
             rl.draw_text("ON", 447, SCREEN_HEIGHT - 115, 20, rl.RED)

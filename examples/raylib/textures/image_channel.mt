@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -32,7 +31,14 @@ function main() -> int:
     defer rl.unload_image(image_blue)
     rl.image_alpha_mask(image_blue, image_alpha)
 
-    let background_image = rl.gen_image_checked(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH / 20, SCREEN_HEIGHT / 20, rl.ORANGE, rl.YELLOW)
+    let background_image = rl.gen_image_checked(
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        SCREEN_WIDTH / 20,
+        SCREEN_HEIGHT / 20,
+        rl.ORANGE,
+        rl.YELLOW
+    )
     defer rl.unload_image(background_image)
 
     let fudesumi_texture = rl.load_texture_from_image(fudesumi_image)
@@ -48,12 +54,42 @@ function main() -> int:
     let background_texture = rl.load_texture_from_image(background_image)
     defer rl.unload_texture(background_texture)
 
-    let fudesumi_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-fudesumi_image.width, height = float<-fudesumi_image.height)
-    let fudesumi_pos = rl.Rectangle(x = 50.0, y = 10.0, width = float<-fudesumi_image.width * 0.8, height = float<-fudesumi_image.height * 0.8)
-    let red_pos = rl.Rectangle(x = 410.0, y = 10.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)
-    let green_pos = rl.Rectangle(x = 600.0, y = 10.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)
-    let blue_pos = rl.Rectangle(x = 410.0, y = 230.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)
-    let alpha_pos = rl.Rectangle(x = 600.0, y = 230.0, width = fudesumi_pos.width / 2.0, height = fudesumi_pos.height / 2.0)
+    let fudesumi_rect = rl.Rectangle(
+        x = 0.0,
+        y = 0.0,
+        width = float<-fudesumi_image.width,
+        height = float<-fudesumi_image.height
+    )
+    let fudesumi_pos = rl.Rectangle(
+        x = 50.0,
+        y = 10.0,
+        width = float<-fudesumi_image.width * 0.8,
+        height = float<-fudesumi_image.height * 0.8
+    )
+    let red_pos = rl.Rectangle(
+        x = 410.0,
+        y = 10.0,
+        width = fudesumi_pos.width / 2.0,
+        height = fudesumi_pos.height / 2.0
+    )
+    let green_pos = rl.Rectangle(
+        x = 600.0,
+        y = 10.0,
+        width = fudesumi_pos.width / 2.0,
+        height = fudesumi_pos.height / 2.0
+    )
+    let blue_pos = rl.Rectangle(
+        x = 410.0,
+        y = 230.0,
+        width = fudesumi_pos.width / 2.0,
+        height = fudesumi_pos.height / 2.0
+    )
+    let alpha_pos = rl.Rectangle(
+        x = 600.0,
+        y = 230.0,
+        width = fudesumi_pos.width / 2.0,
+        height = fudesumi_pos.height / 2.0
+    )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 
     rl.set_target_fps(60)

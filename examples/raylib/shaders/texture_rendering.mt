@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -14,7 +13,7 @@ function main() -> int:
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
-    var blank = rl.gen_image_color(1024, 1024, rl.BLANK)
+    let blank = rl.gen_image_color(1024, 1024, rl.BLANK)
     let texture = rl.load_texture_from_image(blank)
     defer rl.unload_texture(texture)
     rl.unload_image(blank)

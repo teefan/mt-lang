@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -35,13 +34,13 @@ function main() -> int:
             rl.Vector2(x = 600.0, y = 80.0),
             rl.Vector2(x = 540.0, y = 150.0),
             rl.Vector2(x = 660.0, y = 150.0),
-            rl.VIOLET,
+            rl.VIOLET
         )
         rl.draw_triangle_lines(
             rl.Vector2(x = 600.0, y = 160.0),
             rl.Vector2(x = 580.0, y = 230.0),
             rl.Vector2(x = 620.0, y = 230.0),
-            rl.DARKBLUE,
+            rl.DARKBLUE
         )
 
         rl.draw_poly(rl.Vector2(x = 600.0, y = 330.0), 6, 80.0, rotation, rl.BROWN)

@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const LINE_COLOR_COUNT: int = 8
@@ -15,7 +14,16 @@ function main() -> int:
     var line_end_position = rl.Vector2(x = 780.0, y = 400.0)
     var dash_length: float = 25.0
     var blank_length: float = 15.0
-    let line_colors = array[rl.Color, LINE_COLOR_COUNT](rl.RED, rl.ORANGE, rl.GOLD, rl.GREEN, rl.BLUE, rl.VIOLET, rl.PINK, rl.BLACK)
+    let line_colors = array[rl.Color, LINE_COLOR_COUNT](
+        rl.RED,
+        rl.ORANGE,
+        rl.GOLD,
+        rl.GREEN,
+        rl.BLUE,
+        rl.VIOLET,
+        rl.PINK,
+        rl.BLACK
+    )
     var color_index = 0
 
     rl.set_target_fps(60)
@@ -39,7 +47,13 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
 
-        rl.draw_line_dashed(line_start_position, line_end_position, int<-dash_length, int<-blank_length, line_colors[color_index])
+        rl.draw_line_dashed(
+            line_start_position,
+            line_end_position,
+            int<-dash_length,
+            int<-blank_length,
+            line_colors[color_index]
+        )
 
         rl.draw_rectangle(5, 5, 265, 95, rl.fade(rl.SKYBLUE, 0.5))
         rl.draw_rectangle_lines(5, 5, 265, 95, rl.BLUE)

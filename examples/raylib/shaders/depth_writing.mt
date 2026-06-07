@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -20,14 +19,14 @@ function load_render_texture_depth_tex(width: int, height: int) -> rl.RenderText
             width = width,
             height = height,
             mipmaps = 1,
-            format = int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+            format = int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         )
         target.depth = rl.Texture(
             id = rlgl.load_texture_depth(width, height, false),
             width = width,
             height = height,
             mipmaps = 1,
-            format = 19,
+            format = 19
         )
 
         rlgl.framebuffer_attach(
@@ -35,18 +34,22 @@ function load_render_texture_depth_tex(width: int, height: int) -> rl.RenderText
             target.texture.id,
             int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
             int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
-            0,
+            0
         )
         rlgl.framebuffer_attach(
             target.id,
             target.depth.id,
             int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH,
             int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
-            0,
+            0
         )
 
         if rlgl.framebuffer_complete(target.id):
-            rl.trace_log(int<-rl.TraceLogLevel.LOG_INFO, "FBO: [ID %i] Framebuffer object created successfully", target.id)
+            rl.trace_log(
+                int<-rl.TraceLogLevel.LOG_INFO,
+                "FBO: [ID %i] Framebuffer object created successfully",
+                target.id
+            )
 
         rlgl.disable_framebuffer()
 
@@ -72,7 +75,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.5, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let target = load_render_texture_depth_tex(SCREEN_WIDTH, SCREEN_HEIGHT)
@@ -93,7 +96,11 @@ function main() -> int:
         rl.begin_shader_mode(shader)
         rl.draw_cube_wires_v(rl.Vector3(x = 0.0, y = 0.5, z = 1.0), rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.RED)
         rl.draw_cube_v(rl.Vector3(x = 0.0, y = 0.5, z = 1.0), rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.PURPLE)
-        rl.draw_cube_wires_v(rl.Vector3(x = 0.0, y = 0.5, z = -1.0), rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.DARKGREEN)
+        rl.draw_cube_wires_v(
+            rl.Vector3(x = 0.0, y = 0.5, z = -1.0),
+            rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
+            rl.DARKGREEN
+        )
         rl.draw_cube_v(rl.Vector3(x = 0.0, y = 0.5, z = -1.0), rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.YELLOW)
         rl.draw_grid(10, 1.0)
         rl.end_shader_mode()
@@ -106,7 +113,7 @@ function main() -> int:
             target.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_fps(10, 10)
         rl.end_drawing()

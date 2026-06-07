@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const STORAGE_DATA_FILE: str = "storage.data"
@@ -15,7 +14,7 @@ function save_storage_value(position: int, value: int) -> bool:
 
     var values: array[int, STORAGE_VALUE_COUNT] = zero[array[int, STORAGE_VALUE_COUNT]]
     var data_size = 0
-    var data = rl.load_file_data(STORAGE_DATA_FILE, data_size)
+    let data = rl.load_file_data(STORAGE_DATA_FILE, data_size)
     if data != null:
         defer rl.unload_file_data(data)
 
@@ -30,7 +29,10 @@ function save_storage_value(position: int, value: int) -> bool:
     values[position] = value
     return rl.save_file_data(
         STORAGE_DATA_FILE,
-        unsafe: span[ubyte](data = ptr[ubyte]<-ptr_of(values[0]), len = ptr_uint<-(STORAGE_VALUE_COUNT * int<-size_of(int))),
+        unsafe: span[ubyte](
+            data = ptr[ubyte]<-ptr_of(values[0]),
+            len = ptr_uint<-(STORAGE_VALUE_COUNT * int<-size_of(int))
+        )
     )
 
 
@@ -39,8 +41,7 @@ function load_storage_value(position: int) -> int:
         return 0
 
     var data_size = 0
-    var data = rl.load_file_data(STORAGE_DATA_FILE, data_size)
-    if data == null:
+    let data = rl.load_file_data(STORAGE_DATA_FILE, data_size) else:
         return 0
     defer rl.unload_file_data(data)
 

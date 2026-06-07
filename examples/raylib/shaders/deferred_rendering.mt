@@ -2,14 +2,12 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_CUBES: int = 30
 const MAX_LIGHTS: int = 4
 const GLSL_VERSION: int = 330
 const DEPTH_BUFFER_BIT: int = 0x00000100
-
 
 struct GBuffer:
     framebuffer_id: uint
@@ -18,18 +16,15 @@ struct GBuffer:
     albedo_spec_texture_id: uint
     depth_renderbuffer_id: uint
 
-
 enum DeferredMode: int
     DEFERRED_POSITION = 0
     DEFERRED_NORMAL = 1
     DEFERRED_ALBEDO = 2
     DEFERRED_SHADING = 3
 
-
 enum LightType: int
     LIGHT_DIRECTIONAL = 0
     LIGHT_POINT = 1
-
 
 struct Light:
     kind: int
@@ -44,7 +39,14 @@ struct Light:
     color_loc: int
 
 
-function create_light(slot: int, light_type: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light:
+function create_light(
+    slot: int,
+    light_type: int,
+    position: rl.Vector3,
+    target: rl.Vector3,
+    color: rl.Color,
+    shader: rl.Shader
+) -> Light:
     let light = Light(
         kind = light_type,
         enabled = true,
@@ -55,7 +57,7 @@ function create_light(slot: int, light_type: int, position: rl.Vector3, target: 
         type_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].type", slot)),
         position_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].position", slot)),
         target_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].target", slot)),
-        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot)),
+        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot))
     )
     update_light_values(shader, light)
     return light
@@ -69,7 +71,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
         float<-light.color.r / 255.0,
         float<-light.color.g / 255.0,
         float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0,
+        float<-light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.enabled_loc, enabled_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
     rl.set_shader_value(shader, light.type_loc, light.kind, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
@@ -94,7 +96,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 60.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var model = rl.load_model_from_mesh(rl.gen_mesh_plane(10.0, 10.0, 3, 3))
@@ -104,52 +106,146 @@ function main() -> int:
 
     let gbuffer_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/gbuffer.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/gbuffer.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/gbuffer.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(gbuffer_shader)
 
     var deferred_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/deferred_shading.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/deferred_shading.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/deferred_shading.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(deferred_shader)
-    unsafe: deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(deferred_shader, "viewPosition")
+    unsafe: deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(
+        deferred_shader,
+        "viewPosition"
+    )
 
-    var gbuffer = GBuffer(framebuffer_id = rlgl.load_framebuffer(), position_texture_id = uint<-0, normal_texture_id = uint<-0, albedo_spec_texture_id = uint<-0, depth_renderbuffer_id = uint<-0)
+    var gbuffer = GBuffer(
+        framebuffer_id = rlgl.load_framebuffer(),
+        position_texture_id = uint<-0,
+        normal_texture_id = uint<-0,
+        albedo_spec_texture_id = uint<-0,
+        depth_renderbuffer_id = uint<-0
+    )
     if gbuffer.framebuffer_id == uint<-0:
         rl.trace_log(int<-rl.TraceLogLevel.LOG_WARNING, "Failed to create framebufferId")
 
     rlgl.enable_framebuffer(gbuffer.framebuffer_id)
-    gbuffer.position_texture_id = rlgl.load_texture(null, SCREEN_WIDTH, SCREEN_HEIGHT, int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16, 1)
-    gbuffer.normal_texture_id = rlgl.load_texture(null, SCREEN_WIDTH, SCREEN_HEIGHT, int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16, 1)
-    gbuffer.albedo_spec_texture_id = rlgl.load_texture(null, SCREEN_WIDTH, SCREEN_HEIGHT, int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1)
+    gbuffer.position_texture_id = rlgl.load_texture(
+        null,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16,
+        1
+    )
+    gbuffer.normal_texture_id = rlgl.load_texture(
+        null,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16,
+        1
+    )
+    gbuffer.albedo_spec_texture_id = rlgl.load_texture(
+        null,
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        int<-rlgl.PixelFormat.RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        1
+    )
 
     rlgl.active_draw_buffers(3)
-    rlgl.framebuffer_attach(gbuffer.framebuffer_id, gbuffer.position_texture_id, int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0, int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
-    rlgl.framebuffer_attach(gbuffer.framebuffer_id, gbuffer.normal_texture_id, int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL1, int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
-    rlgl.framebuffer_attach(gbuffer.framebuffer_id, gbuffer.albedo_spec_texture_id, int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL2, int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
+    rlgl.framebuffer_attach(
+        gbuffer.framebuffer_id,
+        gbuffer.position_texture_id,
+        int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
+        int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+        0
+    )
+    rlgl.framebuffer_attach(
+        gbuffer.framebuffer_id,
+        gbuffer.normal_texture_id,
+        int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL1,
+        int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+        0
+    )
+    rlgl.framebuffer_attach(
+        gbuffer.framebuffer_id,
+        gbuffer.albedo_spec_texture_id,
+        int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL2,
+        int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+        0
+    )
     gbuffer.depth_renderbuffer_id = rlgl.load_texture_depth(SCREEN_WIDTH, SCREEN_HEIGHT, true)
-    rlgl.framebuffer_attach(gbuffer.framebuffer_id, gbuffer.depth_renderbuffer_id, int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH, int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER, 0)
+    rlgl.framebuffer_attach(
+        gbuffer.framebuffer_id,
+        gbuffer.depth_renderbuffer_id,
+        int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH,
+        int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER,
+        0
+    )
     if not rlgl.framebuffer_complete(gbuffer.framebuffer_id):
         rl.trace_log(int<-rl.TraceLogLevel.LOG_WARNING, "Framebuffer is not complete")
 
     rlgl.enable_shader(deferred_shader.id)
-    var tex_unit_position = 0
-    var tex_unit_normal = 1
-    var tex_unit_albedo_spec = 2
-    rl.set_shader_value(deferred_shader, rlgl.get_location_uniform(deferred_shader.id, "gPosition"), tex_unit_position, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.set_shader_value(deferred_shader, rlgl.get_location_uniform(deferred_shader.id, "gNormal"), tex_unit_normal, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
-    rl.set_shader_value(deferred_shader, rlgl.get_location_uniform(deferred_shader.id, "gAlbedoSpec"), tex_unit_albedo_spec, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D)
+    let tex_unit_position = 0
+    let tex_unit_normal = 1
+    let tex_unit_albedo_spec = 2
+    rl.set_shader_value(
+        deferred_shader,
+        rlgl.get_location_uniform(deferred_shader.id, "gPosition"),
+        tex_unit_position,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D
+    )
+    rl.set_shader_value(
+        deferred_shader,
+        rlgl.get_location_uniform(deferred_shader.id, "gNormal"),
+        tex_unit_normal,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D
+    )
+    rl.set_shader_value(
+        deferred_shader,
+        rlgl.get_location_uniform(deferred_shader.id, "gAlbedoSpec"),
+        tex_unit_albedo_spec,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_SAMPLER2D
+    )
     rlgl.disable_shader()
 
     unsafe: model.materials[0].shader = gbuffer_shader
     unsafe: cube.materials[0].shader = gbuffer_shader
 
     var lights: array[Light, MAX_LIGHTS] = zero[array[Light, MAX_LIGHTS]]
-    lights[0] = create_light(0, int<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.YELLOW, deferred_shader)
-    lights[1] = create_light(1, int<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.RED, deferred_shader)
-    lights[2] = create_light(2, int<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GREEN, deferred_shader)
-    lights[3] = create_light(3, int<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.BLUE, deferred_shader)
+    lights[0] = create_light(
+        0,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -2.0, y = 1.0, z = -2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.YELLOW,
+        deferred_shader
+    )
+    lights[1] = create_light(
+        1,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 2.0, y = 1.0, z = 2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.RED,
+        deferred_shader
+    )
+    lights[2] = create_light(
+        2,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -2.0, y = 1.0, z = 2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GREEN,
+        deferred_shader
+    )
+    lights[3] = create_light(
+        3,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 2.0, y = 1.0, z = -2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.BLUE,
+        deferred_shader
+    )
 
     let cube_scale: float = 0.25
     var cube_positions: array[rl.Vector3, MAX_CUBES] = zero[array[rl.Vector3, MAX_CUBES]]
@@ -159,7 +255,7 @@ function main() -> int:
         cube_positions[cube_index] = rl.Vector3(
             x = float<-rl.get_random_value(0, 9) - 5.0,
             y = float<-rl.get_random_value(0, 4),
-            z = float<-rl.get_random_value(0, 9) - 5.0,
+            z = float<-rl.get_random_value(0, 9) - 5.0
         )
         cube_rotations[cube_index] = float<-rl.get_random_value(0, 359)
         cube_index += 1
@@ -175,7 +271,7 @@ function main() -> int:
             deferred_shader,
             unsafe: deferred_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW],
             camera_position,
-            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
         )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_Y):
@@ -222,7 +318,14 @@ function main() -> int:
 
         cube_index = 0
         while cube_index < MAX_CUBES:
-            rl.draw_model_ex(cube, cube_positions[cube_index], rl.Vector3(x = 1.0, y = 1.0, z = 1.0), cube_rotations[cube_index], rl.Vector3(x = cube_scale, y = cube_scale, z = cube_scale), rl.WHITE)
+            rl.draw_model_ex(
+                cube,
+                cube_positions[cube_index],
+                rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
+                cube_rotations[cube_index],
+                rl.Vector3(x = cube_scale, y = cube_scale, z = cube_scale),
+                rl.WHITE
+            )
             cube_index += 1
         rlgl.disable_shader()
         rl.end_mode_3d()
@@ -248,7 +351,17 @@ function main() -> int:
 
             rlgl.bind_framebuffer(uint<-rlgl.RL_READ_FRAMEBUFFER, gbuffer.framebuffer_id)
             rlgl.bind_framebuffer(uint<-rlgl.RL_DRAW_FRAMEBUFFER, uint<-0)
-            rlgl.blit_framebuffer(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, DEPTH_BUFFER_BIT)
+            rlgl.blit_framebuffer(
+                0,
+                0,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                0,
+                0,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                DEPTH_BUFFER_BIT
+            )
             rlgl.disable_framebuffer()
 
             rl.begin_mode_3d(camera)
@@ -258,20 +371,41 @@ function main() -> int:
                 if lights[light_index].enabled:
                     rl.draw_sphere_ex(lights[light_index].position, 0.2, 8, 8, lights[light_index].color)
                 else:
-                    rl.draw_sphere_wires(lights[light_index].position, 0.2, 8, 8, rl.color_alpha(lights[light_index].color, 0.3))
+                    rl.draw_sphere_wires(
+                        lights[light_index].position,
+                        0.2,
+                        8,
+                        8,
+                        rl.color_alpha(lights[light_index].color, 0.3)
+                    )
                 light_index += 1
             rlgl.disable_shader()
             rl.end_mode_3d()
 
             rl.draw_text("FINAL RESULT", 10, SCREEN_HEIGHT - 30, 20, rl.DARKGREEN)
         else if mode == int<-DeferredMode.DEFERRED_POSITION:
-            rl.draw_texture_rec(gbuffer_texture(gbuffer.position_texture_id), rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)), rl.Vector2(x = 0.0, y = 0.0), rl.RAYWHITE)
+            rl.draw_texture_rec(
+                gbuffer_texture(gbuffer.position_texture_id),
+                rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)),
+                rl.Vector2(x = 0.0, y = 0.0),
+                rl.RAYWHITE
+            )
             rl.draw_text("POSITION TEXTURE", 10, SCREEN_HEIGHT - 30, 20, rl.DARKGREEN)
         else if mode == int<-DeferredMode.DEFERRED_NORMAL:
-            rl.draw_texture_rec(gbuffer_texture(gbuffer.normal_texture_id), rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)), rl.Vector2(x = 0.0, y = 0.0), rl.RAYWHITE)
+            rl.draw_texture_rec(
+                gbuffer_texture(gbuffer.normal_texture_id),
+                rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)),
+                rl.Vector2(x = 0.0, y = 0.0),
+                rl.RAYWHITE
+            )
             rl.draw_text("NORMAL TEXTURE", 10, SCREEN_HEIGHT - 30, 20, rl.DARKGREEN)
         else if mode == int<-DeferredMode.DEFERRED_ALBEDO:
-            rl.draw_texture_rec(gbuffer_texture(gbuffer.albedo_spec_texture_id), rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)), rl.Vector2(x = 0.0, y = 0.0), rl.RAYWHITE)
+            rl.draw_texture_rec(
+                gbuffer_texture(gbuffer.albedo_spec_texture_id),
+                rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -(float<-SCREEN_HEIGHT)),
+                rl.Vector2(x = 0.0, y = 0.0),
+                rl.RAYWHITE
+            )
             rl.draw_text("ALBEDO TEXTURE", 10, SCREEN_HEIGHT - 30, 20, rl.DARKGREEN)
 
         rl.draw_text("Toggle lights keys: [Y][R][G][B]", 10, 40, 20, rl.DARKGRAY)

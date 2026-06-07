@@ -2,11 +2,9 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_BALLS: int = 5000
-
 
 struct Ball:
     position: rl.Vector2
@@ -17,7 +15,6 @@ struct Ball:
     elasticity: float
     color: rl.Color
     grabbed: bool
-
 
 var balls: array[Ball, MAX_BALLS] = zero[array[Ball, MAX_BALLS]]
 
@@ -34,7 +31,7 @@ function main() -> int:
         friction = 0.99,
         elasticity = 0.9,
         color = rl.BLUE,
-        grabbed = false,
+        grabbed = false
     )
 
     var ball_count = 1
@@ -67,11 +64,17 @@ function main() -> int:
                 balls[grabbed_ball_index].grabbed = false
                 grabbed_ball_index = -1
 
-        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_RIGHT) or (rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT)):
+        if (
+            rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_RIGHT)
+            or (rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT))
+        ):
             if ball_count < MAX_BALLS:
                 balls[ball_count] = Ball(
                     position = mouse_pos,
-                    speed = rl.Vector2(x = float<-rl.get_random_value(-300, 300), y = float<-rl.get_random_value(-300, 300)),
+                    speed = rl.Vector2(
+                        x = float<-rl.get_random_value(-300, 300),
+                        y = float<-rl.get_random_value(-300, 300)
+                    ),
                     prev_position = zero[rl.Vector2],
                     radius = 20.0 + float<-rl.get_random_value(0, 30),
                     friction = 0.99,
@@ -80,9 +83,9 @@ function main() -> int:
                         r = ubyte<-rl.get_random_value(0, 255),
                         g = ubyte<-rl.get_random_value(0, 255),
                         b = ubyte<-rl.get_random_value(0, 255),
-                        a = ubyte<-255,
+                        a = ubyte<-255
                     ),
-                    grabbed = false,
+                    grabbed = false
                 )
                 ball_count += 1
 
@@ -90,7 +93,10 @@ function main() -> int:
             var index = 0
             while index < ball_count:
                 if not balls[index].grabbed:
-                    balls[index].speed = rl.Vector2(x = float<-rl.get_random_value(-2000, 2000), y = float<-rl.get_random_value(-2000, 2000))
+                    balls[index].speed = rl.Vector2(
+                        x = float<-rl.get_random_value(-2000, 2000),
+                        y = float<-rl.get_random_value(-2000, 2000)
+                    )
                 index += 1
 
         gravity += rl.get_mouse_wheel_move() * 5.0
@@ -136,11 +142,29 @@ function main() -> int:
             index += 1
 
         rl.draw_text("grab a ball by pressing with the mouse and throw it by releasing", 10, 10, 10, rl.DARKGRAY)
-        rl.draw_text("right click to create new balls (keep left control pressed to create a lot)", 10, 30, 10, rl.DARKGRAY)
+        rl.draw_text(
+            "right click to create new balls (keep left control pressed to create a lot)",
+            10,
+            30,
+            10,
+            rl.DARKGRAY
+        )
         rl.draw_text("use mouse wheel to change gravity", 10, 50, 10, rl.DARKGRAY)
         rl.draw_text("middle click to shake", 10, 70, 10, rl.DARKGRAY)
-        rl.draw_text(text.cstr_as_str(rl.text_format("BALL COUNT: %d", ball_count)), 10, rl.get_screen_height() - 70, 20, rl.BLACK)
-        rl.draw_text(text.cstr_as_str(rl.text_format("GRAVITY: %.2f", gravity)), 10, rl.get_screen_height() - 40, 20, rl.BLACK)
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("BALL COUNT: %d", ball_count)),
+            10,
+            rl.get_screen_height() - 70,
+            20,
+            rl.BLACK
+        )
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("GRAVITY: %.2f", gravity)),
+            10,
+            rl.get_screen_height() - 40,
+            20,
+            rl.BLACK
+        )
 
         rl.end_drawing()
 

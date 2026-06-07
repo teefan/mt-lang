@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const CIRCLE_SPEED: float = 200.0
@@ -58,7 +57,13 @@ function main() -> int:
         rl.draw_circle(int<-position, (rl.get_screen_height() / 2) - 25, 50.0, rl.RED)
         rl.draw_text(elapsed_text, int<-position - 40, (rl.get_screen_height() / 2) - 100, 20, rl.MAROON)
         rl.draw_text(position_text, int<-position - 50, (rl.get_screen_height() / 2) + 40, 20, rl.BLACK)
-        rl.draw_text("Circle is moving at a constant 200 pixels/sec,\nindependently of the frame rate.", 10, 10, 20, rl.DARKGRAY)
+        rl.draw_text(
+            "Circle is moving at a constant 200 pixels/sec,\nindependently of the frame rate.",
+            10,
+            10,
+            20,
+            rl.DARKGRAY
+        )
         rl.draw_text("PRESS SPACE to PAUSE MOVEMENT", 10, rl.get_screen_height() - 60, 20, rl.GRAY)
         rl.draw_text("PRESS UP | DOWN to CHANGE TARGET FPS", 10, rl.get_screen_height() - 30, 20, rl.GRAY)
         rl.draw_text(target_fps_text, rl.get_screen_width() - 220, 10, 20, rl.LIME)

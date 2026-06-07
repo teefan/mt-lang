@@ -2,7 +2,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -27,7 +26,7 @@ function main() -> int:
             x = (float<-rl.get_screen_width() - rect_width - 250.0) / 2.0,
             y = (float<-rl.get_screen_height() - rect_height) / 2.0,
             width = rect_width,
-            height = rect_height,
+            height = rect_height
         )
 
         rl.begin_drawing()
@@ -43,14 +42,57 @@ function main() -> int:
         if draw_rounded_lines:
             rl.draw_rectangle_rounded_lines_ex(rec, roundness, int<-segments, line_thick, rl.fade(rl.MAROON, 0.4))
 
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0), "Width", text.cstr_as_str(rl.text_format("%.2f", rect_width)), rect_width, 0.0, float<-rl.get_screen_width() - 300.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0), "Height", text.cstr_as_str(rl.text_format("%.2f", rect_height)), rect_height, 0.0, float<-rl.get_screen_height() - 50.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0), "Roundness", text.cstr_as_str(rl.text_format("%.2f", roundness)), roundness, 0.0, 1.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0), "Thickness", text.cstr_as_str(rl.text_format("%.2f", line_thick)), line_thick, 0.0, 20.0)
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0), "Segments", text.cstr_as_str(rl.text_format("%.2f", segments)), segments, 0.0, 60.0)
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 40.0, width = 105.0, height = 20.0),
+            "Width",
+            text.cstr_as_str(rl.text_format("%.2f", rect_width)),
+            rect_width,
+            0.0,
+            float<-rl.get_screen_width() - 300.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 70.0, width = 105.0, height = 20.0),
+            "Height",
+            text.cstr_as_str(rl.text_format("%.2f", rect_height)),
+            rect_height,
+            0.0,
+            float<-rl.get_screen_height() - 50.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 140.0, width = 105.0, height = 20.0),
+            "Roundness",
+            text.cstr_as_str(rl.text_format("%.2f", roundness)),
+            roundness,
+            0.0,
+            1.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 170.0, width = 105.0, height = 20.0),
+            "Thickness",
+            text.cstr_as_str(rl.text_format("%.2f", line_thick)),
+            line_thick,
+            0.0,
+            20.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 240.0, width = 105.0, height = 20.0),
+            "Segments",
+            text.cstr_as_str(rl.text_format("%.2f", segments)),
+            segments,
+            0.0,
+            60.0
+        )
 
-        gui.check_box(rl.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0), "DrawRoundedRect", draw_rounded_rect)
-        gui.check_box(rl.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0), "DrawRoundedLines", draw_rounded_lines)
+        gui.check_box(
+            rl.Rectangle(x = 640.0, y = 320.0, width = 20.0, height = 20.0),
+            "DrawRoundedRect",
+            draw_rounded_rect
+        )
+        gui.check_box(
+            rl.Rectangle(x = 640.0, y = 350.0, width = 20.0, height = 20.0),
+            "DrawRoundedLines",
+            draw_rounded_lines
+        )
         gui.check_box(rl.Rectangle(x = 640.0, y = 380.0, width = 20.0, height = 20.0), "DrawRect", draw_rect)
 
         let mode_text = if segments >= 4.0: "MANUAL" else: "AUTO"

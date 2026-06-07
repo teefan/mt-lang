@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const FRAME_CAPTURE_STRIDE: int = 5
@@ -65,7 +64,11 @@ function main() -> int:
         if recording:
             capture_frame_counter += 1
             if capture_frame_counter > uint<-FRAME_CAPTURE_STRIDE:
-                rl.take_screenshot(rl.text_format("%sscreenrecording_%04i.png", rl.get_application_directory(), capture_index))
+                rl.take_screenshot(rl.text_format(
+                    "%sscreenrecording_%04i.png",
+                    rl.get_application_directory(),
+                    capture_index
+                ))
                 capture_index += 1
                 capture_frame_counter = 0
 

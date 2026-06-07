@@ -3,7 +3,6 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const BONE_SOCKETS: int = 3
@@ -25,7 +24,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var character_model = rl.load_model("models/gltf/greenman.glb")
@@ -91,14 +90,17 @@ function main() -> int:
         if rl.is_key_pressed(rl.KeyboardKey.KEY_THREE):
             show_equip[BONE_SOCKET_HAND_L] = not show_equip[BONE_SOCKET_HAND_L]
 
-        var animation = unsafe: animations[anim_index]
+        let animation = unsafe: animations[anim_index]
         anim_current_frame = (anim_current_frame + 1) % animation.keyframeCount
         rl.update_model_animation(character_model, animation, float<-anim_current_frame)
 
-        let character_rotate = rm.quaternion_from_axis_angle(rl.Vector3(x = 0.0, y = 1.0, z = 0.0), float<-angle * DEG_TO_RAD)
+        let character_rotate = rm.quaternion_from_axis_angle(
+            rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+            float<-angle * DEG_TO_RAD
+        )
         character_model.transform = rm.matrix_multiply(
             rm.quaternion_to_matrix(character_rotate),
-            rm.matrix_translate(position.x, position.y, position.z),
+            rm.matrix_translate(position.x, position.y, position.z)
         )
         rl.update_model_animation(character_model, animation, float<-anim_current_frame)
 
@@ -121,11 +123,19 @@ function main() -> int:
                 var matrix_transform = rm.quaternion_to_matrix(rotate)
                 matrix_transform = rm.matrix_multiply(
                     matrix_transform,
-                    rm.matrix_translate(socket_transform.translation.x, socket_transform.translation.y, socket_transform.translation.z),
+                    rm.matrix_translate(
+                        socket_transform.translation.x,
+                        socket_transform.translation.y,
+                        socket_transform.translation.z
+                    )
                 )
                 matrix_transform = rm.matrix_multiply(matrix_transform, character_model.transform)
 
-                rl.draw_mesh(unsafe: equip_models[socket_index].meshes[0], unsafe: equip_models[socket_index].materials[1], matrix_transform)
+                rl.draw_mesh(
+                    unsafe: equip_models[socket_index].meshes[0],
+                    unsafe: equip_models[socket_index].materials[1],
+                    matrix_transform
+                )
             socket_index += 1
 
         rl.draw_grid(10, 1.0)

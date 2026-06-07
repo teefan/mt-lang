@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 

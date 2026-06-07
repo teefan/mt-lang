@@ -2,7 +2,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_SPLINE_POINTS: int = 32
@@ -12,7 +11,6 @@ const SPLINE_LINEAR: int = 0
 const SPLINE_BASIS: int = 1
 const SPLINE_CATMULLROM: int = 2
 const SPLINE_BEZIER: int = 3
-
 
 struct ControlPoint:
     start: rl.Vector2
@@ -120,7 +118,11 @@ function main() -> int:
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_FOUR):
             spline_type_active = SPLINE_BEZIER
 
-        if rl.is_key_pressed(rl.KeyboardKey.KEY_ONE) or rl.is_key_pressed(rl.KeyboardKey.KEY_TWO) or rl.is_key_pressed(rl.KeyboardKey.KEY_THREE):
+        if (
+            rl.is_key_pressed(rl.KeyboardKey.KEY_ONE)
+            or rl.is_key_pressed(rl.KeyboardKey.KEY_TWO)
+            or rl.is_key_pressed(rl.KeyboardKey.KEY_THREE)
+        ):
             selected_control_segment = -1
 
         rl.begin_drawing()
@@ -141,7 +143,12 @@ function main() -> int:
                 index += 1
 
             points_interleaved[3 * (point_count - 1)] = points[point_count - 1]
-            rl.draw_spline_bezier_cubic_ptr(ptr_of(points_interleaved[0]), (3 * (point_count - 1)) + 1, spline_thickness, rl.RED)
+            rl.draw_spline_bezier_cubic_ptr(
+                ptr_of(points_interleaved[0]),
+                (3 * (point_count - 1)) + 1,
+                spline_thickness,
+                rl.RED
+            )
 
             index = 0
             while index < point_count - 1:
@@ -163,24 +170,53 @@ function main() -> int:
                 let helper_radius: float = if focused_point == index: 12.0 else: 8.0
                 let helper_color = if focused_point == index: rl.BLUE else: rl.DARKBLUE
                 rl.draw_circle_lines_v(points[index], helper_radius, helper_color)
-                if spline_type_active != SPLINE_LINEAR and spline_type_active != SPLINE_BEZIER and index < point_count - 1:
+                if (
+                    spline_type_active != SPLINE_LINEAR
+                    and spline_type_active != SPLINE_BEZIER
+                    and index < point_count - 1
+                ):
                     rl.draw_line_v(points[index], points[index + 1], rl.GRAY)
 
-                rl.draw_text(text.cstr_as_str(rl.text_format("[%.0f, %.0f]", points[index].x, points[index].y)), int<-points[index].x, int<-points[index].y + 10, 10, rl.BLACK)
+                rl.draw_text(
+                    text.cstr_as_str(rl.text_format("[%.0f, %.0f]", points[index].x, points[index].y)),
+                    int<-points[index].x,
+                    int<-points[index].y + 10,
+                    10,
+                    rl.BLACK
+                )
                 index += 1
 
         if spline_type_edit_mode or selected_point != -1 or selected_control_segment != -1:
             gui.lock()
 
-        gui.label(rl.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0), text.cstr_as_str(rl.text_format("Spline thickness: %i", int<-spline_thickness)))
-        gui.slider_bar(rl.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0), "", "", spline_thickness, 1.0, 40.0)
-        gui.check_box(rl.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0), "Show point helpers", spline_helpers_active)
+        gui.label(
+            rl.Rectangle(x = 12.0, y = 62.0, width = 140.0, height = 24.0),
+            text.cstr_as_str(rl.text_format("Spline thickness: %i", int<-spline_thickness))
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 12.0, y = 84.0, width = 140.0, height = 16.0),
+            "",
+            "",
+            spline_thickness,
+            1.0,
+            40.0
+        )
+        gui.check_box(
+            rl.Rectangle(x = 12.0, y = 110.0, width = 20.0, height = 20.0),
+            "Show point helpers",
+            spline_helpers_active
+        )
 
         if spline_type_edit_mode:
             gui.unlock()
 
         gui.label(rl.Rectangle(x = 12.0, y = 10.0, width = 140.0, height = 24.0), "Spline type:")
-        if gui.dropdown_box(rl.Rectangle(x = 12.0, y = 32.0, width = 140.0, height = 28.0), "LINEAR;BSPLINE;CATMULLROM;BEZIER", spline_type_active, spline_type_edit_mode) != 0:
+        if gui.dropdown_box(
+            rl.Rectangle(x = 12.0, y = 32.0, width = 140.0, height = 28.0),
+            "LINEAR;BSPLINE;CATMULLROM;BEZIER",
+            spline_type_active,
+            spline_type_edit_mode
+        ) != 0:
             spline_type_edit_mode = not spline_type_edit_mode
 
         gui.unlock()

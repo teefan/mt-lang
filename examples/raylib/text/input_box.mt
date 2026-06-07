@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_INPUT_CHARS: int = 9
@@ -58,7 +57,13 @@ function main() -> int:
         if mouse_on_text:
             rl.draw_rectangle_lines(int<-text_box.x, int<-text_box.y, int<-text_box.width, int<-text_box.height, rl.RED)
         else:
-            rl.draw_rectangle_lines(int<-text_box.x, int<-text_box.y, int<-text_box.width, int<-text_box.height, rl.DARKGRAY)
+            rl.draw_rectangle_lines(
+                int<-text_box.x,
+                int<-text_box.y,
+                int<-text_box.width,
+                int<-text_box.height,
+                rl.DARKGRAY
+            )
 
         let input_count_text = rl.text_format("INPUT CHARS: %i/%i", letter_count, MAX_INPUT_CHARS)
         rl.draw_text(name_text, int<-text_box.x + 5, int<-text_box.y + 8, 40, rl.MAROON)
@@ -67,7 +72,13 @@ function main() -> int:
         if mouse_on_text:
             if letter_count < MAX_INPUT_CHARS:
                 if ((frames_counter / 20) % 2) == 0:
-                    rl.draw_text("_", int<-text_box.x + 8 + rl.measure_text(name_text, 40), int<-text_box.y + 12, 40, rl.MAROON)
+                    rl.draw_text(
+                        "_",
+                        int<-text_box.x + 8 + rl.measure_text(name_text, 40),
+                        int<-text_box.y + 12,
+                        40,
+                        rl.MAROON
+                    )
             else:
                 rl.draw_text("Press BACKSPACE to delete chars...", 230, 300, 20, rl.GRAY)
 

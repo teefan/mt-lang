@@ -2,7 +2,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -56,10 +55,17 @@ function main() -> int:
         gui.set_style(gui.Control.DEFAULT, int<-gui.DefaultProperty.TEXT_SPACING, 1)
         gui.set_style(gui.Control.DEFAULT, int<-gui.DefaultProperty.TEXT_SIZE, 10)
 
-        if gui.text_box(gui.Rectangle(x = 40.0, y = 64.0, width = 720.0, height = 32.0), text_input, text_box_edit_mode) != 0:
+        if gui.text_box(
+            gui.Rectangle(x = 40.0, y = 64.0, width = 720.0, height = 32.0),
+            text_input,
+            text_box_edit_mode
+        ) != 0:
             text_box_edit_mode = not text_box_edit_mode
 
-        let btn_compute_hashes = gui.button(gui.Rectangle(x = 40.0, y = 104.0, width = 720.0, height = 32.0), "COMPUTE INPUT DATA HASHES") != 0
+        let btn_compute_hashes = gui.button(
+            gui.Rectangle(x = 40.0, y = 104.0, width = 720.0, height = 32.0),
+            "COMPUTE INPUT DATA HASHES"
+        ) != 0
         if btn_compute_hashes:
             let input_text = text_input.as_str()
             let input_len = int<-input_text.len

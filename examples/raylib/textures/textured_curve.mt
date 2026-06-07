@@ -4,7 +4,6 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SELECT_START_POINT: int = 0
@@ -13,7 +12,15 @@ const SELECT_END_POINT: int = 2
 const SELECT_END_TANGENT: int = 3
 
 
-function draw_textured_curve(texture: rl.Texture2D, curve_start_position: rl.Vector2, curve_start_tangent: rl.Vector2, curve_end_position: rl.Vector2, curve_end_tangent: rl.Vector2, curve_width: float, curve_segments: int) -> void:
+function draw_textured_curve(
+    texture: rl.Texture2D,
+    curve_start_position: rl.Vector2,
+    curve_start_tangent: rl.Vector2,
+    curve_end_position: rl.Vector2,
+    curve_end_tangent: rl.Vector2,
+    curve_width: float,
+    curve_segments: int
+) -> void:
     let step = 1.0 / float<-curve_segments
 
     var previous = curve_start_position
@@ -33,7 +40,7 @@ function draw_textured_curve(texture: rl.Texture2D, curve_start_position: rl.Vec
 
         let current = rl.Vector2(
             x = a * curve_start_position.x + b * curve_start_tangent.x + c * curve_end_tangent.x + d * curve_end_position.x,
-            y = a * curve_start_position.y + b * curve_start_tangent.y + c * curve_end_tangent.y + d * curve_end_position.y,
+            y = a * curve_start_position.y + b * curve_start_tangent.y + c * curve_end_tangent.y + d * curve_end_position.y
         )
         let delta = rl.Vector2(x = current.x - previous.x, y = current.y - previous.y)
         let normal = rm.vector2_normalize(rl.Vector2(x = -delta.y, y = delta.x))
@@ -147,7 +154,7 @@ function main() -> int:
             curve_end_position,
             curve_end_position_tangent,
             curve_width,
-            curve_segments,
+            curve_segments
         )
 
         if show_curve:
@@ -157,7 +164,7 @@ function main() -> int:
                 curve_start_position_tangent,
                 curve_end_position_tangent,
                 2.0,
-                rl.BLUE,
+                rl.BLUE
             )
 
         rl.draw_line_v(curve_start_position, curve_start_position_tangent, rl.SKYBLUE)

@@ -2,7 +2,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const FILTER: str = ".png;.c"

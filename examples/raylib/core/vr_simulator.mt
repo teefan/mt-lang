@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -22,31 +21,81 @@ function main() -> int:
         lensSeparationDistance = 0.07,
         interpupillaryDistance = 0.07,
         lensDistortionValues = array[float, 4](1.0, 0.22, 0.24, 0.0),
-        chromaAbCorrection = array[float, 4](0.996, -0.004, 1.014, 0.0),
+        chromaAbCorrection = array[float, 4](0.996, -0.004, 1.014, 0.0)
     )
 
     let config = rl.load_vr_stereo_config(device)
     let distortion = rl.load_shader(null, rl.text_format("shaders/glsl%i/distortion.fs", GLSL_VERSION))
 
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "leftLensCenter"), config.leftLensCenter, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "rightLensCenter"), config.rightLensCenter, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "leftScreenCenter"), config.leftScreenCenter, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "rightScreenCenter"), config.rightScreenCenter, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "scale"), config.scale, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "scaleIn"), config.scaleIn, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "deviceWarpParam"), device.lensDistortionValues, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    rl.set_shader_value(distortion, rl.get_shader_location(distortion, "chromaAbParam"), device.chromaAbCorrection, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "leftLensCenter"),
+        config.leftLensCenter,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "rightLensCenter"),
+        config.rightLensCenter,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "leftScreenCenter"),
+        config.leftScreenCenter,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "rightScreenCenter"),
+        config.rightScreenCenter,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "scale"),
+        config.scale,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "scaleIn"),
+        config.scaleIn,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "deviceWarpParam"),
+        device.lensDistortionValues,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4
+    )
+    rl.set_shader_value(
+        distortion,
+        rl.get_shader_location(distortion, "chromaAbParam"),
+        device.chromaAbCorrection,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4
+    )
 
     let target = rl.load_render_texture(device.hResolution, device.vResolution)
-    let source_rec = rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height)
-    let dest_rec = rl.Rectangle(x = 0.0, y = 0.0, width = float<-rl.get_screen_width(), height = float<-rl.get_screen_height())
+    let source_rec = rl.Rectangle(
+        x = 0.0,
+        y = 0.0,
+        width = float<-target.texture.width,
+        height = -float<-target.texture.height
+    )
+    let dest_rec = rl.Rectangle(
+        x = 0.0,
+        y = 0.0,
+        width = float<-rl.get_screen_width(),
+        height = float<-rl.get_screen_height()
+    )
 
     var camera = rl.Camera3D(
         position = rl.Vector3(x = 5.0, y = 2.0, z = 5.0),
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 60.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let cube_position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 

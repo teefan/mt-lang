@@ -1,7 +1,6 @@
 import std.fmt as fmt
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SPEED: float = 10.0

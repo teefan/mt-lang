@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -20,7 +19,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.5, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let skillbot = rl.load_texture("skillbot.png")
@@ -41,7 +40,10 @@ function main() -> int:
         if anim >= 4:
             anim = 0
 
-        var dir = float<-math.floor(double<-(((rm.vector2_angle(rl.Vector2(x = 2.0, y = 0.0), rl.Vector2(x = camera.position.x, y = camera.position.z)) / rl.PI) * 4.0) + 0.25))
+        var dir = float<-math.floor(double<-(((rm.vector2_angle(
+            rl.Vector2(x = 2.0, y = 0.0),
+            rl.Vector2(x = camera.position.x, y = camera.position.z)
+        ) / rl.PI) * 4.0) + 0.25))
         if dir < 0.0:
             dir = 8.0 - float<-math.abs(double<-dir)
 
@@ -54,7 +56,17 @@ function main() -> int:
 
         rl.begin_mode_3d(camera)
         rl.draw_grid(10, 1.0)
-        rl.draw_billboard_pro(camera, skillbot, source, rm.vector3_zero(), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), rm.vector2_one(), rl.Vector2(x = 0.5, y = 0.0), 0.0, rl.WHITE)
+        rl.draw_billboard_pro(
+            camera,
+            skillbot,
+            source,
+            rm.vector3_zero(),
+            rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+            rm.vector2_one(),
+            rl.Vector2(x = 0.5, y = 0.0),
+            0.0,
+            rl.WHITE
+        )
         rl.end_mode_3d()
 
         rl.draw_text(animation_text, 10, 10, 20, rl.DARKGRAY)

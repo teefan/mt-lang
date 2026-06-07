@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -14,13 +13,13 @@ function main() -> int:
     let starting_positions = array[rl.Vector2, 3](
         rl.Vector2(x = 400.0, y = 150.0),
         rl.Vector2(x = 300.0, y = 300.0),
-        rl.Vector2(x = 500.0, y = 300.0),
+        rl.Vector2(x = 500.0, y = 300.0)
     )
     var triangle_positions = array[rl.Vector2, 3](starting_positions[0], starting_positions[1], starting_positions[2])
 
     var triangle_index = -1
     var lines_mode = false
-    var handle_radius: float = 8.0
+    let handle_radius: float = 8.0
 
     rl.set_target_fps(60)
 
@@ -30,7 +29,11 @@ function main() -> int:
 
         var index = 0
         while index < 3:
-            if rl.check_collision_point_circle(rl.get_mouse_position(), triangle_positions[index], handle_radius) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
+            if rl.check_collision_point_circle(
+                rl.get_mouse_position(),
+                triangle_positions[index],
+                handle_radius
+            ) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 triangle_index = index
                 break
             index += 1

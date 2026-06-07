@@ -10,7 +10,6 @@
 # 1  Module imports
 # ---------------------------------------------------------------------------
 
-import std.async as aio
 import std.linalg
 
 # ---------------------------------------------------------------------------
@@ -47,6 +46,8 @@ const SHADER: cstr = c<<-GLSL
 GLSL
 
 # --- heredoc format string (exercised in function body)
+
+
 function heredoc_fmt_demo() -> void:
     let _rendered = f<<-SQL
     SELECT * FROM items
@@ -63,10 +64,12 @@ const TYPED_NULL: ptr[int]? = null[ptr[int]]
 # ---------------------------------------------------------------------------
 
 # --- type aliases (plain, callable)
+
 type Seconds = float
 public type IntCallback = fn(value: int) -> void
 
 # --- plain struct with fields
+
 struct Vec2:
     x: float
     y: float
@@ -81,22 +84,26 @@ struct Mat4:
     data: array[float, 16]
 
 # --- union
+
 union Number:
     i: int
     f: float
 
 # --- enum (explicit backing type)
+
 enum State: ubyte
     idle = 0
     running = 1
 
 # --- flags (bitmask, composite alias referencing earlier member)
+
 flags Mask: uint
     a = 1 << 0
     b = 1 << 1
     both = Mask.a | Mask.b
 
 # --- opaque
+
 opaque RawHandle
 
 # --- generic struct
@@ -125,34 +132,45 @@ interface Named:
 struct NPC implements Damageable, Named:
     hp: int
 
+
 extending NPC:
     editable function take_damage(amount: int) -> void:
         this.hp = this.hp - amount
 
+
     function is_alive() -> bool:
         return this.hp > 0
+
 
     function name() -> str:
         return "npc"
 
+
     static function default() -> NPC:
         return NPC(hp = 100)
+
 
     static function max_hp() -> int:
         return 100
 
 # --- generic function with implements constraint
+
+
 function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
     if target.is_alive():
         target.take_damage(amount)
 
 # --- generic function with multiple implements constraints
+
+
 function describe[T implements Damageable and Named](target: ref[T]) -> str:
     if target.is_alive():
         return target.name()
     return "dead"
 
 # --- generic function without constraint (relies on default[T])
+
+
 function make_default[T]() -> T:
     return default[T]
 
@@ -166,6 +184,7 @@ attribute[callable] traced(tag: str)
 struct Labeled:
     @[rename("my_field")]
     value: int
+
 
 @[traced("identity")]
 function identity(x: int) -> int:
@@ -190,6 +209,7 @@ const OFFSET_VALUE: ptr_uint = offset_of(Labeled, value)
 
 const WIDTH: int = 640
 public var global_counter: int = 0
+
 var scratch_buffer: array[ubyte, 256]
 
 # --- event (no payload)
@@ -202,29 +222,38 @@ public event updated[8](Seconds)
 # 7  Functions, externals
 # ---------------------------------------------------------------------------
 
+
 function void_returning() -> void:
     return
 
+
 function simple_noop():
     pass
+
 
 function add(a: int, b: int) -> int:
     return a + b
 
 # --- generic function (explicit specialization at call site)
+
+
 function first_pair[T](pair: Pair[T, int]) -> T:
     return pair.first
 
 # --- generic function with ref parameter
+
+
 function read_into[T](source: T, target: ref[T]) -> void:
     read(target) = source
 
 # --- external function (simple manual ABI bridge; no call needed)
+
 external function atoi(input: cstr) -> int
 
 # ---------------------------------------------------------------------------
 # 8  Statements: local declarations, guards, Result propagation
 # ---------------------------------------------------------------------------
+
 
 function statements_demo() -> int:
     # --- let / var locals with type inference
@@ -236,8 +265,8 @@ function statements_demo() -> int:
     var result: int
 
     # --- char literal and usage
-    var nl: char = char<-10
-    var letter: char = char<-65
+    let nl: char = char<-10
+    let letter: char = char<-65
     let _nl = nl
     let _letter = letter
 
@@ -352,6 +381,7 @@ enum GuardError: ubyte
     missing = 1
     timeout = 2
 
+
 function guard_demo() -> Result[int, GuardError]:
     # --- let ... else: over nullable
     let known_ptr: ptr[int]? = null[ptr[int]]
@@ -363,13 +393,13 @@ function guard_demo() -> Result[int, GuardError]:
         return Result[int, GuardError].failure(error = error)
 
     # --- let ... else: over get() (recoverable array index)
-    var guarded_arr: array[int, 3] = array[int, 3](10, 20, 30)
+    let guarded_arr: array[int, 3] = array[int, 3](10, 20, 30)
     let third = get(guarded_arr, 2) else:
         return Result[int, GuardError].failure(error = GuardError.missing)
     let _third = unsafe: read(third)
 
     # --- var ... else: over Option
-    var maybe: Option[int]? = Option[int].some(value = 3)
+    let maybe: Option[int]? = Option[int].some(value = 3)
     var bound = maybe else:
         return Result[int, GuardError].failure(error = GuardError.missing)
 
@@ -385,6 +415,7 @@ function guard_demo() -> Result[int, GuardError]:
 # ---------------------------------------------------------------------------
 # 9  Expressions and operators
 # ---------------------------------------------------------------------------
+
 
 function expressions_demo(x: int, y: int) -> int:
     # --- arithmetic
@@ -434,7 +465,7 @@ function expressions_demo(x: int, y: int) -> int:
     # --- member access and indexing
     let v = Vec2(x = 1.0, y = 2.0)
     let vx_val = int<-(v.x)
-    var buf: array[int, 4]
+    let buf: array[int, 4]
     let elem = buf[0]
 
     # --- specialization expression
@@ -448,9 +479,7 @@ function expressions_demo(x: int, y: int) -> int:
     )
 
     # --- operator-led continuation
-    let continued = x +
-        y -
-        acc
+    let continued = x +        y -        acc
 
     let expr_result = wrapped + continued + chosen + vx_val + elem + pair.first
     return expr_result
@@ -458,6 +487,7 @@ function expressions_demo(x: int, y: int) -> int:
 # ---------------------------------------------------------------------------
 # 10  Built-in callable surface
 # ---------------------------------------------------------------------------
+
 
 function builtins_demo() -> int:
     var counter: int = 0
@@ -523,6 +553,7 @@ function builtins_demo() -> int:
 # 11  unsafe blocks
 # ---------------------------------------------------------------------------
 
+
 function unsafe_demo() -> void:
     var counter: int = 42
     let raw_p = ptr_of(counter)
@@ -546,6 +577,7 @@ function unsafe_demo() -> void:
 # 12  proc expressions
 # ---------------------------------------------------------------------------
 
+
 function proc_demo() -> int:
     # --- expression-bodied proc
     let triple = proc(x: int) -> int: x * 3
@@ -566,14 +598,18 @@ function proc_demo() -> int:
 # 13  events usage (within declaring module)
 # ---------------------------------------------------------------------------
 
+
 function emit_ready() -> void:
     ready.emit()
+
 
 function on_ready_callback() -> void:
     global_counter += 1
 
+
 function on_ready_once() -> void:
     global_counter += 1
+
 
 function schedule_ready_callback() -> void:
     var _h_sub = ready.subscribe(on_ready_callback)
@@ -583,6 +619,7 @@ function schedule_ready_callback() -> void:
 # ---------------------------------------------------------------------------
 # 14  format strings
 # ---------------------------------------------------------------------------
+
 
 function format_demo() -> str:
     let count = 42
@@ -612,6 +649,7 @@ function format_demo() -> str:
 # 15  Generic struct usage
 # ---------------------------------------------------------------------------
 
+
 function generics_demo() -> int:
     # --- generic struct specialization
     let pair = Pair[int, bool](first = 10, second = true)
@@ -634,8 +672,10 @@ function generics_demo() -> int:
 # 16  Async functions
 # ---------------------------------------------------------------------------
 
+
 async function async_child() -> int:
     return 41
+
 
 async function async_demo() -> int:
     let v = await async_child()
@@ -657,6 +697,7 @@ async function async_demo() -> int:
 # ---------------------------------------------------------------------------
 # 17  Interface method and callable type projections
 # ---------------------------------------------------------------------------
+
 
 function interface_demo(target: ref[NPC]) -> int:
     # --- methods via type projection (editable function)
@@ -691,6 +732,7 @@ static_assert(true, "static_assert true check")
 # 19  str_buffer[N] usage
 # ---------------------------------------------------------------------------
 
+
 function str_buffer_demo() -> bool:
     var buffer: str_buffer[64]
 
@@ -711,6 +753,7 @@ function str_buffer_demo() -> bool:
 # ---------------------------------------------------------------------------
 # 20  Nullability
 # ---------------------------------------------------------------------------
+
 
 function nullability_demo() -> int:
     # --- nullable pointers and null checks
@@ -734,6 +777,7 @@ function nullability_demo() -> int:
 # --- 21a: block-bodied const with `->`
 # The block body is a sequence of statements evaluated at compile time.
 # The block's `return` produces the const value.
+
 const NEXT_POW2_ABOVE_1000 -> int:
     var n: int = 1
     while n < 1024:
@@ -752,12 +796,14 @@ const FNV_HASH -> uint:
     return h
 
 # --- 21c: when for compile-time dispatch
+
 enum TargetBackend: ubyte
     gl = 1
     metal = 2
     vulkan = 3
 
 const TARGET: TargetBackend = TargetBackend.gl
+
 
 function backend_label() -> str:
     when TARGET:
@@ -769,13 +815,16 @@ function backend_label() -> str:
             return "Vulkan"
 
 # --- 21d: enum used by inline match and members_of below
+
 enum Palette: ubyte
     red = 1
     green = 2
     blue = 3
 
 # --- 21e: inline match for compile-time dispatch (alternative to when)
+
 const FAVORITE_COLOR: Palette = Palette.red
+
 
 function favorite_label() -> str:
     inline match FAVORITE_COLOR:
@@ -787,10 +836,12 @@ function favorite_label() -> str:
             return "cool"
 
 # --- 21f: inline for over a struct's fields (reflection: fields_of)
+
 struct Particle:
     x: float
     y: float
     z: float
+
 
 function all_fields_floats() -> bool:
     inline for field in fields_of(Particle):
@@ -799,6 +850,7 @@ function all_fields_floats() -> bool:
     return true
 
 # --- 21g: inline while with a compile-time-bounded step
+
 const ROUNDED_UP -> int:
     var n: int = 1
     inline while n < 1024:
@@ -806,6 +858,8 @@ const ROUNDED_UP -> int:
     return n
 
 # --- 21h: members_of over an enum (reflection: members_of)
+
+
 function color_count() -> int:
     var count: int = 0
     inline for member in members_of(Palette):
@@ -814,6 +868,8 @@ function color_count() -> int:
     return count
 
 # --- 21i: type as a return type (picking a primitive by width)
+
+
 function int_with_bits[N: int]() -> type:
     if N == 8:
         return byte
@@ -823,13 +879,14 @@ function int_with_bits[N: int]() -> type:
         return int
     else if N == 64:
         return long
-    else:
-        static_assert(false, "unsupported bit width")
+    static_assert(false, "unsupported bit width")
 
 const Wide: type = int_with_bits[64]
 const WidePtr: type = ptr[Wide]
 
 # --- 21j: comptime demo function called from main
+
+
 function comptime_demo() -> int:
     let pow2 = NEXT_POW2_ABOVE_1000
     let hash = FNV_HASH
@@ -845,6 +902,7 @@ function comptime_demo() -> int:
 # ---------------------------------------------------------------------------
 # 22  Native vector types (vec2, vec3, vec4, ivec2, ivec3, ivec4)
 # ---------------------------------------------------------------------------
+
 
 function vector_demo() -> float:
     # --- zero-initialized vectors
@@ -864,20 +922,20 @@ function vector_demo() -> float:
     let iv2x = iv2.x
 
     # --- component-wise arithmetic (same type)
-    let vsum = v3 + v3      # vec3 + vec3
-    let vdiff = v3 - v3     # vec3 - vec3
-    let vmul = v3 * v3      # vec3 * vec3 (component-wise)
-    let vneg = -v3          # unary negation
+    let vsum = v3 + v3 # vec3 + vec3
+    let vdiff = v3 - v3 # vec3 - vec3
+    let vmul = v3 * v3 # vec3 * vec3 (component-wise)
+    let vneg = -v3 # unary negation
 
     # --- scalar arithmetic
-    let v_scaled = v3 * 2.0     # vec3 * scalar
-    let sv_scaled = 3.0 * v3    # scalar * vec3
-    let v_divided = v3 / 2.0    # vec3 / scalar
+    let v_scaled = v3 * 2.0 # vec3 * scalar
+    let sv_scaled = 3.0 * v3 # scalar * vec3
+    let v_divided = v3 / 2.0 # vec3 / scalar
 
     # --- integer vector arithmetic
-    let isum = iv3 + iv3        # ivec3 + ivec3
-    let iscaled = iv3 * 3       # ivec3 * scalar
-    let ineg = -iv3             # unary negation
+    let isum = iv3 + iv3 # ivec3 + ivec3
+    let iscaled = iv3 * 3 # ivec3 * scalar
+    let ineg = -iv3 # unary negation
 
     # --- extending block method on native vector type
     let squared = v3.squared_len()
@@ -904,6 +962,7 @@ function vector_demo() -> float:
         + identity_mat.col0.x + identity_quat.w
     )
 
+
 extending vec3:
     function squared_len() -> float:
         return this.x * this.x + this.y * this.y + this.z * this.z
@@ -911,6 +970,7 @@ extending vec3:
 # ---------------------------------------------------------------------------
 # 23  Native matrix types (mat3, mat4)
 # ---------------------------------------------------------------------------
+
 
 function matrix_demo() -> float:
     let m4 = zero[mat4]
@@ -921,10 +981,10 @@ function matrix_demo() -> float:
     let col0x = m4.col0.x
 
     # --- component-wise arithmetic
-    let msum = m4 + m4       # mat4 + mat4
-    let mdif = m4 - m4       # mat4 - mat4
-    let mscaled = m4 * 2.0   # mat4 * scalar
-    let mneg = -m4           # unary negation
+    let msum = m4 + m4 # mat4 + mat4
+    let mdif = m4 - m4 # mat4 - mat4
+    let mscaled = m4 * 2.0 # mat4 * scalar
+    let mneg = -m4 # unary negation
 
     let _m3 = m3
     let _col0 = col0
@@ -934,6 +994,7 @@ function matrix_demo() -> float:
 # ---------------------------------------------------------------------------
 # 24  Native quaternion type (quat)
 # ---------------------------------------------------------------------------
+
 
 function quat_demo() -> float:
     let q = zero[quat]
@@ -945,10 +1006,10 @@ function quat_demo() -> float:
     let qw = q.w
 
     # --- component-wise arithmetic
-    let qsum = q + q         # quat + quat
-    let qdiff = q - q        # quat - quat
-    let qmul = q * q         # quat * quat (component-wise)
-    let qneg = -q            # unary negation
+    let qsum = q + q # quat + quat
+    let qdiff = q - q # quat - quat
+    let qmul = q * q # quat * quat (component-wise)
+    let qneg = -q # unary negation
 
     let _qdiff = qdiff
     let _qmul = qmul
@@ -963,6 +1024,7 @@ struct Point:
     x: float
     y: float
     z: float
+
 
 function soa_demo() -> float:
     var particles: SoA[Point, 4]
@@ -985,6 +1047,7 @@ function soa_demo() -> float:
 # ---------------------------------------------------------------------------
 # 26  Entrypoint
 # ---------------------------------------------------------------------------
+
 
 function main() -> int:
     var total: int = 0

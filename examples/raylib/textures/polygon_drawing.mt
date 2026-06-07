@@ -3,14 +3,20 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as math
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_POINTS: int = 11
 const DEG_TO_RAD: float = rl.PI / 180.0
 
 
-function draw_texture_poly(texture: rl.Texture2D, center: rl.Vector2, points: ref[array[rl.Vector2, MAX_POINTS]], texcoords: ref[array[rl.Vector2, MAX_POINTS]], point_count: int, tint: rl.Color) -> void:
+function draw_texture_poly(
+    texture: rl.Texture2D,
+    center: rl.Vector2,
+    points: ref[array[rl.Vector2, MAX_POINTS]],
+    texcoords: ref[array[rl.Vector2, MAX_POINTS]],
+    point_count: int,
+    tint: rl.Color
+) -> void:
     rlgl.set_texture(texture.id)
     rlgl.begin(rlgl.RL_TRIANGLES)
     rlgl.color4ub(tint.r, tint.g, tint.b, tint.a)
@@ -54,7 +60,7 @@ function main() -> int:
         rl.Vector2(x = 0.75, y = 1.0),
         rl.Vector2(x = 1.0, y = 0.75),
         rl.Vector2(x = 1.0, y = 0.5),
-        rl.Vector2(x = 0.75, y = 0.0),
+        rl.Vector2(x = 0.75, y = 0.0)
     )
 
     var points: array[rl.Vector2, MAX_POINTS] = zero[array[rl.Vector2, MAX_POINTS]]
@@ -75,7 +81,7 @@ function main() -> int:
         points[7],
         points[8],
         points[9],
-        points[10],
+        points[10]
     )
 
     let texture = rl.load_texture("cat.png")
@@ -102,7 +108,7 @@ function main() -> int:
             ref_of(positions),
             ref_of(texcoords),
             MAX_POINTS,
-            rl.WHITE,
+            rl.WHITE
         )
 
         rl.end_drawing()

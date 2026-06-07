@@ -1,7 +1,6 @@
 import std.raylib.easing as ease
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -21,7 +20,12 @@ function main() -> int:
     while not rl.window_should_close():
         if state == 0:
             frames_counter += 1
-            ball_position_x = int<-ease.elastic_out(float<-frames_counter, -100.0, float<-SCREEN_WIDTH / 2.0 + 100.0, 120.0)
+            ball_position_x = int<-ease.elastic_out(
+                float<-frames_counter,
+                -100.0,
+                float<-SCREEN_WIDTH / 2.0 + 100.0,
+                120.0
+            )
 
             if frames_counter >= 120:
                 frames_counter = 0

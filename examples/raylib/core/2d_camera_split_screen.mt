@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 440
 const PLAYER_SIZE: int = 40
@@ -12,13 +11,21 @@ function draw_scene(player1: rl.Rectangle, player2: rl.Rectangle) -> void:
     var column = 0
     while column < (SCREEN_WIDTH / PLAYER_SIZE) + 1:
         let x = PLAYER_SIZE * column
-        rl.draw_line_v(rl.Vector2(x = float<-x, y = 0.0), rl.Vector2(x = float<-x, y = float<-SCREEN_HEIGHT), rl.LIGHTGRAY)
+        rl.draw_line_v(
+            rl.Vector2(x = float<-x, y = 0.0),
+            rl.Vector2(x = float<-x, y = float<-SCREEN_HEIGHT),
+            rl.LIGHTGRAY
+        )
         column += 1
 
     var row = 0
     while row < (SCREEN_HEIGHT / PLAYER_SIZE) + 1:
         let y = PLAYER_SIZE * row
-        rl.draw_line_v(rl.Vector2(x = 0.0, y = float<-y), rl.Vector2(x = float<-SCREEN_WIDTH, y = float<-y), rl.LIGHTGRAY)
+        rl.draw_line_v(
+            rl.Vector2(x = 0.0, y = float<-y),
+            rl.Vector2(x = float<-SCREEN_WIDTH, y = float<-y),
+            rl.LIGHTGRAY
+        )
         row += 1
 
     var cell_x = 0
@@ -44,18 +51,23 @@ function main() -> int:
         target = rl.Vector2(x = player1.x, y = player1.y),
         offset = rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 200.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
     var camera2 = rl.Camera2D(
         target = rl.Vector2(x = player2.x, y = player2.y),
         offset = rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 200.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     let screen_camera1 = rl.load_render_texture(HALF_SCREEN_WIDTH, SCREEN_HEIGHT)
     let screen_camera2 = rl.load_render_texture(HALF_SCREEN_WIDTH, SCREEN_HEIGHT)
-    let split_screen_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-screen_camera1.texture.width, height = -float<-screen_camera1.texture.height)
+    let split_screen_rect = rl.Rectangle(
+        x = 0.0,
+        y = 0.0,
+        width = float<-screen_camera1.texture.width,
+        height = -float<-screen_camera1.texture.height
+    )
 
     rl.set_target_fps(60)
 
@@ -102,7 +114,12 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.BLACK)
         rl.draw_texture_rec(screen_camera1.texture, split_screen_rect, rl.Vector2(x = 0.0, y = 0.0), rl.WHITE)
-        rl.draw_texture_rec(screen_camera2.texture, split_screen_rect, rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 0.0), rl.WHITE)
+        rl.draw_texture_rec(
+            screen_camera2.texture,
+            split_screen_rect,
+            rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 0.0),
+            rl.WHITE
+        )
         rl.draw_rectangle((rl.get_screen_width() / 2) - 2, 0, 4, rl.get_screen_height(), rl.LIGHTGRAY)
         rl.end_drawing()
 

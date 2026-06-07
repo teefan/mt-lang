@@ -5,7 +5,6 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const FILE_NAME: str = "text_file.txt"
@@ -92,7 +91,7 @@ function main() -> int:
         offset = rl.Vector2(x = 0.0, y = 0.0),
         target = rl.Vector2(x = 0.0, y = 0.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     let raw_text = rl.load_file_text(FILE_NAME) else:
@@ -142,7 +141,11 @@ function main() -> int:
             cam.target.y = max_scroll
 
         if text_height > SCREEN_HEIGHT:
-            scroll_bar.y = math.lerp(float<-text_top, (float<-SCREEN_HEIGHT) - scroll_bar.height, (cam.target.y - float<-text_top) / float<-(text_height - SCREEN_HEIGHT))
+            scroll_bar.y = math.lerp(
+                float<-text_top,
+                (float<-SCREEN_HEIGHT) - scroll_bar.height,
+                (cam.target.y - float<-text_top) / float<-(text_height - SCREEN_HEIGHT)
+            )
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

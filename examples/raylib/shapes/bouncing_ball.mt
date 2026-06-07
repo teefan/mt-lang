@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -35,7 +34,10 @@ function main() -> int:
 
             if ball_position.x >= float<-(rl.get_screen_width() - ball_radius) or ball_position.x <= float<-ball_radius:
                 ball_speed.x *= -1.0
-            if ball_position.y >= float<-(rl.get_screen_height() - ball_radius) or ball_position.y <= float<-ball_radius:
+            if (
+                ball_position.y >= float<-(rl.get_screen_height() - ball_radius)
+                or ball_position.y <= float<-ball_radius
+            ):
                 ball_speed.y *= -0.95
         else:
             frames_counter += 1

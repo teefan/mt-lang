@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const TESSERACT_POINT_COUNT: int = 16
@@ -31,7 +30,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 0.0, z = 1.0),
         fovy = 50.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let tesseract = array[rl.Vector4, TESSERACT_POINT_COUNT](
@@ -50,7 +49,7 @@ function main() -> int:
         rl.Vector4(x = -1.0, y = -1.0, z = 1.0, w = 1.0),
         rl.Vector4(x = -1.0, y = -1.0, z = 1.0, w = -1.0),
         rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = 1.0),
-        rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = -1.0),
+        rl.Vector4(x = -1.0, y = -1.0, z = -1.0, w = -1.0)
     )
 
     var transformed: array[rl.Vector3, TESSERACT_POINT_COUNT] = zero[array[rl.Vector3, TESSERACT_POINT_COUNT]]

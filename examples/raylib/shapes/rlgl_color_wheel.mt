@@ -5,7 +5,6 @@ import std.raymath as rm
 import std.rlgl as rlgl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const POINTS_MIN: int = 3
@@ -17,9 +16,9 @@ function wheel_handle_position(center: rl.Vector2, point_scale: float, angle: fl
     return rm.vector2_add(
         rl.Vector2(
             x = float<-math.sin(double<-(angle * TWO_PI)) * point_scale,
-            y = float<-(-math.cos(double<-(angle * TWO_PI)) * point_scale),
+            y = float<-(-math.cos(double<-(angle * TWO_PI)) * point_scale)
         ),
-        center,
+        center
     )
 
 
@@ -42,7 +41,11 @@ function main() -> int:
     rl.set_target_fps(60)
 
     while not rl.window_should_close():
-        triangle_count = int<-rm.clamp(float<-triangle_count + rl.get_mouse_wheel_move(), float<-POINTS_MIN, float<-POINTS_MAX)
+        triangle_count = int<-rm.clamp(
+            float<-triangle_count + rl.get_mouse_wheel_move(),
+            float<-POINTS_MIN,
+            float<-POINTS_MAX
+        )
 
         let slider_rectangle = rl.Rectangle(x = 42.0, y = 16.0 + 64.0 + 45.0, width = 64.0, height = 16.0)
         let mouse_position = rl.get_mouse_position()
@@ -57,21 +60,33 @@ function main() -> int:
             if point_scale > float<-SCREEN_HEIGHT / 2.0:
                 point_scale = float<-SCREEN_HEIGHT / 2.0
             else:
-                circle_position = rm.vector2_add(rm.vector2_multiply(rm.vector2_subtract(circle_position, center), rl.Vector2(x = 1.025, y = 1.025)), center)
+                circle_position = rm.vector2_add(
+                    rm.vector2_multiply(rm.vector2_subtract(circle_position, center), rl.Vector2(x = 1.025, y = 1.025)),
+                    center
+                )
 
         if rl.is_key_down(rl.KeyboardKey.KEY_DOWN):
             point_scale *= 0.975
             if point_scale < 32.0:
                 point_scale = 32.0
             else:
-                circle_position = rm.vector2_add(rm.vector2_multiply(rm.vector2_subtract(circle_position, center), rl.Vector2(x = 0.975, y = 0.975)), center)
+                circle_position = rm.vector2_add(
+                    rm.vector2_multiply(rm.vector2_subtract(circle_position, center), rl.Vector2(x = 0.975, y = 0.975)),
+                    center
+                )
 
             let distance = rm.vector2_distance(center, circle_position) / point_scale
-            let angle = ((rm.vector2_angle(rl.Vector2(x = 0.0, y = -point_scale), rm.vector2_subtract(center, circle_position)) / rl.PI) + 1.0) / 2.0
+            let angle = ((rm.vector2_angle(
+                rl.Vector2(x = 0.0, y = -point_scale),
+                rm.vector2_subtract(center, circle_position)
+            ) / rl.PI) + 1.0) / 2.0
             if distance > 1.0:
                 circle_position = wheel_handle_position(center, point_scale, angle)
 
-        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and rm.vector2_distance(rl.get_mouse_position(), center) <= point_scale + 10.0:
+        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and rm.vector2_distance(
+            rl.get_mouse_position(),
+            center
+        ) <= point_scale + 10.0:
             setting_color = true
         if rl.is_mouse_button_released(rl.MouseButton.MOUSE_BUTTON_LEFT):
             setting_color = false
@@ -91,7 +106,10 @@ function main() -> int:
                 circle_position = rl.get_mouse_position()
 
             let distance = rm.vector2_distance(center, circle_position) / point_scale
-            let angle = ((rm.vector2_angle(rl.Vector2(x = 0.0, y = -point_scale), rm.vector2_subtract(center, circle_position)) / rl.PI) + 1.0) / 2.0
+            let angle = ((rm.vector2_angle(
+                rl.Vector2(x = 0.0, y = -point_scale),
+                rm.vector2_subtract(center, circle_position)
+            ) / rl.PI) + 1.0) / 2.0
             if setting_color and distance > 1.0:
                 circle_position = wheel_handle_position(center, point_scale, angle)
 
@@ -101,7 +119,7 @@ function main() -> int:
             color = rl.color_lerp(
                 rl.Color(r = channel, g = channel, b = channel, a = 255),
                 rl.color_from_hsv(angle360, rm.clamp(distance, 0.0, 1.0), 1.0),
-                value_actual,
+                value_actual
             )
 
         rl.begin_drawing()
@@ -115,8 +133,17 @@ function main() -> int:
             let angle_offset_calculated = float<-(index + 1) * angle_offset
             let scale = rl.Vector2(x = point_scale, y = point_scale)
 
-            let offset = rm.vector2_multiply(rl.Vector2(x = float<-math.sin(double<-angle), y = float<-(-math.cos(double<-angle))), scale)
-            let offset2 = rm.vector2_multiply(rl.Vector2(x = float<-math.sin(double<-angle_offset_calculated), y = float<-(-math.cos(double<-angle_offset_calculated))), scale)
+            let offset = rm.vector2_multiply(
+                rl.Vector2(x = float<-math.sin(double<-angle), y = float<-(-math.cos(double<-angle))),
+                scale
+            )
+            let offset2 = rm.vector2_multiply(
+                rl.Vector2(
+                    x = float<-math.sin(double<-angle_offset_calculated),
+                    y = float<-(-math.cos(double<-angle_offset_calculated))
+                ),
+                scale
+            )
             let position = rm.vector2_add(center, offset)
             let position2 = rm.vector2_add(center, offset2)
 
@@ -154,8 +181,26 @@ function main() -> int:
 
         rl.draw_circle_lines_v(circle_position, 4.0, handle_color)
         rl.draw_rectangle_v(rl.Vector2(x = 8.0, y = 8.0), rl.Vector2(x = 64.0, y = 64.0), color)
-        rl.draw_rectangle_lines_ex(rl.Rectangle(x = 8.0, y = 8.0, width = 64.0, height = 64.0), 2.0, rl.color_lerp(color, rl.BLACK, 0.5))
-        rl.draw_text(text.cstr_as_str(rl.text_format("#%02X%02X%02X\n(%d, %d, %d)", color.r, color.g, color.b, color.r, color.g, color.b)), 8, 80, 20, rl.DARKGRAY)
+        rl.draw_rectangle_lines_ex(
+            rl.Rectangle(x = 8.0, y = 8.0, width = 64.0, height = 64.0),
+            2.0,
+            rl.color_lerp(color, rl.BLACK, 0.5)
+        )
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format(
+                "#%02X%02X%02X\n(%d, %d, %d)",
+                color.r,
+                color.g,
+                color.b,
+                color.r,
+                color.g,
+                color.b
+            )),
+            8,
+            80,
+            20,
+            rl.DARKGRAY
+        )
 
         var copy_color = rl.DARKGRAY
         var copy_offset = 0

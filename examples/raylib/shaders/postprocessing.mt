@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -31,7 +30,7 @@ const POSTPRO_SHADER_TEXT: array[str, MAX_POSTPRO_SHADERS] = array[str, MAX_POST
     "FISHEYE",
     "SOBEL",
     "BLOOM",
-    "BLUR",
+    "BLUR"
 )
 
 
@@ -48,10 +47,10 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
-    var model = rl.load_model("models/church.obj")
+    let model = rl.load_model("models/church.obj")
     defer rl.unload_model(model)
     let texture = rl.load_texture("models/church_diffuse.png")
     defer rl.unload_texture(texture)
@@ -63,7 +62,10 @@ function main() -> int:
     shaders[FX_DREAM_VISION] = rl.load_shader(null, rl.text_format("shaders/glsl%i/dream_vision.fs", GLSL_VERSION))
     shaders[FX_PIXELIZER] = rl.load_shader(null, rl.text_format("shaders/glsl%i/pixelizer.fs", GLSL_VERSION))
     shaders[FX_CROSS_HATCHING] = rl.load_shader(null, rl.text_format("shaders/glsl%i/cross_hatching.fs", GLSL_VERSION))
-    shaders[FX_CROSS_STITCHING] = rl.load_shader(null, rl.text_format("shaders/glsl%i/cross_stitching.fs", GLSL_VERSION))
+    shaders[FX_CROSS_STITCHING] = rl.load_shader(
+        null,
+        rl.text_format("shaders/glsl%i/cross_stitching.fs", GLSL_VERSION)
+    )
     shaders[FX_PREDATOR_VIEW] = rl.load_shader(null, rl.text_format("shaders/glsl%i/predator.fs", GLSL_VERSION))
     shaders[FX_SCANLINES] = rl.load_shader(null, rl.text_format("shaders/glsl%i/scanlines.fs", GLSL_VERSION))
     shaders[FX_FISHEYE] = rl.load_shader(null, rl.text_format("shaders/glsl%i/fisheye.fs", GLSL_VERSION))
@@ -110,9 +112,14 @@ function main() -> int:
         rl.begin_shader_mode(shaders[current_shader])
         rl.draw_texture_rec(
             target.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -(float<-target.texture.height)),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-target.texture.width,
+                height = -(float<-target.texture.height)
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.end_shader_mode()
 

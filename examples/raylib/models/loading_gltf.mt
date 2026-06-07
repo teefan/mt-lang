@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -24,7 +23,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let model = rl.load_model("models/gltf/robot.glb")
@@ -49,7 +48,7 @@ function main() -> int:
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT):
             anim_index = (anim_index + anim_count - 1) % anim_count
 
-        var current_animation = unsafe: animations[anim_index]
+        let current_animation = unsafe: animations[anim_index]
         anim_current_frame = (anim_current_frame + 1) % current_animation.keyframeCount
         rl.update_model_animation(model, current_animation, float<-anim_current_frame)
 

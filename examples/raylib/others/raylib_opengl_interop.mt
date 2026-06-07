@@ -4,12 +4,10 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
 const MAX_PARTICLES: int = 1000
-
 
 struct Particle:
     x: float

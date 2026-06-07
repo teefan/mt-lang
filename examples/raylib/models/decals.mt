@@ -5,13 +5,11 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 import std.vec as vec
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_DECALS: int = 256
 const FLOAT_MAX: float = 340282346638528859811704183484516925440.0
 const DEG_TO_RAD: float = rl.PI / 180.0
-
 
 struct MeshBuilder:
     vertices: vec.Vec[rl.Vector3]
@@ -21,7 +19,7 @@ struct MeshBuilder:
 function create_mesh_builder() -> MeshBuilder:
     return MeshBuilder(
         vertices = vec.Vec[rl.Vector3].create(),
-        uvs = vec.Vec[rl.Vector2].create(),
+        uvs = vec.Vec[rl.Vector2].create()
     )
 
 
@@ -71,7 +69,7 @@ function build_mesh(builder: MeshBuilder) -> rl.Mesh:
         vertexCount = vertex_count,
         triangleCount = vertex_count / 3,
         vertices = vertices,
-        texcoords = texcoords,
+        texcoords = texcoords
     )
     rl.upload_mesh(ptr_of(mesh), false)
     return mesh
@@ -90,7 +88,7 @@ function triangle_vertex(mesh: rl.Mesh, triangle_index: int, corner_index: int) 
         return rl.Vector3(
             x = unsafe: read(mesh.vertices + ptr_uint<-(base + 0)),
             y = unsafe: read(mesh.vertices + ptr_uint<-(base + 1)),
-            z = unsafe: read(mesh.vertices + ptr_uint<-(base + 2)),
+            z = unsafe: read(mesh.vertices + ptr_uint<-(base + 2))
         )
 
     let indices = mesh.indices else:
@@ -100,7 +98,7 @@ function triangle_vertex(mesh: rl.Mesh, triangle_index: int, corner_index: int) 
     return rl.Vector3(
         x = unsafe: read(mesh.vertices + ptr_uint<-(base + 0)),
         y = unsafe: read(mesh.vertices + ptr_uint<-(base + 1)),
-        z = unsafe: read(mesh.vertices + ptr_uint<-(base + 2)),
+        z = unsafe: read(mesh.vertices + ptr_uint<-(base + 2))
     )
 
 
@@ -111,7 +109,7 @@ function gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: flo
         rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         rl.Vector3(x = 0.0, y = -1.0, z = 0.0),
         rl.Vector3(x = 0.0, y = 0.0, z = 1.0),
-        rl.Vector3(x = 0.0, y = 0.0, z = -1.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
     )
 
     let inverse_projection = rm.matrix_invert(projection)
@@ -217,7 +215,7 @@ function gen_mesh_decal(target: rl.Model, projection: rl.Matrix, decal_size: flo
         read_builder.uvs.push(
             rl.Vector2(
                 x = 0.5 + projected.x / decal_size,
-                y = 0.5 + projected.y / decal_size,
+                y = 0.5 + projected.y / decal_size
             )
         )
 
@@ -238,13 +236,25 @@ function draw_button(bounds: rl.Rectangle, label: str) -> bool:
             rl.draw_rectangle_rec(bounds, background)
             rl.draw_rectangle_lines_ex(bounds, 2.0, rl.DARKGRAY)
             let text_width = rl.measure_text(label, 10)
-            rl.draw_text(label, int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5), int<-(bounds.y + bounds.height * 0.5 - 5.0), 10, rl.RAYWHITE)
+            rl.draw_text(
+                label,
+                int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5),
+                int<-(bounds.y + bounds.height * 0.5 - 5.0),
+                10,
+                rl.RAYWHITE
+            )
             return true
 
     rl.draw_rectangle_rec(bounds, background)
     rl.draw_rectangle_lines_ex(bounds, 2.0, rl.DARKGRAY)
     let text_width = rl.measure_text(label, 10)
-    rl.draw_text(label, int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5), int<-(bounds.y + bounds.height * 0.5 - 5.0), 10, rl.DARKGRAY)
+    rl.draw_text(
+        label,
+        int<-(bounds.x + bounds.width * 0.5 - float<-text_width * 0.5),
+        int<-(bounds.y + bounds.height * 0.5 - 5.0),
+        10,
+        rl.DARKGRAY
+    )
     return false
 
 
@@ -261,10 +271,10 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.6, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
-    var model = rl.load_model("models/obj/character.obj")
+    let model = rl.load_model("models/obj/character.obj")
     defer rl.unload_model(model)
 
     let model_texture = rl.load_texture("models/obj/character_diffuse.png")
@@ -427,18 +437,24 @@ function main() -> int:
         rl.draw_text(total_triangles_text, int<-x2, int<-y_position, 10, rl.LIME)
 
         rl.draw_text("Hold RMB to move camera", 10, 430, 10, rl.GRAY)
-        rl.draw_text("(c) Character model and texture from kenney.nl", SCREEN_WIDTH - 260, SCREEN_HEIGHT - 20, 10, rl.GRAY)
+        rl.draw_text(
+            "(c) Character model and texture from kenney.nl",
+            SCREEN_WIDTH - 260,
+            SCREEN_HEIGHT - 20,
+            10,
+            rl.GRAY
+        )
 
         let show_model_label = if show_model: "Hide Model" else: "Show Model"
         if draw_button(
             rl.Rectangle(x = 10.0, y = float<-SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
-            show_model_label,
+            show_model_label
         ):
             show_model = not show_model
 
         if draw_button(
             rl.Rectangle(x = 120.0, y = float<-SCREEN_HEIGHT - 100.0, width = 100.0, height = 60.0),
-            "Clear Decals",
+            "Clear Decals"
         ):
             var index = 0
             while index < decal_count:

@@ -5,7 +5,6 @@ import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -26,7 +25,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var mesh = rl.gen_mesh_plane(float<-MAP_SIZE, float<-MAP_SIZE, 1, 1)
@@ -50,7 +49,7 @@ function main() -> int:
         mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_TEXCOORD02] = rlgl.load_vertex_buffer(
             texcoords2,
             mesh.vertexCount * 2 * int<-size_of(float),
-            false,
+            false
         )
     rlgl.enable_vertex_array(mesh.vaoId)
     rlgl.set_vertex_attribute(LIGHTMAP_ATTRIBUTE_LOCATION, 2, c_rlgl.RL_FLOAT, false, 0, 0)
@@ -59,7 +58,7 @@ function main() -> int:
 
     let shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/lightmap.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/lightmap.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/lightmap.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shader)
 
@@ -71,7 +70,7 @@ function main() -> int:
     rl.gen_texture_mipmaps(texture)
     rl.set_texture_filter(texture, int<-rl.TextureFilter.TEXTURE_FILTER_TRILINEAR)
 
-    var lightmap = rl.load_render_texture(MAP_SIZE, MAP_SIZE)
+    let lightmap = rl.load_render_texture(MAP_SIZE, MAP_SIZE)
     defer rl.unload_render_texture(lightmap)
     var lightmap_texture = lightmap.texture
 
@@ -89,23 +88,33 @@ function main() -> int:
         rl.Rectangle(x = 0.0, y = 0.0, width = 2.0 * float<-MAP_SIZE, height = 2.0 * float<-MAP_SIZE),
         rl.Vector2(x = float<-MAP_SIZE, y = float<-MAP_SIZE),
         0.0,
-        rl.RED,
+        rl.RED
     )
     rl.draw_texture_pro(
         light,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
-        rl.Rectangle(x = float<-MAP_SIZE * 0.8, y = float<-MAP_SIZE / 2.0, width = 2.0 * float<-MAP_SIZE, height = 2.0 * float<-MAP_SIZE),
+        rl.Rectangle(
+            x = float<-MAP_SIZE * 0.8,
+            y = float<-MAP_SIZE / 2.0,
+            width = 2.0 * float<-MAP_SIZE,
+            height = 2.0 * float<-MAP_SIZE
+        ),
         rl.Vector2(x = float<-MAP_SIZE, y = float<-MAP_SIZE),
         0.0,
-        rl.BLUE,
+        rl.BLUE
     )
     rl.draw_texture_pro(
         light,
         rl.Rectangle(x = 0.0, y = 0.0, width = float<-light.width, height = float<-light.height),
-        rl.Rectangle(x = float<-MAP_SIZE * 0.8, y = float<-MAP_SIZE * 0.8, width = float<-MAP_SIZE, height = float<-MAP_SIZE),
+        rl.Rectangle(
+            x = float<-MAP_SIZE * 0.8,
+            y = float<-MAP_SIZE * 0.8,
+            width = float<-MAP_SIZE,
+            height = float<-MAP_SIZE
+        ),
         rl.Vector2(x = float<-MAP_SIZE / 2.0, y = float<-MAP_SIZE / 2.0),
         0.0,
-        rl.GREEN,
+        rl.GREEN
     )
     rl.end_blend_mode()
     rl.end_texture_mode()
@@ -128,12 +137,23 @@ function main() -> int:
         rl.draw_texture_pro(
             lightmap_texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = -(float<-MAP_SIZE), height = -(float<-MAP_SIZE)),
-            rl.Rectangle(x = float<-rl.get_render_width() - float<-(MAP_SIZE * 8) - 10.0, y = 10.0, width = float<-(MAP_SIZE * 8), height = float<-(MAP_SIZE * 8)),
+            rl.Rectangle(
+                x = float<-rl.get_render_width() - float<-(MAP_SIZE * 8) - 10.0,
+                y = 10.0,
+                width = float<-(MAP_SIZE * 8),
+                height = float<-(MAP_SIZE * 8)
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
-            rl.WHITE,
+            rl.WHITE
         )
-        rl.draw_text(rl.text_format("LIGHTMAP: %ix%i pixels", MAP_SIZE, MAP_SIZE), rl.get_render_width() - 130, 20 + MAP_SIZE * 8, 10, rl.GREEN)
+        rl.draw_text(
+            rl.text_format("LIGHTMAP: %ix%i pixels", MAP_SIZE, MAP_SIZE),
+            rl.get_render_width() - 130,
+            20 + MAP_SIZE * 8,
+            10,
+            rl.GREEN
+        )
         rl.draw_fps(10, 10)
         rl.end_drawing()
 

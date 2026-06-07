@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -18,7 +17,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.185, y = 0.4, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let map_image = rl.load_image("cubicmap.png")
@@ -26,7 +25,7 @@ function main() -> int:
     let cubicmap = rl.load_texture_from_image(map_image)
     defer rl.unload_texture(cubicmap)
 
-    var model = rl.load_model_from_mesh(rl.gen_mesh_cubicmap(map_image, rl.Vector3(x = 1.0, y = 1.0, z = 1.0)))
+    let model = rl.load_model_from_mesh(rl.gen_mesh_cubicmap(map_image, rl.Vector3(x = 1.0, y = 1.0, z = 1.0)))
     defer rl.unload_model(model)
     let texture = rl.load_texture("cubicmap_atlas.png")
     defer rl.unload_texture(texture)
@@ -74,7 +73,7 @@ function main() -> int:
                             x = map_position.x - 0.5 + float<-x,
                             y = map_position.z - 0.5 + float<-y,
                             width = 1.0,
-                            height = 1.0,
+                            height = 1.0
                         )
                         if hit_wall and rl.check_collision_circle_rec(player_position, player_radius, wall_rect):
                             camera.position = old_camera_position
@@ -93,10 +92,22 @@ function main() -> int:
             rl.Vector2(x = float<-(rl.get_screen_width() - cubicmap.width * 4 - 20), y = 20.0),
             0.0,
             4.0,
-            rl.WHITE,
+            rl.WHITE
         )
-        rl.draw_rectangle_lines(rl.get_screen_width() - cubicmap.width * 4 - 20, 20, cubicmap.width * 4, cubicmap.height * 4, rl.GREEN)
-        rl.draw_rectangle(rl.get_screen_width() - cubicmap.width * 4 - 20 + player_cell_x * 4, 20 + player_cell_y * 4, 4, 4, rl.RED)
+        rl.draw_rectangle_lines(
+            rl.get_screen_width() - cubicmap.width * 4 - 20,
+            20,
+            cubicmap.width * 4,
+            cubicmap.height * 4,
+            rl.GREEN
+        )
+        rl.draw_rectangle(
+            rl.get_screen_width() - cubicmap.width * 4 - 20 + player_cell_x * 4,
+            20 + player_cell_y * 4,
+            4,
+            4,
+            rl.RED
+        )
         rl.draw_fps(10, 10)
         rl.end_drawing()
 

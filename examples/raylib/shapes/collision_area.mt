@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -12,7 +11,12 @@ function main() -> int:
 
     var box_a = rl.Rectangle(x = 10.0, y = float<-rl.get_screen_height() / 2.0 - 50.0, width = 200.0, height = 100.0)
     var box_a_speed_x = 4
-    var box_b = rl.Rectangle(x = float<-rl.get_screen_width() / 2.0 - 30.0, y = float<-rl.get_screen_height() / 2.0 - 30.0, width = 60.0, height = 60.0)
+    var box_b = rl.Rectangle(
+        x = float<-rl.get_screen_width() / 2.0 - 30.0,
+        y = float<-rl.get_screen_height() / 2.0 - 30.0,
+        width = 60.0,
+        height = 60.0
+    )
     var box_collision = zero[rl.Rectangle]
     let screen_upper_limit = 40
     var pause = false
@@ -57,8 +61,23 @@ function main() -> int:
 
         if collision:
             rl.draw_rectangle_rec(box_collision, rl.LIME)
-            rl.draw_text("COLLISION!", (rl.get_screen_width() / 2) - (rl.measure_text("COLLISION!", 20) / 2), (screen_upper_limit / 2) - 10, 20, rl.BLACK)
-            rl.draw_text(text.cstr_as_str(rl.text_format("Collision Area: %i", int<-box_collision.width * int<-box_collision.height)), (rl.get_screen_width() / 2) - 100, screen_upper_limit + 10, 20, rl.BLACK)
+            rl.draw_text(
+                "COLLISION!",
+                (rl.get_screen_width() / 2) - (rl.measure_text("COLLISION!", 20) / 2),
+                (screen_upper_limit / 2) - 10,
+                20,
+                rl.BLACK
+            )
+            rl.draw_text(
+                text.cstr_as_str(rl.text_format(
+                    "Collision Area: %i",
+                    int<-box_collision.width * int<-box_collision.height
+                )),
+                (rl.get_screen_width() / 2) - 100,
+                screen_upper_limit + 10,
+                20,
+                rl.BLACK
+            )
 
         rl.draw_text("Press SPACE to PAUSE/RESUME", 20, SCREEN_HEIGHT - 35, 20, rl.LIGHTGRAY)
         rl.draw_fps(10, 10)

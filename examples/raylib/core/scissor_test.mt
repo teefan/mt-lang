@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -25,7 +24,12 @@ function main() -> int:
         rl.clear_background(rl.RAYWHITE)
 
         if scissor_mode:
-            rl.begin_scissor_mode(int<-scissor_area.x, int<-scissor_area.y, int<-scissor_area.width, int<-scissor_area.height)
+            rl.begin_scissor_mode(
+                int<-scissor_area.x,
+                int<-scissor_area.y,
+                int<-scissor_area.width,
+                int<-scissor_area.height
+            )
 
         rl.draw_rectangle(0, 0, rl.get_screen_width(), rl.get_screen_height(), rl.RED)
         rl.draw_text("Move the mouse around to reveal this text!", 190, 200, 20, rl.LIGHTGRAY)

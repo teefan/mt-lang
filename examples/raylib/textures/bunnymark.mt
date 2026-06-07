@@ -1,12 +1,10 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_BUNNIES: int = 80000
 const MAX_BATCH_ELEMENTS: int = 8192
-
 
 struct Bunny:
     position: rl.Vector2
@@ -19,7 +17,7 @@ function random_bunny_color() -> rl.Color:
         r = ubyte<-rl.get_random_value(50, 240),
         g = ubyte<-rl.get_random_value(80, 240),
         b = ubyte<-rl.get_random_value(100, 240),
-        a = 255,
+        a = 255
     )
 
 
@@ -44,7 +42,7 @@ function main() -> int:
                 bunnies[bunny_count].position = rl.get_mouse_position()
                 bunnies[bunny_count].speed = rl.Vector2(
                     x = float<-rl.get_random_value(-250, 250),
-                    y = float<-rl.get_random_value(-250, 250),
+                    y = float<-rl.get_random_value(-250, 250)
                 )
                 bunnies[bunny_count].color = random_bunny_color()
                 bunny_count += 1
@@ -60,12 +58,10 @@ function main() -> int:
                 bunnies[index].position.x += bunnies[index].speed.x * frame_time
                 bunnies[index].position.y += bunnies[index].speed.y * frame_time
 
-                if (bunnies[index].position.x + float<-bunny_texture.width / 2.0) > float<-rl.get_screen_width() or
-                   (bunnies[index].position.x + float<-bunny_texture.width / 2.0) < 0.0:
+                if (bunnies[index].position.x + float<-bunny_texture.width / 2.0) > float<-rl.get_screen_width() or                   (bunnies[index].position.x + float<-bunny_texture.width / 2.0) < 0.0:
                     bunnies[index].speed.x *= -1.0
 
-                if (bunnies[index].position.y + float<-bunny_texture.height / 2.0) > float<-rl.get_screen_height() or
-                   (bunnies[index].position.y + float<-bunny_texture.height / 2.0 - 40.0) < 0.0:
+                if (bunnies[index].position.y + float<-bunny_texture.height / 2.0) > float<-rl.get_screen_height() or                   (bunnies[index].position.y + float<-bunny_texture.height / 2.0 - 40.0) < 0.0:
                     bunnies[index].speed.y *= -1.0
 
                 index += 1
@@ -79,14 +75,14 @@ function main() -> int:
                 bunny_texture,
                 int<-bunnies[index].position.x,
                 int<-bunnies[index].position.y,
-                bunnies[index].color,
+                bunnies[index].color
             )
             index += 1
 
         let bunny_count_text = rl.text_format("bunnies: %i", bunny_count)
         let draw_call_text = rl.text_format(
             "batched draw calls: %i",
-            1 + (bunny_count / MAX_BATCH_ELEMENTS),
+            1 + (bunny_count / MAX_BATCH_ELEMENTS)
         )
 
         rl.draw_rectangle(0, 0, SCREEN_WIDTH, 40, rl.BLACK)

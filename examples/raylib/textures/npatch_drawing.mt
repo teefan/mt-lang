@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -37,7 +36,7 @@ function main() -> int:
         top = 40,
         right = 12,
         bottom = 12,
-        layout = int<-rl.NPatchLayout.NPATCH_NINE_PATCH,
+        layout = int<-rl.NPatchLayout.NPATCH_NINE_PATCH
     )
     let nine_patch_info2 = rl.NPatchInfo(
         source = rl.Rectangle(x = 0.0, y = 128.0, width = 64.0, height = 64.0),
@@ -45,7 +44,7 @@ function main() -> int:
         top = 16,
         right = 16,
         bottom = 16,
-        layout = int<-rl.NPatchLayout.NPATCH_NINE_PATCH,
+        layout = int<-rl.NPatchLayout.NPATCH_NINE_PATCH
     )
     let h3_patch_info = rl.NPatchInfo(
         source = rl.Rectangle(x = 0.0, y = 64.0, width = 64.0, height = 64.0),
@@ -53,7 +52,7 @@ function main() -> int:
         top = 8,
         right = 8,
         bottom = 8,
-        layout = int<-rl.NPatchLayout.NPATCH_THREE_PATCH_HORIZONTAL,
+        layout = int<-rl.NPatchLayout.NPATCH_THREE_PATCH_HORIZONTAL
     )
     let v3_patch_info = rl.NPatchInfo(
         source = rl.Rectangle(x = 0.0, y = 192.0, width = 64.0, height = 64.0),
@@ -61,7 +60,7 @@ function main() -> int:
         top = 6,
         right = 6,
         bottom = 6,
-        layout = int<-rl.NPatchLayout.NPATCH_THREE_PATCH_VERTICAL,
+        layout = int<-rl.NPatchLayout.NPATCH_THREE_PATCH_VERTICAL
     )
 
     rl.set_target_fps(60)

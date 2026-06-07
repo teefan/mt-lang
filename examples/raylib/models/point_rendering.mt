@@ -3,7 +3,6 @@ import std.c.raylib as c
 import std.raylib as rl
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_POINTS: int = 10000000
@@ -35,7 +34,7 @@ function gen_mesh_points(num_points: int) -> rl.Mesh:
         animVertices = zero[ptr[float]],
         animNormals = zero[ptr[float]],
         vaoId = 0,
-        vboId = zero[ptr[uint]],
+        vboId = zero[ptr[uint]]
     )
 
     var index = 0
@@ -79,7 +78,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -135,13 +134,13 @@ function main() -> int:
                 let pos = rl.Vector3(
                     x = unsafe: read(mesh.vertices + ptr_uint<-(index * 3 + 0)),
                     y = unsafe: read(mesh.vertices + ptr_uint<-(index * 3 + 1)),
-                    z = unsafe: read(mesh.vertices + ptr_uint<-(index * 3 + 2)),
+                    z = unsafe: read(mesh.vertices + ptr_uint<-(index * 3 + 2))
                 )
                 let color = rl.Color(
                     r = unsafe: read(mesh.colors + ptr_uint<-(index * 4 + 0)),
                     g = unsafe: read(mesh.colors + ptr_uint<-(index * 4 + 1)),
                     b = unsafe: read(mesh.colors + ptr_uint<-(index * 4 + 2)),
-                    a = unsafe: read(mesh.colors + ptr_uint<-(index * 4 + 3)),
+                    a = unsafe: read(mesh.colors + ptr_uint<-(index * 4 + 3))
                 )
                 rl.draw_point_3d(pos, color)
                 index += 1

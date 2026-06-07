@@ -3,19 +3,16 @@ import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 import std.str as text
 
-
 const GOL_WIDTH: int = 768
 const SCREEN_WIDTH: int = GOL_WIDTH
 const SCREEN_HEIGHT: int = GOL_WIDTH
 const MAX_BUFFERED_TRANSFERS: int = 48
-
 
 struct GolUpdateCmd:
     x: uint
     y: uint
     w: uint
     enabled: uint
-
 
 struct GolUpdateSSBO:
     count: uint
@@ -101,14 +98,25 @@ function main() -> int:
             ssbo_b = temp
 
         rlgl.bind_shader_buffer(ssbo_a, uint<-1)
-        rl.set_shader_value(gol_render_shader, resolution_uniform_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.set_shader_value(
+            gol_render_shader,
+            resolution_uniform_location,
+            resolution,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+        )
 
         rl.begin_drawing()
         rl.clear_background(rl.BLANK)
         rl.begin_shader_mode(gol_render_shader)
         rl.draw_texture(white_texture, 0, 0, rl.WHITE)
         rl.end_shader_mode()
-        rl.draw_rectangle_lines(rl.get_mouse_x() - brush_size / 2, rl.get_mouse_y() - brush_size / 2, brush_size, brush_size, rl.RED)
+        rl.draw_rectangle_lines(
+            rl.get_mouse_x() - brush_size / 2,
+            rl.get_mouse_y() - brush_size / 2,
+            brush_size,
+            brush_size,
+            rl.RED
+        )
         rl.draw_text("Use Mouse wheel to increase/decrease brush size", 10, 10, 20, rl.WHITE)
         rl.draw_fps(rl.get_screen_width() - 100, 10)
         rl.end_drawing()

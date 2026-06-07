@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -17,7 +16,15 @@ function main() -> int:
     let font = rl.load_font_ex("KAISG.ttf", 64, null, 0)
     defer rl.unload_font(font)
 
-    rl.image_draw_text_ex(parrots, font, "[Parrots font drawing]", rl.Vector2(x = 20.0, y = 20.0), float<-font.baseSize, 0.0, rl.RED)
+    rl.image_draw_text_ex(
+        parrots,
+        font,
+        "[Parrots font drawing]",
+        rl.Vector2(x = 20.0, y = 20.0),
+        float<-font.baseSize,
+        0.0,
+        rl.RED
+    )
 
     let texture = rl.load_texture_from_image(parrots)
     defer rl.unload_texture(texture)
@@ -25,7 +32,7 @@ function main() -> int:
 
     let position = rl.Vector2(
         x = float<-SCREEN_WIDTH / 2.0 - float<-texture.width / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-texture.height / 2.0 - 20.0,
+        y = float<-SCREEN_HEIGHT / 2.0 - float<-texture.height / 2.0 - 20.0
     )
 
     var show_font = false
@@ -46,7 +53,7 @@ function main() -> int:
                 rl.Vector2(x = position.x + 20.0, y = position.y + 300.0),
                 float<-font.baseSize,
                 0.0,
-                rl.WHITE,
+                rl.WHITE
             )
         else:
             rl.draw_texture(font.texture, SCREEN_WIDTH / 2 - font.texture.width / 2, 50, rl.BLACK)

@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_MODELS: int = 9
@@ -10,17 +9,17 @@ function gen_mesh_custom() -> rl.Mesh:
     var vertices = array[float, 9](
         0.0, 0.0, 0.0,
         1.0, 0.0, 2.0,
-        2.0, 0.0, 0.0,
+        2.0, 0.0, 0.0
     )
     var texcoords = array[float, 6](
         0.0, 0.0,
         0.5, 1.0,
-        1.0, 0.0,
+        1.0, 0.0
     )
     var normals = array[float, 9](
         0.0, 1.0, 0.0,
         0.0, 1.0, 0.0,
-        0.0, 1.0, 0.0,
+        0.0, 1.0, 0.0
     )
 
     var mesh = rl.Mesh(
@@ -39,7 +38,7 @@ function gen_mesh_custom() -> rl.Mesh:
         animVertices = zero[ptr[float]],
         animNormals = zero[ptr[float]],
         vaoId = 0,
-        vboId = zero[ptr[uint]],
+        vboId = zero[ptr[uint]]
     )
 
     rl.upload_mesh(ptr_of(mesh), false)
@@ -56,7 +55,7 @@ function model_name(index: int) -> str:
         "TORUS",
         "KNOT",
         "POLY",
-        "Custom (triangle)",
+        "Custom (triangle)"
     )
     return names[index]
 
@@ -99,7 +98,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 

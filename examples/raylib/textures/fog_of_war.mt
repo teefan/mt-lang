@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAP_TILE_SIZE: int = 32
@@ -9,7 +8,6 @@ const PLAYER_TILE_VISIBILITY: int = 2
 const MAP_TILES_X: int = 25
 const MAP_TILES_Y: int = 15
 const MAP_TILE_COUNT: int = MAP_TILES_X * MAP_TILES_Y
-
 
 struct Map:
     tile_ids: array[ubyte, 375]
@@ -101,18 +99,34 @@ function main() -> int:
                 let tile_index = (y * MAP_TILES_X) + x
                 let tile_color = if map.tile_ids[tile_index] == 0: rl.BLUE else: rl.fade(rl.BLUE, 0.9)
                 rl.draw_rectangle(x * MAP_TILE_SIZE, y * MAP_TILE_SIZE, MAP_TILE_SIZE, MAP_TILE_SIZE, tile_color)
-                rl.draw_rectangle_lines(x * MAP_TILE_SIZE, y * MAP_TILE_SIZE, MAP_TILE_SIZE, MAP_TILE_SIZE, rl.fade(rl.DARKBLUE, 0.5))
+                rl.draw_rectangle_lines(
+                    x * MAP_TILE_SIZE,
+                    y * MAP_TILE_SIZE,
+                    MAP_TILE_SIZE,
+                    MAP_TILE_SIZE,
+                    rl.fade(rl.DARKBLUE, 0.5)
+                )
                 x += 1
             y += 1
 
         rl.draw_rectangle_v(player_position, rl.Vector2(x = float<-PLAYER_SIZE, y = float<-PLAYER_SIZE), rl.RED)
         rl.draw_texture_pro(
             fog_of_war.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-fog_of_war.texture.width, height = -float<-fog_of_war.texture.height),
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-(MAP_TILES_X * MAP_TILE_SIZE), height = float<-(MAP_TILES_Y * MAP_TILE_SIZE)),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-fog_of_war.texture.width,
+                height = -float<-fog_of_war.texture.height
+            ),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-(MAP_TILES_X * MAP_TILE_SIZE),
+                height = float<-(MAP_TILES_Y * MAP_TILE_SIZE)
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_text(current_tile_text, 10, 10, 20, rl.RAYWHITE)
         rl.draw_text("ARROW KEYS to move", 10, SCREEN_HEIGHT - 25, 20, rl.RAYWHITE)

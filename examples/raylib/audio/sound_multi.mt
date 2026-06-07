@@ -1,11 +1,9 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_SOUNDS: int = 10
-
 
 var sound_array: array[rl.Sound, MAX_SOUNDS] = zero[array[rl.Sound, MAX_SOUNDS]]
 

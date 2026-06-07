@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const STR_MAX_SIZE: int = 10000
@@ -19,11 +18,9 @@ const ASCII_RBRACKET: ubyte = ubyte<-93
 const ASCII_ZERO: ubyte = ubyte<-48
 const ASCII_NINE: ubyte = ubyte<-57
 
-
 struct TurtleState:
     origin: rl.Vector2
     angle: float
-
 
 struct PenroseLSystem:
     steps: int
@@ -34,7 +31,6 @@ struct PenroseLSystem:
     rule_z: str
     draw_length: float
     theta: float
-
 
 var turtle_stack: array[TurtleState, TURTLE_STACK_MAX_SIZE] = zero[array[TurtleState, TURTLE_STACK_MAX_SIZE]]
 var turtle_top: int = -1
@@ -67,7 +63,7 @@ function create_penrose_lsystem(draw_length: float) -> PenroseLSystem:
         rule_y = "-WF++XF[+++YF++ZF]-",
         rule_z = "--YF++++WF[+ZF++++XF]--XF",
         draw_length = draw_length,
-        theta = 36.0,
+        theta = 36.0
     )
     result.production.assign("[X]++[X]++[X]++[X]++[X]")
     return result
@@ -117,8 +113,14 @@ function draw_penrose_lsystem(ls: ref[PenroseLSystem]) -> void:
                 turtle.origin.x += read(ls).draw_length * float<-math.cos(double<-rad_angle)
                 turtle.origin.y += read(ls).draw_length * float<-math.sin(double<-rad_angle)
 
-                let start_pos_screen = rl.Vector2(x = start_pos_world.x + screen_center.x, y = start_pos_world.y + screen_center.y)
-                let end_pos_screen = rl.Vector2(x = turtle.origin.x + screen_center.x, y = turtle.origin.y + screen_center.y)
+                let start_pos_screen = rl.Vector2(
+                    x = start_pos_world.x + screen_center.x,
+                    y = start_pos_world.y + screen_center.y
+                )
+                let end_pos_screen = rl.Vector2(
+                    x = turtle.origin.x + screen_center.x,
+                    y = turtle.origin.y + screen_center.y
+                )
                 rl.draw_line_ex(start_pos_screen, end_pos_screen, 2.0, rl.fade(rl.BLACK, 0.2))
                 repeat_index += 1
             repeats = 1

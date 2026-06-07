@@ -3,7 +3,6 @@ import std.stdio as stdio
 import std.str as text
 import std.time as time
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const TIMESTAMP_BUFFER_SIZE: int = 64
@@ -12,7 +11,12 @@ const TIMESTAMP_BUFFER_SIZE: int = 64
 function log_message(level: str, message: str) -> void:
     var timestamp_buffer: array[char, TIMESTAMP_BUFFER_SIZE] = zero[array[char, TIMESTAMP_BUFFER_SIZE]]
     let now = time.now()
-    unsafe: time.format_local_time_into(ptr_of(timestamp_buffer[0]), ptr_uint<-TIMESTAMP_BUFFER_SIZE, "%Y-%m-%d %H:%M:%S", now)
+    unsafe: time.format_local_time_into(
+        ptr_of(timestamp_buffer[0]),
+        ptr_uint<-TIMESTAMP_BUFFER_SIZE,
+        "%Y-%m-%d %H:%M:%S",
+        now
+    )
     stdio.print("[%s] [%s] : %s\n", text.chars_as_str(ptr_of(timestamp_buffer[0])), level, message)
 
 
@@ -37,9 +41,21 @@ function main() -> int:
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_text("Check the console output to see the custom logger adaptation in action!", 40, 170, 20, rl.LIGHTGRAY)
+        rl.draw_text(
+            "Check the console output to see the custom logger adaptation in action!",
+            40,
+            170,
+            20,
+            rl.LIGHTGRAY
+        )
         rl.draw_text("I = info   W = warning   E = error   D = debug", 120, 220, 20, rl.GRAY)
-        rl.draw_text("This example keeps the upstream intent, but logs are generated from Milk Tea code.", 30, 260, 18, rl.DARKGRAY)
+        rl.draw_text(
+            "This example keeps the upstream intent, but logs are generated from Milk Tea code.",
+            30,
+            260,
+            18,
+            rl.DARKGRAY
+        )
         rl.end_drawing()
 
     return 0

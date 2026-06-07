@@ -5,17 +5,14 @@ import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_LIGHTS: int = 4
 const GLSL_VERSION: int = 330
 
-
 enum LightType: int
     LIGHT_DIRECTIONAL = 0
     LIGHT_POINT = 1
-
 
 struct Light:
     kind: int
@@ -30,7 +27,14 @@ struct Light:
     color_loc: int
 
 
-function create_light(slot: int, light_type: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light:
+function create_light(
+    slot: int,
+    light_type: int,
+    position: rl.Vector3,
+    target: rl.Vector3,
+    color: rl.Color,
+    shader: rl.Shader
+) -> Light:
     let light = Light(
         kind = light_type,
         enabled = true,
@@ -41,7 +45,7 @@ function create_light(slot: int, light_type: int, position: rl.Vector3, target: 
         type_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].type", slot)),
         position_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].position", slot)),
         target_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].target", slot)),
-        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot)),
+        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot))
     )
     update_light_values(shader, light)
     return light
@@ -62,7 +66,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
         float<-light.color.r / 255.0,
         float<-light.color.g / 255.0,
         float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0,
+        float<-light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.color_loc, color_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
@@ -80,7 +84,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var model = rl.load_model("models/old_car_new.glb")
@@ -88,7 +92,7 @@ function main() -> int:
 
     let cel_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/cel.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/cel.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/cel.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(cel_shader)
     let view_pos_location = rl.get_shader_location(cel_shader, "viewPos")
@@ -102,13 +106,20 @@ function main() -> int:
 
     let outline_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/outline_hull.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/outline_hull.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/outline_hull.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(outline_shader)
     let outline_thickness_location = rl.get_shader_location(outline_shader, "outlineThickness")
 
     var lights: array[Light, MAX_LIGHTS] = zero[array[Light, MAX_LIGHTS]]
-    lights[0] = create_light(0, int<-LightType.LIGHT_DIRECTIONAL, rl.Vector3(x = 50.0, y = 50.0, z = 50.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.WHITE, cel_shader)
+    lights[0] = create_light(
+        0,
+        int<-LightType.LIGHT_DIRECTIONAL,
+        rl.Vector3(x = 50.0, y = 50.0, z = 50.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.WHITE,
+        cel_shader
+    )
 
     var cel_enabled = true
     var outline_enabled = true
@@ -119,7 +130,12 @@ function main() -> int:
         rl.update_camera(camera, rl.CameraMode.CAMERA_ORBITAL)
 
         let camera_position = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.set_shader_value(cel_shader, view_pos_location, camera_position, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(
+            cel_shader,
+            view_pos_location,
+            camera_position,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_Z):
             cel_enabled = not cel_enabled
@@ -132,14 +148,19 @@ function main() -> int:
             num_bands = rm.clamp(num_bands + 1.0, 2.0, 20.0)
         if rl.is_key_pressed(rl.KeyboardKey.KEY_Q) or rl.is_key_pressed_repeat(rl.KeyboardKey.KEY_Q):
             num_bands = rm.clamp(num_bands - 1.0, 2.0, 20.0)
-        rl.set_shader_value(cel_shader, num_bands_location, num_bands, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+        rl.set_shader_value(
+            cel_shader,
+            num_bands_location,
+            num_bands,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
+        )
 
         var light = lights[0]
         let time_seconds = rl.get_time()
         light.position = rl.Vector3(
             x = float<-(math.sin(-time_seconds * 0.3) * 5.0),
             y = 5.0,
-            z = float<-(math.cos(-time_seconds * 0.3) * 5.0),
+            z = float<-(math.cos(-time_seconds * 0.3) * 5.0)
         )
         lights[0] = light
         update_light_values(cel_shader, lights[0])
@@ -150,7 +171,12 @@ function main() -> int:
         rl.begin_mode_3d(camera)
         if outline_enabled:
             let thickness: float = 0.005
-            rl.set_shader_value(outline_shader, outline_thickness_location, thickness, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
+            rl.set_shader_value(
+                outline_shader,
+                outline_thickness_location,
+                thickness,
+                int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
+            )
             rlgl.set_cull_face(int<-c_rlgl.rlCullMode.RL_CULL_FACE_FRONT)
             unsafe: model.materials[0].shader = outline_shader
             rl.draw_model(model, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), 0.75, rl.WHITE)
@@ -165,8 +191,20 @@ function main() -> int:
         let cel_text = if cel_enabled: "ON" else: "OFF"
         let outline_text = if outline_enabled: "ON" else: "OFF"
         rl.draw_fps(10, 10)
-        rl.draw_text(rl.text_format("Cel: %s  [Z]", cel_text), 10, 65, 20, if cel_enabled: rl.DARKGREEN else: rl.DARKGRAY)
-        rl.draw_text(rl.text_format("Outline: %s  [C]", outline_text), 10, 90, 20, if outline_enabled: rl.DARKGREEN else: rl.DARKGRAY)
+        rl.draw_text(
+            rl.text_format("Cel: %s  [Z]", cel_text),
+            10,
+            65,
+            20,
+            if cel_enabled: rl.DARKGREEN else: rl.DARKGRAY
+        )
+        rl.draw_text(
+            rl.text_format("Outline: %s  [C]", outline_text),
+            10,
+            90,
+            20,
+            if outline_enabled: rl.DARKGREEN else: rl.DARKGRAY
+        )
         rl.draw_text(rl.text_format("Bands: %.0f  [Q/E]", num_bands), 10, 115, 20, rl.DARKGRAY)
         rl.end_drawing()
 

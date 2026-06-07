@@ -1,11 +1,9 @@
 import std.raygui as gui
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_HILBERT_STROKES: int = 65536
-
 
 var hilbert_path: array[rl.Vector2, MAX_HILBERT_STROKES] = zero[array[rl.Vector2, MAX_HILBERT_STROKES]]
 
@@ -30,7 +28,7 @@ function compute_hilbert_step(order: int, index: int) -> rl.Vector2:
         rl.Vector2(x = 0.0, y = 0.0),
         rl.Vector2(x = 0.0, y = 1.0),
         rl.Vector2(x = 1.0, y = 1.0),
-        rl.Vector2(x = 1.0, y = 0.0),
+        rl.Vector2(x = 1.0, y = 0.0)
     )
 
     var current_index = index
@@ -101,7 +99,7 @@ function main() -> int:
                     hilbert_path[index],
                     hilbert_path[index - 1],
                     thick,
-                    rl.color_from_hsv((float<-index / float<-stroke_count) * 360.0, 1.0, 1.0),
+                    rl.color_from_hsv((float<-index / float<-stroke_count) * 360.0, 1.0, 1.0)
                 )
                 index += 1
 
@@ -113,14 +111,39 @@ function main() -> int:
                     hilbert_path[index],
                     hilbert_path[index - 1],
                     thick,
-                    rl.color_from_hsv((float<-index / float<-stroke_count) * 360.0, 1.0, 1.0),
+                    rl.color_from_hsv((float<-index / float<-stroke_count) * 360.0, 1.0, 1.0)
                 )
                 index += 1
 
-        gui.check_box(rl.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0), "ANIMATE GENERATION ON CHANGE", animate)
-        gui.spinner(rl.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0), "HILBERT CURVE ORDER:  ", order, 2, 8, false)
-        gui.slider(rl.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0), "THICKNESS:  ", "", thick, 1.0, 10.0)
-        gui.slider(rl.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0), "TOTAL SIZE: ", "", size, 10.0, float<-rl.get_screen_height() * 1.5)
+        gui.check_box(
+            rl.Rectangle(x = 450.0, y = 50.0, width = 20.0, height = 20.0),
+            "ANIMATE GENERATION ON CHANGE",
+            animate
+        )
+        gui.spinner(
+            rl.Rectangle(x = 585.0, y = 100.0, width = 180.0, height = 30.0),
+            "HILBERT CURVE ORDER:  ",
+            order,
+            2,
+            8,
+            false
+        )
+        gui.slider(
+            rl.Rectangle(x = 524.0, y = 150.0, width = 240.0, height = 24.0),
+            "THICKNESS:  ",
+            "",
+            thick,
+            1.0,
+            10.0
+        )
+        gui.slider(
+            rl.Rectangle(x = 524.0, y = 190.0, width = 240.0, height = 24.0),
+            "TOTAL SIZE: ",
+            "",
+            size,
+            10.0,
+            float<-rl.get_screen_height() * 1.5
+        )
         rl.end_drawing()
 
     return 0

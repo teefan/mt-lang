@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_ANIMATION_NAMES: int = 64
@@ -40,7 +39,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let model = rl.load_model("models/gltf/robot.glb")
@@ -74,7 +73,7 @@ function main() -> int:
         if rl.is_key_pressed(rl.KeyboardKey.KEY_P):
             anim_pause = not anim_pause
 
-        var current_animation = unsafe: animations[anim_index]
+        let current_animation = unsafe: animations[anim_index]
         if not anim_pause:
             anim_current_frame += anim_frame_speed
             if anim_current_frame >= float<-current_animation.keyframeCount:
@@ -83,7 +82,11 @@ function main() -> int:
 
         anim_frame_progress = anim_current_frame
         let frame_speed_text = text.cstr_as_str(rl.text_format("x%.1f", anim_frame_speed))
-        let timeline_text = rl.text_format("CURRENT FRAME: %.2f / %i", anim_frame_progress, current_animation.keyframeCount)
+        let timeline_text = rl.text_format(
+            "CURRENT FRAME: %.2f / %i",
+            anim_frame_progress,
+            current_animation.keyframeCount
+        )
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
@@ -94,18 +97,43 @@ function main() -> int:
         rl.end_mode_3d()
 
         gui.set_style(gui.Control.DROPDOWNBOX, int<-gui.DropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
-        if gui.dropdown_box(rl.Rectangle(x = 10.0, y = 10.0, width = 140.0, height = 24.0), animation_names_text, anim_index, dropdown_edit_mode) != 0:
+        if gui.dropdown_box(
+            rl.Rectangle(x = 10.0, y = 10.0, width = 140.0, height = 24.0),
+            animation_names_text,
+            anim_index,
+            dropdown_edit_mode
+        ) != 0:
             dropdown_edit_mode = not dropdown_edit_mode
 
-        gui.slider(rl.Rectangle(x = 260.0, y = 10.0, width = 500.0, height = 24.0), "FRAME SPEED: ", frame_speed_text, anim_frame_speed, 0.1, 2.0)
-        gui.label(rl.Rectangle(x = 10.0, y = float<-rl.get_screen_height() - 64.0, width = float<-rl.get_screen_width() - 20.0, height = 24.0), timeline_text)
+        gui.slider(
+            rl.Rectangle(x = 260.0, y = 10.0, width = 500.0, height = 24.0),
+            "FRAME SPEED: ",
+            frame_speed_text,
+            anim_frame_speed,
+            0.1,
+            2.0
+        )
+        gui.label(
+            rl.Rectangle(
+                x = 10.0,
+                y = float<-rl.get_screen_height() - 64.0,
+                width = float<-rl.get_screen_width() - 20.0,
+                height = 24.0
+            ),
+            timeline_text
+        )
         gui.progress_bar(
-            rl.Rectangle(x = 10.0, y = float<-rl.get_screen_height() - 40.0, width = float<-rl.get_screen_width() - 20.0, height = 24.0),
+            rl.Rectangle(
+                x = 10.0,
+                y = float<-rl.get_screen_height() - 40.0,
+                width = float<-rl.get_screen_width() - 20.0,
+                height = 24.0
+            ),
             "",
             "",
             anim_frame_progress,
             0.0,
-            float<-current_animation.keyframeCount,
+            float<-current_animation.keyframeCount
         )
 
         var index = 0

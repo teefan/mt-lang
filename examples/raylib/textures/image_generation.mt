@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_TEXTURES: int = 9
@@ -108,7 +107,13 @@ function main() -> int:
         rl.draw_rectangle(30, 400, 325, 30, rl.fade(rl.SKYBLUE, 0.5))
         rl.draw_rectangle_lines(30, 400, 325, 30, rl.fade(rl.WHITE, 0.5))
         rl.draw_text("MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES", 40, 410, 10, rl.WHITE)
-        rl.draw_text(texture_label(current_texture), texture_label_x(current_texture), 10, 20, texture_label_color(current_texture))
+        rl.draw_text(
+            texture_label(current_texture),
+            texture_label_x(current_texture),
+            10,
+            20,
+            texture_label_color(current_texture)
+        )
 
         rl.end_drawing()
 

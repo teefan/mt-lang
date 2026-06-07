@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -20,10 +19,10 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.5, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
-    var model = rl.load_model("models/barracks.obj")
+    let model = rl.load_model("models/barracks.obj")
     defer rl.unload_model(model)
     let texture = rl.load_texture("models/barracks_diffuse.png")
     defer rl.unload_texture(texture)
@@ -44,9 +43,14 @@ function main() -> int:
         let mouse_position = rl.get_mouse_position()
         let swirl_center = rl.Vector2(
             x = mouse_position.x,
-            y = float<-SCREEN_HEIGHT - mouse_position.y,
+            y = float<-SCREEN_HEIGHT - mouse_position.y
         )
-        rl.set_shader_value(shader, swirl_center_location, swirl_center, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+        rl.set_shader_value(
+            shader,
+            swirl_center_location,
+            swirl_center,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+        )
 
         rl.begin_texture_mode(target)
         rl.clear_background(rl.RAYWHITE)
@@ -69,10 +73,10 @@ function main() -> int:
                 x = 0.0,
                 y = 0.0,
                 width = float<-target.texture.width,
-                height = -(float<-target.texture.height),
+                height = -(float<-target.texture.height)
             ),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.end_shader_mode()
 

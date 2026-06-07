@@ -1,11 +1,9 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RESOLUTION_COUNT: int = 4
 const VIEWPORT_TYPE_COUNT: int = 6
-
 
 struct ViewportLayout:
     source: rl.Rectangle
@@ -27,23 +25,38 @@ function viewport_type_name(viewport_type: int) -> str:
     return "KEEP_WIDTH"
 
 
-function keep_aspect_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_aspect_centered_integer(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let ratio_x = screen_width / game_width
     let ratio_y = screen_height / game_height
     let resize_ratio = float<-((if ratio_x < ratio_y: ratio_x else: ratio_y))
 
     return ViewportLayout(
-        source = rl.Rectangle(x = 0.0, y = float<-game_height, width = float<-game_width, height = -(float<-game_height)),
+        source = rl.Rectangle(
+            x = 0.0,
+            y = float<-game_height,
+            width = float<-game_width,
+            height = -(float<-game_height)
+        ),
         destination = rl.Rectangle(
             x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
             width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio)),
-        ),
+            height = float<-(int<-((float<-game_height) * resize_ratio))
+        )
     )
 
 
-function keep_height_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_height_centered_integer(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let resize_ratio = (float<-screen_height) / (float<-game_height)
     let source_width = float<-(int<-((float<-screen_width) / resize_ratio))
 
@@ -53,12 +66,17 @@ function keep_height_centered_integer(screen_width: int, screen_height: int, gam
             x = float<-((screen_width - int<-(source_width * resize_ratio)) / 2),
             y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
             width = float<-(int<-(source_width * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio)),
-        ),
+            height = float<-(int<-((float<-game_height) * resize_ratio))
+        )
     )
 
 
-function keep_width_centered_integer(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_width_centered_integer(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let resize_ratio = (float<-screen_width) / (float<-game_width)
     let source_height = float<-(int<-((float<-screen_height) / resize_ratio))
 
@@ -68,12 +86,17 @@ function keep_width_centered_integer(screen_width: int, screen_height: int, game
             x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-(source_height * resize_ratio)) / 2),
             width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-(source_height * resize_ratio)),
-        ),
+            height = float<-(int<-(source_height * resize_ratio))
+        )
     )
 
 
-function keep_aspect_centered(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_aspect_centered(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let ratio_x = (float<-screen_width) / (float<-game_width)
     let ratio_y = (float<-screen_height) / (float<-game_height)
     var resize_ratio = ratio_x
@@ -81,17 +104,27 @@ function keep_aspect_centered(screen_width: int, screen_height: int, game_width:
         resize_ratio = ratio_y
 
     return ViewportLayout(
-        source = rl.Rectangle(x = 0.0, y = float<-game_height, width = float<-game_width, height = -(float<-game_height)),
+        source = rl.Rectangle(
+            x = 0.0,
+            y = float<-game_height,
+            width = float<-game_width,
+            height = -(float<-game_height)
+        ),
         destination = rl.Rectangle(
             x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
             width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio)),
-        ),
+            height = float<-(int<-((float<-game_height) * resize_ratio))
+        )
     )
 
 
-function keep_height_centered(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_height_centered(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let resize_ratio = (float<-screen_height) / (float<-game_height)
     let source_width = float<-(int<-((float<-screen_width) / resize_ratio))
 
@@ -101,12 +134,17 @@ function keep_height_centered(screen_width: int, screen_height: int, game_width:
             x = float<-((screen_width - int<-(source_width * resize_ratio)) / 2),
             y = float<-((screen_height - int<-((float<-game_height) * resize_ratio)) / 2),
             width = float<-(int<-(source_width * resize_ratio)),
-            height = float<-(int<-((float<-game_height) * resize_ratio)),
-        ),
+            height = float<-(int<-((float<-game_height) * resize_ratio))
+        )
     )
 
 
-function keep_width_centered(screen_width: int, screen_height: int, game_width: int, game_height: int) -> ViewportLayout:
+function keep_width_centered(
+    screen_width: int,
+    screen_height: int,
+    game_width: int,
+    game_height: int
+) -> ViewportLayout:
     let resize_ratio = (float<-screen_width) / (float<-game_width)
     let source_height = float<-(int<-((float<-screen_height) / resize_ratio))
 
@@ -116,12 +154,17 @@ function keep_width_centered(screen_width: int, screen_height: int, game_width: 
             x = float<-((screen_width - int<-((float<-game_width) * resize_ratio)) / 2),
             y = float<-((screen_height - int<-(source_height * resize_ratio)) / 2),
             width = float<-(int<-((float<-game_width) * resize_ratio)),
-            height = float<-(int<-(source_height * resize_ratio)),
-        ),
+            height = float<-(int<-(source_height * resize_ratio))
+        )
     )
 
 
-function resize_render_size(viewport_type: int, game_width: int, game_height: int, target: ref[rl.RenderTexture2D]) -> ViewportLayout:
+function resize_render_size(
+    viewport_type: int,
+    game_width: int,
+    game_height: int,
+    target: ref[rl.RenderTexture2D]
+) -> ViewportLayout:
     let screen_width = rl.get_screen_width()
     let screen_height = rl.get_screen_height()
 
@@ -151,7 +194,7 @@ function screen_to_render_texture_position(point: rl.Vector2, layout: ViewportLa
     let relative_position = rl.Vector2(x = point.x - layout.destination.x, y = point.y - layout.destination.y)
     let ratio = rl.Vector2(
         x = layout.source.width / layout.destination.width,
-        y = -(layout.source.height) / layout.destination.height,
+        y = -(layout.source.height) / layout.destination.height
     )
     return rl.Vector2(x = relative_position.x * ratio.x, y = relative_position.y * ratio.x)
 
@@ -171,7 +214,7 @@ function main() -> int:
         rl.Vector2(x = 64.0, y = 64.0),
         rl.Vector2(x = 256.0, y = 240.0),
         rl.Vector2(x = 320.0, y = 180.0),
-        rl.Vector2(x = 3840.0, y = 2160.0),
+        rl.Vector2(x = 3840.0, y = 2160.0)
     )
 
     var resolution_index = 0
@@ -226,7 +269,14 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.BLACK)
 
-        rl.draw_texture_pro(target.texture, layout.source, layout.destination, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)
+        rl.draw_texture_pro(
+            target.texture,
+            layout.source,
+            layout.destination,
+            rl.Vector2(x = 0.0, y = 0.0),
+            0.0,
+            rl.WHITE
+        )
 
         let info_rect = rl.Rectangle(x = 5.0, y = 5.0, width = 330.0, height = 105.0)
         rl.draw_rectangle_rec(info_rect, rl.fade(rl.LIGHTGRAY, 0.7))
@@ -236,14 +286,23 @@ function main() -> int:
         rl.draw_text(f"Game Resolution: #{game_width} x #{game_height}", 15, 30, 10, rl.BLACK)
         rl.draw_text(f"Type: #{viewport_type_name(viewport_type)}", 15, 45, 10, rl.BLACK)
 
-        let scale_ratio = rl.Vector2(x = layout.destination.width / layout.source.width, y = -layout.destination.height / layout.source.height)
+        let scale_ratio = rl.Vector2(
+            x = layout.destination.width / layout.source.width,
+            y = -layout.destination.height / layout.source.height
+        )
         if scale_ratio.x < 0.001 or scale_ratio.y < 0.001:
             rl.draw_text("Scale ratio: INVALID", 15, 60, 10, rl.BLACK)
         else:
             rl.draw_text(f"Scale ratio: #{scale_ratio.x} x #{scale_ratio.y}", 15, 60, 10, rl.BLACK)
 
         rl.draw_text(f"Source size: #{layout.source.width} x #{-layout.source.height}", 15, 75, 10, rl.BLACK)
-        rl.draw_text(f"Destination size: #{layout.destination.width} x #{layout.destination.height}", 15, 90, 10, rl.BLACK)
+        rl.draw_text(
+            f"Destination size: #{layout.destination.width} x #{layout.destination.height}",
+            15,
+            90,
+            10,
+            rl.BLACK
+        )
 
         rl.draw_rectangle_rec(decrease_type_button, rl.SKYBLUE)
         rl.draw_rectangle_rec(increase_type_button, rl.SKYBLUE)

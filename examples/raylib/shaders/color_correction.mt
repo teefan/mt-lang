@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -17,11 +16,11 @@ function main() -> int:
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
-    var textures: array[rl.Texture2D, MAX_TEXTURES] = array[rl.Texture2D, MAX_TEXTURES](
+    let textures: array[rl.Texture2D, MAX_TEXTURES] = array[rl.Texture2D, MAX_TEXTURES](
         rl.load_texture("parrots.png"),
         rl.load_texture("cat.png"),
         rl.load_texture("mandrill.png"),
-        rl.load_texture("fudesumi.png"),
+        rl.load_texture("fudesumi.png")
     )
     defer:
         var index = 0
@@ -71,12 +70,18 @@ function main() -> int:
             textures[image_index],
             290 - textures[image_index].width / 2,
             rl.get_screen_height() / 2 - textures[image_index].height / 2,
-            rl.WHITE,
+            rl.WHITE
         )
         rl.end_shader_mode()
 
         rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = 218, g = 218, b = 218, a = 255))
-        rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = 232, g = 232, b = 232, a = 255))
+        rl.draw_rectangle(
+            580,
+            0,
+            rl.get_screen_width(),
+            rl.get_screen_height(),
+            rl.Color(r = 232, g = 232, b = 232, a = 255)
+        )
 
         rl.draw_text("Color Correction", 585, 40, 20, rl.GRAY)
         rl.draw_text("Picture", 602, 75, 10, rl.GRAY)
@@ -84,9 +89,30 @@ function main() -> int:
         rl.draw_text("Press [R] to Reset Values", 600, 250, 8, rl.GRAY)
 
         gui.toggle_group(rl.Rectangle(x = 645.0, y = 70.0, width = 20.0, height = 20.0), "1;2;3;4", image_index)
-        gui.slider_bar(rl.Rectangle(x = 645.0, y = 100.0, width = 120.0, height = 20.0), "Contrast", text.cstr_as_str(rl.text_format("%.0f", contrast)), contrast, -100.0, 100.0)
-        gui.slider_bar(rl.Rectangle(x = 645.0, y = 130.0, width = 120.0, height = 20.0), "Saturation", text.cstr_as_str(rl.text_format("%.0f", saturation)), saturation, -100.0, 100.0)
-        gui.slider_bar(rl.Rectangle(x = 645.0, y = 160.0, width = 120.0, height = 20.0), "Brightness", text.cstr_as_str(rl.text_format("%.0f", brightness)), brightness, -100.0, 100.0)
+        gui.slider_bar(
+            rl.Rectangle(x = 645.0, y = 100.0, width = 120.0, height = 20.0),
+            "Contrast",
+            text.cstr_as_str(rl.text_format("%.0f", contrast)),
+            contrast,
+            -100.0,
+            100.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 645.0, y = 130.0, width = 120.0, height = 20.0),
+            "Saturation",
+            text.cstr_as_str(rl.text_format("%.0f", saturation)),
+            saturation,
+            -100.0,
+            100.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 645.0, y = 160.0, width = 120.0, height = 20.0),
+            "Brightness",
+            text.cstr_as_str(rl.text_format("%.0f", brightness)),
+            brightness,
+            -100.0,
+            100.0
+        )
         reset_button_clicked = gui.button(rl.Rectangle(x = 645.0, y = 190.0, width = 40.0, height = 20.0), "Reset") != 0
 
         rl.draw_fps(710, 10)

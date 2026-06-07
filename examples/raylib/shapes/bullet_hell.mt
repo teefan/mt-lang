@@ -2,19 +2,16 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_BULLETS: int = 500000
 const DEG_TO_RAD: float = rl.PI / 180.0
-
 
 struct Bullet:
     position: rl.Vector2
     acceleration: rl.Vector2
     disabled: bool
     color: rl.Color
-
 
 var bullets: array[Bullet, MAX_BULLETS] = zero[array[Bullet, MAX_BULLETS]]
 
@@ -35,7 +32,7 @@ function main() -> int:
     var spawn_cooldown: float = 2.0
     var spawn_cooldown_timer: float = spawn_cooldown
     var magic_circle_rotation: float = 0.0
-    var bullet_texture = rl.load_render_texture(24, 24)
+    let bullet_texture = rl.load_render_texture(24, 24)
     defer rl.unload_render_texture(bullet_texture)
 
     rl.begin_texture_mode(bullet_texture)
@@ -60,14 +57,17 @@ function main() -> int:
             var row = 0
             while row < bullet_rows:
                 if bullet_count < MAX_BULLETS:
-                    bullets[bullet_count].position = rl.Vector2(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0)
+                    bullets[bullet_count].position = rl.Vector2(
+                        x = float<-SCREEN_WIDTH / 2.0,
+                        y = float<-SCREEN_HEIGHT / 2.0
+                    )
                     bullets[bullet_count].disabled = false
                     bullets[bullet_count].color = bullet_color[row % 2]
 
                     let bullet_direction = base_direction + degrees_per_row * float<-row
                     bullets[bullet_count].acceleration = rl.Vector2(
                         x = bullet_speed * float<-math.cos(double<-(bullet_direction * DEG_TO_RAD)),
-                        y = bullet_speed * float<-math.sin(double<-(bullet_direction * DEG_TO_RAD)),
+                        y = bullet_speed * float<-math.sin(double<-(bullet_direction * DEG_TO_RAD))
                     )
                     bullet_count += 1
                 row += 1
@@ -80,7 +80,12 @@ function main() -> int:
                 bullets[index].position.x += bullets[index].acceleration.x
                 bullets[index].position.y += bullets[index].acceleration.y
 
-                if bullets[index].position.x < float<-(-bullet_radius * 2) or bullets[index].position.x > float<-SCREEN_WIDTH + float<-(bullet_radius * 2) or bullets[index].position.y < float<-(-bullet_radius * 2) or bullets[index].position.y > float<-SCREEN_HEIGHT + float<-(bullet_radius * 2):
+                if (
+                    bullets[index].position.x < float<-(-bullet_radius * 2)
+                    or bullets[index].position.x > float<-SCREEN_WIDTH + float<-(bullet_radius * 2)
+                    or bullets[index].position.y < float<-(-bullet_radius * 2)
+                    or bullets[index].position.y > float<-SCREEN_HEIGHT + float<-(bullet_radius * 2)
+                ):
                     bullets[index].disabled = true
                     bullet_disabled_count += 1
             index += 1
@@ -112,8 +117,18 @@ function main() -> int:
         rl.clear_background(rl.RAYWHITE)
 
         magic_circle_rotation += 1.0
-        rl.draw_rectangle_pro(rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0, width = 120.0, height = 120.0), rl.Vector2(x = 60.0, y = 60.0), magic_circle_rotation, rl.PURPLE)
-        rl.draw_rectangle_pro(rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0, width = 120.0, height = 120.0), rl.Vector2(x = 60.0, y = 60.0), magic_circle_rotation + 45.0, rl.PURPLE)
+        rl.draw_rectangle_pro(
+            rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0, width = 120.0, height = 120.0),
+            rl.Vector2(x = 60.0, y = 60.0),
+            magic_circle_rotation,
+            rl.PURPLE
+        )
+        rl.draw_rectangle_pro(
+            rl.Rectangle(x = float<-SCREEN_WIDTH / 2.0, y = float<-SCREEN_HEIGHT / 2.0, width = 120.0, height = 120.0),
+            rl.Vector2(x = 60.0, y = 60.0),
+            magic_circle_rotation + 45.0,
+            rl.PURPLE
+        )
         rl.draw_circle_lines(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 70.0, rl.BLACK)
         rl.draw_circle_lines(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 50.0, rl.BLACK)
         rl.draw_circle_lines(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 30.0, rl.BLACK)
@@ -126,7 +141,7 @@ function main() -> int:
                         bullet_texture.texture,
                         int<-(bullets[index].position.x - float<-bullet_texture.texture.width * 0.5),
                         int<-(bullets[index].position.y - float<-bullet_texture.texture.height * 0.5),
-                        bullets[index].color,
+                        bullets[index].color
                     )
                 index += 1
         else:
@@ -161,7 +176,7 @@ function main() -> int:
                 bullet_rows,
                 bullet_speed,
                 angle_increment,
-                spawn_cooldown,
+                spawn_cooldown
             )
         )
         rl.draw_text(status_text, 155, 420, 10, rl.GREEN)

@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_COLORS_COUNT: int = 23
@@ -33,7 +32,7 @@ function main() -> int:
         rl.LIGHTGRAY,
         rl.GRAY,
         rl.DARKGRAY,
-        rl.BLACK,
+        rl.BLACK
     )
 
     var color_rects: array[rl.Rectangle, MAX_COLORS_COUNT] = zero[array[rl.Rectangle, MAX_COLORS_COUNT]]
@@ -101,7 +100,10 @@ function main() -> int:
             rl.clear_background(colors[0])
             rl.end_texture_mode()
 
-        if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) or rl.get_gesture_detected() == int<-rl.Gesture.GESTURE_DRAG:
+        if (
+            rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)
+            or rl.get_gesture_detected() == int<-rl.Gesture.GESTURE_DRAG
+        ):
             rl.begin_texture_mode(target)
             if mouse_pos.y > 50.0:
                 rl.draw_circle(int<-mouse_pos.x, int<-mouse_pos.y, brush_size, colors[color_selected])
@@ -144,7 +146,7 @@ function main() -> int:
             target.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-target.texture.width, height = -float<-target.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
 
         if mouse_pos.y > 50.0:
@@ -170,10 +172,10 @@ function main() -> int:
                 x = color_rects[color_selected].x - 2.0,
                 y = color_rects[color_selected].y - 2.0,
                 width = color_rects[color_selected].width + 4.0,
-                height = color_rects[color_selected].height + 4.0,
+                height = color_rects[color_selected].height + 4.0
             ),
             2.0,
-            rl.BLACK,
+            rl.BLACK
         )
 
         let save_button_color = if save_button_hover: rl.RED else: rl.BLACK
