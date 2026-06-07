@@ -108,6 +108,11 @@ module MilkTea
         lines << ""
       end
 
+      collect_soa_types.each do |type|
+        lines.concat(emit_soa_type(type))
+        lines << ""
+      end
+
       if uses_entrypoint_argv_helpers?
         lines.concat(emit_entrypoint_argv_helpers)
         lines << ""

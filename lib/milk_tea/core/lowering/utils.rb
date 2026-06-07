@@ -292,6 +292,10 @@ module MilkTea
           return receiver_type.element_type
         end
 
+        if receiver_type.is_a?(Types::SoA)
+          return receiver_type.element_type
+        end
+
         if pointer_type?(receiver_type)
           return pointee_type(receiver_type)
         end

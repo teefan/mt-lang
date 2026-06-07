@@ -1306,6 +1306,13 @@ module MilkTea
 
          receiver_type = infer_expression_type(expression.receiver, env:)
 
+        if expression.receiver.is_a?(AST::IndexAccess)
+          base_type = infer_expression_type(expression.receiver.receiver, env:)
+          if base_type.is_a?(Types::SoA)
+            return lower_soa_indexed_field_access(expression.receiver.receiver, expression.receiver.index, expression.member, base_type, env:, type:)
+          end
+        end
+
         if receiver_type == @types["field_handle"]
           handle = compile_time_const_value(expression.receiver, env:)
           return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::FieldHandle)
@@ -1392,6 +1399,19 @@ module MilkTea
           IR::AggregateField.new(name: fname, value:)
         end
         IR::AggregateLiteral.new(fields:, type: result_type)
+      end
+
+      def lower_soa_indexed_field_access(soa_base, index_expr, field_name, soa_type, env:, type:)
+        field_type = soa_type.fields[field_name]
+        raise LoweringError, "SoA type #{soa_type} has no field #{field_name}" unless field_type
+
+        receiver = lower_expression(soa_base, env:)
+        index = lower_expression(index_expr, env:)
+        IR::Index.new(
+          receiver: IR::Member.new(receiver:, member: field_name, type: field_type),
+          index:,
+          type:,
+        )
       end
 
       def member_c_name(receiver_type, member)

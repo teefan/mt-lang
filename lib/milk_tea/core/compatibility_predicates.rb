@@ -186,6 +186,7 @@ module MilkTea
       return true if foreign_function_type_projection_compatible?(actual_type, expected_type)
       return true if native_foreign_layout_compatible?(actual_type, expected_type)
       return true if native_foreign_layout_compatible?(expected_type, actual_type)
+      return true if quat_vec4_layout_compatible?(actual_type, expected_type)
 
       if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
         return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -317,6 +318,11 @@ module MilkTea
       return false unless native_flat.size == foreign_flat.size
 
       native_flat.zip(foreign_flat).all? { |nf, ff| nf == ff }
+    end
+
+    def quat_vec4_layout_compatible?(a, b)
+      (a.is_a?(Types::Quaternion) && b.is_a?(Types::Vector) && b.width == 4 && b.element_type.name == "float") ||
+        (b.is_a?(Types::Quaternion) && a.is_a?(Types::Vector) && a.width == 4 && a.element_type.name == "float")
     end
 
     def flatten_field_types(type)

@@ -167,6 +167,16 @@ module MilkTea
             ]
           end
 
+          def emit_soa_type(type)
+            name = soa_type_name(type)
+            lines = ["typedef struct #{name} {"]
+            type.fields.each do |field_name, field_type|
+              lines << "#{INDENT}#{c_field_declaration(field_type, field_name)};"
+            end
+            lines << "} #{name};"
+            lines
+          end
+
           def struct_layout_attributes(struct_decl)
             attributes = []
             attributes << "packed" if struct_decl.packed

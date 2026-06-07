@@ -127,6 +127,9 @@ module MilkTea
             when Types::Quaternion
               base = "mt_#{type.name}"
               pointer ? "#{base}*" : base
+            when Types::SoA
+              base = soa_type_name(type)
+              pointer ? "#{base}*" : base
             else
               raise LoweringError, "unsupported C type #{type.class.name}"
             end
@@ -356,6 +359,36 @@ module MilkTea
             end
 
             span_types.uniq
+          end
+
+          def collect_soa_types
+            soa_types = []
+            visited = {}
+
+            emitted_functions.each do |function|
+              collect_soa_type(function.return_type, soa_types, visited)
+              function.params.each do |param|
+                collect_soa_type(param.type, soa_types, visited)
+              end
+            end
+
+            @program.structs.each do |struct_decl|
+              struct_decl.fields.each do |field|
+                collect_soa_type(field.type, soa_types, visited)
+              end
+            end
+
+            soa_types.uniq
+          end
+
+          def collect_soa_type(type, soa_types, visited)
+            return unless type
+            return if visited[type.object_id]
+
+            if type.is_a?(Types::SoA)
+              soa_types << type
+              visited[type.object_id] = true
+            end
           end
 
           def collect_generic_struct_decls
@@ -1450,6 +1483,11 @@ module MilkTea
 
           def span_type_name(type)
             "mt_span_#{sanitize_identifier(type.element_type.to_s)}"
+          end
+
+          def soa_type_name(type)
+            element_name = sanitize_identifier(type.element_type.respond_to?(:name) ? type.element_type.name : type.element_type.to_s)
+            "mt_soa_#{element_name}_#{type.count}"
           end
 
           def task_type_name(type)
