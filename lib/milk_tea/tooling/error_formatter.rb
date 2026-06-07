@@ -2,7 +2,7 @@
 
 module MilkTea
   module ErrorFormatter
-    def self.format(error, path: nil, source: nil, color: true)
+    def self.format(error, path: nil, source: nil, color: true, index: nil)
       error_message = error.respond_to?(:message) ? error.message : error.to_s
       return error_message unless error.respond_to?(:line) && error.line
       return error_message unless error.respond_to?(:column) && error.column
@@ -43,10 +43,12 @@ module MilkTea
                             when :hint    then [cyan,   "hint"]
                             else               [red,    "error"]
                             end
+
+      index_text = index ? "#{bold}[E#{sprintf('%04d', index)}]#{reset}#{bold} " : ""
       code_text = code ? " #{cyan}[#{code}]#{reset}" : ""
 
       [
-        "#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
+        "#{index_text}#{sev_color}#{sev_text}#{code_text}#{reset}: #{error_message}",
         "  #{bold}-->#{reset} #{path}:#{line}:#{column}",
         "   #{bold}|#{reset}",
         "#{line.to_s.rjust(5)} #{bold}|#{reset} #{stripped}",
