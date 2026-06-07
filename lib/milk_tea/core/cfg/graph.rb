@@ -63,6 +63,23 @@ module MilkTea
         @nodes.keys
       end
 
+      def rpo_ids
+        visited = {}
+        order = []
+
+        dfs = lambda do |id|
+          return if visited[id]
+
+          visited[id] = true
+          node = @nodes[id]
+          node&.succs&.each { |succ| dfs.call(succ) }
+          order.unshift(id)
+        end
+
+        dfs.call(@entry_id) if @entry_id
+        order
+      end
+
       def read_bindings
         keys = Set.new
         each_node { |node| keys.merge(node.reads) }
