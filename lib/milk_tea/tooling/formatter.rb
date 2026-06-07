@@ -11,44 +11,52 @@ module MilkTea
     MODES = %i[safe canonical preserve tidy].freeze
     DEFAULT_MAX_LINE_LENGTH = 120
 
-    def self.format_source(source, path: nil, mode: :safe, max_line_length: nil)
+    def self.format_source(source, path: nil, mode: :safe, max_line_length: nil, profile: nil)
       validate_mode!(mode)
 
       case mode
       when :safe, :canonical
-        canonical_format(source, path:)
+        canonical_format(source, path:, profile:)
       when :preserve
-        preserve_format(source, path:)
+        preserve_format(source, path:, profile:)
       when :tidy
-        tidy_format(source, path:, max_line_length: resolve_max_line_length(path, explicit: max_line_length))
+        tidy_format(source, path:, max_line_length: resolve_max_line_length(path, explicit: max_line_length), profile:)
       end
     end
 
-    def self.check_source(source, path: nil, mode: :canonical, max_line_length: nil)
-      formatted = format_source(source, path:, mode:, max_line_length:)
-      CheckResult.new(changed: source != formatted, formatted_source: formatted)
+    def self.check_source(source, path: nil, mode: :canonical, max_line_length: nil, profile: nil)
+      profile_phase(profile, "format") do
+        formatted = format_source(source, path:, mode:, max_line_length:, profile:)
+        CheckResult.new(changed: source != formatted, formatted_source: formatted)
+      end
     end
 
     def self.build_cst(source, path: nil)
       CSTBuilder.build(source, path:)
     end
 
-    def self.canonical_format(source, path:)
-      lexed = Lexer.lex_with_trivia(source, path:)
-      ast = Parser.parse(source, path:)
-      PrettyPrinter.format_ast(ast, trivia: lexed.trivia)
+    def self.profile_phase(profile, name)
+      return yield unless profile
+
+      profile.measure(name) { yield }
     end
 
-    def self.preserve_format(source, path:)
-      cst = build_cst(source, path:)
-      CSTFormatter.format(cst)
+    def self.canonical_format(source, path:, profile: nil)
+      lexed = profile_phase(profile, "format.lex") { Lexer.lex_with_trivia(source, path:) }
+      ast = profile_phase(profile, "format.parse") { Parser.parse(source, path:) }
+      profile_phase(profile, "format.ast") { PrettyPrinter.format_ast(ast, trivia: lexed.trivia) }
     end
 
-    def self.tidy_format(source, path:, max_line_length: DEFAULT_MAX_LINE_LENGTH)
-      cst = build_cst(source, path:)
-      normalized = CSTFormatter.format_normalized(cst)
-      wrapped = wrap_long_argument_lists(normalized, max_line_length:, path:)
-      normalize_blank_lines(wrapped, path:)
+    def self.preserve_format(source, path:, profile: nil)
+      cst = profile_phase(profile, "format.cst") { build_cst(source, path:) }
+      profile_phase(profile, "format.cst_fmt") { CSTFormatter.format(cst) }
+    end
+
+    def self.tidy_format(source, path:, max_line_length: DEFAULT_MAX_LINE_LENGTH, profile: nil)
+      cst = profile_phase(profile, "format.cst") { build_cst(source, path:) }
+      normalized = profile_phase(profile, "format.normalize") { CSTFormatter.format_normalized(cst) }
+      wrapped = profile_phase(profile, "format.wrap") { wrap_long_argument_lists(normalized, max_line_length:, path:) }
+      profile_phase(profile, "format.blank_lines") { normalize_blank_lines(wrapped, path:) }
     end
 
     def self.resolve_max_line_length(path = nil, explicit: nil)

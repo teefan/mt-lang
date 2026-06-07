@@ -12,7 +12,8 @@ module MilkTea
         in_states  = {}
         out_states = {}
         edge_out   = {}  # [from_id, to_id] => state  (only when edge_transfer given)
-        graph.ids.each do |id|
+        all_ids = graph.ids
+        all_ids.each do |id|
           in_states[id]  = initial.call
           out_states[id] = initial.call
         end
@@ -20,7 +21,7 @@ module MilkTea
         changed = true
         while changed
           changed = false
-          iteration_ids = direction == :forward ? graph.ids : graph.ids.reverse
+          iteration_ids = direction == :forward ? graph.rpo_ids : all_ids.reverse
           iteration_ids.each do |id|
             node = graph.nodes[id]
 

@@ -152,20 +152,21 @@ module MilkTea
       path = paths.first
 
       source = read_source_file(path)
-      result = Formatter.check_source(source, path: path, mode: options[:mode], max_line_length: options[:max_line_length])
+      format_profile = options[:profile] ? Linter::Profile.new : nil
+      start_time = options[:profile] ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
+      result = Formatter.check_source(source, path: path, mode: options[:mode], max_line_length: options[:max_line_length], profile: format_profile)
+      elapsed_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
 
-      if options[:check]
+      rc = if options[:check]
         announce_file_action(path, "format-check")
         if result.changed
           @out.puts("needs formatting #{path}")
-          return 1
+          1
+        else
+          @out.puts("already formatted #{path}")
+          0
         end
-
-        @out.puts("already formatted #{path}")
-        return 0
-      end
-
-      if options[:write]
+      elsif options[:write]
         announce_file_action(path, "format-write")
         if result.changed
           File.write(path, result.formatted_source)
@@ -173,21 +174,30 @@ module MilkTea
         else
           @out.puts("already formatted #{path}")
         end
-        return 0
+        0
+      else
+        @out.write(result.formatted_source)
+        0
       end
 
-      @out.write(result.formatted_source)
-      0
+      print_file_profiles([{ path:, total_ms: elapsed_ms, profile: format_profile }], "format") if options[:profile]
+      rc
     end
 
     def format_paths(paths, options)
+      format_profiles = []
       if options[:check]
         needs_fmt = []
         paths.each do |p|
           announce_file_action(p, "format-check")
-          result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
+          format_profile = options[:profile] ? Linter::Profile.new : nil
+          start_time = options[:profile] ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
+          result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length], profile: format_profile)
+          elapsed_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
+          format_profiles << { path: p, total_ms: elapsed_ms, profile: format_profile } if options[:profile]
           needs_fmt << p if result.changed
         end
+        print_file_profiles(format_profiles, "format") if options[:profile]
         if needs_fmt.empty?
           @out.puts("all #{paths.size} file(s) already formatted")
           return 0
@@ -201,13 +211,18 @@ module MilkTea
       changed = 0
       paths.each do |p|
         announce_file_action(p, "format-write")
-        result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length])
+        format_profile = options[:profile] ? Linter::Profile.new : nil
+        start_time = options[:profile] ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
+        result = Formatter.check_source(read_source_file(p), path: p, mode: options[:mode], max_line_length: options[:max_line_length], profile: format_profile)
+        elapsed_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
+        format_profiles << { path: p, total_ms: elapsed_ms, profile: format_profile } if options[:profile]
         if result.changed
           File.write(p, result.formatted_source)
           @out.puts("formatted #{p}")
           changed += 1
         end
       end
+      print_file_profiles(format_profiles, "format") if options[:profile]
       @out.puts("formatted #{changed} of #{paths.size} file(s)")
       0
     end
@@ -220,8 +235,7 @@ module MilkTea
       init = false
       output_format = :text
       ignore_generated = false
-      profile_rules = false
-      profile_rules_limit = 12
+      profile = false
       input_paths = []
       until @argv.empty?
         arg = @argv.shift
@@ -270,27 +284,16 @@ module MilkTea
           end
         when "--ignore-generated"
           ignore_generated = true
-        when "--profile-rules"
-          profile_rules = true
-        when "--profile-rules-limit"
-          raw_limit = @argv.shift
-          unless raw_limit
-            @err.puts("--profile-rules-limit requires a positive integer")
-            return 1
-          end
-          profile_rules_limit = raw_limit.to_i
-          if profile_rules_limit <= 0
-            @err.puts("--profile-rules-limit requires a positive integer")
-            return 1
-          end
+        when "--profile"
+          profile = true
         else
           @err.puts("unknown lint flag: #{flag}")
           return 1
         end
       end
 
-      if profile_rules && output_format == :json
-        @err.puts("--profile-rules is only supported with --output-format text")
+      if profile && output_format == :json
+        @err.puts("--profile is only supported with --output-format text")
         return 1
       end
 
@@ -336,7 +339,8 @@ module MilkTea
           end
 
           facts = lint_sema_facts_for(source, p, locked: resolution[:locked])
-          profile = profile_rules ? Linter::Profile.new : nil
+          prof = profile ? Linter::Profile.new : nil
+          start_time = profile ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
 
           fixed = Linter.fix_source(
             source,
@@ -344,15 +348,17 @@ module MilkTea
             sema_facts: facts,
             select:,
             ignore:,
-            profile:,
+            profile: prof,
           )
-          lint_profiles << { path: p, profile:, mode: :pre_fix_scan } if profile
+          total_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
+          lint_profiles << { path: p, profile: prof, mode: :pre_fix_scan, total_ms: } if prof
           if fixed != source
             File.write(p, fixed)
             @out.puts("fixed #{p}")
           end
         end
-        print_lint_rule_profiles(lint_profiles, limit: profile_rules_limit) if profile_rules
+        print_lint_rule_profiles(lint_profiles) if profile
+        print_lint_file_profiles(lint_profiles) if profile
         return 0
       end
 
@@ -363,9 +369,11 @@ module MilkTea
         next [] if ignore_generated && generated_source?(source)
 
         facts = lint_sema_facts_for(source, p, locked: resolution[:locked])
-        profile = profile_rules ? Linter::Profile.new : nil
-        warnings = Linter.lint_source(source, path: p, select:, ignore:, sema_facts: facts, profile:)
-        lint_profiles << { path: p, profile:, mode: :lint } if profile
+        prof = profile ? Linter::Profile.new : nil
+        start_time = profile ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil
+        warnings = Linter.lint_source(source, path: p, select:, ignore:, sema_facts: facts, profile: prof)
+        total_ms = start_time ? ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000.0).round(1) : nil
+        lint_profiles << { path: p, profile: prof, mode: :lint, total_ms: } if prof
         warnings
       end
 
@@ -383,6 +391,7 @@ module MilkTea
         else
           @out.puts("clean #{paths.size} file(s)")
         end
+        print_lint_file_profiles(lint_profiles) if profile
         return 0
       end
 
@@ -390,7 +399,8 @@ module MilkTea
         @out.puts("#{warning.path}:#{warning.line}: #{warning.code}: #{warning.message}")
       end
 
-      print_lint_rule_profiles(lint_profiles, limit: profile_rules_limit) if profile_rules
+      print_lint_rule_profiles(lint_profiles) if profile
+      print_lint_file_profiles(lint_profiles) if profile
 
       file_count = all_warnings.map(&:path).uniq.size
       noun = all_warnings.size == 1 ? "warning" : "warnings"
@@ -411,7 +421,7 @@ module MilkTea
       0
     end
 
-    def print_lint_rule_profiles(lint_profiles, limit:)
+    def print_lint_rule_profiles(lint_profiles, limit: 12)
       lint_profiles.each do |entry|
         profile = entry[:profile]
         next unless profile
@@ -450,6 +460,53 @@ module MilkTea
 
         @out.puts("  non-rule hot phases: #{non_rule_rows.join(', ')}") unless non_rule_rows.empty?
       end
+    end
+
+    def print_lint_file_profiles(lint_profiles)
+      file_entries = lint_profiles.filter_map do |entry|
+        total = entry[:total_ms]
+        next unless total
+
+        phases = entry[:profile]&.timings_ms&.reject { |name, _| name.start_with?("rule.") }&.sort_by { |_, ms| -ms }
+        { path: entry[:path], total_ms: total, phases: }
+      end
+      return if file_entries.empty?
+
+      sorted = file_entries.sort_by { |e| -e[:total_ms] }
+      @out.puts
+      @out.puts("Profile (lint): #{sorted.size} file(s)")
+      sorted.each do |entry|
+        phase_str = entry[:phases]&.filter_map { |name, ms| "#{name}: #{format('%.1f', ms)}ms" if ms >= 1.0 }&.join(", ")
+        detail = phase_str && !phase_str.empty? ? " (#{phase_str})" : ""
+        @out.puts("  #{entry[:path]}: #{format('%.1f', entry[:total_ms])}ms#{detail}")
+      end
+      total = sorted.sum { |e| e[:total_ms] }
+      @out.puts("Total: #{format('%.1f', total)}ms")
+    end
+
+    def print_file_profiles(file_profiles, label)
+      sorted = file_profiles.sort_by { |fp| -fp[:total_ms] }
+      return if sorted.empty?
+
+      @out.puts
+      if sorted.size == 1
+        entry = sorted.first
+        phases = entry[:profile]&.timings_ms&.sort_by { |_, ms| -ms }
+        phase_str = phases&.filter_map { |name, ms| "#{name}: #{format('%.1f', ms)}ms" if ms >= 0.1 }&.join(", ")
+        detail = phase_str && !phase_str.empty? ? " (#{phase_str})" : ""
+        @out.puts("#{label} profile #{entry[:path]}: #{format('%.1f', entry[:total_ms])}ms#{detail}")
+        return
+      end
+
+      @out.puts("Profile (#{label}): #{sorted.size} file(s)")
+      sorted.each do |entry|
+        phases = entry[:profile]&.timings_ms&.sort_by { |_, ms| -ms }
+        phase_str = phases&.filter_map { |name, ms| "#{name}: #{format('%.1f', ms)}ms" if ms >= 1.0 }&.join(", ")
+        detail = phase_str && !phase_str.empty? ? " (#{phase_str})" : ""
+        @out.puts("  #{entry[:path]}: #{format('%.1f', entry[:total_ms])}ms#{detail}")
+      end
+      total = sorted.sum { |fp| fp[:total_ms] }
+      @out.puts("Total: #{format('%.1f', total)}ms")
     end
 
     def check_command
@@ -843,6 +900,7 @@ module MilkTea
         write: false,
         mode: :safe,
         max_line_length: nil,
+        profile: false,
       }
       input_paths = []
 
@@ -874,6 +932,8 @@ module MilkTea
             end
 
             options[:max_line_length] = line_length
+          when "--profile"
+            options[:profile] = true
           else
             @err.puts("unknown format option #{option}")
             print_usage(@err)
@@ -1102,6 +1162,7 @@ module MilkTea
             --tidy           Apply tidy formatting with line wrapping and blank-line normalization.
             --max-line-length N
                              Override the line length used by tidy mode.
+            --profile        Print per-file format timing breakdown.
 
           When formatting directories or multiple files, --check or --write is required.
         HELP
@@ -1120,8 +1181,7 @@ module MilkTea
             --fix                   Apply auto-fixable changes in place.
             --output-format FORMAT  Output format: text (default) or json.
             --ignore-generated      Skip files that start with '# generated by mtc'.
-            --profile-rules         Print per-rule lint scan timing breakdown.
-            --profile-rules-limit N Show at most N rules per file (default: 12).
+            --profile               Print lint timing: per-file summary and per-rule breakdown.
             --locked                Use package.lock for semantic dependency resolution.
             --frozen                Require a current package.lock before semantic dependency resolution.
             -I, --include-path PATH Add an extra module root for semantic resolution.
@@ -1259,8 +1319,8 @@ module MilkTea
     def print_usage(io)
       io.puts("Usage: mtc lex PATH")
       io.puts("       mtc parse PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N]")
-      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--ignore-generated] [--profile-rules] [--profile-rules-limit N] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc format PATH|DIR [PATH|DIR ...] [--check|--write] [--safe|--canonical|--preserve|--tidy] [--max-line-length N] [--profile]")
+      io.puts("       mtc lint PATH|DIR [--select RULES] [--ignore RULES] [--fix] [--output-format text|json] [--ignore-generated] [--profile] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lint --init")
       io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
