@@ -1161,9 +1161,9 @@ module MilkTea
           return "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"
         end
 
-        return type.name if type.module_name&.start_with?("std.c.")
+        return type.name if type.respond_to?(:module_name) && type.module_name&.start_with?("std.c.")
 
-        base = type.module_name ? "#{module_c_prefix(type.module_name)}_#{type.name}" : type.name
+        base = (type.respond_to?(:module_name) && type.module_name) ? "#{module_c_prefix(type.module_name)}_#{type.name}" : type.name
         return base unless type.is_a?(Types::StructInstance) || type.is_a?(Types::VariantInstance)
 
         "#{base}_#{sanitize_identifier(type.arguments.join('_'))}"

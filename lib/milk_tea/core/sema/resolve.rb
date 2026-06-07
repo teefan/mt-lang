@@ -913,7 +913,7 @@ module MilkTea
 
           begin
             receiver_type = resolve_type_ref(type_ref)
-            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
+            unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
               raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
             end
 
@@ -929,7 +929,7 @@ module MilkTea
         end
 
         receiver_type = resolve_type_ref(type_ref)
-        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
+        unless receiver_type.is_a?(Types::Struct) || receiver_type.is_a?(Types::StructInstance) || receiver_type.is_a?(Types::Opaque) || receiver_type.is_a?(Types::GenericInstance) || receiver_type.is_a?(Types::Nullable) || receiver_type.is_a?(Types::StringView) || receiver_type.is_a?(Types::Primitive) || vector_type?(receiver_type) || matrix_type?(receiver_type) || quaternion_type?(receiver_type)
           raise_sema_error("extending target #{type_ref} must be a struct, opaque, nullable/generic receiver, or str")
         end
 

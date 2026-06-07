@@ -1,16 +1,16 @@
 ## Milk Tea Data Structure Baseline
 ##
 ## Exercises all standard library data structure modules.
-## Hash/order-based collections use custom key structs with
-## defined hooks since primitives lack built-in hash/order.
+## Uses std.hash for primitive type hash/order hooks.
 
+import std.hash
+import std.str
 import std.vec as vec
 import std.deque as deque
 import std.queue as fifo
 import std.stack as lifo
 import std.binary_heap as heap_mod
 import std.priority_queue as pq_mod
-import std.str
 import std.map as ht
 import std.set as hset
 import std.ordered_map as omap
@@ -20,68 +20,6 @@ import std.linked_set as lset
 import std.counter as counter_mod
 import std.multiset as mset
 import std.graph as gmod
-
-# --- Key types with hash/equal/order hooks ---
-
-struct IntKey:
-    value: int
-
-extending IntKey:
-    static function hash(v: const_ptr[IntKey]) -> uint:
-        unsafe:
-            return uint<-read(ptr[IntKey]<-v).value
-
-    static function equal(a: const_ptr[IntKey], b: const_ptr[IntKey]) -> bool:
-        unsafe:
-            return read(ptr[IntKey]<-a).value == read(ptr[IntKey]<-b).value
-
-    static function order(a: const_ptr[IntKey], b: const_ptr[IntKey]) -> int:
-        unsafe:
-            let av = read(ptr[IntKey]<-a).value
-            let bv = read(ptr[IntKey]<-b).value
-            if av < bv:
-                return -1
-            else if av > bv:
-                return 1
-            else:
-                return 0
-
-struct StrKey:
-    value: str
-
-extending StrKey:
-    static function hash(v: const_ptr[StrKey]) -> uint:
-        unsafe:
-            let value = read(ptr[StrKey]<-v).value
-            let fnv: uint = 0x811C9DC5
-            let prime: uint = 0x01000193
-            var result = fnv
-            var i: ptr_uint = 0
-            while i < value.len:
-                let b = value.byte_at(i)
-                result = (result ^ uint<-b) * prime
-                i += 1
-            return result
-
-    static function equal(a: const_ptr[StrKey], b: const_ptr[StrKey]) -> bool:
-        unsafe:
-            return read(ptr[StrKey]<-a).value.equal(read(ptr[StrKey]<-b).value)
-
-    static function order(a: const_ptr[StrKey], b: const_ptr[StrKey]) -> int:
-        unsafe:
-            let sa = read(ptr[StrKey]<-a).value
-            let sb = read(ptr[StrKey]<-b).value
-            var min_len = sa.len
-            if sb.len < min_len:
-                min_len = sb.len
-            var j: ptr_uint = 0
-            while j < min_len:
-                let ba = int<-sa.byte_at(j)
-                let bb = int<-sb.byte_at(j)
-                if ba != bb:
-                    return ba - bb
-                j += 1
-            return int<-(sa.len) - int<-(sb.len)
 
 # ---------------------------------------------------------------------------
 # 1  Vec[T] — contiguous dynamic array
@@ -140,10 +78,10 @@ function stack_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function heap_demo() -> int:
-    var h = heap_mod.BinaryHeap[IntKey].create()
-    h.push(IntKey(value = 30))
-    h.push(IntKey(value = 10))
-    h.push(IntKey(value = 20))
+    var h = heap_mod.BinaryHeap[int].create()
+    h.push(30)
+    h.push(10)
+    h.push(20)
     let result = h.pop()
     h.release()
     return 1
@@ -153,10 +91,10 @@ function heap_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function priority_queue_demo() -> int:
-    var q = pq_mod.PriorityQueue[IntKey].create()
-    q.enqueue(IntKey(value = 15))
-    q.enqueue(IntKey(value = 5))
-    q.enqueue(IntKey(value = 10))
+    var q = pq_mod.PriorityQueue[int].create()
+    q.enqueue(15)
+    q.enqueue(5)
+    q.enqueue(10)
     let result = q.dequeue()
     q.release()
     return 1
@@ -166,10 +104,10 @@ function priority_queue_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function map_demo() -> int:
-    var m = ht.Map[StrKey, int].create()
-    m.set(StrKey(value = "x"), 10)
-    m.set(StrKey(value = "y"), 20)
-    let val = m.get(StrKey(value = "y"))
+    var m = ht.Map[str, int].create()
+    m.set("x", 10)
+    m.set("y", 20)
+    let val = m.get("y")
     let _val = val
     m.release()
     return 1
@@ -179,12 +117,12 @@ function map_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function set_demo() -> int:
-    var s = hset.Set[IntKey].create()
-    s.insert(IntKey(value = 1))
-    s.insert(IntKey(value = 2))
-    s.insert(IntKey(value = 3))
-    s.remove(IntKey(value = 2))
-    let has = s.contains(IntKey(value = 1))
+    var s = hset.Set[int].create()
+    s.insert(1)
+    s.insert(2)
+    s.insert(3)
+    s.remove(2)
+    let has = s.contains(1)
     let _has = has
     s.release()
     return 1
@@ -194,10 +132,10 @@ function set_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function ordered_map_demo() -> int:
-    var m = omap.OrderedMap[IntKey, str].create()
-    m.set(IntKey(value = 3), "three")
-    m.set(IntKey(value = 1), "one")
-    let val = m.get(IntKey(value = 1))
+    var m = omap.OrderedMap[int, str].create()
+    m.set(3, "three")
+    m.set(1, "one")
+    let val = m.get(1)
     let _val = val
     m.release()
     return 1
@@ -207,11 +145,11 @@ function ordered_map_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function ordered_set_demo() -> int:
-    var s = oset.OrderedSet[IntKey].create()
-    s.insert(IntKey(value = 3))
-    s.insert(IntKey(value = 1))
-    s.insert(IntKey(value = 2))
-    let has = s.contains(IntKey(value = 1))
+    var s = oset.OrderedSet[int].create()
+    s.insert(3)
+    s.insert(1)
+    s.insert(2)
+    let has = s.contains(1)
     let _has = has
     s.release()
     return 1
@@ -221,11 +159,11 @@ function ordered_set_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function linked_map_demo() -> int:
-    var m = lmap.LinkedMap[StrKey, int].create()
-    m.set(StrKey(value = "c"), 30)
-    m.set(StrKey(value = "a"), 10)
-    m.set(StrKey(value = "b"), 20)
-    let val = m.get(StrKey(value = "a"))
+    var m = lmap.LinkedMap[str, int].create()
+    m.set("c", 30)
+    m.set("a", 10)
+    m.set("b", 20)
+    let val = m.get("a")
     let _val = val
     m.release()
     return 1
@@ -235,11 +173,11 @@ function linked_map_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function linked_set_demo() -> int:
-    var s = lset.LinkedSet[IntKey].create()
-    s.insert(IntKey(value = 3))
-    s.insert(IntKey(value = 1))
-    s.insert(IntKey(value = 2))
-    let has = s.contains(IntKey(value = 2))
+    var s = lset.LinkedSet[int].create()
+    s.insert(3)
+    s.insert(1)
+    s.insert(2)
+    let has = s.contains(2)
     let _has = has
     s.release()
     return 1
@@ -249,12 +187,12 @@ function linked_set_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function counter_demo() -> int:
-    var c = counter_mod.Counter[IntKey].create()
-    c.increment(IntKey(value = 1))
-    c.increment(IntKey(value = 1))
-    c.increment(IntKey(value = 2))
+    var c = counter_mod.Counter[int].create()
+    c.increment(1)
+    c.increment(1)
+    c.increment(2)
     let total = c.total_count()
-    let cnt = c.count(IntKey(value = 1))
+    let cnt = c.count(1)
     let _cnt = cnt
     c.release()
     return int<-(total)
@@ -264,10 +202,10 @@ function counter_demo() -> int:
 # ---------------------------------------------------------------------------
 
 function multiset_demo() -> int:
-    var s = mset.MultiSet[IntKey].create()
-    s.insert(IntKey(value = 1))
-    s.insert(IntKey(value = 1))
-    s.insert(IntKey(value = 2))
+    var s = mset.MultiSet[int].create()
+    s.insert(1)
+    s.insert(1)
+    s.insert(2)
     let total = s.total_count()
     let distinct = s.distinct_len()
     let _distinct = distinct
