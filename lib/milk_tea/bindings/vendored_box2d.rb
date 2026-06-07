@@ -41,7 +41,7 @@ module MilkTea
     end
 
     def source_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("third_party/box2d-upstream")
+      MilkTea.writable_root_for(root).join("third_party/box2d-upstream")
     end
 
     def include_root(root: MilkTea.root)
@@ -53,11 +53,11 @@ module MilkTea
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-box2d")
+      MilkTea.writable_root_for(root).join("tmp/vendored-box2d")
     end
 
     def install_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-box2d-prefix")
+      MilkTea.writable_root_for(root).join("tmp/vendored-box2d-prefix")
     end
 
     def archive_path(root: MilkTea.root)

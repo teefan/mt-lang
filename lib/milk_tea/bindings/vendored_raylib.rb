@@ -47,31 +47,31 @@ module MilkTea
 
     class AdaptiveArchive < VendoredCLibrary::Base
       def initialize(root:)
-        resolved_root = Pathname.new(File.expand_path(root.to_s))
+        sr = VendoredRaylib.source_root(root:)
         super(
           name: "raylib",
-          source_root: VendoredRaylib.source_root(root: resolved_root),
-          include_roots: [VendoredRaylib.source_root(root: resolved_root)],
+          source_root: sr,
+          include_roots: [sr],
           cc_env_var: "RAYLIB_CC",
         )
         @desktop_archive = VendoredCLibrary::Archive.new(
           name: "raylib",
-          source_root: VendoredRaylib.source_root(root: resolved_root),
-          build_root: VendoredRaylib.build_root(root: resolved_root),
+          source_root: sr,
+          build_root: VendoredRaylib.build_root(root:),
           archive_name: "libraylib.a",
           sources: SOURCES,
-          include_roots: [VendoredRaylib.source_root(root: resolved_root)],
+          include_roots: [sr],
           defines: DESKTOP_DEFINES,
           system_link_flags: DESKTOP_SYSTEM_LINK_FLAGS,
           cc_env_var: "RAYLIB_CC",
         )
         @wasm_archive = VendoredCLibrary::Archive.new(
           name: "raylib",
-          source_root: VendoredRaylib.source_root(root: resolved_root),
-          build_root: VendoredRaylib.build_root(root: resolved_root, platform: :wasm),
+          source_root: sr,
+          build_root: VendoredRaylib.build_root(root:, platform: :wasm),
           archive_name: "libraylib.a",
           sources: SOURCES,
-          include_roots: [VendoredRaylib.source_root(root: resolved_root)],
+          include_roots: [sr],
           defines: WASM_DEFINES,
           c_flags: WASM_COMPILE_FLAGS,
           system_link_flags: WASM_SYSTEM_LINK_FLAGS,
@@ -108,12 +108,12 @@ module MilkTea
     end
 
     def source_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("third_party/raylib-upstream/src")
+      MilkTea.writable_root_for(root).join("third_party/raylib-upstream/src")
     end
 
     def build_root(root: MilkTea.root, platform: nil)
       suffix = platform == :wasm ? "tmp/vendored-raylib-web" : "tmp/vendored-raylib-opengl43"
-      Pathname.new(File.expand_path(root.to_s)).join(suffix)
+      MilkTea.writable_root_for(root).join(suffix)
     end
 
     def archive_path(root: MilkTea.root, platform: nil)

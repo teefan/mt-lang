@@ -50,11 +50,11 @@ module MilkTea
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-glfw")
+      MilkTea.writable_root_for(root).join("tmp/vendored-glfw")
     end
 
     def install_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-glfw-prefix")
+      MilkTea.writable_root_for(root).join("tmp/vendored-glfw-prefix")
     end
 
     def archive_path(root: MilkTea.root)

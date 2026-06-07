@@ -50,10 +50,11 @@ module MilkTea
     module_function
 
     def default_sources(root: MilkTea.root)
+      data = MilkTea.writable_root_for(root)
       [
         Source.new(
           name: "raylib",
-          checkout_root: root.join("third_party/raylib-upstream"),
+          checkout_root: data.join("third_party/raylib-upstream"),
           repository_url: "https://github.com/raysan5/raylib.git",
           revision: "dbc56a87da87d973a9c5baa4e7438a9d20121d28",
           sentinel_paths: %w[
@@ -64,7 +65,7 @@ module MilkTea
         ),
         Source.new(
           name: "sdl3",
-          checkout_root: root.join("third_party/sdl3-upstream"),
+          checkout_root: data.join("third_party/sdl3-upstream"),
           repository_url: "https://github.com/libsdl-org/SDL.git",
           revision: "41f079491a0e79b22441fd32a7c8ad91db237744",
           sentinel_paths: %w[
@@ -75,7 +76,7 @@ module MilkTea
         ),
         Source.new(
           name: "glfw",
-          checkout_root: root.join("third_party/glfw-upstream"),
+          checkout_root: data.join("third_party/glfw-upstream"),
           repository_url: "https://github.com/glfw/glfw.git",
           revision: "b00e6a8a88ad1b60c0a045e696301deb92c9a13e",
           sentinel_paths: %w[
@@ -85,7 +86,7 @@ module MilkTea
         ),
         Source.new(
           name: "opengl_registry",
-          checkout_root: root.join("third_party/opengl-registry-upstream"),
+          checkout_root: data.join("third_party/opengl-registry-upstream"),
           repository_url: "https://github.com/KhronosGroup/OpenGL-Registry.git",
           revision: "9cb90ca4902d588bef3c830fbb1da484893bd5fb",
           sentinel_paths: %w[
@@ -96,7 +97,7 @@ module MilkTea
         ),
         Source.new(
           name: "box2d",
-          checkout_root: root.join("third_party/box2d-upstream"),
+          checkout_root: data.join("third_party/box2d-upstream"),
           repository_url: "https://github.com/erincatto/box2d.git",
           revision: "ddfd9df727a06940af34b5bc2ef79bcaba287d50",
           sentinel_paths: %w[
@@ -105,7 +106,7 @@ module MilkTea
         ),
         Source.new(
           name: "cjson",
-          checkout_root: root.join("third_party/cjson-upstream"),
+          checkout_root: data.join("third_party/cjson-upstream"),
           repository_url: "https://github.com/DaveGamble/cJSON.git",
           revision: "c859b25da02955fef659d658b8f324b5cde87be3",
           sentinel_paths: %w[
@@ -115,7 +116,7 @@ module MilkTea
         ),
         Source.new(
           name: "flecs",
-          checkout_root: root.join("third_party/flecs-upstream"),
+          checkout_root: data.join("third_party/flecs-upstream"),
           repository_url: "https://github.com/SanderMertens/flecs.git",
           revision: "d7d0c4f7afb4518a6bae749efdc52c7cb5cffee6",
           sentinel_paths: %w[
@@ -126,7 +127,7 @@ module MilkTea
         ),
         Source.new(
           name: "libuv",
-          checkout_root: root.join("third_party/libuv-upstream"),
+          checkout_root: data.join("third_party/libuv-upstream"),
           repository_url: "https://github.com/libuv/libuv.git",
           revision: "1cfa32ff59c076ffb6ed735bbc8c18361558661f",
           sentinel_paths: %w[
@@ -137,7 +138,7 @@ module MilkTea
         ),
         Source.new(
           name: "pcre2",
-          checkout_root: root.join("third_party/pcre2-upstream"),
+          checkout_root: data.join("third_party/pcre2-upstream"),
           repository_url: "https://github.com/PCRE2Project/pcre2.git",
           revision: "b2bd4254b379b9d7dc9a3dda060a7e27009ccdff",
           sentinel_paths: %w[
@@ -148,7 +149,7 @@ module MilkTea
         ),
         Source.new(
           name: "steamworks_sdk",
-          checkout_root: root.join("third_party/steamworks-sdk-upstream"),
+          checkout_root: data.join("third_party/steamworks-sdk-upstream"),
           repository_url: "https://github.com/rlabrecque/steamworkssdk.git",
           revision: "be6107f4b75bf996531415c53a6488a33a2a1be3",
           sentinel_paths: %w[
@@ -162,7 +163,7 @@ module MilkTea
         ),
         Source.new(
           name: "miniaudio",
-          checkout_root: root.join("third_party/miniaudio-upstream"),
+          checkout_root: data.join("third_party/miniaudio-upstream"),
           repository_url: "https://github.com/mackron/miniaudio.git",
           revision: "9634bedb5b5a2ca38c1ee7108a9358a4e233f14d",
           sentinel_paths: %w[

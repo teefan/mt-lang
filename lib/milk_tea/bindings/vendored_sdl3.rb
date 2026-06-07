@@ -51,11 +51,11 @@ module MilkTea
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-sdl3")
+      MilkTea.writable_root_for(root).join("tmp/vendored-sdl3")
     end
 
     def install_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-sdl3-prefix")
+      MilkTea.writable_root_for(root).join("tmp/vendored-sdl3-prefix")
     end
 
     def archive_path(root: MilkTea.root)

@@ -9,8 +9,9 @@ module MilkTea
     module_function
 
     def library(root: MilkTea.root)
+      resolved_root = Pathname.new(File.expand_path(root.to_s))
       @libraries ||= {}
-      @libraries[root.to_s] ||= Library.new(root:)
+      @libraries[resolved_root.to_s] ||= Library.new(root: resolved_root)
     end
 
     class Library < VendoredCLibrary::Base
@@ -18,8 +19,8 @@ module MilkTea
 
       def initialize(root: MilkTea.root)
         @root = Pathname.new(File.expand_path(root.to_s))
-        @build_root = @root.join("tmp/vendored-steamworks")
-        super(name: "steamworks", source_root: @root.join("third_party/steamworks-sdk-upstream"))
+        @build_root = MilkTea.writable_root_for(root).join("tmp/vendored-steamworks")
+        super(name: "steamworks", source_root: MilkTea.writable_root_for(root).join("third_party/steamworks-sdk-upstream"))
       end
 
       def link_flags(platform: nil)
