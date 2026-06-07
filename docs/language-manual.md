@@ -734,6 +734,10 @@ Rules:
 - `void`
 - `str`
 - `cstr`
+- `vec2` `vec3` `vec4` — float vectors with `.x` `.y` `.z` `.w` fields; support component-wise `+` `-` `*` `/` and unary `-`
+- `ivec2` `ivec3` `ivec4` — integer vectors with `.x` `.y` `.z` `.w` fields
+- `mat3` `mat4` — column-major matrices; `mat3` has columns `.col0`–`.col2` (each `vec3`), `mat4` has `.col0`–`.col3` (each `vec4`)
+- `quat` — quaternion with `.x` `.y` `.z` `.w` fields; memory-layout compatible with `vec4`
 
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
@@ -754,6 +758,7 @@ Primitive type names are reserved. They cannot be reused for value bindings, par
 - `proc(params...) -> R`
 - `Option[T]`
 - `Result[T, E]`
+- `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
 
 ### 6.3 Nullability
 

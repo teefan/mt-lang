@@ -486,6 +486,12 @@ Operator precedence, low to high:
 9. `+`, `-`
 10. `*`, `/`, `%`
 
+Native type operators:
+
+- Vectors (`vecN`/`ivecN`): `+`, `-`, `*` (component-wise) with same-type vectors; `*`, `/` with scalar; unary `-`
+- Matrices (`matN`): `+`, `-` with same-type matrices; `*`, `/` with scalar; unary `-`
+- Quaternions (`quat`): `+`, `-`, `*` (component-wise) with same-type quaternions; unary `-`
+
 ## 10. Type System
 
 Primitive types:
@@ -499,6 +505,10 @@ Primitive types:
 - `void`
 - `str`
 - `cstr`
+- `vec2`, `vec3`, `vec4` — float vectors with `.x` `.y` `.z` `.w` fields
+- `ivec2`, `ivec3`, `ivec4` — integer vectors with `.x` `.y` `.z` `.w` fields
+- `mat3`, `mat4` — column-major matrices; `mat3` has `vec3` columns `.col0`–`.col2`, `mat4` has `vec4` columns `.col0`–`.col3`
+- `quat` — quaternion with `.x` `.y` `.z` `.w` fields (layout-compatible with `vec4`)
 
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
@@ -515,6 +525,7 @@ Type constructors:
 - `Result[T, E]`
 - `fn(params...) -> R`
 - `proc(params...) -> R`
+- `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. There is no separate `array.as_span()` method surface.
 

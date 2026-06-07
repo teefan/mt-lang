@@ -1220,6 +1220,12 @@ module MilkTea
           raise LoweringError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
           raise LoweringError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
           raise LoweringError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+        when "SoA"
+          raise LoweringError, "SoA requires exactly two type arguments" unless arguments.length == 2
+          raise LoweringError, "SoA element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise LoweringError, "SoA element type must be a struct with fields" unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
+          raise LoweringError, "SoA length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
+          raise LoweringError, "SoA length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "str_buffer"
           raise LoweringError, "str_buffer requires exactly one type argument" unless arguments.length == 1
           raise LoweringError, "str_buffer capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)

@@ -485,6 +485,10 @@ The type system must stay simple, explicit, and close to C.
 - `void`
 - `str`
 - `cstr`
+- `vec2`, `vec3`, `vec4` — float vectors
+- `ivec2`, `ivec3`, `ivec4` — integer vectors
+- `mat3`, `mat4` — column-major matrices
+- `quat` — quaternion (memory-compatible with `vec4`)
 
 Notes:
 
@@ -506,6 +510,7 @@ Notes:
 
 ```mt
 array[T, N]      # fixed-size array
+SoA[T, N]        # Structure-of-Arrays: flatten struct fields into separate arrays
 str_buffer[N]   # fixed-capacity mutable UTF-8 text buffer
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
@@ -687,6 +692,12 @@ Built-in operators should match familiar C behavior where possible:
 - bitwise: `& | ^ ~ << >>`
 
 No user-defined operator overloading.
+
+Built-in vector, matrix, and quaternion types support component-wise arithmetic with the standard operators:
+
+- Vectors (`vecN`/`ivecN`): `+`, `-`, `*` (component-wise same-type); `*`, `/` (scalar); unary `-`
+- Matrices (`matN`): `+`, `-` (component-wise same-type); `*`, `/` (scalar); unary `-`
+- Quaternions (`quat`): `+`, `-`, `*` (component-wise same-type); unary `-`
 
 ### Casts
 

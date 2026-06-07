@@ -36,12 +36,12 @@ module MilkTea
             lowered << IR::BlockStmt.new(body:)
           when AST::LocalDecl
             storage_type = if statement.else_body
-                             infer_expression_type(statement.value, env: local_env)
-                           elsif statement.type
-                             resolve_type_ref(statement.type)
-                           else
-                             infer_expression_type(statement.value, env: local_env)
-                           end
+                              infer_expression_type(statement.value, env: local_env)
+                            elsif statement.type
+                              resolve_type_ref(statement.type)
+                            else
+                              infer_expression_type(statement.value, env: local_env)
+                            end
             type = if statement.else_body
                      statement.type ? resolve_type_ref(statement.type) : let_else_success_type(storage_type)
                    else
