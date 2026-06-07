@@ -307,7 +307,7 @@ module MilkTea
                                    data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
                                    arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
                                    binding_c = c_local_name(arm.binding_name)
-                                   arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+                                    arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: true, pointer: false)
                                    IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
                                  end
                                end

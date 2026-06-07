@@ -163,7 +163,7 @@ module MilkTea
 
       def check_local_decl(statement, scopes:, return_type:, allow_return:)
         current_scope = current_actual_scope(scopes)
-        discard_binding = let_else_discard_binding_syntax?(statement)
+        discard_binding = statement.name == "_" || let_else_discard_binding_syntax?(statement)
         raise_sema_error("duplicate local #{statement.name}") if !discard_binding && current_scope.key?(statement.name)
         ensure_non_reserved_primitive_name!(statement.name, kind_label: "local", line: statement.line, column: statement.column) unless discard_binding
 
@@ -570,7 +570,7 @@ module MilkTea
               arm.binding_name => value_binding(
                 name: arm.binding_name,
                 type: payload_type,
-                mutable: false,
+                mutable: true,
                 kind: :local,
                 id: @preassigned_local_binding_ids[arm.object_id],
               )
@@ -601,7 +601,7 @@ module MilkTea
           binding = value_binding(
             name: arm.binding_name,
             type: @error_type,
-            mutable: false,
+            mutable: true,
             kind: :local,
             id: @preassigned_local_binding_ids.fetch(arm.object_id),
           )

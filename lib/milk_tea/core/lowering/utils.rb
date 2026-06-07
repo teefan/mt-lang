@@ -55,7 +55,7 @@ module MilkTea
 
         fields = scrutinee_type.arm(arm_name)
         payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: false, pointer: false)
+        arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: c_local_name(arm.binding_name), mutable: true, pointer: false)
       end
 
       def array_type?(type)
