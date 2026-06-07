@@ -492,6 +492,7 @@ The type system must stay simple, explicit, and close to C.
 
 Notes:
 
+- Native vector, matrix, and quaternion types support aggregate construction: `vec3(x = 1.0, y = 2.0, z = 3.0)`, `quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)`, and column-wise `mat4(col0 = ..., col1 = ..., ...)`. Omitted fields default to zero.
 - `str` is a UTF-8 string view, not a NUL-terminated C string.
 - Every `str` value must contain valid UTF-8 bytes for its full length.
 - `cstr` is the raw ABI-facing NUL-terminated C string type. It belongs primarily in raw `external` files and low-level interop code.

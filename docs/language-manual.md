@@ -741,6 +741,14 @@ Rules:
 
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
+Native vector, matrix, and quaternion types support aggregate construction with named fields. Omitted fields default to zero:
+
+```mt
+let v = vec3(x = 1.0, y = 2.0, z = 3.0)
+let m = mat4(col0 = vec4(x = 1.0, ...), ...)
+let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+```
+
 ### 6.2 Type constructors
 
 - `ptr[T]`

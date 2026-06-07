@@ -9,10 +9,7 @@ extending vec2:
         return zero[vec2]
 
     public static function fill(value: float) -> vec2:
-        var result = zero[vec2]
-        result.x = value
-        result.y = value
-        return result
+        return vec2(x = value, y = value)
 
     public function dot(v: vec2) -> float:
         return this.x * v.x + this.y * v.y
@@ -47,11 +44,7 @@ extending vec3:
         return zero[vec3]
 
     public static function fill(value: float) -> vec3:
-        var result = zero[vec3]
-        result.x = value
-        result.y = value
-        result.z = value
-        return result
+        return vec3(x = value, y = value, z = value)
 
     public function dot(v: vec3) -> float:
         return this.x * v.x + this.y * v.y + this.z * v.z
@@ -76,11 +69,11 @@ extending vec3:
         return float<-math.sqrt(double<-(this.distance_squared_to(v)))
 
     public function cross(v: vec3) -> vec3:
-        var result = zero[vec3]
-        result.x = this.y * v.z - this.z * v.y
-        result.y = this.z * v.x - this.x * v.z
-        result.z = this.x * v.y - this.y * v.x
-        return result
+        return vec3(
+            x = this.y * v.z - this.z * v.y,
+            y = this.z * v.x - this.x * v.z,
+            z = this.x * v.y - this.y * v.x,
+        )
 
     public function lerp(target: vec3, t: float) -> vec3:
         return this + (target - this) * t
@@ -94,12 +87,7 @@ extending vec4:
         return zero[vec4]
 
     public static function fill(value: float) -> vec4:
-        var result = zero[vec4]
-        result.x = value
-        result.y = value
-        result.z = value
-        result.w = value
-        return result
+        return vec4(x = value, y = value, z = value, w = value)
 
     public function dot(v: vec4) -> float:
         return this.x * v.x + this.y * v.y + this.z * v.z + this.w * v.w
@@ -175,24 +163,18 @@ extending ivec4:
 
 extending mat3:
     public static function identity() -> mat3:
-        var m = zero[mat3]
-        m.col0.x = 1.0
-        m.col1.y = 1.0
-        m.col2.z = 1.0
-        return m
+        return mat3(
+            col0 = vec3(x = 1.0, y = 0.0, z = 0.0),
+            col1 = vec3(x = 0.0, y = 1.0, z = 0.0),
+            col2 = vec3(x = 0.0, y = 0.0, z = 1.0),
+        )
 
     public function transpose() -> mat3:
-        var result = zero[mat3]
-        result.col0.x = this.col0.x
-        result.col0.y = this.col1.x
-        result.col0.z = this.col2.x
-        result.col1.x = this.col0.y
-        result.col1.y = this.col1.y
-        result.col1.z = this.col2.y
-        result.col2.x = this.col0.z
-        result.col2.y = this.col1.z
-        result.col2.z = this.col2.z
-        return result
+        return mat3(
+            col0 = vec3(x = this.col0.x, y = this.col1.x, z = this.col2.x),
+            col1 = vec3(x = this.col0.y, y = this.col1.y, z = this.col2.y),
+            col2 = vec3(x = this.col0.z, y = this.col1.z, z = this.col2.z),
+        )
 
 # ---------------------------------------------------------------------------
 #  mat4 — 4×4 column-major matrix
@@ -200,32 +182,20 @@ extending mat3:
 
 extending mat4:
     public static function identity() -> mat4:
-        var m = zero[mat4]
-        m.col0.x = 1.0
-        m.col1.y = 1.0
-        m.col2.z = 1.0
-        m.col3.w = 1.0
-        return m
+        return mat4(
+            col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+            col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+            col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+            col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+        )
 
     public function transpose() -> mat4:
-        var result = zero[mat4]
-        result.col0.x = this.col0.x
-        result.col0.y = this.col1.x
-        result.col0.z = this.col2.x
-        result.col0.w = this.col3.x
-        result.col1.x = this.col0.y
-        result.col1.y = this.col1.y
-        result.col1.z = this.col2.y
-        result.col1.w = this.col3.y
-        result.col2.x = this.col0.z
-        result.col2.y = this.col1.z
-        result.col2.z = this.col2.z
-        result.col2.w = this.col3.z
-        result.col3.x = this.col0.w
-        result.col3.y = this.col1.w
-        result.col3.z = this.col2.w
-        result.col3.w = this.col3.w
-        return result
+        return mat4(
+            col0 = vec4(x = this.col0.x, y = this.col1.x, z = this.col2.x, w = this.col3.x),
+            col1 = vec4(x = this.col0.y, y = this.col1.y, z = this.col2.y, w = this.col3.y),
+            col2 = vec4(x = this.col0.z, y = this.col1.z, z = this.col2.z, w = this.col3.z),
+            col3 = vec4(x = this.col0.w, y = this.col1.w, z = this.col2.w, w = this.col3.w),
+        )
 
 # ---------------------------------------------------------------------------
 #  quat — quaternion
@@ -233,14 +203,7 @@ extending mat4:
 
 extending quat:
     public static function identity() -> quat:
-        var q = zero[quat]
-        q.w = 1.0
-        return q
+        return quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 
     public function conjugate() -> quat:
-        var result = zero[quat]
-        result.x = -this.x
-        result.y = -this.y
-        result.z = -this.z
-        result.w = this.w
-        return result
+        return quat(x = -this.x, y = -this.y, z = -this.z, w = this.w)
