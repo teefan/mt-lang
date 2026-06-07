@@ -621,30 +621,7 @@ module MilkTea
       end
 
       def contains_type_var?(type)
-        case type
-        when Types::TypeVar
-          true
-        when Types::Nullable
-          contains_type_var?(type.base)
-        when Types::GenericInstance
-          type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_type_var?(argument) }
-        when Types::Span
-          contains_type_var?(type.element_type)
-        when Types::Task
-          contains_type_var?(type.result_type)
-        when Types::StructInstance
-          type.arguments.any? { |argument| contains_type_var?(argument) }
-        when Types::VariantInstance
-          type.arguments.any? { |argument| contains_type_var?(argument) }
-        when Types::Proc
-          type.params.any? { |param| contains_type_var?(param.type) } || contains_type_var?(type.return_type)
-        when Types::Function
-          type.params.any? { |param| contains_type_var?(param.type) } ||
-            contains_type_var?(type.return_type) ||
-            (type.receiver_type && contains_type_var?(type.receiver_type))
-        else
-          false
-        end
+        super
       end
 
       def resolve_named_generic_type(parts)
@@ -691,21 +668,15 @@ module MilkTea
       end
 
       def collection_loop_type(type)
-        return array_element_type(type) if array_type?(type)
-        return type.element_type if span_type?(type)
-
-        nil
+        super
       end
 
       def collection_loop_binding_type(iterable_type, element_type)
-        return nil unless array_type?(iterable_type) || span_type?(iterable_type)
-        return nil unless collection_loop_ref_element_type?(element_type)
-
-        Types::GenericInstance.new("ref", [element_type])
+        super
       end
 
       def collection_loop_ref_element_type?(type)
-        type.is_a?(Types::Struct)
+        super
       end
 
       def iterator_loop_type(type)
