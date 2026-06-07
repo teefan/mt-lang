@@ -1200,7 +1200,7 @@ extending Vector3:
         return math.vector3_transform(this, mat)
 
 
-    public function rotate_by_quaternion(q: quat) -> vec3:
+    public function rotate_by_quaternion(q: vec4) -> vec3:
         return math.vector3_rotate_by_quaternion(this, q)
 
 
@@ -1349,8 +1349,8 @@ extending Vector4:
         return math.vector4_invert(this)
 
 
-    public static function equals(p: quat, q: quat) -> int:
-        return math.vector4_equals(p, q)
+    public function equals(q: vec4) -> int:
+        return math.vector4_equals(this, q)
 
 
 extending Matrix:
@@ -1456,7 +1456,7 @@ extending Matrix:
         return math.matrix_to_float_v(this)
 
 
-    public static function compose(translation: vec3, rotation: quat, scale: vec3) -> mat4:
+    public static function compose(translation: vec3, rotation: vec4, scale: vec3) -> mat4:
         return math.matrix_compose(translation, rotation, scale)
 
 
@@ -1465,15 +1465,15 @@ extending Quaternion:
         return math.quaternion_identity()
 
 
-    public function nlerp(q2: quat, amount: float) -> quat:
+    public function nlerp(q2: vec4, amount: float) -> quat:
         return math.quaternion_nlerp(this, q2, amount)
 
 
-    public function slerp(q2: quat, amount: float) -> quat:
+    public function slerp(q2: vec4, amount: float) -> quat:
         return math.quaternion_slerp(this, q2, amount)
 
 
-    public function cubic_hermite_spline(out_tangent1: quat, q2: quat, in_tangent2: quat, t: float) -> quat:
+    public function cubic_hermite_spline(out_tangent1: vec4, q2: vec4, in_tangent2: vec4, t: float) -> quat:
         return math.quaternion_cubic_hermite_spline(this, out_tangent1, q2, in_tangent2, t)
 
 

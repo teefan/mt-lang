@@ -15,7 +15,7 @@ module MilkTea
       Option Result
     ].freeze
     BUILTIN_TYPE_NAMES = (BUILTIN_PRIMITIVE_NAMES + %w[
-      ptr const_ptr ref span array str_buffer Task Option Result
+      ptr const_ptr ref span array str_buffer Task Option Result SoA
       struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
     RESERVED_TYPE_BINDING_NAMES = BUILTIN_TYPE_NAMES
@@ -1444,6 +1444,47 @@ module MilkTea
 
       def to_s
         name
+      end
+    end
+
+    class SoA < Base
+      attr_reader :name, :element_type, :count, :module_name
+
+      def initialize(element_type, count:)
+        @name = "SoA[#{element_type}, #{count}]"
+        @element_type = element_type
+        @count = count
+        @module_name = nil
+        @fields = if element_type.respond_to?(:fields) && element_type.fields
+                     element_type.fields.each_with_object({}) do |(fname, ftype), h|
+                       h[fname] = GenericInstance.new("array", [ftype, LiteralTypeArg.new(count)])
+                     end
+                   else
+                     {}.freeze
+                   end.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(SoA) && other.element_type == element_type && other.count == count
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, element_type, count].hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        @name
       end
     end
 

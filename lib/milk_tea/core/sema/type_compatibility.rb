@@ -41,10 +41,16 @@ module MilkTea
         return true if contextual_int_to_float && contextual_int_to_float_compatibility?(actual_type, expected_type)
         return true if same_external_opaque_handle_pointer_compatibility?(actual_type, expected_type)
         return true if actual_type.is_a?(Types::Function) && expected_type.is_a?(Types::Function) &&
-                      !actual_type.receiver_type && !actual_type.variadic &&
-                      function_type_matches_proc_type?(actual_type, expected_type)
+                       !actual_type.receiver_type && !actual_type.variadic &&
+                       function_type_matches_proc_type?(actual_type, expected_type)
+        return true if quat_vec4_compatible?(actual_type, expected_type)
 
         false
+      end
+
+      def quat_vec4_compatible?(a, b)
+        (a.is_a?(Types::Quaternion) && b.is_a?(Types::Vector) && b.width == 4 && b.element_type.name == "float") ||
+          (b.is_a?(Types::Quaternion) && a.is_a?(Types::Vector) && a.width == 4 && a.element_type.name == "float")
       end
 
       def argument_types_compatible?(actual_type, expected_type, external:, expression: nil, scopes: nil, contextual_int_to_float: false)

@@ -249,6 +249,8 @@ module MilkTea
           validate_generic_type!(name, arguments)
           return Types::Span.new(arguments.first) if name == "span"
 
+          return Types::SoA.new(arguments[0], count: arguments[1].value) if name == "SoA"
+
           return Types::GenericInstance.new(name, arguments)
         end
 
@@ -520,6 +522,7 @@ module MilkTea
         return true if vector_type?(type)
         return true if matrix_type?(type)
         return true if quaternion_type?(type)
+        return true if soa_type?(type)
 
         raise_sema_error("#{operation} does not support type #{type}")
       end
@@ -546,6 +549,10 @@ module MilkTea
 
       def quaternion_type?(type)
         type.is_a?(Types::Quaternion)
+      end
+
+      def soa_type?(type)
+        type.is_a?(Types::SoA)
       end
 
       def array_type?(type)
@@ -697,6 +704,12 @@ module MilkTea
           raise_sema_error("array element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
           raise_sema_error("array length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
           raise_sema_error("array length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+        when "SoA"
+          raise_sema_error("SoA requires exactly two type arguments") unless arguments.length == 2
+          raise_sema_error("SoA element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+          raise_sema_error("SoA element type must be a struct with fields") unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
+          raise_sema_error("SoA length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
+          raise_sema_error("SoA length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
         when "str_buffer"
           raise_sema_error("str_buffer requires exactly one type argument") unless arguments.length == 1
           raise_sema_error("str_buffer capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
@@ -785,6 +798,10 @@ module MilkTea
         end
 
         if span_type?(receiver_type)
+          return receiver_type.element_type
+        end
+
+        if soa_type?(receiver_type)
           return receiver_type.element_type
         end
 

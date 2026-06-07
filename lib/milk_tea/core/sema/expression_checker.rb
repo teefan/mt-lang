@@ -373,6 +373,10 @@ module MilkTea
         receiver_type = infer_expression(expression.receiver, scopes:)
         index_type = infer_expression(expression.index, scopes:)
 
+        if soa_type?(receiver_type)
+          return receiver_type.element_type
+        end
+
         if array_type?(receiver_type) && !unsafe_context? && !addressable_storage_expression?(expression.receiver, scopes:)
           raise_sema_error("safe array indexing requires an addressable array value; bind it to a local first")
         end
