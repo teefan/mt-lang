@@ -77,7 +77,7 @@ class MilkTeaLanguageBaselineTest < Minitest::Test
     assert_equal "atoi", externals.first.name
 
     # --- imports
-    assert_equal 1, ast.imports.length
+    assert_equal 2, ast.imports.length
     assert_equal "std.async", ast.imports.first.path.to_s
     assert_equal "aio", ast.imports.first.alias_name
   end

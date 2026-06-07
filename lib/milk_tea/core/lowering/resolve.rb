@@ -2185,12 +2185,12 @@ module MilkTea
                    Types::Task.new(args.fetch(0))
                  elsif (generic_type = resolve_named_generic_type(parts))
                    generic_type.instantiate(args)
-                  elsif name == "span"
-                    Types::Span.new(args.fetch(0))
-                  elsif name == "SoA"
-                    validate_generic_type!(name, args)
-                    Types::SoA.new(args.fetch(0), count: args.fetch(1).value)
-                  else
+                 elsif name == "span"
+                   Types::Span.new(args.fetch(0))
+                 elsif name == "SoA"
+                   validate_generic_type!(name, args)
+                   Types::SoA.new(args.fetch(0), count: args.fetch(1).value)
+                 else
                    validate_generic_type!(name, args)
                    Types::GenericInstance.new(name, args)
                  end

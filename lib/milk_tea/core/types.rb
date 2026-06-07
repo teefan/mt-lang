@@ -112,10 +112,6 @@ module MilkTea
       def field_c_name(name)
         name
       end
-
-      def field_c_name(name)
-        name
-      end
     end
 
     class ReflectionHandleType < Base
