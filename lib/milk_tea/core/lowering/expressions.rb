@@ -1350,9 +1350,24 @@ module MilkTea
           return lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
         end
 
-        return lower_aggregate_binary_op(operator, left, right, result_type) unless operator == "*"
+        return lower_aggregate_binary_op(operator, left, right, result_type) if operator == "+" || operator == "-"
 
-        nil
+        return lower_aggregate_binary_op(operator, left, right, result_type) if result_type.is_a?(Types::Quaternion)
+
+        scalar_is_left = !left_type.is_a?(Types::Matrix)
+        aggregate_expr = scalar_is_left ? right : left
+        scalar_expr = scalar_is_left ? left : right
+        scalar_type = scalar_is_left ? left_type : right_type
+
+        fields = result_type.fields.map do |fname, ftype|
+          field_expr = IR::Member.new(receiver: aggregate_expr, member: fname, type: ftype)
+          left_expr = scalar_is_left ? scalar_expr : field_expr
+          right_expr = scalar_is_left ? field_expr : scalar_expr
+          value = lower_vector_binary_op(operator, left_expr, ftype, right_expr, scalar_type, ftype) ||
+                  IR::Binary.new(operator:, left: left_expr, right: right_expr, type: ftype)
+          IR::AggregateField.new(name: fname, value:)
+        end
+        IR::AggregateLiteral.new(fields:, type: result_type)
       end
 
       def lower_vector_unary_op(operator, operand, result_type)
@@ -1361,7 +1376,7 @@ module MilkTea
 
         fields = result_type.fields.map do |fname, ftype|
           field_expr = IR::Member.new(receiver: operand, member: fname, type: ftype)
-          value = IR::Unary.new(operator:, operand: field_expr, type: ftype)
+          value = lower_vector_unary_op(operator, field_expr, ftype) || IR::Unary.new(operator:, operand: field_expr, type: ftype)
           IR::AggregateField.new(name: fname, value:)
         end
         IR::AggregateLiteral.new(fields:, type: result_type)
@@ -1370,7 +1385,9 @@ module MilkTea
     private
 
       def lower_vector_binary_op_on_vectors(operator, left, left_type, right, right_type, result_type)
-        return lower_aggregate_binary_op(operator, left, right, result_type) if right_type.is_a?(Types::Vector)
+        if left_type.is_a?(Types::Vector) && right_type.is_a?(Types::Vector)
+          return lower_aggregate_binary_op(operator, left, right, result_type)
+        end
 
         return nil unless operator == "*" || operator == "/"
 
@@ -1390,10 +1407,12 @@ module MilkTea
 
       def lower_aggregate_binary_op(operator, left, right, result_type)
         fields = result_type.fields.map do |fname, ftype|
-          value = IR::Binary.new(
+          left_field = IR::Member.new(receiver: left, member: fname, type: ftype)
+          right_field = IR::Member.new(receiver: right, member: fname, type: ftype)
+          value = lower_vector_binary_op(operator, left_field, ftype, right_field, ftype, ftype) || IR::Binary.new(
             operator:,
-            left: IR::Member.new(receiver: left, member: fname, type: ftype),
-            right: IR::Member.new(receiver: right, member: fname, type: ftype),
+            left: left_field,
+            right: right_field,
             type: ftype,
           )
           IR::AggregateField.new(name: fname, value:)

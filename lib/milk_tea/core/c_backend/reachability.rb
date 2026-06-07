@@ -433,6 +433,12 @@ module MilkTea
             case stmt
             when IR::LocalDecl
               type_contains_vector_math?(stmt.type)
+            when IR::Assignment
+              type_contains_vector_math?(stmt.target.type) || expression_uses_vector_math?(stmt.value)
+            when IR::ExpressionStmt
+              expression_uses_vector_math?(stmt.expression)
+            when IR::ReturnStmt
+              stmt.value && expression_uses_vector_math?(stmt.value)
             when IR::BlockStmt
               stmt.body.any? { |s| statement_uses_vector_math?(s) }
             when IR::WhileStmt
@@ -444,6 +450,29 @@ module MilkTea
                 (stmt.else_body && stmt.else_body.any? { |s| statement_uses_vector_math?(s) })
             when IR::SwitchStmt
               stmt.cases.any? { |c| c.body.any? { |s| statement_uses_vector_math?(s) } }
+            else
+              false
+            end
+          end
+
+          def expression_uses_vector_math?(expr)
+            return false unless expr
+            return true if type_contains_vector_math?(expr.type)
+            case expr
+            when IR::AggregateLiteral
+              expr.fields.any? { |f| expression_uses_vector_math?(f.value) }
+            when IR::Binary
+              expression_uses_vector_math?(expr.left) || expression_uses_vector_math?(expr.right)
+            when IR::Unary
+              expression_uses_vector_math?(expr.operand)
+            when IR::Call
+              expr.arguments.any? { |a| expression_uses_vector_math?(a) }
+            when IR::Member
+              expression_uses_vector_math?(expr.receiver)
+            when IR::Index
+              expression_uses_vector_math?(expr.receiver)
+            when IR::Conditional
+              expression_uses_vector_math?(expr.then_expression) || expression_uses_vector_math?(expr.else_expression)
             else
               false
             end

@@ -3,11 +3,11 @@
 import std.c.raylib as c
 import std.raymath as math
 
-public type Vector2 = vec2
-public type Vector3 = vec3
-public type Vector4 = vec4
-public type Quaternion = quat
-public type Matrix = mat4
+public type Vector2 = c.Vector2
+public type Vector3 = c.Vector3
+public type Vector4 = c.Vector4
+public type Quaternion = c.Quaternion
+public type Matrix = c.Matrix
 public type Color = c.Color
 public type Rectangle = c.Rectangle
 public type Image = c.Image
@@ -132,14 +132,14 @@ public foreign function get_render_width() -> int = c.GetRenderWidth
 public foreign function get_render_height() -> int = c.GetRenderHeight
 public foreign function get_monitor_count() -> int = c.GetMonitorCount
 public foreign function get_current_monitor() -> int = c.GetCurrentMonitor
-public foreign function get_monitor_position(monitor: int) -> vec2 = c.GetMonitorPosition
+public foreign function get_monitor_position(monitor: int) -> Vector2 = c.GetMonitorPosition
 public foreign function get_monitor_width(monitor: int) -> int = c.GetMonitorWidth
 public foreign function get_monitor_height(monitor: int) -> int = c.GetMonitorHeight
 public foreign function get_monitor_physical_width(monitor: int) -> int = c.GetMonitorPhysicalWidth
 public foreign function get_monitor_physical_height(monitor: int) -> int = c.GetMonitorPhysicalHeight
 public foreign function get_monitor_refresh_rate(monitor: int) -> int = c.GetMonitorRefreshRate
-public foreign function get_window_position() -> vec2 = c.GetWindowPosition
-public foreign function get_window_scale_dpi() -> vec2 = c.GetWindowScaleDPI
+public foreign function get_window_position() -> Vector2 = c.GetWindowPosition
+public foreign function get_window_scale_dpi() -> Vector2 = c.GetWindowScaleDPI
 public foreign function get_monitor_name(monitor: int) -> cstr = c.GetMonitorName
 public foreign function set_clipboard_text(text: str as cstr) -> void = c.SetClipboardText
 public foreign function get_clipboard_text() -> cstr = c.GetClipboardText
@@ -180,17 +180,17 @@ public foreign function get_shader_location(shader: Shader, uniform_name: str as
 public foreign function get_shader_location_attrib(shader: Shader, attrib_name: str as cstr) -> int = c.GetShaderLocationAttrib
 public foreign function set_shader_value[T](shader: Shader, loc_index: int, in value: T as const_ptr[void], uniform_type: int) -> void = c.SetShaderValue
 public foreign function set_shader_value_v[T](shader: Shader, loc_index: int, value: ptr[T] as const_ptr[void], uniform_type: int, count: int) -> void = c.SetShaderValueV
-public foreign function set_shader_value_matrix(shader: Shader, loc_index: int, mat: mat4) -> void = c.SetShaderValueMatrix
+public foreign function set_shader_value_matrix(shader: Shader, loc_index: int, mat: Matrix) -> void = c.SetShaderValueMatrix
 public foreign function set_shader_value_texture(shader: Shader, loc_index: int, texture: Texture) -> void = c.SetShaderValueTexture
 public foreign function unload_shader(shader: Shader) -> void = c.UnloadShader
-public foreign function get_screen_to_world_ray(position: vec2, camera: Camera3D) -> Ray = c.GetScreenToWorldRay
-public foreign function get_screen_to_world_ray_ex(position: vec2, camera: Camera3D, width: int, height: int) -> Ray = c.GetScreenToWorldRayEx
-public foreign function get_world_to_screen(position: vec3, camera: Camera3D) -> vec2 = c.GetWorldToScreen
-public foreign function get_world_to_screen_ex(position: vec3, camera: Camera3D, width: int, height: int) -> vec2 = c.GetWorldToScreenEx
-public foreign function get_world_to_screen_2d(position: vec2, camera: Camera2D) -> vec2 = c.GetWorldToScreen2D
-public foreign function get_screen_to_world_2d(position: vec2, camera: Camera2D) -> vec2 = c.GetScreenToWorld2D
-public foreign function get_camera_matrix(camera: Camera3D) -> mat4 = c.GetCameraMatrix
-public foreign function get_camera_matrix_2d(camera: Camera2D) -> mat4 = c.GetCameraMatrix2D
+public foreign function get_screen_to_world_ray(position: Vector2, camera: Camera3D) -> Ray = c.GetScreenToWorldRay
+public foreign function get_screen_to_world_ray_ex(position: Vector2, camera: Camera3D, width: int, height: int) -> Ray = c.GetScreenToWorldRayEx
+public foreign function get_world_to_screen(position: Vector3, camera: Camera3D) -> Vector2 = c.GetWorldToScreen
+public foreign function get_world_to_screen_ex(position: Vector3, camera: Camera3D, width: int, height: int) -> Vector2 = c.GetWorldToScreenEx
+public foreign function get_world_to_screen_2d(position: Vector2, camera: Camera2D) -> Vector2 = c.GetWorldToScreen2D
+public foreign function get_screen_to_world_2d(position: Vector2, camera: Camera2D) -> Vector2 = c.GetScreenToWorld2D
+public foreign function get_camera_matrix(camera: Camera3D) -> Matrix = c.GetCameraMatrix
+public foreign function get_camera_matrix_2d(camera: Camera2D) -> Matrix = c.GetCameraMatrix2D
 public foreign function set_target_fps(fps: int) -> void = c.SetTargetFPS
 public foreign function get_frame_time() -> float = c.GetFrameTime
 public foreign function get_time() -> double = c.GetTime
@@ -289,57 +289,57 @@ public foreign function is_mouse_button_released(button: MouseButton) -> bool = 
 public foreign function is_mouse_button_up(button: MouseButton) -> bool = c.IsMouseButtonUp
 public foreign function get_mouse_x() -> int = c.GetMouseX
 public foreign function get_mouse_y() -> int = c.GetMouseY
-public foreign function get_mouse_position() -> vec2 = c.GetMousePosition
-public foreign function get_mouse_delta() -> vec2 = c.GetMouseDelta
+public foreign function get_mouse_position() -> Vector2 = c.GetMousePosition
+public foreign function get_mouse_delta() -> Vector2 = c.GetMouseDelta
 public foreign function set_mouse_position(x: int, y: int) -> void = c.SetMousePosition
 public foreign function set_mouse_offset(offset_x: int, offset_y: int) -> void = c.SetMouseOffset
 public foreign function set_mouse_scale(scale_x: float, scale_y: float) -> void = c.SetMouseScale
 public foreign function get_mouse_wheel_move() -> float = c.GetMouseWheelMove
-public foreign function get_mouse_wheel_move_v() -> vec2 = c.GetMouseWheelMoveV
+public foreign function get_mouse_wheel_move_v() -> Vector2 = c.GetMouseWheelMoveV
 public foreign function set_mouse_cursor(cursor: MouseCursor) -> void = c.SetMouseCursor
 public foreign function get_touch_x() -> int = c.GetTouchX
 public foreign function get_touch_y() -> int = c.GetTouchY
-public foreign function get_touch_position(index: int) -> vec2 = c.GetTouchPosition
+public foreign function get_touch_position(index: int) -> Vector2 = c.GetTouchPosition
 public foreign function get_touch_point_id(index: int) -> int = c.GetTouchPointId
 public foreign function get_touch_point_count() -> int = c.GetTouchPointCount
 public foreign function set_gestures_enabled(flag_bits: Gesture) -> void = c.SetGesturesEnabled
 public foreign function is_gesture_detected(gesture: Gesture) -> bool = c.IsGestureDetected
 public foreign function get_gesture_detected() -> int = c.GetGestureDetected
 public foreign function get_gesture_hold_duration() -> float = c.GetGestureHoldDuration
-public foreign function get_gesture_drag_vector() -> vec2 = c.GetGestureDragVector
+public foreign function get_gesture_drag_vector() -> Vector2 = c.GetGestureDragVector
 public foreign function get_gesture_drag_angle() -> float = c.GetGestureDragAngle
-public foreign function get_gesture_pinch_vector() -> vec2 = c.GetGesturePinchVector
+public foreign function get_gesture_pinch_vector() -> Vector2 = c.GetGesturePinchVector
 public foreign function get_gesture_pinch_angle() -> float = c.GetGesturePinchAngle
 public foreign function update_camera(inout camera: Camera, mode: CameraMode) -> void = c.UpdateCamera
-public foreign function update_camera_pro(camera: ptr[Camera], movement: vec3, rotation: vec3, zoom: float) -> void = c.UpdateCameraPro
+public foreign function update_camera_pro(camera: ptr[Camera], movement: Vector3, rotation: Vector3, zoom: float) -> void = c.UpdateCameraPro
 public foreign function set_shapes_texture(texture: Texture, source: Rectangle) -> void = c.SetShapesTexture
 public foreign function get_shapes_texture() -> Texture2D = c.GetShapesTexture
 public foreign function get_shapes_texture_rectangle() -> Rectangle = c.GetShapesTextureRectangle
 public foreign function draw_pixel(pos_x: int, pos_y: int, color: Color) -> void = c.DrawPixel
-public foreign function draw_pixel_v(position: vec2, color: Color) -> void = c.DrawPixelV
+public foreign function draw_pixel_v(position: Vector2, color: Color) -> void = c.DrawPixelV
 public foreign function draw_line(start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void = c.DrawLine
-public foreign function draw_line_v(start_pos: vec2, end_pos: vec2, color: Color) -> void = c.DrawLineV
-public foreign function draw_line_ex(start_pos: vec2, end_pos: vec2, thick: float, color: Color) -> void = c.DrawLineEx
-public foreign function draw_line_strip_ptr(points: const_ptr[vec2], point_count: int, color: Color) -> void = c.DrawLineStrip
-public foreign function draw_line_bezier(start_pos: vec2, end_pos: vec2, thick: float, color: Color) -> void = c.DrawLineBezier
-public foreign function draw_line_dashed(start_pos: vec2, end_pos: vec2, dash_size: int, space_size: int, color: Color) -> void = c.DrawLineDashed
+public foreign function draw_line_v(start_pos: Vector2, end_pos: Vector2, color: Color) -> void = c.DrawLineV
+public foreign function draw_line_ex(start_pos: Vector2, end_pos: Vector2, thick: float, color: Color) -> void = c.DrawLineEx
+public foreign function draw_line_strip_ptr(points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.DrawLineStrip
+public foreign function draw_line_bezier(start_pos: Vector2, end_pos: Vector2, thick: float, color: Color) -> void = c.DrawLineBezier
+public foreign function draw_line_dashed(start_pos: Vector2, end_pos: Vector2, dash_size: int, space_size: int, color: Color) -> void = c.DrawLineDashed
 public foreign function draw_circle(center_x: int, center_y: int, radius: float, color: Color) -> void = c.DrawCircle
-public foreign function draw_circle_v(center: vec2, radius: float, color: Color) -> void = c.DrawCircleV
-public foreign function draw_circle_gradient(center: vec2, radius: float, inner: Color, outer: Color) -> void = c.DrawCircleGradient
-public foreign function draw_circle_sector(center: vec2, radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawCircleSector
-public foreign function draw_circle_sector_lines(center: vec2, radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawCircleSectorLines
+public foreign function draw_circle_v(center: Vector2, radius: float, color: Color) -> void = c.DrawCircleV
+public foreign function draw_circle_gradient(center: Vector2, radius: float, inner: Color, outer: Color) -> void = c.DrawCircleGradient
+public foreign function draw_circle_sector(center: Vector2, radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawCircleSector
+public foreign function draw_circle_sector_lines(center: Vector2, radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawCircleSectorLines
 public foreign function draw_circle_lines(center_x: int, center_y: int, radius: float, color: Color) -> void = c.DrawCircleLines
-public foreign function draw_circle_lines_v(center: vec2, radius: float, color: Color) -> void = c.DrawCircleLinesV
+public foreign function draw_circle_lines_v(center: Vector2, radius: float, color: Color) -> void = c.DrawCircleLinesV
 public foreign function draw_ellipse(center_x: int, center_y: int, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipse
-public foreign function draw_ellipse_v(center: vec2, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipseV
+public foreign function draw_ellipse_v(center: Vector2, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipseV
 public foreign function draw_ellipse_lines(center_x: int, center_y: int, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipseLines
-public foreign function draw_ellipse_lines_v(center: vec2, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipseLinesV
-public foreign function draw_ring(center: vec2, inner_radius: float, outer_radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawRing
-public foreign function draw_ring_lines(center: vec2, inner_radius: float, outer_radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawRingLines
+public foreign function draw_ellipse_lines_v(center: Vector2, radius_h: float, radius_v: float, color: Color) -> void = c.DrawEllipseLinesV
+public foreign function draw_ring(center: Vector2, inner_radius: float, outer_radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawRing
+public foreign function draw_ring_lines(center: Vector2, inner_radius: float, outer_radius: float, start_angle: float, end_angle: float, segments: int, color: Color) -> void = c.DrawRingLines
 public foreign function draw_rectangle(pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void = c.DrawRectangle
-public foreign function draw_rectangle_v(position: vec2, size: vec2, color: Color) -> void = c.DrawRectangleV
+public foreign function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void = c.DrawRectangleV
 public foreign function draw_rectangle_rec(rec: Rectangle, color: Color) -> void = c.DrawRectangleRec
-public foreign function draw_rectangle_pro(rec: Rectangle, origin: vec2, rotation: float, color: Color) -> void = c.DrawRectanglePro
+public foreign function draw_rectangle_pro(rec: Rectangle, origin: Vector2, rotation: float, color: Color) -> void = c.DrawRectanglePro
 public foreign function draw_rectangle_gradient_v(pos_x: int, pos_y: int, width: int, height: int, top: Color, bottom: Color) -> void = c.DrawRectangleGradientV
 public foreign function draw_rectangle_gradient_h(pos_x: int, pos_y: int, width: int, height: int, left: Color, right: Color) -> void = c.DrawRectangleGradientH
 public foreign function draw_rectangle_gradient_ex(rec: Rectangle, top_left: Color, bottom_left: Color, bottom_right: Color, top_right: Color) -> void = c.DrawRectangleGradientEx
@@ -348,38 +348,38 @@ public foreign function draw_rectangle_lines_ex(rec: Rectangle, line_thick: floa
 public foreign function draw_rectangle_rounded(rec: Rectangle, roundness: float, segments: int, color: Color) -> void = c.DrawRectangleRounded
 public foreign function draw_rectangle_rounded_lines(rec: Rectangle, roundness: float, segments: int, color: Color) -> void = c.DrawRectangleRoundedLines
 public foreign function draw_rectangle_rounded_lines_ex(rec: Rectangle, roundness: float, segments: int, line_thick: float, color: Color) -> void = c.DrawRectangleRoundedLinesEx
-public foreign function draw_triangle(v1: vec2, v2: vec2, v3: vec2, color: Color) -> void = c.DrawTriangle
-public foreign function draw_triangle_lines(v1: vec2, v2: vec2, v3: vec2, color: Color) -> void = c.DrawTriangleLines
-public foreign function draw_triangle_fan_ptr(points: const_ptr[vec2], point_count: int, color: Color) -> void = c.DrawTriangleFan
-public foreign function draw_triangle_strip_ptr(points: const_ptr[vec2], point_count: int, color: Color) -> void = c.DrawTriangleStrip
-public foreign function draw_poly(center: vec2, sides: int, radius: float, rotation: float, color: Color) -> void = c.DrawPoly
-public foreign function draw_poly_lines(center: vec2, sides: int, radius: float, rotation: float, color: Color) -> void = c.DrawPolyLines
-public foreign function draw_poly_lines_ex(center: vec2, sides: int, radius: float, rotation: float, line_thick: float, color: Color) -> void = c.DrawPolyLinesEx
-public foreign function draw_spline_linear_ptr(points: const_ptr[vec2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineLinear
-public foreign function draw_spline_basis_ptr(points: const_ptr[vec2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBasis
-public foreign function draw_spline_catmull_rom_ptr(points: const_ptr[vec2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineCatmullRom
-public foreign function draw_spline_bezier_quadratic_ptr(points: const_ptr[vec2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierQuadratic
-public foreign function draw_spline_bezier_cubic_ptr(points: const_ptr[vec2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierCubic
-public foreign function draw_spline_segment_linear(p1: vec2, p2: vec2, thick: float, color: Color) -> void = c.DrawSplineSegmentLinear
-public foreign function draw_spline_segment_basis(p1: vec2, p2: vec2, p3: vec2, p4: vec2, thick: float, color: Color) -> void = c.DrawSplineSegmentBasis
-public foreign function draw_spline_segment_catmull_rom(p1: vec2, p2: vec2, p3: vec2, p4: vec2, thick: float, color: Color) -> void = c.DrawSplineSegmentCatmullRom
-public foreign function draw_spline_segment_bezier_quadratic(p1: vec2, c2: vec2, p3: vec2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierQuadratic
-public foreign function draw_spline_segment_bezier_cubic(p1: vec2, c2: vec2, c3: vec2, p4: vec2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierCubic
-public foreign function get_spline_point_linear(start_pos: vec2, end_pos: vec2, t: float) -> vec2 = c.GetSplinePointLinear
-public foreign function get_spline_point_basis(p1: vec2, p2: vec2, p3: vec2, p4: vec2, t: float) -> vec2 = c.GetSplinePointBasis
-public foreign function get_spline_point_catmull_rom(p1: vec2, p2: vec2, p3: vec2, p4: vec2, t: float) -> vec2 = c.GetSplinePointCatmullRom
-public foreign function get_spline_point_bezier_quad(p1: vec2, c2: vec2, p3: vec2, t: float) -> vec2 = c.GetSplinePointBezierQuad
-public foreign function get_spline_point_bezier_cubic(p1: vec2, c2: vec2, c3: vec2, p4: vec2, t: float) -> vec2 = c.GetSplinePointBezierCubic
+public foreign function draw_triangle(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.DrawTriangle
+public foreign function draw_triangle_lines(v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void = c.DrawTriangleLines
+public foreign function draw_triangle_fan_ptr(points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.DrawTriangleFan
+public foreign function draw_triangle_strip_ptr(points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.DrawTriangleStrip
+public foreign function draw_poly(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void = c.DrawPoly
+public foreign function draw_poly_lines(center: Vector2, sides: int, radius: float, rotation: float, color: Color) -> void = c.DrawPolyLines
+public foreign function draw_poly_lines_ex(center: Vector2, sides: int, radius: float, rotation: float, line_thick: float, color: Color) -> void = c.DrawPolyLinesEx
+public foreign function draw_spline_linear_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineLinear
+public foreign function draw_spline_basis_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBasis
+public foreign function draw_spline_catmull_rom_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineCatmullRom
+public foreign function draw_spline_bezier_quadratic_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierQuadratic
+public foreign function draw_spline_bezier_cubic_ptr(points: const_ptr[Vector2], point_count: int, thick: float, color: Color) -> void = c.DrawSplineBezierCubic
+public foreign function draw_spline_segment_linear(p1: Vector2, p2: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentLinear
+public foreign function draw_spline_segment_basis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBasis
+public foreign function draw_spline_segment_catmull_rom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentCatmullRom
+public foreign function draw_spline_segment_bezier_quadratic(p1: Vector2, c2: Vector2, p3: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierQuadratic
+public foreign function draw_spline_segment_bezier_cubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, thick: float, color: Color) -> void = c.DrawSplineSegmentBezierCubic
+public foreign function get_spline_point_linear(start_pos: Vector2, end_pos: Vector2, t: float) -> Vector2 = c.GetSplinePointLinear
+public foreign function get_spline_point_basis(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointBasis
+public foreign function get_spline_point_catmull_rom(p1: Vector2, p2: Vector2, p3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointCatmullRom
+public foreign function get_spline_point_bezier_quad(p1: Vector2, c2: Vector2, p3: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierQuad
+public foreign function get_spline_point_bezier_cubic(p1: Vector2, c2: Vector2, c3: Vector2, p4: Vector2, t: float) -> Vector2 = c.GetSplinePointBezierCubic
 public foreign function check_collision_recs(rec1: Rectangle, rec2: Rectangle) -> bool = c.CheckCollisionRecs
-public foreign function check_collision_circles(center1: vec2, radius1: float, center2: vec2, radius2: float) -> bool = c.CheckCollisionCircles
-public foreign function check_collision_circle_rec(center: vec2, radius: float, rec: Rectangle) -> bool = c.CheckCollisionCircleRec
-public foreign function check_collision_circle_line(center: vec2, radius: float, p1: vec2, p2: vec2) -> bool = c.CheckCollisionCircleLine
-public foreign function check_collision_point_rec(point: vec2, rec: Rectangle) -> bool = c.CheckCollisionPointRec
-public foreign function check_collision_point_circle(point: vec2, center: vec2, radius: float) -> bool = c.CheckCollisionPointCircle
-public foreign function check_collision_point_triangle(point: vec2, p1: vec2, p2: vec2, p3: vec2) -> bool = c.CheckCollisionPointTriangle
-public foreign function check_collision_point_line(point: vec2, p1: vec2, p2: vec2, threshold: int) -> bool = c.CheckCollisionPointLine
-public foreign function check_collision_point_poly_ptr(point: vec2, points: const_ptr[vec2], point_count: int) -> bool = c.CheckCollisionPointPoly
-public foreign function check_collision_lines(start_pos1: vec2, end_pos1: vec2, start_pos2: vec2, end_pos2: vec2, collision_point: ptr[vec2]) -> bool = c.CheckCollisionLines
+public foreign function check_collision_circles(center1: Vector2, radius1: float, center2: Vector2, radius2: float) -> bool = c.CheckCollisionCircles
+public foreign function check_collision_circle_rec(center: Vector2, radius: float, rec: Rectangle) -> bool = c.CheckCollisionCircleRec
+public foreign function check_collision_circle_line(center: Vector2, radius: float, p1: Vector2, p2: Vector2) -> bool = c.CheckCollisionCircleLine
+public foreign function check_collision_point_rec(point: Vector2, rec: Rectangle) -> bool = c.CheckCollisionPointRec
+public foreign function check_collision_point_circle(point: Vector2, center: Vector2, radius: float) -> bool = c.CheckCollisionPointCircle
+public foreign function check_collision_point_triangle(point: Vector2, p1: Vector2, p2: Vector2, p3: Vector2) -> bool = c.CheckCollisionPointTriangle
+public foreign function check_collision_point_line(point: Vector2, p1: Vector2, p2: Vector2, threshold: int) -> bool = c.CheckCollisionPointLine
+public foreign function check_collision_point_poly_ptr(point: Vector2, points: const_ptr[Vector2], point_count: int) -> bool = c.CheckCollisionPointPoly
+public foreign function check_collision_lines(start_pos1: Vector2, end_pos1: Vector2, start_pos2: Vector2, end_pos2: Vector2, collision_point: ptr[Vector2]) -> bool = c.CheckCollisionLines
 public foreign function get_collision_rec(rec1: Rectangle, rec2: Rectangle) -> Rectangle = c.GetCollisionRec
 public foreign function load_image(file_name: str as cstr) -> Image = c.LoadImage
 public foreign function load_image_raw(file_name: str as cstr, width: int, height: int, format: int, header_size: int) -> Image = c.LoadImageRaw
@@ -440,26 +440,26 @@ public foreign function get_image_alpha_border(image: Image, threshold: float) -
 public foreign function get_image_color(image: Image, x: int, y: int) -> Color = c.GetImageColor
 public foreign function image_clear_background(inout dst: Image, color: Color) -> void = c.ImageClearBackground
 public foreign function image_draw_pixel(inout dst: Image, pos_x: int, pos_y: int, color: Color) -> void = c.ImageDrawPixel
-public foreign function image_draw_pixel_v(inout dst: Image, position: vec2, color: Color) -> void = c.ImageDrawPixelV
+public foreign function image_draw_pixel_v(inout dst: Image, position: Vector2, color: Color) -> void = c.ImageDrawPixelV
 public foreign function image_draw_line(inout dst: Image, start_pos_x: int, start_pos_y: int, end_pos_x: int, end_pos_y: int, color: Color) -> void = c.ImageDrawLine
-public foreign function image_draw_line_v(inout dst: Image, start: vec2, end: vec2, color: Color) -> void = c.ImageDrawLineV
-public foreign function image_draw_line_ex(inout dst: Image, start: vec2, end: vec2, thick: int, color: Color) -> void = c.ImageDrawLineEx
+public foreign function image_draw_line_v(inout dst: Image, start: Vector2, end: Vector2, color: Color) -> void = c.ImageDrawLineV
+public foreign function image_draw_line_ex(inout dst: Image, start: Vector2, end: Vector2, thick: int, color: Color) -> void = c.ImageDrawLineEx
 public foreign function image_draw_circle(inout dst: Image, center_x: int, center_y: int, radius: int, color: Color) -> void = c.ImageDrawCircle
-public foreign function image_draw_circle_v(inout dst: Image, center: vec2, radius: int, color: Color) -> void = c.ImageDrawCircleV
+public foreign function image_draw_circle_v(inout dst: Image, center: Vector2, radius: int, color: Color) -> void = c.ImageDrawCircleV
 public foreign function image_draw_circle_lines(inout dst: Image, center_x: int, center_y: int, radius: int, color: Color) -> void = c.ImageDrawCircleLines
-public foreign function image_draw_circle_lines_v(inout dst: Image, center: vec2, radius: int, color: Color) -> void = c.ImageDrawCircleLinesV
+public foreign function image_draw_circle_lines_v(inout dst: Image, center: Vector2, radius: int, color: Color) -> void = c.ImageDrawCircleLinesV
 public foreign function image_draw_rectangle(inout dst: Image, pos_x: int, pos_y: int, width: int, height: int, color: Color) -> void = c.ImageDrawRectangle
-public foreign function image_draw_rectangle_v(inout dst: Image, position: vec2, size: vec2, color: Color) -> void = c.ImageDrawRectangleV
+public foreign function image_draw_rectangle_v(inout dst: Image, position: Vector2, size: Vector2, color: Color) -> void = c.ImageDrawRectangleV
 public foreign function image_draw_rectangle_rec(inout dst: Image, rec: Rectangle, color: Color) -> void = c.ImageDrawRectangleRec
 public foreign function image_draw_rectangle_lines(inout dst: Image, rec: Rectangle, thick: int, color: Color) -> void = c.ImageDrawRectangleLines
-public foreign function image_draw_triangle(inout dst: Image, v_1: vec2, v_2: vec2, v_3: vec2, color: Color) -> void = c.ImageDrawTriangle
-public foreign function image_draw_triangle_ex(inout dst: Image, v_1: vec2, v_2: vec2, v_3: vec2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
-public foreign function image_draw_triangle_lines(inout dst: Image, v_1: vec2, v_2: vec2, v_3: vec2, color: Color) -> void = c.ImageDrawTriangleLines
-public foreign function image_draw_triangle_fan(inout dst: Image, points: const_ptr[vec2], point_count: int, color: Color) -> void = c.ImageDrawTriangleFan
-public foreign function image_draw_triangle_strip(inout dst: Image, points: const_ptr[vec2], point_count: int, color: Color) -> void = c.ImageDrawTriangleStrip
+public foreign function image_draw_triangle(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangle
+public foreign function image_draw_triangle_ex(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, c_1: Color, c_2: Color, c_3: Color) -> void = c.ImageDrawTriangleEx
+public foreign function image_draw_triangle_lines(inout dst: Image, v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void = c.ImageDrawTriangleLines
+public foreign function image_draw_triangle_fan(inout dst: Image, points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.ImageDrawTriangleFan
+public foreign function image_draw_triangle_strip(inout dst: Image, points: const_ptr[Vector2], point_count: int, color: Color) -> void = c.ImageDrawTriangleStrip
 public foreign function image_draw(inout dst: Image, src: Image, src_rec: Rectangle, dst_rec: Rectangle, tint: Color) -> void = c.ImageDraw
 public foreign function image_draw_text(inout dst: Image, text: str as cstr, pos_x: int, pos_y: int, font_size: int, color: Color) -> void = c.ImageDrawText
-public foreign function image_draw_text_ex(inout dst: Image, font: Font, text: str as cstr, position: vec2, font_size: float, spacing: float, tint: Color) -> void = c.ImageDrawTextEx
+public foreign function image_draw_text_ex(inout dst: Image, font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color) -> void = c.ImageDrawTextEx
 public foreign function load_texture(file_name: str as cstr) -> Texture2D = c.LoadTexture
 public foreign function load_texture_from_image(image: Image) -> Texture2D = c.LoadTextureFromImage
 public foreign function load_texture_cubemap(image: Image, layout: int) -> TextureCubemap = c.LoadTextureCubemap
@@ -474,17 +474,17 @@ public foreign function gen_texture_mipmaps(inout texture: Texture2D) -> void = 
 public foreign function set_texture_filter(texture: Texture, filter: int) -> void = c.SetTextureFilter
 public foreign function set_texture_wrap(texture: Texture, wrap: int) -> void = c.SetTextureWrap
 public foreign function draw_texture(texture: Texture, pos_x: int, pos_y: int, tint: Color) -> void = c.DrawTexture
-public foreign function draw_texture_v(texture: Texture, position: vec2, tint: Color) -> void = c.DrawTextureV
-public foreign function draw_texture_ex(texture: Texture, position: vec2, rotation: float, scale: float, tint: Color) -> void = c.DrawTextureEx
-public foreign function draw_texture_rec(texture: Texture, source: Rectangle, position: vec2, tint: Color) -> void = c.DrawTextureRec
-public foreign function draw_texture_pro(texture: Texture, source: Rectangle, dest: Rectangle, origin: vec2, rotation: float, tint: Color) -> void = c.DrawTexturePro
-public foreign function draw_texture_n_patch(texture: Texture, n_patch_info: NPatchInfo, dest: Rectangle, origin: vec2, rotation: float, tint: Color) -> void = c.DrawTextureNPatch
+public foreign function draw_texture_v(texture: Texture, position: Vector2, tint: Color) -> void = c.DrawTextureV
+public foreign function draw_texture_ex(texture: Texture, position: Vector2, rotation: float, scale: float, tint: Color) -> void = c.DrawTextureEx
+public foreign function draw_texture_rec(texture: Texture, source: Rectangle, position: Vector2, tint: Color) -> void = c.DrawTextureRec
+public foreign function draw_texture_pro(texture: Texture, source: Rectangle, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void = c.DrawTexturePro
+public foreign function draw_texture_n_patch(texture: Texture, n_patch_info: NPatchInfo, dest: Rectangle, origin: Vector2, rotation: float, tint: Color) -> void = c.DrawTextureNPatch
 public foreign function color_is_equal(col1: Color, col2: Color) -> bool = c.ColorIsEqual
 public foreign function fade(color: Color, alpha: float) -> Color = c.Fade
 public foreign function color_to_int(color: Color) -> int = c.ColorToInt
-public foreign function color_normalize(color: Color) -> vec4 = c.ColorNormalize
-public foreign function color_from_normalized(normalized: vec4) -> Color = c.ColorFromNormalized
-public foreign function color_to_hsv(color: Color) -> vec3 = c.ColorToHSV
+public foreign function color_normalize(color: Color) -> Vector4 = c.ColorNormalize
+public foreign function color_from_normalized(normalized: Vector4) -> Color = c.ColorFromNormalized
+public foreign function color_to_hsv(color: Color) -> Vector3 = c.ColorToHSV
 public foreign function color_from_hsv(hue: float, saturation: float, value: float) -> Color = c.ColorFromHSV
 public foreign function color_tint(color: Color, tint: Color) -> Color = c.ColorTint
 public foreign function color_brightness(color: Color, factor: float) -> Color = c.ColorBrightness
@@ -509,14 +509,14 @@ public foreign function unload_font(font: Font) -> void = c.UnloadFont
 public foreign function export_font_as_code(font: Font, file_name: str as cstr) -> bool = c.ExportFontAsCode
 public foreign function draw_fps(pos_x: int, pos_y: int) -> void = c.DrawFPS
 public foreign function draw_text(text: str as cstr, pos_x: int, pos_y: int, font_size: int, color: Color) -> void = c.DrawText
-public foreign function draw_text_ex(font: Font, text: str as cstr, position: vec2, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextEx
-public foreign function draw_text_pro(font: Font, text: str as cstr, position: vec2, origin: vec2, rotation: float, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextPro
-public foreign function draw_text_codepoint(font: Font, codepoint: int, position: vec2, font_size: float, tint: Color) -> void = c.DrawTextCodepoint
-public foreign function draw_text_codepoints(font: Font, codepoints: const_ptr[int], codepoint_count: int, position: vec2, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextCodepoints
+public foreign function draw_text_ex(font: Font, text: str as cstr, position: Vector2, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextEx
+public foreign function draw_text_pro(font: Font, text: str as cstr, position: Vector2, origin: Vector2, rotation: float, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextPro
+public foreign function draw_text_codepoint(font: Font, codepoint: int, position: Vector2, font_size: float, tint: Color) -> void = c.DrawTextCodepoint
+public foreign function draw_text_codepoints(font: Font, codepoints: const_ptr[int], codepoint_count: int, position: Vector2, font_size: float, spacing: float, tint: Color) -> void = c.DrawTextCodepoints
 public foreign function set_text_line_spacing(spacing: int) -> void = c.SetTextLineSpacing
 public foreign function measure_text(text: str as cstr, font_size: int) -> int = c.MeasureText
-public foreign function measure_text_ex(font: Font, text: str as cstr, font_size: float, spacing: float) -> vec2 = c.MeasureTextEx
-public foreign function measure_text_codepoints(font: Font, codepoints: const_ptr[int], length: int, font_size: float, spacing: float) -> vec2 = c.MeasureTextCodepoints
+public foreign function measure_text_ex(font: Font, text: str as cstr, font_size: float, spacing: float) -> Vector2 = c.MeasureTextEx
+public foreign function measure_text_codepoints(font: Font, codepoints: const_ptr[int], length: int, font_size: float, spacing: float) -> Vector2 = c.MeasureTextCodepoints
 public foreign function get_glyph_index(font: Font, codepoint: int) -> int = c.GetGlyphIndex
 public foreign function get_glyph_info(font: Font, codepoint: int) -> GlyphInfo = c.GetGlyphInfo
 public foreign function get_glyph_atlas_rec(font: Font, codepoint: int) -> Rectangle = c.GetGlyphAtlasRec
@@ -555,25 +555,25 @@ public foreign function text_to_snake_ptr(text: str as cstr) -> ptr[char] = c.Te
 public foreign function text_to_camel_ptr(text: str as cstr) -> ptr[char] = c.TextToCamel
 public foreign function text_to_integer(text: str as cstr) -> int = c.TextToInteger
 public foreign function text_to_float(text: str as cstr) -> float = c.TextToFloat
-public foreign function draw_line_3d(start_pos: vec3, end_pos: vec3, color: Color) -> void = c.DrawLine3D
-public foreign function draw_point_3d(position: vec3, color: Color) -> void = c.DrawPoint3D
-public foreign function draw_circle_3d(center: vec3, radius: float, rotation_axis: vec3, rotation_angle: float, color: Color) -> void = c.DrawCircle3D
-public foreign function draw_triangle_3d(v1: vec3, v2: vec3, v3: vec3, color: Color) -> void = c.DrawTriangle3D
-public foreign function draw_triangle_strip_3d(points: const_ptr[vec3], point_count: int, color: Color) -> void = c.DrawTriangleStrip3D
-public foreign function draw_cube(position: vec3, width: float, height: float, length: float, color: Color) -> void = c.DrawCube
-public foreign function draw_cube_v(position: vec3, size: vec3, color: Color) -> void = c.DrawCubeV
-public foreign function draw_cube_wires(position: vec3, width: float, height: float, length: float, color: Color) -> void = c.DrawCubeWires
-public foreign function draw_cube_wires_v(position: vec3, size: vec3, color: Color) -> void = c.DrawCubeWiresV
-public foreign function draw_sphere(center_pos: vec3, radius: float, color: Color) -> void = c.DrawSphere
-public foreign function draw_sphere_ex(center_pos: vec3, radius: float, rings: int, slices: int, color: Color) -> void = c.DrawSphereEx
-public foreign function draw_sphere_wires(center_pos: vec3, radius: float, rings: int, slices: int, color: Color) -> void = c.DrawSphereWires
-public foreign function draw_cylinder(position: vec3, radius_top: float, radius_bottom: float, height: float, slices: int, color: Color) -> void = c.DrawCylinder
-public foreign function draw_cylinder_ex(start_pos: vec3, end_pos: vec3, start_radius: float, end_radius: float, sides: int, color: Color) -> void = c.DrawCylinderEx
-public foreign function draw_cylinder_wires(position: vec3, radius_top: float, radius_bottom: float, height: float, slices: int, color: Color) -> void = c.DrawCylinderWires
-public foreign function draw_cylinder_wires_ex(start_pos: vec3, end_pos: vec3, start_radius: float, end_radius: float, sides: int, color: Color) -> void = c.DrawCylinderWiresEx
-public foreign function draw_capsule(start_pos: vec3, end_pos: vec3, radius: float, slices: int, rings: int, color: Color) -> void = c.DrawCapsule
-public foreign function draw_capsule_wires(start_pos: vec3, end_pos: vec3, radius: float, slices: int, rings: int, color: Color) -> void = c.DrawCapsuleWires
-public foreign function draw_plane(center_pos: vec3, size: vec2, color: Color) -> void = c.DrawPlane
+public foreign function draw_line_3d(start_pos: Vector3, end_pos: Vector3, color: Color) -> void = c.DrawLine3D
+public foreign function draw_point_3d(position: Vector3, color: Color) -> void = c.DrawPoint3D
+public foreign function draw_circle_3d(center: Vector3, radius: float, rotation_axis: Vector3, rotation_angle: float, color: Color) -> void = c.DrawCircle3D
+public foreign function draw_triangle_3d(v1: Vector3, v2: Vector3, v3: Vector3, color: Color) -> void = c.DrawTriangle3D
+public foreign function draw_triangle_strip_3d(points: const_ptr[Vector3], point_count: int, color: Color) -> void = c.DrawTriangleStrip3D
+public foreign function draw_cube(position: Vector3, width: float, height: float, length: float, color: Color) -> void = c.DrawCube
+public foreign function draw_cube_v(position: Vector3, size: Vector3, color: Color) -> void = c.DrawCubeV
+public foreign function draw_cube_wires(position: Vector3, width: float, height: float, length: float, color: Color) -> void = c.DrawCubeWires
+public foreign function draw_cube_wires_v(position: Vector3, size: Vector3, color: Color) -> void = c.DrawCubeWiresV
+public foreign function draw_sphere(center_pos: Vector3, radius: float, color: Color) -> void = c.DrawSphere
+public foreign function draw_sphere_ex(center_pos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void = c.DrawSphereEx
+public foreign function draw_sphere_wires(center_pos: Vector3, radius: float, rings: int, slices: int, color: Color) -> void = c.DrawSphereWires
+public foreign function draw_cylinder(position: Vector3, radius_top: float, radius_bottom: float, height: float, slices: int, color: Color) -> void = c.DrawCylinder
+public foreign function draw_cylinder_ex(start_pos: Vector3, end_pos: Vector3, start_radius: float, end_radius: float, sides: int, color: Color) -> void = c.DrawCylinderEx
+public foreign function draw_cylinder_wires(position: Vector3, radius_top: float, radius_bottom: float, height: float, slices: int, color: Color) -> void = c.DrawCylinderWires
+public foreign function draw_cylinder_wires_ex(start_pos: Vector3, end_pos: Vector3, start_radius: float, end_radius: float, sides: int, color: Color) -> void = c.DrawCylinderWiresEx
+public foreign function draw_capsule(start_pos: Vector3, end_pos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void = c.DrawCapsule
+public foreign function draw_capsule_wires(start_pos: Vector3, end_pos: Vector3, radius: float, slices: int, rings: int, color: Color) -> void = c.DrawCapsuleWires
+public foreign function draw_plane(center_pos: Vector3, size: Vector2, color: Color) -> void = c.DrawPlane
 public foreign function draw_ray(ray: Ray, color: Color) -> void = c.DrawRay
 public foreign function draw_grid(slices: int, spacing: float) -> void = c.DrawGrid
 public foreign function load_model(file_name: str as cstr) -> Model = c.LoadModel
@@ -581,19 +581,19 @@ public foreign function load_model_from_mesh(mesh: Mesh) -> Model = c.LoadModelF
 public foreign function is_model_valid(model: Model) -> bool = c.IsModelValid
 public foreign function unload_model(model: Model) -> void = c.UnloadModel
 public foreign function get_model_bounding_box(model: Model) -> BoundingBox = c.GetModelBoundingBox
-public foreign function draw_model(model: Model, position: vec3, scale: float, tint: Color) -> void = c.DrawModel
-public foreign function draw_model_ex(model: Model, position: vec3, rotation_axis: vec3, rotation_angle: float, scale: vec3, tint: Color) -> void = c.DrawModelEx
-public foreign function draw_model_wires(model: Model, position: vec3, scale: float, tint: Color) -> void = c.DrawModelWires
-public foreign function draw_model_wires_ex(model: Model, position: vec3, rotation_axis: vec3, rotation_angle: float, scale: vec3, tint: Color) -> void = c.DrawModelWiresEx
+public foreign function draw_model(model: Model, position: Vector3, scale: float, tint: Color) -> void = c.DrawModel
+public foreign function draw_model_ex(model: Model, position: Vector3, rotation_axis: Vector3, rotation_angle: float, scale: Vector3, tint: Color) -> void = c.DrawModelEx
+public foreign function draw_model_wires(model: Model, position: Vector3, scale: float, tint: Color) -> void = c.DrawModelWires
+public foreign function draw_model_wires_ex(model: Model, position: Vector3, rotation_axis: Vector3, rotation_angle: float, scale: Vector3, tint: Color) -> void = c.DrawModelWiresEx
 public foreign function draw_bounding_box(box: BoundingBox, color: Color) -> void = c.DrawBoundingBox
-public foreign function draw_billboard(camera: Camera3D, texture: Texture, position: vec3, scale: float, tint: Color) -> void = c.DrawBillboard
-public foreign function draw_billboard_rec(camera: Camera3D, texture: Texture, source: Rectangle, position: vec3, size: vec2, tint: Color) -> void = c.DrawBillboardRec
-public foreign function draw_billboard_pro(camera: Camera3D, texture: Texture, source: Rectangle, position: vec3, up: vec3, size: vec2, origin: vec2, rotation: float, tint: Color) -> void = c.DrawBillboardPro
+public foreign function draw_billboard(camera: Camera3D, texture: Texture, position: Vector3, scale: float, tint: Color) -> void = c.DrawBillboard
+public foreign function draw_billboard_rec(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, size: Vector2, tint: Color) -> void = c.DrawBillboardRec
+public foreign function draw_billboard_pro(camera: Camera3D, texture: Texture, source: Rectangle, position: Vector3, up: Vector3, size: Vector2, origin: Vector2, rotation: float, tint: Color) -> void = c.DrawBillboardPro
 public foreign function upload_mesh(mesh: ptr[Mesh], dynamic: bool) -> void = c.UploadMesh
 public foreign function update_mesh_buffer[T](mesh: Mesh, index: int, data: ptr[T] as const_ptr[void], data_size: int, offset: int) -> void = c.UpdateMeshBuffer
 public foreign function unload_mesh(mesh: Mesh) -> void = c.UnloadMesh
-public foreign function draw_mesh(mesh: Mesh, material: Material, transform: mat4) -> void = c.DrawMesh
-public foreign function draw_mesh_instanced(mesh: Mesh, material: Material, transforms: const_ptr[mat4], instances: int) -> void = c.DrawMeshInstanced
+public foreign function draw_mesh(mesh: Mesh, material: Material, transform: Matrix) -> void = c.DrawMesh
+public foreign function draw_mesh_instanced(mesh: Mesh, material: Material, transforms: const_ptr[Matrix], instances: int) -> void = c.DrawMeshInstanced
 public foreign function get_mesh_bounding_box(mesh: Mesh) -> BoundingBox = c.GetMeshBoundingBox
 public foreign function gen_mesh_tangents(mesh: ptr[Mesh]) -> void = c.GenMeshTangents
 public foreign function export_mesh(mesh: Mesh, file_name: str as cstr) -> bool = c.ExportMesh
@@ -607,8 +607,8 @@ public foreign function gen_mesh_cylinder(radius: float, height: float, slices: 
 public foreign function gen_mesh_cone(radius: float, height: float, slices: int) -> Mesh = c.GenMeshCone
 public foreign function gen_mesh_torus(radius: float, size: float, rad_seg: int, sides: int) -> Mesh = c.GenMeshTorus
 public foreign function gen_mesh_knot(radius: float, size: float, rad_seg: int, sides: int) -> Mesh = c.GenMeshKnot
-public foreign function gen_mesh_heightmap(heightmap: Image, size: vec3) -> Mesh = c.GenMeshHeightmap
-public foreign function gen_mesh_cubicmap(cubicmap: Image, cube_size: vec3) -> Mesh = c.GenMeshCubicmap
+public foreign function gen_mesh_heightmap(heightmap: Image, size: Vector3) -> Mesh = c.GenMeshHeightmap
+public foreign function gen_mesh_cubicmap(cubicmap: Image, cube_size: Vector3) -> Mesh = c.GenMeshCubicmap
 public foreign function load_materials(file_name: str as cstr, material_count: ptr[int]) -> ptr[Material]? = c.LoadMaterials
 public foreign function load_material_default() -> Material = c.LoadMaterialDefault
 public foreign function is_material_valid(material: Material) -> bool = c.IsMaterialValid
@@ -620,14 +620,14 @@ public foreign function update_model_animation(model: Model, anim: ModelAnimatio
 public foreign function update_model_animation_ex(model: Model, anim_a: ModelAnimation, frame_a: float, anim_b: ModelAnimation, frame_b: float, blend: float) -> void = c.UpdateModelAnimationEx
 public foreign function unload_model_animations(animations: ptr[ModelAnimation], anim_count: int) -> void = c.UnloadModelAnimations
 public foreign function is_model_animation_valid(model: Model, anim: ModelAnimation) -> bool = c.IsModelAnimationValid
-public foreign function check_collision_spheres(center1: vec3, radius1: float, center2: vec3, radius2: float) -> bool = c.CheckCollisionSpheres
+public foreign function check_collision_spheres(center1: Vector3, radius1: float, center2: Vector3, radius2: float) -> bool = c.CheckCollisionSpheres
 public foreign function check_collision_boxes(box1: BoundingBox, box2: BoundingBox) -> bool = c.CheckCollisionBoxes
-public foreign function check_collision_box_sphere(box: BoundingBox, center: vec3, radius: float) -> bool = c.CheckCollisionBoxSphere
-public foreign function get_ray_collision_sphere(ray: Ray, center: vec3, radius: float) -> RayCollision = c.GetRayCollisionSphere
+public foreign function check_collision_box_sphere(box: BoundingBox, center: Vector3, radius: float) -> bool = c.CheckCollisionBoxSphere
+public foreign function get_ray_collision_sphere(ray: Ray, center: Vector3, radius: float) -> RayCollision = c.GetRayCollisionSphere
 public foreign function get_ray_collision_box(ray: Ray, box: BoundingBox) -> RayCollision = c.GetRayCollisionBox
-public foreign function get_ray_collision_mesh(ray: Ray, mesh: Mesh, transform: mat4) -> RayCollision = c.GetRayCollisionMesh
-public foreign function get_ray_collision_triangle(ray: Ray, p1: vec3, p2: vec3, p3: vec3) -> RayCollision = c.GetRayCollisionTriangle
-public foreign function get_ray_collision_quad(ray: Ray, p1: vec3, p2: vec3, p3: vec3, p4: vec3) -> RayCollision = c.GetRayCollisionQuad
+public foreign function get_ray_collision_mesh(ray: Ray, mesh: Mesh, transform: Matrix) -> RayCollision = c.GetRayCollisionMesh
+public foreign function get_ray_collision_triangle(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3) -> RayCollision = c.GetRayCollisionTriangle
+public foreign function get_ray_collision_quad(ray: Ray, p1: Vector3, p2: Vector3, p3: Vector3, p4: Vector3) -> RayCollision = c.GetRayCollisionQuad
 public foreign function init_audio_device() -> void = c.InitAudioDevice
 public foreign function close_audio_device() -> void = c.CloseAudioDevice
 public foreign function is_audio_device_ready() -> bool = c.IsAudioDeviceReady
@@ -705,15 +705,15 @@ extending Color:
         return color_to_int(this)
 
 
-    public function normalize() -> vec4:
+    public function normalize() -> Vector4:
         return color_normalize(this)
 
 
-    public static function from_normalized(normalized: vec4) -> Color:
+    public static function from_normalized(normalized: Vector4) -> Color:
         return color_from_normalized(normalized)
 
 
-    public function to_hsv() -> vec3:
+    public function to_hsv() -> Vector3:
         return color_to_hsv(this)
 
 
@@ -872,7 +872,7 @@ extending Image:
         image_draw_pixel(this, pos_x, pos_y, color)
 
 
-    public editable function draw_pixel_v(position: vec2, color: Color) -> void:
+    public editable function draw_pixel_v(position: Vector2, color: Color) -> void:
         image_draw_pixel_v(this, position, color)
 
 
@@ -886,11 +886,11 @@ extending Image:
         image_draw_line(this, start_pos_x, start_pos_y, end_pos_x, end_pos_y, color)
 
 
-    public editable function draw_line_v(start: vec2, end: vec2, color: Color) -> void:
+    public editable function draw_line_v(start: Vector2, end: Vector2, color: Color) -> void:
         image_draw_line_v(this, start, end, color)
 
 
-    public editable function draw_line_ex(start: vec2, end: vec2, thick: int, color: Color) -> void:
+    public editable function draw_line_ex(start: Vector2, end: Vector2, thick: int, color: Color) -> void:
         image_draw_line_ex(this, start, end, thick, color)
 
 
@@ -898,7 +898,7 @@ extending Image:
         image_draw_circle(this, center_x, center_y, radius, color)
 
 
-    public editable function draw_circle_v(center: vec2, radius: int, color: Color) -> void:
+    public editable function draw_circle_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_v(this, center, radius, color)
 
 
@@ -906,7 +906,7 @@ extending Image:
         image_draw_circle_lines(this, center_x, center_y, radius, color)
 
 
-    public editable function draw_circle_lines_v(center: vec2, radius: int, color: Color) -> void:
+    public editable function draw_circle_lines_v(center: Vector2, radius: int, color: Color) -> void:
         image_draw_circle_lines_v(this, center, radius, color)
 
 
@@ -914,7 +914,7 @@ extending Image:
         image_draw_rectangle(this, pos_x, pos_y, width, height, color)
 
 
-    public editable function draw_rectangle_v(position: vec2, size: vec2, color: Color) -> void:
+    public editable function draw_rectangle_v(position: Vector2, size: Vector2, color: Color) -> void:
         image_draw_rectangle_v(this, position, size, color)
 
 
@@ -926,14 +926,14 @@ extending Image:
         image_draw_rectangle_lines(this, rec, thick, color)
 
 
-    public editable function draw_triangle(v_1: vec2, v_2: vec2, v_3: vec2, color: Color) -> void:
+    public editable function draw_triangle(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle(this, v_1, v_2, v_3, color)
 
 
     public editable function draw_triangle_ex(
-        v_1: vec2,
-        v_2: vec2,
-        v_3: vec2,
+        v_1: Vector2,
+        v_2: Vector2,
+        v_3: Vector2,
         c_1: Color,
         c_2: Color,
         c_3: Color
@@ -941,15 +941,15 @@ extending Image:
         image_draw_triangle_ex(this, v_1, v_2, v_3, c_1, c_2, c_3)
 
 
-    public editable function draw_triangle_lines(v_1: vec2, v_2: vec2, v_3: vec2, color: Color) -> void:
+    public editable function draw_triangle_lines(v_1: Vector2, v_2: Vector2, v_3: Vector2, color: Color) -> void:
         image_draw_triangle_lines(this, v_1, v_2, v_3, color)
 
 
-    public editable function draw_triangle_fan(points: const_ptr[vec2], point_count: int, color: Color) -> void:
+    public editable function draw_triangle_fan(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_fan(this, points, point_count, color)
 
 
-    public editable function draw_triangle_strip(points: const_ptr[vec2], point_count: int, color: Color) -> void:
+    public editable function draw_triangle_strip(points: const_ptr[Vector2], point_count: int, color: Color) -> void:
         image_draw_triangle_strip(this, points, point_count, color)
 
 
@@ -964,7 +964,7 @@ extending Image:
     public editable function draw_text_ex(
         font: Font,
         text: str,
-        position: vec2,
+        position: Vector2,
         font_size: float,
         spacing: float,
         tint: Color
@@ -987,27 +987,27 @@ extending ptr[Wave]:
 
 
 extending Vector2:
-    public static function zero() -> vec2:
+    public static function zero() -> Vector2:
         return math.vector2_zero()
 
 
-    public static function one() -> vec2:
+    public static function one() -> Vector2:
         return math.vector2_one()
 
 
-    public function add(v2: vec2) -> vec2:
+    public function add(v2: Vector2) -> Vector2:
         return math.vector2_add(this, v2)
 
 
-    public function add_value(add: float) -> vec2:
+    public function add_value(add: float) -> Vector2:
         return math.vector2_add_value(this, add)
 
 
-    public function subtract(v2: vec2) -> vec2:
+    public function subtract(v2: Vector2) -> Vector2:
         return math.vector2_subtract(this, v2)
 
 
-    public function subtract_value(sub: float) -> vec2:
+    public function subtract_value(sub: float) -> Vector2:
         return math.vector2_subtract_value(this, sub)
 
 
@@ -1019,136 +1019,136 @@ extending Vector2:
         return math.vector2_length_sqr(this)
 
 
-    public function dot_product(v2: vec2) -> float:
+    public function dot_product(v2: Vector2) -> float:
         return math.vector2_dot_product(this, v2)
 
 
-    public function cross_product(v2: vec2) -> float:
+    public function cross_product(v2: Vector2) -> float:
         return math.vector2_cross_product(this, v2)
 
 
-    public function distance(v2: vec2) -> float:
+    public function distance(v2: Vector2) -> float:
         return math.vector2_distance(this, v2)
 
 
-    public function distance_sqr(v2: vec2) -> float:
+    public function distance_sqr(v2: Vector2) -> float:
         return math.vector2_distance_sqr(this, v2)
 
 
-    public function angle(v2: vec2) -> float:
+    public function angle(v2: Vector2) -> float:
         return math.vector2_angle(this, v2)
 
 
-    public function line_angle(end: vec2) -> float:
+    public function line_angle(end: Vector2) -> float:
         return math.vector2_line_angle(this, end)
 
 
-    public function scale(scale: float) -> vec2:
+    public function scale(scale: float) -> Vector2:
         return math.vector2_scale(this, scale)
 
 
-    public function multiply(v2: vec2) -> vec2:
+    public function multiply(v2: Vector2) -> Vector2:
         return math.vector2_multiply(this, v2)
 
 
-    public function negate() -> vec2:
+    public function negate() -> Vector2:
         return math.vector2_negate(this)
 
 
-    public function divide(v2: vec2) -> vec2:
+    public function divide(v2: Vector2) -> Vector2:
         return math.vector2_divide(this, v2)
 
 
-    public function normalize() -> vec2:
+    public function normalize() -> Vector2:
         return math.vector2_normalize(this)
 
 
-    public function transform(mat: mat4) -> vec2:
+    public function transform(mat: Matrix) -> Vector2:
         return math.vector2_transform(this, mat)
 
 
-    public function lerp(v2: vec2, amount: float) -> vec2:
+    public function lerp(v2: Vector2, amount: float) -> Vector2:
         return math.vector2_lerp(this, v2, amount)
 
 
-    public function reflect(normal: vec2) -> vec2:
+    public function reflect(normal: Vector2) -> Vector2:
         return math.vector2_reflect(this, normal)
 
 
-    public function min(v2: vec2) -> vec2:
+    public function min(v2: Vector2) -> Vector2:
         return math.vector2_min(this, v2)
 
 
-    public function max(v2: vec2) -> vec2:
+    public function max(v2: Vector2) -> Vector2:
         return math.vector2_max(this, v2)
 
 
-    public function rotate(angle: float) -> vec2:
+    public function rotate(angle: float) -> Vector2:
         return math.vector2_rotate(this, angle)
 
 
-    public function move_towards(target: vec2, max_distance: float) -> vec2:
+    public function move_towards(target: Vector2, max_distance: float) -> Vector2:
         return math.vector2_move_towards(this, target, max_distance)
 
 
-    public function invert() -> vec2:
+    public function invert() -> Vector2:
         return math.vector2_invert(this)
 
 
-    public function clamp(min: vec2, max: vec2) -> vec2:
+    public function clamp(min: Vector2, max: Vector2) -> Vector2:
         return math.vector2_clamp(this, min, max)
 
 
-    public function clamp_value(min: float, max: float) -> vec2:
+    public function clamp_value(min: float, max: float) -> Vector2:
         return math.vector2_clamp_value(this, min, max)
 
 
-    public function equals(q: vec2) -> int:
+    public function equals(q: Vector2) -> int:
         return math.vector2_equals(this, q)
 
 
-    public function refract(n: vec2, r: float) -> vec2:
+    public function refract(n: Vector2, r: float) -> Vector2:
         return math.vector2_refract(this, n, r)
 
 
 extending Vector3:
-    public static function zero() -> vec3:
+    public static function zero() -> Vector3:
         return math.vector3_zero()
 
 
-    public static function one() -> vec3:
+    public static function one() -> Vector3:
         return math.vector3_one()
 
 
-    public function add(v2: vec3) -> vec3:
+    public function add(v2: Vector3) -> Vector3:
         return math.vector3_add(this, v2)
 
 
-    public function add_value(add: float) -> vec3:
+    public function add_value(add: float) -> Vector3:
         return math.vector3_add_value(this, add)
 
 
-    public function subtract(v2: vec3) -> vec3:
+    public function subtract(v2: Vector3) -> Vector3:
         return math.vector3_subtract(this, v2)
 
 
-    public function subtract_value(sub: float) -> vec3:
+    public function subtract_value(sub: float) -> Vector3:
         return math.vector3_subtract_value(this, sub)
 
 
-    public function scale(scalar: float) -> vec3:
+    public function scale(scalar: float) -> Vector3:
         return math.vector3_scale(this, scalar)
 
 
-    public function multiply(v2: vec3) -> vec3:
+    public function multiply(v2: Vector3) -> Vector3:
         return math.vector3_multiply(this, v2)
 
 
-    public function cross_product(v2: vec3) -> vec3:
+    public function cross_product(v2: Vector3) -> Vector3:
         return math.vector3_cross_product(this, v2)
 
 
-    public function perpendicular() -> vec3:
+    public function perpendicular() -> Vector3:
         return math.vector3_perpendicular(this)
 
 
@@ -1160,83 +1160,83 @@ extending Vector3:
         return math.vector3_length_sqr(this)
 
 
-    public function dot_product(v2: vec3) -> float:
+    public function dot_product(v2: Vector3) -> float:
         return math.vector3_dot_product(this, v2)
 
 
-    public function distance(v2: vec3) -> float:
+    public function distance(v2: Vector3) -> float:
         return math.vector3_distance(this, v2)
 
 
-    public function distance_sqr(v2: vec3) -> float:
+    public function distance_sqr(v2: Vector3) -> float:
         return math.vector3_distance_sqr(this, v2)
 
 
-    public function angle(v2: vec3) -> float:
+    public function angle(v2: Vector3) -> float:
         return math.vector3_angle(this, v2)
 
 
-    public function negate() -> vec3:
+    public function negate() -> Vector3:
         return math.vector3_negate(this)
 
 
-    public function divide(v2: vec3) -> vec3:
+    public function divide(v2: Vector3) -> Vector3:
         return math.vector3_divide(this, v2)
 
 
-    public function normalize() -> vec3:
+    public function normalize() -> Vector3:
         return math.vector3_normalize(this)
 
 
-    public function project(v2: vec3) -> vec3:
+    public function project(v2: Vector3) -> Vector3:
         return math.vector3_project(this, v2)
 
 
-    public function reject(v2: vec3) -> vec3:
+    public function reject(v2: Vector3) -> Vector3:
         return math.vector3_reject(this, v2)
 
 
-    public function transform(mat: mat4) -> vec3:
+    public function transform(mat: Matrix) -> Vector3:
         return math.vector3_transform(this, mat)
 
 
-    public function rotate_by_quaternion(q: vec4) -> vec3:
+    public function rotate_by_quaternion(q: Vector4) -> Vector3:
         return math.vector3_rotate_by_quaternion(this, q)
 
 
-    public function rotate_by_axis_angle(axis: vec3, angle: float) -> vec3:
+    public function rotate_by_axis_angle(axis: Vector3, angle: float) -> Vector3:
         return math.vector3_rotate_by_axis_angle(this, axis, angle)
 
 
-    public function move_towards(target: vec3, max_distance: float) -> vec3:
+    public function move_towards(target: Vector3, max_distance: float) -> Vector3:
         return math.vector3_move_towards(this, target, max_distance)
 
 
-    public function lerp(v2: vec3, amount: float) -> vec3:
+    public function lerp(v2: Vector3, amount: float) -> Vector3:
         return math.vector3_lerp(this, v2, amount)
 
 
-    public function cubic_hermite(tangent1: vec3, v2: vec3, tangent2: vec3, amount: float) -> vec3:
+    public function cubic_hermite(tangent1: Vector3, v2: Vector3, tangent2: Vector3, amount: float) -> Vector3:
         return math.vector3_cubic_hermite(this, tangent1, v2, tangent2, amount)
 
 
-    public function reflect(normal: vec3) -> vec3:
+    public function reflect(normal: Vector3) -> Vector3:
         return math.vector3_reflect(this, normal)
 
 
-    public function min(v2: vec3) -> vec3:
+    public function min(v2: Vector3) -> Vector3:
         return math.vector3_min(this, v2)
 
 
-    public function max(v2: vec3) -> vec3:
+    public function max(v2: Vector3) -> Vector3:
         return math.vector3_max(this, v2)
 
 
-    public function barycenter(a: vec3, b: vec3, c: vec3) -> vec3:
+    public function barycenter(a: Vector3, b: Vector3, c: Vector3) -> Vector3:
         return math.vector3_barycenter(this, a, b, c)
 
 
-    public function unproject(projection: mat4, view: mat4) -> vec3:
+    public function unproject(projection: Matrix, view: Matrix) -> Vector3:
         return math.vector3_unproject(this, projection, view)
 
 
@@ -1244,48 +1244,48 @@ extending Vector3:
         return math.vector3_to_float_v(this)
 
 
-    public function invert() -> vec3:
+    public function invert() -> Vector3:
         return math.vector3_invert(this)
 
 
-    public function clamp(min: vec3, max: vec3) -> vec3:
+    public function clamp(min: Vector3, max: Vector3) -> Vector3:
         return math.vector3_clamp(this, min, max)
 
 
-    public function clamp_value(min: float, max: float) -> vec3:
+    public function clamp_value(min: float, max: float) -> Vector3:
         return math.vector3_clamp_value(this, min, max)
 
 
-    public function equals(q: vec3) -> int:
+    public function equals(q: Vector3) -> int:
         return math.vector3_equals(this, q)
 
 
-    public function refract(n: vec3, r: float) -> vec3:
+    public function refract(n: Vector3, r: float) -> Vector3:
         return math.vector3_refract(this, n, r)
 
 
 extending Vector4:
-    public static function zero() -> vec4:
+    public static function zero() -> Vector4:
         return math.vector4_zero()
 
 
-    public static function one() -> vec4:
+    public static function one() -> Vector4:
         return math.vector4_one()
 
 
-    public function add(v2: vec4) -> vec4:
+    public function add(v2: Vector4) -> Vector4:
         return math.vector4_add(this, v2)
 
 
-    public function add_value(add: float) -> vec4:
+    public function add_value(add: float) -> Vector4:
         return math.vector4_add_value(this, add)
 
 
-    public function subtract(v2: vec4) -> vec4:
+    public function subtract(v2: Vector4) -> Vector4:
         return math.vector4_subtract(this, v2)
 
 
-    public function subtract_value(add: float) -> vec4:
+    public function subtract_value(add: float) -> Vector4:
         return math.vector4_subtract_value(this, add)
 
 
@@ -1297,59 +1297,59 @@ extending Vector4:
         return math.vector4_length_sqr(this)
 
 
-    public function dot_product(v2: vec4) -> float:
+    public function dot_product(v2: Vector4) -> float:
         return math.vector4_dot_product(this, v2)
 
 
-    public function distance(v2: vec4) -> float:
+    public function distance(v2: Vector4) -> float:
         return math.vector4_distance(this, v2)
 
 
-    public function distance_sqr(v2: vec4) -> float:
+    public function distance_sqr(v2: Vector4) -> float:
         return math.vector4_distance_sqr(this, v2)
 
 
-    public function scale(scale: float) -> vec4:
+    public function scale(scale: float) -> Vector4:
         return math.vector4_scale(this, scale)
 
 
-    public function multiply(v2: vec4) -> vec4:
+    public function multiply(v2: Vector4) -> Vector4:
         return math.vector4_multiply(this, v2)
 
 
-    public function negate() -> vec4:
+    public function negate() -> Vector4:
         return math.vector4_negate(this)
 
 
-    public function divide(v2: vec4) -> vec4:
+    public function divide(v2: Vector4) -> Vector4:
         return math.vector4_divide(this, v2)
 
 
-    public function normalize() -> vec4:
+    public function normalize() -> Vector4:
         return math.vector4_normalize(this)
 
 
-    public function min(v2: vec4) -> vec4:
+    public function min(v2: Vector4) -> Vector4:
         return math.vector4_min(this, v2)
 
 
-    public function max(v2: vec4) -> vec4:
+    public function max(v2: Vector4) -> Vector4:
         return math.vector4_max(this, v2)
 
 
-    public function lerp(v2: vec4, amount: float) -> vec4:
+    public function lerp(v2: Vector4, amount: float) -> Vector4:
         return math.vector4_lerp(this, v2, amount)
 
 
-    public function move_towards(target: vec4, max_distance: float) -> vec4:
+    public function move_towards(target: Vector4, max_distance: float) -> Vector4:
         return math.vector4_move_towards(this, target, max_distance)
 
 
-    public function invert() -> vec4:
+    public function invert() -> Vector4:
         return math.vector4_invert(this)
 
 
-    public function equals(q: vec4) -> int:
+    public function equals(q: Vector4) -> int:
         return math.vector4_equals(this, q)
 
 
@@ -1362,63 +1362,63 @@ extending Matrix:
         return math.matrix_trace(this)
 
 
-    public function transpose() -> mat4:
+    public function transpose() -> Matrix:
         return math.matrix_transpose(this)
 
 
-    public function invert() -> mat4:
+    public function invert() -> Matrix:
         return math.matrix_invert(this)
 
 
-    public static function identity() -> mat4:
+    public static function identity() -> Matrix:
         return math.matrix_identity()
 
 
-    public function add(right: mat4) -> mat4:
+    public function add(right: Matrix) -> Matrix:
         return math.matrix_add(this, right)
 
 
-    public function subtract(right: mat4) -> mat4:
+    public function subtract(right: Matrix) -> Matrix:
         return math.matrix_subtract(this, right)
 
 
-    public function multiply(right: mat4) -> mat4:
+    public function multiply(right: Matrix) -> Matrix:
         return math.matrix_multiply(this, right)
 
 
-    public function multiply_value(value: float) -> mat4:
+    public function multiply_value(value: float) -> Matrix:
         return math.matrix_multiply_value(this, value)
 
 
-    public static function translate(x: float, y: float, z: float) -> mat4:
+    public static function translate(x: float, y: float, z: float) -> Matrix:
         return math.matrix_translate(x, y, z)
 
 
-    public static function rotate(axis: vec3, angle: float) -> mat4:
+    public static function rotate(axis: Vector3, angle: float) -> Matrix:
         return math.matrix_rotate(axis, angle)
 
 
-    public static function rotate_x(angle: float) -> mat4:
+    public static function rotate_x(angle: float) -> Matrix:
         return math.matrix_rotate_x(angle)
 
 
-    public static function rotate_y(angle: float) -> mat4:
+    public static function rotate_y(angle: float) -> Matrix:
         return math.matrix_rotate_y(angle)
 
 
-    public static function rotate_z(angle: float) -> mat4:
+    public static function rotate_z(angle: float) -> Matrix:
         return math.matrix_rotate_z(angle)
 
 
-    public static function rotate_xyz(angle: vec3) -> mat4:
+    public static function rotate_xyz(angle: Vector3) -> Matrix:
         return math.matrix_rotate_xyz(angle)
 
 
-    public static function rotate_zyx(angle: vec3) -> mat4:
+    public static function rotate_zyx(angle: Vector3) -> Matrix:
         return math.matrix_rotate_zyx(angle)
 
 
-    public static function scale(x: float, y: float, z: float) -> mat4:
+    public static function scale(x: float, y: float, z: float) -> Matrix:
         return math.matrix_scale(x, y, z)
 
 
@@ -1429,11 +1429,11 @@ extending Matrix:
         top: double,
         near_plane: double,
         far_plane: double
-    ) -> mat4:
+    ) -> Matrix:
         return math.matrix_frustum(left, right, bottom, top, near_plane, far_plane)
 
 
-    public static function perspective(fov_y: double, aspect: double, near_plane: double, far_plane: double) -> mat4:
+    public static function perspective(fov_y: double, aspect: double, near_plane: double, far_plane: double) -> Matrix:
         return math.matrix_perspective(fov_y, aspect, near_plane, far_plane)
 
 
@@ -1444,11 +1444,11 @@ extending Matrix:
         top: double,
         near_plane: double,
         far_plane: double
-    ) -> mat4:
+    ) -> Matrix:
         return math.matrix_ortho(left, right, bottom, top, near_plane, far_plane)
 
 
-    public static function look_at(eye: vec3, target: vec3, up: vec3) -> mat4:
+    public static function look_at(eye: Vector3, target: Vector3, up: Vector3) -> Matrix:
         return math.matrix_look_at(eye, target, up)
 
 
@@ -1456,50 +1456,55 @@ extending Matrix:
         return math.matrix_to_float_v(this)
 
 
-    public static function compose(translation: vec3, rotation: vec4, scale: vec3) -> mat4:
+    public static function compose(translation: Vector3, rotation: Vector4, scale: Vector3) -> Matrix:
         return math.matrix_compose(translation, rotation, scale)
 
 
 extending Quaternion:
-    public static function identity() -> quat:
+    public static function identity() -> Quaternion:
         return math.quaternion_identity()
 
 
-    public function nlerp(q2: vec4, amount: float) -> quat:
+    public function nlerp(q2: Vector4, amount: float) -> Quaternion:
         return math.quaternion_nlerp(this, q2, amount)
 
 
-    public function slerp(q2: vec4, amount: float) -> quat:
+    public function slerp(q2: Vector4, amount: float) -> Quaternion:
         return math.quaternion_slerp(this, q2, amount)
 
 
-    public function cubic_hermite_spline(out_tangent1: vec4, q2: vec4, in_tangent2: vec4, t: float) -> quat:
+    public function cubic_hermite_spline(
+        out_tangent1: Vector4,
+        q2: Vector4,
+        in_tangent2: Vector4,
+        t: float
+    ) -> Quaternion:
         return math.quaternion_cubic_hermite_spline(this, out_tangent1, q2, in_tangent2, t)
 
 
-    public static function from_vector3_to_vector3(from: vec3, to: vec3) -> quat:
+    public static function from_vector3_to_vector3(from: Vector3, to: Vector3) -> Quaternion:
         return math.quaternion_from_vector3_to_vector3(from, to)
 
 
-    public static function from_matrix(mat: mat4) -> quat:
+    public static function from_matrix(mat: Matrix) -> Quaternion:
         return math.quaternion_from_matrix(mat)
 
 
-    public function to_matrix() -> mat4:
+    public function to_matrix() -> Matrix:
         return math.quaternion_to_matrix(this)
 
 
-    public static function from_axis_angle(axis: vec3, angle: float) -> quat:
+    public static function from_axis_angle(axis: Vector3, angle: float) -> Quaternion:
         return math.quaternion_from_axis_angle(axis, angle)
 
 
-    public static function from_euler(pitch: float, yaw: float, roll: float) -> quat:
+    public static function from_euler(pitch: float, yaw: float, roll: float) -> Quaternion:
         return math.quaternion_from_euler(pitch, yaw, roll)
 
 
-    public function to_euler() -> vec3:
+    public function to_euler() -> Vector3:
         return math.quaternion_to_euler(this)
 
 
-    public function transform(mat: mat4) -> quat:
+    public function transform(mat: Matrix) -> Quaternion:
         return math.quaternion_transform(this, mat)

@@ -897,7 +897,12 @@ function vector_demo() -> float:
     let result_b = vmul.x + vneg.x
     let result_c = v_scaled.x + sv_scaled.x + v_divided.x
     let result_d = float<-(isum.x) + float<-(iscaled.x) + float<-(ineg.x)
-    return v2x + v2y + v3z + v4w + float<-(iv2x) + result_a + result_b + result_c + result_d + squared + dot_val + len_val + cross_val.x + identity_mat.col0.x + identity_quat.w
+    return (
+        v2x + v2y + v3z + v4w + float<-(iv2x)
+        + result_a + result_b + result_c + result_d
+        + squared + dot_val + len_val + cross_val.x
+        + identity_mat.col0.x + identity_quat.w
+    )
 
 extending vec3:
     function squared_len() -> float:
