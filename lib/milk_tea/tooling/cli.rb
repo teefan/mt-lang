@@ -56,6 +56,8 @@ module MilkTea
         build_command
       when "run"
         run_command
+      when "app"
+        app_command
       when "new"
         new_command
       when "dap"
@@ -727,13 +729,76 @@ module MilkTea
         package_graph:,
         frontend: @build_frontend,
         preview_started:,
+        argv: @argv.dup,
         **options
       )
-      @out.write(result.stdout) unless preview_notice_emitted
+      unless @out.equal?($stdout) || preview_notice_emitted
+        @out.write(result.stdout)
+      end
       @out.flush if @out.respond_to?(:flush)
-      @err.write(result.stderr)
+      @err.write(result.stderr) unless @err.equal?($stderr)
       @err.puts("(cached)") if result.cached
       result.exit_status
+    end
+
+    def app_command
+      module_name = @argv.shift
+      unless module_name
+        @err.puts("missing module name")
+        print_usage(@err)
+        return 1
+      end
+
+      path = resolve_app_module(module_name)
+      unless path
+        @err.puts("app module not found: #{module_name}")
+        return 1
+      end
+
+      options = parse_build_options
+      return 1 unless options
+
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+      package_graph = package_graph_for(path, locked:)
+      preview_notice_emitted = false
+      preview_started = lambda do |message|
+        preview_notice_emitted = true
+        @out.write(message)
+        @out.flush if @out.respond_to?(:flush)
+      end
+
+      result = Run.run(
+        path,
+        module_roots: module_roots_for(path, locked:),
+        package_graph:,
+        frontend: @build_frontend,
+        preview_started:,
+        argv: @argv.dup,
+        **options
+      )
+      unless @out.equal?($stdout) || preview_notice_emitted
+        @out.write(result.stdout)
+      end
+      @out.flush if @out.respond_to?(:flush)
+      @err.write(result.stderr) unless @err.equal?($stderr)
+      @err.puts("(cached)") if result.cached
+      result.exit_status
+    end
+
+    def resolve_app_module(name)
+      relative = name.tr(".", "/").sub(%r{^/}, "") + ".mt"
+
+      module_roots_for(Dir.pwd).each do |root|
+        candidate = File.join(root, "std", relative)
+        return File.expand_path(candidate) if File.file?(candidate)
+
+        candidate = File.join(root, relative)
+        return File.expand_path(candidate) if File.file?(candidate)
+      end
+
+      nil
     end
 
     def new_command
@@ -884,10 +949,16 @@ module MilkTea
             print_usage(@err)
             return nil
           end
+        when "--"
+          break
         else
-          @err.puts("unknown build option #{option}")
-          print_usage(@err)
-          return nil
+          if option.start_with?("-")
+            @err.puts("unknown build option #{option}")
+            print_usage(@err)
+            return nil
+          end
+          @argv.unshift(option)
+          break
         end
       end
 
@@ -1234,6 +1305,26 @@ module MilkTea
             --frozen                     Require a current package.lock and use locked resolution.
             -I, --include-path PATH      Add an extra module root.
         HELP
+      "app"             => <<~HELP,
+        Usage: mtc app MODULE [OPTIONS] [-- ARGS...]
+
+          Resolve a standard-library module by name, build it, and run it.
+          Like `python -m module.name`, this finds the module in the module
+          roots (e.g., std/http/server.mt for `http/server`), compiles it, and
+          forwards remaining arguments to the program.
+
+          Module name can use / or . separators (e.g., http/server or http.server).
+
+          Options:
+            --cc COMPILER                C compiler to use (default: $CC or cc).
+            --profile PROFILE            debug (default) | release.
+            --platform PLATFORM          linux (default) | windows | wasm.
+            --locked                     Resolve dependencies from package.lock.
+            --frozen                     Require a current package.lock and use locked resolution.
+            -I, --include-path PATH      Add an extra module root.
+
+          Arguments after -- are forwarded to the app as-is.
+        HELP
       "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
       "toolchain"       => <<~HELP,
         Usage: mtc toolchain SUBCOMMAND
@@ -1328,6 +1419,7 @@ module MilkTea
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
+      io.puts("       mtc app MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")

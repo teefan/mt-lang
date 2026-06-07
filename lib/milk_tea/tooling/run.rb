@@ -210,11 +210,11 @@ module MilkTea
 
     Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
-      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [])
+      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:, argv:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [])
       @input_path = File.expand_path(path)
       @output_path = output_path ? File.expand_path(output_path) : nil
       @cc = cc
@@ -230,6 +230,7 @@ module MilkTea
       @browser_opener = browser_opener || method(:open_browser)
       @preview_server_class = preview_server_class || WasmPreviewServer
       @preview_started = preview_started
+      @argv = argv
     end
 
     def run
@@ -276,11 +277,55 @@ module MilkTea
         raise RunError, "run target platform is #{build_result.platform}; host platform is #{host_platform}"
       end
 
-      stdout, stderr, status = Open3.capture3(build_result.output_path, chdir: @project_root)
+      out_buf = String.new
+      err_buf = String.new
+      status = nil
+
+      cmd = [build_result.output_path, *@argv]
+      cmd = ["stdbuf", "-oL", "-eL", *cmd] if host_platform == :linux
+
+      Open3.popen3(*cmd, chdir: @project_root) do |stdin, stdout, stderr, wait_thr|
+        stdin.close
+
+        out_thread = Thread.new do
+          Thread.current.report_on_exception = false
+          while (chunk = stdout.readpartial(4096))
+            $stdout.write(chunk)
+            $stdout.flush
+            out_buf << chunk
+          end
+        rescue EOFError, IOError
+        end
+
+        err_thread = Thread.new do
+          Thread.current.report_on_exception = false
+          while (chunk = stderr.readpartial(4096))
+            $stderr.write(chunk)
+            $stderr.flush
+            err_buf << chunk
+          end
+        rescue EOFError, IOError
+        end
+
+        begin
+          status = wait_thr.value
+        rescue Interrupt
+          Process.kill("TERM", wait_thr.pid) rescue nil
+          begin
+            status = wait_thr.value
+          rescue Interrupt
+            Process.kill("KILL", wait_thr.pid) rescue nil
+            status = wait_thr.value
+          end
+        end
+
+        out_thread.join
+        err_thread.join
+      end
 
       Result.new(
-        stdout:,
-        stderr:,
+        stdout: out_buf,
+        stderr: err_buf,
         exit_status: process_exit_status(status),
         output_path: @output_path,
         c_path: build_result.c_path,
