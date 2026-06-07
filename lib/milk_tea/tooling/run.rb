@@ -280,6 +280,7 @@ module MilkTea
       out_buf = String.new
       err_buf = String.new
       status = nil
+      live = $stdout.tty?
 
       cmd = [build_result.output_path, *@argv]
       cmd = ["stdbuf", "-oL", "-eL", *cmd] if host_platform == :linux
@@ -290,8 +291,8 @@ module MilkTea
         out_thread = Thread.new do
           Thread.current.report_on_exception = false
           while (chunk = stdout.readpartial(4096))
-            $stdout.write(chunk)
-            $stdout.flush
+            $stdout.write(chunk) if live
+            $stdout.flush if live
             out_buf << chunk
           end
         rescue EOFError, IOError
@@ -300,8 +301,8 @@ module MilkTea
         err_thread = Thread.new do
           Thread.current.report_on_exception = false
           while (chunk = stderr.readpartial(4096))
-            $stderr.write(chunk)
-            $stderr.flush
+            $stderr.write(chunk) if live
+            $stderr.flush if live
             err_buf << chunk
           end
         rescue EOFError, IOError
