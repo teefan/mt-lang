@@ -396,6 +396,7 @@ module MilkTea
           param_fields:,
           local_fields:,
           await_fields:,
+          format_str_fields: {},
         }
       end
 
@@ -754,6 +755,17 @@ module MilkTea
           body.concat(lower_async_frame_proc_release_statements(field_expr, field_info[:storage_type]))
         end
 
+        (async_info[:format_str_fields] || {}).each_key do |field_name|
+          field_expr = async_frame_field_expression(frame_expr, field_name, @types.fetch("str"))
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: "mt_format_str_release",
+              arguments: [field_expr],
+              type: @types.fetch("void"),
+            ),
+          )
+        end
+
         body << IR::ExpressionStmt.new(expression: IR::Call.new(callee: "mt_async_free", arguments: [raw_frame_expr], type: @types.fetch("void")))
         body << IR::ReturnStmt.new(value: nil)
 
@@ -769,12 +781,12 @@ module MilkTea
 
       def build_async_take_result_function(frame_type, take_result_c_name, async_info)
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
-        body = [async_frame_cast_declaration(frame_type, async_info)]
-        if async_info[:result_type] == @types.fetch("void")
-          body << IR::ReturnStmt.new(value: nil)
-        else
-          body << IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "result", async_info[:result_type]))
-        end
+        body = if async_info[:result_type] == @types.fetch("void")
+                 [IR::ReturnStmt.new(value: nil)]
+               else
+                 [async_frame_cast_declaration(frame_type, async_info),
+                  IR::ReturnStmt.new(value: async_frame_field_expression(frame_expr, "result", async_info[:result_type]))]
+               end
 
         IR::Function.new(
           name: "#{take_result_c_name}_fn",
@@ -863,12 +875,18 @@ module MilkTea
         prepared_value = statement.value
 
         if statement.value
+          cleanup_start = (env[:prepared_expression_cleanups] ||= []).length
           prepared_setup, prepared_value = prepare_expression_for_inline_lowering(
             statement.value,
             env:,
             expected_type: storage_type,
             allow_root_statement_foreign: true,
           )
+          cleanup_count = (env[:prepared_expression_cleanups] || []).length - cleanup_start
+          if cleanup_count.positive?
+            async_info[:format_str_fields][field_info[:field_name]] = storage_type
+            env[:prepared_expression_cleanups].slice!(cleanup_start, cleanup_count)
+          end
           lowered.concat(prepared_setup)
         end
 

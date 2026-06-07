@@ -200,7 +200,11 @@ module MilkTea
           end
 
           def emit_str_initializer(expression)
-            "{ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+            if @str_literal_map && @str_literal_map[expression.value]
+              @str_literal_map[expression.value]
+            else
+              "{ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+            end
           end
 
           def emit_aggregate_literal(expression)
@@ -375,7 +379,11 @@ module MilkTea
           end
 
           def emit_str_literal(expression)
-            "(mt_str){ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+            if @str_literal_map && @str_literal_map[expression.value]
+              @str_literal_map[expression.value]
+            else
+              "(mt_str){ .data = #{expression.value.inspect}, .len = #{expression.value.bytesize} }"
+            end
           end
 
           def emit_float_literal(expression)

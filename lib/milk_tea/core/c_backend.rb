@@ -190,6 +190,14 @@ module MilkTea
         lines << ""
       end
 
+      str_literals = collect_str_literals
+      unless str_literals.empty?
+        @str_literal_map = {}
+        str_literals.each_with_index { |value, i| @str_literal_map[value] = str_literal_name(i) }
+        lines.concat(emit_str_literal_constants(str_literals))
+        lines << ""
+      end
+
       emitted_functions.each do |function|
         lines.concat(emit_function(function))
         lines << ""

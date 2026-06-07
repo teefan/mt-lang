@@ -2480,7 +2480,7 @@ function main() -> int:
     assert_match(/static void mt_fatal_str\(mt_str message\)/, generated)
     assert_match(/fwrite\(message\.data, 1, message\.len, stderr\);/, generated)
     assert_match(/abort\(\);/, generated)
-    assert_match(/mt_fatal_str\(\(mt_str\)\{ \.data = "bad state", \.len = 9 \}\);/, generated)
+    assert_match(/mt_fatal_str\(mt_str_lit_\d+\);/, generated)
   end
 
   def test_generate_c_for_enum_match_statement_as_switch
