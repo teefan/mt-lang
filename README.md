@@ -510,6 +510,19 @@ Primitive types:
 - `mat3`, `mat4` — column-major matrices; `mat3` has `vec3` columns `.col0`–`.col2`, `mat4` has `vec4` columns `.col0`–`.col3`
 - `quat` — quaternion with `.x` `.y` `.z` `.w` fields (layout-compatible with `vec4`)
 
+Native vector, matrix, and quaternion types support aggregate construction with named fields, same as struct literals. Omitted fields default to zero.
+
+```mt
+let direction = vec3(x = 1.0, y = 0.0, z = 0.0)
+let identity = mat4(
+    col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+    col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+    col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+    col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+)
+let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+```
+
 Primitive type names are reserved. They cannot be reused for value bindings, parameters, locals, import aliases, or type parameters.
 
 Type constructors:
