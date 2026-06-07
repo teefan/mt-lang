@@ -1643,6 +1643,94 @@ module MilkTea
           def pointer_to(type)
             Types::GenericInstance.new("ptr", [type])
           end
+
+          def collect_str_literals
+            literals = {}
+            emitted_functions.each do |func|
+              collect_str_literals_from_statements(func.body, literals)
+            end
+            emitted_globals.each do |global|
+              collect_str_literals_from_expression(global.value, literals)
+            end
+            emitted_constants.each do |constant|
+              collect_str_literals_from_expression(constant.value, literals)
+            end
+            literals.keys.sort_by { |k| [k.bytesize, k] }
+          end
+
+          def collect_str_literals_from_statements(statements, literals)
+            statements.each do |stmt|
+              case stmt
+              when IR::LocalDecl
+                collect_str_literals_from_expression(stmt.value, literals) if stmt.value
+              when IR::Assignment
+                collect_str_literals_from_expression(stmt.target, literals)
+                collect_str_literals_from_expression(stmt.value, literals)
+              when IR::BlockStmt
+                collect_str_literals_from_statements(stmt.body, literals)
+              when IR::WhileStmt
+                collect_str_literals_from_expression(stmt.condition, literals)
+                collect_str_literals_from_statements(stmt.body, literals)
+              when IR::ForStmt
+                collect_str_literals_from_statements([stmt.init], literals)
+                collect_str_literals_from_expression(stmt.condition, literals)
+                collect_str_literals_from_statements(stmt.body, literals)
+                collect_str_literals_from_statements([stmt.post], literals)
+              when IR::IfStmt
+                collect_str_literals_from_expression(stmt.condition, literals)
+                collect_str_literals_from_statements(stmt.then_body, literals)
+                collect_str_literals_from_statements(stmt.else_body, literals) if stmt.else_body
+              when IR::SwitchStmt
+                collect_str_literals_from_expression(stmt.expression, literals)
+                stmt.cases.each { |c| collect_str_literals_from_statements(c.body, literals) }
+              when IR::ReturnStmt
+                collect_str_literals_from_expression(stmt.value, literals) if stmt.value
+              when IR::ExpressionStmt
+                collect_str_literals_from_expression(stmt.expression, literals)
+              when IR::StaticAssert
+                collect_str_literals_from_expression(stmt.condition, literals)
+                collect_str_literals_from_expression(stmt.message, literals)
+              end
+            end
+          end
+
+          def collect_str_literals_from_expression(expr, literals)
+            return unless expr
+
+            case expr
+            when IR::StringLiteral
+              literals[expr.value] = true if expr.type.is_a?(Types::StringView)
+            when IR::Member
+              collect_str_literals_from_expression(expr.receiver, literals)
+            when IR::Index, IR::CheckedIndex, IR::CheckedSpanIndex, IR::NullableIndex, IR::NullableSpanIndex
+              collect_str_literals_from_expression(expr.receiver, literals)
+              collect_str_literals_from_expression(expr.index, literals)
+            when IR::Call
+              collect_str_literals_from_expression(expr.callee, literals) unless expr.callee.is_a?(String)
+              expr.arguments.each { |arg| collect_str_literals_from_expression(arg, literals) }
+            when IR::Unary
+              collect_str_literals_from_expression(expr.operand, literals)
+            when IR::Binary
+              collect_str_literals_from_expression(expr.left, literals)
+              collect_str_literals_from_expression(expr.right, literals)
+            when IR::Conditional
+              collect_str_literals_from_expression(expr.condition, literals)
+              collect_str_literals_from_expression(expr.then_expression, literals)
+              collect_str_literals_from_expression(expr.else_expression, literals)
+            when IR::ReinterpretExpr
+              collect_str_literals_from_expression(expr.expression, literals)
+            when IR::AddressOf
+              collect_str_literals_from_expression(expr.expression, literals)
+            when IR::Cast
+              collect_str_literals_from_expression(expr.expression, literals)
+            when IR::AggregateLiteral
+              expr.fields.each { |f| collect_str_literals_from_expression(f.value, literals) }
+            when IR::ArrayLiteral
+              expr.elements.each { |e| collect_str_literals_from_expression(e, literals) }
+            when IR::VariantLiteral
+              expr.fields.each { |f| collect_str_literals_from_expression(f.value, literals) }
+            end
+          end
     end
   end
 end

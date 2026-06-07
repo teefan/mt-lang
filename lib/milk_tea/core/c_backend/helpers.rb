@@ -839,6 +839,16 @@ module MilkTea
               "}",
             ]
           end
+
+          def emit_str_literal_constants(literals)
+            literals.each_with_index.map do |value, i|
+              "static const mt_str #{str_literal_name(i)} = { .data = #{value.inspect}, .len = #{value.bytesize} };"
+            end
+          end
+
+          def str_literal_name(index)
+            "mt_str_lit_#{index}"
+          end
     end
   end
 end

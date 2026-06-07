@@ -367,7 +367,7 @@ function main() -> int:
     assert_match(/uint8_t\* memory = std_mem_arena_Arena_alloc_bytes\(this, text\.len \+ 1\);/, generated)
     assert_match(/char \*buffer = \(char\*\) memory;/, generated)
     assert_match(/\*\(buffer \+ text\.len\) = 0;/, generated)
-    assert_match(/mt_str text = \{ \.data = "hello world", \.len = 11 \};/, generated)
+    assert_match(/mt_str text = mt_str_lit_\d+;/, generated)
     assert_match(/const char\* copied = str_to_cstr\(part, &scratch\);/, generated)
   end
 
@@ -1186,8 +1186,8 @@ function main() -> int:
     assert_match(/static void mt_str_buffer_append\(mt_str value, char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
     assert_match(/static void mt_str_buffer_clear\(char\* data, uintptr_t cap, uintptr_t\* len, bool\* dirty\)/, generated)
     assert_match(/mt_str_buffer_32 buffer = \{ 0 \};/, generated)
-    assert_match(/mt_str_buffer_assign\(\(mt_str\)\{ \.data = "hi", \.len = 2 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
-    assert_match(/mt_str_buffer_append\(\(mt_str\)\{ \.data = "!", \.len = 1 \}, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str_buffer_assign\(mt_str_lit_\d+, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
+    assert_match(/mt_str_buffer_append\(mt_str_lit_\d+, &buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
     assert_match(/mt_str text = \{ \.data = &buffer\.data\[0\], \.len = mt_str_buffer_len\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\) \};/, generated)
     assert_match(/const char\* label = mt_str_buffer_as_cstr\(&buffer\.data\[0\], 32, &buffer\.len, &buffer\.dirty\);/, generated)
     assert_match(/\(mt_span_char\)\{ \.data = mt_str_buffer_prepare_write\(&buffer\.data\[0\], 32, &buffer\.dirty\), \.len = 33 \}/, generated)
