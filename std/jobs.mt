@@ -86,8 +86,7 @@ function join_and_release_workers(workers: ref[vec.Vec[thread.Thread]]) -> void:
                 let join_result = worker.join()
                 match join_result:
                     Result.failure as join_payload:
-                        var error = join_payload.error
-                        error.release()
+                        join_payload.error.release()
                         fatal(c"jobs worker join failed")
                     Result.success as join_payload:
                         join_payload.value
@@ -132,8 +131,7 @@ function worker_entry(state_raw: ptr[void]) -> void:
                 let send_result = completions.send(item)
                 match send_result:
                     Result.failure as send_payload:
-                        var error = send_payload.error
-                        error.release()
+                        send_payload.error.release()
                     Result.success as send_payload:
                         send_payload.value
 
@@ -154,17 +152,14 @@ public function create_on(runtime: aio.Runtime, worker_count: ptr_uint) -> Resul
             let condition_result = sync.create_condition()
             match condition_result:
                 Result.failure as payload:
-                    var mutex = mutex_payload.value
-                    mutex.release()
+                    mutex_payload.value.release()
                     return Result[Pool, Error].failure(error = error_from_sync(payload.error))
                 Result.success as condition_payload:
                     let mailbox_result = aio_mailbox.create_on[WorkItem](runtime)
                     match mailbox_result:
                         Result.failure as payload:
-                            var condition = condition_payload.value
-                            condition.release()
-                            var mutex = mutex_payload.value
-                            mutex.release()
+                            condition_payload.value.release()
+                            mutex_payload.value.release()
                             return Result[Pool, Error].failure(error = error_from_mailbox(payload.error))
                         Result.success as mailbox_payload:
                             let state = heap.must_alloc_zeroed[PoolState](1)
