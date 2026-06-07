@@ -1522,7 +1522,7 @@ class HoverTest < Minitest::Test
         })
 
         hover_value = hover_response.dig("result", "contents", "value")
-        assert_includes hover_value, "local payload: <error> (immutable)"
+        assert_includes hover_value, "local payload: <error> (mutable)"
       end
     end
   end

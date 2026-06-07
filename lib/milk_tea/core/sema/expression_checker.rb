@@ -704,7 +704,7 @@ module MilkTea
             binding = value_binding(
               name: arm.binding_name,
               type: payload_type,
-              mutable: false,
+              mutable: true,
               kind: :local,
               id: @preassigned_local_binding_ids.fetch(arm.object_id),
             )
