@@ -44,34 +44,19 @@ struct ResponseHead:
 
 
 function status_error(message: str) -> Error:
-    var owned_message = string.String.with_capacity(message.len)
-    var index: ptr_uint = 0
-    while index < message.len:
-        owned_message.push_byte(message.byte_at(index))
-        index += 1
-    return Error(message = owned_message)
+    return Error(message = string.String.from_str(message))
 
 
 function status_net_error(net_error: net.Error) -> Error:
     var owned_error = net_error
-    let text_value = owned_error.message.as_str()
-    var message = string.String.with_capacity(text_value.len)
-    var index: ptr_uint = 0
-    while index < text_value.len:
-        message.push_byte(text_value.byte_at(index))
-        index += 1
+    let message = string.String.from_str(owned_error.message.as_str())
     owned_error.release()
     return Error(message = message)
 
 
 function status_tls_error(tls_error: tls.Error) -> Error:
     var owned_error = tls_error
-    let text_value = owned_error.message.as_str()
-    var message = string.String.with_capacity(text_value.len)
-    var index: ptr_uint = 0
-    while index < text_value.len:
-        message.push_byte(text_value.byte_at(index))
-        index += 1
+    let message = string.String.from_str(owned_error.message.as_str())
     owned_error.release()
     return Error(message = message)
 
@@ -1135,6 +1120,10 @@ extending Response:
         this.body.release()
 
 
+    public function body_as_str() -> Option[str]:
+        return this.body.as_str()
+
+
     public function header(name: str) -> Option[str]:
         var index: ptr_uint = 0
         while index < this.headers.len:
@@ -1175,6 +1164,42 @@ extending ResponseHead:
 
 public async function get(url: str) -> Result[Response, Error]:
     return await request(url, "GET", zero[span[RequestHeader]], Option[span[ubyte]].none)
+
+
+public async function head(url: str) -> Result[Response, Error]:
+    return await request(url, "HEAD", zero[span[RequestHeader]], Option[span[ubyte]].none)
+
+
+public async function delete(url: str) -> Result[Response, Error]:
+    return await request(url, "DELETE", zero[span[RequestHeader]], Option[span[ubyte]].none)
+
+
+public async function options(url: str) -> Result[Response, Error]:
+    return await request(url, "OPTIONS", zero[span[RequestHeader]], Option[span[ubyte]].none)
+
+
+async function request_with_body(
+    url: str,
+    method: str,
+    body: str,
+    content_type: str
+) -> Result[Response, Error]:
+    var ct = RequestHeader(name = "Content-Type", value = content_type)
+    let headers = span[RequestHeader](data = ptr_of(ct), len = 1)
+    let body_bytes = text.as_byte_span(body)
+    return await request(url, method, headers, Option[span[ubyte]].some(value = body_bytes))
+
+
+public async function post(url: str, body: str, content_type: str) -> Result[Response, Error]:
+    return await request_with_body(url, "POST", body, content_type)
+
+
+public async function put(url: str, body: str, content_type: str) -> Result[Response, Error]:
+    return await request_with_body(url, "PUT", body, content_type)
+
+
+public async function patch(url: str, body: str, content_type: str) -> Result[Response, Error]:
+    return await request_with_body(url, "PATCH", body, content_type)
 
 
 public async function request(
