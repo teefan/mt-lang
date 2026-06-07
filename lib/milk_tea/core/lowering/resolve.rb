@@ -428,7 +428,7 @@ module MilkTea
             [:compile_time_builtin, "attribute_of", nil, compile_time_builtin_function_type("attribute_of", arguments, env)]
           elsif callee.name == "get"
             [:get, nil, nil, nil]
-          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
+          elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
             [ :struct_literal, nil, nil, type ]
           else
             raise LoweringError, "unknown callee #{callee.name}"
@@ -444,7 +444,7 @@ module MilkTea
               return [:function, binding.name, nil, binding.type, binding]
             end
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type)
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
               return [:struct_literal, nil, nil, imported_module.types.fetch(callee.member)]
             end
 
@@ -591,7 +591,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type)
+            return [:struct_literal, nil, nil, specialized_type] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion)
           end
 
           raise LoweringError, "unsupported specialization callee"
