@@ -636,14 +636,14 @@ module MilkTea
 
         dispatch_receiver_type = method_dispatch_receiver_type_for_completion(receiver_type)
 
-        if (binding = facts.methods.fetch(receiver_type, {})[method_name])
+        if (binding = find_method_entry(facts.methods, receiver_type, method_name))
           return {
             binding: binding,
             module_name: facts.module_name,
           }
         end
 
-        if dispatch_receiver_type != receiver_type && (binding = facts.methods.fetch(dispatch_receiver_type, {})[method_name])
+        if dispatch_receiver_type != receiver_type && (binding = find_method_entry(facts.methods, dispatch_receiver_type, method_name))
           return {
             binding: binding,
             module_name: facts.module_name,
@@ -651,9 +651,9 @@ module MilkTea
         end
 
         facts.imports.each_value do |module_binding|
-          binding = module_binding.methods.fetch(receiver_type, {})[method_name]
+          binding = find_method_entry(module_binding.methods, receiver_type, method_name)
           if binding.nil? && dispatch_receiver_type != receiver_type
-            binding = module_binding.methods.fetch(dispatch_receiver_type, {})[method_name]
+            binding = find_method_entry(module_binding.methods, dispatch_receiver_type, method_name)
           end
           next unless binding
 
@@ -664,6 +664,10 @@ module MilkTea
         end
 
         nil
+      end
+
+      def find_method_entry(methods_table, receiver_type, method_name)
+        methods_table.fetch(receiver_type, {})[method_name] || methods_table.fetch(receiver_type, {})["static:#{method_name}"]
       end
 
       def resolve_enum_member_hover_info(current_uri, facts, tokens, token_index)
