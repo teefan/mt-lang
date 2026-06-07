@@ -222,6 +222,8 @@ class MilkTeaLanguageBaselineTest < Minitest::Test
     assert_match(/examples_language_baseline_interface_demo/, generated)
     assert_match(/examples_language_baseline_str_buffer_demo/, generated)
     assert_match(/examples_language_baseline_heredoc_fmt_demo/, generated)
+    assert_match(/examples_language_baseline_async_child/, generated)
+    assert_match(/examples_language_baseline_async_demo/, generated)
 
     # --- event helpers
     assert_match(/\bmt_event_/, generated)
@@ -241,6 +243,9 @@ class MilkTeaLanguageBaselineTest < Minitest::Test
     # --- external function (declared; reachability analysis may exclude)
     # var without initializer (zero-init)
     assert_match(/scratch_buffer/, generated)
+
+    # --- async bridging (main uses aio.wait)
+    assert_match(/std_async_wait_int/, generated)
   end
 
   private

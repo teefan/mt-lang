@@ -10,6 +10,7 @@
 # 1  Module imports
 # ---------------------------------------------------------------------------
 
+import std.async as aio
 import std.linalg
 
 # ---------------------------------------------------------------------------
@@ -1074,5 +1075,8 @@ function main() -> int:
     var npc = NPC.default()
     interface_demo(ref_of(npc))
     nullability_demo()
+
+    total += aio.wait(async_child())
+    total += aio.wait(async_demo())
 
     return total
