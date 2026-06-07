@@ -734,7 +734,7 @@ module MilkTea
         return 1
       end
 
-      cache_root = MilkTea.root.join("tmp", "mtc-cache")
+      cache_root = MilkTea.data_root.join("tmp", "mtc-cache")
 
       case subcommand
       when "purge"

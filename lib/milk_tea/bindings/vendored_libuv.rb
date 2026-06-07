@@ -48,11 +48,11 @@ module MilkTea
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-libuv")
+      MilkTea.writable_root_for(root).join("tmp/vendored-libuv")
     end
 
     def install_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-libuv-prefix")
+      MilkTea.writable_root_for(root).join("tmp/vendored-libuv-prefix")
     end
 
     def archive_path(root: MilkTea.root)

@@ -719,7 +719,7 @@ module MilkTea
           bindgen_include_directives: ["raylib.h"],
           module_imports: [{ module_name: "std.c.raylib", alias: "rl" }],
           link_libraries: ["m"],
-          clang_args: ["-I#{root.join('third_party/raylib-upstream/src')}", "-include", "raylib.h"],
+          clang_args: ["-I#{vendored_raylib.source_root}", "-include", "raylib.h"],
           compiler_flags: ["-DRAYMATH_STATIC_INLINE"],
           excluded_declaration_names: ["double_t"],
           type_name_overrides: {
@@ -734,7 +734,7 @@ module MilkTea
             "Quaternion" => "rl.Quaternion",
           },
           header_candidates: [
-            root.join("third_party/raylib-upstream/src/raymath.h").to_s,
+            vendored_raylib.source_root.join("raymath.h").to_s,
           ],
           allow_static_inline_functions: true,
         ),
@@ -748,7 +748,7 @@ module MilkTea
           compiler_flags: ["-DGRAPHICS_API_OPENGL_43"],
           implementation_defines: ["RAYGUI_IMPLEMENTATION"],
           header_candidates: [
-            root.join("third_party/raylib-upstream/examples/shapes/raygui.h").to_s,
+            vendored_raylib.source_root.dirname.join("examples/shapes/raygui.h").to_s,
           ],
           function_param_type_overrides: raylib_function_param_overrides,
           function_return_type_overrides: raygui_function_return_overrides,
@@ -775,7 +775,7 @@ module MilkTea
             "rlGetProcAddress" => "ptr[void]?",
           },
           header_candidates: [
-            root.join("third_party/raylib-upstream/src/rlgl.h").to_s,
+            vendored_raylib.source_root.join("rlgl.h").to_s,
           ],
         ),
         Binding.new(
@@ -1185,7 +1185,7 @@ module MilkTea
           link_libraries: ["dl", "pthread", "m"],
           declaration_name_prefixes: ["ma_", "MA_"],
           header_candidates: [
-            root.join("third_party/miniaudio-upstream/miniaudio.h").to_s,
+            MilkTea.data_root.join("third_party/miniaudio-upstream/miniaudio.h").to_s,
           ],
         ),
       ]

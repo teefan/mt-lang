@@ -49,7 +49,7 @@ module MilkTea
 
     def initialize(root:)
       @root = File.expand_path(root.to_s)
-      @cache_root = File.join(@root, "tmp", "mtc-cache")
+      @cache_root = File.join(MilkTea.data_root.to_s, "tmp", "mtc-cache")
     end
 
     attr_reader :root

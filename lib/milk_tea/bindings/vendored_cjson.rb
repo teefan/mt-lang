@@ -30,11 +30,11 @@ module MilkTea
     end
 
     def source_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("third_party/cjson-upstream")
+      MilkTea.writable_root_for(root).join("third_party/cjson-upstream")
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-cjson")
+      MilkTea.writable_root_for(root).join("tmp/vendored-cjson")
     end
 
     def archive_path(root: MilkTea.root)

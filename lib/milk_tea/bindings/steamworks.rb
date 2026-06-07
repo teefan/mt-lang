@@ -65,7 +65,7 @@ module MilkTea
       env_root = env[SDK_ROOT_ENV_VAR]
       candidates << canonical_sdk_root(env_root) if env_root && !env_root.empty?
 
-      third_party_sdk = root.join("third_party/steamworks-sdk")
+      third_party_sdk = MilkTea.data_root.join("third_party/steamworks-sdk")
       candidates << canonical_sdk_root(third_party_sdk) if File.directory?(third_party_sdk)
 
       upstream_root = source(root:).checkout_root

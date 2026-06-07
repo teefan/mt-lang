@@ -55,7 +55,7 @@ module MilkTea
     end
 
     def build_root(root: MilkTea.root)
-      Pathname.new(File.expand_path(root.to_s)).join("tmp/vendored-flecs")
+      MilkTea.writable_root_for(root).join("tmp/vendored-flecs")
     end
 
     def archive_path(root: MilkTea.root)
