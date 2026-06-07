@@ -114,7 +114,7 @@ module MilkTea
 
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
-        ast = make_module_loader(path, locked: resolution[:locked]).load_file(path)
+        ast = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).load_file(path)
         if multiple
           @out.puts("# --- #{path} ---")
         end
@@ -557,7 +557,7 @@ module MilkTea
     end
 
     def check_single_reporting_all(path, locked: false)
-      loader = make_module_loader(path, locked:)
+      loader = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform)
       resolved_path = File.expand_path(path)
       ast = loader.load_file(resolved_path)
       module_name = ast.module_name.to_s
@@ -612,7 +612,7 @@ module MilkTea
 
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
-        program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
+        program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
         if multiple
           @out.puts("# --- #{path} ---")
         end
@@ -640,7 +640,7 @@ module MilkTea
 
       multiple = paths.length > 1
       paths.each_with_index do |path, index|
-        program = make_module_loader(path, locked: resolution[:locked]).check_program(path)
+        program = make_module_loader(path, locked: resolution[:locked], platform: ModuleLoader.default_host_platform).check_program(path)
         if multiple
           @out.puts("/* --- #{path} --- */")
         end
@@ -1084,8 +1084,8 @@ module MilkTea
       @out.puts("about to #{action} #{path}")
     end
 
-    def make_module_loader(path = nil, locked: false)
-      ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:), source_overrides: @source_overrides)
+    def make_module_loader(path = nil, locked: false, platform: nil)
+      ModuleLoader.new(module_roots: module_roots_for(path, locked:), package_graph: package_graph_for(path, locked:), source_overrides: @source_overrides, platform:)
     end
 
     def normalize_source_overrides(source_overrides)
@@ -1184,7 +1184,7 @@ module MilkTea
 
     def lint_sema_facts_for(source, path, locked: false)
       ast = Parser.parse(source, path: path)
-      imported_modules = make_module_loader(path, locked:).imported_modules_for_ast(ast, importer_path: path)
+      imported_modules = make_module_loader(path, locked:, platform: ModuleLoader.default_host_platform).imported_modules_for_ast(ast, importer_path: path)
       Sema.tooling_snapshot(ast, imported_modules: imported_modules, path: path).facts
     rescue MilkTea::LexError, MilkTea::ParseError, SemaError, ModuleLoadError
       nil
