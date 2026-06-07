@@ -1335,6 +1335,20 @@ module MilkTea
           binding = lookup_value(expression.name, env)
           lower_assignment_binding_target(binding)
         when AST::MemberAccess
+          if expression.receiver.is_a?(AST::IndexAccess)
+            base_type = infer_expression_type(expression.receiver.receiver, env:)
+            if base_type.is_a?(Types::SoA)
+              soa_base = lower_expression(expression.receiver.receiver, env:)
+              index = lower_expression(expression.receiver.index, env:)
+              field_type = base_type.fields[expression.member]
+              target_type = infer_expression_type(expression, env:)
+              return IR::Index.new(
+                receiver: IR::Member.new(receiver: soa_base, member: expression.member, type: field_type),
+                index:,
+                type: target_type,
+              )
+            end
+          end
           receiver_type = infer_expression_type(expression.receiver, env:)
           receiver = lower_expression(expression.receiver, env:)
           type = infer_expression_type(expression, env:)

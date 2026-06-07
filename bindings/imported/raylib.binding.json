@@ -13,14 +13,7 @@
       "LoadFileTextCallback",
       "SaveFileTextCallback",
       "AudioCallback"
-    ],
-    "native_types": {
-      "Vector2": "vec2",
-      "Vector3": "vec3",
-      "Vector4": "vec4",
-      "Matrix": "mat4",
-      "Quaternion": "quat"
-    }
+    ]
   },
   "constants": {},
   "methods": [

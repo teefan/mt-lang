@@ -370,6 +370,7 @@ module MilkTea
               function.params.each do |param|
                 collect_soa_type(param.type, soa_types, visited)
               end
+              collect_soa_from_statements(function.body, soa_types, visited)
             end
 
             @program.structs.each do |struct_decl|
@@ -379,6 +380,24 @@ module MilkTea
             end
 
             soa_types.uniq
+          end
+
+          def collect_soa_from_statements(statements, soa_types, visited)
+            statements.each do |stmt|
+              case stmt
+              when IR::LocalDecl
+                collect_soa_type(stmt.type, soa_types, visited)
+              when IR::BlockStmt
+                collect_soa_from_statements(stmt.body, soa_types, visited)
+              when IR::IfStmt
+                collect_soa_from_statements(stmt.then_body || [], soa_types, visited)
+                collect_soa_from_statements(stmt.else_body || [], soa_types, visited)
+              when IR::WhileStmt
+                collect_soa_from_statements(stmt.body || [], soa_types, visited)
+              when IR::ForStmt
+                collect_soa_from_statements(stmt.body || [], soa_types, visited)
+              end
+            end
           end
 
           def collect_soa_type(type, soa_types, visited)
