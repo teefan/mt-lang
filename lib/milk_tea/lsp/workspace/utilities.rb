@@ -182,14 +182,38 @@ module MilkTea
           lines = content.split("\n", -1)
           line_str = lines[lsp_line] || ''
 
-          # Walk back over any partially-typed identifier after the dot.
           idx = [lsp_char - 1, line_str.length - 1].min
+
+          # Walk back past the hovered identifier to its dot
           idx -= 1 while idx >= 0 && line_str[idx] =~ /[A-Za-z0-9_]/
           return nil if idx < 0 || line_str[idx] != '.'
 
-          dot_idx = idx
-          receiver_match = line_str[0...dot_idx].match(/([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\z/)
-          receiver_match&.[](1)
+          segments = []
+          left = idx - 1
+          loop do
+            # Skip brackets and their contents, then collect the identifier before them
+            if line_str[left] == ']'
+              depth = 1
+              left -= 1
+              while left >= 0 && depth > 0
+                depth += 1 if line_str[left] == ']'
+                depth -= 1 if line_str[left] == '['
+                left -= 1 if depth > 0 && left > 0
+              end
+              left -= 1  # skip past opening bracket
+            end
+
+            # Walk back over identifier chars
+            start = left
+            start -= 1 while start >= 0 && line_str[start] =~ /[A-Za-z0-9_]/
+            segments.unshift(line_str[start + 1..left]) if start < left
+
+            break unless start >= 0 && line_str[start] == '.'
+
+            left = start - 1
+          end
+
+          segments.any? ? segments.join('.') : nil
         rescue StandardError
           nil
         end
