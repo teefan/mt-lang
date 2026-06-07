@@ -3,7 +3,14 @@
   "raw_module_name": "std.c.raymath",
   "raw_import_alias": "c",
   "types": {
-    "exclude": ["Float3Array", "Float16Array"]
+    "exclude": ["Float3Array", "Float16Array"],
+    "native_types": {
+      "Vector2": "vec2",
+      "Vector3": "vec3",
+      "Vector4": "vec4",
+      "Matrix": "mat4",
+      "Quaternion": "quat"
+    }
   },
   "constants": {},
   "functions": {
@@ -11,25 +18,25 @@
       {
         "raw": "Vector3OrthoNormalize",
         "params": [
-          { "name": "v1", "mode": "inout", "type": "rl.Vector3" },
-          { "name": "v2", "mode": "inout", "type": "rl.Vector3" }
+          { "name": "v1", "mode": "inout", "type": "vec3" },
+          { "name": "v2", "mode": "inout", "type": "vec3" }
         ]
       },
       {
         "raw": "QuaternionToAxisAngle",
         "params": [
-          { "name": "q", "type": "rl.Quaternion" },
-          { "name": "axis", "mode": "out", "type": "rl.Vector3" },
+          { "name": "q", "type": "quat" },
+          { "name": "axis", "mode": "out", "type": "vec3" },
           { "name": "angle", "mode": "out", "type": "float" }
         ]
       },
       {
         "raw": "MatrixDecompose",
         "params": [
-          { "name": "mat", "type": "rl.Matrix" },
-          { "name": "translation", "mode": "out", "type": "rl.Vector3" },
-          { "name": "rotation", "mode": "out", "type": "rl.Quaternion" },
-          { "name": "scale", "mode": "out", "type": "rl.Vector3" }
+          { "name": "mat", "type": "mat4" },
+          { "name": "translation", "mode": "out", "type": "vec3" },
+          { "name": "rotation", "mode": "out", "type": "quat" },
+          { "name": "scale", "mode": "out", "type": "vec3" }
         ]
       },
       {

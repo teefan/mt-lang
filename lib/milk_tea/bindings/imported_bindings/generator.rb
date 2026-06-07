@@ -158,7 +158,7 @@ module MilkTea
             seen_public_names[public_name] = true
             case public_type_kind(raw_name, override:, raw_declaration:)
             when :alias
-              mapping = override && override["mapping"] || "#{@import_alias}.#{raw_name}"
+              mapping = override && override["mapping"] || @native_type_mapping[raw_name] || "#{@import_alias}.#{raw_name}"
               "public type #{public_name} = #{mapping}"
             when :opaque
               opaque_c_name = raw_declaration.c_name || raw_name
@@ -326,6 +326,7 @@ module MilkTea
               overrides: [],
               rename_rules: [],
               strip_prefix: nil,
+              native_types: {},
             }
           when Array
             {
@@ -335,10 +336,16 @@ module MilkTea
               overrides: [],
               rename_rules: [],
               strip_prefix: nil,
+              native_types: {},
             }
           when Hash
-            allowed_keys = %w[include include_prefixes exclude overrides rename_rules strip_prefix]
+            allowed_keys = %w[include include_prefixes exclude overrides rename_rules strip_prefix native_types]
             validate_allowed_keys!(value, allowed_keys, context: "#{context} section")
+            native_types = value["native_types"] || {}
+            raise Error, "native_types in #{@policy_path} must be an object" unless native_types.is_a?(Hash)
+            native_types.each do |raw_type, native_type|
+              raise Error, "native_types key '#{raw_type}' in #{@policy_path} must be a non-empty string" unless native_type.is_a?(String) && !native_type.empty?
+            end
             {
               include: default_include(value, context:),
               include_prefixes: normalize_prefix_list(value["include_prefixes"], context:),
@@ -346,6 +353,7 @@ module MilkTea
               overrides: normalize_alias_overrides(value["overrides"], context:),
               rename_rules: normalize_rename_rules(value["rename_rules"], context:),
               strip_prefix: normalize_strip_prefix(value["strip_prefix"], context:),
+              native_types:,
             }
           else
             raise Error, "#{context} section in #{@policy_path} must be an array or object"
@@ -769,6 +777,7 @@ module MilkTea
             Array(entry["params"]).map do |param|
               param = param.dup
               param["name"] = generated_foreign_param_name(param.fetch("name"))
+              param["type"] = apply_native_type_mapping(param["type"])
               param
             end
           else
@@ -781,14 +790,25 @@ module MilkTea
           end
         end
 
+        def apply_native_type_mapping(type_str)
+          return type_str unless type_str.is_a?(String)
+          return type_str if @native_type_mapping.empty?
+
+          type_str.gsub(/\b([A-Z][A-Za-z0-9_]*)\b/) do |match|
+            @native_type_mapping[match] || match
+          end
+        end
+
         def plan_overridden_function(entry, raw_declaration, spec:)
           raw_name = raw_declaration.name
+          return_type = entry["return_type"] || render_public_foreign_type(raw_declaration.return_type)
+          return_type = apply_native_type_mapping(return_type) if return_type
           {
             raw_name:,
             public_name: entry["name"] || foreign_function_name(raw_name, spec:),
             type_params: override_type_param_names(entry, raw_declaration),
             params: override_param_specs(entry, raw_declaration),
-            return_type: entry["return_type"] || render_public_foreign_type(raw_declaration.return_type),
+            return_type:,
             mapping: entry["mapping"] || "#{@import_alias}.#{raw_name}",
             variadic: false,
           }
@@ -860,7 +880,7 @@ module MilkTea
         def method_kind(function_entry, spec:, raw_name:)
           first_param = function_entry.fetch(:params).first
           return :static unless first_param
-          return :static unless spec.fetch(:receiver_types).include?(first_param.fetch("type"))
+          return :static unless method_receiver_type_match?(first_param.fetch("type"), spec.fetch(:receiver_types))
 
           case first_param["mode"]
           when nil
@@ -870,6 +890,12 @@ module MilkTea
           else
             raise Error, "method generation for #{raw_name} in #{@policy_path} cannot use receiver mode #{first_param["mode"].inspect}"
           end
+        end
+
+        def method_receiver_type_match?(param_type, receiver_types)
+          return true if receiver_types.include?(param_type)
+
+          receiver_types.any? { |rt| @native_type_mapping[rt] == param_type }
         end
 
         def build_foreign_signature(name, type_params:, params:, return_type:, mapping:, variadic: false, visibility: :public)
@@ -1047,6 +1073,11 @@ module MilkTea
         end
 
         def rendered_type_name(raw_name, seen = [])
+          return @native_type_mapping[raw_name] if @native_type_mapping.key?(raw_name)
+
+          bare_name = raw_name.split(".").last
+          return @native_type_mapping[bare_name] if @native_type_mapping.key?(bare_name)
+
           public_name = @public_type_names_by_raw_name[raw_name]
           return public_name if public_name
 

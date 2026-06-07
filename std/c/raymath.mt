@@ -73,7 +73,7 @@ external function Vector3Project(v1: rl.Vector3, v2: rl.Vector3) -> rl.Vector3
 external function Vector3Reject(v1: rl.Vector3, v2: rl.Vector3) -> rl.Vector3
 external function Vector3OrthoNormalize(v1: ptr[rl.Vector3], v2: ptr[rl.Vector3]) -> void
 external function Vector3Transform(v: rl.Vector3, mat: rl.Matrix) -> rl.Vector3
-external function Vector3RotateByQuaternion(v: rl.Vector3, q: rl.Vector4) -> rl.Vector3
+external function Vector3RotateByQuaternion(v: rl.Vector3, q: rl.Quaternion) -> rl.Vector3
 external function Vector3RotateByAxisAngle(v: rl.Vector3, axis: rl.Vector3, angle: float) -> rl.Vector3
 external function Vector3MoveTowards(v: rl.Vector3, target: rl.Vector3, maxDistance: float) -> rl.Vector3
 external function Vector3Lerp(v1: rl.Vector3, v2: rl.Vector3, amount: float) -> rl.Vector3
@@ -110,7 +110,7 @@ external function Vector4Max(v1: rl.Vector4, v2: rl.Vector4) -> rl.Vector4
 external function Vector4Lerp(v1: rl.Vector4, v2: rl.Vector4, amount: float) -> rl.Vector4
 external function Vector4MoveTowards(v: rl.Vector4, target: rl.Vector4, maxDistance: float) -> rl.Vector4
 external function Vector4Invert(v: rl.Vector4) -> rl.Vector4
-external function Vector4Equals(p: rl.Vector4, q: rl.Vector4) -> int
+external function Vector4Equals(p: rl.Quaternion, q: rl.Quaternion) -> int
 external function MatrixDeterminant(mat: rl.Matrix) -> float
 external function MatrixTrace(mat: rl.Matrix) -> float
 external function MatrixTranspose(mat: rl.Matrix) -> rl.Matrix
@@ -133,31 +133,31 @@ external function MatrixPerspective(fovY: double, aspect: double, nearPlane: dou
 external function MatrixOrtho(left: double, right: double, bottom: double, top: double, nearPlane: double, farPlane: double) -> rl.Matrix
 external function MatrixLookAt(eye: rl.Vector3, target: rl.Vector3, up: rl.Vector3) -> rl.Matrix
 external function MatrixToFloatV(mat: rl.Matrix) -> Float16Array
-external function QuaternionAdd(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion
-external function QuaternionAddValue(q: rl.Vector4, add: float) -> rl.Quaternion
-external function QuaternionSubtract(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion
-external function QuaternionSubtractValue(q: rl.Vector4, sub: float) -> rl.Quaternion
+external function QuaternionAdd(q1: rl.Quaternion, q2: rl.Quaternion) -> rl.Quaternion
+external function QuaternionAddValue(q: rl.Quaternion, add: float) -> rl.Quaternion
+external function QuaternionSubtract(q1: rl.Quaternion, q2: rl.Quaternion) -> rl.Quaternion
+external function QuaternionSubtractValue(q: rl.Quaternion, sub: float) -> rl.Quaternion
 external function QuaternionIdentity() -> rl.Quaternion
-external function QuaternionLength(q: rl.Vector4) -> float
-external function QuaternionNormalize(q: rl.Vector4) -> rl.Quaternion
-external function QuaternionInvert(q: rl.Vector4) -> rl.Quaternion
-external function QuaternionMultiply(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion
-external function QuaternionScale(q: rl.Vector4, mul: float) -> rl.Quaternion
-external function QuaternionDivide(q1: rl.Vector4, q2: rl.Vector4) -> rl.Quaternion
-external function QuaternionLerp(q1: rl.Vector4, q2: rl.Vector4, amount: float) -> rl.Quaternion
-external function QuaternionNlerp(q1: rl.Vector4, q2: rl.Vector4, amount: float) -> rl.Quaternion
-external function QuaternionSlerp(q1: rl.Vector4, q2: rl.Vector4, amount: float) -> rl.Quaternion
-external function QuaternionCubicHermiteSpline(q1: rl.Vector4, outTangent1: rl.Vector4, q2: rl.Vector4, inTangent2: rl.Vector4, t: float) -> rl.Quaternion
+external function QuaternionLength(q: rl.Quaternion) -> float
+external function QuaternionNormalize(q: rl.Quaternion) -> rl.Quaternion
+external function QuaternionInvert(q: rl.Quaternion) -> rl.Quaternion
+external function QuaternionMultiply(q1: rl.Quaternion, q2: rl.Quaternion) -> rl.Quaternion
+external function QuaternionScale(q: rl.Quaternion, mul: float) -> rl.Quaternion
+external function QuaternionDivide(q1: rl.Quaternion, q2: rl.Quaternion) -> rl.Quaternion
+external function QuaternionLerp(q1: rl.Quaternion, q2: rl.Quaternion, amount: float) -> rl.Quaternion
+external function QuaternionNlerp(q1: rl.Quaternion, q2: rl.Quaternion, amount: float) -> rl.Quaternion
+external function QuaternionSlerp(q1: rl.Quaternion, q2: rl.Quaternion, amount: float) -> rl.Quaternion
+external function QuaternionCubicHermiteSpline(q1: rl.Quaternion, outTangent1: rl.Quaternion, q2: rl.Quaternion, inTangent2: rl.Quaternion, t: float) -> rl.Quaternion
 external function QuaternionFromVector3ToVector3(from: rl.Vector3, to: rl.Vector3) -> rl.Quaternion
 external function QuaternionFromMatrix(mat: rl.Matrix) -> rl.Quaternion
-external function QuaternionToMatrix(q: rl.Vector4) -> rl.Matrix
+external function QuaternionToMatrix(q: rl.Quaternion) -> rl.Matrix
 external function QuaternionFromAxisAngle(axis: rl.Vector3, angle: float) -> rl.Quaternion
-external function QuaternionToAxisAngle(q: rl.Vector4, outAxis: ptr[rl.Vector3], outAngle: ptr[float]) -> void
+external function QuaternionToAxisAngle(q: rl.Quaternion, outAxis: ptr[rl.Vector3], outAngle: ptr[float]) -> void
 external function QuaternionFromEuler(pitch: float, yaw: float, roll: float) -> rl.Quaternion
-external function QuaternionToEuler(q: rl.Vector4) -> rl.Vector3
-external function QuaternionTransform(q: rl.Vector4, mat: rl.Matrix) -> rl.Quaternion
-external function QuaternionEquals(p: rl.Vector4, q: rl.Vector4) -> int
-external function MatrixCompose(translation: rl.Vector3, rotation: rl.Vector4, scale: rl.Vector3) -> rl.Matrix
+external function QuaternionToEuler(q: rl.Quaternion) -> rl.Vector3
+external function QuaternionTransform(q: rl.Quaternion, mat: rl.Matrix) -> rl.Quaternion
+external function QuaternionEquals(p: rl.Quaternion, q: rl.Quaternion) -> int
+external function MatrixCompose(translation: rl.Vector3, rotation: rl.Quaternion, scale: rl.Vector3) -> rl.Matrix
 external function MatrixDecompose(mat: rl.Matrix, translation: ptr[rl.Vector3], rotation: ptr[rl.Quaternion], scale: ptr[rl.Vector3]) -> void
 
 const EPSILON: float = 9.99999997E-7
