@@ -11,6 +11,7 @@
 # ---------------------------------------------------------------------------
 
 import std.async as aio
+import std.linalg
 
 # ---------------------------------------------------------------------------
 # 2  Literals
@@ -881,6 +882,13 @@ function vector_demo() -> float:
     # --- extending block method on native vector type
     let squared = v3.squared_len()
 
+    # --- methods from std.linalg import (dot, length, cross, identity, etc.)
+    let dot_val = v3.dot(v3)
+    let len_val = v3.length()
+    let cross_val = v3.cross(v3)
+    let identity_mat = mat4.identity()
+    let identity_quat = quat.identity()
+
     let _v2 = v2
     let _v4 = v4
     let _iv3 = iv3
@@ -889,7 +897,7 @@ function vector_demo() -> float:
     let result_b = vmul.x + vneg.x
     let result_c = v_scaled.x + sv_scaled.x + v_divided.x
     let result_d = float<-(isum.x) + float<-(iscaled.x) + float<-(ineg.x)
-    return v2x + v2y + v3z + v4w + float<-(iv2x) + result_a + result_b + result_c + result_d + squared
+    return v2x + v2y + v3z + v4w + float<-(iv2x) + result_a + result_b + result_c + result_d + squared + dot_val + len_val + cross_val.x + identity_mat.col0.x + identity_quat.w
 
 extending vec3:
     function squared_len() -> float:
