@@ -1016,8 +1016,7 @@ extending Terminal:
         if this.mouse_enabled:
             match disable_mouse():
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
                 Result.success:
                     pass
             this.mouse_enabled = false
@@ -1025,8 +1024,7 @@ extending Terminal:
         if this.cursor_hidden:
             match show_cursor():
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
                 Result.success:
                     pass
             this.cursor_hidden = false
@@ -1034,8 +1032,7 @@ extending Terminal:
         if this.alternate_screen:
             match leave_alternate_screen():
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
                 Result.success:
                     pass
             this.alternate_screen = false
@@ -1043,8 +1040,7 @@ extending Terminal:
         if this.raw_mode:
             match raw_mode_leave():
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
                 Result.success:
                     pass
             this.raw_mode = false

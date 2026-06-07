@@ -599,11 +599,9 @@ function resolve_release(frame: ptr[void]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    var address = payload.value
-                    address.release()
+                    payload.value.release()
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
 
         var storage = read(state).storage
         storage.release()
@@ -673,8 +671,7 @@ function resolve_all_release(frame: ptr[void]) -> void:
                     var addresses = payload.value
                     release_socket_addresses(ref_of(addresses))
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
 
         var storage = read(state).storage
         storage.release()
@@ -730,11 +727,9 @@ function connect_cleanup_and_release(state: ptr[ConnectState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    var stream = payload.value
-                    stream.release()
+                    payload.value.release()
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
             read(state).result_owned = false
 
         if read(state).handle != null[ptr[NativeTcpHandle]]:
@@ -847,11 +842,9 @@ function accept_cleanup_and_release(state: ptr[AcceptState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    var stream = payload.value
-                    stream.release()
+                    payload.value.release()
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)
@@ -1107,8 +1100,7 @@ function write_cleanup_and_release(state: ptr[WriteState]) -> void:
                 Result.success as ok_payload:
                     ptr_uint<-ok_payload.value
                 Result.failure as error_payload:
-                    var error = error_payload.error
-                    error.release()
+                    error_payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)
@@ -1321,11 +1313,9 @@ function stream_read_cleanup_and_release(state: ptr[ReadState]) -> void:
             let result_value = read(state).result
             match result_value:
                 Result.success as payload:
-                    var payload_data = payload.value
-                    payload_data.release()
+                    payload.value.release()
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)
@@ -1602,8 +1592,7 @@ function shutdown_cleanup_and_release(state: ptr[ShutdownState]) -> void:
                 Result.success as payload:
                     bool<-payload.value
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)
@@ -1794,8 +1783,7 @@ function udp_send_cleanup_and_release(state: ptr[UdpSendState]) -> void:
                 Result.success as ok_payload:
                     ptr_uint<-ok_payload.value
                 Result.failure as error_payload:
-                    var error = error_payload.error
-                    error.release()
+                    error_payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)
@@ -2023,8 +2011,7 @@ function udp_receive_cleanup_and_release(state: ptr[UdpReceiveState]) -> void:
                     datagram.data.release()
                     datagram.source.release()
                 Result.failure as payload:
-                    var error = payload.error
-                    error.release()
+                    payload.error.release()
             read(state).result_owned = false
 
         heap.release(state)

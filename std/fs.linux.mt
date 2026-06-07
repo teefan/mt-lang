@@ -472,8 +472,7 @@ public function temporary_directory() -> string.String:
             Result.success as payload:
                 return payload.value
             Result.failure as payload:
-                var error = payload.error
-                error.release()
+                payload.error.release()
 
     if raw_error.message_data != null or raw_error.message_len != 0:
         var ignored_error = take_error(raw_error, "fs temporary directory failed")

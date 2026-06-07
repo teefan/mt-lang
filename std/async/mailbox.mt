@@ -100,8 +100,7 @@ public function create_on[T](runtime: aio.Runtime) -> Result[Mailbox[T], Error]:
 
             let status_code = libuv.async_init(loop, handle, mailbox_async_callback)
             if status_code != 0:
-                var mutex = payload.value
-                mutex.release()
+                payload.value.release()
                 unsafe: heap.release_bytes(ptr[void]<-handle)
                 heap.release(state)
                 return Result[Mailbox[T], Error].failure(error = libuv_error(status_code))
