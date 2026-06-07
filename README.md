@@ -612,11 +612,27 @@ Core modules in `std/`:
 - `std.linalg` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
 - `std.graph.Graph[T]` — adjacency-list graph with `add_node`, `add_edge`, `has_edge`, `remove_edge`, `neighbors`, `bfs`, `dfs`, `toposort`; directed or undirected; `compile()` converts to CSR-based `DenseGraph[T]` for O(degree) neighbor iteration
 - `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
+- `std.cstring` — C string helpers (`cstr_len`, `cstr_as_str`)
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
 - `std.string.String` — growable owned UTF-8 text
 - `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack` — allocators
 - `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)
-- `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]` — generic collections
+
+**Collections**: `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]`
+
+**Serialization**: `std.json`, `std.toml`, `std.uri`
+
+**System**: `std.time`, `std.fs`, `std.path`, `std.process`, `std.cli`, `std.log`, `std.stdio`, `std.console`, `std.terminal`
+
+**Concurrency**: `std.sync`, `std.thread`, `std.jobs`
+
+**AI/State**: `std.fsm` (finite state machine), `std.goap` (goal-oriented action planning), `std.behavior_tree`
+
+**Networking**: `std.http`, `std.tls`, `std.net`
+
+**Compression**: `std.gzip`, `std.tar`
+
+**Other**: `std.bytes`, `std.ctype`, `std.asset_pack`, `std.cell`
 
 See module source for full method surface. Iterator forms:
 - Pointer-returning (`next() -> nullable ptr[T]`): `Vec`, `Deque`, `BinaryHeap`/`PriorityQueue`/`OrderedSet` (read-only), `OrderedMap.keys`/`Map.keys`/`Set`/`LinkedMap.keys`/`LinkedSet`/`Counter.keys`/`MultiSet.values`, `Queue`/`Stack` (mutable)
