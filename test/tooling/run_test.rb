@@ -26,13 +26,19 @@ class MilkTeaRunTest < Minitest::Test
       assert_equal frontend, kwargs[:frontend]
       build_result
     end
-    capture_runner = lambda do |_command, chdir:|
+    popen_runner = lambda do |*_command, chdir:, &block|
       observed_chdir = chdir
-      ["", "", Object.new.tap { |status| status.define_singleton_method(:exited?) { true }; status.define_singleton_method(:exitstatus) { 0 } }]
+      stdin = StringIO.new
+      stdout = StringIO.new
+      stderr = StringIO.new
+      wait_thr = Object.new
+      wait_thr.define_singleton_method(:value) { Object.new.tap { |status| status.define_singleton_method(:exited?) { true }; status.define_singleton_method(:exitstatus) { 0 } } }
+      wait_thr.define_singleton_method(:pid) { 12345 }
+      block.call(stdin, stdout, stderr, wait_thr)
     end
 
     with_singleton_method_override(MilkTea::Build, :build, build_runner) do
-      with_singleton_method_override(Open3, :capture3, capture_runner) do
+      with_singleton_method_override(Open3, :popen3, popen_runner) do
         result = MilkTea::Run.run(virtual_path, module_roots: [MilkTea.root.to_s], frontend: frontend)
 
         assert_equal 0, result.exit_status
@@ -2389,7 +2395,7 @@ function main() -> int:
     )
 
     with_singleton_method_override(MilkTea::Build, :build, ->(_path, **_kwargs) { build_result }) do
-      with_singleton_method_override(Open3, :capture3, ->(_cmd, chdir:) { raise Errno::ENOENT, chdir }) do
+      with_singleton_method_override(Open3, :popen3, ->(*_args, **_kwargs, &_block) { raise Errno::ENOENT }) do
         error = assert_raises(MilkTea::RunError) { MilkTea::Run.run("/tmp/no-source.mt", output_path: "/tmp/out") }
         assert_match(/built program not found:/, error.message)
       end

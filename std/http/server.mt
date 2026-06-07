@@ -14,9 +14,12 @@ const DEFAULT_PORT: int = 8080
 const DEFAULT_BACKLOG: int = 128
 
 
-async function main() -> void:
+async function main(args: span[str]) -> void:
     var port = DEFAULT_PORT
     var serve_dir = "."
+
+    if args.len > 0:
+        serve_dir = unsafe: read(args.data)
 
     var port_str = fmt.to_string_int(port)
     defer port_str.release()
