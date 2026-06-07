@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -14,7 +13,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     rl.set_target_fps(60)
@@ -38,8 +37,22 @@ function main() -> int:
         rl.draw_cylinder(rl.Vector3(x = 1.0, y = 0.0, z = -4.0), 0.0, 1.5, 3.0, 8, rl.GOLD)
         rl.draw_cylinder_wires(rl.Vector3(x = 1.0, y = 0.0, z = -4.0), 0.0, 1.5, 3.0, 8, rl.PINK)
 
-        rl.draw_capsule(rl.Vector3(x = -3.0, y = 1.5, z = -4.0), rl.Vector3(x = -4.0, y = -1.0, z = -4.0), 1.2, 8, 8, rl.VIOLET)
-        rl.draw_capsule_wires(rl.Vector3(x = -3.0, y = 1.5, z = -4.0), rl.Vector3(x = -4.0, y = -1.0, z = -4.0), 1.2, 8, 8, rl.PURPLE)
+        rl.draw_capsule(
+            rl.Vector3(x = -3.0, y = 1.5, z = -4.0),
+            rl.Vector3(x = -4.0, y = -1.0, z = -4.0),
+            1.2,
+            8,
+            8,
+            rl.VIOLET
+        )
+        rl.draw_capsule_wires(
+            rl.Vector3(x = -3.0, y = 1.5, z = -4.0),
+            rl.Vector3(x = -4.0, y = -1.0, z = -4.0),
+            1.2,
+            8,
+            8,
+            rl.PURPLE
+        )
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()
 

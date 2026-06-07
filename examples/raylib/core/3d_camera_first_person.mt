@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_COLUMNS: int = 20
@@ -37,7 +36,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 60.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     var camera_mode = rl.CameraMode.CAMERA_FIRST_PERSON
 
@@ -51,13 +50,13 @@ function main() -> int:
         positions[index] = rl.Vector3(
             x = float<-rl.get_random_value(-15, 15),
             y = heights[index] / 2.0,
-            z = float<-rl.get_random_value(-15, 15),
+            z = float<-rl.get_random_value(-15, 15)
         )
         colors[index] = rl.Color(
             r = ubyte<-rl.get_random_value(20, 255),
             g = ubyte<-rl.get_random_value(10, 55),
             b = ubyte<-30,
-            a = ubyte<-255,
+            a = ubyte<-255
         )
         index += 1
 
@@ -134,7 +133,13 @@ function main() -> int:
         rl.draw_text("Camera status:", 610, 15, 10, rl.BLACK)
         rl.draw_text(f"- Mode: #{camera_mode_name(camera_mode)}", 610, 30, 10, rl.BLACK)
         rl.draw_text(f"- Projection: #{projection_name(camera.projection)}", 610, 45, 10, rl.BLACK)
-        rl.draw_text(f"- Position: (#{camera.position.x}, #{camera.position.y}, #{camera.position.z})", 610, 60, 10, rl.BLACK)
+        rl.draw_text(
+            f"- Position: (#{camera.position.x}, #{camera.position.y}, #{camera.position.z})",
+            610,
+            60,
+            10,
+            rl.BLACK
+        )
         rl.draw_text(f"- Target: (#{camera.target.x}, #{camera.target.y}, #{camera.target.z})", 610, 75, 10, rl.BLACK)
         rl.draw_text(f"- Up: (#{camera.up.x}, #{camera.up.y}, #{camera.up.z})", 610, 90, 10, rl.BLACK)
         rl.end_drawing()

@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_FONTS: int = 8
@@ -32,17 +31,31 @@ function main() -> int:
         "ROMULUS FONT designed by Hewett Tsoi",
         "PIXANTIQUA FONT designed by Gerhard Grossmann",
         "ALPHA_BETA FONT designed by Brian Kent (AEnigma)",
-        "JUPITER_CRASH FONT designed by Brian Kent (AEnigma)",
+        "JUPITER_CRASH FONT designed by Brian Kent (AEnigma)"
     )
     let spacings = array[int, MAX_FONTS](2, 4, 8, 4, 3, 4, 4, 1)
-    let colors = array[rl.Color, MAX_FONTS](rl.MAROON, rl.ORANGE, rl.DARKGREEN, rl.DARKBLUE, rl.DARKPURPLE, rl.LIME, rl.GOLD, rl.RED)
+    let colors = array[rl.Color, MAX_FONTS](
+        rl.MAROON,
+        rl.ORANGE,
+        rl.DARKGREEN,
+        rl.DARKBLUE,
+        rl.DARKPURPLE,
+        rl.LIME,
+        rl.GOLD,
+        rl.RED
+    )
     var positions: array[rl.Vector2, MAX_FONTS] = zero[array[rl.Vector2, MAX_FONTS]]
 
     var index = 0
     while index < MAX_FONTS:
         let font_size = float<-fonts[index].baseSize * 2.0
         let spacing = float<-spacings[index]
-        positions[index].x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(fonts[index], messages[index], font_size, spacing).x / 2.0
+        positions[index].x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(
+            fonts[index],
+            messages[index],
+            font_size,
+            spacing
+        ).x / 2.0
         positions[index].y = 60.0 + float<-fonts[index].baseSize + 45.0 * float<-index
         index += 1
 
@@ -61,7 +74,14 @@ function main() -> int:
 
         index = 0
         while index < MAX_FONTS:
-            rl.draw_text_ex(fonts[index], messages[index], positions[index], float<-fonts[index].baseSize * 2.0, float<-spacings[index], colors[index])
+            rl.draw_text_ex(
+                fonts[index],
+                messages[index],
+                positions[index],
+                float<-fonts[index].baseSize * 2.0,
+                float<-spacings[index],
+                colors[index]
+            )
             index += 1
 
         rl.end_drawing()

@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -14,7 +13,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let cube_position = rl.Vector3(x = 0.0, y = 1.0, z = 0.0)
@@ -44,14 +43,14 @@ function main() -> int:
                         min = rl.Vector3(
                             x = cube_position.x - cube_size.x / 2.0,
                             y = cube_position.y - cube_size.y / 2.0,
-                            z = cube_position.z - cube_size.z / 2.0,
+                            z = cube_position.z - cube_size.z / 2.0
                         ),
                         max = rl.Vector3(
                             x = cube_position.x + cube_size.x / 2.0,
                             y = cube_position.y + cube_size.y / 2.0,
-                            z = cube_position.z + cube_size.z / 2.0,
-                        ),
-                    ),
+                            z = cube_position.z + cube_size.z / 2.0
+                        )
+                    )
                 )
             else:
                 collision.hit = false
@@ -75,7 +74,13 @@ function main() -> int:
         rl.draw_text("Try clicking on the box with your mouse!", 240, 10, 20, rl.DARKGRAY)
         if collision.hit:
             let label = "BOX SELECTED"
-            rl.draw_text(label, (SCREEN_WIDTH - rl.measure_text(label, 30)) / 2, int<-((float<-SCREEN_HEIGHT) * 0.1), 30, rl.GREEN)
+            rl.draw_text(
+                label,
+                (SCREEN_WIDTH - rl.measure_text(label, 30)) / 2,
+                int<-((float<-SCREEN_HEIGHT) * 0.1),
+                30,
+                rl.GREEN
+            )
 
         rl.draw_text("Right click mouse to toggle camera controls", 10, 430, 10, rl.GRAY)
         rl.draw_fps(10, 10)

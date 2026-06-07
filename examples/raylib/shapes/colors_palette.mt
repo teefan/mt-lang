@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_COLORS_COUNT: int = 21
@@ -13,12 +12,12 @@ function main() -> int:
     let colors = array[rl.Color, MAX_COLORS_COUNT](
         rl.DARKGRAY, rl.MAROON, rl.ORANGE, rl.DARKGREEN, rl.DARKBLUE, rl.DARKPURPLE, rl.DARKBROWN,
         rl.GRAY, rl.RED, rl.GOLD, rl.LIME, rl.BLUE, rl.VIOLET, rl.BROWN, rl.LIGHTGRAY, rl.PINK, rl.YELLOW,
-        rl.GREEN, rl.SKYBLUE, rl.PURPLE, rl.BEIGE,
+        rl.GREEN, rl.SKYBLUE, rl.PURPLE, rl.BEIGE
     )
     let color_names = array[str, MAX_COLORS_COUNT](
         "DARKGRAY", "MAROON", "ORANGE", "DARKGREEN", "DARKBLUE", "DARKPURPLE", "DARKBROWN",
         "GRAY", "RED", "GOLD", "LIME", "BLUE", "VIOLET", "BROWN", "LIGHTGRAY", "PINK", "YELLOW",
-        "GREEN", "SKYBLUE", "PURPLE", "BEIGE",
+        "GREEN", "SKYBLUE", "PURPLE", "BEIGE"
     )
 
     var color_rects: array[rl.Rectangle, MAX_COLORS_COUNT] = zero[array[rl.Rectangle, MAX_COLORS_COUNT]]
@@ -52,7 +51,13 @@ function main() -> int:
         rl.clear_background(rl.RAYWHITE)
 
         rl.draw_text("raylib colors palette", 28, 42, 20, rl.BLACK)
-        rl.draw_text("press SPACE to see all colors", rl.get_screen_width() - 180, rl.get_screen_height() - 40, 10, rl.GRAY)
+        rl.draw_text(
+            "press SPACE to see all colors",
+            rl.get_screen_width() - 180,
+            rl.get_screen_height() - 40,
+            10,
+            rl.GRAY
+        )
 
         index = 0
         while index < MAX_COLORS_COUNT:
@@ -65,7 +70,7 @@ function main() -> int:
                     int<-(color_rects[index].y + color_rects[index].height - 26.0),
                     int<-color_rects[index].width,
                     20,
-                    rl.BLACK,
+                    rl.BLACK
                 )
                 rl.draw_rectangle_lines_ex(color_rects[index], 6.0, rl.fade(rl.BLACK, 0.3))
                 let name_width = rl.measure_text(color_names[index], 10)
@@ -74,7 +79,7 @@ function main() -> int:
                     int<-(color_rects[index].x + color_rects[index].width - float<-name_width - 12.0),
                     int<-(color_rects[index].y + color_rects[index].height - 20.0),
                     10,
-                    colors[index],
+                    colors[index]
                 )
             index += 1
 

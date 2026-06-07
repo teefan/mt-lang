@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -70,7 +69,7 @@ function main() -> int:
                 x = (monitor_position.x + (float<-monitor_offset_x)) * monitor_scale + 140.0,
                 y = monitor_position.y * monitor_scale + 80.0,
                 width = (float<-monitor_width) * monitor_scale,
-                height = (float<-monitor_height) * monitor_scale,
+                height = (float<-monitor_height) * monitor_scale
             )
 
             let heading_y = (int<-rec.y) + int<-(100.0 * monitor_scale)
@@ -78,22 +77,46 @@ function main() -> int:
             let info_size = int<-(120.0 * monitor_scale)
 
             rl.draw_text(f"[#{monitor_index}] #{monitor_name}", (int<-rec.x) + 10, heading_y, info_size, rl.BLUE)
-            rl.draw_text(f"Resolution: [#{monitor_width}px x #{monitor_height}px]", (int<-rec.x) + 10, info_y, info_size, rl.DARKGRAY)
-            rl.draw_text(f"RefreshRate: [#{refresh_rate}hz]", (int<-rec.x) + 10, info_y + info_size + 4, info_size, rl.DARKGRAY)
-            rl.draw_text(f"Physical Size: [#{physical_width}mm x #{physical_height}mm]", (int<-rec.x) + 10, info_y + (info_size + 4) * 2, info_size, rl.DARKGRAY)
-            rl.draw_text(f"Position: #{int<-monitor_position.x} x #{int<-monitor_position.y}", (int<-rec.x) + 10, info_y + (info_size + 4) * 3, info_size, rl.DARKGRAY)
+            rl.draw_text(
+                f"Resolution: [#{monitor_width}px x #{monitor_height}px]",
+                (int<-rec.x) + 10,
+                info_y,
+                info_size,
+                rl.DARKGRAY
+            )
+            rl.draw_text(
+                f"RefreshRate: [#{refresh_rate}hz]",
+                (int<-rec.x) + 10,
+                info_y + info_size + 4,
+                info_size,
+                rl.DARKGRAY
+            )
+            rl.draw_text(
+                f"Physical Size: [#{physical_width}mm x #{physical_height}mm]",
+                (int<-rec.x) + 10,
+                info_y + (info_size + 4) * 2,
+                info_size,
+                rl.DARKGRAY
+            )
+            rl.draw_text(
+                f"Position: #{int<-monitor_position.x} x #{int<-monitor_position.y}",
+                (int<-rec.x) + 10,
+                info_y + (info_size + 4) * 3,
+                info_size,
+                rl.DARKGRAY
+            )
 
             if monitor_index == current_monitor_index:
                 rl.draw_rectangle_lines_ex(rec, 5.0, rl.RED)
                 let window_origin = rl.get_window_position()
                 let window_position = rl.Vector2(
                     x = (window_origin.x + (float<-monitor_offset_x)) * monitor_scale + 140.0,
-                    y = window_origin.y * monitor_scale + 80.0,
+                    y = window_origin.y * monitor_scale + 80.0
                 )
                 rl.draw_rectangle_v(
                     window_position,
                     rl.Vector2(x = (float<-SCREEN_WIDTH) * monitor_scale, y = (float<-SCREEN_HEIGHT) * monitor_scale),
-                    rl.fade(rl.GREEN, 0.5),
+                    rl.fade(rl.GREEN, 0.5)
                 )
             else:
                 rl.draw_rectangle_lines_ex(rec, 5.0, rl.GRAY)

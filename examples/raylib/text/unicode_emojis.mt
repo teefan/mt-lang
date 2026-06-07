@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const EMOJI_PER_WIDTH: int = 8
@@ -12,12 +11,10 @@ const EMOJI_SLOT_COUNT: int = EMOJI_PER_WIDTH * EMOJI_PER_HEIGHT
 const EMOJI_COUNT: int = 48
 const MESSAGE_COUNT: int = 12
 
-
 struct EmojiSlot:
     index: int
     message: int
     color: rl.Color
-
 
 struct EmojiMessage:
     text: str
@@ -78,7 +75,7 @@ function main() -> int:
         EmojiMessage(text = "有理走遍天下，无理寸步难行。", language = "Chinese"),
         EmojiMessage(text = "猿も木から落ちる", language = "Japanese"),
         EmojiMessage(text = "고생 끝에 낙이 온다", language = "Korean"),
-        EmojiMessage(text = "Hello from raylib and Milk Tea!", language = "English"),
+        EmojiMessage(text = "Hello from raylib and Milk Tea!", language = "English")
     )
 
     var emoji_slots: array[EmojiSlot, EMOJI_SLOT_COUNT] = zero[array[EmojiSlot, EMOJI_SLOT_COUNT]]
@@ -109,13 +106,25 @@ function main() -> int:
         var index = 0
         while index < EMOJI_SLOT_COUNT:
             let emoji_text = emoji_texts[emoji_slots[index].index]
-            let emoji_rect = rl.Rectangle(x = position.x, y = position.y, width = float<-font_emoji.baseSize, height = float<-font_emoji.baseSize)
+            let emoji_rect = rl.Rectangle(
+                x = position.x,
+                y = position.y,
+                width = float<-font_emoji.baseSize,
+                height = float<-font_emoji.baseSize
+            )
 
             if not rl.check_collision_point_rec(mouse, emoji_rect):
                 let tint = if selected == index: emoji_slots[index].color else: rl.fade(rl.LIGHTGRAY, 0.4)
                 rl.draw_text_ex(font_emoji, emoji_text, position, float<-font_emoji.baseSize, 1.0, tint)
             else:
-                rl.draw_text_ex(font_emoji, emoji_text, position, float<-font_emoji.baseSize, 1.0, emoji_slots[index].color)
+                rl.draw_text_ex(
+                    font_emoji,
+                    emoji_text,
+                    position,
+                    float<-font_emoji.baseSize,
+                    1.0,
+                    emoji_slots[index].color
+                )
                 hovered = index
                 hovered_pos = position
 
@@ -142,7 +151,7 @@ function main() -> int:
                 x = selected_pos.x - float<-38.8,
                 y = selected_pos.y,
                 width = float<-2.0 * horizontal_padding + size.x,
-                height = float<-2.0 * vertical_padding + size.y,
+                height = float<-2.0 * vertical_padding + size.y
             )
             message_rect.y -= message_rect.height
 
@@ -171,23 +180,49 @@ function main() -> int:
                 x = message_rect.x + horizontal_padding / 2.0,
                 y = message_rect.y + vertical_padding / 2.0,
                 width = message_rect.width - horizontal_padding,
-                height = message_rect.height,
+                height = message_rect.height
             )
-            boxed.draw_text_boxed(selected_font, message.text, text_rect, float<-selected_font.baseSize, 1.0, true, rl.WHITE)
+            boxed.draw_text_boxed(
+                selected_font,
+                message.text,
+                text_rect,
+                float<-selected_font.baseSize,
+                1.0,
+                true,
+                rl.WHITE
+            )
 
             let info_text = text.cstr_as_str(
                 rl.text_format(
                     "%s %i characters %i bytes",
                     message.language,
                     rl.get_codepoint_count(message.text),
-                    int<-rl.text_length(message.text),
+                    int<-rl.text_length(message.text)
                 )
             )
             let info_size = rl.measure_text_ex(rl.get_font_default(), info_text, 10.0, 1.0)
-            rl.draw_text(info_text, int<-(text_rect.x + text_rect.width - info_size.x), int<-(message_rect.y + message_rect.height - info_size.y - 2.0), 10, rl.RAYWHITE)
+            rl.draw_text(
+                info_text,
+                int<-(text_rect.x + text_rect.width - info_size.x),
+                int<-(message_rect.y + message_rect.height - info_size.y - 2.0),
+                10,
+                rl.RAYWHITE
+            )
 
-        rl.draw_text("These emojis have something to tell you, click each to find out!", (SCREEN_WIDTH - 650) / 2, SCREEN_HEIGHT - 40, 20, rl.GRAY)
-        rl.draw_text("Each emoji is a unicode character from a font, not a texture... Press [SPACEBAR] to refresh", (SCREEN_WIDTH - 484) / 2, SCREEN_HEIGHT - 16, 10, rl.GRAY)
+        rl.draw_text(
+            "These emojis have something to tell you, click each to find out!",
+            (SCREEN_WIDTH - 650) / 2,
+            SCREEN_HEIGHT - 40,
+            20,
+            rl.GRAY
+        )
+        rl.draw_text(
+            "Each emoji is a unicode character from a font, not a texture... Press [SPACEBAR] to refresh",
+            (SCREEN_WIDTH - 484) / 2,
+            SCREEN_HEIGHT - 16,
+            10,
+            rl.GRAY
+        )
 
         rl.end_drawing()
 

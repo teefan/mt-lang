@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -18,13 +17,13 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
-    var model = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
+    let model = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
     defer rl.unload_model(model)
 
-    var image = rl.load_image("cubicmap_atlas.png")
+    let image = rl.load_image("cubicmap_atlas.png")
     defer rl.unload_image(image)
     let crop = rl.image_from_image(
         image,
@@ -32,8 +31,8 @@ function main() -> int:
             x = 0.0,
             y = float<-image.height / 2.0,
             width = float<-image.width / 2.0,
-            height = float<-image.height / 2.0,
-        ),
+            height = float<-image.height / 2.0
+        )
     )
     defer rl.unload_image(crop)
     let texture = rl.load_texture_from_image(crop)
@@ -58,7 +57,7 @@ function main() -> int:
             rl.Vector3(x = 0.5, y = 1.0, z = 0.0),
             rotation,
             rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()

@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLASS_SIZE: int = 256
@@ -48,7 +47,7 @@ function main() -> int:
         offset = rl.Vector2(x = GLASS_RADIUS, y = GLASS_RADIUS),
         target = rl.Vector2(x = 0.0, y = 0.0),
         rotation = 0.0,
-        zoom = 2.0,
+        zoom = 2.0
     )
 
     rl.set_target_fps(60)
@@ -77,7 +76,7 @@ function main() -> int:
             rlgl.RL_ONE,
             rlgl.RL_ZERO,
             rlgl.RL_FUNC_ADD,
-            rlgl.RL_FUNC_ADD,
+            rlgl.RL_FUNC_ADD
         )
         rl.draw_texture(mask, 0, 0, rl.WHITE)
         rl.end_blend_mode()
@@ -88,13 +87,13 @@ function main() -> int:
             magnified_world.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-GLASS_SIZE, height = -float<-GLASS_SIZE),
             rl.Vector2(x = mouse_pos.x - GLASS_RADIUS, y = mouse_pos.y - GLASS_RADIUS),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_ring(mouse_pos, GLASS_RADIUS - 2.0, GLASS_RADIUS + 2.0, 0.0, 360.0, 64, rl.BLACK)
 
         let highlight_pos = rl.Vector2(
             x = mouse_pos.x - (64.0 * (mouse_pos.x / float<-SCREEN_WIDTH)) - 32.0,
-            y = mouse_pos.y - (64.0 * (mouse_pos.y / float<-SCREEN_WIDTH)) - 32.0,
+            y = mouse_pos.y - (64.0 * (mouse_pos.y / float<-SCREEN_WIDTH)) - 32.0
         )
         rl.draw_circle_v(highlight_pos, 4.0, rl.color_alpha(rl.WHITE, 0.5))
 

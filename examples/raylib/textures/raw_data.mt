@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const CHECKED_WIDTH: int = 960
@@ -21,7 +20,7 @@ function main() -> int:
         384,
         512,
         int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
-        0,
+        0
     )
     let fudesumi = rl.load_texture_from_image(fudesumi_raw)
     defer rl.unload_texture(fudesumi)
@@ -46,7 +45,7 @@ function main() -> int:
         width = CHECKED_WIDTH,
         height = CHECKED_HEIGHT,
         mipmaps = 1,
-        format = int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        format = int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
     )
 
     let checked = rl.load_texture_from_image(checked_image)
@@ -62,7 +61,7 @@ function main() -> int:
             checked,
             SCREEN_WIDTH / 2 - checked.width / 2,
             SCREEN_HEIGHT / 2 - checked.height / 2,
-            rl.fade(rl.WHITE, 0.5),
+            rl.fade(rl.WHITE, 0.5)
         )
         rl.draw_texture(fudesumi, 430, -30, rl.WHITE)
 

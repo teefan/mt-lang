@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const BUTTON_NONE: int = -1
@@ -20,7 +19,13 @@ function abs_float(value: float) -> float:
     return value
 
 
-function draw_pad_button(position: rl.Vector2, button_radius: float, button: int, pressed_button: int, arrow_color: rl.Color) -> void:
+function draw_pad_button(
+    position: rl.Vector2,
+    button_radius: float,
+    button: int,
+    pressed_button: int,
+    arrow_color: rl.Color
+) -> void:
     let circle_color = if button == pressed_button: rl.DARKGRAY else: rl.BLACK
     rl.draw_circle_v(position, button_radius, circle_color)
 
@@ -29,28 +34,28 @@ function draw_pad_button(position: rl.Vector2, button_radius: float, button: int
             rl.Vector2(x = position.x, y = position.y - ARROW_TIP),
             rl.Vector2(x = position.x - ARROW_SIDE, y = position.y + ARROW_SIDE),
             rl.Vector2(x = position.x + ARROW_SIDE, y = position.y + ARROW_SIDE),
-            arrow_color,
+            arrow_color
         )
     else if button == BUTTON_LEFT:
         rl.draw_triangle(
             rl.Vector2(x = position.x + ARROW_SIDE, y = position.y - ARROW_SIDE),
             rl.Vector2(x = position.x - ARROW_TIP, y = position.y),
             rl.Vector2(x = position.x + ARROW_SIDE, y = position.y + ARROW_SIDE),
-            arrow_color,
+            arrow_color
         )
     else if button == BUTTON_RIGHT:
         rl.draw_triangle(
             rl.Vector2(x = position.x + ARROW_TIP, y = position.y),
             rl.Vector2(x = position.x - ARROW_SIDE, y = position.y - ARROW_SIDE),
             rl.Vector2(x = position.x - ARROW_SIDE, y = position.y + ARROW_SIDE),
-            arrow_color,
+            arrow_color
         )
     else:
         rl.draw_triangle(
             rl.Vector2(x = position.x - ARROW_SIDE, y = position.y - ARROW_SIDE),
             rl.Vector2(x = position.x, y = position.y + ARROW_TIP),
             rl.Vector2(x = position.x + ARROW_SIDE, y = position.y - ARROW_SIDE),
-            arrow_color,
+            arrow_color
         )
 
 
@@ -65,7 +70,7 @@ function main() -> int:
         rl.Vector2(x = pad_position.x, y = pad_position.y - button_step),
         rl.Vector2(x = pad_position.x - button_step, y = pad_position.y),
         rl.Vector2(x = pad_position.x + button_step, y = pad_position.y),
-        rl.Vector2(x = pad_position.x, y = pad_position.y + button_step),
+        rl.Vector2(x = pad_position.x, y = pad_position.y + button_step)
     )
     let button_label_colors = array[rl.Color, 4](rl.YELLOW, rl.BLUE, rl.RED, rl.GREEN)
 
@@ -83,7 +88,10 @@ function main() -> int:
             input_position = rl.get_mouse_position()
 
         pressed_button = BUTTON_NONE
-        if rl.get_touch_point_count() > 0 or (rl.get_touch_point_count() == 0 and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)):
+        if (
+            rl.get_touch_point_count() > 0
+            or (rl.get_touch_point_count() == 0 and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT))
+        ):
             var index = 0
             while index < BUTTON_MAX:
                 let dist_x = abs_float(button_positions[index].x - input_position.x)

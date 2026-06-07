@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const G: float = 400.0
@@ -24,18 +23,15 @@ const ZOOM_STEP: float = 0.05
 const PLAYER_HALF_WIDTH: float = 20.0
 const PLAYER_HEIGHT: float = 40.0
 
-
 struct Player:
     position: rl.Vector2
     speed: float
     can_jump: bool
 
-
 struct EnvItem:
     rect: rl.Rectangle
     blocking: bool
     color: rl.Color
-
 
 var camera_evening_out: bool = false
 var camera_even_out_target: float = 0.0
@@ -71,11 +67,13 @@ function update_player(player: ref[Player], env_items: array[EnvItem, ENV_ITEM_C
         let env_item = env_items[index]
         let player_position = unsafe: read(player).position
         let player_speed = unsafe: read(player).speed
-        if env_item.blocking and
-            env_item.rect.x <= player_position.x and
-            env_item.rect.x + env_item.rect.width >= player_position.x and
-            env_item.rect.y >= player_position.y and
-            env_item.rect.y <= player_position.y + player_speed * delta:
+        if (
+            env_item.blocking
+            and env_item.rect.x <= player_position.x
+            and env_item.rect.x + env_item.rect.width >= player_position.x
+            and env_item.rect.y >= player_position.y
+            and env_item.rect.y <= player_position.y + player_speed * delta
+        ):
             hit_obstacle = true
             unsafe:
                 read(player).speed = 0.0
@@ -98,7 +96,11 @@ function update_camera_center(camera: ref[rl.Camera2D], player: Player) -> void:
         read(camera).target = player.position
 
 
-function update_camera_center_inside_map(camera: ref[rl.Camera2D], player: Player, env_items: array[EnvItem, ENV_ITEM_COUNT]) -> void:
+function update_camera_center_inside_map(
+    camera: ref[rl.Camera2D],
+    player: Player,
+    env_items: array[EnvItem, ENV_ITEM_COUNT]
+) -> void:
     unsafe:
         read(camera).target = player.position
         read(camera).offset = rl.Vector2(x = HALF_SCREEN_WIDTH, y = HALF_SCREEN_HEIGHT)
@@ -181,13 +183,16 @@ function update_camera_player_bounds_push(camera: ref[rl.Camera2D], player: Play
     let camera_value = unsafe: read(camera)
     let bbox_world_min = rl.get_screen_to_world_2d(
         rl.Vector2(x = (ONE - bbox.x) * HALF * float<-SCREEN_WIDTH, y = (ONE - bbox.y) * HALF * float<-SCREEN_HEIGHT),
-        camera_value,
+        camera_value
     )
     let bbox_world_max = rl.get_screen_to_world_2d(
         rl.Vector2(x = (ONE + bbox.x) * HALF * float<-SCREEN_WIDTH, y = (ONE + bbox.y) * HALF * float<-SCREEN_HEIGHT),
-        camera_value,
+        camera_value
     )
-    unsafe: read(camera).offset = rl.Vector2(x = (ONE - bbox.x) * HALF * float<-SCREEN_WIDTH, y = (ONE - bbox.y) * HALF * float<-SCREEN_HEIGHT)
+    unsafe: read(camera).offset = rl.Vector2(
+        x = (ONE - bbox.x) * HALF * float<-SCREEN_WIDTH,
+        y = (ONE - bbox.y) * HALF * float<-SCREEN_HEIGHT
+    )
 
     if player.position.x < bbox_world_min.x:
         unsafe: read(camera).target.x = player.position.x
@@ -205,18 +210,38 @@ function main() -> int:
 
     var player = Player(position = rl.Vector2(x = 400.0, y = 280.0), speed = 0.0, can_jump = false)
     let env_items = array[EnvItem, 5](
-        EnvItem(rect = rl.Rectangle(x = 0.0, y = 0.0, width = 1000.0, height = 400.0), blocking = false, color = rl.LIGHTGRAY),
-        EnvItem(rect = rl.Rectangle(x = 0.0, y = 400.0, width = 1000.0, height = 200.0), blocking = true, color = rl.GRAY),
-        EnvItem(rect = rl.Rectangle(x = 300.0, y = 200.0, width = 400.0, height = 10.0), blocking = true, color = rl.GRAY),
-        EnvItem(rect = rl.Rectangle(x = 250.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
-        EnvItem(rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
+        EnvItem(
+            rect = rl.Rectangle(x = 0.0, y = 0.0, width = 1000.0, height = 400.0),
+            blocking = false,
+            color = rl.LIGHTGRAY
+        ),
+        EnvItem(
+            rect = rl.Rectangle(x = 0.0, y = 400.0, width = 1000.0, height = 200.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvItem(
+            rect = rl.Rectangle(x = 300.0, y = 200.0, width = 400.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvItem(
+            rect = rl.Rectangle(x = 250.0, y = 300.0, width = 100.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvItem(
+            rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        )
     )
 
     var camera = rl.Camera2D(
         target = player.position,
         offset = rl.Vector2(x = HALF_SCREEN_WIDTH, y = HALF_SCREEN_HEIGHT),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     var camera_option = 0
@@ -260,7 +285,12 @@ function main() -> int:
             rl.draw_rectangle_rec(env_items[index].rect, env_items[index].color)
             index += 1
 
-        let player_rect = rl.Rectangle(x = player.position.x - PLAYER_HALF_WIDTH, y = player.position.y - PLAYER_HEIGHT, width = PLAYER_HEIGHT, height = PLAYER_HEIGHT)
+        let player_rect = rl.Rectangle(
+            x = player.position.x - PLAYER_HALF_WIDTH,
+            y = player.position.y - PLAYER_HEIGHT,
+            width = PLAYER_HEIGHT,
+            height = PLAYER_HEIGHT
+        )
         rl.draw_rectangle_rec(player_rect, rl.RED)
         rl.draw_circle_v(player.position, 5.0, rl.GOLD)
         rl.end_mode_2d()

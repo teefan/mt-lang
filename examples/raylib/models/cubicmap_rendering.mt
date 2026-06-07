@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -18,7 +17,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let image = rl.load_image("cubicmap.png")
@@ -26,7 +25,7 @@ function main() -> int:
     let cubicmap = rl.load_texture_from_image(image)
     defer rl.unload_texture(cubicmap)
 
-    var model = rl.load_model_from_mesh(rl.gen_mesh_cubicmap(image, rl.Vector3(x = 1.0, y = 1.0, z = 1.0)))
+    let model = rl.load_model_from_mesh(rl.gen_mesh_cubicmap(image, rl.Vector3(x = 1.0, y = 1.0, z = 1.0)))
     defer rl.unload_model(model)
     let texture = rl.load_texture("cubicmap_atlas.png")
     defer rl.unload_texture(texture)
@@ -56,9 +55,15 @@ function main() -> int:
             rl.Vector2(x = float<-(SCREEN_WIDTH - cubicmap.width * 4 - 20), y = 20.0),
             0.0,
             4.0,
-            rl.WHITE,
+            rl.WHITE
         )
-        rl.draw_rectangle_lines(SCREEN_WIDTH - cubicmap.width * 4 - 20, 20, cubicmap.width * 4, cubicmap.height * 4, rl.GREEN)
+        rl.draw_rectangle_lines(
+            SCREEN_WIDTH - cubicmap.width * 4 - 20,
+            20,
+            cubicmap.width * 4,
+            cubicmap.height * 4,
+            rl.GREEN
+        )
         rl.draw_text("cubicmap image used to", 658, 90, 10, rl.GRAY)
         rl.draw_text("generate map 3d model", 658, 104, 10, rl.GRAY)
         rl.draw_fps(10, 10)

@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -78,11 +77,41 @@ function main() -> int:
             rl.draw_rectangle(logo_position_x, logo_position_y + 240, bottom_side_rec_width, 16, rl.BLACK)
         else if state == 3:
             rl.draw_rectangle(logo_position_x, logo_position_y, top_side_rec_width, 16, rl.fade(rl.BLACK, alpha))
-            rl.draw_rectangle(logo_position_x, logo_position_y + 16, 16, left_side_rec_height - 32, rl.fade(rl.BLACK, alpha))
-            rl.draw_rectangle(logo_position_x + 240, logo_position_y + 16, 16, right_side_rec_height - 32, rl.fade(rl.BLACK, alpha))
-            rl.draw_rectangle(logo_position_x, logo_position_y + 240, bottom_side_rec_width, 16, rl.fade(rl.BLACK, alpha))
-            rl.draw_rectangle(rl.get_screen_width() / 2 - 112, rl.get_screen_height() / 2 - 112, 224, 224, rl.fade(rl.RAYWHITE, alpha))
-            rl.draw_text(text.cstr_as_str(rl.text_subtext("raylib", 0, letters_count)), rl.get_screen_width() / 2 - 44, rl.get_screen_height() / 2 + 48, 50, rl.fade(rl.BLACK, alpha))
+            rl.draw_rectangle(
+                logo_position_x,
+                logo_position_y + 16,
+                16,
+                left_side_rec_height - 32,
+                rl.fade(rl.BLACK, alpha)
+            )
+            rl.draw_rectangle(
+                logo_position_x + 240,
+                logo_position_y + 16,
+                16,
+                right_side_rec_height - 32,
+                rl.fade(rl.BLACK, alpha)
+            )
+            rl.draw_rectangle(
+                logo_position_x,
+                logo_position_y + 240,
+                bottom_side_rec_width,
+                16,
+                rl.fade(rl.BLACK, alpha)
+            )
+            rl.draw_rectangle(
+                rl.get_screen_width() / 2 - 112,
+                rl.get_screen_height() / 2 - 112,
+                224,
+                224,
+                rl.fade(rl.RAYWHITE, alpha)
+            )
+            rl.draw_text(
+                text.cstr_as_str(rl.text_subtext("raylib", 0, letters_count)),
+                rl.get_screen_width() / 2 - 44,
+                rl.get_screen_height() / 2 + 48,
+                50,
+                rl.fade(rl.BLACK, alpha)
+            )
         else if state == 4:
             rl.draw_text("[R] REPLAY", 340, 200, 20, rl.GRAY)
 

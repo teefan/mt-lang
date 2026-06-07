@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raymath as rm
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RLGL_SRC_ALPHA: int = 0x0302
@@ -12,10 +11,8 @@ const MAX_BOXES: int = 20
 const MAX_SHADOWS: int = MAX_BOXES * 3
 const MAX_LIGHTS: int = 16
 
-
 struct ShadowGeometry:
     vertices: array[rl.Vector2, 4]
-
 
 struct LightInfo:
     active: bool
@@ -27,7 +24,6 @@ struct LightInfo:
     bounds: rl.Rectangle
     shadows: array[ShadowGeometry, 60]
     shadow_count: int
-
 
 var lights: array[LightInfo, MAX_LIGHTS] = zero[array[LightInfo, MAX_LIGHTS]]
 var boxes: array[rl.Rectangle, MAX_BOXES] = zero[array[rl.Rectangle, MAX_BOXES]]
@@ -67,7 +63,12 @@ function draw_light_mask(slot: int) -> void:
     rlgl.set_blend_mode(int<-rl.BlendMode.BLEND_CUSTOM)
 
     if lights[slot].valid:
-        rl.draw_circle_gradient(lights[slot].position, lights[slot].outer_radius, rl.color_alpha(rl.WHITE, 0.0), rl.WHITE)
+        rl.draw_circle_gradient(
+            lights[slot].position,
+            lights[slot].outer_radius,
+            rl.color_alpha(rl.WHITE, 0.0),
+            rl.WHITE
+        )
 
     rlgl.draw_render_batch_active()
 
@@ -133,10 +134,22 @@ function update_light(slot: int) -> bool:
             compute_shadow_volume_for_edge(slot, sp, ep)
 
         if lights[slot].shadow_count < MAX_SHADOWS:
-            lights[slot].shadows[lights[slot].shadow_count].vertices[0] = rl.Vector2(x = boxes[index].x, y = boxes[index].y)
-            lights[slot].shadows[lights[slot].shadow_count].vertices[1] = rl.Vector2(x = boxes[index].x, y = boxes[index].y + boxes[index].height)
-            lights[slot].shadows[lights[slot].shadow_count].vertices[2] = rl.Vector2(x = boxes[index].x + boxes[index].width, y = boxes[index].y + boxes[index].height)
-            lights[slot].shadows[lights[slot].shadow_count].vertices[3] = rl.Vector2(x = boxes[index].x + boxes[index].width, y = boxes[index].y)
+            lights[slot].shadows[lights[slot].shadow_count].vertices[0] = rl.Vector2(
+                x = boxes[index].x,
+                y = boxes[index].y
+            )
+            lights[slot].shadows[lights[slot].shadow_count].vertices[1] = rl.Vector2(
+                x = boxes[index].x,
+                y = boxes[index].y + boxes[index].height
+            )
+            lights[slot].shadows[lights[slot].shadow_count].vertices[2] = rl.Vector2(
+                x = boxes[index].x + boxes[index].width,
+                y = boxes[index].y + boxes[index].height
+            )
+            lights[slot].shadows[lights[slot].shadow_count].vertices[3] = rl.Vector2(
+                x = boxes[index].x + boxes[index].width,
+                y = boxes[index].y
+            )
             lights[slot].shadow_count += 1
 
         index += 1
@@ -159,7 +172,7 @@ function setup_boxes() -> void:
             x = float<-rl.get_random_value(0, rl.get_screen_width()),
             y = float<-rl.get_random_value(0, rl.get_screen_height()),
             width = float<-rl.get_random_value(10, 100),
-            height = float<-rl.get_random_value(10, 100),
+            height = float<-rl.get_random_value(10, 100)
         )
         index += 1
 
@@ -218,9 +231,14 @@ function main() -> int:
                 if lights[index].active:
                     rl.draw_texture_rec(
                         lights[index].mask.texture,
-                        rl.Rectangle(x = 0.0, y = 0.0, width = float<-rl.get_screen_width(), height = -float<-rl.get_screen_height()),
+                        rl.Rectangle(
+                            x = 0.0,
+                            y = 0.0,
+                            width = float<-rl.get_screen_width(),
+                            height = -float<-rl.get_screen_height()
+                        ),
                         rl.Vector2(x = 0.0, y = 0.0),
-                        rl.WHITE,
+                        rl.WHITE
                     )
                 index += 1
 
@@ -233,9 +251,14 @@ function main() -> int:
 
         rl.draw_texture_rec(
             background_texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-rl.get_screen_width(), height = float<-rl.get_screen_height()),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-rl.get_screen_width(),
+                height = float<-rl.get_screen_height()
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
 
         var mask_alpha: float = 1.0
@@ -243,9 +266,14 @@ function main() -> int:
             mask_alpha = 0.75
         rl.draw_texture_rec(
             light_mask.texture,
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-rl.get_screen_width(), height = -float<-rl.get_screen_height()),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-rl.get_screen_width(),
+                height = -float<-rl.get_screen_height()
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.color_alpha(rl.WHITE, mask_alpha),
+            rl.color_alpha(rl.WHITE, mask_alpha)
         )
 
         index = 0
@@ -267,7 +295,13 @@ function main() -> int:
             while index < box_count:
                 if rl.check_collision_recs(boxes[index], lights[0].bounds):
                     rl.draw_rectangle_rec(boxes[index], rl.PURPLE)
-                rl.draw_rectangle_lines(int<-boxes[index].x, int<-boxes[index].y, int<-boxes[index].width, int<-boxes[index].height, rl.DARKBLUE)
+                rl.draw_rectangle_lines(
+                    int<-boxes[index].x,
+                    int<-boxes[index].y,
+                    int<-boxes[index].width,
+                    int<-boxes[index].height,
+                    rl.DARKBLUE
+                )
                 index += 1
 
             rl.draw_text("(F1) Hide Shadow Volumes", 10, 50, 10, rl.GREEN)

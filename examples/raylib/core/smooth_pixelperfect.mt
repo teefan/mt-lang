@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const VIRTUAL_SCREEN_WIDTH: int = 160
@@ -25,13 +24,13 @@ function main() -> int:
         offset = rl.Vector2(x = 0.0, y = 0.0),
         target = rl.Vector2(x = 0.0, y = 0.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
     var screen_space_camera = rl.Camera2D(
         offset = rl.Vector2(x = 0.0, y = 0.0),
         target = rl.Vector2(x = 0.0, y = 0.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     let target = rl.load_render_texture(VIRTUAL_SCREEN_WIDTH, VIRTUAL_SCREEN_HEIGHT)
@@ -45,13 +44,13 @@ function main() -> int:
         x = 0.0,
         y = 0.0,
         width = float<-target.texture.width,
-        height = -(float<-target.texture.height),
+        height = -(float<-target.texture.height)
     )
     let dest_rec = rl.Rectangle(
         x = -virtual_ratio,
         y = -virtual_ratio,
         width = (float<-SCREEN_WIDTH) + (virtual_ratio * 2.0),
-        height = (float<-SCREEN_HEIGHT) + (virtual_ratio * 2.0),
+        height = (float<-SCREEN_HEIGHT) + (virtual_ratio * 2.0)
     )
     let origin = rl.Vector2(x = 0.0, y = 0.0)
 

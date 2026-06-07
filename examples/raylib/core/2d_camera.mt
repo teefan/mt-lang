@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.raymath as raymath
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_BUILDINGS: int = 100
@@ -29,7 +28,7 @@ function main() -> int:
             r = ubyte<-rl.get_random_value(200, 240),
             g = ubyte<-rl.get_random_value(200, 240),
             b = ubyte<-rl.get_random_value(200, 250),
-            a = ubyte<-255,
+            a = ubyte<-255
         )
         building_index += 1
 
@@ -37,7 +36,7 @@ function main() -> int:
         target = rl.Vector2(x = player.x + 20.0, y = player.y + 20.0),
         offset = rl.Vector2(x = (float<-SCREEN_WIDTH) / 2.0, y = (float<-SCREEN_HEIGHT) / 2.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     rl.set_target_fps(60)

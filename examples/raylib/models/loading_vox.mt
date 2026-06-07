@@ -3,18 +3,15 @@ import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_VOX_FILES: int = 4
 const MAX_LIGHTS: int = 4
 const GLSL_VERSION: int = 330
 
-
 enum LightType: int
     LIGHT_DIRECTIONAL = 0
     LIGHT_POINT = 1
-
 
 struct Light:
     kind: int
@@ -29,7 +26,14 @@ struct Light:
     color_loc: int
 
 
-function create_light(slot: int, light_type: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light:
+function create_light(
+    slot: int,
+    light_type: int,
+    position: rl.Vector3,
+    target: rl.Vector3,
+    color: rl.Color,
+    shader: rl.Shader
+) -> Light:
     let light = Light(
         kind = light_type,
         enabled = true,
@@ -40,7 +44,7 @@ function create_light(slot: int, light_type: int, position: rl.Vector3, target: 
         type_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].type", slot)),
         position_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].position", slot)),
         target_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].target", slot)),
-        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot)),
+        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot))
     )
     update_light_values(shader, light)
     return light
@@ -61,7 +65,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
         float<-light.color.r / 255.0,
         float<-light.color.g / 255.0,
         float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0,
+        float<-light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.color_loc, color_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
@@ -77,7 +81,7 @@ function main() -> int:
         "models/vox/chr_knight.vox",
         "models/vox/chr_sword.vox",
         "models/vox/monu9.vox",
-        "models/vox/fez.vox",
+        "models/vox/fez.vox"
     )
 
     var camera = rl.Camera3D(
@@ -85,7 +89,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var models: array[rl.Model, MAX_VOX_FILES] = zero[array[rl.Model, MAX_VOX_FILES]]
@@ -94,13 +98,18 @@ function main() -> int:
         let start_time = rl.get_time() * 1000.0
         models[model_index] = rl.load_model(vox_file_names[model_index])
         let end_time = rl.get_time() * 1000.0
-        rl.trace_log(int<-rl.TraceLogLevel.LOG_INFO, "[%s] Model file loaded in %.3f ms", vox_file_names[model_index], end_time - start_time)
+        rl.trace_log(
+            int<-rl.TraceLogLevel.LOG_INFO,
+            "[%s] Model file loaded in %.3f ms",
+            vox_file_names[model_index],
+            end_time - start_time
+        )
 
         let bounds = rl.get_model_bounding_box(models[model_index])
         let center = rl.Vector3(
             x = bounds.min.x + (bounds.max.x - bounds.min.x) / 2.0,
             y = 0.0,
-            z = bounds.min.z + (bounds.max.z - bounds.min.z) / 2.0,
+            z = bounds.min.z + (bounds.max.z - bounds.min.z) / 2.0
         )
         models[model_index].transform = rm.matrix_translate(-center.x, 0.0, -center.z)
         model_index += 1
@@ -135,10 +144,38 @@ function main() -> int:
         model_index += 1
 
     var lights: array[Light, MAX_LIGHTS] = zero[array[Light, MAX_LIGHTS]]
-    lights[0] = create_light(0, int<-LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = -20.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GRAY, shader)
-    lights[1] = create_light(1, int<-LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = 20.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GRAY, shader)
-    lights[2] = create_light(2, int<-LightType.LIGHT_POINT, rl.Vector3(x = -20.0, y = 20.0, z = 20.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GRAY, shader)
-    lights[3] = create_light(3, int<-LightType.LIGHT_POINT, rl.Vector3(x = 20.0, y = -20.0, z = -20.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GRAY, shader)
+    lights[0] = create_light(
+        0,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -20.0, y = 20.0, z = -20.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GRAY,
+        shader
+    )
+    lights[1] = create_light(
+        1,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 20.0, y = -20.0, z = 20.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GRAY,
+        shader
+    )
+    lights[2] = create_light(
+        2,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -20.0, y = 20.0, z = 20.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GRAY,
+        shader
+    )
+    lights[3] = create_light(
+        3,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 20.0, y = -20.0, z = -20.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GRAY,
+        shader
+    )
 
     rl.set_target_fps(60)
 
@@ -163,7 +200,12 @@ function main() -> int:
         if rl.is_key_down(rl.KeyboardKey.KEY_A) or rl.is_key_down(rl.KeyboardKey.KEY_LEFT):
             movement_x -= 0.1
 
-        rl.update_camera_pro(ptr_of(camera), rl.Vector3(x = movement_z, y = movement_x, z = 0.0), camera_rotation, rl.get_mouse_wheel_move() * -2.0)
+        rl.update_camera_pro(
+            ptr_of(camera),
+            rl.Vector3(x = movement_z, y = movement_x, z = 0.0),
+            camera_rotation,
+            rl.get_mouse_wheel_move() * -2.0
+        )
 
         if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT):
             current_model = (current_model + 1) % MAX_VOX_FILES
@@ -173,7 +215,7 @@ function main() -> int:
             shader,
             unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW],
             camera_pos,
-            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
         )
 
         var light_index = 0
@@ -196,7 +238,13 @@ function main() -> int:
             if lights[light_index].enabled:
                 rl.draw_sphere_ex(lights[light_index].position, 0.2, 8, 8, lights[light_index].color)
             else:
-                rl.draw_sphere_wires(lights[light_index].position, 0.2, 8, 8, rl.color_alpha(lights[light_index].color, 0.3))
+                rl.draw_sphere_wires(
+                    lights[light_index].position,
+                    0.2,
+                    8,
+                    8,
+                    rl.color_alpha(lights[light_index].color, 0.3)
+                )
             light_index += 1
         rl.end_mode_3d()
 

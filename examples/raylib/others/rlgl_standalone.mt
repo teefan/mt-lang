@@ -5,7 +5,6 @@ import std.raylib as rl
 import std.raymath as rm
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const DEG_TO_RAD: float = rl.PI / 180.0
@@ -31,7 +30,7 @@ function matrix_to_rlgl(matrix: rl.Matrix) -> rlgl.Matrix:
         m3 = matrix.m3,
         m7 = matrix.m7,
         m11 = matrix.m11,
-        m15 = matrix.m15,
+        m15 = matrix.m15
     )
 
 
@@ -183,7 +182,13 @@ function main() -> int:
     glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
     glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
-    let window = glfw.create_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [others] example - rlgl standalone", null, null) else:
+    let window = glfw.create_window(
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        "raylib [others] example - rlgl standalone",
+        null,
+        null
+    ) else:
         return 2
     defer glfw.destroy_window(window)
 
@@ -205,12 +210,12 @@ function main() -> int:
     rlgl.clear_color(245, 245, 245, 255)
     rlgl.enable_depth_test()
 
-    var camera = rl.Camera3D(
+    let camera = rl.Camera3D(
         position = rl.Vector3(x = 5.0, y = 5.0, z = 5.0),
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let cube_position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
 
@@ -224,7 +229,7 @@ function main() -> int:
             double<-(camera.fovy * DEG_TO_RAD),
             (double<-SCREEN_WIDTH) / (double<-SCREEN_HEIGHT),
             0.01,
-            1000.0,
+            1000.0
         )
         let view = rm.matrix_look_at(camera.position, camera.target, camera.up)
         rlgl.set_matrix_modelview(matrix_to_rlgl(view))
@@ -237,7 +242,7 @@ function main() -> int:
 
         rlgl.set_matrix_modelview(matrix_to_rlgl(rm.matrix_identity()))
         rlgl.set_matrix_projection(
-            matrix_to_rlgl(rm.matrix_ortho(0.0, double<-SCREEN_WIDTH, double<-SCREEN_HEIGHT, 0.0, 0.0, 1.0)),
+            matrix_to_rlgl(rm.matrix_ortho(0.0, double<-SCREEN_WIDTH, double<-SCREEN_HEIGHT, 0.0, 0.0, 1.0))
         )
         draw_rectangle_v(rl.Vector2(x = 10.0, y = 10.0), rl.Vector2(x = 780.0, y = 20.0), DARKGRAY)
         rlgl.draw_render_batch_active()

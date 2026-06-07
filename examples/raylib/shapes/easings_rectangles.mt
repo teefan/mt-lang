@@ -1,7 +1,6 @@
 import std.raylib.easing as ease
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RECS_WIDTH: float = 50.0
@@ -42,7 +41,12 @@ function main() -> int:
 
             var index = 0
             while index < TOTAL_RECS:
-                recs[index].height = ease.circ_out(float<-frames_counter, RECS_HEIGHT, -RECS_HEIGHT, PLAY_TIME_IN_FRAMES)
+                recs[index].height = ease.circ_out(
+                    float<-frames_counter,
+                    RECS_HEIGHT,
+                    -RECS_HEIGHT,
+                    PLAY_TIME_IN_FRAMES
+                )
                 recs[index].width = ease.circ_out(float<-frames_counter, RECS_WIDTH, -RECS_WIDTH, PLAY_TIME_IN_FRAMES)
 
                 if recs[index].height < 0.0:
@@ -75,7 +79,7 @@ function main() -> int:
                     recs[index],
                     rl.Vector2(x = recs[index].width / 2.0, y = recs[index].height / 2.0),
                     rotation,
-                    rl.RED,
+                    rl.RED
                 )
                 index += 1
         else:

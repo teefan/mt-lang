@@ -3,7 +3,6 @@ import std.raymath as rm
 import std.str as text
 import std.time as time
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const CLOCK_DIGITS: int = 6
@@ -40,22 +39,281 @@ function main() -> int:
     let ZZ = rl.Vector2(x = 135.0, y = 135.0)
 
     let digit_angles = array[array[rl.Vector2, CLOCK_CELLS], 10](
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, VV, TL, TR, VV, VV, VV, VV, VV, VV, VV, VV, VV, VV, BL, BR, VV, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, TR, ZZ, BL, TR, VV, ZZ, ZZ, VV, VV, ZZ, ZZ, VV, VV, ZZ, TL, BR, BL, TR, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, BL, HH, TR, VV, TL, HH, BR, VV, VV, TL, HH, BR, VV, BL, HH, TR, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, BL, HH, TR, VV, TL, HH, BR, VV, BL, HH, TR, VV, TL, HH, BR, VV, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, TR, TL, TR, VV, VV, VV, VV, VV, BL, BR, VV, BL, HH, TR, VV, ZZ, ZZ, VV, VV, ZZ, ZZ, BL, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, VV, TL, HH, BR, VV, BL, HH, TR, BL, HH, TR, VV, TL, HH, BR, VV, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, VV, TL, HH, BR, VV, BL, HH, TR, VV, TL, TR, VV, VV, BL, BR, VV, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, BL, HH, TR, VV, ZZ, ZZ, VV, VV, ZZ, ZZ, VV, VV, ZZ, ZZ, VV, VV, ZZ, ZZ, BL, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, VV, TL, TR, VV, VV, BL, BR, VV, VV, TL, TR, VV, VV, BL, BR, VV, BL, HH, HH, BR),
-        array[rl.Vector2, CLOCK_CELLS](TL, HH, HH, TR, VV, TL, TR, VV, VV, BL, BR, VV, BL, HH, TR, VV, TL, HH, BR, VV, BL, HH, HH, BR),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            VV,
+            TL,
+            TR,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            TR,
+            ZZ,
+            BL,
+            TR,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            TL,
+            BR,
+            BL,
+            TR,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            TR,
+            TL,
+            TR,
+            VV,
+            VV,
+            VV,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            ZZ,
+            BL,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            TR,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            BL,
+            HH,
+            TR,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            ZZ,
+            VV,
+            VV,
+            ZZ,
+            ZZ,
+            BL,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            VV,
+            TL,
+            TR,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            VV,
+            TL,
+            TR,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        ),
+        array[rl.Vector2, CLOCK_CELLS](
+            TL,
+            HH,
+            HH,
+            TR,
+            VV,
+            TL,
+            TR,
+            VV,
+            VV,
+            BL,
+            BR,
+            VV,
+            BL,
+            HH,
+            TR,
+            VV,
+            TL,
+            HH,
+            BR,
+            VV,
+            BL,
+            HH,
+            HH,
+            BR
+        )
     )
 
     var prev_seconds = -1
-    var current_angles: array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
-    var src_angles: array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
-    var dst_angles: array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
+    var current_angles: array[
+        array[rl.Vector2, CLOCK_CELLS],
+        CLOCK_DIGITS
+    ] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
+    var src_angles: array[
+        array[rl.Vector2, CLOCK_CELLS],
+        CLOCK_DIGITS
+    ] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
+    var dst_angles: array[
+        array[rl.Vector2, CLOCK_CELLS],
+        CLOCK_DIGITS
+    ] = zero[array[array[rl.Vector2, CLOCK_CELLS], CLOCK_DIGITS]]
     var hands_move_timer: float = 0.0
     var hour_mode = 24
 
@@ -77,7 +335,7 @@ function main() -> int:
                     parse_two_digits(clock_text, ptr_uint<-2) / 10,
                     parse_two_digits(clock_text, ptr_uint<-2) % 10,
                     seconds / 10,
-                    seconds % 10,
+                    seconds % 10
                 )
                 let leading_blank = hour_mode == 12 and digit_values[0] == 0
 
@@ -132,22 +390,30 @@ function main() -> int:
                 while col < 4:
                     let centre = rl.Vector2(
                         x = x_offset + float<-col * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
-                        y = 100.0 + float<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5,
+                        y = 100.0 + float<-row * (clock_face_size + clock_face_spacing) + clock_face_size * 0.5
                     )
 
-                    rl.draw_ring(centre, clock_face_size * 0.5 - 2.0, clock_face_size * 0.5, 0.0, 360.0, 24, rl.DARKGRAY)
+                    rl.draw_ring(
+                        centre,
+                        clock_face_size * 0.5 - 2.0,
+                        clock_face_size * 0.5,
+                        0.0,
+                        360.0,
+                        24,
+                        rl.DARKGRAY
+                    )
 
                     rl.draw_rectangle_pro(
                         rl.Rectangle(x = centre.x, y = centre.y, width = clock_face_size * 0.5 + 4.0, height = 4.0),
                         rl.Vector2(x = 2.0, y = 2.0),
                         current_angles[digit][row * 4 + col].x,
-                        hands_color,
+                        hands_color
                     )
                     rl.draw_rectangle_pro(
                         rl.Rectangle(x = centre.x, y = centre.y, width = clock_face_size * 0.5 + 2.0, height = 4.0),
                         rl.Vector2(x = 2.0, y = 2.0),
                         current_angles[digit][row * 4 + col].y,
-                        hands_color,
+                        hands_color
                     )
                     col += 1
                 row += 1

@@ -1,10 +1,8 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_TEXTURE_COLLECTION: int = 20
-
 
 struct TextureCollection:
     texture: rl.Texture2D
@@ -24,7 +22,10 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - clipboard image")
     defer rl.close_window()
 
-    var collection: array[TextureCollection, MAX_TEXTURE_COLLECTION] = zero[array[TextureCollection, MAX_TEXTURE_COLLECTION]]
+    var collection: array[
+        TextureCollection,
+        MAX_TEXTURE_COLLECTION
+    ] = zero[array[TextureCollection, MAX_TEXTURE_COLLECTION]]
     defer unload_collection(ref_of(collection))
 
     var current_collection_index = 0
@@ -36,9 +37,11 @@ function main() -> int:
             unload_collection(ref_of(collection))
             current_collection_index = 0
 
-        if rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL) and
-           rl.is_key_pressed(rl.KeyboardKey.KEY_V) and
-           current_collection_index < MAX_TEXTURE_COLLECTION:
+        if (
+            rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL)
+            and rl.is_key_pressed(rl.KeyboardKey.KEY_V)
+            and current_collection_index < MAX_TEXTURE_COLLECTION
+        ):
             let image = rl.get_clipboard_image()
 
             if rl.is_image_valid(image):
@@ -59,20 +62,20 @@ function main() -> int:
                         x = 0.0,
                         y = 0.0,
                         width = float<-collection[index].texture.width,
-                        height = float<-collection[index].texture.height,
+                        height = float<-collection[index].texture.height
                     ),
                     rl.Rectangle(
                         x = collection[index].position.x,
                         y = collection[index].position.y,
                         width = float<-collection[index].texture.width,
-                        height = float<-collection[index].texture.height,
+                        height = float<-collection[index].texture.height
                     ),
                     rl.Vector2(
                         x = float<-collection[index].texture.width * 0.5,
-                        y = float<-collection[index].texture.height * 0.5,
+                        y = float<-collection[index].texture.height * 0.5
                     ),
                     0.0,
-                    rl.WHITE,
+                    rl.WHITE
                 )
             index += 1
 

@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raymath as math
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SPLIT_WIDTH: int = SCREEN_WIDTH / 2
@@ -15,7 +14,7 @@ function draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) 
         rl.Vector3(x = -1.0, y = -1.0, z = 1.0),
         rl.Vector3(x = 1.0, y = -1.0, z = 1.0),
         rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
-        rl.Vector3(x = -1.0, y = 1.0, z = 1.0),
+        rl.Vector3(x = -1.0, y = 1.0, z = 1.0)
     )
 
     let view = rl.get_camera_matrix(camera)
@@ -23,7 +22,7 @@ function draw_camera_prism(camera: rl.Camera3D, aspect: float, color: rl.Color) 
         double<-(camera.fovy * DEG_TO_RAD),
         double<-aspect,
         0.05,
-        double<-length,
+        double<-length
     )
     let view_proj = math.matrix_multiply(view, proj)
     let inverse_view_proj = math.matrix_invert(view_proj)
@@ -63,14 +62,14 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     var observer_camera = rl.Camera3D(
         position = rl.Vector3(x = 10.0, y = 10.0, z = 10.0),
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let observer_target = rl.load_render_texture(SPLIT_WIDTH, SCREEN_HEIGHT)
@@ -79,7 +78,7 @@ function main() -> int:
         x = 0.0,
         y = 0.0,
         width = float<-observer_target.texture.width,
-        height = -float<-observer_target.texture.height,
+        height = -float<-observer_target.texture.height
     )
     let observer_dest = rl.Rectangle(x = 0.0, y = 0.0, width = float<-SPLIT_WIDTH, height = float<-SCREEN_HEIGHT)
 
@@ -89,16 +88,21 @@ function main() -> int:
         x = 0.0,
         y = 0.0,
         width = float<-subject_target.texture.width,
-        height = -float<-subject_target.texture.height,
+        height = -float<-subject_target.texture.height
     )
-    let subject_dest = rl.Rectangle(x = float<-SPLIT_WIDTH, y = 0.0, width = float<-SPLIT_WIDTH, height = float<-SCREEN_HEIGHT)
+    let subject_dest = rl.Rectangle(
+        x = float<-SPLIT_WIDTH,
+        y = 0.0,
+        width = float<-SPLIT_WIDTH,
+        height = float<-SCREEN_HEIGHT
+    )
     let texture_aspect_ratio = float<-subject_target.texture.width / float<-subject_target.texture.height
 
     let crop_source = rl.Rectangle(
         x = (float<-subject_target.texture.width - CAPTURE_SIZE) / 2.0,
         y = (float<-subject_target.texture.height - CAPTURE_SIZE) / 2.0,
         width = CAPTURE_SIZE,
-        height = -CAPTURE_SIZE,
+        height = -CAPTURE_SIZE
     )
     let crop_dest = rl.Rectangle(x = float<-SPLIT_WIDTH + 20.0, y = 20.0, width = CAPTURE_SIZE, height = CAPTURE_SIZE)
 
@@ -138,15 +142,29 @@ function main() -> int:
             int<-((float<-subject_target.texture.height - CAPTURE_SIZE) / 2.0),
             int<-CAPTURE_SIZE,
             int<-CAPTURE_SIZE,
-            rl.GREEN,
+            rl.GREEN
         )
         rl.draw_text("Subject View", 10, subject_target.texture.height - 30, 20, rl.BLACK)
         rl.end_texture_mode()
 
         rl.begin_drawing()
         rl.clear_background(rl.BLACK)
-        rl.draw_texture_pro(observer_target.texture, observer_source, observer_dest, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)
-        rl.draw_texture_pro(subject_target.texture, subject_source, subject_dest, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)
+        rl.draw_texture_pro(
+            observer_target.texture,
+            observer_source,
+            observer_dest,
+            rl.Vector2(x = 0.0, y = 0.0),
+            0.0,
+            rl.WHITE
+        )
+        rl.draw_texture_pro(
+            subject_target.texture,
+            subject_source,
+            subject_dest,
+            rl.Vector2(x = 0.0, y = 0.0),
+            0.0,
+            rl.WHITE
+        )
         rl.draw_texture_pro(subject_target.texture, crop_source, crop_dest, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)
         rl.draw_rectangle_lines_ex(crop_dest, 2.0, rl.BLACK)
         rl.draw_line(SPLIT_WIDTH, 0, SPLIT_WIDTH, SCREEN_HEIGHT, rl.BLACK)

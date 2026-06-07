@@ -4,7 +4,6 @@ import std.raymath as rm
 import std.rlgl as rlgl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -19,7 +18,15 @@ function is_upper_body_bone(bone_name: str) -> bool:
     return bone_name == "body_up" or bone_name == "hand_L" or bone_name == "hand_R" or bone_name == "socket_hat" or bone_name == "socket_hand_L" or bone_name == "socket_hand_R"
 
 
-function update_model_animation_bones(model: rl.Model, anim0: rl.ModelAnimation, frame0: int, anim1: rl.ModelAnimation, frame1: int, blend: float, upper_body_blend: bool) -> void:
+function update_model_animation_bones(
+    model: rl.Model,
+    anim0: rl.ModelAnimation,
+    frame0: int,
+    anim1: rl.ModelAnimation,
+    frame1: int,
+    blend: float,
+    upper_body_blend: bool
+) -> void:
     if anim0.boneCount == 0:
         return
     if anim1.boneCount == 0:
@@ -67,25 +74,32 @@ function update_model_animation_bones(model: rl.Model, anim0: rl.ModelAnimation,
         let blended = rl.Transform(
             translation = rm.vector3_lerp(anim_transform0.translation, anim_transform1.translation, bone_blend_factor),
             rotation = rm.quaternion_slerp(anim_transform0.rotation, anim_transform1.rotation, bone_blend_factor),
-            scale = rm.vector3_lerp(anim_transform0.scale, anim_transform1.scale, bone_blend_factor),
+            scale = rm.vector3_lerp(anim_transform0.scale, anim_transform1.scale, bone_blend_factor)
         )
 
         let bind_matrix = rm.matrix_multiply(
             rm.matrix_multiply(
                 rm.matrix_scale(bind_transform.scale.x, bind_transform.scale.y, bind_transform.scale.z),
-                rm.quaternion_to_matrix(bind_transform.rotation),
+                rm.quaternion_to_matrix(bind_transform.rotation)
             ),
-            rm.matrix_translate(bind_transform.translation.x, bind_transform.translation.y, bind_transform.translation.z),
+            rm.matrix_translate(
+                bind_transform.translation.x,
+                bind_transform.translation.y,
+                bind_transform.translation.z
+            )
         )
         let blended_matrix = rm.matrix_multiply(
             rm.matrix_multiply(
                 rm.matrix_scale(blended.scale.x, blended.scale.y, blended.scale.z),
-                rm.quaternion_to_matrix(blended.rotation),
+                rm.quaternion_to_matrix(blended.rotation)
             ),
-            rm.matrix_translate(blended.translation.x, blended.translation.y, blended.translation.z),
+            rm.matrix_translate(blended.translation.x, blended.translation.y, blended.translation.z)
         )
 
-        unsafe: read(model.boneMatrices + ptr_uint<-bone_index) = rm.matrix_multiply(rm.matrix_invert(bind_matrix), blended_matrix)
+        unsafe: read(model.boneMatrices + ptr_uint<-bone_index) = rm.matrix_multiply(
+            rm.matrix_invert(bind_matrix),
+            blended_matrix
+        )
         bone_index += 1
 
     var mesh_index = 0
@@ -122,9 +136,9 @@ function update_model_animation_bones(model: rl.Model, anim0: rl.ModelAnimation,
                     rl.Vector3(
                         x = unsafe: read(mesh.vertices + ptr_uint<-vertex_counter),
                         y = unsafe: read(mesh.vertices + ptr_uint<-(vertex_counter + 1)),
-                        z = unsafe: read(mesh.vertices + ptr_uint<-(vertex_counter + 2)),
+                        z = unsafe: read(mesh.vertices + ptr_uint<-(vertex_counter + 2))
                     ),
-                    unsafe: read(model.boneMatrices + ptr_uint<-current_bone_index),
+                    unsafe: read(model.boneMatrices + ptr_uint<-current_bone_index)
                 )
                 unsafe:
                     read(mesh.animVertices + ptr_uint<-vertex_counter) += anim_vertex.x * bone_weight
@@ -137,9 +151,9 @@ function update_model_animation_bones(model: rl.Model, anim0: rl.ModelAnimation,
                     rl.Vector3(
                         x = unsafe: read(mesh.normals + ptr_uint<-vertex_counter),
                         y = unsafe: read(mesh.normals + ptr_uint<-(vertex_counter + 1)),
-                        z = unsafe: read(mesh.normals + ptr_uint<-(vertex_counter + 2)),
+                        z = unsafe: read(mesh.normals + ptr_uint<-(vertex_counter + 2))
                     ),
-                    normal_matrix,
+                    normal_matrix
                 )
                 unsafe:
                     read(mesh.animNormals + ptr_uint<-vertex_counter) += anim_normal.x * bone_weight
@@ -155,13 +169,13 @@ function update_model_animation_bones(model: rl.Model, anim0: rl.ModelAnimation,
                 unsafe: mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_POSITION],
                 mesh.animVertices,
                 mesh.vertexCount * 3 * int<-size_of(float),
-                0,
+                0
             )
             rlgl.update_vertex_buffer(
                 unsafe: mesh.vboId[int<-rl.ShaderLocationIndex.SHADER_LOC_VERTEX_NORMAL],
                 mesh.animNormals,
                 mesh.vertexCount * 3 * int<-size_of(float),
-                0,
+                0
             )
 
         mesh_index += 1
@@ -179,7 +193,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var model = rl.load_model("models/gltf/greenman.glb")
@@ -228,7 +242,15 @@ function main() -> int:
         var blend_factor = float<-0.5
         if upper_body_blend:
             blend_factor = 1.0
-        update_model_animation_bones(model, anim0, anim_current_frame0, anim1, anim_current_frame1, blend_factor, upper_body_blend)
+        update_model_animation_bones(
+            model,
+            anim0,
+            anim_current_frame0,
+            anim1,
+            anim_current_frame1,
+            blend_factor,
+            upper_body_blend
+        )
 
         let anim0_text = rl.text_format("ANIM 0: %s", animation_name(animations, anim_index0))
         let anim1_text = rl.text_format("ANIM 1: %s", animation_name(animations, anim_index1))

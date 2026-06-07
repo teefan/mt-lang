@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raymath as math
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const RAD_TO_DEG: float = 180.0 / rl.PI

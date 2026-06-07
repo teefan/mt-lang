@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GESTURE_LOG_SIZE: int = 20
@@ -137,7 +136,7 @@ function main() -> int:
         let current_angle_radians = (current_angle_degrees + ANGLE_OFFSET) * rl.PI / DEGREE_DIVISOR
         final_vector = rl.Vector2(
             x = angle_length * float<-math.sin(double<-current_angle_radians) + protractor_position.x,
-            y = angle_length * float<-math.cos(double<-current_angle_radians) + protractor_position.y,
+            y = angle_length * float<-math.cos(double<-current_angle_radians) + protractor_position.y
         )
 
         var touch_positions: array[rl.Vector2, MAX_TOUCH_COUNT] = zero[array[rl.Vector2, MAX_TOUCH_COUNT]]
@@ -162,28 +161,112 @@ function main() -> int:
         let protractor_y = int<-protractor_position.y
 
         rl.draw_text("*", message_x + 5, message_y + 5, 10, rl.BLACK)
-        rl.draw_text("Example optimized for Web/HTML5\non Smartphones with Touch Screen.", message_x + 15, message_y + 5, 10, rl.BLACK)
+        rl.draw_text(
+            "Example optimized for Web/HTML5\non Smartphones with Touch Screen.",
+            message_x + 15,
+            message_y + 5,
+            10,
+            rl.BLACK
+        )
         rl.draw_text("*", message_x + 5, message_y + 35, 10, rl.BLACK)
-        rl.draw_text("While running on Desktop Web Browsers,\ninspect and turn on Touch Emulation.", message_x + 15, message_y + 35, 10, rl.BLACK)
+        rl.draw_text(
+            "While running on Desktop Web Browsers,\ninspect and turn on Touch Emulation.",
+            message_x + 15,
+            message_y + 35,
+            10,
+            rl.BLACK
+        )
 
         rl.draw_text("Last gesture", last_x + 33, last_y - 47, 20, rl.BLACK)
         rl.draw_text("Swipe         Tap       Pinch  Touch", last_x + 17, last_y - 18, 10, rl.BLACK)
-        rl.draw_rectangle(last_x + 20, last_y, 20, 20, if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_UP: rl.RED else: rl.LIGHTGRAY)
-        rl.draw_rectangle(last_x, last_y + 20, 20, 20, if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_LEFT: rl.RED else: rl.LIGHTGRAY)
-        rl.draw_rectangle(last_x + 40, last_y + 20, 20, 20, if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_RIGHT: rl.RED else: rl.LIGHTGRAY)
-        rl.draw_rectangle(last_x + 20, last_y + 40, 20, 20, if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_DOWN: rl.RED else: rl.LIGHTGRAY)
-        rl.draw_circle(last_x + 80, last_y + 16, 10.0, if last_gesture == int<-rl.Gesture.GESTURE_TAP: rl.BLUE else: rl.LIGHTGRAY)
-        rl.draw_ring(point(last_x + 103, last_y + 16), 6.0, 11.0, 0.0, 360.0, 0, if last_gesture == int<-rl.Gesture.GESTURE_DRAG: rl.LIME else: rl.LIGHTGRAY)
-        rl.draw_circle(last_x + 80, last_y + 43, 10.0, if last_gesture == int<-rl.Gesture.GESTURE_DOUBLETAP: rl.SKYBLUE else: rl.LIGHTGRAY)
-        rl.draw_circle(last_x + 103, last_y + 43, 10.0, if last_gesture == int<-rl.Gesture.GESTURE_DOUBLETAP: rl.SKYBLUE else: rl.LIGHTGRAY)
-        rl.draw_triangle(point(last_x + 122, last_y + 16), point(last_x + 137, last_y + 26), point(last_x + 137, last_y + 6), if last_gesture == int<-rl.Gesture.GESTURE_PINCH_OUT: rl.ORANGE else: rl.LIGHTGRAY)
-        rl.draw_triangle(point(last_x + 147, last_y + 6), point(last_x + 147, last_y + 26), point(last_x + 162, last_y + 16), if last_gesture == int<-rl.Gesture.GESTURE_PINCH_OUT: rl.ORANGE else: rl.LIGHTGRAY)
-        rl.draw_triangle(point(last_x + 125, last_y + 33), point(last_x + 125, last_y + 53), point(last_x + 140, last_y + 43), if last_gesture == int<-rl.Gesture.GESTURE_PINCH_IN: rl.VIOLET else: rl.LIGHTGRAY)
-        rl.draw_triangle(point(last_x + 144, last_y + 43), point(last_x + 159, last_y + 53), point(last_x + 159, last_y + 33), if last_gesture == int<-rl.Gesture.GESTURE_PINCH_IN: rl.VIOLET else: rl.LIGHTGRAY)
+        rl.draw_rectangle(
+            last_x + 20,
+            last_y,
+            20,
+            20,
+            if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_UP: rl.RED else: rl.LIGHTGRAY
+        )
+        rl.draw_rectangle(
+            last_x,
+            last_y + 20,
+            20,
+            20,
+            if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_LEFT: rl.RED else: rl.LIGHTGRAY
+        )
+        rl.draw_rectangle(
+            last_x + 40,
+            last_y + 20,
+            20,
+            20,
+            if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_RIGHT: rl.RED else: rl.LIGHTGRAY
+        )
+        rl.draw_rectangle(
+            last_x + 20,
+            last_y + 40,
+            20,
+            20,
+            if last_gesture == int<-rl.Gesture.GESTURE_SWIPE_DOWN: rl.RED else: rl.LIGHTGRAY
+        )
+        rl.draw_circle(
+            last_x + 80,
+            last_y + 16,
+            10.0,
+            if last_gesture == int<-rl.Gesture.GESTURE_TAP: rl.BLUE else: rl.LIGHTGRAY
+        )
+        rl.draw_ring(
+            point(last_x + 103, last_y + 16),
+            6.0,
+            11.0,
+            0.0,
+            360.0,
+            0,
+            if last_gesture == int<-rl.Gesture.GESTURE_DRAG: rl.LIME else: rl.LIGHTGRAY
+        )
+        rl.draw_circle(
+            last_x + 80,
+            last_y + 43,
+            10.0,
+            if last_gesture == int<-rl.Gesture.GESTURE_DOUBLETAP: rl.SKYBLUE else: rl.LIGHTGRAY
+        )
+        rl.draw_circle(
+            last_x + 103,
+            last_y + 43,
+            10.0,
+            if last_gesture == int<-rl.Gesture.GESTURE_DOUBLETAP: rl.SKYBLUE else: rl.LIGHTGRAY
+        )
+        rl.draw_triangle(
+            point(last_x + 122, last_y + 16),
+            point(last_x + 137, last_y + 26),
+            point(last_x + 137, last_y + 6),
+            if last_gesture == int<-rl.Gesture.GESTURE_PINCH_OUT: rl.ORANGE else: rl.LIGHTGRAY
+        )
+        rl.draw_triangle(
+            point(last_x + 147, last_y + 6),
+            point(last_x + 147, last_y + 26),
+            point(last_x + 162, last_y + 16),
+            if last_gesture == int<-rl.Gesture.GESTURE_PINCH_OUT: rl.ORANGE else: rl.LIGHTGRAY
+        )
+        rl.draw_triangle(
+            point(last_x + 125, last_y + 33),
+            point(last_x + 125, last_y + 53),
+            point(last_x + 140, last_y + 43),
+            if last_gesture == int<-rl.Gesture.GESTURE_PINCH_IN: rl.VIOLET else: rl.LIGHTGRAY
+        )
+        rl.draw_triangle(
+            point(last_x + 144, last_y + 43),
+            point(last_x + 159, last_y + 53),
+            point(last_x + 159, last_y + 33),
+            if last_gesture == int<-rl.Gesture.GESTURE_PINCH_IN: rl.VIOLET else: rl.LIGHTGRAY
+        )
 
         var index = 0
         while index < 4:
-            rl.draw_circle(last_x + 180, last_y + 7 + index * 15, 5.0, if touch_count <= index: rl.LIGHTGRAY else: active_gesture_color)
+            rl.draw_circle(
+                last_x + 180,
+                last_y + 7 + index * 15,
+                5.0,
+                if touch_count <= index: rl.LIGHTGRAY else: active_gesture_color
+            )
             index += 1
 
         rl.draw_text("Log", int<-gesture_log_position.x, int<-gesture_log_position.y, 20, rl.BLACK)
@@ -191,7 +274,13 @@ function main() -> int:
         var log_scan = gesture_log_index % GESTURE_LOG_SIZE
         while index < GESTURE_LOG_SIZE:
             let entry_gesture = gesture_log[log_scan]
-            rl.draw_text(gesture_name(entry_gesture), int<-gesture_log_position.x, int<-gesture_log_position.y + 410 - index * 20, 20, if index == 0: active_gesture_color else: rl.LIGHTGRAY)
+            rl.draw_text(
+                gesture_name(entry_gesture),
+                int<-gesture_log_position.x,
+                int<-gesture_log_position.y + 410 - index * 20,
+                20,
+                if index == 0: active_gesture_color else: rl.LIGHTGRAY
+            )
             log_scan = (log_scan + 1) % GESTURE_LOG_SIZE
             index += 1
 
@@ -218,10 +307,30 @@ function main() -> int:
         let angle_string_trim = rl.text_subtext(angle_string, 0, angle_string_dot + 3)
         rl.draw_text(angle_string_trim, protractor_x + 55, protractor_y + 92, 20, active_gesture_color)
         rl.draw_circle_v(protractor_position, 80.0, rl.WHITE)
-        rl.draw_line_ex(point(protractor_x - 90, protractor_y), point(protractor_x + 90, protractor_y), 3.0, rl.LIGHTGRAY)
-        rl.draw_line_ex(point(protractor_x, protractor_y - 90), point(protractor_x, protractor_y + 90), 3.0, rl.LIGHTGRAY)
-        rl.draw_line_ex(point(protractor_x - 80, protractor_y - 45), point(protractor_x + 80, protractor_y + 45), 3.0, rl.GREEN)
-        rl.draw_line_ex(point(protractor_x - 80, protractor_y + 45), point(protractor_x + 80, protractor_y - 45), 3.0, rl.GREEN)
+        rl.draw_line_ex(
+            point(protractor_x - 90, protractor_y),
+            point(protractor_x + 90, protractor_y),
+            3.0,
+            rl.LIGHTGRAY
+        )
+        rl.draw_line_ex(
+            point(protractor_x, protractor_y - 90),
+            point(protractor_x, protractor_y + 90),
+            3.0,
+            rl.LIGHTGRAY
+        )
+        rl.draw_line_ex(
+            point(protractor_x - 80, protractor_y - 45),
+            point(protractor_x + 80, protractor_y + 45),
+            3.0,
+            rl.GREEN
+        )
+        rl.draw_line_ex(
+            point(protractor_x - 80, protractor_y + 45),
+            point(protractor_x + 80, protractor_y - 45),
+            3.0,
+            rl.GREEN
+        )
         rl.draw_text("0", protractor_x + 96, protractor_y - 9, 20, rl.BLACK)
         rl.draw_text("30", protractor_x + 74, protractor_y - 68, 20, rl.BLACK)
         rl.draw_text("90", protractor_x - 11, protractor_y - 110, 20, rl.BLACK)
@@ -242,7 +351,12 @@ function main() -> int:
                     index += 1
 
                 if touch_count == 2:
-                    rl.draw_line_ex(touch_positions[0], touch_positions[1], if current_gesture == 512: 8.0 else: 12.0, active_gesture_color)
+                    rl.draw_line_ex(
+                        touch_positions[0],
+                        touch_positions[1],
+                        if current_gesture == 512: 8.0 else: 12.0,
+                        active_gesture_color
+                    )
             else:
                 rl.draw_circle_v(mouse_position, 35.0, rl.fade(active_gesture_color, HALF_ALPHA))
                 rl.draw_circle_v(mouse_position, 5.0, active_gesture_color)

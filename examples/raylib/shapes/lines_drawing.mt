@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -62,7 +61,7 @@ function main() -> int:
             canvas.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-canvas.texture.width, height = -float<-canvas.texture.height),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
 
         if not left_button_down:

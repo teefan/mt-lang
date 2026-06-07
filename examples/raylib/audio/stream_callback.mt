@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const BUFFER_SIZE: int = 4096
@@ -12,13 +11,11 @@ const LAST_WINDOW_SIZE: int = SAMPLE_RATE / 100
 const LAST_WINDOW_START: int = SAMPLE_RATE - LAST_WINDOW_SIZE
 const TWO_PI: float = rl.PI * 2.0
 
-
 enum WaveType: int
     SINE = 0
     SQUARE = 1
     TRIANGLE = 2
     SAWTOOTH = 3
-
 
 var wave_frequency: int = 440
 var new_wave_frequency: int = 440

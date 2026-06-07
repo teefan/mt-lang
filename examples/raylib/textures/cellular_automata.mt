@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const IMAGE_WIDTH: int = 800
@@ -55,8 +54,12 @@ function main() -> int:
         while index < 8:
             let cell_x = DRAW_RULE_START_X - DRAW_RULE_GROUP_SPACING * index + DRAW_RULE_SPACING
             let cell_y = DRAW_RULE_START_Y + DRAW_RULE_SPACING
-            if mouse.x >= float<-cell_x and mouse.x <= float<-(cell_x + DRAW_RULE_SIZE) and
-               mouse.y >= float<-cell_y and mouse.y <= float<-(cell_y + DRAW_RULE_SIZE):
+            if (
+                mouse.x >= float<-cell_x
+                and mouse.x <= float<-(cell_x + DRAW_RULE_SIZE)
+                and mouse.y >= float<-cell_y
+                and mouse.y <= float<-(cell_y + DRAW_RULE_SIZE)
+            ):
                 mouse_in_cell = index
                 break
             index += 1
@@ -66,8 +69,12 @@ function main() -> int:
             while index < PRESETS_COUNT:
                 let cell_x = 4 + (PRESETS_SIZE_X + 2) * (index / 2)
                 let cell_y = 2 + (PRESETS_SIZE_Y + 2) * (index % 2)
-                if mouse.x >= float<-cell_x and mouse.x <= float<-(cell_x + PRESETS_SIZE_X) and
-                   mouse.y >= float<-cell_y and mouse.y <= float<-(cell_y + PRESETS_SIZE_Y):
+                if (
+                    mouse.x >= float<-cell_x
+                    and mouse.x <= float<-(cell_x + PRESETS_SIZE_X)
+                    and mouse.y >= float<-cell_y
+                    and mouse.y <= float<-(cell_y + PRESETS_SIZE_Y)
+                ):
                     mouse_in_cell = index + 8
                     break
                 index += 1
@@ -113,10 +120,10 @@ function main() -> int:
                         x = float<-(preset_x - 2),
                         y = float<-preset_y,
                         width = float<-(PRESETS_SIZE_X + 4),
-                        height = float<-(PRESETS_SIZE_Y + 4),
+                        height = float<-(PRESETS_SIZE_Y + 4)
                     ),
                     3.0,
-                    rl.RED,
+                    rl.RED
                 )
             index += 1
 
@@ -127,13 +134,31 @@ function main() -> int:
                 let bit_x = DRAW_RULE_START_X - DRAW_RULE_GROUP_SPACING * index + DRAW_RULE_SPACING * bit
                 rl.draw_rectangle_lines(bit_x, DRAW_RULE_START_Y, DRAW_RULE_SIZE, DRAW_RULE_SIZE, rl.GRAY)
                 if (index & (4 >> bit)) != 0:
-                    rl.draw_rectangle(bit_x + 2, DRAW_RULE_START_Y + 2, DRAW_RULE_INNER_SIZE, DRAW_RULE_INNER_SIZE, rl.BLACK)
+                    rl.draw_rectangle(
+                        bit_x + 2,
+                        DRAW_RULE_START_Y + 2,
+                        DRAW_RULE_INNER_SIZE,
+                        DRAW_RULE_INNER_SIZE,
+                        rl.BLACK
+                    )
                 bit += 1
 
             let output_x = DRAW_RULE_START_X - DRAW_RULE_GROUP_SPACING * index + DRAW_RULE_SPACING
-            rl.draw_rectangle_lines(output_x, DRAW_RULE_START_Y + DRAW_RULE_SPACING, DRAW_RULE_SIZE, DRAW_RULE_SIZE, rl.BLUE)
+            rl.draw_rectangle_lines(
+                output_x,
+                DRAW_RULE_START_Y + DRAW_RULE_SPACING,
+                DRAW_RULE_SIZE,
+                DRAW_RULE_SIZE,
+                rl.BLUE
+            )
             if (rule & (1 << index)) != 0:
-                rl.draw_rectangle(output_x + 2, DRAW_RULE_START_Y + DRAW_RULE_SPACING + 2, DRAW_RULE_INNER_SIZE, DRAW_RULE_INNER_SIZE, rl.BLACK)
+                rl.draw_rectangle(
+                    output_x + 2,
+                    DRAW_RULE_START_Y + DRAW_RULE_SPACING + 2,
+                    DRAW_RULE_INNER_SIZE,
+                    DRAW_RULE_INNER_SIZE,
+                    rl.BLACK
+                )
 
             if mouse_in_cell == index:
                 rl.draw_rectangle_lines_ex(
@@ -141,10 +166,10 @@ function main() -> int:
                         x = float<-(output_x - 2),
                         y = float<-(DRAW_RULE_START_Y + DRAW_RULE_SPACING - 2),
                         width = float<-(DRAW_RULE_SIZE + 4),
-                        height = float<-(DRAW_RULE_SIZE + 4),
+                        height = float<-(DRAW_RULE_SIZE + 4)
                     ),
                     3.0,
-                    rl.RED,
+                    rl.RED
                 )
             index += 1
 

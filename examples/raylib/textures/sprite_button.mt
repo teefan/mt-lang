@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_FRAMES: int = 3
@@ -29,7 +28,7 @@ function main() -> int:
         x = float<-SCREEN_WIDTH / float<-2.0 - float<-button.width / float<-2.0,
         y = float<-SCREEN_HEIGHT / float<-2.0 - float<-button.height / float<-NUM_FRAMES / float<-2.0,
         width = float<-button.width,
-        height = frame_height,
+        height = frame_height
     )
 
     var button_state = 0

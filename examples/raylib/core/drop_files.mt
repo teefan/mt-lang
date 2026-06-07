@@ -3,7 +3,6 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_FILEPATH_RECORDED: int = 4096

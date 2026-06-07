@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -23,16 +22,17 @@ const FFT_ROW: int = 0
 const UNUSED_CHANNEL: float = 0.0
 const FFT_HISTORY_LEN: int = 45
 
-
 struct FFTComplex:
     real: float
     imaginary: float
 
-
 var fft_spectrum: array[FFTComplex, FFT_WINDOW_SIZE] = zero[array[FFTComplex, FFT_WINDOW_SIZE]]
 var fft_work_buffer: array[FFTComplex, FFT_WINDOW_SIZE] = zero[array[FFTComplex, FFT_WINDOW_SIZE]]
 var fft_prev_magnitudes: array[float, BUFFER_SIZE] = zero[array[float, BUFFER_SIZE]]
-var fft_history: array[array[float, BUFFER_SIZE], FFT_HISTORY_LEN] = zero[array[array[float, BUFFER_SIZE], FFT_HISTORY_LEN]]
+var fft_history: array[
+    array[float, BUFFER_SIZE],
+    FFT_HISTORY_LEN
+] = zero[array[array[float, BUFFER_SIZE], FFT_HISTORY_LEN]]
 var fft_history_pos: int = 0
 var fft_last_fft_time: double = 0.0
 var fft_tapback_pos: float = 0.01
@@ -58,7 +58,7 @@ function cooley_tukey_fft_slow(n: int) -> void:
         let angle: float = -2.0 * rl.PI / float<-len
         let twiddle_unit = FFTComplex(
             real = float<-math.cos(double<-angle),
-            imaginary = float<-math.sin(double<-angle),
+            imaginary = float<-math.sin(double<-angle)
         )
 
         index = 0
@@ -70,7 +70,7 @@ function cooley_tukey_fft_slow(n: int) -> void:
                 let odd = fft_work_buffer[index + j + len / 2]
                 let twiddled_odd = FFTComplex(
                     real = odd.real * twiddle_current.real - odd.imaginary * twiddle_current.imaginary,
-                    imaginary = odd.real * twiddle_current.imaginary + odd.imaginary * twiddle_current.real,
+                    imaginary = odd.real * twiddle_current.imaginary + odd.imaginary * twiddle_current.real
                 )
 
                 fft_work_buffer[index + j].real = even.real + twiddled_odd.real
@@ -151,7 +151,12 @@ function render_frame(fft_image: ref[rl.Image]) -> void:
         fft_image.draw_pixel(
             bin,
             FFT_ROW,
-            rl.color_from_normalized(rl.Vector4(x = fft_history[history_position][bin], y = UNUSED_CHANNEL, z = UNUSED_CHANNEL, w = UNUSED_CHANNEL)),
+            rl.color_from_normalized(rl.Vector4(
+                x = fft_history[history_position][bin],
+                y = UNUSED_CHANNEL,
+                z = UNUSED_CHANNEL,
+                w = UNUSED_CHANNEL
+            ))
         )
         bin += 1
 
@@ -238,7 +243,7 @@ function main() -> int:
             buffer_a.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-SCREEN_WIDTH, height = -float<-SCREEN_HEIGHT),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.end_shader_mode()
         rl.end_drawing()

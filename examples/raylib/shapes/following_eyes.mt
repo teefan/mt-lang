@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -10,8 +9,14 @@ function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [shapes] example - following eyes")
     defer rl.close_window()
 
-    let sclera_left_position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0 - 100.0, y = float<-rl.get_screen_height() / 2.0)
-    let sclera_right_position = rl.Vector2(x = float<-rl.get_screen_width() / 2.0 + 100.0, y = float<-rl.get_screen_height() / 2.0)
+    let sclera_left_position = rl.Vector2(
+        x = float<-rl.get_screen_width() / 2.0 - 100.0,
+        y = float<-rl.get_screen_height() / 2.0
+    )
+    let sclera_right_position = rl.Vector2(
+        x = float<-rl.get_screen_width() / 2.0 + 100.0,
+        y = float<-rl.get_screen_height() / 2.0
+    )
     let sclera_radius: float = 80.0
     var iris_left_position = sclera_left_position
     var iris_right_position = sclera_right_position

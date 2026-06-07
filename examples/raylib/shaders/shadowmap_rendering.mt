@@ -3,7 +3,6 @@ import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const SHADOWMAP_RESOLUTION: int = 1024
@@ -16,7 +15,7 @@ function color_vector(color: rl.Color) -> array[float, 4]:
         float<-color.r / 255.0,
         float<-color.g / 255.0,
         float<-color.b / 255.0,
-        float<-color.a / 255.0,
+        float<-color.a / 255.0
     )
 
 
@@ -37,7 +36,7 @@ function matrix_from_rlgl(matrix: rlgl.Matrix) -> rl.Matrix:
         m3 = matrix.m3,
         m7 = matrix.m7,
         m11 = matrix.m11,
-        m15 = matrix.m15,
+        m15 = matrix.m15
     )
 
 
@@ -54,11 +53,21 @@ function load_shadowmap_render_texture(width: int, height: int) -> rl.RenderText
             width = width,
             height = height,
             format = DEPTH_TEXTURE_FORMAT,
-            mipmaps = 1,
+            mipmaps = 1
         )
-        rlgl.framebuffer_attach(target.id, target.depth.id, int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH, int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D, 0)
+        rlgl.framebuffer_attach(
+            target.id,
+            target.depth.id,
+            int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH,
+            int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_TEXTURE2D,
+            0
+        )
         if rlgl.framebuffer_complete(target.id):
-            rl.trace_log(int<-rl.TraceLogLevel.LOG_INFO, "FBO: [ID %i] Framebuffer object created successfully", target.id)
+            rl.trace_log(
+                int<-rl.TraceLogLevel.LOG_INFO,
+                "FBO: [ID %i] Framebuffer object created successfully",
+                target.id
+            )
         rlgl.disable_framebuffer()
 
     return target
@@ -70,9 +79,30 @@ function unload_shadowmap_render_texture(target: rl.RenderTexture2D) -> void:
 
 
 function draw_scene(cube: rl.Model, robot: rl.Model) -> void:
-    rl.draw_model_ex(cube, rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 10.0, y = 1.0, z = 10.0), rl.BLUE)
-    rl.draw_model_ex(cube, rl.Vector3(x = 1.5, y = 1.0, z = -1.5), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.WHITE)
-    rl.draw_model_ex(robot, rl.Vector3(x = 0.0, y = 0.5, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), 0.0, rl.Vector3(x = 1.0, y = 1.0, z = 1.0), rl.RED)
+    rl.draw_model_ex(
+        cube,
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+        0.0,
+        rl.Vector3(x = 10.0, y = 1.0, z = 10.0),
+        rl.BLUE
+    )
+    rl.draw_model_ex(
+        cube,
+        rl.Vector3(x = 1.5, y = 1.0, z = -1.5),
+        rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+        0.0,
+        rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
+        rl.WHITE
+    )
+    rl.draw_model_ex(
+        robot,
+        rl.Vector3(x = 0.0, y = 0.5, z = 0.0),
+        rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+        0.0,
+        rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
+        rl.RED
+    )
 
 
 function main() -> int:
@@ -88,15 +118,18 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
-        fovy = 45.0,
+        fovy = 45.0
     )
 
     var shadow_shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/shadowmap.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/shadowmap.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/shadowmap.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shadow_shader)
-    unsafe: shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(shadow_shader, "viewPos")
+    unsafe: shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW] = rl.get_shader_location(
+        shadow_shader,
+        "viewPos"
+    )
 
     var light_dir = rm.vector3_normalize(rl.Vector3(x = 0.35, y = -1.0, z = -0.35))
     let light_color = color_vector(rl.WHITE)
@@ -109,10 +142,25 @@ function main() -> int:
 
     let initial_light_dir = array[float, 3](light_dir.x, light_dir.y, light_dir.z)
     let ambient = array[float, 4](0.1, 0.1, 0.1, 1.0)
-    rl.set_shader_value(shadow_shader, light_dir_location, initial_light_dir, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-    rl.set_shader_value(shadow_shader, light_color_location, light_color, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
+    rl.set_shader_value(
+        shadow_shader,
+        light_dir_location,
+        initial_light_dir,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+    )
+    rl.set_shader_value(
+        shadow_shader,
+        light_color_location,
+        light_color,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4
+    )
     rl.set_shader_value(shadow_shader, ambient_location, ambient, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
-    rl.set_shader_value(shadow_shader, shadow_map_resolution_location, SHADOWMAP_RESOLUTION, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.set_shader_value(
+        shadow_shader,
+        shadow_map_resolution_location,
+        SHADOWMAP_RESOLUTION,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT
+    )
 
     var cube = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
     defer rl.unload_model(cube)
@@ -139,7 +187,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         projection = int<-rl.CameraProjection.CAMERA_ORTHOGRAPHIC,
-        fovy = 20.0,
+        fovy = 20.0
     )
 
     var frame_counter = 0
@@ -157,7 +205,7 @@ function main() -> int:
             shadow_shader,
             unsafe: shadow_shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW],
             camera_position,
-            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
         )
         rl.update_camera(camera, rl.CameraMode.CAMERA_ORBITAL)
 
@@ -177,7 +225,12 @@ function main() -> int:
         light_dir = rm.vector3_normalize(light_dir)
         light_camera.position = rm.vector3_scale(light_dir, -15.0)
         let light_dir_value = array[float, 3](light_dir.x, light_dir.y, light_dir.z)
-        rl.set_shader_value(shadow_shader, light_dir_location, light_dir_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(
+            shadow_shader,
+            light_dir_location,
+            light_dir_value,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
 
         rl.begin_texture_mode(shadow_map)
         rl.clear_background(rl.WHITE)
@@ -195,7 +248,12 @@ function main() -> int:
         rlgl.enable_shader(shadow_shader.id)
         rlgl.active_texture_slot(texture_active_slot)
         rlgl.enable_texture(shadow_map.depth.id)
-        rlgl.set_uniform(shadow_map_location, ptr_of(texture_active_slot), int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT, 1)
+        rlgl.set_uniform(
+            shadow_map_location,
+            ptr_of(texture_active_slot),
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT,
+            1
+        )
 
         rl.begin_mode_3d(camera)
         draw_scene(cube, robot)
@@ -204,7 +262,13 @@ function main() -> int:
         rlgl.disable_texture()
         rlgl.disable_shader()
         rl.draw_text("Use the arrow keys to rotate the light!", 10, 10, 30, rl.RED)
-        rl.draw_text("Shadows in raylib using the shadowmapping algorithm!", SCREEN_WIDTH - 280, SCREEN_HEIGHT - 20, 10, rl.GRAY)
+        rl.draw_text(
+            "Shadows in raylib using the shadowmapping algorithm!",
+            SCREEN_WIDTH - 280,
+            SCREEN_HEIGHT - 20,
+            10,
+            rl.GRAY
+        )
         rl.end_drawing()
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_F):

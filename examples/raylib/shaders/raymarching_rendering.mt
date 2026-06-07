@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -20,7 +19,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.7),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 65.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let shader = rl.load_shader(null, rl.text_format("shaders/glsl%i/raymarching.fs", GLSL_VERSION))
@@ -45,21 +44,42 @@ function main() -> int:
         let camera_target = array[float, 3](camera.target.x, camera.target.y, camera.target.z)
         run_time += rl.get_frame_time()
 
-        rl.set_shader_value(shader, view_eye_location, camera_position, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
-        rl.set_shader_value(shader, view_center_location, camera_target, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(
+            shader,
+            view_eye_location,
+            camera_position,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
+        rl.set_shader_value(
+            shader,
+            view_center_location,
+            camera_target,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
         rl.set_shader_value(shader, run_time_location, run_time, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
 
         if rl.is_window_resized():
             resolution[0] = float<-rl.get_screen_width()
             resolution[1] = float<-rl.get_screen_height()
-            rl.set_shader_value(shader, resolution_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+            rl.set_shader_value(
+                shader,
+                resolution_location,
+                resolution,
+                int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+            )
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
         rl.begin_shader_mode(shader)
         rl.draw_rectangle(0, 0, rl.get_screen_width(), rl.get_screen_height(), rl.WHITE)
         rl.end_shader_mode()
-        rl.draw_text("(c) Raymarching shader by Inigo Quilez. MIT License.", rl.get_screen_width() - 280, rl.get_screen_height() - 20, 10, rl.BLACK)
+        rl.draw_text(
+            "(c) Raymarching shader by Inigo Quilez. MIT License.",
+            rl.get_screen_width() - 280,
+            rl.get_screen_height() - 20,
+            10,
+            rl.BLACK
+        )
         rl.end_drawing()
 
     return 0

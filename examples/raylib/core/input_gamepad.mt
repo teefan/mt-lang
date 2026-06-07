@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const LEFT_STICK_DEADZONE_X: float = 0.1
@@ -18,15 +17,28 @@ function axis_movement(gamepad: int, axis: rl.GamepadAxis) -> float:
 
 
 function contains_any_name(text_value: str, first: str, second: str, third: str) -> bool:
-    return rl.text_find_index(text_value, first) > -1 or rl.text_find_index(text_value, second) > -1 or rl.text_find_index(text_value, third) > -1
+    return rl.text_find_index(text_value, first) > -1 or rl.text_find_index(
+        text_value,
+        second
+    ) > -1 or rl.text_find_index(text_value, third) > -1
 
 
 function is_xbox_name(text_value: str) -> bool:
-    return contains_any_name(text_value, "xbox", "Xbox", "XBOX") or contains_any_name(text_value, "x-box", "X-Box", "X-BOX")
+    return contains_any_name(text_value, "xbox", "Xbox", "XBOX") or contains_any_name(
+        text_value,
+        "x-box",
+        "X-Box",
+        "X-BOX"
+    )
 
 
 function is_playstation_name(text_value: str) -> bool:
-    return contains_any_name(text_value, "playstation", "PlayStation", "PLAYSTATION") or contains_any_name(text_value, "sony", "Sony", "SONY")
+    return contains_any_name(
+        text_value,
+        "playstation",
+        "PlayStation",
+        "PLAYSTATION"
+    ) or contains_any_name(text_value, "sony", "Sony", "SONY")
 
 
 function deadzone_axis(value: float, deadzone: float) -> float:
@@ -68,8 +80,16 @@ function main() -> int:
             gamepad += 1
 
         let mouse_position = rl.get_mouse_position()
-        vibrate_button = rl.Rectangle(x = 10.0, y = 70.0 + float<-(20 * rl.get_gamepad_axis_count(gamepad) + 20), width = 75.0, height = 24.0)
-        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and rl.check_collision_point_rec(mouse_position, vibrate_button):
+        vibrate_button = rl.Rectangle(
+            x = 10.0,
+            y = 70.0 + float<-(20 * rl.get_gamepad_axis_count(gamepad) + 20),
+            width = 75.0,
+            height = 24.0
+        )
+        if rl.is_mouse_button_pressed(rl.MouseButton.MOUSE_BUTTON_LEFT) and rl.check_collision_point_rec(
+            mouse_position,
+            vibrate_button
+        ):
             rl.set_gamepad_vibration(gamepad, 1.0, 1.0, 1.0)
 
         rl.begin_drawing()
@@ -79,12 +99,30 @@ function main() -> int:
             let gamepad_name = text.cstr_as_str(rl.get_gamepad_name(gamepad))
             rl.draw_text(f"GP#{gamepad}: #{gamepad_name}", 10, 10, 10, rl.BLACK)
 
-            var left_stick_x = deadzone_axis(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_X), LEFT_STICK_DEADZONE_X)
-            var left_stick_y = deadzone_axis(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_Y), LEFT_STICK_DEADZONE_Y)
-            var right_stick_x = deadzone_axis(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_X), RIGHT_STICK_DEADZONE_X)
-            var right_stick_y = deadzone_axis(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_Y), RIGHT_STICK_DEADZONE_Y)
-            let left_trigger = trigger_value(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_TRIGGER), LEFT_TRIGGER_DEADZONE)
-            let right_trigger = trigger_value(axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_TRIGGER), RIGHT_TRIGGER_DEADZONE)
+            let left_stick_x = deadzone_axis(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_X),
+                LEFT_STICK_DEADZONE_X
+            )
+            let left_stick_y = deadzone_axis(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_Y),
+                LEFT_STICK_DEADZONE_Y
+            )
+            let right_stick_x = deadzone_axis(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_X),
+                RIGHT_STICK_DEADZONE_X
+            )
+            let right_stick_y = deadzone_axis(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_Y),
+                RIGHT_STICK_DEADZONE_Y
+            )
+            let left_trigger = trigger_value(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_LEFT_TRIGGER),
+                LEFT_TRIGGER_DEADZONE
+            )
+            let right_trigger = trigger_value(
+                axis_movement(gamepad, rl.GamepadAxis.GAMEPAD_AXIS_RIGHT_TRIGGER),
+                RIGHT_TRIGGER_DEADZONE
+            )
 
             if is_xbox_name(gamepad_name):
                 rl.draw_texture(tex_xbox_pad, 0, 0, rl.DARKGRAY)
@@ -126,14 +164,24 @@ function main() -> int:
                     left_gamepad_color = rl.RED
                 rl.draw_circle(259, 152, 39.0, rl.BLACK)
                 rl.draw_circle(259, 152, 34.0, rl.LIGHTGRAY)
-                rl.draw_circle(259 + int<-(left_stick_x * 20.0), 152 + int<-(left_stick_y * 20.0), 25.0, left_gamepad_color)
+                rl.draw_circle(
+                    259 + int<-(left_stick_x * 20.0),
+                    152 + int<-(left_stick_y * 20.0),
+                    25.0,
+                    left_gamepad_color
+                )
 
                 var right_gamepad_color = rl.BLACK
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_THUMB):
                     right_gamepad_color = rl.RED
                 rl.draw_circle(461, 237, 38.0, rl.BLACK)
                 rl.draw_circle(461, 237, 33.0, rl.LIGHTGRAY)
-                rl.draw_circle(461 + int<-(right_stick_x * 20.0), 237 + int<-(right_stick_y * 20.0), 25.0, right_gamepad_color)
+                rl.draw_circle(
+                    461 + int<-(right_stick_x * 20.0),
+                    237 + int<-(right_stick_y * 20.0),
+                    25.0,
+                    right_gamepad_color
+                )
 
                 rl.draw_rectangle(170, 30, 15, 70, rl.GRAY)
                 rl.draw_rectangle(604, 30, 15, 70, rl.GRAY)
@@ -148,7 +196,12 @@ function main() -> int:
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_MIDDLE_LEFT):
                     rl.draw_rectangle(328, 170, 32, 13, rl.RED)
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_MIDDLE_RIGHT):
-                    rl.draw_triangle(rl.Vector2(x = 436.0, y = 168.0), rl.Vector2(x = 436.0, y = 185.0), rl.Vector2(x = 464.0, y = 177.0), rl.RED)
+                    rl.draw_triangle(
+                        rl.Vector2(x = 436.0, y = 168.0),
+                        rl.Vector2(x = 436.0, y = 185.0),
+                        rl.Vector2(x = 464.0, y = 177.0),
+                        rl.RED
+                    )
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_UP):
                     rl.draw_circle(557, 144, 13.0, rl.LIME)
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_FACE_RIGHT):
@@ -179,21 +232,36 @@ function main() -> int:
                     left_gamepad_color = rl.RED
                 rl.draw_circle(319, 255, 35.0, rl.BLACK)
                 rl.draw_circle(319, 255, 31.0, rl.LIGHTGRAY)
-                rl.draw_circle(319 + int<-(left_stick_x * 20.0), 255 + int<-(left_stick_y * 20.0), 25.0, left_gamepad_color)
+                rl.draw_circle(
+                    319 + int<-(left_stick_x * 20.0),
+                    255 + int<-(left_stick_y * 20.0),
+                    25.0,
+                    left_gamepad_color
+                )
 
                 var right_gamepad_color = rl.BLACK
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_THUMB):
                     right_gamepad_color = rl.RED
                 rl.draw_circle(475, 255, 35.0, rl.BLACK)
                 rl.draw_circle(475, 255, 31.0, rl.LIGHTGRAY)
-                rl.draw_circle(475 + int<-(right_stick_x * 20.0), 255 + int<-(right_stick_y * 20.0), 25.0, right_gamepad_color)
+                rl.draw_circle(
+                    475 + int<-(right_stick_x * 20.0),
+                    255 + int<-(right_stick_y * 20.0),
+                    25.0,
+                    right_gamepad_color
+                )
 
                 rl.draw_rectangle(169, 48, 15, 70, rl.GRAY)
                 rl.draw_rectangle(611, 48, 15, 70, rl.GRAY)
                 rl.draw_rectangle(169, 48, 15, int<-(((1.0 + left_trigger) / 2.0) * 70.0), rl.RED)
                 rl.draw_rectangle(611, 48, 15, int<-(((1.0 + right_trigger) / 2.0) * 70.0), rl.RED)
             else:
-                rl.draw_rectangle_rounded(rl.Rectangle(x = 175.0, y = 110.0, width = 460.0, height = 220.0), 0.3, 16, rl.DARKGRAY)
+                rl.draw_rectangle_rounded(
+                    rl.Rectangle(x = 175.0, y = 110.0, width = 460.0, height = 220.0),
+                    0.3,
+                    16,
+                    rl.DARKGRAY
+                )
 
                 rl.draw_circle(365, 170, 12.0, rl.RAYWHITE)
                 rl.draw_circle(405, 170, 12.0, rl.RAYWHITE)
@@ -230,26 +298,56 @@ function main() -> int:
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_LEFT_FACE_RIGHT):
                     rl.draw_rectangle(271, 176, 30, 25, rl.RED)
 
-                rl.draw_rectangle_rounded(rl.Rectangle(x = 215.0, y = 98.0, width = 100.0, height = 10.0), 0.5, 16, rl.DARKGRAY)
-                rl.draw_rectangle_rounded(rl.Rectangle(x = 495.0, y = 98.0, width = 100.0, height = 10.0), 0.5, 16, rl.DARKGRAY)
+                rl.draw_rectangle_rounded(
+                    rl.Rectangle(x = 215.0, y = 98.0, width = 100.0, height = 10.0),
+                    0.5,
+                    16,
+                    rl.DARKGRAY
+                )
+                rl.draw_rectangle_rounded(
+                    rl.Rectangle(x = 495.0, y = 98.0, width = 100.0, height = 10.0),
+                    0.5,
+                    16,
+                    rl.DARKGRAY
+                )
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_LEFT_TRIGGER_1):
-                    rl.draw_rectangle_rounded(rl.Rectangle(x = 215.0, y = 98.0, width = 100.0, height = 10.0), 0.5, 16, rl.RED)
+                    rl.draw_rectangle_rounded(
+                        rl.Rectangle(x = 215.0, y = 98.0, width = 100.0, height = 10.0),
+                        0.5,
+                        16,
+                        rl.RED
+                    )
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_TRIGGER_1):
-                    rl.draw_rectangle_rounded(rl.Rectangle(x = 495.0, y = 98.0, width = 100.0, height = 10.0), 0.5, 16, rl.RED)
+                    rl.draw_rectangle_rounded(
+                        rl.Rectangle(x = 495.0, y = 98.0, width = 100.0, height = 10.0),
+                        0.5,
+                        16,
+                        rl.RED
+                    )
 
                 var left_gamepad_color = rl.BLACK
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_LEFT_THUMB):
                     left_gamepad_color = rl.RED
                 rl.draw_circle(345, 260, 40.0, rl.BLACK)
                 rl.draw_circle(345, 260, 35.0, rl.LIGHTGRAY)
-                rl.draw_circle(345 + int<-(left_stick_x * 20.0), 260 + int<-(left_stick_y * 20.0), 25.0, left_gamepad_color)
+                rl.draw_circle(
+                    345 + int<-(left_stick_x * 20.0),
+                    260 + int<-(left_stick_y * 20.0),
+                    25.0,
+                    left_gamepad_color
+                )
 
                 var right_gamepad_color = rl.BLACK
                 if rl.is_gamepad_button_down(gamepad, rl.GamepadButton.GAMEPAD_BUTTON_RIGHT_THUMB):
                     right_gamepad_color = rl.RED
                 rl.draw_circle(465, 260, 40.0, rl.BLACK)
                 rl.draw_circle(465, 260, 35.0, rl.LIGHTGRAY)
-                rl.draw_circle(465 + int<-(right_stick_x * 20.0), 260 + int<-(right_stick_y * 20.0), 25.0, right_gamepad_color)
+                rl.draw_circle(
+                    465 + int<-(right_stick_x * 20.0),
+                    260 + int<-(right_stick_y * 20.0),
+                    25.0,
+                    right_gamepad_color
+                )
 
                 rl.draw_rectangle(151, 110, 15, 70, rl.GRAY)
                 rl.draw_rectangle(644, 110, 15, 70, rl.GRAY)
@@ -260,7 +358,13 @@ function main() -> int:
 
             var axis_index = 0
             while axis_index < rl.get_gamepad_axis_count(gamepad):
-                rl.draw_text(f"AXIS #{axis_index}: #{rl.get_gamepad_axis_movement(gamepad, axis_index)}", 20, 70 + 20 * axis_index, 10, rl.DARKGRAY)
+                rl.draw_text(
+                    f"AXIS #{axis_index}: #{rl.get_gamepad_axis_movement(gamepad, axis_index)}",
+                    20,
+                    70 + 20 * axis_index,
+                    10,
+                    rl.DARKGRAY
+                )
                 axis_index += 1
 
             rl.draw_rectangle_rec(vibrate_button, rl.SKYBLUE)

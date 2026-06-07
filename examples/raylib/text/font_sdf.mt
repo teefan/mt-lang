@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -24,7 +23,15 @@ function main() -> int:
     var font_default = zero[rl.Font]
     font_default.baseSize = 16
     font_default.glyphCount = 95
-    font_default.glyphs = rl.load_font_data(file_data, file_size, 16, null, 95, rl.FontType.FONT_DEFAULT, font_default.glyphCount)
+    font_default.glyphs = rl.load_font_data(
+        file_data,
+        file_size,
+        16,
+        null,
+        95,
+        rl.FontType.FONT_DEFAULT,
+        font_default.glyphCount
+    )
     var atlas = rl.gen_image_font_atlas(font_default.glyphs, font_default.recs, 95, 16, 4, 0)
     font_default.texture = rl.load_texture_from_image(atlas)
     rl.unload_image(atlas)

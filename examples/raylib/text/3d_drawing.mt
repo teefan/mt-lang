@@ -4,7 +4,6 @@ import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -12,10 +11,8 @@ const LETTER_BOUNDARY_SIZE: float = 0.25
 const TEXT_MAX_LAYERS: int = 32
 const TEXT_BUFFER_CAPACITY: int = 64
 
-
 var show_letter_boundary: bool = false
 var show_text_boundary: bool = false
-
 
 struct WaveTextConfig:
     wave_range: rl.Vector3
@@ -27,13 +24,20 @@ function buffer_as_str(buffer: ref[array[char, TEXT_BUFFER_CAPACITY]]) -> str:
     return text.chars_as_str(ptr_of(read(buffer)[0]))
 
 
-function draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vector3, font_size: float, backface: bool, tint: rl.Color) -> void:
+function draw_text_codepoint_3d(
+    font: rl.Font,
+    codepoint: int,
+    position: rl.Vector3,
+    font_size: float,
+    backface: bool,
+    tint: rl.Color
+) -> void:
     let glyph_index = rl.get_glyph_index(font, codepoint)
     let scale = font_size / float<-font.baseSize
 
     var glyph_offset_x = 0
     var glyph_offset_y = 0
-    var glyph_padding = font.glyphPadding
+    let glyph_padding = font.glyphPadding
     var rec = rl.Rectangle(x = 0.0, y = 0.0, width = 0.0, height = 0.0)
     unsafe:
         glyph_offset_x = read(font.glyphs + ptr_uint<-glyph_index).offsetX
@@ -48,7 +52,7 @@ function draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vect
         x = rec.x - float<-glyph_padding,
         y = rec.y - float<-glyph_padding,
         width = rec.width + 2.0 * float<-glyph_padding,
-        height = rec.height + 2.0 * float<-glyph_padding,
+        height = rec.height + 2.0 * float<-glyph_padding
     )
 
     let width = (rec.width + 2.0 * float<-glyph_padding) * scale
@@ -62,9 +66,13 @@ function draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vect
 
         if show_letter_boundary:
             rl.draw_cube_wires_v(
-                rl.Vector3(x = glyph_position.x + width / 2.0, y = glyph_position.y, z = glyph_position.z + height / 2.0),
+                rl.Vector3(
+                    x = glyph_position.x + width / 2.0,
+                    y = glyph_position.y,
+                    z = glyph_position.z + height / 2.0
+                ),
                 rl.Vector3(x = width, y = LETTER_BOUNDARY_SIZE, z = height),
-                rl.VIOLET,
+                rl.VIOLET
             )
 
         let vertex_quad_count = if backface: 8 else: 4
@@ -103,7 +111,16 @@ function draw_text_codepoint_3d(font: rl.Font, codepoint: int, position: rl.Vect
         rlgl.set_texture(0)
 
 
-function draw_text_3d(font: rl.Font, body_text: str, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, tint: rl.Color) -> void:
+function draw_text_3d(
+    font: rl.Font,
+    body_text: str,
+    position: rl.Vector3,
+    font_size: float,
+    font_spacing: float,
+    line_spacing: float,
+    backface: bool,
+    tint: rl.Color
+) -> void:
     let length = int<-rl.text_length(body_text)
     let scale = font_size / float<-font.baseSize
     var text_offset_x = float<-0.0
@@ -112,7 +129,10 @@ function draw_text_3d(font: rl.Font, body_text: str, position: rl.Vector3, font_
 
     while index < length:
         var codepoint_byte_count = 0
-        let codepoint = rl.get_codepoint(body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)), codepoint_byte_count)
+        let codepoint = rl.get_codepoint(
+            body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)),
+            codepoint_byte_count
+        )
         var advance = codepoint_byte_count
         if codepoint == 0x3f:
             advance = 1
@@ -129,7 +149,14 @@ function draw_text_3d(font: rl.Font, body_text: str, position: rl.Vector3, font_
             text_offset_x = 0.0
         else:
             if codepoint != 32 and codepoint != 9:
-                draw_text_codepoint_3d(font, codepoint, rl.Vector3(x = position.x + text_offset_x, y = position.y, z = position.z + text_offset_y), font_size, backface, tint)
+                draw_text_codepoint_3d(
+                    font,
+                    codepoint,
+                    rl.Vector3(x = position.x + text_offset_x, y = position.y, z = position.z + text_offset_y),
+                    font_size,
+                    backface,
+                    tint
+                )
 
             if glyph_advance_x == 0:
                 text_offset_x += rec_width * scale + font_spacing
@@ -139,7 +166,18 @@ function draw_text_3d(font: rl.Font, body_text: str, position: rl.Vector3, font_
         index += advance
 
 
-function draw_text_wave_3d(font: rl.Font, body_text: str, position: rl.Vector3, font_size: float, font_spacing: float, line_spacing: float, backface: bool, config: WaveTextConfig, time_value: float, tint: rl.Color) -> void:
+function draw_text_wave_3d(
+    font: rl.Font,
+    body_text: str,
+    position: rl.Vector3,
+    font_size: float,
+    font_spacing: float,
+    line_spacing: float,
+    backface: bool,
+    config: WaveTextConfig,
+    time_value: float,
+    tint: rl.Color
+) -> void:
     let length = int<-rl.text_length(body_text)
     let scale = font_size / float<-font.baseSize
     var text_offset_x = float<-0.0
@@ -150,7 +188,10 @@ function draw_text_wave_3d(font: rl.Font, body_text: str, position: rl.Vector3, 
 
     while index < length:
         var codepoint_byte_count = 0
-        let codepoint = rl.get_codepoint(body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)), codepoint_byte_count)
+        let codepoint = rl.get_codepoint(
+            body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)),
+            codepoint_byte_count
+        )
         var advance = codepoint_byte_count
         if codepoint == 0x3f:
             advance = 1
@@ -168,7 +209,10 @@ function draw_text_wave_3d(font: rl.Font, body_text: str, position: rl.Vector3, 
             char_index = 0
         else if codepoint == 126 and index + 1 < length:
             var next_size = 0
-            let next_codepoint = rl.get_codepoint(body_text.slice(ptr_uint<-(index + 1), ptr_uint<-(length - index - 1)), next_size)
+            let next_codepoint = rl.get_codepoint(
+                body_text.slice(ptr_uint<-(index + 1), ptr_uint<-(length - index - 1)),
+                next_size
+            )
             if next_codepoint == 126:
                 wave = not wave
                 advance += 1
@@ -180,7 +224,18 @@ function draw_text_wave_3d(font: rl.Font, body_text: str, position: rl.Vector3, 
                     glyph_position.y += float<-math.sin(double<-(time_value * config.wave_speed.y - float<-char_index * config.wave_offset.y)) * config.wave_range.y
                     glyph_position.z += float<-math.sin(double<-(time_value * config.wave_speed.z - float<-char_index * config.wave_offset.z)) * config.wave_range.z
 
-                draw_text_codepoint_3d(font, codepoint, rl.Vector3(x = glyph_position.x + text_offset_x, y = glyph_position.y, z = glyph_position.z + text_offset_y), font_size, backface, tint)
+                draw_text_codepoint_3d(
+                    font,
+                    codepoint,
+                    rl.Vector3(
+                        x = glyph_position.x + text_offset_x,
+                        y = glyph_position.y,
+                        z = glyph_position.z + text_offset_y
+                    ),
+                    font_size,
+                    backface,
+                    tint
+                )
 
             if glyph_advance_x == 0:
                 text_offset_x += rec_width * scale + font_spacing
@@ -191,7 +246,13 @@ function draw_text_wave_3d(font: rl.Font, body_text: str, position: rl.Vector3, 
         index += advance
 
 
-function measure_text_wave_3d(font: rl.Font, body_text: str, font_size: float, font_spacing: float, line_spacing: float) -> rl.Vector3:
+function measure_text_wave_3d(
+    font: rl.Font,
+    body_text: str,
+    font_size: float,
+    font_spacing: float,
+    line_spacing: float
+) -> rl.Vector3:
     let length = int<-rl.text_length(body_text)
     let scale = font_size / float<-font.baseSize
     var temp_len = 0
@@ -203,7 +264,10 @@ function measure_text_wave_3d(font: rl.Font, body_text: str, font_size: float, f
 
     while index < length:
         var codepoint_byte_count = 0
-        let codepoint = rl.get_codepoint(body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)), codepoint_byte_count)
+        let codepoint = rl.get_codepoint(
+            body_text.slice(ptr_uint<-index, ptr_uint<-(length - index)),
+            codepoint_byte_count
+        )
         var advance = codepoint_byte_count
         if codepoint == 0x3f:
             advance = 1
@@ -220,7 +284,10 @@ function measure_text_wave_3d(font: rl.Font, body_text: str, font_size: float, f
         if codepoint != 10:
             if codepoint == 126 and index + 1 < length:
                 var next_size = 0
-                let next_codepoint = rl.get_codepoint(body_text.slice(ptr_uint<-(index + 1), ptr_uint<-(length - index - 1)), next_size)
+                let next_codepoint = rl.get_codepoint(
+                    body_text.slice(ptr_uint<-(index + 1), ptr_uint<-(length - index - 1)),
+                    next_size
+                )
                 if next_codepoint == 126:
                     index += 2
                     continue
@@ -293,7 +360,7 @@ function main() -> int:
     let wave_config = WaveTextConfig(
         wave_range = rl.Vector3(x = 0.45, y = 0.45, z = 0.45),
         wave_speed = rl.Vector3(x = 3.0, y = 3.0, z = 0.5),
-        wave_offset = rl.Vector3(x = 0.35, y = 0.35, z = 0.35),
+        wave_offset = rl.Vector3(x = 0.35, y = 0.35, z = 0.35)
     )
     var time_value = float<-0.0
     var light = rl.MAROON
@@ -351,9 +418,17 @@ function main() -> int:
             let collision = rl.get_ray_collision_box(
                 ray,
                 rl.BoundingBox(
-                    min = rl.Vector3(x = cube_position.x - cube_size.x / 2.0, y = cube_position.y - cube_size.y / 2.0, z = cube_position.z - cube_size.z / 2.0),
-                    max = rl.Vector3(x = cube_position.x + cube_size.x / 2.0, y = cube_position.y + cube_size.y / 2.0, z = cube_position.z + cube_size.z / 2.0),
-                ),
+                    min = rl.Vector3(
+                        x = cube_position.x - cube_size.x / 2.0,
+                        y = cube_position.y - cube_size.y / 2.0,
+                        z = cube_position.z - cube_size.z / 2.0
+                    ),
+                    max = rl.Vector3(
+                        x = cube_position.x + cube_size.x / 2.0,
+                        y = cube_position.y + cube_size.y / 2.0,
+                        z = cube_position.z + cube_size.z / 2.0
+                    )
+                )
             )
             if collision.hit:
                 light = generate_random_color(0.5, 0.78)
@@ -427,7 +502,18 @@ function main() -> int:
             var tint = light
             if multicolor:
                 tint = multi[layer_index]
-            draw_text_wave_3d(font, live_text, rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * float<-layer_index, z = -4.5), font_size, font_spacing, line_spacing, true, wave_config, time_value, tint)
+            draw_text_wave_3d(
+                font,
+                live_text,
+                rl.Vector3(x = -text_box.x / 2.0, y = layer_distance * float<-layer_index, z = -4.5),
+                font_size,
+                font_spacing,
+                line_spacing,
+                true,
+                wave_config,
+                time_value,
+                tint
+            )
             layer_index += 1
 
         if show_text_boundary:
@@ -529,7 +615,13 @@ function main() -> int:
         rl.end_shader_mode()
         rl.end_mode_3d()
 
-        rl.draw_text("Drag & drop a font file to change the font!\nType something, see what happens!\n\nPress [F3] to toggle the camera", 10, 35, 10, rl.BLACK)
+        rl.draw_text(
+            "Drag & drop a font file to change the font!\nType something, see what happens!\n\nPress [F3] to toggle the camera",
+            10,
+            35,
+            10,
+            rl.BLACK
+        )
 
         quads += int<-rl.text_length(live_text) * 2 * layers
         var hud = text.cstr_as_str(
@@ -538,7 +630,7 @@ function main() -> int:
                 layers,
                 if spin: "ORBITAL" else: "FREE",
                 quads,
-                quads * 4,
+                quads * 4
             )
         )
         var hud_width = rl.measure_text(hud, 10)

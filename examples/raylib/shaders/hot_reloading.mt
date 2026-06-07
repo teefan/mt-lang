@@ -4,7 +4,6 @@ import std.rlgl as rlgl
 import std.str as text
 import std.time as time
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -53,7 +52,12 @@ function main() -> int:
                     resolution_location = rl.get_shader_location(shader, "resolution")
                     mouse_location = rl.get_shader_location(shader, "mouse")
                     time_location = rl.get_shader_location(shader, "time")
-                    rl.set_shader_value(shader, resolution_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
+                    rl.set_shader_value(
+                        shader,
+                        resolution_location,
+                        resolution,
+                        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2
+                    )
                 frag_shader_file_mod_time = current_frag_shader_mod_time
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_A):
@@ -64,7 +68,7 @@ function main() -> int:
             ptr_of(timestamp_buffer[0]),
             ptr_uint<-TIMESTAMP_BUFFER_SIZE,
             "%Y-%m-%d %H:%M:%S",
-            frag_shader_file_mod_time,
+            frag_shader_file_mod_time
         )
         let timestamp_text = if timestamp_written != 0: text.chars_as_str(ptr_of(timestamp_buffer[0])) else: "unknown"
         let reload_mode_text = if shader_auto_reloading: "AUTO" else: "MANUAL"

@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -16,17 +15,17 @@ function main() -> int:
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
-    var camera = rl.Camera3D(
+    let camera = rl.Camera3D(
         position = rl.Vector3(x = 0.0, y = 2.0, z = -4.0),
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/normalmap.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/normalmap.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/normalmap.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shader)
     unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MAP_NORMAL] = rl.get_shader_location(shader, "normalMap")
@@ -84,15 +83,30 @@ function main() -> int:
 
         let light_position_value = array[float, 3](light_position.x, light_position.y, light_position.z)
         let camera_position = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.set_shader_value(shader, light_position_location, light_position_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(
+            shader,
+            light_position_location,
+            light_position_value,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
         rl.set_shader_value(
             shader,
             unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_VECTOR_VIEW],
             camera_position,
-            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
         )
-        rl.set_shader_value(shader, specular_exponent_location, specular_exponent, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT)
-        rl.set_shader_value(shader, use_normal_map_location, use_normal_map, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+        rl.set_shader_value(
+            shader,
+            specular_exponent_location,
+            specular_exponent,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_FLOAT
+        )
+        rl.set_shader_value(
+            shader,
+            use_normal_map_location,
+            use_normal_map,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT
+        )
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)

@@ -1,7 +1,6 @@
 import std.raylib.easing as ease
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -65,7 +64,12 @@ function main() -> int:
 
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
-        rl.draw_rectangle_pro(rec, rl.Vector2(x = rec.width / 2.0, y = rec.height / 2.0), rotation, rl.fade(rl.BLACK, alpha))
+        rl.draw_rectangle_pro(
+            rec,
+            rl.Vector2(x = rec.width / 2.0, y = rec.height / 2.0),
+            rotation,
+            rl.fade(rl.BLACK, alpha)
+        )
         rl.draw_text("PRESS [SPACE] TO RESET BOX ANIMATION!", 10, rl.get_screen_height() - 25, 20, rl.LIGHTGRAY)
         rl.end_drawing()
 

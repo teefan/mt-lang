@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_PROCESSES: int = 9
@@ -130,10 +129,19 @@ function main() -> int:
             let stroke = if selected: rl.BLUE else: rl.GRAY
             let label_color = if selected: rl.DARKBLUE else: rl.DARKGRAY
             let label = process_text(index)
-            let label_x = int<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - float<-rl.measure_text(label, 10) / 2.0)
+            let label_x = int<-(toggle_rects[index].x + toggle_rects[index].width / 2.0 - float<-rl.measure_text(
+                label,
+                10
+            ) / 2.0)
 
             rl.draw_rectangle_rec(toggle_rects[index], fill)
-            rl.draw_rectangle_lines(int<-toggle_rects[index].x, int<-toggle_rects[index].y, int<-toggle_rects[index].width, int<-toggle_rects[index].height, stroke)
+            rl.draw_rectangle_lines(
+                int<-toggle_rects[index].x,
+                int<-toggle_rects[index].y,
+                int<-toggle_rects[index].width,
+                int<-toggle_rects[index].height,
+                stroke
+            )
             rl.draw_text(label, label_x, int<-toggle_rects[index].y + 11, 10, label_color)
             index += 1
 

@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const NUM_BLOCKS: int = 15
@@ -16,7 +15,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 70.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     rl.set_target_fps(60)
@@ -46,7 +45,7 @@ function main() -> int:
                     let cube_pos = rl.Vector3(
                         x = float<-(x - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
                         y = float<-(y - float<-NUM_BLOCKS / 2.0) * (scale * 2.0) + scatter,
-                        z = float<-(z - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter,
+                        z = float<-(z - float<-NUM_BLOCKS / 2.0) * (scale * 3.0) + scatter
                     )
                     let cube_color = rl.color_from_hsv(float<-(((x + y + z) * 18) % 360), 0.75, 0.9)
                     let cube_size = (2.4 - scale) * block_scale

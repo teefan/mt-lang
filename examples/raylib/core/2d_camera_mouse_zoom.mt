@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raymath as raymath
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -16,7 +15,7 @@ function main() -> int:
         target = rl.Vector2(x = 0.0, y = 0.0),
         offset = rl.Vector2(x = 0.0, y = 0.0),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
     var zoom_mode = 0
 
@@ -73,7 +72,7 @@ function main() -> int:
             raymath.vector2_add(rl.get_mouse_position(), rl.Vector2(x = -44.0, y = -24.0)),
             20.0,
             2.0,
-            rl.BLACK,
+            rl.BLACK
         )
 
         rl.draw_text("[1][2] Select mouse zoom mode (Wheel or Move)", 20, 20, 20, rl.DARKGRAY)

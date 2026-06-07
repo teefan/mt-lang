@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const ACTION_UP: int = 1
@@ -10,11 +9,9 @@ const ACTION_RIGHT: int = 4
 const ACTION_FIRE: int = 5
 const MAX_ACTION: int = 6
 
-
 struct ActionInput:
     key: int
     button: int
-
 
 var gamepad_index: int = 0
 var action_inputs: array[ActionInput, MAX_ACTION] = zero[array[ActionInput, MAX_ACTION]]
@@ -24,21 +21,30 @@ function is_action_pressed(action: int) -> bool:
     if action >= MAX_ACTION:
         return false
 
-    return rl.is_key_pressed(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_pressed(gamepad_index, rl.GamepadButton<-action_inputs[action].button)
+    return rl.is_key_pressed(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_pressed(
+        gamepad_index,
+        rl.GamepadButton<-action_inputs[action].button
+    )
 
 
 function is_action_released(action: int) -> bool:
     if action >= MAX_ACTION:
         return false
 
-    return rl.is_key_released(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_released(gamepad_index, rl.GamepadButton<-action_inputs[action].button)
+    return rl.is_key_released(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_released(
+        gamepad_index,
+        rl.GamepadButton<-action_inputs[action].button
+    )
 
 
 function is_action_down(action: int) -> bool:
     if action >= MAX_ACTION:
         return false
 
-    return rl.is_key_down(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_down(gamepad_index, rl.GamepadButton<-action_inputs[action].button)
+    return rl.is_key_down(rl.KeyboardKey<-action_inputs[action].key) or rl.is_gamepad_button_down(
+        gamepad_index,
+        rl.GamepadButton<-action_inputs[action].button
+    )
 
 
 function set_actions_default() -> void:

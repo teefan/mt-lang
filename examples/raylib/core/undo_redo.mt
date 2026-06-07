@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_UNDO_STATES: int = 26
@@ -8,11 +7,9 @@ const GRID_CELL_SIZE: int = 24
 const MAX_GRID_CELLS_X: int = 30
 const MAX_GRID_CELLS_Y: int = 13
 
-
 struct Point:
     x: int
     y: int
-
 
 struct PlayerState:
     cell: Point
@@ -23,7 +20,13 @@ function states_equal(left: PlayerState, right: PlayerState) -> bool:
     return left.cell.x == right.cell.x and left.cell.y == right.cell.y and left.color.r == right.color.r and left.color.g == right.color.g and left.color.b == right.color.b and left.color.a == right.color.a
 
 
-function draw_undo_buffer(position: rl.Vector2, first_undo_index: int, last_undo_index: int, current_undo_index: int, slot_size: int) -> void:
+function draw_undo_buffer(
+    position: rl.Vector2,
+    first_undo_index: int,
+    last_undo_index: int,
+    current_undo_index: int,
+    slot_size: int
+) -> void:
     rl.draw_rectangle(int<-position.x + 8 + slot_size * current_undo_index, int<-position.y - 10, 8, 8, rl.RED)
     rl.draw_rectangle_lines(int<-position.x + 2 + slot_size * first_undo_index, int<-position.y + 27, 8, 8, rl.BLACK)
     rl.draw_rectangle(int<-position.x + 14 + slot_size * last_undo_index, int<-position.y + 27, 8, 8, rl.BLACK)
@@ -71,7 +74,13 @@ function draw_undo_buffer(position: rl.Vector2, first_undo_index: int, last_undo
             index += 1
 
     rl.draw_rectangle(int<-position.x + slot_size * current_undo_index, int<-position.y, slot_size, slot_size, rl.GOLD)
-    rl.draw_rectangle_lines(int<-position.x + slot_size * current_undo_index, int<-position.y, slot_size, slot_size, rl.ORANGE)
+    rl.draw_rectangle_lines(
+        int<-position.x + slot_size * current_undo_index,
+        int<-position.y,
+        slot_size,
+        slot_size,
+        rl.ORANGE
+    )
 
 
 function main() -> int:
@@ -159,8 +168,13 @@ function main() -> int:
             var index = first_undo_index
             while index < current_undo_index:
                 rl.draw_rectangle_rec(
-                    rl.Rectangle(x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE), y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE), width = float<-GRID_CELL_SIZE, height = float<-GRID_CELL_SIZE),
-                    rl.LIGHTGRAY,
+                    rl.Rectangle(
+                        x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE),
+                        y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE),
+                        width = float<-GRID_CELL_SIZE,
+                        height = float<-GRID_CELL_SIZE
+                    ),
+                    rl.LIGHTGRAY
                 )
                 index += 1
         else if first_undo_index > last_undo_index:
@@ -168,30 +182,65 @@ function main() -> int:
                 var index = first_undo_index
                 while index < current_undo_index:
                     rl.draw_rectangle_rec(
-                        rl.Rectangle(x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE), y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE), width = float<-GRID_CELL_SIZE, height = float<-GRID_CELL_SIZE),
-                        rl.LIGHTGRAY,
+                        rl.Rectangle(
+                            x = grid_position.x + float<-(states[index].cell.x * GRID_CELL_SIZE),
+                            y = grid_position.y + float<-(states[index].cell.y * GRID_CELL_SIZE),
+                            width = float<-GRID_CELL_SIZE,
+                            height = float<-GRID_CELL_SIZE
+                        ),
+                        rl.LIGHTGRAY
                     )
                     index += 1
             else:
                 var index = first_undo_index
                 while index < MAX_UNDO_STATES:
-                    rl.draw_rectangle(int<-grid_position.x + states[index].cell.x * GRID_CELL_SIZE, int<-grid_position.y + states[index].cell.y * GRID_CELL_SIZE, GRID_CELL_SIZE, GRID_CELL_SIZE, rl.LIGHTGRAY)
+                    rl.draw_rectangle(
+                        int<-grid_position.x + states[index].cell.x * GRID_CELL_SIZE,
+                        int<-grid_position.y + states[index].cell.y * GRID_CELL_SIZE,
+                        GRID_CELL_SIZE,
+                        GRID_CELL_SIZE,
+                        rl.LIGHTGRAY
+                    )
                     index += 1
                 index = 0
                 while index < current_undo_index:
-                    rl.draw_rectangle(int<-grid_position.x + states[index].cell.x * GRID_CELL_SIZE, int<-grid_position.y + states[index].cell.y * GRID_CELL_SIZE, GRID_CELL_SIZE, GRID_CELL_SIZE, rl.LIGHTGRAY)
+                    rl.draw_rectangle(
+                        int<-grid_position.x + states[index].cell.x * GRID_CELL_SIZE,
+                        int<-grid_position.y + states[index].cell.y * GRID_CELL_SIZE,
+                        GRID_CELL_SIZE,
+                        GRID_CELL_SIZE,
+                        rl.LIGHTGRAY
+                    )
                     index += 1
 
         var y = 0
         while y <= MAX_GRID_CELLS_Y:
-            rl.draw_line(int<-grid_position.x, int<-grid_position.y + y * GRID_CELL_SIZE, int<-grid_position.x + MAX_GRID_CELLS_X * GRID_CELL_SIZE, int<-grid_position.y + y * GRID_CELL_SIZE, rl.GRAY)
+            rl.draw_line(
+                int<-grid_position.x,
+                int<-grid_position.y + y * GRID_CELL_SIZE,
+                int<-grid_position.x + MAX_GRID_CELLS_X * GRID_CELL_SIZE,
+                int<-grid_position.y + y * GRID_CELL_SIZE,
+                rl.GRAY
+            )
             y += 1
         var x = 0
         while x <= MAX_GRID_CELLS_X:
-            rl.draw_line(int<-grid_position.x + x * GRID_CELL_SIZE, int<-grid_position.y, int<-grid_position.x + x * GRID_CELL_SIZE, int<-grid_position.y + MAX_GRID_CELLS_Y * GRID_CELL_SIZE, rl.GRAY)
+            rl.draw_line(
+                int<-grid_position.x + x * GRID_CELL_SIZE,
+                int<-grid_position.y,
+                int<-grid_position.x + x * GRID_CELL_SIZE,
+                int<-grid_position.y + MAX_GRID_CELLS_Y * GRID_CELL_SIZE,
+                rl.GRAY
+            )
             x += 1
 
-        rl.draw_rectangle(int<-grid_position.x + player.cell.x * GRID_CELL_SIZE, int<-grid_position.y + player.cell.y * GRID_CELL_SIZE, GRID_CELL_SIZE + 1, GRID_CELL_SIZE + 1, player.color)
+        rl.draw_rectangle(
+            int<-grid_position.x + player.cell.x * GRID_CELL_SIZE,
+            int<-grid_position.y + player.cell.y * GRID_CELL_SIZE,
+            GRID_CELL_SIZE + 1,
+            GRID_CELL_SIZE + 1,
+            player.color
+        )
         rl.draw_text("UNDO STATES:", int<-undo_info_pos.x - 85, int<-undo_info_pos.y + 9, 10, rl.DARKGRAY)
         draw_undo_buffer(undo_info_pos, first_undo_index, last_undo_index, current_undo_index, 24)
         rl.end_drawing()

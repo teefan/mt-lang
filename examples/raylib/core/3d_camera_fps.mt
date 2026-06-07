@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GRAVITY: float = 32.0
@@ -34,19 +33,17 @@ const ANGLE_EPSILON: float = 0.0001
 const CLAMP_EPSILON: float = 0.001
 const HALF_PI: float = rl.PI / float<-2
 
-
 struct Body:
     position: rl.Vector3
     velocity: rl.Vector3
     dir: rl.Vector3
     is_grounded: bool
 
-
 var player: Body = Body(
     position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
     velocity = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
     dir = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
-    is_grounded = false,
+    is_grounded = false
 )
 var look_rotation: rl.Vector2 = rl.Vector2(x = 0.0, y = 0.0)
 var head_timer: float = 0.0
@@ -59,7 +56,14 @@ function abs_float(value: float) -> float:
     return float<-math.abs(double<-value)
 
 
-function update_body(body: ref[Body], rot: float, side: int, forward: int, jump_pressed: bool, crouch_hold: bool) -> void:
+function update_body(
+    body: ref[Body],
+    rot: float,
+    side: int,
+    forward: int,
+    jump_pressed: bool,
+    crouch_hold: bool
+) -> void:
     let input = rl.Vector2(x = float<-side, y = -float<-forward)
     let delta = rl.get_frame_time()
     let is_grounded = unsafe: read(body).is_grounded
@@ -77,7 +81,7 @@ function update_body(body: ref[Body], rot: float, side: int, forward: int, jump_
     let desired_dir = rl.Vector3(
         x = input.x * right.x + input.y * front.x,
         y = 0.0,
-        z = input.x * right.z + input.y * front.z,
+        z = input.x * right.z + input.y * front.z
     )
     let updated_dir = rm.vector3_lerp(unsafe: read(body).dir, desired_dir, CONTROL * delta)
     unsafe: read(body).dir = updated_dir
@@ -115,7 +119,7 @@ function update_camera_fps(camera: ref[rl.Camera3D]) -> void:
     let target_offset = rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
     let yaw = rm.vector3_rotate_by_axis_angle(target_offset, up, look_rotation.x)
 
-    var max_angle_up = rm.vector3_angle(up, yaw) - CLAMP_EPSILON
+    let max_angle_up = rm.vector3_angle(up, yaw) - CLAMP_EPSILON
     if -look_rotation.y > max_angle_up:
         look_rotation.y = -max_angle_up
 
@@ -170,7 +174,11 @@ function draw_level() -> void:
     rl.draw_cube_v(tower_position, tower_size, tile_color)
     rl.draw_cube_wires_v(tower_position, tower_size, rl.DARKBLUE)
 
-    rl.draw_sphere(rl.Vector3(x = 300.0, y = 300.0, z = 0.0), 100.0, rl.Color(r = ubyte<-255, g = ubyte<-0, b = ubyte<-0, a = ubyte<-255))
+    rl.draw_sphere(
+        rl.Vector3(x = 300.0, y = 300.0, z = 0.0),
+        100.0,
+        rl.Color(r = ubyte<-255, g = ubyte<-0, b = ubyte<-0, a = ubyte<-255)
+    )
 
 
 function main() -> int:
@@ -178,11 +186,15 @@ function main() -> int:
     defer rl.close_window()
 
     var camera = rl.Camera3D(
-        position = rl.Vector3(x = player.position.x, y = player.position.y + (BOTTOM_HEIGHT + head_lerp), z = player.position.z),
+        position = rl.Vector3(
+            x = player.position.x,
+            y = player.position.y + (BOTTOM_HEIGHT + head_lerp),
+            z = player.position.z
+        ),
         target = rl.Vector3(x = 0.0, y = 0.0, z = -1.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = IDLE_FOV,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     update_camera_fps(ref_of(camera))
@@ -207,11 +219,22 @@ function main() -> int:
             forward -= 1
 
         let crouching = rl.is_key_down(rl.KeyboardKey.KEY_LEFT_CONTROL)
-        update_body(ref_of(player), look_rotation.x, sideway, forward, rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE), crouching)
+        update_body(
+            ref_of(player),
+            look_rotation.x,
+            sideway,
+            forward,
+            rl.is_key_pressed(rl.KeyboardKey.KEY_SPACE),
+            crouching
+        )
 
         let delta = rl.get_frame_time()
         head_lerp = rm.lerp(head_lerp, if crouching: CROUCH_HEIGHT else: STAND_HEIGHT, HEAD_LERP_SPEED * delta)
-        camera.position = rl.Vector3(x = player.position.x, y = player.position.y + (BOTTOM_HEIGHT + head_lerp), z = player.position.z)
+        camera.position = rl.Vector3(
+            x = player.position.x,
+            y = player.position.y + (BOTTOM_HEIGHT + head_lerp),
+            z = player.position.z
+        )
 
         if player.is_grounded and (forward != 0 or sideway != 0):
             head_timer += delta * HEAD_TIMER_SPEED

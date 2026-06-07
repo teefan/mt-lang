@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -10,13 +9,13 @@ function player_box(position: rl.Vector3, size: rl.Vector3) -> rl.BoundingBox:
         min = rl.Vector3(
             x = position.x - size.x / 2.0,
             y = position.y - size.y / 2.0,
-            z = position.z - size.z / 2.0,
+            z = position.z - size.z / 2.0
         ),
         max = rl.Vector3(
             x = position.x + size.x / 2.0,
             y = position.y + size.y / 2.0,
-            z = position.z + size.z / 2.0,
-        ),
+            z = position.z + size.z / 2.0
+        )
     )
 
 
@@ -29,7 +28,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var player_position = rl.Vector3(x = 0.0, y = 1.0, z = 2.0)
@@ -56,7 +55,11 @@ function main() -> int:
 
         let player_bounds = player_box(player_position, player_size)
         let enemy_box_bounds = player_box(enemy_box_pos, enemy_box_size)
-        let collision = rl.check_collision_boxes(player_bounds, enemy_box_bounds) or rl.check_collision_box_sphere(player_bounds, enemy_sphere_pos, enemy_sphere_size)
+        let collision = rl.check_collision_boxes(player_bounds, enemy_box_bounds) or rl.check_collision_box_sphere(
+            player_bounds,
+            enemy_sphere_pos,
+            enemy_sphere_size
+        )
         player_color = if collision: rl.RED else: rl.GREEN
 
         rl.begin_drawing()

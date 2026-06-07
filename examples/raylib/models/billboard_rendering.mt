@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -19,7 +18,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let bill = rl.load_texture("billboard.png")
@@ -50,9 +49,29 @@ function main() -> int:
 
         if distance_static > distance_rotating:
             rl.draw_billboard(camera, bill, static_position, 2.0, rl.WHITE)
-            rl.draw_billboard_pro(camera, bill, source, rotating_position, billboard_up, size, origin, rotation, rl.WHITE)
+            rl.draw_billboard_pro(
+                camera,
+                bill,
+                source,
+                rotating_position,
+                billboard_up,
+                size,
+                origin,
+                rotation,
+                rl.WHITE
+            )
         else:
-            rl.draw_billboard_pro(camera, bill, source, rotating_position, billboard_up, size, origin, rotation, rl.WHITE)
+            rl.draw_billboard_pro(
+                camera,
+                bill,
+                source,
+                rotating_position,
+                billboard_up,
+                size,
+                origin,
+                rotation,
+                rl.WHITE
+            )
             rl.draw_billboard(camera, bill, static_position, 2.0, rl.WHITE)
 
         rl.end_mode_3d()

@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_GESTURE_STRINGS: int = 20
@@ -36,7 +35,12 @@ function main() -> int:
     defer rl.close_window()
 
     var touch_position = rl.Vector2(x = 0.0, y = 0.0)
-    let touch_area = rl.Rectangle(x = 220.0, y = 10.0, width = (float<-SCREEN_WIDTH) - 230.0, height = (float<-SCREEN_HEIGHT) - 20.0)
+    let touch_area = rl.Rectangle(
+        x = 220.0,
+        y = 10.0,
+        width = (float<-SCREEN_WIDTH) - 230.0,
+        height = (float<-SCREEN_HEIGHT) - 20.0
+    )
 
     var gestures_count = 0
     var gesture_codes: array[int, MAX_GESTURE_STRINGS] = zero[array[int, MAX_GESTURE_STRINGS]]

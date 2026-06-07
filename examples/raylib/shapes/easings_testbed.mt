@@ -2,7 +2,6 @@ import std.raylib.easing as ease
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const FONT_SIZE: int = 20
@@ -89,15 +88,57 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
 
-        rl.draw_text(text.cstr_as_str(rl.text_format("Easing x: %s", ease.kind_name(easing_x))), 20, FONT_SIZE, FONT_SIZE, rl.LIGHTGRAY)
-        rl.draw_text(text.cstr_as_str(rl.text_format("Easing y: %s", ease.kind_name(easing_y))), 20, FONT_SIZE * 2, FONT_SIZE, rl.LIGHTGRAY)
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("Easing x: %s", ease.kind_name(easing_x))),
+            20,
+            FONT_SIZE,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("Easing y: %s", ease.kind_name(easing_y))),
+            20,
+            FONT_SIZE * 2,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
         let time_mode = if bounded_t: "b" else: "u"
-        rl.draw_text(text.cstr_as_str(rl.text_format("t (%s) = %.2f d = %.2f", time_mode, t, d)), 20, FONT_SIZE * 3, FONT_SIZE, rl.LIGHTGRAY)
+        rl.draw_text(
+            text.cstr_as_str(rl.text_format("t (%s) = %.2f d = %.2f", time_mode, t, d)),
+            20,
+            FONT_SIZE * 3,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
 
-        rl.draw_text("Use ENTER to play or pause movement, use SPACE to restart", 20, rl.get_screen_height() - FONT_SIZE * 2, FONT_SIZE, rl.LIGHTGRAY)
-        rl.draw_text("Use Q and W or A and S keys to change duration", 20, rl.get_screen_height() - FONT_SIZE * 3, FONT_SIZE, rl.LIGHTGRAY)
-        rl.draw_text("Use LEFT or RIGHT keys to choose easing for the x axis", 20, rl.get_screen_height() - FONT_SIZE * 4, FONT_SIZE, rl.LIGHTGRAY)
-        rl.draw_text("Use UP or DOWN keys to choose easing for the y axis", 20, rl.get_screen_height() - FONT_SIZE * 5, FONT_SIZE, rl.LIGHTGRAY)
+        rl.draw_text(
+            "Use ENTER to play or pause movement, use SPACE to restart",
+            20,
+            rl.get_screen_height() - FONT_SIZE * 2,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
+        rl.draw_text(
+            "Use Q and W or A and S keys to change duration",
+            20,
+            rl.get_screen_height() - FONT_SIZE * 3,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
+        rl.draw_text(
+            "Use LEFT or RIGHT keys to choose easing for the x axis",
+            20,
+            rl.get_screen_height() - FONT_SIZE * 4,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
+        rl.draw_text(
+            "Use UP or DOWN keys to choose easing for the y axis",
+            20,
+            rl.get_screen_height() - FONT_SIZE * 5,
+            FONT_SIZE,
+            rl.LIGHTGRAY
+        )
         rl.draw_circle_v(ball_position, 16.0, rl.MAROON)
         rl.end_drawing()
 

@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_ANIMATION_NAMES: int = 64
@@ -36,7 +35,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 2.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let model = rl.load_model("models/gltf/robot.glb")
@@ -104,8 +103,8 @@ function main() -> int:
                 anim_blend_time_counter = 0.0
                 anim_blend_factor = 0.0
 
-            var anim0 = unsafe: animations[anim_index0]
-            var anim1 = unsafe: animations[anim_index1]
+            let anim0 = unsafe: animations[anim_index0]
+            let anim1 = unsafe: animations[anim_index1]
 
             if anim_transition:
                 anim_current_frame0 += anim_frame_speed0
@@ -120,9 +119,23 @@ function main() -> int:
                 anim_blend_progress = anim_blend_factor
 
                 if next_anim_to_play == 1:
-                    rl.update_model_animation_ex(model, anim0, anim_current_frame0, anim1, anim_current_frame1, anim_blend_factor)
+                    rl.update_model_animation_ex(
+                        model,
+                        anim0,
+                        anim_current_frame0,
+                        anim1,
+                        anim_current_frame1,
+                        anim_blend_factor
+                    )
                 else:
-                    rl.update_model_animation_ex(model, anim1, anim_current_frame1, anim0, anim_current_frame0, anim_blend_factor)
+                    rl.update_model_animation_ex(
+                        model,
+                        anim1,
+                        anim_current_frame1,
+                        anim0,
+                        anim_current_frame0,
+                        anim_blend_factor
+                    )
 
                 if anim_blend_factor > 1.0:
                     if current_anim_playing == 0:
@@ -149,8 +162,8 @@ function main() -> int:
         anim_frame_progress0 = anim_current_frame0
         anim_frame_progress1 = anim_current_frame1
 
-        var anim0 = unsafe: animations[anim_index0]
-        var anim1 = unsafe: animations[anim_index1]
+        let anim0 = unsafe: animations[anim_index0]
+        let anim1 = unsafe: animations[anim_index1]
         let frame_speed_text0 = text.cstr_as_str(rl.text_format("x%.1f", anim_frame_speed0))
         let frame_speed_text1 = text.cstr_as_str(rl.text_format("%.1fx", anim_frame_speed1))
         let timeline_text0 = rl.text_format("FRAME: %.2f / %i", anim_frame_progress0, anim0.keyframeCount)
@@ -169,35 +182,71 @@ function main() -> int:
 
         if dropdown_edit_mode0:
             gui.disable()
-        gui.slider(rl.Rectangle(x = 10.0, y = 38.0, width = 160.0, height = 12.0), "", frame_speed_text0, anim_frame_speed0, 0.1, 2.0)
+        gui.slider(
+            rl.Rectangle(x = 10.0, y = 38.0, width = 160.0, height = 12.0),
+            "",
+            frame_speed_text0,
+            anim_frame_speed0,
+            0.1,
+            2.0
+        )
         gui.enable()
 
         if dropdown_edit_mode1:
             gui.disable()
-        gui.slider(rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 38.0, width = 160.0, height = 12.0), frame_speed_text1, "", anim_frame_speed1, 0.1, 2.0)
+        gui.slider(
+            rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 38.0, width = 160.0, height = 12.0),
+            frame_speed_text1,
+            "",
+            anim_frame_speed1,
+            0.1,
+            2.0
+        )
         gui.enable()
 
         gui.set_style(gui.Control.DROPDOWNBOX, int<-gui.DropdownBoxProperty.DROPDOWN_ITEMS_SPACING, 1)
-        if gui.dropdown_box(rl.Rectangle(x = 10.0, y = 10.0, width = 160.0, height = 24.0), animation_names, anim_index0, dropdown_edit_mode0) != 0:
+        if gui.dropdown_box(
+            rl.Rectangle(x = 10.0, y = 10.0, width = 160.0, height = 24.0),
+            animation_names,
+            anim_index0,
+            dropdown_edit_mode0
+        ) != 0:
             dropdown_edit_mode0 = not dropdown_edit_mode0
 
         if next_anim_to_play == 1:
             gui.set_style(gui.Control.PROGRESSBAR, int<-gui.ProgressBarProperty.PROGRESS_SIDE, 0)
         else:
             gui.set_style(gui.Control.PROGRESSBAR, int<-gui.ProgressBarProperty.PROGRESS_SIDE, 1)
-        gui.progress_bar(rl.Rectangle(x = 180.0, y = 14.0, width = 440.0, height = 16.0), "", "", anim_blend_progress, 0.0, 1.0)
+        gui.progress_bar(
+            rl.Rectangle(x = 180.0, y = 14.0, width = 440.0, height = 16.0),
+            "",
+            "",
+            anim_blend_progress,
+            0.0,
+            1.0
+        )
         gui.set_style(gui.Control.PROGRESSBAR, int<-gui.ProgressBarProperty.PROGRESS_SIDE, 0)
 
-        if gui.dropdown_box(rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 10.0, width = 160.0, height = 24.0), animation_names, anim_index1, dropdown_edit_mode1) != 0:
+        if gui.dropdown_box(
+            rl.Rectangle(x = float<-rl.get_screen_width() - 170.0, y = 10.0, width = 160.0, height = 24.0),
+            animation_names,
+            anim_index1,
+            dropdown_edit_mode1
+        ) != 0:
             dropdown_edit_mode1 = not dropdown_edit_mode1
 
         gui.progress_bar(
-            rl.Rectangle(x = 60.0, y = float<-rl.get_screen_height() - 60.0, width = float<-rl.get_screen_width() - 180.0, height = 20.0),
+            rl.Rectangle(
+                x = 60.0,
+                y = float<-rl.get_screen_height() - 60.0,
+                width = float<-rl.get_screen_width() - 180.0,
+                height = 20.0
+            ),
             "ANIM 0",
             timeline_text0,
             anim_frame_progress0,
             0.0,
-            float<-anim0.keyframeCount,
+            float<-anim0.keyframeCount
         )
         var index = 0
         while index < anim0.keyframeCount:
@@ -206,12 +255,17 @@ function main() -> int:
             index += 1
 
         gui.progress_bar(
-            rl.Rectangle(x = 60.0, y = float<-rl.get_screen_height() - 30.0, width = float<-rl.get_screen_width() - 180.0, height = 20.0),
+            rl.Rectangle(
+                x = 60.0,
+                y = float<-rl.get_screen_height() - 30.0,
+                width = float<-rl.get_screen_width() - 180.0,
+                height = 20.0
+            ),
             "ANIM 1",
             timeline_text1,
             anim_frame_progress1,
             0.0,
-            float<-anim1.keyframeCount,
+            float<-anim1.keyframeCount
         )
         index = 0
         while index < anim1.keyframeCount:

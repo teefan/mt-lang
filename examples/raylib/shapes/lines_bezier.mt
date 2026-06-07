@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const HANDLE_RADIUS: float = 10.0
@@ -23,9 +22,17 @@ function main() -> int:
     while not rl.window_should_close():
         let mouse = rl.get_mouse_position()
 
-        if rl.check_collision_point_circle(mouse, start_point, HANDLE_RADIUS) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
+        if rl.check_collision_point_circle(
+            mouse,
+            start_point,
+            HANDLE_RADIUS
+        ) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
             move_start_point = true
-        else if rl.check_collision_point_circle(mouse, end_point, HANDLE_RADIUS) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
+        else if rl.check_collision_point_circle(
+            mouse,
+            end_point,
+            HANDLE_RADIUS
+        ) and rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
             move_end_point = true
 
         if move_start_point:
@@ -44,11 +51,19 @@ function main() -> int:
         rl.draw_text("MOVE START-END POINTS WITH MOUSE", 15, 20, 20, rl.GRAY)
         rl.draw_line_bezier(start_point, end_point, 4.0, rl.BLUE)
 
-        let start_radius = if rl.check_collision_point_circle(mouse, start_point, HANDLE_RADIUS): ACTIVE_RADIUS else: IDLE_RADIUS
+        let start_radius = if rl.check_collision_point_circle(
+            mouse,
+            start_point,
+            HANDLE_RADIUS
+        ): ACTIVE_RADIUS else: IDLE_RADIUS
         let start_color = if move_start_point: rl.RED else: rl.BLUE
         rl.draw_circle_v(start_point, start_radius, start_color)
 
-        let end_radius = if rl.check_collision_point_circle(mouse, end_point, HANDLE_RADIUS): ACTIVE_RADIUS else: IDLE_RADIUS
+        let end_radius = if rl.check_collision_point_circle(
+            mouse,
+            end_point,
+            HANDLE_RADIUS
+        ): ACTIVE_RADIUS else: IDLE_RADIUS
         let end_color = if move_end_point: rl.RED else: rl.BLUE
         rl.draw_circle_v(end_point, end_radius, end_color)
 

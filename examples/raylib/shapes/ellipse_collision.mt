@@ -1,7 +1,6 @@
 import std.math as math
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -12,7 +11,14 @@ function check_collision_point_ellipse(point: rl.Vector2, center: rl.Vector2, rx
     return ((dx * dx) + (dy * dy)) <= 1.0
 
 
-function check_collision_ellipses(c1: rl.Vector2, rx1: float, ry1: float, c2: rl.Vector2, rx2: float, ry2: float) -> bool:
+function check_collision_ellipses(
+    c1: rl.Vector2,
+    rx1: float,
+    ry1: float,
+    c2: rl.Vector2,
+    rx2: float,
+    ry2: float
+) -> bool:
     let dx = c2.x - c1.x
     let dy = c2.y - c1.y
     let distance = float<-math.sqrt(double<-((dx * dx) + (dy * dy)))
@@ -53,7 +59,14 @@ function main() -> int:
         else:
             ellipse_b_center = rl.get_mouse_position()
 
-        let ellipses_collide = check_collision_ellipses(ellipse_a_center, ellipse_a_rx, ellipse_a_ry, ellipse_b_center, ellipse_b_rx, ellipse_b_ry)
+        let ellipses_collide = check_collision_ellipses(
+            ellipse_a_center,
+            ellipse_a_rx,
+            ellipse_a_ry,
+            ellipse_b_center,
+            ellipse_b_rx,
+            ellipse_b_ry
+        )
         let mouse_position = rl.get_mouse_position()
         let mouse_in_a = check_collision_point_ellipse(mouse_position, ellipse_a_center, ellipse_a_rx, ellipse_a_ry)
         let mouse_in_b = check_collision_point_ellipse(mouse_position, ellipse_b_center, ellipse_b_rx, ellipse_b_ry)
@@ -61,8 +74,20 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.RAYWHITE)
 
-        rl.draw_ellipse(int<-ellipse_a_center.x, int<-ellipse_a_center.y, ellipse_a_rx, ellipse_a_ry, if ellipses_collide: rl.RED else: rl.BLUE)
-        rl.draw_ellipse(int<-ellipse_b_center.x, int<-ellipse_b_center.y, ellipse_b_rx, ellipse_b_ry, if ellipses_collide: rl.RED else: rl.GREEN)
+        rl.draw_ellipse(
+            int<-ellipse_a_center.x,
+            int<-ellipse_a_center.y,
+            ellipse_a_rx,
+            ellipse_a_ry,
+            if ellipses_collide: rl.RED else: rl.BLUE
+        )
+        rl.draw_ellipse(
+            int<-ellipse_b_center.x,
+            int<-ellipse_b_center.y,
+            ellipse_b_rx,
+            ellipse_b_ry,
+            if ellipses_collide: rl.RED else: rl.GREEN
+        )
         rl.draw_ellipse_lines(int<-ellipse_a_center.x, int<-ellipse_a_center.y, ellipse_a_rx, ellipse_a_ry, rl.WHITE)
         rl.draw_ellipse_lines(int<-ellipse_b_center.x, int<-ellipse_b_center.y, ellipse_b_rx, ellipse_b_ry, rl.WHITE)
         rl.draw_circle_v(ellipse_a_center, 4.0, rl.WHITE)

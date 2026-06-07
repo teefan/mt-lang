@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -15,7 +14,7 @@ const POINTS_OF_INTEREST: array[array[float, 2], 6] = array[array[float, 2], 6](
     array[float, 2](-0.8, 0.156),
     array[float, 2](0.285, 0.0),
     array[float, 2](-0.835, -0.2321),
-    array[float, 2](-0.70176, -0.3842),
+    array[float, 2](-0.70176, -0.3842)
 )
 
 
@@ -84,7 +83,10 @@ function main() -> int:
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT):
             increment_speed -= 1
 
-        if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT) or rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT):
+        if (
+            rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT)
+            or rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_RIGHT)
+        ):
             if rl.is_mouse_button_down(rl.MouseButton.MOUSE_BUTTON_LEFT):
                 zoom *= ZOOM_SPEED
             else:
@@ -93,7 +95,7 @@ function main() -> int:
             let mouse_position = rl.get_mouse_position()
             let offset_velocity = rl.Vector2(
                 x = (mouse_position.x / float<-SCREEN_WIDTH - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
-                y = (mouse_position.y / float<-SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom,
+                y = (mouse_position.y / float<-SCREEN_HEIGHT - 0.5) * OFFSET_SPEED_MULTIPLIER / zoom
             )
             offset[0] += rl.get_frame_time() * offset_velocity.x
             offset[1] += rl.get_frame_time() * offset_velocity.y

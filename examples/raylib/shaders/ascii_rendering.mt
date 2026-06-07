@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -64,10 +63,10 @@ function main() -> int:
                 x = 0.0,
                 y = 0.0,
                 width = float<-target.texture.width,
-                height = -(float<-target.texture.height),
+                height = -(float<-target.texture.height)
             ),
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.end_shader_mode()
 

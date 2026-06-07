@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -19,8 +18,18 @@ function main() -> int:
     let frame_width = scarfy.width / 6
     let frame_height = scarfy.height
 
-    let source_rect = rl.Rectangle(x = float<-0.0, y = float<-0.0, width = float<-frame_width, height = float<-frame_height)
-    let dest_rect = rl.Rectangle(x = float<-SCREEN_WIDTH / float<-2.0, y = float<-SCREEN_HEIGHT / float<-2.0, width = float<-frame_width * float<-2.0, height = float<-frame_height * float<-2.0)
+    let source_rect = rl.Rectangle(
+        x = float<-0.0,
+        y = float<-0.0,
+        width = float<-frame_width,
+        height = float<-frame_height
+    )
+    let dest_rect = rl.Rectangle(
+        x = float<-SCREEN_WIDTH / float<-2.0,
+        y = float<-SCREEN_HEIGHT / float<-2.0,
+        width = float<-frame_width * float<-2.0,
+        height = float<-frame_height * float<-2.0
+    )
     let origin = rl.Vector2(x = float<-frame_width, y = float<-frame_height)
 
     var rotation = 0

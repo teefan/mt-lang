@@ -2,7 +2,6 @@ import std.math as math
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 720
 const SCREEN_HEIGHT: int = 400
 const LINE_LENGTH: float = 150.0
@@ -46,14 +45,14 @@ function main() -> int:
             let radians = float<-angles[index] * DEG_TO_RAD
             let end_point = rl.Vector2(
                 x = center.x + float<-math.cos(double<-radians) * LINE_LENGTH,
-                y = center.y + float<-math.sin(double<-radians) * LINE_LENGTH,
+                y = center.y + float<-math.sin(double<-radians) * LINE_LENGTH
             )
             let color = angle_color(index)
             rl.draw_line_ex(center, end_point, 5.0, color)
 
             let text_position = rl.Vector2(
                 x = center.x + float<-math.cos(double<-radians) * (LINE_LENGTH + 20.0),
-                y = center.y + float<-math.sin(double<-radians) * (LINE_LENGTH + 20.0),
+                y = center.y + float<-math.sin(double<-radians) * (LINE_LENGTH + 20.0)
             )
             rl.draw_text(text.cstr_as_str(rl.text_format("%d°", angles[index])), int<-text_position.x, int<-text_position.y, 20, color)
             index += 1
@@ -61,7 +60,7 @@ function main() -> int:
         let animated_radians = total_angle * DEG_TO_RAD
         let animated_end = rl.Vector2(
             x = center.x + float<-math.cos(double<-animated_radians) * LINE_LENGTH,
-            y = center.y + float<-math.sin(double<-animated_radians) * LINE_LENGTH,
+            y = center.y + float<-math.sin(double<-animated_radians) * LINE_LENGTH
         )
         let animated_color = rl.color_from_hsv(total_angle, 0.8, 0.9)
         rl.draw_line_ex(center, animated_end, 5.0, animated_color)

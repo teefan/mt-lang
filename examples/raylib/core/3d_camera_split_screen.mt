@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const HALF_SCREEN_WIDTH: int = SCREEN_WIDTH / 2
@@ -38,7 +37,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let screen_player1 = rl.load_render_texture(HALF_SCREEN_WIDTH, SCREEN_HEIGHT)
 
@@ -47,10 +46,15 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 3.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
     let screen_player2 = rl.load_render_texture(HALF_SCREEN_WIDTH, SCREEN_HEIGHT)
-    let split_screen_rect = rl.Rectangle(x = 0.0, y = 0.0, width = float<-screen_player1.texture.width, height = -float<-screen_player1.texture.height)
+    let split_screen_rect = rl.Rectangle(
+        x = 0.0,
+        y = 0.0,
+        width = float<-screen_player1.texture.width,
+        height = -float<-screen_player1.texture.height
+    )
 
     rl.set_target_fps(60)
 
@@ -92,7 +96,12 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.BLACK)
         rl.draw_texture_rec(screen_player1.texture, split_screen_rect, rl.Vector2(x = 0.0, y = 0.0), rl.WHITE)
-        rl.draw_texture_rec(screen_player2.texture, split_screen_rect, rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 0.0), rl.WHITE)
+        rl.draw_texture_rec(
+            screen_player2.texture,
+            split_screen_rect,
+            rl.Vector2(x = float<-HALF_SCREEN_WIDTH, y = 0.0),
+            rl.WHITE
+        )
         rl.draw_rectangle((rl.get_screen_width() / 2) - 2, 0, 4, rl.get_screen_height(), rl.LIGHTGRAY)
         rl.end_drawing()
 

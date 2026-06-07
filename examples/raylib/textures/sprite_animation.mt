@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_FRAME_SPEED: int = 15
@@ -19,7 +18,12 @@ function main() -> int:
     defer rl.unload_texture(scarfy)
 
     let position = rl.Vector2(x = float<-350.0, y = float<-280.0)
-    var frame_rect = rl.Rectangle(x = float<-0.0, y = float<-0.0, width = float<-scarfy.width / float<-6.0, height = float<-scarfy.height)
+    var frame_rect = rl.Rectangle(
+        x = float<-0.0,
+        y = float<-0.0,
+        width = float<-scarfy.width / float<-6.0,
+        height = float<-scarfy.height
+    )
     var current_frame = 0
 
     var frames_counter = 0
@@ -54,7 +58,13 @@ function main() -> int:
 
         rl.draw_texture(scarfy, 15, 40, rl.WHITE)
         rl.draw_rectangle_lines(15, 40, scarfy.width, scarfy.height, rl.LIME)
-        rl.draw_rectangle_lines(15 + int<-frame_rect.x, 40 + int<-frame_rect.y, int<-frame_rect.width, int<-frame_rect.height, rl.RED)
+        rl.draw_rectangle_lines(
+            15 + int<-frame_rect.x,
+            40 + int<-frame_rect.y,
+            int<-frame_rect.width,
+            int<-frame_rect.height,
+            rl.RED
+        )
 
         let frame_speed_text = rl.text_format("%02i FPS", frames_speed)
         rl.draw_text("FRAME SPEED: ", 165, 210, 10, rl.DARKGRAY)

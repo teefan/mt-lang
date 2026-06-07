@@ -1,11 +1,9 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_PARTICLES: int = 200
-
 
 struct Particle:
     position: rl.Vector2
@@ -32,7 +30,7 @@ function main() -> int:
             r = ubyte<-rl.get_random_value(0, 255),
             g = ubyte<-rl.get_random_value(0, 255),
             b = ubyte<-rl.get_random_value(0, 255),
-            a = 255,
+            a = 255
         )
         mouse_tail[index].alpha = float<-1.0
         mouse_tail[index].size = float<-rl.get_random_value(1, 30) / float<-20.0
@@ -90,13 +88,20 @@ function main() -> int:
                     x = mouse_tail[index].position.x,
                     y = mouse_tail[index].position.y,
                     width = float<-smoke.width * mouse_tail[index].size,
-                    height = float<-smoke.height * mouse_tail[index].size,
+                    height = float<-smoke.height * mouse_tail[index].size
                 )
                 let origin = rl.Vector2(
                     x = float<-smoke.width * mouse_tail[index].size / 2.0,
-                    y = float<-smoke.height * mouse_tail[index].size / 2.0,
+                    y = float<-smoke.height * mouse_tail[index].size / 2.0
                 )
-                rl.draw_texture_pro(smoke, source, destination, origin, mouse_tail[index].rotation, rl.fade(mouse_tail[index].color, mouse_tail[index].alpha))
+                rl.draw_texture_pro(
+                    smoke,
+                    source,
+                    destination,
+                    origin,
+                    mouse_tail[index].rotation,
+                    rl.fade(mouse_tail[index].color, mouse_tail[index].alpha)
+                )
             index += 1
 
         rl.end_blend_mode()

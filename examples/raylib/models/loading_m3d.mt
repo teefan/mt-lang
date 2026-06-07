@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -38,7 +37,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.4, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let model = rl.load_model("models/m3d/cesium_man.m3d")
@@ -63,7 +62,7 @@ function main() -> int:
         else if rl.is_key_pressed(rl.KeyboardKey.KEY_LEFT):
             anim_index = (anim_index + anim_count - 1) % anim_count
 
-        var animation = unsafe: animations[anim_index]
+        let animation = unsafe: animations[anim_index]
         anim_current_frame += 1.0
         if anim_current_frame >= float<-animation.keyframeCount:
             anim_current_frame = 0.0
@@ -85,7 +84,13 @@ function main() -> int:
 
         rl.draw_text(current_animation_text, 10, 10, 20, rl.LIGHTGRAY)
         rl.draw_text("Press SPACE to draw skeleton", 10, 40, 20, rl.MAROON)
-        rl.draw_text("(c) CesiumMan model by KhronosGroup", rl.get_screen_width() - 210, rl.get_screen_height() - 20, 10, rl.GRAY)
+        rl.draw_text(
+            "(c) CesiumMan model by KhronosGroup",
+            rl.get_screen_width() - 210,
+            rl.get_screen_height() - 20,
+            10,
+            rl.GRAY
+        )
         rl.end_drawing()
 
     return 0

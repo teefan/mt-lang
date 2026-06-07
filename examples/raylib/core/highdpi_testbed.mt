@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GRID_SPACING: int = 40
@@ -44,7 +43,7 @@ function main() -> int:
             50,
             50,
             20,
-            rl.DARKGRAY,
+            rl.DARKGRAY
         )
         rl.draw_text(f"WINDOW POSITION: #{int<-window_pos.x}x#{int<-window_pos.y}", 50, 90, 20, rl.DARKGRAY)
         rl.draw_text(f"SCREEN SIZE: #{rl.get_screen_width()}x#{rl.get_screen_height()}", 50, 130, 20, rl.DARKGRAY)
@@ -55,8 +54,14 @@ function main() -> int:
         rl.draw_rectangle(rl.get_screen_width() - 30, rl.get_screen_height() - 60, 30, 60, rl.BLUE)
 
         rl.draw_circle_v(mouse_pos, 20.0, rl.MAROON)
-        rl.draw_rectangle_rec(rl.Rectangle(x = mouse_pos.x - 25.0, y = mouse_pos.y, width = 50.0, height = 2.0), rl.BLACK)
-        rl.draw_rectangle_rec(rl.Rectangle(x = mouse_pos.x, y = mouse_pos.y - 25.0, width = 2.0, height = 50.0), rl.BLACK)
+        rl.draw_rectangle_rec(
+            rl.Rectangle(x = mouse_pos.x - 25.0, y = mouse_pos.y, width = 50.0, height = 2.0),
+            rl.BLACK
+        )
+        rl.draw_rectangle_rec(
+            rl.Rectangle(x = mouse_pos.x, y = mouse_pos.y - 25.0, width = 2.0, height = 50.0),
+            rl.BLACK
+        )
 
         var label_y = (int<-mouse_pos.y) + 30
         if mouse_pos.y > (float<-rl.get_screen_height()) - 60.0:

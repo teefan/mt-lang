@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MOUSE_SCALE_MARK_SIZE: int = 12
@@ -23,7 +22,7 @@ function main() -> int:
             x = rec.x + rec.width - float<-MOUSE_SCALE_MARK_SIZE,
             y = rec.y + rec.height - float<-MOUSE_SCALE_MARK_SIZE,
             width = float<-MOUSE_SCALE_MARK_SIZE,
-            height = float<-MOUSE_SCALE_MARK_SIZE,
+            height = float<-MOUSE_SCALE_MARK_SIZE
         )
 
         if rl.check_collision_point_rec(mouse_position, scale_mark):
@@ -62,7 +61,7 @@ function main() -> int:
                 rl.Vector2(x = rec.x + rec.width - float<-MOUSE_SCALE_MARK_SIZE, y = rec.y + rec.height),
                 rl.Vector2(x = rec.x + rec.width, y = rec.y + rec.height),
                 rl.Vector2(x = rec.x + rec.width, y = rec.y + rec.height - float<-MOUSE_SCALE_MARK_SIZE),
-                rl.RED,
+                rl.RED
             )
 
         rl.end_drawing()

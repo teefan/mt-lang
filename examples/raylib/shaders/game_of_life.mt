@@ -2,7 +2,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MENU_WIDTH: int = 100
@@ -24,15 +23,13 @@ const PRESET_IMAGE_NAMES: array[str, IMAGE_PRESET_COUNT] = array[str, IMAGE_PRES
     "game_of_life/oscillators.png",
     "game_of_life/puffer_train.png",
     "game_of_life/glider_gun.png",
-    "game_of_life/breeder.png",
+    "game_of_life/breeder.png"
 )
-
 
 enum InteractionMode: int
     MODE_RUN = 0
     MODE_PAUSE = 1
     MODE_DRAW = 2
-
 
 struct PresetPattern:
     name: str
@@ -59,7 +56,7 @@ function main() -> int:
         PresetPattern(name = "Puffer train", position = rl.Vector2(x = 0.1, y = 0.5)),
         PresetPattern(name = "Glider Gun", position = rl.Vector2(x = 0.2, y = 0.2)),
         PresetPattern(name = "Breeder", position = rl.Vector2(x = 0.1, y = 0.5)),
-        PresetPattern(name = "Random", position = rl.Vector2(x = 0.5, y = 0.5)),
+        PresetPattern(name = "Random", position = rl.Vector2(x = 0.5, y = 0.5))
     )
 
     var zoom = 1
@@ -81,19 +78,24 @@ function main() -> int:
     let resolution = array[float, 2](float<-WORLD_WIDTH, float<-WORLD_HEIGHT)
     rl.set_shader_value(shader, resolution_location, resolution, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC2)
 
-    var world1 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
+    let world1 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
     defer rl.unload_render_texture(world1)
-    var world2 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
+    let world2 = rl.load_render_texture(WORLD_WIDTH, WORLD_HEIGHT)
     defer rl.unload_render_texture(world2)
     rl.begin_texture_mode(world2)
     rl.clear_background(rl.RAYWHITE)
     rl.end_texture_mode()
 
-    var start_pattern = rl.load_image("game_of_life/r_pentomino.png")
+    let start_pattern = rl.load_image("game_of_life/r_pentomino.png")
     rl.update_texture_rec(
         world2.texture,
-        rl.Rectangle(x = float<-WORLD_WIDTH / 2.0, y = float<-WORLD_HEIGHT / 2.0, width = float<-start_pattern.width, height = float<-start_pattern.height),
-        start_pattern.data,
+        rl.Rectangle(
+            x = float<-WORLD_WIDTH / 2.0,
+            y = float<-WORLD_HEIGHT / 2.0,
+            width = float<-start_pattern.width,
+            height = float<-start_pattern.height
+        ),
+        start_pattern.data
     )
     rl.unload_image(start_pattern)
 
@@ -154,11 +156,16 @@ function main() -> int:
                 rl.begin_texture_mode(world_on_screen)
                 rl.draw_texture_pro(
                     current_world.texture,
-                    rl.Rectangle(x = float<-(int<-offset_x), y = float<-(int<-offset_y), width = float<-size_in_world_x, height = -(float<-size_in_world_y)),
+                    rl.Rectangle(
+                        x = float<-(int<-offset_x),
+                        y = float<-(int<-offset_y),
+                        width = float<-size_in_world_x,
+                        height = -(float<-size_in_world_y)
+                    ),
                     rl.Rectangle(x = 0.0, y = 0.0, width = float<-size_in_world_x, height = float<-size_in_world_y),
                     rl.Vector2(x = 0.0, y = 0.0),
                     0.0,
-                    rl.WHITE,
+                    rl.WHITE
                 )
                 rl.end_texture_mode()
                 image_to_draw = rl.load_image_from_texture(world_on_screen.texture)
@@ -181,15 +188,20 @@ function main() -> int:
                 if previous_color != first_color:
                     rl.update_texture_rec(
                         current_world.texture,
-                        rl.Rectangle(x = float<-(int<-offset_x), y = float<-(int<-offset_y), width = float<-size_in_world_x, height = float<-size_in_world_y),
-                        image_to_draw.data,
+                        rl.Rectangle(
+                            x = float<-(int<-offset_x),
+                            y = float<-(int<-offset_y),
+                            width = float<-size_in_world_x,
+                            height = float<-size_in_world_y
+                        ),
+                        image_to_draw.data
                     )
             else:
                 first_color = -1
 
         if preset >= 0:
             if preset < PRESET_COUNT - 1:
-                var pattern = rl.load_image(PRESET_IMAGE_NAMES[preset])
+                let pattern = rl.load_image(PRESET_IMAGE_NAMES[preset])
                 rl.begin_texture_mode(current_world)
                 rl.clear_background(rl.RAYWHITE)
                 rl.end_texture_mode()
@@ -199,9 +211,9 @@ function main() -> int:
                         x = float<-WORLD_WIDTH * preset_patterns[preset].position.x - float<-pattern.width / 2.0,
                         y = float<-WORLD_HEIGHT * preset_patterns[preset].position.y - float<-pattern.height / 2.0,
                         width = float<-pattern.width,
-                        height = float<-pattern.height,
+                        height = float<-pattern.height
                     ),
-                    pattern.data,
+                    pattern.data
                 )
                 rl.unload_image(pattern)
             else:
@@ -221,8 +233,13 @@ function main() -> int:
                             x += 1
                         rl.update_texture_rec(
                             current_world.texture,
-                            rl.Rectangle(x = float<-(pattern.width * i), y = float<-(pattern.height * j), width = float<-pattern.width, height = float<-pattern.height),
-                            pattern.data,
+                            rl.Rectangle(
+                                x = float<-(pattern.width * i),
+                                y = float<-(pattern.height * j),
+                                width = float<-pattern.width,
+                                height = float<-pattern.height
+                            ),
+                            pattern.data
                         )
                         j += 1
                     i += 1
@@ -245,7 +262,7 @@ function main() -> int:
             x = offset_x,
             y = offset_y,
             width = float<-WINDOW_WIDTH / float<-zoom,
-            height = float<-WINDOW_HEIGHT / float<-zoom,
+            height = float<-WINDOW_HEIGHT / float<-zoom
         )
 
         if mode == int<-InteractionMode.MODE_RUN and frame % frames_per_step == 0:
@@ -255,14 +272,34 @@ function main() -> int:
 
             rl.begin_texture_mode(current_world)
             rl.begin_shader_mode(shader)
-            rl.draw_texture_pro(previous_world.texture, world_rect_source, world_rect_dest, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.RAYWHITE)
+            rl.draw_texture_pro(
+                previous_world.texture,
+                world_rect_source,
+                world_rect_dest,
+                rl.Vector2(x = 0.0, y = 0.0),
+                0.0,
+                rl.RAYWHITE
+            )
             rl.end_shader_mode()
             rl.end_texture_mode()
 
         rl.begin_drawing()
-        rl.draw_texture_pro(current_world.texture, texture_source_to_screen, texture_on_screen, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)
+        rl.draw_texture_pro(
+            current_world.texture,
+            texture_source_to_screen,
+            texture_on_screen,
+            rl.Vector2(x = 0.0, y = 0.0),
+            0.0,
+            rl.WHITE
+        )
         rl.draw_line(WINDOW_WIDTH, 0, WINDOW_WIDTH, SCREEN_HEIGHT, rl.Color(r = 218, g = 218, b = 218, a = 255))
-        rl.draw_rectangle(WINDOW_WIDTH, 0, SCREEN_WIDTH - WINDOW_WIDTH, SCREEN_HEIGHT, rl.Color(r = 232, g = 232, b = 232, a = 255))
+        rl.draw_rectangle(
+            WINDOW_WIDTH,
+            0,
+            SCREEN_WIDTH - WINDOW_WIDTH,
+            SCREEN_HEIGHT,
+            rl.Color(r = 232, g = 232, b = 232, a = 255)
+        )
 
         rl.draw_text("Conway's", 704, 4, 20, rl.DARKBLUE)
         rl.draw_text(" game of", 704, 19, 20, rl.DARKBLUE)
@@ -273,7 +310,10 @@ function main() -> int:
         preset = -1
         var preset_index = 0
         while preset_index < PRESET_COUNT:
-            if gui.button(rl.Rectangle(x = 710.0, y = 70.0 + 18.0 * float<-preset_index, width = 80.0, height = 16.0), preset_patterns[preset_index].name) != 0:
+            if gui.button(
+                rl.Rectangle(x = 710.0, y = 70.0 + 18.0 * float<-preset_index, width = 80.0, height = 16.0),
+                preset_patterns[preset_index].name
+            ) != 0:
                 preset = preset_index
             preset_index += 1
 

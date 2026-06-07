@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const DEG_TO_RAD: float = 0.0174532925
@@ -20,7 +19,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 30.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var model = rl.load_model("models/obj/plane.obj")
@@ -71,8 +70,8 @@ function main() -> int:
             rl.Vector3(
                 x = DEG_TO_RAD * pitch,
                 y = DEG_TO_RAD * yaw,
-                z = DEG_TO_RAD * roll,
-            ),
+                z = DEG_TO_RAD * roll
+            )
         )
 
         rl.begin_drawing()
@@ -88,7 +87,13 @@ function main() -> int:
         rl.draw_text("Pitch controlled with: KEY_UP / KEY_DOWN", 40, 380, 10, rl.DARKGRAY)
         rl.draw_text("Roll controlled with: KEY_LEFT / KEY_RIGHT", 40, 400, 10, rl.DARKGRAY)
         rl.draw_text("Yaw controlled with: KEY_A / KEY_S", 40, 420, 10, rl.DARKGRAY)
-        rl.draw_text("(c) WWI Plane Model created by GiaHanLam", SCREEN_WIDTH - 240, SCREEN_HEIGHT - 20, 10, rl.DARKGRAY)
+        rl.draw_text(
+            "(c) WWI Plane Model created by GiaHanLam",
+            SCREEN_WIDTH - 240,
+            SCREEN_HEIGHT - 20,
+            10,
+            rl.DARKGRAY
+        )
         rl.end_drawing()
 
     return 0

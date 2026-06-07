@@ -4,6 +4,7 @@ import std.raylib.runtime as rl_runtime
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
+
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [textures] example - background scrolling")
     defer rl.close_window()
@@ -39,17 +40,53 @@ function main() -> int:
         rl.begin_drawing()
         rl.clear_background(rl.get_color(0x052c46ff))
 
-        rl.draw_texture_ex(background, rl.Vector2(x = scrolling_back, y = float<-20.0), float<-0.0, float<-2.0, rl.WHITE)
-        rl.draw_texture_ex(background, rl.Vector2(x = float<-(background.width * 2) + scrolling_back, y = float<-20.0), float<-0.0, float<-2.0, rl.WHITE)
+        rl.draw_texture_ex(
+            background,
+            rl.Vector2(x = scrolling_back, y = float<-20.0),
+            float<-0.0,
+            float<-2.0,
+            rl.WHITE
+        )
+        rl.draw_texture_ex(
+            background,
+            rl.Vector2(x = float<-(background.width * 2) + scrolling_back, y = float<-20.0),
+            float<-0.0,
+            float<-2.0,
+            rl.WHITE
+        )
 
         rl.draw_texture_ex(midground, rl.Vector2(x = scrolling_mid, y = float<-20.0), float<-0.0, float<-2.0, rl.WHITE)
-        rl.draw_texture_ex(midground, rl.Vector2(x = float<-(midground.width * 2) + scrolling_mid, y = float<-20.0), float<-0.0, float<-2.0, rl.WHITE)
+        rl.draw_texture_ex(
+            midground,
+            rl.Vector2(x = float<-(midground.width * 2) + scrolling_mid, y = float<-20.0),
+            float<-0.0,
+            float<-2.0,
+            rl.WHITE
+        )
 
-        rl.draw_texture_ex(foreground, rl.Vector2(x = scrolling_fore, y = float<-70.0), float<-0.0, float<-2.0, rl.WHITE)
-        rl.draw_texture_ex(foreground, rl.Vector2(x = float<-(foreground.width * 2) + scrolling_fore, y = float<-70.0), float<-0.0, float<-2.0, rl.WHITE)
+        rl.draw_texture_ex(
+            foreground,
+            rl.Vector2(x = scrolling_fore, y = float<-70.0),
+            float<-0.0,
+            float<-2.0,
+            rl.WHITE
+        )
+        rl.draw_texture_ex(
+            foreground,
+            rl.Vector2(x = float<-(foreground.width * 2) + scrolling_fore, y = float<-70.0),
+            float<-0.0,
+            float<-2.0,
+            rl.WHITE
+        )
 
         rl.draw_text("BACKGROUND SCROLLING & PARALLAX", 10, 10, 20, rl.RED)
-        rl.draw_text("(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)", SCREEN_WIDTH - 330, SCREEN_HEIGHT - 20, 10, rl.RAYWHITE)
+        rl.draw_text(
+            "(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)",
+            SCREEN_WIDTH - 330,
+            SCREEN_HEIGHT - 20,
+            10,
+            rl.RAYWHITE
+        )
         rl.end_drawing()
 
     return 0

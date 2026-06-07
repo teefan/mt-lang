@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -26,15 +25,15 @@ function main() -> int:
 
     let font_position1 = rl.Vector2(
         x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(font1, msg1, float<-font1.baseSize, -3.0).x / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-font1.baseSize / 2.0 - 80.0,
+        y = float<-SCREEN_HEIGHT / 2.0 - float<-font1.baseSize / 2.0 - 80.0
     )
     let font_position2 = rl.Vector2(
         x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(font2, msg2, float<-font2.baseSize, -2.0).x / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-font2.baseSize / 2.0 - 10.0,
+        y = float<-SCREEN_HEIGHT / 2.0 - float<-font2.baseSize / 2.0 - 10.0
     )
     let font_position3 = rl.Vector2(
         x = float<-SCREEN_WIDTH / 2.0 - rl.measure_text_ex(font3, msg3, float<-font3.baseSize, 2.0).x / 2.0,
-        y = float<-SCREEN_HEIGHT / 2.0 - float<-font3.baseSize / 2.0 + 50.0,
+        y = float<-SCREEN_HEIGHT / 2.0 - float<-font3.baseSize / 2.0 + 50.0
     )
 
     rl.set_target_fps(60)

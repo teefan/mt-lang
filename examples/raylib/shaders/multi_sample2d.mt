@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -14,12 +13,12 @@ function main() -> int:
     if not rl_runtime.enter_asset_directory("../resources"):
         fatal("could not enter examples/raylib/resources")
 
-    var red_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 255, g = 0, b = 0, a = 255))
+    let red_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 255, g = 0, b = 0, a = 255))
     let red_texture = rl.load_texture_from_image(red_image)
     defer rl.unload_texture(red_texture)
     rl.unload_image(red_image)
 
-    var blue_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 0, g = 0, b = 255, a = 255))
+    let blue_image = rl.gen_image_color(SCREEN_WIDTH, SCREEN_HEIGHT, rl.Color(r = 0, g = 0, b = 255, a = 255))
     let blue_texture = rl.load_texture_from_image(blue_image)
     defer rl.unload_texture(blue_texture)
     rl.unload_image(blue_image)
@@ -54,7 +53,13 @@ function main() -> int:
         rl.draw_texture(red_texture, 0, 0, rl.WHITE)
         rl.end_shader_mode()
 
-        rl.draw_text("Use KEY_LEFT/KEY_RIGHT to move texture mixing in shader!", 80, rl.get_screen_height() - 40, 20, rl.RAYWHITE)
+        rl.draw_text(
+            "Use KEY_LEFT/KEY_RIGHT to move texture mixing in shader!",
+            80,
+            rl.get_screen_height() - 40,
+            20,
+            rl.RAYWHITE
+        )
         rl.end_drawing()
 
     return 0

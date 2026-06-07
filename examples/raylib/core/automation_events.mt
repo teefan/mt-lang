@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GRAVITY: float = 400.0
@@ -18,12 +17,10 @@ const ZERO_FLOAT: float = 0.0
 const PLAYER_HALF_WIDTH: float = 20.0
 const PLAYER_HEIGHT: float = 40.0
 
-
 struct Player:
     position: rl.Vector2
     speed: float
     can_jump: bool
-
 
 struct EnvElement:
     rect: rl.Rectangle
@@ -43,7 +40,11 @@ function reset_scene(player: ref[Player], camera: ref[rl.Camera2D]) -> void:
         read(camera).zoom = 1.0
 
 
-function update_player(player: ref[Player], env_elements: array[EnvElement, MAX_ENVIRONMENT_ELEMENTS], delta_time: float) -> void:
+function update_player(
+    player: ref[Player],
+    env_elements: array[EnvElement, MAX_ENVIRONMENT_ELEMENTS],
+    delta_time: float
+) -> void:
     if rl.is_key_down(rl.KeyboardKey.KEY_LEFT):
         unsafe: read(player).position.x -= PLAYER_HOR_SPD * delta_time
     if rl.is_key_down(rl.KeyboardKey.KEY_RIGHT):
@@ -61,11 +62,13 @@ function update_player(player: ref[Player], env_elements: array[EnvElement, MAX_
         let element = env_elements[index]
         let player_position = unsafe: read(player).position
         let player_speed = unsafe: read(player).speed
-        if element.blocking and
-            element.rect.x <= player_position.x and
-            element.rect.x + element.rect.width >= player_position.x and
-            element.rect.y >= player_position.y and
-            element.rect.y <= player_position.y + player_speed * delta_time:
+        if (
+            element.blocking
+            and element.rect.x <= player_position.x
+            and element.rect.x + element.rect.width >= player_position.x
+            and element.rect.y >= player_position.y
+            and element.rect.y <= player_position.y + player_speed * delta_time
+        ):
             hit_obstacle = true
             unsafe:
                 read(player).speed = ZERO_FLOAT
@@ -81,7 +84,11 @@ function update_player(player: ref[Player], env_elements: array[EnvElement, MAX_
         unsafe: read(player).can_jump = true
 
 
-function update_camera(camera: ref[rl.Camera2D], player: Player, env_elements: array[EnvElement, MAX_ENVIRONMENT_ELEMENTS]) -> void:
+function update_camera(
+    camera: ref[rl.Camera2D],
+    player: Player,
+    env_elements: array[EnvElement, MAX_ENVIRONMENT_ELEMENTS]
+) -> void:
     unsafe:
         read(camera).target = player.position
         read(camera).offset = rl.Vector2(x = HALF_SCREEN_WIDTH, y = HALF_SCREEN_HEIGHT)
@@ -130,17 +137,37 @@ function main() -> int:
 
     var player = Player(position = rl.Vector2(x = 400.0, y = 280.0), speed = ZERO_FLOAT, can_jump = false)
     let env_elements = array[EnvElement, 5](
-        EnvElement(rect = rl.Rectangle(x = 0.0, y = 0.0, width = 1000.0, height = 400.0), blocking = false, color = rl.LIGHTGRAY),
-        EnvElement(rect = rl.Rectangle(x = 0.0, y = 400.0, width = 1000.0, height = 200.0), blocking = true, color = rl.GRAY),
-        EnvElement(rect = rl.Rectangle(x = 300.0, y = 200.0, width = 400.0, height = 10.0), blocking = true, color = rl.GRAY),
-        EnvElement(rect = rl.Rectangle(x = 250.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
-        EnvElement(rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0), blocking = true, color = rl.GRAY),
+        EnvElement(
+            rect = rl.Rectangle(x = 0.0, y = 0.0, width = 1000.0, height = 400.0),
+            blocking = false,
+            color = rl.LIGHTGRAY
+        ),
+        EnvElement(
+            rect = rl.Rectangle(x = 0.0, y = 400.0, width = 1000.0, height = 200.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvElement(
+            rect = rl.Rectangle(x = 300.0, y = 200.0, width = 400.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvElement(
+            rect = rl.Rectangle(x = 250.0, y = 300.0, width = 100.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        ),
+        EnvElement(
+            rect = rl.Rectangle(x = 650.0, y = 300.0, width = 100.0, height = 10.0),
+            blocking = true,
+            color = rl.GRAY
+        )
     )
     var camera = rl.Camera2D(
         target = player.position,
         offset = rl.Vector2(x = HALF_SCREEN_WIDTH, y = HALF_SCREEN_HEIGHT),
         rotation = 0.0,
-        zoom = 1.0,
+        zoom = 1.0
     )
 
     var aelist = rl.load_automation_event_list(null)
@@ -227,7 +254,15 @@ function main() -> int:
         while index < MAX_ENVIRONMENT_ELEMENTS:
             rl.draw_rectangle_rec(env_elements[index].rect, env_elements[index].color)
             index += 1
-        rl.draw_rectangle_rec(rl.Rectangle(x = player.position.x - PLAYER_HALF_WIDTH, y = player.position.y - PLAYER_HEIGHT, width = PLAYER_HEIGHT, height = PLAYER_HEIGHT), rl.RED)
+        rl.draw_rectangle_rec(
+            rl.Rectangle(
+                x = player.position.x - PLAYER_HALF_WIDTH,
+                y = player.position.y - PLAYER_HEIGHT,
+                width = PLAYER_HEIGHT,
+                height = PLAYER_HEIGHT
+            ),
+            rl.RED
+        )
         rl.end_mode_2d()
 
         rl.draw_rectangle(10, 10, 290, 145, rl.fade(rl.SKYBLUE, 0.5))
@@ -249,7 +284,12 @@ function main() -> int:
         else if event_playing:
             rl.draw_rectangle(10, 160, 290, 30, rl.fade(rl.LIME, 0.3))
             rl.draw_rectangle_lines(10, 160, 290, 30, rl.fade(rl.DARKGREEN, 0.8))
-            rl.draw_triangle(rl.Vector2(x = 20.0, y = 165.0), rl.Vector2(x = 20.0, y = 185.0), rl.Vector2(x = 40.0, y = 175.0), rl.DARKGREEN)
+            rl.draw_triangle(
+                rl.Vector2(x = 20.0, y = 165.0),
+                rl.Vector2(x = 20.0, y = 185.0),
+                rl.Vector2(x = 40.0, y = 175.0),
+                rl.DARKGREEN
+            )
             if ((frame_counter / 15) % 2) == 1:
                 let playback_text = rl.text_format("PLAYING RECORDED EVENTS... [%i]", int<-current_play_frame)
                 rl.draw_text(playback_text, 50, 170, 10, rl.DARKGREEN)

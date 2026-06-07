@@ -1,6 +1,5 @@
 import std.raylib as rl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const AUTO_RESTORE_FRAMES: int = 240
@@ -104,9 +103,14 @@ function main() -> int:
 
         rl.draw_circle_v(ball_position, BALL_RADIUS, rl.MAROON)
         rl.draw_rectangle_lines_ex(
-            rl.Rectangle(x = 0.0, y = 0.0, width = float<-rl.get_screen_width(), height = float<-rl.get_screen_height()),
+            rl.Rectangle(
+                x = 0.0,
+                y = 0.0,
+                width = float<-rl.get_screen_width(),
+                height = float<-rl.get_screen_height()
+            ),
             4.0,
-            rl.RAYWHITE,
+            rl.RAYWHITE
         )
         rl.draw_circle_v(rl.get_mouse_position(), 10.0, rl.DARKBLUE)
         rl.draw_fps(10, 10)
@@ -117,14 +121,32 @@ function main() -> int:
         draw_toggle_flag_line("F", "FLAG_FULLSCREEN_MODE", rl.ConfigFlags.FLAG_FULLSCREEN_MODE, 80, "off")
         draw_toggle_flag_line("R", "FLAG_WINDOW_RESIZABLE", rl.ConfigFlags.FLAG_WINDOW_RESIZABLE, 100, "off")
         draw_toggle_flag_line("D", "FLAG_WINDOW_UNDECORATED", rl.ConfigFlags.FLAG_WINDOW_UNDECORATED, 120, "off")
-        draw_toggle_flag_line("H", "FLAG_WINDOW_HIDDEN", rl.ConfigFlags.FLAG_WINDOW_HIDDEN, 140, "off (hides for 3 seconds)")
-        draw_toggle_flag_line("N", "FLAG_WINDOW_MINIMIZED", rl.ConfigFlags.FLAG_WINDOW_MINIMIZED, 160, "off (restores after 3 seconds)")
+        draw_toggle_flag_line(
+            "H",
+            "FLAG_WINDOW_HIDDEN",
+            rl.ConfigFlags.FLAG_WINDOW_HIDDEN,
+            140,
+            "off (hides for 3 seconds)"
+        )
+        draw_toggle_flag_line(
+            "N",
+            "FLAG_WINDOW_MINIMIZED",
+            rl.ConfigFlags.FLAG_WINDOW_MINIMIZED,
+            160,
+            "off (restores after 3 seconds)"
+        )
         draw_toggle_flag_line("M", "FLAG_WINDOW_MAXIMIZED", rl.ConfigFlags.FLAG_WINDOW_MAXIMIZED, 180, "off")
         draw_toggle_flag_line("U", "FLAG_WINDOW_UNFOCUSED", rl.ConfigFlags.FLAG_WINDOW_UNFOCUSED, 200, "off")
         draw_toggle_flag_line("T", "FLAG_WINDOW_TOPMOST", rl.ConfigFlags.FLAG_WINDOW_TOPMOST, 220, "off")
         draw_toggle_flag_line("A", "FLAG_WINDOW_ALWAYS_RUN", rl.ConfigFlags.FLAG_WINDOW_ALWAYS_RUN, 240, "off")
         draw_toggle_flag_line("V", "FLAG_VSYNC_HINT", rl.ConfigFlags.FLAG_VSYNC_HINT, 260, "off")
-        draw_toggle_flag_line("B", "FLAG_BORDERLESS_WINDOWED_MODE", rl.ConfigFlags.FLAG_BORDERLESS_WINDOWED_MODE, 280, "off")
+        draw_toggle_flag_line(
+            "B",
+            "FLAG_BORDERLESS_WINDOWED_MODE",
+            rl.ConfigFlags.FLAG_BORDERLESS_WINDOWED_MODE,
+            280,
+            "off"
+        )
 
         rl.draw_text("Following flags can only be set before window creation:", 10, 320, 10, rl.GRAY)
         draw_static_flag_line("FLAG_WINDOW_HIGHDPI", rl.ConfigFlags.FLAG_WINDOW_HIGHDPI, 340)

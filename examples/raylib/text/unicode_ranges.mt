@@ -2,7 +2,6 @@ import std.mem.heap as heap
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -104,22 +103,46 @@ function main() -> int:
         rl.draw_text_ex(font, "> 中文: 你好世界!", rl.Vector2(x = 50.0, y = 270.0), 32.0, 1.0, rl.DARKGRAY)
         rl.draw_text_ex(font, "> 日本語: こんにちは世界!", rl.Vector2(x = 50.0, y = 320.0), 32.0, 1.0, rl.DARKGRAY)
 
-        rl.draw_rectangle_rec(rl.Rectangle(x = 400.0, y = 16.0, width = float<-font.texture.width * atlas_scale, height = float<-font.texture.height * atlas_scale), rl.BLACK)
+        rl.draw_rectangle_rec(
+            rl.Rectangle(
+                x = 400.0,
+                y = 16.0,
+                width = float<-font.texture.width * atlas_scale,
+                height = float<-font.texture.height * atlas_scale
+            ),
+            rl.BLACK
+        )
         rl.draw_texture_pro(
             font.texture,
             rl.Rectangle(x = 0.0, y = 0.0, width = float<-font.texture.width, height = float<-font.texture.height),
-            rl.Rectangle(x = 400.0, y = 16.0, width = float<-font.texture.width * atlas_scale, height = float<-font.texture.height * atlas_scale),
+            rl.Rectangle(
+                x = 400.0,
+                y = 16.0,
+                width = float<-font.texture.width * atlas_scale,
+                height = float<-font.texture.height * atlas_scale
+            ),
             rl.Vector2(x = 0.0, y = 0.0),
             0.0,
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_rectangle_lines(400, 16, 380, 380, rl.RED)
 
-        let atlas_size_text = rl.text_format("ATLAS SIZE: %ix%i px (x%02.2f)", font.texture.width, font.texture.height, atlas_scale)
+        let atlas_size_text = rl.text_format(
+            "ATLAS SIZE: %ix%i px (x%02.2f)",
+            font.texture.width,
+            font.texture.height,
+            atlas_scale
+        )
         let glyph_count_text = rl.text_format("CODEPOINTS GLYPHS LOADED: %i", font.glyphCount)
         rl.draw_text(atlas_size_text, 20, 380, 20, rl.BLUE)
         rl.draw_text(glyph_count_text, 20, 410, 20, rl.LIME)
-        rl.draw_text("Font: Noto Sans TC. License: SIL Open Font License 1.1", SCREEN_WIDTH - 300, SCREEN_HEIGHT - 20, 10, rl.GRAY)
+        rl.draw_text(
+            "Font: Noto Sans TC. License: SIL Open Font License 1.1",
+            SCREEN_WIDTH - 300,
+            SCREEN_HEIGHT - 20,
+            10,
+            rl.GRAY
+        )
 
         if generated_this_frame:
             rl.draw_rectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, rl.fade(rl.WHITE, 0.8))

@@ -3,7 +3,6 @@ import std.raylib as rl
 import std.str as text
 import std.time as time
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const CLOCK_ANALOG: int = 0
@@ -32,14 +31,12 @@ function segment_color(segments: int, mask: int, color_on: rl.Color, color_off: 
 
     return color_off
 
-
 struct ClockHand:
     value: int
     angle: float
     length: int
     thickness: int
     color: rl.Color
-
 
 struct Clock:
     second: ClockHand
@@ -93,34 +90,49 @@ function draw_clock_analog(clock: Clock, position: rl.Vector2) -> void:
         rl.draw_line_ex(
             rl.Vector2(
                 x = float<-(position.x + outer_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
-                y = float<-(position.y + outer_radius * float<-math.sin(double<-(angle * DEG_TO_RAD))),
+                y = float<-(position.y + outer_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
             ),
             rl.Vector2(
                 x = float<-(position.x + inner_radius * float<-math.cos(double<-(angle * DEG_TO_RAD))),
-                y = float<-(position.y + inner_radius * float<-math.sin(double<-(angle * DEG_TO_RAD))),
+                y = float<-(position.y + inner_radius * float<-math.sin(double<-(angle * DEG_TO_RAD)))
             ),
             line_thickness,
-            rl.DARKGRAY,
+            rl.DARKGRAY
         )
         index += 1
 
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.second.length, height = float<-clock.second.thickness),
+        rl.Rectangle(
+            x = position.x,
+            y = position.y,
+            width = float<-clock.second.length,
+            height = float<-clock.second.thickness
+        ),
         rl.Vector2(x = 0.0, y = float<-clock.second.thickness / 2.0),
         clock.second.angle,
-        clock.second.color,
+        clock.second.color
     )
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.minute.length, height = float<-clock.minute.thickness),
+        rl.Rectangle(
+            x = position.x,
+            y = position.y,
+            width = float<-clock.minute.length,
+            height = float<-clock.minute.thickness
+        ),
         rl.Vector2(x = 0.0, y = float<-clock.minute.thickness / 2.0),
         clock.minute.angle,
-        clock.minute.color,
+        clock.minute.color
     )
     rl.draw_rectangle_pro(
-        rl.Rectangle(x = position.x, y = position.y, width = float<-clock.hour.length, height = float<-clock.hour.thickness),
+        rl.Rectangle(
+            x = position.x,
+            y = position.y,
+            width = float<-clock.hour.length,
+            height = float<-clock.hour.thickness
+        ),
         rl.Vector2(x = 0.0, y = float<-clock.hour.thickness / 2.0),
         clock.hour.angle,
-        clock.hour.color,
+        clock.hour.color
     )
 
 
@@ -169,53 +181,74 @@ function draw_7s_display(position: rl.Vector2, segments: int, color_on: rl.Color
     let offset_y_adjust: float = float<-segment_thick * 0.3
 
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + float<-segment_thick),
+        rl.Vector2(
+            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
+            y = position.y + float<-segment_thick
+        ),
         segment_len,
         segment_thick,
         false,
-        segment_color(segments, 0b00000001, color_on, color_off),
+        segment_color(segments, 0b00000001, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0,
+            y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         true,
-        segment_color(segments, 0b00000010, color_on, color_off),
+        segment_color(segments, 0b00000010, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick + float<-segment_len + float<-segment_thick / 2.0,
+            y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         true,
-        segment_color(segments, 0b00000100, color_on, color_off),
+        segment_color(segments, 0b00000100, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 5.0 * float<-segment_thick + 2.0 * float<-segment_len - 4.0 * offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
+            y = position.y + 5.0 * float<-segment_thick + 2.0 * float<-segment_len - 4.0 * offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         false,
-        segment_color(segments, 0b00001000, color_on, color_off),
+        segment_color(segments, 0b00001000, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick / 2.0,
+            y = position.y + 4.0 * float<-segment_thick + float<-segment_len + float<-segment_len / 2.0 - 3.0 * offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         true,
-        segment_color(segments, 0b00010000, color_on, color_off),
+        segment_color(segments, 0b00010000, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick / 2.0, y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick / 2.0,
+            y = position.y + 2.0 * float<-segment_thick + float<-segment_len / 2.0 - offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         true,
-        segment_color(segments, 0b00100000, color_on, color_off),
+        segment_color(segments, 0b00100000, color_on, color_off)
     )
     draw_display_segment(
-        rl.Vector2(x = position.x + float<-segment_thick + float<-segment_len / 2.0, y = position.y + 3.0 * float<-segment_thick + float<-segment_len - 2.0 * offset_y_adjust),
+        rl.Vector2(
+            x = position.x + float<-segment_thick + float<-segment_len / 2.0,
+            y = position.y + 3.0 * float<-segment_thick + float<-segment_len - 2.0 * offset_y_adjust
+        ),
         segment_len,
         segment_thick,
         false,
-        segment_color(segments, 0b01000000, color_on, color_off),
+        segment_color(segments, 0b01000000, color_on, color_off)
     )
 
 
@@ -249,7 +282,7 @@ function main() -> int:
     var clock = Clock(
         second = ClockHand(value = 0, angle = 45.0, length = 140, thickness = 3, color = rl.MAROON),
         minute = ClockHand(value = 0, angle = 10.0, length = 130, thickness = 7, color = rl.DARKGRAY),
-        hour = ClockHand(value = 0, angle = 0.0, length = 100, thickness = 7, color = rl.BLACK),
+        hour = ClockHand(value = 0, angle = 0.0, length = 100, thickness = 7, color = rl.BLACK)
     )
 
     rl.set_target_fps(60)
@@ -270,8 +303,19 @@ function main() -> int:
             draw_clock_analog(clock, rl.Vector2(x = 400.0, y = 240.0))
         else:
             draw_clock_digital(clock, rl.Vector2(x = 30.0, y = 60.0))
-            let clock_time = text.cstr_as_str(rl.text_format("%02i:%02i:%02i", clock.hour.value, clock.minute.value, clock.second.value))
-            rl.draw_text(clock_time, rl.get_screen_width() / 2 - rl.measure_text(clock_time, 150) / 2, 300, 150, rl.BLACK)
+            let clock_time = text.cstr_as_str(rl.text_format(
+                "%02i:%02i:%02i",
+                clock.hour.value,
+                clock.minute.value,
+                clock.second.value
+            ))
+            rl.draw_text(
+                clock_time,
+                rl.get_screen_width() / 2 - rl.measure_text(clock_time, 150) / 2,
+                300,
+                150,
+                rl.BLACK
+            )
 
         var mode_name = "ANALOGUE CLOCK"
         if clock_mode == CLOCK_DIGITAL:
@@ -281,7 +325,7 @@ function main() -> int:
             10,
             10,
             20,
-            rl.DARKGRAY,
+            rl.DARKGRAY
         )
         rl.end_drawing()
 

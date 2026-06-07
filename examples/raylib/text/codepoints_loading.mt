@@ -2,7 +2,6 @@ import std.mem.heap as heap
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -77,7 +76,10 @@ function main() -> int:
 
         rl.draw_rectangle(0, 0, rl.get_screen_width(), 70, rl.BLACK)
         let total_codepoints_text = rl.text_format("Total codepoints contained in provided text: %i", codepoint_count)
-        let unique_codepoints_text = rl.text_format("Total codepoints required for font atlas (duplicates excluded): %i", codepoints_no_dups_count)
+        let unique_codepoints_text = rl.text_format(
+            "Total codepoints required for font atlas (duplicates excluded): %i",
+            codepoints_no_dups_count
+        )
         rl.draw_text(total_codepoints_text, 10, 10, 20, rl.GREEN)
         rl.draw_text(unique_codepoints_text, 10, 40, 20, rl.GREEN)
 

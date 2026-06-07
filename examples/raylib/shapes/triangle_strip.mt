@@ -3,7 +3,6 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const POINT_CAPACITY: int = 122
@@ -33,13 +32,13 @@ function main() -> int:
             let angle1 = float<-index * angle_step
             points[point_index] = rl.Vector2(
                 x = center.x + float<-math.cos(double<-angle1) * inside_radius,
-                y = center.y + float<-math.sin(double<-angle1) * inside_radius,
+                y = center.y + float<-math.sin(double<-angle1) * inside_radius
             )
 
             let angle2 = angle1 + (angle_step / 2.0)
             points[point_index + 1] = rl.Vector2(
                 x = center.x + float<-math.cos(double<-angle2) * outside_radius,
-                y = center.y + float<-math.sin(double<-angle2) * outside_radius,
+                y = center.y + float<-math.sin(double<-angle2) * outside_radius
             )
 
             index += 1
@@ -66,10 +65,29 @@ function main() -> int:
                 rl.draw_triangle_lines(c, b, d, rl.BLACK)
             index += 1
 
-        rl.draw_line(580, 0, 580, rl.get_screen_height(), rl.Color(r = ubyte<-218, g = ubyte<-218, b = ubyte<-218, a = ubyte<-255))
-        rl.draw_rectangle(580, 0, rl.get_screen_width(), rl.get_screen_height(), rl.Color(r = ubyte<-232, g = ubyte<-232, b = ubyte<-232, a = ubyte<-255))
+        rl.draw_line(
+            580,
+            0,
+            580,
+            rl.get_screen_height(),
+            rl.Color(r = ubyte<-218, g = ubyte<-218, b = ubyte<-218, a = ubyte<-255)
+        )
+        rl.draw_rectangle(
+            580,
+            0,
+            rl.get_screen_width(),
+            rl.get_screen_height(),
+            rl.Color(r = ubyte<-232, g = ubyte<-232, b = ubyte<-232, a = ubyte<-255)
+        )
 
-        gui.slider_bar(rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0), "Segments", text.cstr_as_str(rl.text_format("%.0f", segments)), segments, 6.0, 60.0)
+        gui.slider_bar(
+            rl.Rectangle(x = 640.0, y = 40.0, width = 120.0, height = 20.0),
+            "Segments",
+            text.cstr_as_str(rl.text_format("%.0f", segments)),
+            segments,
+            6.0,
+            60.0
+        )
         gui.check_box(rl.Rectangle(x = 640.0, y = 70.0, width = 20.0, height = 20.0), "Outline", outline)
         rl.draw_fps(10, 10)
         rl.end_drawing()

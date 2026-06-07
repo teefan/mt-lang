@@ -1,14 +1,16 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
 const MAX_PALETTES: int = 3
 const COLORS_PER_PALETTE: int = 8
 
-const PALETTES: array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES] = array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES](
+const PALETTES: array[
+    array[array[int, 3], COLORS_PER_PALETTE],
+    MAX_PALETTES
+] = array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES](
     array[array[int, 3], COLORS_PER_PALETTE](
         array[int, 3](0, 0, 0),
         array[int, 3](255, 0, 0),
@@ -17,7 +19,7 @@ const PALETTES: array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES] = 
         array[int, 3](0, 255, 255),
         array[int, 3](255, 0, 255),
         array[int, 3](255, 255, 0),
-        array[int, 3](255, 255, 255),
+        array[int, 3](255, 255, 255)
     ),
     array[array[int, 3], COLORS_PER_PALETTE](
         array[int, 3](4, 12, 6),
@@ -27,7 +29,7 @@ const PALETTES: array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES] = 
         array[int, 3](77, 128, 97),
         array[int, 3](137, 162, 87),
         array[int, 3](190, 220, 127),
-        array[int, 3](238, 255, 204),
+        array[int, 3](238, 255, 204)
     ),
     array[array[int, 3], COLORS_PER_PALETTE](
         array[int, 3](21, 25, 26),
@@ -37,14 +39,14 @@ const PALETTES: array[array[array[int, 3], COLORS_PER_PALETTE], MAX_PALETTES] = 
         array[int, 3](69, 107, 115),
         array[int, 3](75, 151, 166),
         array[int, 3](165, 189, 194),
-        array[int, 3](255, 245, 247),
-    ),
+        array[int, 3](255, 245, 247)
+    )
 )
 
 const PALETTE_TEXT: array[str, MAX_PALETTES] = array[str, MAX_PALETTES](
     "3-BIT RGB",
     "AMMO-8 (GameBoy-like)",
-    "RKBV (2-strip film)",
+    "RKBV (2-strip film)"
 )
 
 
@@ -81,7 +83,7 @@ function main() -> int:
             palette_location,
             ptr_of(active_palette[0]),
             int<-rl.ShaderUniformDataType.SHADER_UNIFORM_IVEC3,
-            COLORS_PER_PALETTE,
+            COLORS_PER_PALETTE
         )
 
         rl.begin_drawing()
@@ -95,7 +97,7 @@ function main() -> int:
                 line_height * index,
                 rl.get_screen_width(),
                 line_height,
-                rl.Color(r = ubyte<-index, g = ubyte<-index, b = ubyte<-index, a = 255),
+                rl.Color(r = ubyte<-index, g = ubyte<-index, b = ubyte<-index, a = 255)
             )
             index += 1
         rl.end_shader_mode()

@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.rlgl as rlgl
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -20,16 +19,16 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 60.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/vertex_displacement.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/vertex_displacement.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/vertex_displacement.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shader)
 
-    var perlin_noise_image = rl.gen_image_perlin_noise(512, 512, 0, 0, 1.0)
+    let perlin_noise_image = rl.gen_image_perlin_noise(512, 512, 0, 0, 1.0)
     let perlin_noise_map = rl.load_texture_from_image(perlin_noise_image)
     defer rl.unload_texture(perlin_noise_map)
     rl.unload_image(perlin_noise_image)

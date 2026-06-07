@@ -3,12 +3,10 @@ import std.raygui as gui
 import std.raylib as rl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const BUFFER_SIZE: int = 4096
 const SAMPLE_RATE: int = 44100
-
 
 enum ADSRState: int
     IDLE = 0
@@ -16,7 +14,6 @@ enum ADSRState: int
     DECAY = 2
     SUSTAIN = 3
     RELEASE = 4
-
 
 struct Envelope:
     attack_time: float
@@ -66,7 +63,10 @@ function draw_adsr_graph(env: ref[Envelope], bounds: rl.Rectangle) -> void:
 
     let start = rl.Vector2(x = bounds.x, y = bounds.y + bounds.height)
     let peak = rl.Vector2(x = start.x + read(env).attack_time * scale_x, y = bounds.y)
-    let sustain = rl.Vector2(x = peak.x + read(env).decay_time * scale_x, y = bounds.y + (1.0 - read(env).sustain_level) * scale_y)
+    let sustain = rl.Vector2(
+        x = peak.x + read(env).decay_time * scale_x,
+        y = bounds.y + (1.0 - read(env).sustain_level) * scale_y
+    )
     let release = rl.Vector2(x = sustain.x + sustain_width * scale_x, y = sustain.y)
     let end = rl.Vector2(x = release.x + read(env).release_time * scale_x, y = bounds.y + bounds.height)
 
@@ -96,7 +96,7 @@ function main() -> int:
         sustain_level = 0.5,
         release_time = 1.0,
         current_value = 0.0,
-        state = ADSRState.IDLE,
+        state = ADSRState.IDLE
     )
 
     rl.set_target_fps(60)
@@ -134,10 +134,38 @@ function main() -> int:
         let sustain_text = text.cstr_as_str(rl.text_format("%2.2f", env.sustain_level))
         let release_text = text.cstr_as_str(rl.text_format("%2.2fs", env.release_time))
 
-        gui.slider_bar(rl.Rectangle(x = 100.0, y = 60.0, width = 400.0, height = 30.0), "Attack (s)", attack_text, env.attack_time, 0.1, 3.0)
-        gui.slider_bar(rl.Rectangle(x = 100.0, y = 100.0, width = 400.0, height = 30.0), "Decay (s)", decay_text, env.decay_time, 0.1, 3.0)
-        gui.slider_bar(rl.Rectangle(x = 100.0, y = 140.0, width = 400.0, height = 30.0), "Sustain", sustain_text, env.sustain_level, 0.0, 1.0)
-        gui.slider_bar(rl.Rectangle(x = 100.0, y = 180.0, width = 400.0, height = 30.0), "Release (s)", release_text, env.release_time, 0.1, 3.0)
+        gui.slider_bar(
+            rl.Rectangle(x = 100.0, y = 60.0, width = 400.0, height = 30.0),
+            "Attack (s)",
+            attack_text,
+            env.attack_time,
+            0.1,
+            3.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 100.0, y = 100.0, width = 400.0, height = 30.0),
+            "Decay (s)",
+            decay_text,
+            env.decay_time,
+            0.1,
+            3.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 100.0, y = 140.0, width = 400.0, height = 30.0),
+            "Sustain",
+            sustain_text,
+            env.sustain_level,
+            0.0,
+            1.0
+        )
+        gui.slider_bar(
+            rl.Rectangle(x = 100.0, y = 180.0, width = 400.0, height = 30.0),
+            "Release (s)",
+            release_text,
+            env.release_time,
+            0.1,
+            3.0
+        )
 
         draw_adsr_graph(ref_of(env), rl.Rectangle(x = 100.0, y = 250.0, width = 400.0, height = 100.0))
         rl.draw_circle_v(rl.Vector2(x = 520.0, y = 350.0 - env.current_value * 100.0), 5.0, rl.MAROON)

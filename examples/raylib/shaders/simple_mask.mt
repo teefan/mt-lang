@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.raymath as rm
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -20,7 +19,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let torus = rl.gen_mesh_torus(0.3, 1.0, 16, 32)
@@ -82,7 +81,7 @@ function main() -> int:
             rl.Vector3(x = 1.0, y = 1.0, z = 0.0),
             50.0,
             rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_model(model3, rl.Vector3(x = 0.0, y = 0.0, z = -1.5), 1.0, rl.WHITE)
         rl.draw_grid(10, 1.0)

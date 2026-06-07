@@ -1,17 +1,14 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const MAX_LIGHTS: int = 4
 const GLSL_VERSION: int = 330
 
-
 enum LightType: int
     LIGHT_DIRECTIONAL = 0
     LIGHT_POINT = 1
-
 
 struct Light:
     kind: int
@@ -26,7 +23,14 @@ struct Light:
     color_loc: int
 
 
-function create_light(slot: int, light_type: int, position: rl.Vector3, target: rl.Vector3, color: rl.Color, shader: rl.Shader) -> Light:
+function create_light(
+    slot: int,
+    light_type: int,
+    position: rl.Vector3,
+    target: rl.Vector3,
+    color: rl.Color,
+    shader: rl.Shader
+) -> Light:
     let light = Light(
         kind = light_type,
         enabled = true,
@@ -37,7 +41,7 @@ function create_light(slot: int, light_type: int, position: rl.Vector3, target: 
         type_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].type", slot)),
         position_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].position", slot)),
         target_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].target", slot)),
-        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot)),
+        color_loc = rl.get_shader_location(shader, rl.text_format("lights[%i].color", slot))
     )
     update_light_values(shader, light)
     return light
@@ -58,7 +62,7 @@ function update_light_values(shader: rl.Shader, light: Light) -> void:
         float<-light.color.r / 255.0,
         float<-light.color.g / 255.0,
         float<-light.color.b / 255.0,
-        float<-light.color.a / 255.0,
+        float<-light.color.a / 255.0
     )
     rl.set_shader_value(shader, light.color_loc, color_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
@@ -76,12 +80,12 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 0.5, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let shader = rl.load_shader(
         rl.text_format("shaders/glsl%i/lighting.vs", GLSL_VERSION),
-        rl.text_format("shaders/glsl%i/lighting.fs", GLSL_VERSION),
+        rl.text_format("shaders/glsl%i/lighting.fs", GLSL_VERSION)
     )
     defer rl.unload_shader(shader)
 
@@ -91,10 +95,38 @@ function main() -> int:
     rl.set_shader_value(shader, ambient_location, ambient, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC4)
 
     var lights: array[Light, MAX_LIGHTS] = zero[array[Light, MAX_LIGHTS]]
-    lights[0] = create_light(0, int<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = -2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.YELLOW, shader)
-    lights[1] = create_light(1, int<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = 2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.RED, shader)
-    lights[2] = create_light(2, int<-LightType.LIGHT_POINT, rl.Vector3(x = -2.0, y = 1.0, z = 2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.GREEN, shader)
-    lights[3] = create_light(3, int<-LightType.LIGHT_POINT, rl.Vector3(x = 2.0, y = 1.0, z = -2.0), rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.BLUE, shader)
+    lights[0] = create_light(
+        0,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -2.0, y = 1.0, z = -2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.YELLOW,
+        shader
+    )
+    lights[1] = create_light(
+        1,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 2.0, y = 1.0, z = 2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.RED,
+        shader
+    )
+    lights[2] = create_light(
+        2,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = -2.0, y = 1.0, z = 2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.GREEN,
+        shader
+    )
+    lights[3] = create_light(
+        3,
+        int<-LightType.LIGHT_POINT,
+        rl.Vector3(x = 2.0, y = 1.0, z = -2.0),
+        rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+        rl.BLUE,
+        shader
+    )
 
     rl.set_target_fps(60)
 
@@ -102,7 +134,12 @@ function main() -> int:
         rl.update_camera(camera, rl.CameraMode.CAMERA_ORBITAL)
 
         let camera_position = array[float, 3](camera.position.x, camera.position.y, camera.position.z)
-        rl.set_shader_value(shader, view_pos_location, camera_position, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3)
+        rl.set_shader_value(
+            shader,
+            view_pos_location,
+            camera_position,
+            int<-rl.ShaderUniformDataType.SHADER_UNIFORM_VEC3
+        )
 
         if rl.is_key_pressed(rl.KeyboardKey.KEY_Y):
             var light = lights[0]

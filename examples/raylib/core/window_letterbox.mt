@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raymath as math
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GAME_SCREEN_WIDTH: int = 640
@@ -14,7 +13,7 @@ function random_bar_color() -> rl.Color:
         r = ubyte<-rl.get_random_value(100, 250),
         g = ubyte<-rl.get_random_value(50, 150),
         b = ubyte<-rl.get_random_value(10, 100),
-        a = ubyte<-255,
+        a = ubyte<-255
     )
 
 
@@ -57,7 +56,7 @@ function main() -> int:
         virtual_mouse = math.vector2_clamp(
             virtual_mouse,
             rl.Vector2(x = 0.0, y = 0.0),
-            rl.Vector2(x = float<-GAME_SCREEN_WIDTH, y = float<-GAME_SCREEN_HEIGHT),
+            rl.Vector2(x = float<-GAME_SCREEN_WIDTH, y = float<-GAME_SCREEN_HEIGHT)
         )
 
         rl.begin_texture_mode(target)
@@ -70,11 +69,17 @@ function main() -> int:
                 (GAME_SCREEN_HEIGHT / BAR_COUNT) * color_index,
                 GAME_SCREEN_WIDTH,
                 GAME_SCREEN_HEIGHT / BAR_COUNT,
-                colors[color_index],
+                colors[color_index]
             )
             color_index += 1
 
-        rl.draw_text("If executed inside a window,\nyou can resize the window,\nand see the screen scaling!", 10, 25, 20, rl.WHITE)
+        rl.draw_text(
+            "If executed inside a window,\nyou can resize the window,\nand see the screen scaling!",
+            10,
+            25,
+            20,
+            rl.WHITE
+        )
         rl.draw_text(f"Default Mouse: [#{int<-mouse.x} , #{int<-mouse.y}]", 350, 25, 20, rl.GREEN)
         rl.draw_text(f"Virtual Mouse: [#{int<-virtual_mouse.x} , #{int<-virtual_mouse.y}]", 350, 55, 20, rl.YELLOW)
         rl.end_texture_mode()
@@ -86,13 +91,13 @@ function main() -> int:
             x = 0.0,
             y = 0.0,
             width = float<-target.texture.width,
-            height = -(float<-target.texture.height),
+            height = -(float<-target.texture.height)
         )
         let destination = rl.Rectangle(
             x = ((float<-rl.get_screen_width()) - ((float<-GAME_SCREEN_WIDTH) * scale)) * 0.5,
             y = ((float<-rl.get_screen_height()) - ((float<-GAME_SCREEN_HEIGHT) * scale)) * 0.5,
             width = (float<-GAME_SCREEN_WIDTH) * scale,
-            height = (float<-GAME_SCREEN_HEIGHT) * scale,
+            height = (float<-GAME_SCREEN_HEIGHT) * scale
         )
 
         rl.draw_texture_pro(target.texture, source, destination, rl.Vector2(x = 0.0, y = 0.0), 0.0, rl.WHITE)

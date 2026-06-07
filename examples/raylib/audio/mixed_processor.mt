@@ -3,11 +3,9 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const VOLUME_HISTORY_SIZE: int = 400
-
 
 var exponent: float = 1.0
 var average_volume: array[float, VOLUME_HISTORY_SIZE] = zero[array[float, VOLUME_HISTORY_SIZE]]

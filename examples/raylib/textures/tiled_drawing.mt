@@ -1,7 +1,6 @@
 import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 
-
 const OPT_WIDTH: int = 220
 const MARGIN_SIZE: int = 8
 const COLOR_SIZE: int = 16
@@ -11,7 +10,15 @@ const MAX_PATTERNS: int = 6
 const MAX_COLORS: int = 10
 
 
-function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: rl.Rectangle, origin: rl.Vector2, rotation: float, scale: float, tint: rl.Color) -> void:
+function draw_texture_tiled(
+    texture: rl.Texture2D,
+    source: rl.Rectangle,
+    dest: rl.Rectangle,
+    origin: rl.Vector2,
+    rotation: float,
+    scale: float,
+    tint: rl.Color
+) -> void:
     if texture.id <= 0 or scale <= 0.0:
         return
     if source.width == 0.0 or source.height == 0.0:
@@ -27,12 +34,12 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                 x = source.x,
                 y = source.y,
                 width = (dest.width / float<-tile_width) * source.width,
-                height = (dest.height / float<-tile_height) * source.height,
+                height = (dest.height / float<-tile_height) * source.height
             ),
             dest,
             origin,
             rotation,
-            tint,
+            tint
         )
         return
 
@@ -45,12 +52,12 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = (dest.width / float<-tile_width) * source.width,
-                    height = source.height,
+                    height = source.height
                 ),
                 rl.Rectangle(x = dest.x, y = dest.y + float<-dy, width = dest.width, height = float<-tile_height),
                 origin,
                 rotation,
-                tint,
+                tint
             )
             dy += tile_height
 
@@ -61,12 +68,12 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = (dest.width / float<-tile_width) * source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height,
+                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
                 ),
                 rl.Rectangle(x = dest.x, y = dest.y + float<-dy, width = dest.width, height = dest.height - float<-dy),
                 origin,
                 rotation,
-                tint,
+                tint
             )
         return
 
@@ -79,12 +86,12 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = (dest.height / float<-tile_height) * source.height,
+                    height = (dest.height / float<-tile_height) * source.height
                 ),
                 rl.Rectangle(x = dest.x + float<-dx, y = dest.y, width = float<-tile_width, height = dest.height),
                 origin,
                 rotation,
-                tint,
+                tint
             )
             dx += tile_width
 
@@ -95,12 +102,12 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
-                    height = (dest.height / float<-tile_height) * source.height,
+                    height = (dest.height / float<-tile_height) * source.height
                 ),
                 rl.Rectangle(x = dest.x + float<-dx, y = dest.y, width = dest.width - float<-dx, height = dest.height),
                 origin,
                 rotation,
-                tint,
+                tint
             )
         return
 
@@ -111,10 +118,15 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
             rl.draw_texture_pro(
                 texture,
                 source,
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y + float<-dy, width = float<-tile_width, height = float<-tile_height),
+                rl.Rectangle(
+                    x = dest.x + float<-dx,
+                    y = dest.y + float<-dy,
+                    width = float<-tile_width,
+                    height = float<-tile_height
+                ),
                 origin,
                 rotation,
-                tint,
+                tint
             )
             dy += tile_height
 
@@ -125,12 +137,17 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height,
+                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
                 ),
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y + float<-dy, width = float<-tile_width, height = dest.height - float<-dy),
+                rl.Rectangle(
+                    x = dest.x + float<-dx,
+                    y = dest.y + float<-dy,
+                    width = float<-tile_width,
+                    height = dest.height - float<-dy
+                ),
                 origin,
                 rotation,
-                tint,
+                tint
             )
         dx += tile_width
 
@@ -143,12 +160,17 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
-                    height = source.height,
+                    height = source.height
                 ),
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y + float<-dy, width = dest.width - float<-dx, height = float<-tile_height),
+                rl.Rectangle(
+                    x = dest.x + float<-dx,
+                    y = dest.y + float<-dy,
+                    width = dest.width - float<-dx,
+                    height = float<-tile_height
+                ),
                 origin,
                 rotation,
-                tint,
+                tint
             )
             dy += tile_height
 
@@ -159,12 +181,17 @@ function draw_texture_tiled(texture: rl.Texture2D, source: rl.Rectangle, dest: r
                     x = source.x,
                     y = source.y,
                     width = ((dest.width - float<-dx) / float<-tile_width) * source.width,
-                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height,
+                    height = ((dest.height - float<-dy) / float<-tile_height) * source.height
                 ),
-                rl.Rectangle(x = dest.x + float<-dx, y = dest.y + float<-dy, width = dest.width - float<-dx, height = dest.height - float<-dy),
+                rl.Rectangle(
+                    x = dest.x + float<-dx,
+                    y = dest.y + float<-dy,
+                    width = dest.width - float<-dx,
+                    height = dest.height - float<-dy
+                ),
                 origin,
                 rotation,
-                tint,
+                tint
             )
 
 
@@ -186,7 +213,7 @@ function main() -> int:
         rl.Rectangle(x = 3.0, y = 75.0, width = 66.0, height = 66.0),
         rl.Rectangle(x = 7.0, y = 156.0, width = 50.0, height = 50.0),
         rl.Rectangle(x = 85.0, y = 106.0, width = 90.0, height = 45.0),
-        rl.Rectangle(x = 75.0, y = 154.0, width = 100.0, height = 60.0),
+        rl.Rectangle(x = 75.0, y = 154.0, width = 100.0, height = 60.0)
     )
     let colors = array[rl.Color, MAX_COLORS](
         rl.BLACK,
@@ -198,7 +225,7 @@ function main() -> int:
         rl.LIME,
         rl.RED,
         rl.DARKGRAY,
-        rl.SKYBLUE,
+        rl.SKYBLUE
     )
 
     var color_rects: array[rl.Rectangle, MAX_COLORS] = zero[array[rl.Rectangle, MAX_COLORS]]
@@ -235,7 +262,7 @@ function main() -> int:
                     x = 2.0 + float<-MARGIN_SIZE + patterns[index].x,
                     y = 40.0 + float<-MARGIN_SIZE + patterns[index].y,
                     width = patterns[index].width,
-                    height = patterns[index].height,
+                    height = patterns[index].height
                 )
                 if rl.check_collision_point_rec(mouse, hit_rect):
                     active_pattern = index
@@ -281,12 +308,12 @@ function main() -> int:
                 x = float<-OPT_WIDTH + float<-MARGIN_SIZE,
                 y = float<-MARGIN_SIZE,
                 width = float<-rl.get_screen_width() - float<-OPT_WIDTH - 2.0 * float<-MARGIN_SIZE,
-                height = float<-rl.get_screen_height() - 2.0 * float<-MARGIN_SIZE,
+                height = float<-rl.get_screen_height() - 2.0 * float<-MARGIN_SIZE
             ),
             rl.Vector2(x = 0.0, y = 0.0),
             rotation,
             scale,
-            colors[active_color],
+            colors[active_color]
         )
 
         rl.draw_rectangle(
@@ -294,7 +321,7 @@ function main() -> int:
             MARGIN_SIZE,
             OPT_WIDTH - MARGIN_SIZE,
             rl.get_screen_height() - (2 * MARGIN_SIZE),
-            rl.color_alpha(rl.LIGHTGRAY, 0.5),
+            rl.color_alpha(rl.LIGHTGRAY, 0.5)
         )
         rl.draw_text("Select Pattern", 2 + MARGIN_SIZE, 30 + MARGIN_SIZE, 10, rl.BLACK)
         rl.draw_texture(pattern_texture, 2 + MARGIN_SIZE, 40 + MARGIN_SIZE, rl.BLACK)
@@ -303,7 +330,7 @@ function main() -> int:
             40 + MARGIN_SIZE + int<-patterns[active_pattern].y,
             int<-patterns[active_pattern].width,
             int<-patterns[active_pattern].height,
-            rl.color_alpha(rl.DARKBLUE, 0.3),
+            rl.color_alpha(rl.DARKBLUE, 0.3)
         )
 
         rl.draw_text("Select Color", 2 + MARGIN_SIZE, 10 + 256 + MARGIN_SIZE, 10, rl.BLACK)

@@ -2,7 +2,6 @@ import std.raylib as rl
 import std.raylib.runtime as rl_runtime
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 
@@ -19,7 +18,7 @@ function main() -> int:
         target = rl.Vector3(x = 0.0, y = 4.0, z = 0.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     let position = rl.Vector3(x = 0.0, y = 0.0, z = 0.0)
@@ -61,7 +60,7 @@ function main() -> int:
             rl.Vector3(x = 1.0, y = 0.0, z = 0.0),
             -90.0,
             rl.Vector3(x = 1.0, y = 1.0, z = 1.0),
-            rl.WHITE,
+            rl.WHITE
         )
         rl.draw_grid(10, 1.0)
         rl.end_mode_3d()

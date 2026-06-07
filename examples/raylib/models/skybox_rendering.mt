@@ -4,7 +4,6 @@ import std.raymath as rm
 import std.rlgl as rlgl
 import std.str as text
 
-
 const SCREEN_WIDTH: int = 800
 const SCREEN_HEIGHT: int = 450
 const GLSL_VERSION: int = 330
@@ -25,31 +24,68 @@ function gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: in
         depth_buffer,
         int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_DEPTH,
         int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_RENDERBUFFER,
-        0,
+        0
     )
     rlgl.framebuffer_attach(
         framebuffer,
         cubemap.id,
         int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
         int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X,
-        0,
+        0
     )
 
     if rlgl.framebuffer_complete(framebuffer):
-        rl.trace_log(int<-rl.TraceLogLevel.LOG_INFO, "FBO: [ID %i] Framebuffer object created successfully", framebuffer)
+        rl.trace_log(
+            int<-rl.TraceLogLevel.LOG_INFO,
+            "FBO: [ID %i] Framebuffer object created successfully",
+            framebuffer
+        )
 
     rlgl.enable_shader(shader.id)
 
-    let projection = rm.matrix_perspective(90.0 * DEG_TO_RAD, 1.0, rlgl.get_cull_distance_near(), rlgl.get_cull_distance_far())
-    rl.set_shader_value_matrix(shader, unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION], projection)
+    let projection = rm.matrix_perspective(
+        90.0 * DEG_TO_RAD,
+        1.0,
+        rlgl.get_cull_distance_near(),
+        rlgl.get_cull_distance_far()
+    )
+    rl.set_shader_value_matrix(
+        shader,
+        unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_PROJECTION],
+        projection
+    )
 
     let views = array[rl.Matrix, 6](
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0)),
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = -1.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0)),
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 1.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = 1.0)),
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = -1.0)),
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = 1.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0)),
-        rm.matrix_look_at(rl.Vector3(x = 0.0, y = 0.0, z = 0.0), rl.Vector3(x = 0.0, y = 0.0, z = -1.0), rl.Vector3(x = 0.0, y = -1.0, z = 0.0)),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 1.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = -1.0, z = 0.0)
+        ),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = -1.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = -1.0, z = 0.0)
+        ),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = 0.0, z = 1.0)
+        ),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = -1.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = 0.0, z = -1.0)
+        ),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = 0.0, z = 1.0),
+            rl.Vector3(x = 0.0, y = -1.0, z = 0.0)
+        ),
+        rm.matrix_look_at(
+            rl.Vector3(x = 0.0, y = 0.0, z = 0.0),
+            rl.Vector3(x = 0.0, y = 0.0, z = -1.0),
+            rl.Vector3(x = 0.0, y = -1.0, z = 0.0)
+        )
     )
 
     rlgl.viewport(0, 0, size, size)
@@ -58,13 +94,17 @@ function gen_texture_cubemap(shader: rl.Shader, panorama: rl.Texture2D, size: in
 
     var face = 0
     while face < 6:
-        rl.set_shader_value_matrix(shader, unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW], views[face])
+        rl.set_shader_value_matrix(
+            shader,
+            unsafe: shader.locs[int<-rl.ShaderLocationIndex.SHADER_LOC_MATRIX_VIEW],
+            views[face]
+        )
         rlgl.framebuffer_attach(
             framebuffer,
             cubemap.id,
             int<-rlgl.FramebufferAttachType.RL_ATTACHMENT_COLOR_CHANNEL0,
             int<-rlgl.FramebufferAttachTextureType.RL_ATTACHMENT_CUBEMAP_POSITIVE_X + face,
-            0,
+            0
         )
         rlgl.enable_framebuffer(framebuffer)
         rlgl.clear_screen_buffers()
@@ -97,7 +137,7 @@ function main() -> int:
         target = rl.Vector3(x = 4.0, y = 1.0, z = 4.0),
         up = rl.Vector3(x = 0.0, y = 1.0, z = 0.0),
         fovy = 45.0,
-        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE,
+        projection = int<-rl.CameraProjection.CAMERA_PERSPECTIVE
     )
 
     var skybox = rl.load_model_from_mesh(rl.gen_mesh_cube(1.0, 1.0, 1.0))
@@ -115,9 +155,24 @@ function main() -> int:
     let vflipped_loc = rl.get_shader_location(unsafe: skybox.materials[0].shader, "vflipped")
     let environment_map_slot = int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP
     let gamma_value = if use_hdr: 1 else: 0
-    rl.set_shader_value(unsafe: skybox.materials[0].shader, environment_map_loc, environment_map_slot, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
-    rl.set_shader_value(unsafe: skybox.materials[0].shader, do_gamma_loc, gamma_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
-    rl.set_shader_value(unsafe: skybox.materials[0].shader, vflipped_loc, gamma_value, int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT)
+    rl.set_shader_value(
+        unsafe: skybox.materials[0].shader,
+        environment_map_loc,
+        environment_map_slot,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT
+    )
+    rl.set_shader_value(
+        unsafe: skybox.materials[0].shader,
+        do_gamma_loc,
+        gamma_value,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT
+    )
+    rl.set_shader_value(
+        unsafe: skybox.materials[0].shader,
+        vflipped_loc,
+        gamma_value,
+        int<-rl.ShaderUniformDataType.SHADER_UNIFORM_INT
+    )
 
     let cubemap_vertex_shader = rl.text_format("shaders/glsl%i/cubemap.vs", GLSL_VERSION)
     let cubemap_fragment_shader = rl.text_format("shaders/glsl%i/cubemap.fs", GLSL_VERSION)
@@ -135,12 +190,15 @@ function main() -> int:
             cubemap_shader,
             panorama,
             1024,
-            int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+            int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
         )
     else:
         let image = rl.load_image(skybox_file_name)
         defer rl.unload_image(image)
-        unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(image, int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT)
+        unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(
+            image,
+            int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT
+        )
 
     defer rl.unload_texture(unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture)
 
@@ -166,12 +224,15 @@ function main() -> int:
                             cubemap_shader,
                             panorama,
                             1024,
-                            int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+                            int<-rl.PixelFormat.PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
                         )
                     else:
                         let image = rl.load_image(dropped_path)
                         defer rl.unload_image(image)
-                        unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(image, int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT)
+                        unsafe: skybox.materials[0].maps[int<-rl.MaterialMapIndex.MATERIAL_MAP_CUBEMAP].texture = rl.load_texture_cubemap(
+                            image,
+                            int<-rl.CubemapLayout.CUBEMAP_LAYOUT_AUTO_DETECT
+                        )
 
                     skybox_file_name = dropped_path
 
