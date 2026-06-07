@@ -29,6 +29,13 @@ module MilkTea
     end
   end
 
+  def self.host_platform
+    return :windows if /mswin|mingw|cygwin/ === RUBY_PLATFORM
+    return :darwin if /darwin/ === RUBY_PLATFORM
+
+    :linux
+  end
+
   # Unified diagnostic value shared by the linter, sema, and all CFG analyses.
   # severity: :error | :warning | :hint | :info
   Diagnostic = Data.define(:path, :line, :column, :length, :code, :message, :severity, :symbol_name) do

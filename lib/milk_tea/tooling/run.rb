@@ -397,7 +397,7 @@ module MilkTea
     end
 
     def host_platform
-      /mswin|mingw|cygwin/ === RUBY_PLATFORM ? :windows : :linux
+      MilkTea.host_platform
     end
   end
 end

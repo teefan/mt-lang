@@ -16,25 +16,25 @@ module MilkTea
 
     REDISTRIBUTABLE_DIRECTORY_BY_PLATFORM = {
       linux: "redistributable_bin/linux64",
-      macos: "redistributable_bin/osx",
+      darwin: "redistributable_bin/osx",
       windows: "redistributable_bin/win64",
     }.freeze
 
     LINK_LIBRARY_NAME_BY_PLATFORM = {
       linux: "steam_api",
-      macos: "steam_api",
+      darwin: "steam_api",
       windows: "steam_api64",
     }.freeze
 
     IMPORT_LIBRARY_BASENAME_BY_PLATFORM = {
       linux: "libsteam_api.so",
-      macos: "libsteam_api.dylib",
+      darwin: "libsteam_api.dylib",
       windows: "steam_api64.lib",
     }.freeze
 
     RUNTIME_LIBRARY_BASENAME_BY_PLATFORM = {
       linux: "libsteam_api.so",
-      macos: "libsteam_api.dylib",
+      darwin: "libsteam_api.dylib",
       windows: "steam_api64.dll",
     }.freeze
 
@@ -50,10 +50,7 @@ module MilkTea
     end
 
     def host_platform
-      return :windows if /mswin|mingw|cygwin/ === RUBY_PLATFORM
-      return :macos if /darwin/ === RUBY_PLATFORM
-
-      :linux
+      MilkTea.host_platform
     end
 
     def default_link_libraries(platform: host_platform)
