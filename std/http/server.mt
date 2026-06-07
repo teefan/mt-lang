@@ -249,11 +249,12 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
             var body = string.String.with_capacity(4096)
             defer body.release()
 
-            let escaped_path = html_escape(url_prefix)
+            var escaped_path = html_escape(url_prefix)
+            defer escaped_path.release()
             body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
-            body.append(escaped_path)
+            body.append(escaped_path.as_str())
             body.append("</title></head>\n<body>\n<h1>Index of ")
-            body.append(escaped_path)
+            body.append(escaped_path.as_str())
             body.append("</h1>\n<hr>\n<pre>\n")
 
             if url_prefix.len > 0 and url_prefix != "/":
@@ -274,18 +275,20 @@ async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_p
                     defer line.release()
 
                     if is_directory:
-                        let escaped_name = html_escape(name_str)
+                        var escaped_name = html_escape(name_str)
+                        defer escaped_name.release()
                         line.append("<a href=\"")
-                        line.append(escaped_name)
+                        line.append(escaped_name.as_str())
                         line.append("/\">")
-                        line.append(escaped_name)
+                        line.append(escaped_name.as_str())
                         line.append("/</a>")
                     else:
-                        let escaped_name = html_escape(name_str)
+                        var escaped_name = html_escape(name_str)
+                        defer escaped_name.release()
                         line.append("<a href=\"")
-                        line.append(escaped_name)
+                        line.append(escaped_name.as_str())
                         line.append("\">")
-                        line.append(escaped_name)
+                        line.append(escaped_name.as_str())
                         line.append("</a>")
 
                     line.append("\n")
@@ -360,7 +363,7 @@ function sorted_insert(names: ref[vec.Vec[string.String]], dir_flags: ref[vec.Ve
         fatal(c"sorted_insert flags insert failed")
 
 
-function html_escape(source: str) -> str:
+function html_escape(source: str) -> string.String:
     var result = string.String.with_capacity(source.len * 2)
     var index: ptr_uint = 0
     while index < source.len:
@@ -377,7 +380,7 @@ function html_escape(source: str) -> str:
             result.push_byte(ch)
         index += 1
 
-    return result.as_str()
+    return result
 
 
 function release_string_vec(values: ref[vec.Vec[string.String]]) -> void:
