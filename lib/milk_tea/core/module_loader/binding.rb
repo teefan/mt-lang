@@ -141,6 +141,7 @@ module MilkTea
 
       def exported_method_receiver?(receiver_type, analysis, exported_types)
         return true if receiver_type.is_a?(Types::StringView)
+        return true if receiver_type.is_a?(Types::Primitive)
         return true if receiver_type.is_a?(Types::Vector)
         return true if receiver_type.is_a?(Types::Matrix)
         return true if receiver_type.is_a?(Types::Quaternion)

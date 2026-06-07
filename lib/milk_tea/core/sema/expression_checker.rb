@@ -1160,7 +1160,7 @@ module MilkTea
               raise_sema_error("#{callee.receiver.name}.#{callee.member} is private to module #{imported_module.name}")
             end
 
-            raise_sema_error("unknown callable #{callee.receiver.name}.#{callee.member}")
+            raise_sema_error("unknown callable #{callee.receiver.name}.#{callee.member}") unless @types.key?(callee.receiver.name)
           end
 
           if (type_expr = resolve_type_expression(callee.receiver))
