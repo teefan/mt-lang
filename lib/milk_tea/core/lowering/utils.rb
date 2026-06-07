@@ -1199,43 +1199,7 @@ module MilkTea
       end
 
       def validate_generic_type!(name, arguments)
-        case name
-        when "ptr"
-          raise LoweringError, "ptr requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-        when "const_ptr"
-          raise LoweringError, "const_ptr requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "const_ptr type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "const_ptr cannot target ref types" if contains_ref_type?(arguments.first)
-        when "ref"
-          raise LoweringError, "ref requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "ref type argument must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "ref cannot target void" if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
-          raise LoweringError, "ref cannot target another ref type" if contains_ref_type?(arguments.first)
-        when "span"
-          raise LoweringError, "span requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "span element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-        when "array"
-          raise LoweringError, "array requires exactly two type arguments" unless arguments.length == 2
-          raise LoweringError, "array element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "array length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
-          raise LoweringError, "array length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "SoA"
-          raise LoweringError, "SoA requires exactly two type arguments" unless arguments.length == 2
-          raise LoweringError, "SoA element type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise LoweringError, "SoA element type must be a struct with fields" unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
-          raise LoweringError, "SoA length must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments[1])
-          raise LoweringError, "SoA length must be positive" if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "str_buffer"
-          raise LoweringError, "str_buffer requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "str_buffer capacity must be an integer literal, named const, or type parameter" unless generic_integer_type_argument?(arguments.first)
-          raise LoweringError, "str_buffer capacity must be positive" if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
-        when "Task"
-          raise LoweringError, "Task requires exactly one type argument" unless arguments.length == 1
-          raise LoweringError, "Task result type must be a type" if arguments.first.is_a?(Types::LiteralTypeArg)
-        else
-          raise LoweringError, "unknown generic type #{name}"
-        end
+        super(name, arguments) { |msg| raise LoweringError, msg }
       end
 
       def integer_type_argument?(argument)

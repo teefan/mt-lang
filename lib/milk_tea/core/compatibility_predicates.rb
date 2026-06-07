@@ -474,5 +474,53 @@ module MilkTea
         false
       end
     end
+
+    def integer_type_argument?(argument)
+      argument.is_a?(Types::LiteralTypeArg) && argument.value.is_a?(Integer)
+    end
+
+    def generic_integer_type_argument?(argument)
+      integer_type_argument?(argument) || argument.is_a?(Types::TypeVar)
+    end
+
+    def validate_generic_type!(name, arguments, &error)
+      case name
+      when "ptr"
+        error.call("ptr requires exactly one type argument") unless arguments.length == 1
+        error.call("ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+      when "const_ptr"
+        error.call("const_ptr requires exactly one type argument") unless arguments.length == 1
+        error.call("const_ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+        error.call("const_ptr cannot target ref types") if contains_ref_type?(arguments.first)
+      when "ref"
+        error.call("ref requires exactly one type argument") unless arguments.length == 1
+        error.call("ref type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+        error.call("ref cannot target void") if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
+        error.call("ref cannot target another ref type") if contains_ref_type?(arguments.first)
+      when "span"
+        error.call("span requires exactly one type argument") unless arguments.length == 1
+        error.call("span element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+      when "array"
+        error.call("array requires exactly two type arguments") unless arguments.length == 2
+        error.call("array element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+        error.call("array length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
+        error.call("array length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+      when "SoA"
+        error.call("SoA requires exactly two type arguments") unless arguments.length == 2
+        error.call("SoA element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+        error.call("SoA element type must be a struct with fields") unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
+        error.call("SoA length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
+        error.call("SoA length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
+      when "str_buffer"
+        error.call("str_buffer requires exactly one type argument") unless arguments.length == 1
+        error.call("str_buffer capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
+        error.call("str_buffer capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
+      when "Task"
+        error.call("Task requires exactly one type argument") unless arguments.length == 1
+        error.call("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
+      else
+        error.call("unknown generic type #{name}")
+      end
+    end
   end
 end

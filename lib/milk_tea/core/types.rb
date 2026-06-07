@@ -1493,5 +1493,33 @@ module MilkTea
       "success" => { "value" => TypeVar.new("T") },
       "failure" => { "error" => TypeVar.new("E") },
     )
+
+    def self.pointer_to(type)
+      GenericInstance.new("ptr", [type])
+    end
+
+    def self.integer_type?(type)
+      type.is_a?(Primitive) && %w[int ptr_uint i8 i16 i32 i64 u8 u16 u32 u64].include?(type.name)
+    end
+
+    def self.array_type?(type)
+      type.is_a?(GenericInstance) && type.name == "array" && type.arguments.length == 2
+    end
+
+    def self.dynamic_array_type?(type)
+      array_type?(type) && !type.arguments.first.is_a?(LiteralTypeArg)
+    end
+
+    def self.fixed_array_type?(type)
+      array_type?(type) && type.arguments.last.is_a?(LiteralTypeArg) && type.arguments.last.value.is_a?(Integer)
+    end
+
+    def self.str_buffer_type?(type)
+      type.is_a?(GenericInstance) && type.name == "str_buffer" && type.arguments.length == 1
+    end
+
+    def self.str_buffer_struct_type?(type)
+      type.is_a?(GenericStructDefinition) && type.name == "str_buffer"
+    end
   end
 end

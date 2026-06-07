@@ -653,23 +653,8 @@ module MilkTea
     end
 
     def build_command
-      path = nil
-      if @argv.first && !@argv.first.start_with?("-")
-        path = @argv.shift
-      end
-
-      options = parse_build_options(allow_clean: true)
-      return 1 unless options
-
-      unless path
-        if File.file?(File.join(Dir.pwd, "package.toml"))
-          path = Dir.pwd
-        else
-          @err.puts("missing source file path")
-          print_usage(@err)
-          return 1
-        end
-      end
+      path, options = extract_path_and_options(allow_clean: true)
+      return 1 unless path
 
       if options.delete(:clean)
         cleaned_path = Build.clean(path, output_path: options[:output_path], profile: options[:profile], platform: options[:platform], bundle: options[:bundle], archive: options[:archive])
@@ -696,51 +681,10 @@ module MilkTea
     end
 
     def run_command
-      path = nil
-      if @argv.first && !@argv.first.start_with?("-")
-        path = @argv.shift
-      end
+      path, options = extract_path_and_options
+      return 1 unless path
 
-      options = parse_build_options
-      return 1 unless options
-
-      unless path
-        if File.file?(File.join(Dir.pwd, "package.toml"))
-          path = Dir.pwd
-        else
-          @err.puts("missing source file path")
-          print_usage(@err)
-          return 1
-        end
-      end
-
-      frozen = options.delete(:frozen)
-      ensure_current_lockfile!(path) if frozen
-      locked = options.delete(:locked)
-      package_graph = package_graph_for(path, locked:)
-      preview_notice_emitted = false
-      preview_started = lambda do |message|
-        preview_notice_emitted = true
-        @out.write(message)
-        @out.flush if @out.respond_to?(:flush)
-      end
-
-      result = Run.run(
-        path,
-        module_roots: module_roots_for(path, locked:),
-        package_graph:,
-        frontend: @build_frontend,
-        preview_started:,
-        argv: @argv.dup,
-        **options
-      )
-      unless @out.equal?($stdout) || preview_notice_emitted
-        @out.write(result.stdout)
-      end
-      @out.flush if @out.respond_to?(:flush)
-      @err.write(result.stderr) unless @err.equal?($stderr)
-      @err.puts("(cached)") if result.cached
-      result.exit_status
+      run_and_print_result(path, options)
     end
 
     def app_command
@@ -760,6 +704,36 @@ module MilkTea
       options = parse_build_options
       return 1 unless options
 
+      frozen = options.delete(:frozen)
+      ensure_current_lockfile!(path) if frozen
+      locked = options.delete(:locked)
+
+      run_and_print_result(path, options)
+    end
+
+    def extract_path_and_options(allow_clean: false)
+      path = nil
+      if @argv.first && !@argv.first.start_with?("-")
+        path = @argv.shift
+      end
+
+      options = parse_build_options(allow_clean:)
+      return nil unless options
+
+      unless path
+        if File.file?(File.join(Dir.pwd, "package.toml"))
+          path = Dir.pwd
+        else
+          @err.puts("missing source file path")
+          print_usage(@err)
+          return nil
+        end
+      end
+
+      [path, options]
+    end
+
+    def run_and_print_result(path, options)
       frozen = options.delete(:frozen)
       ensure_current_lockfile!(path) if frozen
       locked = options.delete(:locked)

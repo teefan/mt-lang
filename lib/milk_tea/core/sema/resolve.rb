@@ -617,7 +617,7 @@ module MilkTea
       end
 
       def pointer_to(type)
-        Types::GenericInstance.new("ptr", [type])
+        Types.pointer_to(type)
       end
 
       def contains_type_var?(type)
@@ -683,43 +683,7 @@ module MilkTea
       end
 
       def validate_generic_type!(name, arguments)
-        case name
-        when "ptr"
-          raise_sema_error("ptr requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-        when "const_ptr"
-          raise_sema_error("const_ptr requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("const_ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise_sema_error("const_ptr cannot target ref types") if contains_ref_type?(arguments.first)
-        when "ref"
-          raise_sema_error("ref requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("ref type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise_sema_error("ref cannot target void") if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
-          raise_sema_error("ref cannot target another ref type") if contains_ref_type?(arguments.first)
-        when "span"
-          raise_sema_error("span requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("span element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-        when "array"
-          raise_sema_error("array requires exactly two type arguments") unless arguments.length == 2
-          raise_sema_error("array element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise_sema_error("array length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
-          raise_sema_error("array length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "SoA"
-          raise_sema_error("SoA requires exactly two type arguments") unless arguments.length == 2
-          raise_sema_error("SoA element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-          raise_sema_error("SoA element type must be a struct with fields") unless arguments.first.respond_to?(:fields) && arguments.first.fields.any?
-          raise_sema_error("SoA length must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments[1])
-          raise_sema_error("SoA length must be positive") if integer_type_argument?(arguments[1]) && !arguments[1].value.positive?
-        when "str_buffer"
-          raise_sema_error("str_buffer requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("str_buffer capacity must be an integer literal, named const, or type parameter") unless generic_integer_type_argument?(arguments.first)
-          raise_sema_error("str_buffer capacity must be positive") if integer_type_argument?(arguments.first) && !arguments.first.value.positive?
-        when "Task"
-          raise_sema_error("Task requires exactly one type argument") unless arguments.length == 1
-          raise_sema_error("Task result type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-        else
-          raise_sema_error("unknown generic type #{name}")
-        end
+        super(name, arguments) { |msg| raise_sema_error(msg) }
       end
 
       def integer_type?(type)
