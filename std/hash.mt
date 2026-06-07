@@ -32,8 +32,7 @@ extending int:
                 return -1
             else if av > bv:
                 return 1
-            else:
-                return 0
+            return 0
 
 # ---------------------------------------------------------------------------
 #  uint
@@ -64,8 +63,7 @@ extending uint:
                 return -1
             else if av > bv:
                 return 1
-            else:
-                return 0
+            return 0
 
 # ---------------------------------------------------------------------------
 #  bool
@@ -76,8 +74,7 @@ extending bool:
         unsafe:
             if read(ptr[bool]<-value):
                 return 1
-            else:
-                return 0
+            return 0
 
     public static function equal(a: const_ptr[bool], b: const_ptr[bool]) -> bool:
         unsafe:
@@ -91,8 +88,7 @@ extending bool:
                 return 0
             else if av:
                 return 1
-            else:
-                return -1
+            return -1
 
 # ---------------------------------------------------------------------------
 #  float — bitwise hash, exact equal
@@ -115,8 +111,7 @@ extending float:
                 return -1
             else if av > bv:
                 return 1
-            else:
-                return 0
+            return 0
 
 # ---------------------------------------------------------------------------
 #  double — bitwise hash, exact equal
@@ -139,8 +134,7 @@ extending double:
                 return -1
             else if av > bv:
                 return 1
-            else:
-                return 0
+            return 0
 
 # ---------------------------------------------------------------------------
 #  char
@@ -163,5 +157,4 @@ extending char:
                 return -1
             else if av > bv:
                 return 1
-            else:
-                return 0
+            return 0
