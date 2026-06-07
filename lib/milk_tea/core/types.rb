@@ -112,6 +112,10 @@ module MilkTea
       def field_c_name(name)
         name
       end
+
+      def field_c_name(name)
+        name
+      end
     end
 
     class ReflectionHandleType < Base
@@ -1319,7 +1323,7 @@ module MilkTea
     BUILTIN_IVECTOR_ELEMENT = Primitive.new("int")
 
     class Vector < Base
-      attr_reader :name, :element_type, :width
+      attr_reader :name, :element_type, :width, :module_name
 
       FIELD_NAMES = %w[x y z w].freeze
 
@@ -1327,6 +1331,7 @@ module MilkTea
         @name = name
         @element_type = element_type
         @width = width
+        @module_name = nil
         @fields = FIELD_NAMES.first(width).each_with_object({}) do |fname, h|
           h[fname] = element_type
         end.freeze
@@ -1361,11 +1366,12 @@ module MilkTea
     end
 
     class Matrix < Base
-      attr_reader :name, :dim
+      attr_reader :name, :dim, :module_name
 
       def initialize(name, dim:)
         @name = name
         @dim = dim
+        @module_name = nil
         col_type = Vector.new("vec#{dim}", element_type: BUILTIN_VECTOR_ELEMENT, width: dim)
         @fields = (0...dim).each_with_object({}) do |i, h|
           h["col#{i}"] = col_type
@@ -1401,12 +1407,13 @@ module MilkTea
     end
 
     class Quaternion < Base
-      attr_reader :name
+      attr_reader :name, :module_name
 
       FIELD_NAMES = %w[x y z w].freeze
 
       def initialize(name)
         @name = name
+        @module_name = nil
         @fields = FIELD_NAMES.each_with_object({}) do |fname, h|
           h[fname] = BUILTIN_VECTOR_ELEMENT
         end.freeze

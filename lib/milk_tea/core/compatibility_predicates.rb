@@ -184,6 +184,8 @@ module MilkTea
       return true if mutable_to_const_pointer_compatibility?(actual_type, expected_type)
       return true if same_external_opaque_c_name?(actual_type, expected_type)
       return true if foreign_function_type_projection_compatible?(actual_type, expected_type)
+      return true if native_foreign_layout_compatible?(actual_type, expected_type)
+      return true if native_foreign_layout_compatible?(expected_type, actual_type)
 
       if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
         return foreign_identity_projection_cast_compatible?(actual_type.base, expected_type.base)
@@ -304,6 +306,42 @@ module MilkTea
 
     def void_pointer_type?(type)
       pointer_type?(type) && type.arguments.first == @types.fetch("void")
+    end
+
+    def native_foreign_layout_compatible?(native_type, foreign_type)
+      return false unless (native_type.is_a?(Types::Vector) || native_type.is_a?(Types::Matrix) || native_type.is_a?(Types::Quaternion))
+      return false unless foreign_type.is_a?(Types::Struct) && foreign_type.external
+
+      native_flat = flatten_field_types(native_type)
+      foreign_flat = flatten_field_types(foreign_type)
+      return false unless native_flat.size == foreign_flat.size
+
+      native_flat.zip(foreign_flat).all? { |nf, ff| nf == ff }
+    end
+
+    def flatten_field_types(type)
+      if type.is_a?(Types::Primitive)
+        [type]
+      elsif type.respond_to?(:fields) && type.fields
+        type.fields.values.flat_map { |ft| flatten_field_types(ft) }
+      else
+        [type]
+      end
+    end
+
+    def field_layout_compatible?(native_field_type, foreign_field_type)
+      return true if native_field_type == foreign_field_type
+      return true if native_field_type.is_a?(Types::Vector) && foreign_field_type.is_a?(Types::Struct) && foreign_field_type.external && struct_fields_match_vector?(native_field_type, foreign_field_type)
+      return true if foreign_field_type.is_a?(Types::Vector) && native_field_type.is_a?(Types::Struct) && native_field_type.external && struct_fields_match_vector?(foreign_field_type, native_field_type)
+
+      false
+    end
+
+    def struct_fields_match_vector?(vector_type, struct_type)
+      return false unless vector_type.fields.size == struct_type.fields.size
+
+      struct_fields = struct_type.fields.values
+      vector_type.fields.values.zip(struct_fields).all? { |vf, sf| vf == sf }
     end
 
     def char_pointer_type?(type)

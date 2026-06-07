@@ -160,6 +160,7 @@ module MilkTea
         validate_import_specs!(import_specs)
         extra_import_specs = policy_import_specs(policy)
         type_spec = normalize_alias_spec(policy["types"], context: "type")
+        @native_type_mapping = type_spec[:native_types]
         const_spec = normalize_alias_spec(policy["constants"], context: "constant")
         function_spec = normalize_function_spec(policy["functions"])
         method_specs = normalize_method_specs(policy["methods"])
