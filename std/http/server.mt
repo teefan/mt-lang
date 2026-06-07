@@ -24,7 +24,7 @@ async function main(args: span[str]) -> void:
     var port_str = fmt.to_string_int(port)
     defer port_str.release()
 
-    stdio.print("Serving HTTP on 0.0.0.0 port %s (dir: %s)\n", port_str.as_str(), serve_dir)
+    stdio.print("Serving HTTP on http://0.0.0.0:%s (dir: %s)\n", port_str.as_str(), serve_dir)
 
     let addr_result = await net.resolve_first("0.0.0.0", port_str.as_str())
     match addr_result:
@@ -103,9 +103,12 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
         await send_error(stream, 405, "Method Not Allowed")
         return
 
+    var url_prefix = url_path
+    var path_is_root = false
     if url_path.starts_with("/"):
         var stripped = url_path.slice(1, url_path.len - 1)
         if stripped.len == 0:
+            path_is_root = true
             url_path = "index.html"
         else:
             url_path = stripped
@@ -115,9 +118,6 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
 
     let content_result = fs.read_bytes(file_path.as_str())
     match content_result:
-        Result.failure:
-            await send_error(stream, 404, "Not Found")
-            return
         Result.success as content_ok:
             var content = content_ok.value
             defer content.release()
@@ -131,6 +131,13 @@ async function handle_connection(stream: net.TcpStream, serve_dir: str) -> void:
                 content.as_span(),
                 method == "HEAD"
             )
+        Result.failure:
+            if fs.is_directory(file_path.as_str()):
+                await serve_directory_index(stream, file_path.as_str(), url_prefix, method == "HEAD")
+            else if path_is_root:
+                await serve_directory_index(stream, serve_dir, url_prefix, method == "HEAD")
+            else:
+                await send_error(stream, 404, "Not Found")
 
 
 function has_header_end(data: span[ubyte]) -> bool:
@@ -208,6 +215,187 @@ function guess_mime(file_path: str) -> str:
             if e.value == ".mp4":
                 return "video/mp4"
             return "application/octet-stream"
+
+
+async function serve_directory_index(stream: net.TcpStream, dir_path: str, url_prefix: str, head_only: bool) -> void:
+    let entries_result = fs.list_entries(dir_path)
+    match entries_result:
+        Result.failure:
+            await send_error(stream, 500, "Internal Server Error")
+            return
+        Result.success as entries_ok:
+            var entries = entries_ok.value
+            defer entries.release()
+
+            var names = vec.Vec[string.String].create()
+            defer release_string_vec(ref_of(names))
+
+            var is_dir = vec.Vec[bool].create()
+            defer is_dir.release()
+
+            var index: ptr_uint = 0
+            while index < entries.len():
+                match entries.get(index):
+                    Option.some as entry_name:
+                        let name_str = entry_name.value
+                        var child_path = path_ops.join(dir_path, name_str)
+                        defer child_path.release()
+                        let dir_flag = fs.is_directory(child_path.as_str())
+                        sorted_insert(ref_of(names), ref_of(is_dir), string.String.from_str(name_str), dir_flag)
+                    Option.none:
+                        pass
+                index += 1
+
+            var body = string.String.with_capacity(4096)
+            defer body.release()
+
+            var url_prefix_normalized = url_prefix
+            if not url_prefix.ends_with("/"):
+                url_prefix_normalized = url_prefix
+            else:
+                url_prefix_normalized = url_prefix
+
+            let escaped_path = html_escape(url_prefix_normalized)
+            body.append("<!DOCTYPE html>\n<html>\n<head><meta charset=\"utf-8\"><title>Index of ")
+            body.append(escaped_path)
+            body.append("</title></head>\n<body>\n<h1>Index of ")
+            body.append(escaped_path)
+            body.append("</h1>\n<hr>\n<pre>\n")
+
+            if url_prefix_normalized.len > 0 and url_prefix_normalized != "/":
+                body.append("<a href=\"../\">../</a>\n")
+
+            index = 0
+            while index < names.len():
+                let name_ptr = names.get(index) else:
+                    break
+                let dir_flag_ptr = is_dir.get(index) else:
+                    break
+
+                unsafe:
+                    let name_str = read(name_ptr).as_str()
+                    let is_directory = read(dir_flag_ptr)
+
+                    var line = string.String.with_capacity(name_str.len + 64)
+                    defer line.release()
+
+                    if is_directory:
+                        let escaped_name = html_escape(name_str)
+                        line.append("<a href=\"")
+                        line.append(escaped_name)
+                        line.append("/\">")
+                        line.append(escaped_name)
+                        line.append("/</a>")
+                    else:
+                        let escaped_name = html_escape(name_str)
+                        line.append("<a href=\"")
+                        line.append(escaped_name)
+                        line.append("\">")
+                        line.append(escaped_name)
+                        line.append("</a>")
+
+                    line.append("\n")
+                    body.append(line.as_str())
+
+                index += 1
+
+            body.append("</pre>\n<hr>\n</body>\n</html>")
+
+            let body_span = text.as_byte_span(body.as_str())
+            var body_len_str = fmt.to_string_ptr_uint(body_span.len)
+            defer body_len_str.release()
+
+            var header = string.String.with_capacity(256)
+            defer header.release()
+            header.append("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ")
+            header.append(body_len_str.as_str())
+            header.append("\r\nConnection: close\r\n\r\n")
+
+            await stream.write_bytes(text.as_byte_span(header.as_str()))
+
+            if not head_only:
+                await stream.write_bytes(body_span)
+
+
+function string_compare(left: str, right: str) -> int:
+    let min_len = if left.len < right.len: left.len else: right.len
+    var i: ptr_uint = 0
+    while i < min_len:
+        let a = left.byte_at(i)
+        let b = right.byte_at(i)
+        if a < b:
+            return -1
+        if a > b:
+            return 1
+        i += 1
+
+    if left.len < right.len:
+        return -1
+    if left.len > right.len:
+        return 1
+    return 0
+
+
+function sorted_insert(names: ref[vec.Vec[string.String]], dir_flags: ref[vec.Vec[bool]], value: string.String, is_directory: bool) -> void:
+    var index: ptr_uint = 0
+    while index < names.len():
+        let existing_ptr = names.get(index) else:
+            break
+        let existing_flag_ptr = dir_flags.get(index) else:
+            break
+
+        unsafe:
+            let existing_is_dir = read(existing_flag_ptr)
+            let existing_name = read(existing_ptr).as_str()
+
+            if is_directory and not existing_is_dir:
+                break
+            if not is_directory and existing_is_dir:
+                index += 1
+                continue
+
+            let cmp = string_compare(value.as_str(), existing_name)
+            if cmp < 0:
+                break
+
+        index += 1
+
+    if not names.insert(index, value):
+        fatal(c"sorted_insert names insert failed")
+    if not dir_flags.insert(index, is_directory):
+        fatal(c"sorted_insert flags insert failed")
+
+
+function html_escape(source: str) -> str:
+    var result = string.String.with_capacity(source.len * 2)
+    var index: ptr_uint = 0
+    while index < source.len:
+        let ch = source.byte_at(index)
+        if ch == 38:
+            result.append("&amp;")
+        else if ch == 60:
+            result.append("&lt;")
+        else if ch == 62:
+            result.append("&gt;")
+        else if ch == 34:
+            result.append("&quot;")
+        else:
+            result.push_byte(ch)
+        index += 1
+
+    return result.as_str()
+
+
+function release_string_vec(values: ref[vec.Vec[string.String]]) -> void:
+    var index: ptr_uint = 0
+    while index < values.len():
+        let value_ptr = values.get(index) else:
+            break
+        unsafe:
+            read(value_ptr).release()
+        index += 1
+
+    values.release()
 
 
 async function send_error(stream: net.TcpStream, code: int, message: str) -> void:
