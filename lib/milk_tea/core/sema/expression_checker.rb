@@ -1135,7 +1135,7 @@ module MilkTea
           return [:get, nil, nil] if callee.name == "get"
 
           type = @types[callee.name]
-          return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type)
+          return [:struct, type, nil] if type.is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
 
           raise_sema_error("unknown callable #{callee.name}")
         when AST::MemberAccess
@@ -1143,7 +1143,7 @@ module MilkTea
             imported_module = @imports.fetch(callee.receiver.name)
             return [:function, imported_module.functions.fetch(callee.member), nil] if imported_module.functions.key?(callee.member)
             imported_type = imported_module.types[callee.member]
-            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type)
+            if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
               return [:struct, imported_module.types.fetch(callee.member), nil]
             end
 
@@ -1281,7 +1281,7 @@ module MilkTea
 
           if (type_ref = type_ref_from_specialization(callee))
             specialized_type = resolve_type_ref(type_ref)
-            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type)
+            return [:struct, specialized_type, nil] if specialized_type.is_a?(Types::Struct) || task_type?(specialized_type) || specialized_type.is_a?(Types::Vector) || specialized_type.is_a?(Types::Matrix) || specialized_type.is_a?(Types::Quaternion)
           end
 
           raise_sema_error("unsupported callable specialization #{describe_expression(callee)}")
