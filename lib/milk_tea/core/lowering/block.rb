@@ -54,6 +54,7 @@ module MilkTea
             prepared_cleanups = []
             emitted_decl = false
             if statement.value
+              local_env[:current_local_name] = c_name
               prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,
@@ -382,6 +383,7 @@ module MilkTea
             prepared_value = statement.value
             prepared_cleanups = []
             if statement.value
+              local_env[:current_local_name] = c_name
               prepared_setup, prepared_value, prepared_cleanups = prepare_expression_with_cleanups(
                 statement.value,
                 env: local_env,

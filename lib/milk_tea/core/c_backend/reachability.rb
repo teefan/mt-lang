@@ -379,6 +379,14 @@ module MilkTea
             end
           end
 
+          def uses_fmt_builder?
+            return @uses_fmt_builder if defined?(@uses_fmt_builder)
+
+            @uses_fmt_builder = emitted_functions.any? do |function|
+              function_uses_named_call?(function, %w[mt_fmt_begin])
+            end
+          end
+
           def uses_string_view?
             return @uses_string_view if defined?(@uses_string_view)
             @uses_string_view = begin
