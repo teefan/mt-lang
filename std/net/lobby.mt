@@ -1,0 +1,514 @@
+import std.async as aio
+import std.binary as bin
+import std.bytes as bytes
+import std.deque as deque
+import std.net as net
+import std.net.mux as mux
+import std.net.session as sess
+import std.str as text
+import std.string as string
+import std.vec as vec
+
+const lobby_channel: ubyte = 0
+const type_join_request: ushort = 0x0001
+const type_join_accept: ushort = 0x0002
+const type_join_reject: ushort = 0x0003
+const type_player_joined: ushort = 0x0004
+const type_player_left: ushort = 0x0005
+const type_lobby_info: ushort = 0x0006
+
+const reject_reason_full: ubyte = 1
+const reject_reason_banned: ubyte = 2
+const reject_reason_invalid: ubyte = 3
+
+public struct LobbyInfo:
+    name: string.String
+    player_count: ubyte
+    max_players: ubyte
+    player_names: vec.Vec[string.String]
+    game_data: bytes.Bytes
+
+public struct LobbyEvent:
+    kind: LobbyEventKind
+    player_id: uint
+    player_name: string.String
+    slot: ubyte
+    reason: ubyte
+
+public enum LobbyEventKind: ubyte
+    player_joined = 0
+    player_left = 1
+    lobby_info_updated = 2
+    joined = 3
+    join_rejected = 4
+
+public struct LobbyHost:
+    mux: mux.MuxedSession
+    info: LobbyInfo
+    slots: vec.Vec[PlayerSlot]
+    event_queue: deque.Deque[LobbyEvent]
+
+struct PlayerSlot:
+    player_id: uint
+    player_name: string.String
+    occupied: bool
+
+public struct LobbyClient:
+    mux: mux.MuxedConnection
+    assigned_slot: ubyte
+    assigned_id: uint
+    lobby_info: LobbyInfo
+    event_queue: deque.Deque[LobbyEvent]
+    pending_join: bool
+    pending_name: string.String
+
+public struct Error:
+    code: int
+    message: string.String
+
+
+function lobby_error(code: int, message: str) -> Error:
+    return Error(code = code, message = string.String.from_str(message))
+
+
+extending Error:
+    public editable function release() -> void:
+        this.message.release()
+
+
+extending LobbyInfo:
+    public editable function release() -> void:
+        this.name.release()
+        var i: ptr_uint = 0
+        while i < this.player_names.len():
+            let p = this.player_names.get(i) else:
+                return
+            unsafe: read(p).release()
+            i += 1
+        this.player_names.release()
+        this.game_data.release()
+
+
+extending LobbyEvent:
+    public editable function release() -> void:
+        this.player_name.release()
+
+
+extending LobbyHost:
+    public editable function release() -> void:
+        release_lobby_queue(ref_of(this.event_queue))
+        this.event_queue.release()
+        release_slots(ref_of(this.slots))
+        this.slots.release()
+        this.info.release()
+        this.mux.release()
+
+
+    public function local_address() -> Result[net.SocketAddress, net.Error]:
+        return this.mux.session.local_address()
+
+
+    public async editable function tick(frame: uint) -> Result[bool, Error]:
+        let mux_result = await this.mux.tick(frame)
+        drain_lobby_host(ref_of(this))
+        match mux_result:
+            Result.failure as p:
+                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            Result.success as p:
+                return Result[bool, Error].success(value = p.value)
+
+
+    public editable function try_recv() -> Option[LobbyEvent]:
+        return this.event_queue.pop_front()
+
+
+    public function info() -> LobbyInfo:
+        return this.info
+
+
+    public async editable function kick_player(player_id: uint, reason: ubyte) -> Result[bool, Error]:
+        match await this.mux.kick(player_id, reason):
+            Result.failure as p:
+                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            Result.success as p:
+                return Result[bool, Error].success(value = p.value)
+
+
+extending LobbyClient:
+    public editable function release() -> void:
+        release_lobby_queue(ref_of(this.event_queue))
+        this.event_queue.release()
+        this.lobby_info.release()
+        this.pending_name.release()
+        this.mux.release()
+
+
+    public function state() -> sess.ConnectionState:
+        return this.mux.state()
+
+
+    public function assigned_slot() -> ubyte:
+        return this.assigned_slot
+
+
+    public function assigned_id() -> uint:
+        return this.assigned_id
+
+
+    public function lobby_info() -> LobbyInfo:
+        return this.lobby_info
+
+
+    public async editable function tick(frame: uint) -> Result[bool, Error]:
+        let mux_result = await this.mux.tick(frame)
+        await drain_lobby_client(ref_of(this))
+        match mux_result:
+            Result.failure as p:
+                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            Result.success as p:
+                return Result[bool, Error].success(value = p.value)
+
+
+    public editable function try_recv() -> Option[LobbyEvent]:
+        return this.event_queue.pop_front()
+
+
+    public async editable function leave() -> Result[bool, Error]:
+        match await this.mux.disconnect():
+            Result.failure as p:
+                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            Result.success as p:
+                return Result[bool, Error].success(value = p.value)
+
+
+public function create_lobby_on(
+    runtime: aio.Runtime,
+    local_address: net.SocketAddress,
+    info: LobbyInfo,
+    config: mux.MuxedConfig
+) -> Result[LobbyHost, Error]:
+    match mux.mux_listen_on(runtime, local_address, config):
+        Result.failure as p:
+            return Result[LobbyHost, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+        Result.success as p:
+            var slots = vec.Vec[PlayerSlot].create()
+            var i: ubyte = 0
+            while i < info.max_players:
+                slots.push(PlayerSlot(player_id = uint<-0, player_name = string.String.create(), occupied = false))
+                i += 1
+            var host = LobbyHost(
+                mux = p.value,
+                info = info,
+                slots = slots,
+                event_queue = deque.Deque[LobbyEvent].create()
+            )
+            host.event_queue = deque.Deque[LobbyEvent].create()
+            return Result[LobbyHost, Error].success(value = host)
+
+
+public function create_lobby(
+    local_address: net.SocketAddress,
+    info: LobbyInfo,
+    config: mux.MuxedConfig
+) -> Result[LobbyHost, Error]:
+    return create_lobby_on(aio.current_runtime(), local_address, info, config)
+
+
+public async function join_lobby_on(
+    runtime: aio.Runtime,
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    player_name: str,
+    config: mux.MuxedConfig
+) -> Result[LobbyClient, Error]:
+    match mux.mux_connect_on(runtime, local_address, remote_address, config):
+        Result.failure as p:
+            return Result[LobbyClient, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+        Result.success as p:
+            var client = LobbyClient(
+                mux = p.value,
+                assigned_slot = 0,
+                assigned_id = 0,
+                lobby_info = LobbyInfo(
+                    name = string.String.create(),
+                    player_count = 0,
+                    max_players = 0,
+                    player_names = vec.Vec[string.String].create(),
+                    game_data = bytes.Bytes.empty()
+                ),
+                event_queue = deque.Deque[LobbyEvent].create(),
+                pending_join = true,
+                pending_name = string.String.from_str(player_name)
+            )
+            client.event_queue = deque.Deque[LobbyEvent].create()
+            match await client.mux.connect_to_peer():
+                Result.failure as pe:
+                    return Result[LobbyClient, Error].failure(error = Error(code = pe.error.code, message = pe.error.message))
+                Result.success:
+                    pass
+            return Result[LobbyClient, Error].success(value = client)
+
+
+public async function join_lobby(
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    player_name: str,
+    config: mux.MuxedConfig
+) -> Result[LobbyClient, Error]:
+    return await join_lobby_on(aio.current_runtime(), local_address, remote_address, player_name, config)
+
+
+public function discover_lobbies(
+    runtime: aio.Runtime,
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    config: mux.MuxedConfig
+) -> Result[vec.Vec[LobbyInfo], Error]:
+    return Result[vec.Vec[LobbyInfo], Error].success(value = vec.Vec[LobbyInfo].create())
+
+
+function encode_string(value: str) -> bytes.Bytes:
+    var w = bin.Writer.with_capacity(4 + value.len)
+    w.write_u32(uint<-value.len)
+    w.write_bytes(text.as_byte_span(value))
+    return w.finish()
+
+
+function decode_string(data: span[ubyte]) -> Result[string.String, Error]:
+    if data.len < 4:
+        return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
+    var r = bin.reader(data)
+    match r.read_u32():
+        Result.failure:
+            return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
+        Result.success as p:
+            let length = ptr_uint<-p.value
+            if length == 0:
+                return Result[string.String, Error].success(value = string.String.create())
+            if r.remaining() < length:
+                return Result[string.String, Error].failure(error = lobby_error(-1, "lobby string truncated"))
+            match r.read_bytes(length):
+                Result.failure:
+                    return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
+                Result.success as bp:
+                    var b = bp.value
+                    let str_opt = b.as_str()
+                    match str_opt:
+                        Option.none:
+                            b.release()
+                            return Result[string.String, Error].failure(error = lobby_error(-1, "lobby invalid utf8"))
+                        Option.some as sp:
+                            let result = string.String.from_str(sp.value)
+                            b.release()
+                            return Result[string.String, Error].success(value = result)
+
+
+function drain_lobby_host(host: ref[LobbyHost]) -> void:
+    while true:
+        let ev = host.mux.try_recv()
+        match ev:
+            Option.none:
+                break
+            Option.some as p:
+                var msg = p.value
+                process_lobby_msg_host(host, ref_of(msg))
+
+
+async function drain_lobby_client(client: ref[LobbyClient]) -> void:
+    if client.pending_join:
+        let conn_state = client.mux.state()
+        if conn_state == sess.ConnectionState.connected:
+            client.pending_join = false
+            var encoded = encode_string(client.pending_name.as_str())
+            defer encoded.release()
+            let _ = await client.mux.mux_send(lobby_channel, type_join_request, encoded.as_span(), mux.flag_reliable)
+
+    while true:
+        let ev = client.mux.try_recv()
+        match ev:
+            Option.none:
+                break
+            Option.some as p:
+                var msg = p.value
+                process_lobby_msg_client(client, ref_of(msg))
+
+
+function process_lobby_msg_host(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
+    if msg.channel_id != lobby_channel:
+        msg.release()
+        return
+
+    if msg.type_id == type_join_request:
+        handle_join_request(host, msg)
+        return
+
+    msg.release()
+
+
+function process_lobby_msg_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    if msg.channel_id != lobby_channel:
+        msg.release()
+        return
+
+    if msg.type_id == type_join_accept:
+        handle_join_accept(client, msg)
+        return
+
+    if msg.type_id == type_join_reject:
+        handle_join_reject_client(client, msg)
+        return
+
+    if msg.type_id == type_player_joined:
+        handle_player_joined_client(client, msg)
+        return
+
+    if msg.type_id == type_player_left:
+        handle_player_left_client(client, msg)
+        return
+
+    if msg.type_id == type_lobby_info:
+        handle_lobby_info_client(client, msg)
+        return
+
+    msg.release()
+
+
+function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
+    msg.release()
+
+
+function handle_join_accept(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    let data = msg.payload.as_span()
+    if data.len < 5:
+        msg.release()
+        return
+    var r = bin.reader(data)
+    match r.read_u32():
+        Result.failure:
+            msg.release()
+            return
+        Result.success as id_payload:
+            match r.read_u8():
+                Result.failure:
+                    msg.release()
+                    return
+                Result.success as slot_payload:
+                    client.assigned_id = id_payload.value
+                    client.assigned_slot = slot_payload.value
+                    msg.release()
+                    client.event_queue.push_back(LobbyEvent(
+                        kind = LobbyEventKind.joined,
+                        player_id = id_payload.value,
+                        player_name = string.String.create(),
+                        slot = slot_payload.value,
+                        reason = ubyte<-0
+                    ))
+
+
+function handle_join_reject_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    let data = msg.payload.as_span()
+    var reason: ubyte = 0
+    if data.len > 0:
+        reason = unsafe: read(data.data)
+    msg.release()
+    client.event_queue.push_back(LobbyEvent(
+        kind = LobbyEventKind.join_rejected,
+        player_id = uint<-0,
+        player_name = string.String.create(),
+        slot = ubyte<-0,
+        reason = reason
+    ))
+
+
+function handle_player_joined_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    let data = msg.payload.as_span()
+    if data.len < 5:
+        msg.release()
+        return
+    var r = bin.reader(data)
+    match r.read_u32():
+        Result.failure:
+            msg.release()
+            return
+        Result.success as id_payload:
+            match r.read_u8():
+                Result.failure:
+                    msg.release()
+                    return
+                Result.success as slot_payload:
+                    let name_data = unsafe: span[ubyte](data = data.data + 5, len = data.len - 5)
+                    match decode_string(name_data):
+                        Result.failure:
+                            msg.release()
+                            return
+                        Result.success as name_payload:
+                            var name = name_payload.value
+                            msg.release()
+                            client.event_queue.push_back(LobbyEvent(
+                                kind = LobbyEventKind.player_joined,
+                                player_id = id_payload.value,
+                                player_name = name,
+                                slot = slot_payload.value,
+                                reason = ubyte<-0
+                            ))
+
+
+function handle_player_left_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    let data = msg.payload.as_span()
+    if data.len < 5:
+        msg.release()
+        return
+    var r = bin.reader(data)
+    match r.read_u32():
+        Result.failure:
+            msg.release()
+            return
+        Result.success as id_payload:
+            var reason: ubyte = 0
+            if data.len > 4:
+                reason = unsafe: read(data.data + 4)
+            msg.release()
+            client.event_queue.push_back(LobbyEvent(
+                kind = LobbyEventKind.player_left,
+                player_id = id_payload.value,
+                player_name = string.String.create(),
+                slot = ubyte<-0,
+                reason = reason
+            ))
+
+
+function handle_lobby_info_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
+    msg.release()
+
+
+function encode_join_accept(player_id: uint, slot: ubyte) -> bytes.Bytes:
+    var w = bin.Writer.with_capacity(5)
+    w.write_u32(player_id)
+    w.write_u8(slot)
+    return w.finish()
+
+
+function encode_join_reject(reason: ubyte) -> bytes.Bytes:
+    var w = bin.Writer.with_capacity(1)
+    w.write_u8(reason)
+    return w.finish()
+
+
+function release_lobby_queue(queue: ref[deque.Deque[LobbyEvent]]) -> void:
+    while true:
+        let ev = queue.pop_front()
+        match ev:
+            Option.none:
+                break
+            Option.some as p:
+                var e = p.value
+                e.release()
+
+
+function release_slots(slots: ref[vec.Vec[PlayerSlot]]) -> void:
+    var index: ptr_uint = 0
+    while index < slots.len():
+        let slot_ptr = slots.get(index) else:
+            return
+        unsafe: read(slot_ptr).player_name.release()
+        index += 1

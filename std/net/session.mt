@@ -220,7 +220,7 @@ public function connect_on(
         Result.failure as payload:
             return Result[Connection, Error].failure(error = chan_to_session_error(payload.error))
         Result.success as payload:
-            return Result[Connection, Error].success(value = Connection(
+            var conn = Connection(
                 channel = payload.value,
                 state = ConnectionState.disconnected,
                 protocol_version = config.protocol_version,
@@ -232,7 +232,10 @@ public function connect_on(
                 pending_recv = Option[ChanMessageTask].none,
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
-            ))
+            )
+            conn.event_queue = deque.Deque[PeerEvent].create()
+            conn.outgoing = deque.Deque[OutgoingMessage].create()
+            return Result[Connection, Error].success(value = conn)
 
 
 public function connect(
@@ -249,12 +252,12 @@ public function listen_on(
     config: Config
 ) -> Result[Session, Error]:
     let channel_config = channel_config_for(config)
-    let host_result = chan.listen_on(runtime, local_address, channel_config)
-    match host_result:
+    let channel_result = chan.listen_on(runtime, local_address, channel_config)
+    match channel_result:
         Result.failure as payload:
             return Result[Session, Error].failure(error = chan_to_session_error(payload.error))
         Result.success as payload:
-            let session = Session(
+            var session = Session(
                 host = payload.value,
                 config = config,
                 next_peer_id = 1,
@@ -263,6 +266,8 @@ public function listen_on(
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
             )
+            session.event_queue = deque.Deque[PeerEvent].create()
+            session.outgoing = deque.Deque[OutgoingMessage].create()
             return Result[Session, Error].success(value = session)
 
 

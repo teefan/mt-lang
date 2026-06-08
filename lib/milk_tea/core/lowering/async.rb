@@ -364,10 +364,26 @@ module MilkTea
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::MatchStmt
             scrutinee_type = infer_expression_type(statement.expression, env:)
+            scrutinee_is_local = statement.expression.is_a?(AST::Identifier) && local_fields.key?(statement.expression.name)
             statement.arms.each do |arm|
               arm_env = duplicate_env(env)
               bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+              arm_await_count = await_counter
               await_counter = analyze_async_statements!(arm.body, await_counter, arm_env, param_fields, local_fields, await_fields)
+              if arm.binding_name && await_counter > arm_await_count && scrutinee_is_local
+                arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                if arm_name
+                  scrutinee_field_name = local_fields[statement.expression.name][:field_name]
+                  field_name = "#{scrutinee_field_name}_#{arm_name}_#{arm.binding_name}"
+                  unless local_fields.key?(field_name)
+                    arm_binding = arm_env[:scopes].last[arm.binding_name]
+                    payload_type = arm_binding && arm_binding[:type]
+                    if payload_type
+                      local_fields[field_name] = { field_name:, type: payload_type, storage_type: payload_type, mutable: false }
+                    end
+                  end
+                end
+              end
             end
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
@@ -469,10 +485,26 @@ module MilkTea
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
           when AST::MatchStmt
             scrutinee_type = infer_expression_type(statement.expression, env:)
+            scrutinee_is_local = statement.expression.is_a?(AST::Identifier) && local_fields.key?(statement.expression.name)
             statement.arms.each do |arm|
               arm_env = duplicate_env(env)
               bind_async_variant_match_arm_env!(arm_env, scrutinee_type, arm)
+              arm_await_count = await_counter
               await_counter = analyze_async_statements!(arm.body, await_counter, arm_env, param_fields, local_fields, await_fields)
+              if arm.binding_name && await_counter > arm_await_count && scrutinee_is_local
+                arm_name = variant_match_arm_name_from_pattern(arm.pattern)
+                if arm_name
+                  scrutinee_field_name = local_fields[statement.expression.name][:field_name]
+                  field_name = "#{scrutinee_field_name}_#{arm_name}_#{arm.binding_name}"
+                  unless local_fields.key?(field_name)
+                    arm_binding = arm_env[:scopes].last[arm.binding_name]
+                    payload_type = arm_binding && arm_binding[:type]
+                    if payload_type
+                      local_fields[field_name] = { field_name:, type: payload_type, storage_type: payload_type, mutable: false }
+                    end
+                  end
+                end
+              end
             end
           when AST::UnsafeStmt
             await_counter = analyze_async_statements!(statement.body, await_counter, env, param_fields, local_fields, await_fields)
@@ -1807,7 +1839,7 @@ module MilkTea
           kind_type = @types.fetch("int")
           kind_expr = IR::Member.new(receiver: match_expr, member: "kind", type: kind_type)
           cases = statement.arms.map do |arm|
-            arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:)
+            arm_env, binding_decl = async_variant_match_arm_binding(arm, match_expr, match_type, env:, frame_expr:, local_fields: async_info[:local_fields])
             arm_body = if statements_contain_await?(arm.body, async_info)
                          lower_async_cf_statements(arm.body, env: arm_env, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers:, loop_flow: arm_loop_flow)
                        else
