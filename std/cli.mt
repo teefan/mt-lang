@@ -3,7 +3,6 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-const byte_hyphen: ubyte = ubyte<-45
 const byte_equals: ubyte = ubyte<-61
 
 public enum OptionKind: int
@@ -304,6 +303,11 @@ function require_value_arg(option_name: str) -> Error:
     return Error(message = message)
 
 
+function required_option_error(option_name: str) -> Error:
+    let message = fmt.format(f"required option #{option_name} is missing")
+    return Error(message = message)
+
+
 function unknown_option_error(option_name: str) -> Error:
     let message = fmt.format(f"unknown option #{option_name}")
     return Error(message = message)
@@ -374,7 +378,7 @@ function validate_required_options(
 
             let current = unsafe: read(option_match)
             if not current.present and not current.has_value:
-                return Result[bool, Error].failure(error= require_value_arg(spec.long_name))
+                return Result[bool, Error].failure(error= required_option_error(spec.long_name))
         index += 1
 
     index = 0
@@ -386,7 +390,7 @@ function validate_required_options(
 
             let current = unsafe: read(option_match)
             if not current.present and not current.has_value:
-                return Result[bool, Error].failure(error= require_value_arg(spec.long_name))
+                return Result[bool, Error].failure(error= required_option_error(spec.long_name))
         index += 1
 
     return Result[bool, Error].success(value= true)
@@ -455,6 +459,112 @@ public function app_spec(
     )
 
 
+function parse_long_option_impl(
+    result: ptr[Match],
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec],
+    arg: str,
+    next_arg: Option[str]
+) -> Result[ptr_uint, Error]:
+    let split_index = split_long_option(arg)
+    var option_name = arg.slice(2, arg.len - 2)
+    var inline_value = Option[str].none
+    match split_index:
+        Option.some as payload:
+            option_name = arg.slice(2, payload.value - 2)
+            inline_value = Option[str].some(value= arg.slice(payload.value + 1, arg.len - payload.value - 1))
+        Option.none:
+            pass
+
+    let spec_ptr = find_long_option(app_options, command_options, option_name) else:
+        return Result[ptr_uint, Error].failure(error= unknown_option_error(arg))
+
+    let spec = unsafe: read(spec_ptr)
+    if option_takes_value(spec):
+        var consumed = ptr_uint<-1
+
+        match inline_value:
+            Option.some as inline_payload:
+                match set_option_value(result, spec, inline_payload.value):
+                    Result.failure as set_error:
+                        return Result[ptr_uint, Error].failure(error= set_error.error)
+                    Result.success:
+                        return Result[ptr_uint, Error].success(value= consumed)
+            Option.none:
+                pass
+
+        let value_arg = next_arg else:
+            let missing = fmt.format(f"--#{spec.long_name}")
+            return Result[ptr_uint, Error].failure(error= require_value_arg(missing.as_str()))
+
+        match set_option_value(result, spec, value_arg):
+            Result.failure as payload:
+                return Result[ptr_uint, Error].failure(error= payload.error)
+            Result.success:
+                consumed = ptr_uint<-2
+                return Result[ptr_uint, Error].success(value= consumed)
+
+    match inline_value:
+        Option.some:
+            return Result[ptr_uint, Error].failure(error= create_error("flag options do not accept inline values"))
+        Option.none:
+            pass
+
+    match set_option_flag(result, spec):
+        Result.failure as payload:
+            return Result[ptr_uint, Error].failure(error= payload.error)
+        Result.success:
+            return Result[ptr_uint, Error].success(value= ptr_uint<-1)
+
+
+function parse_short_option_impl(
+    result: ptr[Match],
+    app_options: span[OptionSpec],
+    command_options: span[OptionSpec],
+    arg: str,
+    next_arg: Option[str]
+) -> Result[ptr_uint, Error]:
+    var short_index: ptr_uint = 1
+    while short_index < arg.len:
+        let short_name = arg.slice(short_index, 1)
+
+        let spec_ptr = find_short_option(app_options, command_options, short_name) else:
+            return Result[ptr_uint, Error].failure(error= unknown_option_error(arg))
+
+        let spec = unsafe: read(spec_ptr)
+        if option_takes_value(spec):
+            var consumed = ptr_uint<-1
+
+            if short_index + 1 < arg.len:
+                let value = arg.slice(short_index + 1, arg.len - short_index - 1)
+                match set_option_value(result, spec, value):
+                    Result.failure as payload:
+                        return Result[ptr_uint, Error].failure(error= payload.error)
+                    Result.success:
+                        return Result[ptr_uint, Error].success(value= consumed)
+
+            let value_arg = next_arg else:
+                let missing = fmt.format(f"-#{short_name}")
+                return Result[ptr_uint, Error].failure(error= require_value_arg(missing.as_str()))
+
+            match set_option_value(result, spec, value_arg):
+                Result.failure as payload:
+                    return Result[ptr_uint, Error].failure(error= payload.error)
+                Result.success:
+                    consumed = ptr_uint<-2
+                    return Result[ptr_uint, Error].success(value= consumed)
+
+        match set_option_flag(result, spec):
+            Result.failure as payload:
+                return Result[ptr_uint, Error].failure(error= payload.error)
+            Result.success:
+                pass
+
+        short_index += 1
+
+    return Result[ptr_uint, Error].success(value= ptr_uint<-1)
+
+
 public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
     var result = create_match()
 
@@ -482,110 +592,35 @@ public function parse(app: AppSpec, args: span[str]) -> Result[Match, Error]:
             return Result[Match, Error].success(value= result)
 
         if not end_of_options and arg.starts_with("--") and arg.len > 2:
-            let split_index = split_long_option(arg)
-            var option_name = arg.slice(2, arg.len - 2)
-            var inline_value = Option[str].none
-            match split_index:
-                Option.some as payload:
-                    option_name = arg.slice(2, payload.value - 2)
-                    inline_value = Option[str].some(value= arg.slice(payload.value + 1, arg.len - payload.value - 1))
-                Option.none:
-                    pass
+            var next_arg = Option[str].none
+            if index + 1 < args.len:
+                next_arg = Option[str].some(value = unsafe: read(args.data + index + 1))
 
-            let spec_ptr = find_long_option(app.options, command_options, option_name) else:
-                result.release()
-                return Result[Match, Error].failure(error= unknown_option_error(arg))
-
-            let spec = unsafe: read(spec_ptr)
-            if option_takes_value(spec):
-                var consumed_next = false
-                var value = arg
-                match inline_value:
-                    Option.some as payload:
-                        value = payload.value
-                    Option.none:
-                        if index + 1 >= args.len:
-                            result.release()
-                            let missing = fmt.format(f"--#{spec.long_name}")
-                            return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
-                        value = unsafe: read(args.data + index + 1)
-                        consumed_next = true
-
-                match set_option_value(ptr_of(result), spec, value):
-                    Result.failure as value_error_payload:
-                        result.release()
-                        return Result[Match, Error].failure(error= value_error_payload.error)
-                    Result.success:
-                        pass
-
-                index += 1
-                if consumed_next:
-                    index += 1
-                continue
-
-            match inline_value:
-                Option.some:
+            match parse_long_option_impl(ptr_of(result), app.options, command_options, arg, next_arg):
+                Result.failure as payload:
                     result.release()
-                    return Result[Match, Error].failure(error= create_error("flag options do not accept inline values"))
-                Option.none:
-                    pass
+                    return Result[Match, Error].failure(error= payload.error)
+                Result.success as consumed_payload:
+                    index += consumed_payload.value
 
-            match set_option_flag(ptr_of(result), spec):
-                Result.failure as flag_error_payload:
-                    result.release()
-                    return Result[Match, Error].failure(error= flag_error_payload.error)
-                Result.success:
-                    pass
-
-            index += 1
             continue
 
         if not end_of_options and arg.starts_with("-") and arg.len > 1:
-            var short_index: ptr_uint = 1
-            var consumed_next = false
-            while short_index < arg.len:
-                let short_name = arg.slice(short_index, 1)
-                if short_name.equal("h"):
-                    result.show_help = true
-                    return Result[Match, Error].success(value= result)
+            if arg.equal("-h"):
+                result.show_help = true
+                return Result[Match, Error].success(value= result)
 
-                let spec_ptr = find_short_option(app.options, command_options, short_name) else:
+            var next_arg = Option[str].none
+            if index + 1 < args.len:
+                next_arg = Option[str].some(value = unsafe: read(args.data + index + 1))
+
+            match parse_short_option_impl(ptr_of(result), app.options, command_options, arg, next_arg):
+                Result.failure as payload:
                     result.release()
-                    return Result[Match, Error].failure(error= unknown_option_error(arg))
+                    return Result[Match, Error].failure(error= payload.error)
+                Result.success as consumed_payload:
+                    index += consumed_payload.value
 
-                let spec = unsafe: read(spec_ptr)
-                if option_takes_value(spec):
-                    var value = arg
-                    if short_index + 1 < arg.len:
-                        value = arg.slice(short_index + 1, arg.len - short_index - 1)
-                    else:
-                        if index + 1 >= args.len:
-                            result.release()
-                            let missing = fmt.format(f"-#{short_name}")
-                            return Result[Match, Error].failure(error= require_value_arg(missing.as_str()))
-                        value = unsafe: read(args.data + index + 1)
-                        consumed_next = true
-
-                    match set_option_value(ptr_of(result), spec, value):
-                        Result.failure as value_error_payload:
-                            result.release()
-                            return Result[Match, Error].failure(error= value_error_payload.error)
-                        Result.success:
-                            pass
-
-                    short_index = arg.len
-                else:
-                    match set_option_flag(ptr_of(result), spec):
-                        Result.failure as flag_error_payload:
-                            result.release()
-                            return Result[Match, Error].failure(error= flag_error_payload.error)
-                        Result.success:
-                            pass
-                    short_index += 1
-
-            index += 1
-            if consumed_next:
-                index += 1
             continue
 
         if not result.has_command and app.commands.len != 0:
