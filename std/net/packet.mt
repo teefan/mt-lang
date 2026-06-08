@@ -44,7 +44,7 @@ function decode_packet_length(header: bytes.Bytes) -> ptr_uint:
         fatal(c"packet frame header length mismatch")
 
     let header_span = header.as_span()
-    let length = ((uint<-header_span[0]) << 24) |        ((uint<-header_span[1]) << 16) |        ((uint<-header_span[2]) << 8) |        (uint<-header_span[3])
+    let length = ((uint<-header_span[0]) << 24) | ((uint<-header_span[1]) << 16) | ((uint<-header_span[2]) << 8) | (uint<-header_span[3])
     return ptr_uint<-length
 
 

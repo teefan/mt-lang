@@ -2,7 +2,6 @@ import std.str as text
 import std.string as string
 import std.time as time
 
-
 public struct Cookie:
     name: string.String
     value: string.String

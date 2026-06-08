@@ -48,7 +48,6 @@ GLSL
 
 # --- heredoc format string (exercised in function body)
 
-
 function heredoc_fmt_demo() -> void:
     let _rendered = f<<-SQL
     SELECT * FROM items
@@ -156,13 +155,11 @@ extending NPC:
 
 # --- generic function with implements constraint
 
-
 function damage_one[T implements Damageable](target: ref[T], amount: int) -> void:
     if target.is_alive():
         target.take_damage(amount)
 
 # --- generic function with multiple implements constraints
-
 
 function describe[T implements Damageable and Named](target: ref[T]) -> str:
     if target.is_alive():
@@ -170,7 +167,6 @@ function describe[T implements Damageable and Named](target: ref[T]) -> str:
     return "dead"
 
 # --- generic function without constraint (relies on default[T])
-
 
 function make_default[T]() -> T:
     return default[T]
@@ -223,7 +219,6 @@ public event updated[8](Seconds)
 # 7  Functions, externals
 # ---------------------------------------------------------------------------
 
-
 function void_returning() -> void:
     return
 
@@ -237,12 +232,10 @@ function add(a: int, b: int) -> int:
 
 # --- generic function (explicit specialization at call site)
 
-
 function first_pair[T](pair: Pair[T, int]) -> T:
     return pair.first
 
 # --- generic function with ref parameter
-
 
 function read_into[T](source: T, target: ref[T]) -> void:
     read(target) = source
@@ -254,7 +247,6 @@ external function atoi(input: cstr) -> int
 # ---------------------------------------------------------------------------
 # 8  Statements: local declarations, guards, Result propagation
 # ---------------------------------------------------------------------------
-
 
 function statements_demo() -> int:
     # --- let / var locals with type inference
@@ -417,7 +409,6 @@ function guard_demo() -> Result[int, GuardError]:
 # 9  Expressions and operators
 # ---------------------------------------------------------------------------
 
-
 function expressions_demo(x: int, y: int) -> int:
     # --- arithmetic
     let a = x + y
@@ -480,7 +471,7 @@ function expressions_demo(x: int, y: int) -> int:
     )
 
     # --- operator-led continuation
-    let continued = x +        y -        acc
+    let continued = x + y - acc
 
     let expr_result = wrapped + continued + chosen + vx_val + elem + pair.first
     return expr_result
@@ -488,7 +479,6 @@ function expressions_demo(x: int, y: int) -> int:
 # ---------------------------------------------------------------------------
 # 10  Built-in callable surface
 # ---------------------------------------------------------------------------
-
 
 function builtins_demo() -> int:
     var counter: int = 0
@@ -554,7 +544,6 @@ function builtins_demo() -> int:
 # 11  unsafe blocks
 # ---------------------------------------------------------------------------
 
-
 function unsafe_demo() -> void:
     var counter: int = 42
     let raw_p = ptr_of(counter)
@@ -578,7 +567,6 @@ function unsafe_demo() -> void:
 # 12  proc expressions
 # ---------------------------------------------------------------------------
 
-
 function proc_demo() -> int:
     # --- expression-bodied proc
     let triple = proc(x: int) -> int: x * 3
@@ -598,7 +586,6 @@ function proc_demo() -> int:
 # ---------------------------------------------------------------------------
 # 13  events usage (within declaring module)
 # ---------------------------------------------------------------------------
-
 
 function emit_ready() -> void:
     ready.emit()
@@ -620,7 +607,6 @@ function schedule_ready_callback() -> void:
 # ---------------------------------------------------------------------------
 # 14  format strings
 # ---------------------------------------------------------------------------
-
 
 function format_demo() -> str:
     let count = 42
@@ -650,7 +636,6 @@ function format_demo() -> str:
 # 15  Generic struct usage
 # ---------------------------------------------------------------------------
 
-
 function generics_demo() -> int:
     # --- generic struct specialization
     let pair = Pair[int, bool](first = 10, second = true)
@@ -672,7 +657,6 @@ function generics_demo() -> int:
 # ---------------------------------------------------------------------------
 # 16  Async functions
 # ---------------------------------------------------------------------------
-
 
 async function async_child() -> int:
     return 41
@@ -698,7 +682,6 @@ async function async_demo() -> int:
 # ---------------------------------------------------------------------------
 # 17  Interface method and callable type projections
 # ---------------------------------------------------------------------------
-
 
 function interface_demo(target: ref[NPC]) -> int:
     # --- methods via type projection (editable function)
@@ -733,7 +716,6 @@ static_assert(true, "static_assert true check")
 # 19  str_buffer[N] usage
 # ---------------------------------------------------------------------------
 
-
 function str_buffer_demo() -> bool:
     var buffer: str_buffer[64]
 
@@ -754,7 +736,6 @@ function str_buffer_demo() -> bool:
 # ---------------------------------------------------------------------------
 # 20  Nullability
 # ---------------------------------------------------------------------------
-
 
 function nullability_demo() -> int:
     # --- nullable pointers and null checks
@@ -860,7 +841,6 @@ const ROUNDED_UP -> int:
 
 # --- 21h: members_of over an enum (reflection: members_of)
 
-
 function color_count() -> int:
     var count: int = 0
     inline for member in members_of(Palette):
@@ -869,7 +849,6 @@ function color_count() -> int:
     return count
 
 # --- 21i: type as a return type (picking a primitive by width)
-
 
 function int_with_bits[N: int]() -> type:
     if N == 8:
@@ -887,7 +866,6 @@ const WidePtr: type = ptr[Wide]
 
 # --- 21j: comptime demo function called from main
 
-
 function comptime_demo() -> int:
     let pow2 = NEXT_POW2_ABOVE_1000
     let hash = FNV_HASH
@@ -903,7 +881,6 @@ function comptime_demo() -> int:
 # ---------------------------------------------------------------------------
 # 22  Native vector types (vec2, vec3, vec4, ivec2, ivec3, ivec4)
 # ---------------------------------------------------------------------------
-
 
 function vector_demo() -> float:
     # --- zero-initialized vectors
@@ -972,7 +949,6 @@ extending vec3:
 # 23  Native matrix types (mat3, mat4)
 # ---------------------------------------------------------------------------
 
-
 function matrix_demo() -> float:
     let m4 = zero[mat4]
     let m3 = zero[mat3]
@@ -995,7 +971,6 @@ function matrix_demo() -> float:
 # ---------------------------------------------------------------------------
 # 24  Native quaternion type (quat)
 # ---------------------------------------------------------------------------
-
 
 function quat_demo() -> float:
     let q = zero[quat]
@@ -1048,7 +1023,6 @@ function soa_demo() -> float:
 # ---------------------------------------------------------------------------
 # 26  Entrypoint
 # ---------------------------------------------------------------------------
-
 
 function main() -> int:
     var total: int = 0

@@ -231,6 +231,8 @@ module MilkTea
       previous_content_line = nil
       previous_content_index = nil
       previous_top_level_declaration_group = nil
+      previous_content_was_bodyful_function = false
+      previous_content_was_comment = false
 
       lines.each_with_index do |line, line_index|
         if blank_line?(line)
@@ -250,20 +252,24 @@ module MilkTea
             elsif extending_block_header_line?(line)
               2 # exactly 2 blank lines before extending blocks
             elsif function_line?(line)
-              current_bodyless_function_header = bodyless_function_header_at?(lines, line_index)
-              if current_bodyless_function_header
-                if previous_content_index && line_inside_bodyless_function_header?(lines, previous_content_index)
-                  0 # Keep consecutive declaration-style functions tightly packed.
-                elsif previous_content_line && interface_block_header_line?(previous_content_line)
-                  0 # First interface method should not have leading blank lines.
-                else
-                  1 # Separate declaration-style functions from preceding non-function content.
-                end
-              elsif previous_content_line && extending_block_header_line?(previous_content_line)
-                0 # First method in an extending block should not have leading blank lines.
-              else
-                2 # exactly 2 blank lines before function definitions
-              end
+               current_bodyless_function_header = bodyless_function_header_at?(lines, line_index)
+               if current_bodyless_function_header
+                 if previous_content_index && line_inside_bodyless_function_header?(lines, previous_content_index)
+                   0 # Keep consecutive declaration-style functions tightly packed.
+                 elsif previous_content_line && interface_block_header_line?(previous_content_line)
+                   0 # First interface method should not have leading blank lines.
+                 else
+                   1 # Separate declaration-style functions from preceding non-function content.
+                 end
+               elsif previous_content_line && extending_block_header_line?(previous_content_line)
+                 0 # First method in an extending block should not have leading blank lines.
+               elsif previous_content_was_comment
+                 1 # 1 blank line between a comment block and a function
+               elsif previous_content_was_bodyful_function
+                 2 # 2 blank lines between consecutive function definitions
+               else
+                 2 # 2 blank lines before first function in a scope (after const/struct/enum/import etc.)
+               end
             elsif current_top_level_group
               if current_top_level_group == :struct && previous_top_level_declaration_group == :struct
                 1
@@ -288,8 +294,18 @@ module MilkTea
           previous_content_index = line_index
           current_top_level_group = top_level_declaration_group(line)
           previous_top_level_declaration_group = current_top_level_group if current_top_level_group
-        end
-      end
+          if decorated_function_index
+            unless bodyless_function_header_at?(lines, decorated_function_index)
+              previous_content_was_bodyful_function = true
+            end
+          elsif function_line?(line) && !bodyless_function_header_at?(lines, line_index)
+            previous_content_was_bodyful_function = true
+          elsif current_top_level_group || extending_block_header_line?(line) || interface_block_header_line?(line) || line_is_import?(line) || line_is_comment?(line)
+            previous_content_was_bodyful_function = false
+           end
+           previous_content_was_comment = line_is_comment?(line)
+         end
+       end
 
       return "" if result.empty?
 
@@ -480,6 +496,14 @@ module MilkTea
       return false unless stripped.end_with?(":")
 
       stripped.start_with?("interface ")
+    end
+
+    def self.line_is_import?(line)
+      line.strip.start_with?("import ")
+    end
+
+    def self.line_is_comment?(line)
+      line.strip.start_with?("#")
     end
 
     def self.attribute_application_line?(line)

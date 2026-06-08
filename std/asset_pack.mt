@@ -140,6 +140,7 @@ function valid_magic(header: ptr[ubyte]) -> bool:
             read(header + 3) == MAGIC_P
         )
 
+
 function read_entry_metadata(file: stdio.File?) -> Result[EntryMetadata, Error]:
     var prefix = zero[array[ubyte, 32]]
     let prefix_ptr = ptr_of(prefix[0])
@@ -240,6 +241,7 @@ function decode_u32_le(bytes: ptr[ubyte]) -> uint:
             uint<-read(bytes + 2) << 16 |
             uint<-read(bytes + 3) << 24
         )
+
 
 function decode_u64_le(bytes: ptr[ubyte]) -> Result[ptr_uint, Error]:
     if ptr_uint<-size_of(ptr[void]) < 8:

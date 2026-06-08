@@ -6,6 +6,7 @@
 #  int
 # ---------------------------------------------------------------------------
 
+
 extending int:
     public static function hash(value: const_ptr[int]) -> uint:
         unsafe:
@@ -20,9 +21,11 @@ extending int:
             h = (h ^ ((as_uint >> uint<-(24)) & uint<-(0xFF))) * prime
             return h
 
+
     public static function equal(a: const_ptr[int], b: const_ptr[int]) -> bool:
         unsafe:
             return read(ptr[int]<-a) == read(ptr[int]<-b)
+
 
     public static function order(a: const_ptr[int], b: const_ptr[int]) -> int:
         unsafe:
@@ -38,6 +41,7 @@ extending int:
 #  uint
 # ---------------------------------------------------------------------------
 
+
 extending uint:
     public static function hash(value: const_ptr[uint]) -> uint:
         unsafe:
@@ -51,9 +55,11 @@ extending uint:
             h = (h ^ (uint<-(ubyte<-((v >> uint<-(24)) & uint<-(0xFF))))) * prime
             return h
 
+
     public static function equal(a: const_ptr[uint], b: const_ptr[uint]) -> bool:
         unsafe:
             return read(ptr[uint]<-a) == read(ptr[uint]<-b)
+
 
     public static function order(a: const_ptr[uint], b: const_ptr[uint]) -> int:
         unsafe:
@@ -69,6 +75,7 @@ extending uint:
 #  bool
 # ---------------------------------------------------------------------------
 
+
 extending bool:
     public static function hash(value: const_ptr[bool]) -> uint:
         unsafe:
@@ -76,9 +83,11 @@ extending bool:
                 return 1
             return 0
 
+
     public static function equal(a: const_ptr[bool], b: const_ptr[bool]) -> bool:
         unsafe:
             return read(ptr[bool]<-a) == read(ptr[bool]<-b)
+
 
     public static function order(a: const_ptr[bool], b: const_ptr[bool]) -> int:
         unsafe:
@@ -94,14 +103,17 @@ extending bool:
 #  float — bitwise hash, exact equal
 # ---------------------------------------------------------------------------
 
+
 extending float:
     public static function hash(value: const_ptr[float]) -> uint:
         unsafe:
             return uint<-reinterpret[uint](read(ptr[float]<-value))
 
+
     public static function equal(a: const_ptr[float], b: const_ptr[float]) -> bool:
         unsafe:
             return read(ptr[float]<-a) == read(ptr[float]<-b)
+
 
     public static function order(a: const_ptr[float], b: const_ptr[float]) -> int:
         unsafe:
@@ -117,14 +129,17 @@ extending float:
 #  double — bitwise hash, exact equal
 # ---------------------------------------------------------------------------
 
+
 extending double:
     public static function hash(value: const_ptr[double]) -> uint:
         unsafe:
             return uint<-reinterpret[uint](read(ptr[double]<-value))
 
+
     public static function equal(a: const_ptr[double], b: const_ptr[double]) -> bool:
         unsafe:
             return read(ptr[double]<-a) == read(ptr[double]<-b)
+
 
     public static function order(a: const_ptr[double], b: const_ptr[double]) -> int:
         unsafe:
@@ -140,14 +155,17 @@ extending double:
 #  char
 # ---------------------------------------------------------------------------
 
+
 extending char:
     public static function hash(value: const_ptr[char]) -> uint:
         unsafe:
             return uint<-read(ptr[char]<-value)
 
+
     public static function equal(a: const_ptr[char], b: const_ptr[char]) -> bool:
         unsafe:
             return read(ptr[char]<-a) == read(ptr[char]<-b)
+
 
     public static function order(a: const_ptr[char], b: const_ptr[char]) -> int:
         unsafe:

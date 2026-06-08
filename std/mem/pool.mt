@@ -11,7 +11,6 @@ function slot_alignment(slot_size_bytes: ptr_uint, base_alignment: ptr_uint) -> 
 
     return alignment
 
-
 public struct Pool:
     memory: ptr[ubyte]?
     occupancy: ptr[bool]?

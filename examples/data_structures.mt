@@ -25,7 +25,6 @@ import std.graph as gmod
 # 1  Vec[T] — contiguous dynamic array
 # ---------------------------------------------------------------------------
 
-
 function vec_demo() -> int:
     var v = vec.Vec[int].create()
     v.push(10)
@@ -39,7 +38,6 @@ function vec_demo() -> int:
 # ---------------------------------------------------------------------------
 # 2  Deque[T] — double-ended ring buffer
 # ---------------------------------------------------------------------------
-
 
 function deque_demo() -> int:
     var d = deque.Deque[int].create()
@@ -55,7 +53,6 @@ function deque_demo() -> int:
 # 3  Queue[T] — FIFO facade over Deque
 # ---------------------------------------------------------------------------
 
-
 function queue_demo() -> int:
     var q = fifo.Queue[int].with_capacity(4)
     q.enqueue(1)
@@ -68,7 +65,6 @@ function queue_demo() -> int:
 # 4  Stack[T] — LIFO facade over Deque
 # ---------------------------------------------------------------------------
 
-
 function stack_demo() -> int:
     var s = lifo.Stack[int].with_capacity(4)
     s.push(1)
@@ -80,7 +76,6 @@ function stack_demo() -> int:
 # ---------------------------------------------------------------------------
 # 5  BinaryHeap[T] — max-heap keyed by order[T]
 # ---------------------------------------------------------------------------
-
 
 function heap_demo() -> int:
     var h = heap_mod.BinaryHeap[int].create()
@@ -95,7 +90,6 @@ function heap_demo() -> int:
 # 6  PriorityQueue[T] — task facade over BinaryHeap
 # ---------------------------------------------------------------------------
 
-
 function priority_queue_demo() -> int:
     var q = pq_mod.PriorityQueue[int].create()
     q.enqueue(15)
@@ -109,7 +103,6 @@ function priority_queue_demo() -> int:
 # 7  Map[K,V] — hash table
 # ---------------------------------------------------------------------------
 
-
 function map_demo() -> int:
     var m = ht.Map[str, int].create()
     m.set("x", 10)
@@ -122,7 +115,6 @@ function map_demo() -> int:
 # ---------------------------------------------------------------------------
 # 8  Set[T] — hash set
 # ---------------------------------------------------------------------------
-
 
 function set_demo() -> int:
     var s = hset.Set[int].create()
@@ -139,7 +131,6 @@ function set_demo() -> int:
 # 9  OrderedMap[K,V] — AVL-backed ordered map
 # ---------------------------------------------------------------------------
 
-
 function ordered_map_demo() -> int:
     var m = omap.OrderedMap[int, str].create()
     m.set(3, "three")
@@ -152,7 +143,6 @@ function ordered_map_demo() -> int:
 # ---------------------------------------------------------------------------
 # 10  OrderedSet[T] — AVL-backed ordered set
 # ---------------------------------------------------------------------------
-
 
 function ordered_set_demo() -> int:
     var s = oset.OrderedSet[int].create()
@@ -168,7 +158,6 @@ function ordered_set_demo() -> int:
 # 11  LinkedMap[K,V] — insertion-ordered hash map
 # ---------------------------------------------------------------------------
 
-
 function linked_map_demo() -> int:
     var m = lmap.LinkedMap[str, int].create()
     m.set("c", 30)
@@ -182,7 +171,6 @@ function linked_map_demo() -> int:
 # ---------------------------------------------------------------------------
 # 12  LinkedSet[T] — insertion-ordered hash set
 # ---------------------------------------------------------------------------
-
 
 function linked_set_demo() -> int:
     var s = lset.LinkedSet[int].create()
@@ -198,7 +186,6 @@ function linked_set_demo() -> int:
 # 13  Counter[T] — frequency table
 # ---------------------------------------------------------------------------
 
-
 function counter_demo() -> int:
     var c = counter_mod.Counter[int].create()
     c.increment(1)
@@ -213,7 +200,6 @@ function counter_demo() -> int:
 # ---------------------------------------------------------------------------
 # 14  MultiSet[T] — bag
 # ---------------------------------------------------------------------------
-
 
 function multiset_demo() -> int:
     var s = mset.MultiSet[int].create()
@@ -248,7 +234,6 @@ function soa_demo() -> float:
 # 16  Graph[T] — adjacency list + DenseGraph compile
 # ---------------------------------------------------------------------------
 
-
 function graph_demo() -> int:
     var g = gmod.Graph[str].create_directed()
     let a = g.add_node("start")
@@ -272,7 +257,6 @@ function graph_demo() -> int:
 # ---------------------------------------------------------------------------
 # 17  Entrypoint
 # ---------------------------------------------------------------------------
-
 
 function main() -> int:
     var total: int = 0

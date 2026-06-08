@@ -19,6 +19,7 @@ public struct DenseGraph[T]:
     weights: vec.Vec[float]
     is_directed: bool
 
+
 extending Graph[T]:
     public static function create() -> Graph[T]:
         return Graph[T](
@@ -27,6 +28,7 @@ extending Graph[T]:
             is_directed = false
         )
 
+
     public static function create_directed() -> Graph[T]:
         return Graph[T](
             nodes = vec.Vec[T].create(),
@@ -34,24 +36,30 @@ extending Graph[T]:
             is_directed = true
         )
 
+
     public function node_count() -> ptr_uint:
         return this.nodes.len()
 
+
     public function edge_count() -> ptr_uint:
         return this.edges.len()
+
 
     public editable function add_node(value: T) -> ptr_uint:
         let index = this.nodes.len()
         this.nodes.push(value)
         return index
 
+
     public function get_node(index: ptr_uint) -> T:
         let node_ptr = this.nodes.get(index) else:
             fatal(c"graph.get_node: index out of bounds")
         return unsafe: read(node_ptr)
 
+
     public editable function add_edge(from: ptr_uint, to: ptr_uint):
         this.add_weighted_edge(from, to, 1.0)
+
 
     public editable function add_weighted_edge(from: ptr_uint, to: ptr_uint, weight: float):
         var e = zero[Edge]
@@ -66,6 +74,7 @@ extending Graph[T]:
             rev.weight = weight
             this.edges.push(rev)
 
+
     public function has_edge(from: ptr_uint, to: ptr_uint) -> bool:
         let edge_span = this.edges.as_span()
         var i: ptr_uint = 0
@@ -75,6 +84,7 @@ extending Graph[T]:
                 return true
             i += 1
         return false
+
 
     public editable function remove_edge(from: ptr_uint, to: ptr_uint) -> bool:
         let count = this.edges.len()
@@ -89,6 +99,7 @@ extending Graph[T]:
             i += 1
         return false
 
+
     public function neighbors(index: ptr_uint) -> vec.Vec[ptr_uint]:
         var result = vec.Vec[ptr_uint].create()
         let edge_span = this.edges.as_span()
@@ -99,6 +110,7 @@ extending Graph[T]:
                 result.push(e.to)
             i += 1
         return result
+
 
     public function bfs(start: ptr_uint) -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
@@ -133,6 +145,7 @@ extending Graph[T]:
         queue.release()
         return order
 
+
     public function dfs(start: ptr_uint) -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
         let n = this.node_count()
@@ -166,6 +179,7 @@ extending Graph[T]:
         heap.release(visited)
         stack.release()
         return order
+
 
     public function toposort() -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
@@ -209,6 +223,7 @@ extending Graph[T]:
         heap.release(in_degree)
         queue.release()
         return order
+
 
     public function compile() -> DenseGraph[T]:
         let n = this.node_count()
@@ -276,20 +291,25 @@ extending Graph[T]:
             is_directed = this.is_directed
         )
 
+
     public editable function clear():
         this.nodes.clear()
         this.edges.clear()
+
 
     public editable function release():
         this.nodes.release()
         this.edges.release()
 
+
 extending DenseGraph[T]:
     public function node_count() -> ptr_uint:
         return this.nodes.len()
 
+
     public function edge_count() -> ptr_uint:
         return this.targets.len()
+
 
     public function neighbor_count(node: ptr_uint) -> ptr_uint:
         let n = this.node_count()
@@ -301,6 +321,7 @@ extending DenseGraph[T]:
             return 0
         return unsafe: read(end) - read(start)
 
+
     public function neighbor_target(node: ptr_uint, index: ptr_uint) -> ptr_uint:
         let start = this.offsets.get(node) else:
             fatal(c"dense_graph.neighbor_target: invalid node")
@@ -308,12 +329,14 @@ extending DenseGraph[T]:
             fatal(c"dense_graph.neighbor_target: invalid neighbor index")
         return unsafe: read(target)
 
+
     public function neighbor_weight(node: ptr_uint, index: ptr_uint) -> float:
         let start = this.offsets.get(node) else:
             fatal(c"dense_graph.neighbor_weight: invalid node")
         let weight = this.weights.get(unsafe: read(start) + index) else:
             fatal(c"dense_graph.neighbor_weight: invalid neighbor index")
         return unsafe: read(weight)
+
 
     public function has_edge(from: ptr_uint, to: ptr_uint) -> bool:
         let start = this.offsets.get(from) else:
@@ -331,6 +354,7 @@ extending DenseGraph[T]:
                     return true
             i += 1
         return false
+
 
     public function bfs(start: ptr_uint) -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
@@ -371,6 +395,7 @@ extending DenseGraph[T]:
         queue.release()
         return order
 
+
     public function dfs(start: ptr_uint) -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
         let n = this.node_count()
@@ -409,6 +434,7 @@ extending DenseGraph[T]:
         heap.release(visited)
         stack.release()
         return order
+
 
     public function toposort() -> vec.Vec[ptr_uint]:
         var order = vec.Vec[ptr_uint].create()
@@ -474,6 +500,7 @@ extending DenseGraph[T]:
         heap.release(in_degree)
         queue.release()
         return order
+
 
     public editable function release():
         this.nodes.release()

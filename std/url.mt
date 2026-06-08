@@ -85,7 +85,6 @@ public function percent_decode(text_value: str) -> Option[string.String]:
 
     return Option[string.String].some(value = result)
 
-
 public struct QueryParam:
     key: string.String
     value: string.String
@@ -206,7 +205,6 @@ public function build_query(params: span[QueryParam]) -> string.String:
         index += 1
 
     return result
-
 
 public struct FormField:
     key: str

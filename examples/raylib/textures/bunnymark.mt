@@ -11,7 +11,6 @@ struct Bunny:
     speed: rl.Vector2
     color: rl.Color
 
-
 function random_bunny_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.get_random_value(50, 240),
@@ -58,10 +57,10 @@ function main() -> int:
                 bunnies[index].position.x += bunnies[index].speed.x * frame_time
                 bunnies[index].position.y += bunnies[index].speed.y * frame_time
 
-                if (bunnies[index].position.x + float<-bunny_texture.width / 2.0) > float<-rl.get_screen_width() or                   (bunnies[index].position.x + float<-bunny_texture.width / 2.0) < 0.0:
+                if (bunnies[index].position.x + float<-bunny_texture.width / 2.0) > float<-rl.get_screen_width() or (bunnies[index].position.x + float<-bunny_texture.width / 2.0) < 0.0:
                     bunnies[index].speed.x *= -1.0
 
-                if (bunnies[index].position.y + float<-bunny_texture.height / 2.0) > float<-rl.get_screen_height() or                   (bunnies[index].position.y + float<-bunny_texture.height / 2.0 - 40.0) < 0.0:
+                if (bunnies[index].position.y + float<-bunny_texture.height / 2.0) > float<-rl.get_screen_height() or (bunnies[index].position.y + float<-bunny_texture.height / 2.0 - 40.0) < 0.0:
                     bunnies[index].speed.y *= -1.0
 
                 index += 1

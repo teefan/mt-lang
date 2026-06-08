@@ -95,7 +95,6 @@ public function encode(input: span[ubyte]) -> string.String:
 public function encode_urlsafe(input: span[ubyte]) -> string.String:
     return encode_impl(input, BASE64_URL_ALPHABET, false)
 
-
 public struct Error:
     message: string.String
 
