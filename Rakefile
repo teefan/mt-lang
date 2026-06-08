@@ -138,6 +138,16 @@ namespace :deps do
   end
 end
 
+namespace :tools do
+  desc 'Build all vendored tool binaries (e.g. tracy-profiler) and install into bin/'
+  task :build do
+    results = MilkTea::VendoredTools.build_all!(root: MilkTea.root)
+    results.each do |result|
+      puts "built #{result[:tool].name} -> #{result[:binary]}"
+    end
+  end
+end
+
 namespace :imported_bindings do
   desc 'Regenerate all checked-in imported binding modules'
   task all: IMPORTED_BINDINGS.task_names

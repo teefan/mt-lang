@@ -170,6 +170,15 @@ module MilkTea
             miniaudio.h
           ],
         ),
+        Source.new(
+          name: "tracy",
+          checkout_root: data.join("third_party/tracy-upstream"),
+          repository_url: "https://github.com/wolfpld/tracy.git",
+          revision: "v0.13.1",
+          sentinel_paths: %w[
+            public/tracy/TracyC.h
+          ],
+        ),
       ]
     end
 

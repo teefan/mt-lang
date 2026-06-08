@@ -130,6 +130,13 @@ module MilkTea
           raw_module_name: "std.c.miniaudio",
           policy_path: root.join("bindings/imported/miniaudio.binding.json"),
         ),
+        Binding.new(
+          name: "tracy",
+          module_name: "std.tracy",
+          binding_path: root.join("std/tracy.mt"),
+          raw_module_name: "std.c.tracy",
+          policy_path: root.join("bindings/imported/tracy.binding.json"),
+        ),
       ]
     end
 

@@ -1312,6 +1312,7 @@ module MilkTea
           Subcommands:
             bootstrap    Download and prepare all upstream native libraries.
             doctor       Check that all required tools and libraries are available.
+            tools        Build vendored tool binaries (e.g. tracy-profiler).
         HELP
       "deps"            => <<~HELP,
         Usage: mtc deps SUBCOMMAND
@@ -1401,6 +1402,7 @@ module MilkTea
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")
+      io.puts("       mtc toolchain tools")
       io.puts("       mtc deps add [PATH_OR_PACKAGE] NAME[@VERSION_REQ] [--path PATH] [--git URL --rev REV [--subdir DIR]] [--version VERSION_REQ]")
       io.puts("       mtc deps remove [PATH_OR_PACKAGE] NAME")
       io.puts("       mtc deps update [PATH_OR_PACKAGE] [NAME ...]")

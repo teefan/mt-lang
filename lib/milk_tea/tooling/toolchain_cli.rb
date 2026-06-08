@@ -26,6 +26,8 @@ module MilkTea
         bootstrap_command
       when "doctor"
         doctor_command
+      when "tools"
+        tools_command
       else
         @err.puts("unknown toolchain subcommand #{subcommand}")
         print_help
@@ -122,6 +124,25 @@ module MilkTea
       end
 
       checks.all? { |_, ok, _| ok } ? 0 : 1
+    end
+
+    def tools_command
+      if @argv.any?
+        @err.puts("unknown toolchain option #{@argv.first}")
+        print_help
+        return 1
+      end
+
+      require_relative "../bindings"
+
+      results = VendoredTools.build_all!(root: MilkTea.root)
+      results.each do |result|
+        @out.puts("built #{result[:tool].name} -> #{result[:binary]}")
+      end
+      0
+    rescue VendoredTool::Error => e
+      @err.puts(e.message)
+      1
     end
 
     def executable_available?(program)
