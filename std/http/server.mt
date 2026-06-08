@@ -111,7 +111,7 @@ public function response_set_status(response: ref[Response], code: int, reason: 
 
 
 public function response_set_body(response: ref[Response], content: str) -> void:
-    var body_data = bytes.Bytes.copy(text.as_byte_span(content))
+    let body_data = bytes.Bytes.copy(text.as_byte_span(content))
     response.body.release()
     response.body = body_data
 
@@ -143,7 +143,7 @@ public function response_set_header(response: ref[Response], name: str, value: s
 
 
 public function parse_request(raw_data: span[ubyte]) -> Result[Request, string.String]:
-    let header_text = text.utf8_byte_span_as_str(raw_data) else:
+    let _ = text.utf8_byte_span_as_str(raw_data) else:
         return Result[Request, string.String].failure(error = string.String.from_str("request is not valid UTF-8"))
 
     let header_end = find_header_terminator(raw_data)
@@ -152,7 +152,9 @@ public function parse_request(raw_data: span[ubyte]) -> Result[Request, string.S
             return Result[Request, string.String].failure(error = string.String.from_str("request headers incomplete"))
         Option.some as end_pos:
             let inner = text.utf8_byte_span_as_str(span[ubyte](data = raw_data.data, len = end_pos.value)) else:
-                return Result[Request, string.String].failure(error = string.String.from_str("request headers not valid UTF-8"))
+                return Result[Request, string.String].failure(
+                    error = string.String.from_str("request headers not valid UTF-8")
+                )
             let first_line_end = find_byte(inner, 10)
             var request_line = inner.slice(0, first_line_end)
             if request_line.ends_with("\r"):
@@ -169,7 +171,7 @@ public function parse_request(raw_data: span[ubyte]) -> Result[Request, string.S
                 path_start += 1
 
             let path_end = find_byte_from(request_line, 32, path_start)
-            var raw_url = request_line.slice(path_start, path_end - path_start)
+            let raw_url = request_line.slice(path_start, path_end - path_start)
 
             var path = raw_url
             var query: str = zero[str]
