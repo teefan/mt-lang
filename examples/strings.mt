@@ -2,6 +2,7 @@
 
 import std.stdio as stdio
 
+
 function main() -> int:
     #
     # ── plain strings ──

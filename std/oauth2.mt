@@ -8,7 +8,6 @@ import std.string as string
 import std.url as url
 import std.vec as vec
 
-
 public struct Config:
     client_id: string.String
     client_secret: string.String
@@ -17,14 +16,12 @@ public struct Config:
     redirect_uri: string.String
     scopes: vec.Vec[string.String]
 
-
 public struct Tokens:
     access_token: string.String
     refresh_token: Option[string.String]
     token_type: string.String
     expires_in: Option[ptr_int]
     id_token: Option[string.String]
-
 
 public struct Error:
     message: string.String
@@ -91,7 +88,6 @@ public function generate_pkce() -> Result[PkcePair, Error]:
                     challenge = challenge_b64
                 )
             )
-
 
 public struct PkcePair:
     verifier: string.String

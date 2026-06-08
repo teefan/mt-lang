@@ -9,7 +9,6 @@ import std.string as string
 import std.url as url
 import std.vec as vec
 
-
 public struct Request:
     method: string.String
     path: string.String
@@ -18,11 +17,9 @@ public struct Request:
     body: bytes.Bytes
     raw_url: string.String
 
-
 public struct HttpHeader:
     name: string.String
     value: string.String
-
 
 public struct Response:
     status_code: int
@@ -423,7 +420,6 @@ extending Response:
         this.headers.release()
         this.body.release()
 
-
 const DEFAULT_PORT: int = 8080
 const READ_BUFFER_SIZE: ptr_uint = 4096
 
@@ -572,7 +568,12 @@ async function send_file_response(
         await stream.write_bytes(body)
 
 
-function sorted_insert(names: ref[vec.Vec[string.String]], dir_flags: ref[vec.Vec[bool]], value: string.String, is_directory: bool) -> void:
+function sorted_insert(
+    names: ref[vec.Vec[string.String]],
+    dir_flags: ref[vec.Vec[bool]],
+    value: string.String,
+    is_directory: bool
+) -> void:
     var index: ptr_uint = 0
     while index < names.len():
         let existing_ptr = names.get(index) else:

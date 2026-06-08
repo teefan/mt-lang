@@ -7,11 +7,9 @@ import std.str as text
 import std.string as string
 import std.vec as vec
 
-
 const CURLE_OK_CODE: int = 0
 const CURLE_FAILED_INIT_CODE: int = 2
 const CURLE_URL_MALFORMAT_CODE: int = 3
-
 
 foreign function easy_setopt_writedata(curl_handle: ptr[c.CURL], user_data: ptr[void]) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-10001, user_data)
 foreign function easy_setopt_url(curl_handle: ptr[c.CURL], url: cstr) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-10002, url)
@@ -22,7 +20,6 @@ foreign function easy_setopt_postfields(curl_handle: ptr[c.CURL], body: cstr) ->
 foreign function easy_setopt_customrequest(curl_handle: ptr[c.CURL], method: cstr) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-10036, method)
 foreign function easy_setopt_nobody(curl_handle: ptr[c.CURL]) -> c.CURLcode = c.curl_easy_setopt(curl_handle, c.CURLoption<-44, 1)
 foreign function easy_getinfo_long(curl_handle: ptr[c.CURL], value: ptr[int]) -> c.CURLcode = c.curl_easy_getinfo(curl_handle, c.CURLINFO<-2097154, value)
-
 
 public struct HttpError:
     code: curl.Code
@@ -41,6 +38,7 @@ extending HttpError:
 extending HttpResponse:
     public editable function release() -> void:
         this.body.release()
+
 
     public function body_as_str() -> Option[str]:
         return this.body.as_str()
