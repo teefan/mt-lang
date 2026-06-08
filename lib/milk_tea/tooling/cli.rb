@@ -706,7 +706,6 @@ module MilkTea
 
       frozen = options.delete(:frozen)
       ensure_current_lockfile!(path) if frozen
-      locked = options.delete(:locked)
 
       run_and_print_result(path, options)
     end
