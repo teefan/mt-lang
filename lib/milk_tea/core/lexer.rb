@@ -652,9 +652,10 @@ module MilkTea
           end_offset = resync_line_offset || scan_line_offset
           lexeme = @source.byteslice(start_offset, end_offset - start_offset)
           value = dedent_heredoc_content(content_lines)
+          content_margin = heredoc_content_margin(content_lines)
 
           literal = if format
-                       parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: 1)
+                       parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
                      else
                        value
                      end
@@ -678,12 +679,13 @@ module MilkTea
       end_offset = terminator_line_offset + terminator_line.bytesize
       lexeme = @source.byteslice(start_offset, end_offset - start_offset)
       value = dedent_heredoc_content(content_lines)
+      content_margin = heredoc_content_margin(content_lines)
 
       literal = if format
-                  parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: 1)
-                else
-                  value
-                end
+                   parse_format_heredoc_parts(value, start_line: line_number + 1, start_column: content_margin + 1)
+                 else
+                   value
+                 end
       token_type = if format
                      :fstring
                    elsif cstring
@@ -704,6 +706,7 @@ module MilkTea
       index = 0
       line = start_line
       column = start_column
+      base_column = start_column
 
       while index < content.length
         char = content[index]
@@ -724,19 +727,27 @@ module MilkTea
           parts << { kind: :expr, source:, format_spec:, line: expr_line, column: expr_column }
 
           while index <= expr_end
-            line, column = advance_text_position(char: content[index], line:, column:)
+            line, column = advance_heredoc_position(char: content[index], line:, column:, base_column:)
             index += 1
           end
           next
         end
 
         text << char
-        line, column = advance_text_position(char:, line:, column:)
+        line, column = advance_heredoc_position(char:, line:, column:, base_column:)
         index += 1
       end
 
       parts << { kind: :text, value: text } unless text.empty?
       parts
+    end
+
+    def advance_heredoc_position(char:, line:, column:, base_column:)
+      if char == "\n"
+        [line + 1, base_column]
+      else
+        [line, column + 1]
+      end
     end
 
     def advance_text_position(char:, line:, column:)
@@ -837,6 +848,14 @@ module MilkTea
       line.match?(Regexp.new("\\A *#{Regexp.escape(tag)} *\\z"))
     end
 
+    def heredoc_content_margin(raw_lines)
+      raw_lines
+        .map { |raw_line| raw_line.delete_suffix("\n") }
+        .reject { |text| text.strip.empty? }
+        .map { |text| leading_space_count(text) }
+        .min || 0
+    end
+
     def dedent_heredoc_content(raw_lines)
       dedent_heredoc_lines(raw_lines).each_with_index.map do |text, index|
         text + (raw_lines[index].end_with?("\n") ? "\n" : "")
@@ -844,11 +863,7 @@ module MilkTea
     end
 
     def dedent_heredoc_lines(raw_lines)
-      margin = raw_lines
-               .map { |raw_line| raw_line.delete_suffix("\n") }
-               .reject { |text| text.strip.empty? }
-               .map { |text| leading_space_count(text) }
-               .min || 0
+      margin = heredoc_content_margin(raw_lines)
 
       raw_lines.map do |raw_line|
         text = raw_line.delete_suffix("\n")

@@ -238,11 +238,22 @@ module MilkTea
         token = @workspace.find_token_at(uri, lsp_line, lsp_char)
         return nil unless token
 
+        return nil if embedded_heredoc_or_format_heredoc_token?(token)
+
         {
           token: token,
           tokens: tokens,
           token_index: tokens.index(token),
         }
+      end
+
+      def embedded_heredoc_or_format_heredoc_token?(token)
+        return false unless [:string, :cstring, :fstring].include?(token.type)
+
+        tag = token.lexeme[/\A(?:f|c)?<<-([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n/, 1]
+        return false if tag.nil?
+
+        %w[GLSL VERT FRAG COMP JSON JSONC SQL HTML].include?(tag)
       end
 
       def fstring_interpolation_token_context(tokens, lsp_line, lsp_char)
