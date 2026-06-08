@@ -109,7 +109,7 @@ module MilkTea
 
       def prepare_format_string_expression_for_inline_lowering(format_string, env:)
         unless format_string_has_dynamic_parts?(format_string)
-          return [[], AST::StringLiteral.new(value: format_string_static_text(format_string), cstring: false)]
+          return [[], AST::StringLiteral.new(lexeme: "", value: format_string_static_text(format_string), cstring: false)]
         end
 
         setup, temp_name = build_dynamic_format_string_temp_setup(format_string, env:)
