@@ -42,21 +42,21 @@ module MilkTea
         lex_command
       when "parse"
         parse_command
-      when "format"
+      when "format", "-f"
         format_command
-      when "lint"
+      when "lint", "-l"
         lint_command
-      when "check"
+      when "check", "-c"
         check_command
       when "lower"
         lower_command
       when "emit-c"
         emit_c_command
-      when "build"
+      when "build", "-b"
         build_command
-      when "run"
+      when "run", "-r"
         run_command
-      when "app"
+      when "run-module", "-m"
         app_command
       when "new"
         new_command
@@ -697,7 +697,7 @@ module MilkTea
 
       path = resolve_app_module(module_name)
       unless path
-        @err.puts("app module not found: #{module_name}")
+        @err.puts("run-module module not found: #{module_name}")
         return 1
       end
 
@@ -1283,8 +1283,8 @@ module MilkTea
             --frozen                     Require a current package.lock and use locked resolution.
             -I, --include-path PATH      Add an extra module root.
         HELP
-      "app"             => <<~HELP,
-        Usage: mtc app MODULE [OPTIONS] [-- ARGS...]
+      "run-module"      => <<~HELP,
+        Usage: mtc run-module MODULE [OPTIONS] [-- ARGS...]
 
           Resolve a standard-library module by name, build it, and run it.
           Like `python -m module.name`, this finds the module in the module
@@ -1301,7 +1301,7 @@ module MilkTea
             --frozen                     Require a current package.lock and use locked resolution.
             -I, --include-path PATH      Add an extra module root.
 
-          Arguments after -- are forwarded to the app as-is.
+          Arguments after -- are forwarded to the module as-is.
         HELP
       "dap"             => "Usage: mtc dap\n\n  Start the Debug Adapter Protocol server (stdio).",
       "toolchain"       => <<~HELP,
@@ -1397,7 +1397,7 @@ module MilkTea
       io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc app MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
+      io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
       io.puts("       mtc dap")
       io.puts("       mtc toolchain bootstrap")
       io.puts("       mtc toolchain doctor")
