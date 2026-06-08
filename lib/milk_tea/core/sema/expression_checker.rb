@@ -589,42 +589,10 @@ module MilkTea
       end
 
       def infer_enum_match_expression(expression, scrutinee_type, scopes:, expected_type:)
-        covered_members = {}
-        wildcard_seen = false
         arm_entries = []
-
-        expression.arms.each do |arm|
-          if arm.pattern.is_a?(AST::ErrorExpr)
-            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
-            next
-          end
-
-          if wildcard_pattern?(arm.pattern)
-            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
-
-            wildcard_seen = true
-            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
-            next
-          end
-
-          validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
-          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
-          pattern_type = infer_expression(arm.pattern, scopes:, expected_type: scrutinee_type)
-          ensure_assignable!(pattern_type, scrutinee_type, "match arm expects #{scrutinee_type}, got #{pattern_type}")
-
-          member_name = match_member_name(arm.pattern, scrutinee_type)
-          raise_sema_error("match arm must be an enum member of #{scrutinee_type}") unless member_name
-          raise_sema_error("duplicate match arm #{scrutinee_type}.#{member_name}") if covered_members.key?(member_name)
-
-          covered_members[member_name] = true
-          arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
+        each_enum_match_arm(expression, scrutinee_type, scopes:) do |arm, arm_scopes|
+          arm_entries << [infer_match_expression_arm_value(arm, scopes: arm_scopes, expected_type:), arm.value]
         end
-
-        unless wildcard_seen
-          missing_members = scrutinee_type.members - covered_members.keys
-          raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_members.join(', ')}") unless missing_members.empty?
-        end
-
         match_expression_common_type(arm_entries, expected_type)
       end
 
@@ -665,61 +633,10 @@ module MilkTea
       end
 
       def infer_variant_match_expression(expression, scrutinee_type, scopes:, expected_type:)
-        covered_arms = {}
-        wildcard_seen = false
         arm_entries = []
-
-        expression.arms.each do |arm|
-          if arm.pattern.is_a?(AST::ErrorExpr)
-            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
-            next
-          end
-
-          if wildcard_pattern?(arm.pattern)
-            raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
-
-            wildcard_seen = true
-            arm_entries << [infer_match_expression_arm_value(arm, scopes:, expected_type:), arm.value]
-            next
-          end
-
-          validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
-          validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
-
-          arm_name = variant_match_arm_name(arm.pattern, scrutinee_type)
-          raise_sema_error("match arm must be a variant arm of #{scrutinee_type}") unless arm_name
-          raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
-
-          covered_arms[arm_name] = true
-
-          arm_scopes = scopes.dup
-          if arm.binding_name
-            ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
-            fields = scrutinee_type.arm(arm_name)
-            if fields.nil? || fields.empty?
-              raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload; 'as' binding is not allowed")
-            end
-
-            payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-            binding = value_binding(
-              name: arm.binding_name,
-              type: payload_type,
-              mutable: true,
-              kind: :local,
-              id: @preassigned_local_binding_ids.fetch(arm.object_id),
-            )
-            arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
-            record_declaration_binding(arm, binding)
-          end
-
+        each_variant_match_arm(expression, scrutinee_type, scopes:) do |arm, arm_scopes|
           arm_entries << [infer_match_expression_arm_value(arm, scopes: arm_scopes, expected_type:), arm.value]
         end
-
-        unless wildcard_seen
-          missing_arms = scrutinee_type.arm_names - covered_arms.keys
-          raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}") unless missing_arms.empty?
-        end
-
         match_expression_common_type(arm_entries, expected_type)
       end
 

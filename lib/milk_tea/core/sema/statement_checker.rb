@@ -189,114 +189,14 @@ module MilkTea
           inferred_type = declared_type
         end
 
-        if statement.else_body || statement.recovered_else
-          success_type = let_else_success_type(inferred_type)
-          error_type = let_else_error_type(inferred_type)
-
-          if statement.recovered_else
-            success_type ||= declared_type || @error_type
-            error_type ||= @error_type if statement.else_binding
+        storage_type, final_type, const_value =
+          if statement.else_body || statement.recovered_else
+            check_local_decl_let_else(statement, scopes:, return_type:, allow_return:,
+                                      discard_binding:, declared_type:, inferred_type:)
           else
-            raise_sema_error("let-else initializer for #{statement.name} must be nullable, Option[T], or Result[T, E], got #{inferred_type}") unless success_type
+            check_local_decl_plain(statement, scopes:, discard_binding:,
+                                   declared_type:, inferred_type:)
           end
-
-          if discard_binding && declared_type
-            raise_sema_error("let-else discard binding _ cannot have a type annotation")
-          end
-
-          if discard_binding && statement.kind == :var
-            raise_sema_error("var-else discard binding _ is not allowed")
-          end
-
-          if statement.else_binding && !error_type
-            raise_sema_error("let-else error binding for #{statement.name} requires Result[T, E], got #{inferred_type}")
-          end
-
-          if declared_type && let_else_source_type?(declared_type)
-            raise_sema_error("let-else type annotation for #{statement.name} must be the success type, got #{declared_type}")
-          end
-
-          if declared_type
-            validate_local_ref_type!(declared_type, statement.name)
-            validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
-            ensure_assignable!(
-              success_type,
-              declared_type,
-              "cannot assign #{success_type} to #{statement.name}: expected #{declared_type}",
-              expression: statement.value,
-              scopes:,
-              contextual_int_to_float: contextual_int_to_float_target?(declared_type),
-              line: statement.line,
-              column: statement.column,
-            )
-            final_type = declared_type
-          else
-            raise_sema_error("cannot bind void result to #{statement.name}") if success_type.void? && !discard_binding
-
-            final_type = success_type
-          end
-
-          unless discard_binding
-            validate_local_ref_type!(final_type, statement.name)
-            validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
-          end
-
-          else_scopes = scopes
-          if statement.else_binding
-            ensure_non_reserved_primitive_name!(statement.else_binding.name, kind_label: "let-else error binding", line: statement.else_binding.line, column: statement.else_binding.column)
-            else_binding = value_binding(
-              name: statement.else_binding.name,
-              type: error_type,
-              mutable: false,
-              kind: :let,
-              id: preassigned_local_binding_id_for(statement.else_binding),
-            )
-            record_declaration_binding(statement.else_binding, else_binding)
-            else_scopes = scopes + [{ statement.else_binding.name => else_binding }]
-          end
-
-          check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:) if statement.else_body
-          if statement.else_body && !statement.recovered_else
-            terminator = if inside_loop?
-                           CFG::Termination.block_always_terminates_in_loop?(statement.else_body)
-                         else
-                           cfg_block_always_terminates?(statement.else_body)
-                         end
-            unless terminator
-              raise_sema_error("else block for #{statement.name} must exit control flow at line #{statement.line}")
-            end
-          end
-
-          storage_type = statement.kind == :var ? final_type : inferred_type
-          const_value = nil
-        else
-          if declared_type
-            validate_local_ref_type!(declared_type, statement.name)
-            validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
-            ensure_assignable!(
-              inferred_type,
-              declared_type,
-              "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
-              expression: statement.value,
-              scopes:,
-              contextual_int_to_float: contextual_int_to_float_target?(declared_type),
-              line: statement.line,
-              column: statement.column,
-            )
-            final_type = declared_type
-          else
-            raise_sema_error("cannot infer type for #{statement.name} from null") if inferred_type.is_a?(Types::Null)
-            raise_sema_error("cannot bind void result to #{statement.name}") if inferred_type.void?
-
-            final_type = inferred_type
-          end
-
-          validate_local_ref_type!(final_type, statement.name)
-          validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
-
-          storage_type = final_type
-          const_value = statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil
-        end
 
         if noncopyable_event_storage_type?(final_type) && !fresh_noncopyable_event_initializer?(statement.value, final_type, scopes:)
           raise_sema_error("local #{statement.name} cannot copy event storage type #{final_type}")
@@ -314,6 +214,107 @@ module MilkTea
           )
           record_declaration_binding(statement, current_scope[statement.name])
         end
+      end
+
+      def check_local_decl_let_else(statement, scopes:, return_type:, allow_return:,
+                                      discard_binding:, declared_type:, inferred_type:)
+        success_type = let_else_success_type(inferred_type)
+        error_type = let_else_error_type(inferred_type)
+
+        if statement.recovered_else
+          success_type ||= declared_type || @error_type
+          error_type ||= @error_type if statement.else_binding
+        else
+          raise_sema_error("let-else initializer for #{statement.name} must be nullable, Option[T], or Result[T, E], got #{inferred_type}") unless success_type
+        end
+
+        if discard_binding && declared_type
+          raise_sema_error("let-else discard binding _ cannot have a type annotation")
+        end
+
+        if discard_binding && statement.kind == :var
+          raise_sema_error("var-else discard binding _ is not allowed")
+        end
+
+        if statement.else_binding && !error_type
+          raise_sema_error("let-else error binding for #{statement.name} requires Result[T, E], got #{inferred_type}")
+        end
+
+        if declared_type && let_else_source_type?(declared_type)
+          raise_sema_error("let-else type annotation for #{statement.name} must be the success type, got #{declared_type}")
+        end
+
+        if declared_type
+          validate_local_ref_type!(declared_type, statement.name)
+          validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
+          ensure_assignable!(
+            success_type, declared_type,
+            "cannot assign #{success_type} to #{statement.name}: expected #{declared_type}",
+            expression: statement.value, scopes:,
+            contextual_int_to_float: contextual_int_to_float_target?(declared_type),
+            line: statement.line, column: statement.column,
+          )
+          final_type = declared_type
+        else
+          raise_sema_error("cannot bind void result to #{statement.name}") if success_type.void? && !discard_binding
+          final_type = success_type
+        end
+
+        unless discard_binding
+          validate_local_ref_type!(final_type, statement.name)
+          validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+        end
+
+        else_scopes = scopes
+        if statement.else_binding
+          ensure_non_reserved_primitive_name!(statement.else_binding.name, kind_label: "let-else error binding", line: statement.else_binding.line, column: statement.else_binding.column)
+          else_binding = value_binding(
+            name: statement.else_binding.name, type: error_type, mutable: false, kind: :let,
+            id: preassigned_local_binding_id_for(statement.else_binding),
+          )
+          record_declaration_binding(statement.else_binding, else_binding)
+          else_scopes = scopes + [{ statement.else_binding.name => else_binding }]
+        end
+
+        check_block(statement.else_body, scopes: else_scopes, return_type:, allow_return:) if statement.else_body
+        if statement.else_body && !statement.recovered_else
+          terminator = if inside_loop?
+                         CFG::Termination.block_always_terminates_in_loop?(statement.else_body)
+                       else
+                         cfg_block_always_terminates?(statement.else_body)
+                       end
+          unless terminator
+            raise_sema_error("else block for #{statement.name} must exit control flow at line #{statement.line}")
+          end
+        end
+
+        storage_type = statement.kind == :var ? final_type : inferred_type
+        [storage_type, final_type, nil]
+      end
+
+      def check_local_decl_plain(statement, scopes:, discard_binding:, declared_type:, inferred_type:)
+        if declared_type
+          validate_local_ref_type!(declared_type, statement.name)
+          validate_local_proc_type!(declared_type, statement.name, initializer: statement.value)
+          ensure_assignable!(
+            inferred_type, declared_type,
+            "cannot assign #{inferred_type} to #{statement.name}: expected #{declared_type}",
+            expression: statement.value, scopes:,
+            contextual_int_to_float: contextual_int_to_float_target?(declared_type),
+            line: statement.line, column: statement.column,
+          )
+          final_type = declared_type
+        else
+          raise_sema_error("cannot infer type for #{statement.name} from null") if inferred_type.is_a?(Types::Null)
+          raise_sema_error("cannot bind void result to #{statement.name}") if inferred_type.void?
+          final_type = inferred_type
+        end
+
+        validate_local_ref_type!(final_type, statement.name)
+        validate_local_proc_type!(final_type, statement.name, initializer: statement.value)
+
+        const_value = statement.kind == :let && statement.value ? evaluate_compile_time_const_value(statement.value, scopes:) : nil
+        [final_type, final_type, const_value]
       end
 
       def check_assignment(statement, scopes:)
@@ -422,18 +423,24 @@ module MilkTea
       end
 
       def check_enum_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        each_enum_match_arm(statement, scrutinee_type, scopes:) do |arm, arm_scopes|
+          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
+        end
+      end
+
+      def each_enum_match_arm(statement, scrutinee_type, scopes:)
         covered_members = {}
         wildcard_seen = false
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
-            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            yield arm, scopes
             next
           end
 
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm, scopes
             next
           end
           validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
@@ -446,7 +453,7 @@ module MilkTea
           raise_sema_error("duplicate match arm #{scrutinee_type}.#{member_name}") if covered_members.key?(member_name)
 
           covered_members[member_name] = true
-          check_block(arm.body, scopes:, return_type:, allow_return:)
+          yield arm, scopes
         end
 
         return if wildcard_seen
@@ -534,18 +541,24 @@ module MilkTea
       end
 
       def check_variant_match_stmt(statement, scrutinee_type, scopes:, return_type:, allow_return:)
+        each_variant_match_arm(statement, scrutinee_type, scopes:) do |arm, arm_scopes|
+          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
+        end
+      end
+
+      def each_variant_match_arm(statement, scrutinee_type, scopes:)
         covered_arms = {}
         wildcard_seen = false
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
-            check_recovered_match_arm_body(arm, scopes:, return_type:, allow_return:)
+            yield arm, scopes
             next
           end
 
           if wildcard_pattern?(arm.pattern)
             raise_sema_error("duplicate wildcard arm in match") if wildcard_seen
             wildcard_seen = true
-            check_block(arm.body, scopes:, return_type:, allow_return:)
+            yield arm, scopes
             next
           end
           validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
@@ -566,18 +579,17 @@ module MilkTea
             end
 
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-            arm_scopes = [{
-              arm.binding_name => value_binding(
-                name: arm.binding_name,
-                type: payload_type,
-                mutable: true,
-                kind: :local,
-                id: @preassigned_local_binding_ids[arm.object_id],
-              )
-            }] + arm_scopes
-            record_declaration_binding(arm, arm_scopes.first[arm.binding_name])
+            binding = value_binding(
+              name: arm.binding_name,
+              type: payload_type,
+              mutable: true,
+              kind: :local,
+              id: @preassigned_local_binding_ids[arm.object_id],
+            )
+            arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
+            record_declaration_binding(arm, binding)
           end
-          check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)
+          yield arm, arm_scopes
         end
 
         return if wildcard_seen
