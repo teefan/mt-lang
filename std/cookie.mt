@@ -72,7 +72,7 @@ function parse_name_value(text_value: str) -> Option[Cookie]:
             return Option[Cookie].none
         Option.some as e:
             let name_text = text_value.slice(0, e.value).trim_ascii_whitespace()
-            var value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1).trim_ascii_whitespace()
+            let value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1).trim_ascii_whitespace()
 
             var cookie_value = string.String.from_str(value_text)
             if cookie_value.len() >= 2 and cookie_value.as_str().byte_at(0) == 34:

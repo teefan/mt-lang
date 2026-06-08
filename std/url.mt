@@ -163,7 +163,7 @@ function parse_query_pair(text_value: str) -> Result[QueryParam, string.String]:
             )
         Option.some as e:
             let key_text = text_value.slice(0, e.value)
-            var value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1)
+            let value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1)
 
             let decoded_key = percent_decode(key_text) else:
                 return Result[
@@ -246,11 +246,11 @@ function append_form_encoded(output: ref[string.String], text_value: str) -> voi
         index += 1
 
 
-public function decode_form(body: str) -> vec.Vec[QueryParam]:
+public function decode_form(body: str) -> Result[vec.Vec[QueryParam], string.String]:
     var params = vec.Vec[QueryParam].create()
 
     if body.len == 0:
-        return params
+        return Result[vec.Vec[QueryParam], string.String].success(value = params)
 
     var start: ptr_uint = 0
     while start < body.len:
@@ -260,9 +260,12 @@ public function decode_form(body: str) -> vec.Vec[QueryParam]:
                 let pair_text = body.slice(start, body.len - start)
                 let pair_result = parse_form_pair(pair_text)
                 match pair_result:
-                    Result.failure:
+                    Result.failure as payload:
                         release_params(ref_of(params))
-                        return vec.Vec[QueryParam].create()
+                        return Result[
+                            vec.Vec[QueryParam],
+                            string.String
+                        ].failure(error = payload.error)
                     Result.success as payload:
                         params.push(payload.value)
 
@@ -271,15 +274,18 @@ public function decode_form(body: str) -> vec.Vec[QueryParam]:
                 let pair_text = body.slice(start, a.value - start)
                 let pair_result = parse_form_pair(pair_text)
                 match pair_result:
-                    Result.failure:
+                    Result.failure as payload:
                         release_params(ref_of(params))
-                        return vec.Vec[QueryParam].create()
+                        return Result[
+                            vec.Vec[QueryParam],
+                            string.String
+                        ].failure(error = payload.error)
                     Result.success as payload:
                         params.push(payload.value)
 
                 start = a.value + 1
 
-    return params
+    return Result[vec.Vec[QueryParam], string.String].success(value = params)
 
 
 function parse_form_pair(text_value: str) -> Result[QueryParam, string.String]:
@@ -297,7 +303,7 @@ function parse_form_pair(text_value: str) -> Result[QueryParam, string.String]:
             )
         Option.some as e:
             let key_text = text_value.slice(0, e.value)
-            var value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1)
+            let value_text = text_value.slice(e.value + 1, text_value.len - e.value - 1)
 
             let decoded_key = form_percent_decode(key_text) else:
                 return Result[

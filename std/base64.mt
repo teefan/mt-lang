@@ -36,13 +36,6 @@ function encoded_len(input_len: ptr_uint) -> ptr_uint:
     return (padded_len / 3) * 4
 
 
-function decoded_len(input_len: ptr_uint) -> ptr_uint:
-    if input_len == 0:
-        return 0
-
-    return (input_len / 4) * 3
-
-
 function encode_impl(input: span[ubyte], alphabet: str, use_padding: bool) -> string.String:
     if input.len == 0:
         return string.String.create()

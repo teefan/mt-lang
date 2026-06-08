@@ -61,11 +61,11 @@ public function create_config(
 public function generate_state() -> Result[string.String, Error]:
     let random_result = crypto.random_bytes(32)
     match random_result:
-        Result.failure as payload:
+        Result.failure:
             return Result[string.String, Error].failure(error = oauth_error("failed to generate state"))
-        Result.success as payload:
-            var random_data = payload.value
-            var state = base64.encode_urlsafe(random_data.as_span())
+        Result.success as ok_payload:
+            var random_data = ok_payload.value
+            let state = base64.encode_urlsafe(random_data.as_span())
             random_data.release()
             return Result[string.String, Error].success(value = state)
 
@@ -73,11 +73,11 @@ public function generate_state() -> Result[string.String, Error]:
 public function generate_pkce() -> Result[PkcePair, Error]:
     let random_result = crypto.random_bytes(32)
     match random_result:
-        Result.failure as payload:
+        Result.failure:
             return Result[PkcePair, Error].failure(error = oauth_error("failed to generate PKCE verifier"))
-        Result.success as payload:
-            var random_data = payload.value
-            var verifier = base64.encode_urlsafe(random_data.as_span())
+        Result.success as ok_payload:
+            var random_data = ok_payload.value
+            let verifier = base64.encode_urlsafe(random_data.as_span())
             random_data.release()
 
             var challenge = crypto.sha256(text.as_byte_span(verifier.as_str()))
@@ -139,8 +139,10 @@ public function build_authorization_url(
 
 
 function append_query_param(target: ref[string.String], key: str, value: str) -> void:
-    if target.len() > 0 and target.as_str().byte_at(target.len() - 1) != 63 and target.as_str().byte_at(target.len() - 1) != 38:
-        target.push_byte(38)
+    if target.len() > 0:
+        let last_byte = target.as_str().byte_at(target.len() - 1)
+        if last_byte != 63 and last_byte != 38:
+            target.push_byte(38)
 
     var encoded_key = url.percent_encode(key)
     defer encoded_key.release()
@@ -227,7 +229,7 @@ function parse_token_response(body_str: str, status_code: int) -> Result[Tokens,
         Result.failure:
             return Result[Tokens, Error].failure(error = oauth_error("token response is not valid JSON"))
         Result.success as json_payload:
-            var json_value = json_payload.value
+            let json_value = json_payload.value
             defer json.release_value(json_value)
 
             if status_code != 200:
@@ -237,7 +239,7 @@ function parse_token_response(body_str: str, status_code: int) -> Result[Tokens,
                 let error_desc = unsafe: read(object_ptr).get_string("error_description")
                 match error_desc:
                     Option.some as payload:
-                        var msg = string.String.from_str(payload.value)
+                        let msg = string.String.from_str(payload.value)
                         return Result[Tokens, Error].failure(error = Error(message = msg))
                     Option.none:
                         return Result[
@@ -257,7 +259,7 @@ function parse_token_response(body_str: str, status_code: int) -> Result[Tokens,
                 var token_type_str = string.String.from_str("Bearer")
                 match token_type:
                     Option.some as payload:
-                        var owned = string.String.from_str(payload.value)
+                        let owned = string.String.from_str(payload.value)
                         token_type_str = owned
                     Option.none:
                         pass
@@ -348,7 +350,10 @@ public async function refresh_access_token(
 
 
 function http_error_to_oauth(http_error: http.Error) -> Error:
-    return oauth_error(http_error.message.as_str())
+    var owned_error = http_error
+    let message = string.String.from_str(owned_error.message.as_str())
+    owned_error.release()
+    return Error(message = message)
 
 
 function release_form_fields(fields: ref[vec.Vec[url.FormField]]) -> void:
