@@ -393,7 +393,8 @@ module MilkTea
                 emitted_aggregate_unions.any? { |u| u.fields.any? { |f| type_contains_string_view?(f.type) } } ||
                 emitted_aggregate_variants.any? { |v| v.arms.any? { |a| a.fields.any? { |f| type_contains_string_view?(f.type) } } } ||
                 emitted_constants.any? { |c| type_contains_string_view?(c.type) } ||
-                emitted_globals.any? { |g| type_contains_string_view?(g.type) }
+                emitted_globals.any? { |g| type_contains_string_view?(g.type) } ||
+                !collect_str_literals.empty?
             end
           end
 
