@@ -696,6 +696,30 @@ function main(value: int) -> int:
     SQL
   MT
 
+  SOURCE_WITH_HTML_HEREDOC_CSTRING = <<~MT
+    const page: cstr = c<<-HTML
+        <!doctype html>
+        <title>hello</title>
+        <p>line 1</p>
+    HTML
+  MT
+
+  SOURCE_WITH_HTML_HEREDOC_STRING = <<~MT
+    const page: str = <<-HTML
+        <!doctype html>
+        <title>hello</title>
+        <p>line 1</p>
+    HTML
+  MT
+
+  SOURCE_WITH_HTML_FORMAT_HEREDOC = <<~MT
+    const page: str = f<<-HTML
+        <!doctype html>
+        <title>\#{42}</title>
+        <p>line 1</p>
+    HTML
+  MT
+
 
 
   def path_to_uri(path)

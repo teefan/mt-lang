@@ -1901,6 +1901,27 @@ class SemanticTokensTest < Minitest::Test
       )
     end
 
+    def test_semantic_tokens_do_not_override_html_heredoc_cstring_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_HTML_HEREDOC_CSTRING,
+        "file:///tmp/lsp_semantic_html_cstring_heredoc_test.mt"
+      )
+    end
+
+    def test_semantic_tokens_do_not_override_html_heredoc_string_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_HTML_HEREDOC_STRING,
+        "file:///tmp/lsp_semantic_html_string_heredoc_test.mt"
+      )
+    end
+
+    def test_semantic_tokens_do_not_override_html_format_heredoc_body
+      assert_embedded_heredoc_body_has_no_string_semantic_tokens(
+        SOURCE_WITH_HTML_FORMAT_HEREDOC,
+        "file:///tmp/lsp_semantic_html_format_heredoc_test.mt"
+      )
+    end
+
     def test_semantic_tokens_full_stays_within_latency_budget
       with_server do |client|
         init = client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })

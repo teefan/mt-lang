@@ -66,6 +66,7 @@ module MilkTea
           next if [:newline, :indent, :dedent, :eof].include?(tok.type)
 
           if tok.type == :fstring
+            next if embedded_heredoc_token?(tok)
             fstring_interpolation_entries(tok, facts).each { |e| entries << e }
             next
           end
@@ -209,12 +210,12 @@ module MilkTea
       end
 
       def embedded_heredoc_token?(token)
-        return false unless [:string, :cstring].include?(token.type)
+        return false unless [:string, :cstring, :fstring].include?(token.type)
 
-        tag = token.lexeme[/\A(?:c)?<<-([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n/, 1]
+        tag = token.lexeme[/\A(?:f|c)?<<-([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n/, 1]
         return false if tag.nil?
 
-        %w[GLSL VERT FRAG COMP JSON JSONC SQL].include?(tag)
+        %w[GLSL VERT FRAG COMP JSON JSONC SQL HTML].include?(tag)
       end
 
       def token_semantic_entries(token, semantic_type, modifiers)

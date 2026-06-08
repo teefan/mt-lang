@@ -6,6 +6,9 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#format-string" },
+    { "include": "#cstring" },
+    { "include": "#format-html-heredoc-string" },
+    { "include": "#format-heredoc-string" },
     { "include": "#glsl-heredoc-cstring" },
     { "include": "#glsl-heredoc-string" },
     { "include": "#json-heredoc-cstring" },
@@ -14,6 +17,8 @@
     { "include": "#jsonc-heredoc-string" },
     { "include": "#sql-heredoc-cstring" },
     { "include": "#sql-heredoc-string" },
+    { "include": "#html-heredoc-cstring" },
+    { "include": "#html-heredoc-string" },
     { "include": "#heredoc-cstring" },
     { "include": "#heredoc-string" },
     { "include": "#string" },
@@ -38,6 +43,51 @@
     "comment": {
       "name": "comment.line.number-sign.milk-tea",
       "match": "#.*$"
+    },
+
+    "cstring": {
+      "name": "string.quoted.double.c.milk-tea",
+      "begin": "c\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
+        }
+      ]
+    },
+
+    "format-string": {
+      "name": "string.quoted.double.format.milk-tea",
+      "begin": "f\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "meta.embedded.expression.milk-tea",
+          "begin": "#\\{",
+          "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.milk-tea" } },
+          "endCaptures":   { "0": { "name": "punctuation.section.embedded.end.milk-tea" } },
+          "patterns": [
+            { "include": "#comment" },
+            { "include": "#number" },
+            { "include": "#keyword-operator" },
+            { "include": "#type-primitive" },
+            { "include": "#constant-language" },
+            { "include": "#function-call" },
+            { "include": "#identifier" },
+            { "include": "#operator" }
+          ]
+        },
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0{]"
+        }
+      ]
     },
 
     "glsl-heredoc-cstring": {
@@ -187,27 +237,7 @@
       "end": "^\\s*\\2\\s*$",
       "endCaptures": {
         "0": { "name": "punctuation.definition.string.end.milk-tea" }
-      }
-    },
-
-    "heredoc-string": {
-      "name": "string.unquoted.heredoc.milk-tea",
-      "begin": "(?<![A-Za-z0-9_])(<<-)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
-      "beginCaptures": {
-        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
-        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
       },
-      "contentName": "string.unquoted.heredoc.milk-tea",
-      "end": "^\\s*\\2\\s*$",
-      "endCaptures": {
-        "0": { "name": "punctuation.definition.string.end.milk-tea" }
-      }
-    },
-
-    "string": {
-      "name": "string.quoted.double.milk-tea",
-      "begin": "\"",
-      "end": "\"",
       "patterns": [
         {
           "name": "constant.character.escape.milk-tea",
@@ -220,10 +250,18 @@
       ]
     },
 
-    "format-string": {
-      "name": "string.quoted.double.format.milk-tea",
-      "begin": "f\"",
-      "end": "\"",
+    "format-heredoc-string": {
+      "name": "string.unquoted.heredoc.format.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(f<<-)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "string.unquoted.heredoc.format.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
       "patterns": [
         {
           "name": "meta.embedded.expression.milk-tea",
@@ -245,6 +283,138 @@
         {
           "name": "constant.character.escape.milk-tea",
           "match": "\\\\[nrt\\\\\"0{]"
+        }
+      ]
+    },
+
+    "format-html-heredoc-string": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(f<<-)(HTML)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.html.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        {
+          "name": "meta.embedded.expression.milk-tea",
+          "begin": "#\\{",
+          "end": "\\}",
+          "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.milk-tea" } },
+          "endCaptures":   { "0": { "name": "punctuation.section.embedded.end.milk-tea" } },
+          "patterns": [
+            {
+              "name": "constant.numeric.integer.milk-tea",
+              "match": "\\b[0-9][0-9_]*\\b"
+            },
+            {
+              "name": "constant.numeric.float.milk-tea",
+              "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*(?:[eE][+-]?[0-9]+)?\\b"
+            },
+            {
+              "name": "variable.other.milk-tea",
+              "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+            }
+          ]
+        },
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0{]"
+        },
+        { "include": "text.html.basic" }
+      ]
+    },
+
+    "html-heredoc-cstring": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "\\b(c<<-)(HTML)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.html.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
+        },
+        { "include": "text.html.basic" }
+      ]
+    },
+
+    "html-heredoc-string": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)(HTML)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "meta.embedded.block.html.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
+        },
+        { "include": "text.html.basic" }
+      ]
+    },
+
+    "heredoc-string": {
+      "name": "string.unquoted.heredoc.milk-tea",
+      "begin": "(?<![A-Za-z0-9_])(<<-)([A-Za-z_][A-Za-z0-9_]*)\\s*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.string.begin.milk-tea" },
+        "2": { "name": "punctuation.definition.string.begin.milk-tea" }
+      },
+      "contentName": "string.unquoted.heredoc.milk-tea",
+      "end": "^\\s*\\2\\s*$",
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.milk-tea" }
+      },
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
+        }
+      ]
+    },
+
+    "string": {
+      "name": "string.quoted.double.milk-tea",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.milk-tea",
+          "match": "\\\\[nrt\\\\\"0]"
+        },
+        {
+          "name": "invalid.illegal.escape.milk-tea",
+          "match": "\\\\."
         }
       ]
     },

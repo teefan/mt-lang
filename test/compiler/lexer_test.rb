@@ -235,7 +235,7 @@ class MilkTeaLexerTest < Minitest::Test
     assert_equal ".2", format_token.literal[3].fetch(:format_spec)
     assert_equal "\n", format_token.literal[4].fetch(:value)
     assert_equal 2, format_token.literal[1].fetch(:line)
-    assert_equal 9, format_token.literal[1].fetch(:column)
+    assert_equal 13, format_token.literal[1].fetch(:column)
   end
 
   def test_lexes_multiline_adjacent_strings_and_cstrings
