@@ -288,5 +288,11 @@ extending str:
             return left_len - right_len
 
 
+    public function compare(right: str) -> int:
+        var left_copy: str = this
+        var right_copy: str = right
+        return str.order(ptr_of(left_copy), ptr_of(right_copy))
+
+
     public function to_cstr(space: ref[arena.Arena]) -> cstr:
         return space.to_cstr(this)
