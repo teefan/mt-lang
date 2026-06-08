@@ -26,7 +26,7 @@ module MilkTea
         pattern.is_a?(AST::MemberAccess) ? pattern.member : nil
       end
 
-      def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:)
+      def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:, frame_expr: nil, local_fields: nil)
         arm_env = duplicate_env(env)
         binding_decl = nil
 
@@ -35,11 +35,24 @@ module MilkTea
           if arm_name && scrutinee_type.has_payload?(arm_name)
             fields = scrutinee_type.arm(arm_name)
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
-            data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
-            arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
-            binding_c = c_local_name(arm.binding_name)
-            arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
-            binding_decl = IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+
+            scrutinee_name = scrutinee_expr.is_a?(IR::Name) ? scrutinee_expr.name.sub(/\A__mt_frame->/, "") : nil
+            field_key = "#{scrutinee_name}_#{arm_name}_#{arm.binding_name}"
+            field_info = local_fields&.fetch(field_key, nil)
+            if field_info && frame_expr
+              target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
+              binding_c = async_frame_field_c_name(field_info[:field_name])
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
+              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+              binding_decl = IR::Assignment.new(target:, operator: "=", value: arm_expr)
+            else
+              data_expr = IR::Member.new(receiver: scrutinee_expr, member: "data", type: nil)
+              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+              binding_c = c_local_name(arm.binding_name)
+              arm_env[:scopes].last[arm.binding_name] = local_binding(type: payload_type, c_name: binding_c, mutable: false, pointer: false)
+              binding_decl = IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_type, value: arm_expr)
+            end
           end
         end
 
