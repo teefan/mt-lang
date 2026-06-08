@@ -1,0 +1,186 @@
+{
+  "module_name": "std.tracy",
+  "raw_module_name": "std.c.tracy",
+  "raw_import_alias": "c",
+  "types": {
+    "include": [
+      "TracyCZoneCtx",
+      "TracyCSourceLocation",
+      "TracyCGpuTime",
+      "TracyCGpuZoneName"
+    ],
+    "overrides": [
+      { "raw": "TracyCZoneCtx", "name": "Zone" },
+      { "raw": "TracyCSourceLocation", "name": "SourceLocation" },
+      { "raw": "TracyCGpuTime", "name": "GpuTime" },
+      { "raw": "TracyCGpuZoneName", "name": "GpuZoneName" }
+    ]
+  },
+  "constants": {},
+  "functions": {
+    "include_prefixes": [
+      "tracy_"
+    ],
+    "strip_prefix": "tracy_",
+    "overrides": [
+      {
+        "raw": "tracy_emit_zone_begin",
+        "name": "zone_begin",
+        "params": [
+          { "name": "srcloc", "type": "const_ptr[SourceLocation]?" },
+          { "name": "active", "type": "int" }
+        ],
+        "return_type": "Zone"
+      },
+      {
+        "raw": "tracy_emit_zone_end",
+        "name": "zone_end",
+        "params": [
+          { "name": "zone", "type": "Zone" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_zone_text",
+        "name": "zone_text",
+        "params": [
+          { "name": "zone", "type": "const_ptr[Zone]" },
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "size", "type": "ptr_uint" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_zone_name",
+        "name": "zone_name",
+        "params": [
+          { "name": "zone", "type": "const_ptr[Zone]" },
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "size", "type": "ptr_uint" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_zone_value",
+        "name": "zone_value",
+        "params": [
+          { "name": "zone", "type": "const_ptr[Zone]" },
+          { "name": "value", "type": "long" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_frame_mark",
+        "name": "frame_mark",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_frame_mark_start",
+        "name": "frame_mark_start",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_frame_mark_end",
+        "name": "frame_mark_end",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_plot",
+        "name": "plot",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "double" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_plot_float",
+        "name": "plot_float",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "float" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_plot_int",
+        "name": "plot_int",
+        "params": [
+          { "name": "name", "type": "str", "boundary_type": "cstr" },
+          { "name": "value", "type": "long" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_message",
+        "name": "message",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "size", "type": "ptr_uint" },
+          { "name": "callstack", "type": "int" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_message_l",
+        "name": "message_l",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "callstack", "type": "int" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_emit_message_lc",
+        "name": "message_lc",
+        "params": [
+          { "name": "text", "type": "str", "boundary_type": "cstr" },
+          { "name": "color", "type": "uint" },
+          { "name": "callstack", "type": "int" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_connected",
+        "name": "is_connected",
+        "params": [],
+        "return_type": "bool"
+      },
+      {
+        "raw": "tracy_fiber_enter",
+        "name": "fiber_enter",
+        "params": [
+          { "name": "fiber", "type": "str", "boundary_type": "cstr" }
+        ],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_fiber_leave",
+        "name": "fiber_leave",
+        "params": [],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_startup_profiler",
+        "name": "startup",
+        "params": [],
+        "return_type": "void"
+      },
+      {
+        "raw": "tracy_shutdown_profiler",
+        "name": "shutdown",
+        "params": [],
+        "return_type": "void"
+      }
+    ]
+  }
+}

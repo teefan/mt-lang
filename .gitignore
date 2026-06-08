@@ -79,3 +79,6 @@ examples/**/*.bmp
 third_party/**/*
 projects/**/build
 projects/**/tmp
+
+# Vendored tool binaries built into bin/
+/bin/tracy-profiler

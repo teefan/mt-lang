@@ -9,7 +9,7 @@ class MilkTeaImportedBindingsTest < Minitest::Test
   def test_default_registry_exposes_checked_in_imported_bindings
     registry = MilkTea::ImportedBindings.default_registry
 
-    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "zstd", "sqlite3", "curl", "pcre2", "steamworks", "miniaudio"], registry.map(&:name)
+    assert_equal ["raymath", "raylib", "rlgl", "raygui", "sdl3", "gl", "glfw", "box2d", "cjson", "flecs", "libuv", "enet", "zstd", "sqlite3", "curl", "pcre2", "steamworks", "miniaudio", "tracy"], registry.map(&:name)
     assert_equal "std.raylib", registry.fetch("raylib").module_name
     assert_equal "std.c.raylib", registry.fetch("raylib").raw_module_name
     assert_includes registry.fetch("raylib").binding_path, "/std/raylib.mt"

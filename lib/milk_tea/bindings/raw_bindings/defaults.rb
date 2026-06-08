@@ -19,6 +19,8 @@ module MilkTea
       vendored_libuv_library = vendored_libuv.library(root:)
       vendored_pcre2 = MilkTea::VendoredPCRE2
       vendored_pcre2_library = vendored_pcre2.library(root:)
+      vendored_tracy = MilkTea::VendoredTracy
+      vendored_tracy_library = vendored_tracy.library(root:)
 
       raylib_field_type_overrides = {
         "Mesh" => { "indices" => "ptr[ushort]?" },
@@ -1187,6 +1189,25 @@ module MilkTea
           header_candidates: [
             MilkTea.data_root.join("third_party/miniaudio-upstream/miniaudio.h").to_s,
           ],
+        ),
+        Binding.new(
+          name: "tracy",
+          module_name: "std.c.tracy",
+          binding_path: root.join("std/c/tracy.mt"),
+          include_directives: ["TracyC.h"],
+          link_libraries: ["tracyclient", "stdc++"],
+          implementation_defines: ["TRACY_ENABLE"],
+          vendored_library: vendored_tracy_library,
+          prepare: lambda do |_binding, env:, cc:, **|
+            UpstreamSources.default_sources(root:).find { |source| source.name == "tracy" }&.bootstrap!
+            MilkTea::VendoredTracy.library(root:).prepare!(env:, cc:)
+          end,
+          header_candidates: [
+            MilkTea.data_root.join("third_party/tracy-upstream/public/tracy/TracyC.h").to_s,
+          ],
+          generator: lambda do |binding, env:, header_path:|
+            File.read(binding.binding_path)
+          end,
         ),
       ]
     end

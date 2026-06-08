@@ -302,9 +302,9 @@ module MilkTea
             previous_content_was_bodyful_function = true
           elsif current_top_level_group || extending_block_header_line?(line) || interface_block_header_line?(line) || line_is_import?(line) || line_is_comment?(line)
             previous_content_was_bodyful_function = false
-           end
-           previous_content_was_comment = line_is_comment?(line)
-         end
+          end
+          previous_content_was_comment = line_is_comment?(line)
+        end
        end
 
       return "" if result.empty?
