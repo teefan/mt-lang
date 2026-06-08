@@ -70,6 +70,11 @@ module MilkTea
         lines << ""
       end
 
+      if uses_fmt_builder?
+        lines.concat(emit_fmt_builder_helpers)
+        lines << ""
+      end
+
       if uses_str_equality_helper?
         lines.concat(emit_str_equality_helper)
         lines << ""

@@ -129,49 +129,46 @@ module MilkTea
 
       def build_dynamic_format_string_temp_setup(format_string, env:)
         string_type = @types.fetch("str")
-        temp_name = fresh_c_temp_name(env, "fmt_string")
-        total_len_name = fresh_c_temp_name(env, "fmt_total_len")
-        offset_name = fresh_c_temp_name(env, "fmt_offset")
+        dest_name = env[:current_local_name] || env[:lowering_target_name]
+        if dest_name
+          env[:fmt_counter] ||= {}
+          env[:fmt_counter][dest_name] = (env[:fmt_counter][dest_name] || 0) + 1
+          suffix = env[:fmt_counter][dest_name] > 1 ? "_#{env[:fmt_counter][dest_name]}" : ""
+          base = "__fmt_#{dest_name}#{suffix}"
+        else
+          base = fresh_c_temp_name(env, "fmt_str")
+        end
+        temp_name = base
+        cap_name = "#{base}_cap"
+        off_name = "#{base}_off"
         register_prepared_temp!(env, temp_name, string_type, cstr_backed: true)
-        total_len_value = IR::Name.new(name: total_len_name, type: @types.fetch("ptr_uint"), pointer: false)
+        total_cap_value = IR::Name.new(name: cap_name, type: @types.fetch("ptr_uint"), pointer: false)
         result_value = IR::Name.new(name: temp_name, type: string_type, pointer: false)
-        offset_value = IR::Name.new(name: offset_name, type: @types.fetch("ptr_uint"), pointer: false)
+        offset_value = IR::Name.new(name: off_name, type: @types.fetch("ptr_uint"), pointer: false)
 
         setup, format_parts = build_dynamic_format_string_parts(format_string, env:)
         literal_capacity = format_parts.sum { |part| part[:kind] == :text ? part[:value].bytesize : 0 }
 
         setup << IR::LocalDecl.new(
-          name: total_len_name,
-          c_name: total_len_name,
-          type: @types.fetch("ptr_uint"),
+          name: cap_name, c_name: cap_name, type: @types.fetch("ptr_uint"),
           value: IR::IntegerLiteral.new(value: literal_capacity, type: @types.fetch("ptr_uint")),
         )
 
         format_parts.each do |part|
           next if part[:kind] == :text
-
+          part_len = format_string_part_length_expression(part, env:)
           setup << IR::Assignment.new(
-            target: total_len_value,
-            operator: "=",
-            value: IR::Binary.new(
-              operator: "+",
-              left: total_len_value,
-              right: format_string_part_length_expression(part, env:),
-              type: @types.fetch("ptr_uint"),
-            ),
+            target: total_cap_value, operator: "=",
+            value: IR::Binary.new(operator: "+", left: total_cap_value, right: part_len, type: @types.fetch("ptr_uint")),
           )
         end
 
         setup << IR::LocalDecl.new(
-          name: temp_name,
-          c_name: temp_name,
-          type: string_type,
-          value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_len_value], type: string_type),
+          name: temp_name, c_name: temp_name, type: string_type,
+          value: IR::Call.new(callee: "mt_format_str_make", arguments: [total_cap_value], type: string_type),
         )
         setup << IR::LocalDecl.new(
-          name: offset_name,
-          c_name: offset_name,
-          type: @types.fetch("ptr_uint"),
+          name: off_name, c_name: off_name, type: @types.fetch("ptr_uint"),
           value: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")),
         )
 

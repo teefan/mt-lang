@@ -613,10 +613,10 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     refute_match(/demo_format_codegen__fmt_\d+/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
-    assert_match(/std_string_String text = std_fmt_format\(__mt_fmt_string_1\);/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
-    assert_match(/uintptr_t __mt_fmt_total_len_\d+ = 29;/, generated)
+    assert_match(/mt_str __fmt_\w+ = mt_format_str_make\(__fmt_\w+_cap\);/, generated)
+    assert_match(/std_string_String text = std_fmt_format\(__fmt_\w+\);/, generated)
+    assert_match(/mt_format_str_release\(__fmt_\w+\);/, generated)
+    assert_match(/uintptr_t __fmt_\w+_cap = 29;/, generated)
     assert_match(/mt_format_append_uint\(/, generated)
     assert_match(/mt_format_append_int\(/, generated)
     assert_match(/mt_format_append_ulong\(/, generated)
@@ -642,11 +642,11 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     refute_match(/demo_format_expr_codegen__fmt_\d+/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
-    assert_match(/mt_str text = __mt_fmt_string_1;/, generated)
-    assert_match(/demo_format_expr_codegen_sink\(__mt_fmt_string_\d+\)/, generated)
-    assert_operator generated.scan(/mt_format_str_release\(__mt_fmt_string_\d+\);/).length, :>=, 2
-    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    assert_match(/__fmt_\w+ = mt_format_str_make\(__fmt_\w+_cap\);/, generated)
+    assert_match(/mt_str text = __fmt_\w+;/, generated)
+    assert_match(/demo_format_expr_codegen_sink\(__fmt_\w+\)/, generated)
+    assert_operator generated.scan(/mt_format_str_release\(__fmt_\w+\);/).length, :>=, 2
+    assert_match(/mt_format_str_release\(__fmt_\w+\);/, generated)
   end
 
   def test_generate_c_for_direct_string_sink_format_literals
@@ -666,9 +666,9 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     refute_match(/demo_format_sink_codegen__fmt_\d+/, generated)
-    assert_match(/std_string_String_assign\(&output, __mt_fmt_string_\d+\);/, generated)
-    assert_match(/std_string_String_append\(&output, __mt_fmt_string_\d+\);/, generated)
-    assert_equal 2, generated.scan(/mt_format_str_release\(__mt_fmt_string_\d+\);/).length
+    assert_match(/std_string_String_assign\(&output, __fmt_\w+\);/, generated)
+    assert_match(/std_string_String_append\(&output, __fmt_\w+\);/, generated)
+    assert_equal 2, generated.scan(/mt_format_str_release\(__fmt_\w+\);/).length
   end
 
   def test_generate_c_for_explicit_builder_format_sinks
@@ -715,7 +715,7 @@ function main() -> int:
     generated = generate_c_from_source(source)
 
     refute_match(/demo_format_dedup_codegen__fmt_\d+/, generated)
-    assert_equal 2, generated.scan(/mt_str __mt_fmt_string_\d+ = mt_format_str_make\(__mt_fmt_total_len_\d+\);/).length
+    assert_equal 2, generated.scan(/__fmt_\w+ = mt_format_str_make\(__fmt_\w+_cap\)/).length
   end
 
   def test_rejects_returning_general_format_string_as_borrowed_text
@@ -1501,9 +1501,9 @@ function main() -> int:
     generated = generate_c_from_program_source(source, imported_sources)
 
     refute_match(/demo_main__fmt_\d+/, generated)
-    assert_match(/mt_str __mt_fmt_string_1 = mt_format_str_make\(__mt_fmt_total_len_\d+\);/, generated)
-    assert_match(/DrawText\(\(const char\*\) __mt_fmt_string_1\.data, 10, 20, 20, std_sample_BLACK\);/, generated)
-    assert_match(/mt_format_str_release\(__mt_fmt_string_1\);/, generated)
+    assert_match(/\w+ = mt_format_str_make\(\w+_cap\);/, generated)
+    assert_match(/DrawText\(\(const char\*\) \w+\.data, 10, 20, 20, std_sample_BLACK\);/, generated)
+    assert_match(/mt_format_str_release\(\w+\);/, generated)
     refute_match(/mt_foreign_str_to_cstr_temp/, generated)
     refute_match(/mt_free_foreign_cstr_temp/, generated)
   end
