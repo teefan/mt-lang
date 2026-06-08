@@ -187,7 +187,7 @@ function resize_event(current: Size) -> Event:
     return Event(kind = EventKind.resize, key = default_key_event(), mouse = default_mouse_event(), size = current)
 
 
-function clamp_cursor_position(value: int) -> int:
+function clamp_cursor_position_1based(value: int) -> int:
     if value < 1:
         return 1
 
@@ -722,7 +722,7 @@ public function move_cursor(row: int, column: int) -> Result[bool, Error]:
     var sequence = string.String.with_capacity(24)
     defer sequence.release()
     append_escape(ref_of(sequence))
-    sequence.append_format(f"[#{clamp_cursor_position(row)};#{clamp_cursor_position(column)}H")
+    sequence.append_format(f"[#{clamp_cursor_position_1based(row)};#{clamp_cursor_position_1based(column)}H")
     return write_stdout_sequence(sequence, "terminal move cursor failed")
 
 
@@ -864,19 +864,19 @@ extending Terminal:
         return this.size
 
 
-    public editable function write(text: str) -> Result[ptr_uint, Error]:
+    public function write(text: str) -> Result[ptr_uint, Error]:
         return write_stdout(text)
 
 
-    public editable function write_error(text: str) -> Result[ptr_uint, Error]:
+    public function write_error(text: str) -> Result[ptr_uint, Error]:
         return write_stderr(text)
 
 
-    public editable function flush() -> Result[bool, Error]:
+    public function flush() -> Result[bool, Error]:
         return flush_stdout_internal()
 
 
-    public editable function flush_error() -> Result[bool, Error]:
+    public function flush_error() -> Result[bool, Error]:
         return flush_stderr_internal()
 
 
@@ -977,7 +977,7 @@ extending Terminal:
 
 
     public editable function poll_event(timeout_ms: int) -> Result[Option[Event], Error]:
-        if stdout_is_tty():
+        if stdin_is_tty():
             match get_size_internal():
                 Result.failure as payload:
                     return Result[Option[Event], Error].failure(error= payload.error)

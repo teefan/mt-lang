@@ -1,6 +1,7 @@
 import mtop.dashboard as dashboard
 import std.cli as cli
 import std.libc as libc
+import std.str as text
 import std.terminal as terminal
 
 
@@ -72,7 +73,7 @@ function app_definition(options: span[cli.OptionSpec], commands: span[cli.Comman
 
 
 function main(args: span[str]) -> int:
-    let options = array[cli.OptionSpec, 2](
+    var options = array[cli.OptionSpec, 2](
         cli.value_option(
             "interval-ms",
             Option[str].some(value= "i"),
@@ -84,7 +85,7 @@ function main(args: span[str]) -> int:
         cli.flag_option("no-mouse", Option[str].none, "Disable mouse reporting in dashboard mode"),
     )
 
-    let commands = array[cli.CommandSpec, 2](
+    var commands = array[cli.CommandSpec, 2](
         cli.command_spec(
             "dashboard",
             "Run the interactive terminal dashboard",
