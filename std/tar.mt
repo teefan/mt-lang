@@ -119,12 +119,9 @@ function sort_string_values(values: ref[vec.Vec[string.String]]) -> void:
             var should_swap = false
             unsafe:
                 should_swap = compare_text(read(previous_ptr).as_str(), read(current_ptr).as_str()) > 0
-                if should_swap:
-                    let temporary = read(previous_ptr)
-                    read(previous_ptr) = read(current_ptr)
-                    read(current_ptr) = temporary
-
-            if not should_swap:
+            if should_swap:
+                values.swap(current - 1, current)
+            else:
                 break
 
             current -= 1
