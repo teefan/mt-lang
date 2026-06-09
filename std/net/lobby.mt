@@ -48,7 +48,7 @@ public struct LobbyHost:
     slots: vec.Vec[PlayerSlot]
     event_queue: deque.Deque[LobbyEvent]
 
-struct PlayerSlot:
+public struct PlayerSlot:
     player_id: uint
     player_name: string.String
     occupied: bool
@@ -110,7 +110,7 @@ extending LobbyHost:
 
     public async editable function tick(frame: uint) -> Result[bool, Error]:
         let mux_result = await this.mux.tick(frame)
-        drain_lobby_host(ref_of(this))
+        await drain_lobby_host(ref_of(this))
         match mux_result:
             Result.failure as p:
                 return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
@@ -269,41 +269,20 @@ public function discover_lobbies(
 
 function encode_string(value: str) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(4 + value.len)
-    w.write_u32(uint<-value.len)
-    w.write_bytes(text.as_byte_span(value))
+    w.write_str(value)
     return w.finish()
 
 
 function decode_string(data: span[ubyte]) -> Result[string.String, Error]:
-    if data.len < 4:
-        return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
     var r = bin.reader(data)
-    match r.read_u32():
+    match r.read_str():
         Result.failure:
             return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
         Result.success as p:
-            let length = ptr_uint<-p.value
-            if length == 0:
-                return Result[string.String, Error].success(value = string.String.create())
-            if r.remaining() < length:
-                return Result[string.String, Error].failure(error = lobby_error(-1, "lobby string truncated"))
-            match r.read_bytes(length):
-                Result.failure:
-                    return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
-                Result.success as bp:
-                    var b = bp.value
-                    let str_opt = b.as_str()
-                    match str_opt:
-                        Option.none:
-                            b.release()
-                            return Result[string.String, Error].failure(error = lobby_error(-1, "lobby invalid utf8"))
-                        Option.some as sp:
-                            let result = string.String.from_str(sp.value)
-                            b.release()
-                            return Result[string.String, Error].success(value = result)
+            return Result[string.String, Error].success(value = p.value)
 
 
-function drain_lobby_host(host: ref[LobbyHost]) -> void:
+async function drain_lobby_host(host: ref[LobbyHost]) -> void:
     while true:
         let ev = host.mux.try_recv()
         match ev:
@@ -311,7 +290,7 @@ function drain_lobby_host(host: ref[LobbyHost]) -> void:
                 break
             Option.some as p:
                 var msg = p.value
-                process_lobby_msg_host(host, ref_of(msg))
+                await process_lobby_msg_host(host, ref_of(msg))
 
 
 async function drain_lobby_client(client: ref[LobbyClient]) -> void:
@@ -333,13 +312,13 @@ async function drain_lobby_client(client: ref[LobbyClient]) -> void:
                 process_lobby_msg_client(client, ref_of(msg))
 
 
-function process_lobby_msg_host(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
+async function process_lobby_msg_host(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
     if msg.channel_id != lobby_channel:
         msg.release()
         return
 
     if msg.type_id == type_join_request:
-        handle_join_request(host, msg)
+        await handle_join_request(host, msg)
         return
 
     msg.release()
@@ -373,8 +352,50 @@ function process_lobby_msg_client(client: ref[LobbyClient], msg: ref[mux.MuxedMe
     msg.release()
 
 
-function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
-    msg.release()
+async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
+    let data = msg.payload.as_span()
+    let name_result = decode_string(data)
+    match name_result:
+        Result.failure:
+            msg.release()
+            return
+        Result.success as name_payload:
+            var player_name = name_payload.value
+            defer player_name.release()
+
+            var first_free: int = -1
+            var slot_index: ubyte = 0
+            while slot_index < host.info.max_players:
+                let slot_ptr = host.slots.get(ptr_uint<-slot_index) else:
+                    break
+                if not unsafe: read(slot_ptr).occupied:
+                    first_free = int<-slot_index
+                    break
+                slot_index += 1
+
+            if first_free < 0:
+                var reject_data = encode_join_reject(reject_reason_full)
+                defer reject_data.release()
+                let _ = await host.mux.mux_send(msg.peer_id, lobby_channel, type_join_reject, reject_data.as_span(), mux.flag_reliable)
+                msg.release()
+                return
+
+            let slot = ubyte<-first_free
+            let slot_ptr = host.slots.get(ptr_uint<-slot) else:
+                msg.release()
+                return
+            unsafe: read(slot_ptr).player_id = msg.peer_id
+            unsafe: read(slot_ptr).player_name = string.String.from_str(player_name.as_str())
+            unsafe: read(slot_ptr).occupied = true
+
+            var accept_data = encode_join_accept(msg.peer_id, slot)
+            defer accept_data.release()
+            let _ = await host.mux.mux_send(msg.peer_id, lobby_channel, type_join_accept, accept_data.as_span(), mux.flag_reliable)
+
+            let other_id = msg.peer_id
+            msg.release()
+
+            await broadcast_player_joined(host, other_id, player_name.as_str(), slot)
 
 
 function handle_join_accept(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
@@ -479,6 +500,31 @@ function handle_player_left_client(client: ref[LobbyClient], msg: ref[mux.MuxedM
 
 function handle_lobby_info_client(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
     msg.release()
+    client.event_queue.push_back(LobbyEvent(
+        kind = LobbyEventKind.lobby_info_updated,
+        player_id = uint<-0,
+        player_name = string.String.create(),
+        slot = ubyte<-0,
+        reason = ubyte<-0
+    ))
+
+
+async function broadcast_player_joined(host: ref[LobbyHost], new_player_id: uint, new_player_name: str, slot: ubyte) -> void:
+    var w = bin.Writer.with_capacity(5 + new_player_name.len)
+    w.write_u32(new_player_id)
+    w.write_u8(slot)
+    w.write_u32(uint<-new_player_name.len)
+    w.write_bytes(text.as_byte_span(new_player_name))
+    var payload = w.finish()
+    defer payload.release()
+
+    var peer_index: ptr_uint = 0
+    let peer_count = host.mux.peer_count()
+    while peer_index < peer_count:
+        let peer_id = uint<-peer_index + 1
+        if peer_id != new_player_id:
+            let _ = await host.mux.mux_send(peer_id, lobby_channel, type_player_joined, payload.as_span(), mux.flag_reliable)
+        peer_index += 1
 
 
 function encode_join_accept(player_id: uint, slot: ubyte) -> bytes.Bytes:

@@ -41,7 +41,7 @@ public struct MuxedSession:
     next_group_id: ushort
     current_frame: uint
 
-struct FragBuffer:
+public struct FragBuffer:
     group_id: ushort
     peer_id: uint
     channel_id: ubyte
