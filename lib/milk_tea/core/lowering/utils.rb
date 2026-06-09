@@ -528,6 +528,27 @@ module MilkTea
         end
       end
 
+      def contains_task_type?(type)
+        case type
+        when Types::Task
+          true
+        when Types::Struct, Types::StructInstance, Types::Union, Types::GenericStructDefinition, Types::VariantArmPayload
+          type.fields.each_value.any? { |ft| contains_task_type?(ft) }
+        when Types::VariantInstance
+          type.arguments.any? { |arg| contains_task_type?(arg) }
+        when Types::Variant, Types::GenericVariantDefinition
+          type.arms.each_value.any? do |arm_fields|
+            arm_fields.each_value.any? { |ft| contains_task_type?(ft) }
+          end
+        when Types::GenericInstance
+          type.arguments.any? { |arg| contains_task_type?(arg) }
+        when Types::Nullable
+          contains_task_type?(type.base)
+        else
+          false
+        end
+      end
+
       def proc_env_pointer_type
         @proc_env_pointer_type ||= pointer_to(@types.fetch("void"))
       end
