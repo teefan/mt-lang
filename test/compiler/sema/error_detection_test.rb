@@ -123,7 +123,7 @@ class ErrorDetectionTest < Minitest::Test
       check_program_source(source)
     end
 
-    assert_match(/propagation expects Result\[T, E\]/, error.message)
+    assert_match(/propagation expects Result\[T, E\] or Option\[T\]/, error.message)
   end
 
   def test_rejects_result_propagation_outside_function_and_proc_bodies
@@ -138,6 +138,69 @@ class ErrorDetectionTest < Minitest::Test
     end
 
     assert_match(/propagation is only allowed inside function and proc bodies/, error.message)
+  end
+
+  def test_rejects_option_propagation_inside_non_option_function
+    source = <<~MT
+      # module demo.opt_prop_bad_ret
+
+      function find_data() -> Option[int]:
+          return Option[int].some(value = 42)
+
+      function main() -> int:
+          let value = find_data()?
+          return value
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation requires enclosing function\/proc to return Option\[_\]/, error.message)
+  end
+
+  def test_rejects_option_propagation_inside_result_function
+    source = <<~MT
+      # module demo.opt_in_result_fn
+
+      enum Err: ubyte
+          a = 0
+
+      function find_data() -> Option[int]:
+          return Option[int].some(value = 42)
+
+      function main() -> Result[int, Err]:
+          let value = find_data()?
+          return Result[int, Err].success(value = value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation requires enclosing function\/proc to return Option\[_\]/, error.message)
+  end
+
+  def test_rejects_result_propagation_inside_option_function
+    source = <<~MT
+      # module demo.result_in_opt_fn
+
+      enum Err: ubyte
+          a = 0
+
+      function parse(input: int) -> Result[int, Err]:
+          return Result[int, Err].success(value = input)
+
+      function main() -> Option[int]:
+          let value = parse(1)?
+          return Option[int].some(value = value)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_program_source(source)
+    end
+
+    assert_match(/propagation requires enclosing function\/proc to return Result\[_/, error.message)
   end
 
   def test_rejects_let_else_discard_binding_with_type_annotation

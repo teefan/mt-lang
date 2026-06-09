@@ -1021,8 +1021,16 @@ module MilkTea
 
       def infer_result_propagation_types(expression, env:, allow_void_success: false)
         storage_type = infer_expression_type(expression.operand, env:)
-        raise LoweringError, "propagation expects Result[T, E], got #{storage_type}" unless result_let_else_type?(storage_type)
+        if result_let_else_type?(storage_type)
+          infer_result_propagation_details(storage_type, env:, allow_void_success:)
+        elsif option_let_else_type?(storage_type)
+          infer_option_propagation_details(storage_type, env:, allow_void_success:)
+        else
+          raise LoweringError, "propagation expects Result[T, E] or Option[T], got #{storage_type}"
+        end
+      end
 
+      def infer_result_propagation_details(storage_type, env:, allow_void_success:)
         success_type = let_else_success_type(storage_type)
         error_type = let_else_error_type(storage_type)
         raise LoweringError, "propagation requires a non-void Result success type" if success_type == @types.fetch("void") && !allow_void_success
@@ -1044,8 +1052,25 @@ module MilkTea
         [storage_type, success_type, return_type, error_type]
       end
 
+      def infer_option_propagation_details(storage_type, env:, allow_void_success:)
+        success_type = let_else_success_type(storage_type)
+        raise LoweringError, "propagation requires a non-void Option success type" if success_type == @types.fetch("void") && !allow_void_success
+
+        context = env[:return_context]
+        raise LoweringError, "propagation is only allowed inside function and proc bodies" unless context
+        raise LoweringError, "propagation is not allowed inside defer blocks" unless context[:allow_return]
+
+        return_type = context[:return_type]
+        unless option_let_else_type?(return_type)
+          raise LoweringError, "propagation requires enclosing function/proc to return Option[_], got #{return_type}"
+        end
+
+        [storage_type, success_type, return_type, nil]
+      end
+
       def prepare_result_propagation_for_inline_lowering(expression, env:, allow_void_success: false)
         storage_type, success_type, return_type, error_type = infer_result_propagation_types(expression, env:, allow_void_success:)
+        is_option = option_let_else_type?(storage_type)
 
         env[:prepared_expression_cleanups] ||= []
         cleanup_start = env[:prepared_expression_cleanups].length
@@ -1057,6 +1082,12 @@ module MilkTea
         return_context = env.fetch(:return_context)
         failure_return = if storage_type == return_type
                            result_ref
+                         elsif is_option
+                           IR::VariantLiteral.new(
+                             type: return_type,
+                             arm_name: "none",
+                             fields: [],
+                           )
                          else
                            IR::VariantLiteral.new(
                              type: return_type,
@@ -1110,7 +1141,8 @@ module MilkTea
           ]
         end
 
-        register_prepared_temp!(env, result_name, success_type, storage_type:, projection: :result_success_value)
+        projection = is_option ? :option_some_value : :result_success_value
+        register_prepared_temp!(env, result_name, success_type, storage_type:, projection:)
 
         [
           operand_setup + [
