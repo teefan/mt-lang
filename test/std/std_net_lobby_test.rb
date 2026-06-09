@@ -182,6 +182,60 @@ async function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_beacon_probe_and_response
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.bytes as bytes
+import std.net as net
+import std.net.lobby as lobby
+import std.string as string
+import std.vec as vec
+
+function main() -> int:
+    var probe = lobby.build_beacon_probe()
+    defer probe.release()
+    let probe_data = probe.as_span()
+
+    if probe_data.len != 8:
+        return 1
+    if not lobby.is_beacon_probe(probe_data):
+        return 2
+
+    var info = lobby.LobbyInfo(
+        name = string.String.from_str("TestBeacon"),
+        player_count = 2,
+        max_players = 8,
+        player_names = vec.Vec[string.String].create(),
+        game_data = bytes.Bytes.empty()
+    )
+    var response = lobby.build_beacon_response(ref_of(info))
+    defer response.release()
+    info.release()
+
+    let resp_data = response.as_span()
+    let parsed = lobby.parse_beacon_response(resp_data)
+    match parsed:
+        Result.failure:
+            return 3
+        Result.success as pp:
+            var info2 = pp.value
+            defer info2.release()
+            if info2.player_count != 2:
+                return 4
+            if info2.max_players != 8:
+                return 5
+            return 0
+    return 99
+
+    MT
+
+    result = run_program(source, compiler:)
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def run_program(source, compiler:)
