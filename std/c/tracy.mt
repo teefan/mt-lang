@@ -55,3 +55,6 @@ external function ___tracy_connected() -> int
 
 external function ___tracy_fiber_enter(fiber: cstr) -> void
 external function ___tracy_fiber_leave() -> void
+
+external function ___tracy_startup_profiler() -> void
+external function ___tracy_shutdown_profiler() -> void
