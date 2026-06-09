@@ -269,11 +269,13 @@ public function build_send_indication(
     tid: array[ubyte, 12],
     peer: net.SocketAddress,
     data: span[ubyte]
-) -> bytes.Bytes:
+) -> Result[bytes.Bytes, Error]:
     let port_result = peer.port()
     match port_result:
         Result.failure:
-            return bytes.Bytes.empty()
+            return Result[bytes.Bytes, Error].failure(
+                error = turn_error(err_invalid_address, "failed to get peer port")
+            )
         Result.success as pp:
             let host_port = pp.value
             let xport = ushort<-host_port ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
@@ -319,7 +321,7 @@ public function build_send_indication(
                 w.write_u8(data[j])
                 j += 1
 
-            return w.finish()
+            return Result[bytes.Bytes, Error].success(value = w.finish())
 
 
 public function parse_data_indication(
@@ -409,16 +411,21 @@ public async function send_data(
         Result.success as rp:
             var tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
-            var packet = build_send_indication(tid, peer, payload)
-            defer packet.release()
-            let send_result = await socket.send_to(packet.as_span(), turn_server)
-            match send_result:
-                Result.failure as sp:
-                    return Result[ptr_uint, Error].failure(
-                        error = turn_error(err_send_failed, "send indication failed")
-                    )
-                Result.success as nrp:
-                    return Result[ptr_uint, Error].success(value = nrp.value)
+            let build_result = build_send_indication(tid, peer, payload)
+            match build_result:
+                Result.failure as bp:
+                    return Result[ptr_uint, Error].failure(error = bp.error)
+                Result.success as bp:
+                    var packet = bp.value
+                    defer packet.release()
+                    let send_result = await socket.send_to(packet.as_span(), turn_server)
+                    match send_result:
+                        Result.failure as sp:
+                            return Result[ptr_uint, Error].failure(
+                                error = turn_error(err_send_failed, "send indication failed")
+                            )
+                        Result.success as nrp:
+                            return Result[ptr_uint, Error].success(value = nrp.value)
 
 
 public async function recv_data(

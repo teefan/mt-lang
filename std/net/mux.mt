@@ -11,6 +11,10 @@ import std.vec as vec
 public const flag_reliable: ubyte = 0x01
 public const flag_fragmented: ubyte = 0x04
 
+public const meta_channel: ubyte = 0xFF
+public const type_peer_joined: ushort = 0xFFFE
+public const type_peer_left: ushort = 0xFFFD
+
 const wire_header_size: ptr_uint = 4
 const fragment_header_size: ptr_uint = 6
 
@@ -486,6 +490,28 @@ function drain_incoming_session(mux: ref[MuxedSession]) -> void:
 
 
 function demux_conn(mux: ref[MuxedConnection], ev: ref[sess.PeerEvent], frame: uint) -> void:
+    if ev.kind == sess.PeerEventKind.peer_joined:
+        mux.event_queue.push_back(MuxedMessage(
+            peer_id = ev.peer_id,
+            channel_id = meta_channel,
+            type_id = type_peer_joined,
+            msg_flags = 0,
+            payload = bytes.Bytes.empty()
+        ))
+        ev.release()
+        return
+
+    if ev.kind == sess.PeerEventKind.peer_left:
+        mux.event_queue.push_back(MuxedMessage(
+            peer_id = ev.peer_id,
+            channel_id = meta_channel,
+            type_id = type_peer_left,
+            msg_flags = 0,
+            payload = bytes.Bytes.empty()
+        ))
+        ev.release()
+        return
+
     if ev.kind != sess.PeerEventKind.user_data:
         ev.release()
         return
@@ -521,6 +547,28 @@ function demux_conn(mux: ref[MuxedConnection], ev: ref[sess.PeerEvent], frame: u
 
 
 function demux_session(mux: ref[MuxedSession], ev: ref[sess.PeerEvent], frame: uint) -> void:
+    if ev.kind == sess.PeerEventKind.peer_joined:
+        mux.event_queue.push_back(MuxedMessage(
+            peer_id = ev.peer_id,
+            channel_id = meta_channel,
+            type_id = type_peer_joined,
+            msg_flags = 0,
+            payload = bytes.Bytes.empty()
+        ))
+        ev.release()
+        return
+
+    if ev.kind == sess.PeerEventKind.peer_left:
+        mux.event_queue.push_back(MuxedMessage(
+            peer_id = ev.peer_id,
+            channel_id = meta_channel,
+            type_id = type_peer_left,
+            msg_flags = 0,
+            payload = bytes.Bytes.empty()
+        ))
+        ev.release()
+        return
+
     if ev.kind != sess.PeerEventKind.user_data:
         ev.release()
         return

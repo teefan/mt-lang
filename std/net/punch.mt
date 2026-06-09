@@ -115,7 +115,6 @@ public async function punch(
 ) -> Result[PunchResult, Error]:
     var probe = build_punch_probe()
     defer probe.release()
-
     var recv_task = socket.recv_from(512)
 
     var c: uint = 0
@@ -140,6 +139,7 @@ public async function punch(
                 return Result[PunchResult, Error].success(value = rp.value)
             Option.none:
                 pass
+        recv_task = socket.recv_from(512)
 
         if c < burst_count - 1:
             await aio.sleep(burst_delay)
@@ -153,6 +153,7 @@ public async function punch(
                 return Result[PunchResult, Error].success(value = rp.value)
             Option.none:
                 pass
+        recv_task = socket.recv_from(512)
         await aio.sleep(50)
         frame += 1
 
