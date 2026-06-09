@@ -2651,6 +2651,34 @@ extending SocketAddress:
         return socket_address_to_string_result(this)
 
 
+    public function port() -> Result[int, Error]:
+        let storage = this.storage else:
+            return Result[int, Error].failure(
+                error = invalid_address_error("socket address is released")
+            )
+
+        let ss_ptr = unsafe: ptr[libuv.sockaddr_storage]<-storage
+        let family = (unsafe: read(ss_ptr)).ss_family
+
+        let v4_family = ipv4_socket_family()
+        if family == v4_family:
+            let in_ptr = unsafe: ptr[libuv.sockaddr_in]<-storage
+            let nbo_port = (unsafe: read(in_ptr)).sin_port
+            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & uint<-0xFF) << 8))
+            return Result[int, Error].success(value = host_port)
+
+        let v6_family = ipv6_socket_family()
+        if family == v6_family:
+            let in6_ptr = unsafe: ptr[libuv.sockaddr_in6]<-storage
+            let nbo_port = (unsafe: read(in6_ptr)).sin6_port
+            let host_port = int<-(((uint<-nbo_port) >> 8) | (((uint<-nbo_port) & uint<-0xFF) << 8))
+            return Result[int, Error].success(value = host_port)
+
+        return Result[int, Error].failure(
+            error = invalid_address_error("unknown address family")
+        )
+
+
 extending UdpDatagram:
     public editable function release() -> void:
         this.data.release()

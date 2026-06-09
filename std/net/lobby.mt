@@ -661,3 +661,117 @@ function release_slots(slots: ref[vec.Vec[PlayerSlot]]) -> void:
             return
         unsafe: read(slot_ptr).player_name.release()
         index += 1
+
+
+const beacon_magic: array[ubyte, 8] = array[ubyte, 8](0x4D, 0x54, 0x4C, 0x42, 0x59, 0x00, 0x00, 0x00)
+
+const beacon_probe_len: ptr_uint = 8
+const beacon_recv_timeout: uint = 60
+
+
+public function build_beacon_probe() -> bytes.Bytes:
+    var w = bin.Writer.with_capacity(beacon_probe_len)
+    w.write_u8(beacon_magic[0])
+    w.write_u8(beacon_magic[1])
+    w.write_u8(beacon_magic[2])
+    w.write_u8(beacon_magic[3])
+    w.write_u8(beacon_magic[4])
+    w.write_u8(beacon_magic[5])
+    w.write_u8(beacon_magic[6])
+    w.write_u8(beacon_magic[7])
+    return w.finish()
+
+
+public function is_beacon_probe(data: span[ubyte]) -> bool:
+    if data.len < beacon_probe_len:
+        return false
+    return data[0] == beacon_magic[0] and data[1] == beacon_magic[1] and data[2] == beacon_magic[2] and data[3] == beacon_magic[3]
+
+
+public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:
+    var w = bin.Writer.with_capacity(16)
+    w.write_u8(beacon_magic[0])
+    w.write_u8(beacon_magic[1])
+    w.write_u8(beacon_magic[2])
+    w.write_u8(beacon_magic[3])
+    w.write_u8(beacon_magic[4])
+    w.write_u8(beacon_magic[5])
+    w.write_u8(beacon_magic[6])
+    w.write_u8(beacon_magic[7])
+    encode_lobby_info_payload(ref_of(w), info)
+    return w.finish()
+
+
+public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, Error]:
+    if data.len < ptr_uint<-10:
+        return Result[LobbyInfo, Error].failure(
+            error = lobby_error(-1, "beacon response too short")
+        )
+    var r = bin.reader(data)
+    match r.read_bytes(beacon_probe_len):
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(
+                error = lobby_error(-1, "beacon response malformed")
+            )
+        Result.success as bp:
+            bp.value.release()
+    return decode_lobby_info_payload_offset(data, ptr_uint<-beacon_probe_len)
+
+
+function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, Error]:
+    if data.len < offset + ptr_uint<-2:
+        return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info payload truncated"))
+    var r = bin.reader(data)
+    match r.read_bytes(offset):
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success:
+            pass
+    var player_count: ubyte = 0
+    match r.read_u8():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as pc:
+            player_count = pc.value
+    var max_players: ubyte = 0
+    match r.read_u8():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as mp:
+            max_players = mp.value
+    match r.read_str():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as sp:
+            return Result[LobbyInfo, Error].success(value = LobbyInfo(
+                name = sp.value,
+                player_count = player_count,
+                max_players = max_players,
+                player_names = vec.Vec[string.String].create(),
+                game_data = bytes.Bytes.empty()
+            ))
+
+
+public async function respond_to_beacon(
+    socket: net.UdpSocket,
+    info: ref[LobbyInfo]
+) -> void:
+    var recv_task = socket.recv_from(1500)
+    var frame: uint = 0
+    while frame < beacon_recv_timeout:
+        if aio.completed(recv_task):
+            let recv_result = aio.result(recv_task)
+            match recv_result:
+                Result.success as dp:
+                    var datagram = dp.value
+                    defer datagram.data.release()
+                    defer datagram.source.release()
+                    if is_beacon_probe(datagram.data.as_span()):
+                        var response = build_beacon_response(info)
+                        defer response.release()
+                        let _ = await socket.send_to(response.as_span(), datagram.source)
+                Result.failure:
+                    pass
+        await aio.sleep(100)
+        frame += 1
+
