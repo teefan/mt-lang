@@ -85,13 +85,25 @@ module MilkTea
           def collect_active_module_names
             active = Set.new
             active << @program.module_name
-            prefix_set = collect_reachable_module_prefixes
-            (@program.structs + @program.unions + @program.variants).each do |decl|
-              next unless decl.source_module
-              active << decl.source_module if prefix_set.include?(module_c_prefix(decl.source_module) + "_")
-            end
 
             collect_type_referenced_module_names.each { |mod| active << mod }
+
+            loop do
+              size_before = active.size
+              (@program.structs + @program.unions).each do |decl|
+                next unless decl.source_module
+                next unless active.include?(decl.source_module)
+
+                decl.fields.each { |f| add_type_module(f.type, active) }
+              end
+              @program.variants.each do |decl|
+                next unless decl.source_module
+                next unless active.include?(decl.source_module)
+
+                decl.arms.each { |arm| arm.fields.each { |f| add_type_module(f.type, active) } }
+              end
+              break if active.size == size_before
+            end
 
             active
           end
@@ -163,16 +175,6 @@ module MilkTea
             end
           end
 
-          def collect_reachable_module_prefixes
-            prefixes = Set.new
-            emitted_functions.each do |fn|
-              parts = fn.c_name.split("_")
-              parts.each_index do |i|
-                prefixes << parts[0..i].join("_") + "_"
-              end
-            end
-            prefixes
-          end
 
           def emitted_aggregate_structs
             @emitted_aggregate_structs ||= filter_by_type_reachability(@program.structs)
