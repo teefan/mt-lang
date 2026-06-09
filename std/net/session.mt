@@ -271,6 +271,12 @@ public function listen(local_address: net.SocketAddress, config: Config) -> Resu
 
 extending Connection:
     public editable function release() -> void:
+        match this.pending_recv:
+            Option.some as task_opt:
+                let task = task_opt.value
+                task.release(task.frame)
+            Option.none:
+                pass
         this.pending_recv = Option[ChanMessageTask].none
         drain_release_outgoing_conn(ref_of(this))
         this.outgoing.release()
@@ -413,7 +419,6 @@ extending Connection:
             return Result[bool, Error].failure(error = session_error(-3, "session already connected or connecting"))
 
         this.state = ConnectionState.connecting
-        start_recv_if_idle(ref_of(this))
 
         var req = build_connect_request(this.protocol_version, generate_handshake_key())
         defer req.release()
@@ -577,6 +582,12 @@ extending OutgoingMessage:
 
 extending Session:
     public editable function release() -> void:
+        match this.pending_recv:
+            Option.some as task_opt:
+                let task = task_opt.value
+                task.release(task.frame)
+            Option.none:
+                pass
         this.pending_recv = Option[ChanHostMessageTask].none
         drain_release_outgoing(ref_of(this))
         this.outgoing.release()

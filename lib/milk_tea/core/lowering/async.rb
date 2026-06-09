@@ -756,14 +756,37 @@ module MilkTea
         frame_expr = IR::Name.new(name: async_frame_local_name, type: pointer_to(frame_type), pointer: false)
         raw_frame_expr = IR::Name.new(name: async_frame_raw_name, type: async_info[:void_ptr], pointer: false)
 
-        body = [
-          async_frame_cast_declaration(frame_type, async_info),
-          IR::IfStmt.new(
-            condition: IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool")),
-            then_body: [IR::ReturnStmt.new(value: nil)],
+        body = [async_frame_cast_declaration(frame_type, async_info)]
+
+        not_ready_expr = IR::Unary.new(operator: "not", operand: async_frame_field_expression(frame_expr, "ready", @types.fetch("bool")), type: @types.fetch("bool"))
+        not_ready_return = [IR::ReturnStmt.new(value: nil)]
+
+        if async_info[:await_fields].any?
+          await_release_stmts = []
+          async_info[:await_fields].each_value do |field_info|
+            task_field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:task_type])
+            task_frame_expr = async_task_frame_expression(task_field_expr, field_info[:task_type])
+            release_call = IR::ExpressionStmt.new(
+              expression: async_task_call(task_field_expr, field_info[:task_type], "release", [task_frame_expr], @types.fetch("void")),
+            )
+            await_release_stmts << IR::IfStmt.new(
+              condition: task_frame_expr,
+              then_body: [release_call],
+              else_body: nil,
+            )
+          end
+          body << IR::IfStmt.new(
+            condition: not_ready_expr,
+            then_body: await_release_stmts + not_ready_return,
             else_body: nil,
-          ),
-        ]
+          )
+        else
+          body << IR::IfStmt.new(
+            condition: not_ready_expr,
+            then_body: not_ready_return,
+            else_body: nil,
+          )
+        end
 
         # Release proc-containing params (always initialized by constructor, but null-guard is safe).
         async_info[:param_fields].each_value do |field_info|
@@ -791,6 +814,15 @@ module MilkTea
               arguments: [field_expr],
               type: @types.fetch("void"),
             ),
+          )
+        end
+
+        async_info[:param_fields].each_value do |field_info|
+          next unless field_info[:pointer]
+
+          param_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:type])
+          body << IR::ExpressionStmt.new(
+            expression: IR::Call.new(callee: "mt_async_free", arguments: [param_expr], type: @types.fetch("void")),
           )
         end
 
@@ -892,6 +924,122 @@ module MilkTea
           arguments:,
           type: return_type,
         )
+      end
+
+      def lower_contained_task_release_statements(value_expr, type)
+        return [] unless contains_task_type?(type)
+
+        void_type = @types.fetch("void")
+        void_ptr = pointer_to(void_type)
+        int_type = @types.fetch("int")
+
+        case type
+        when Types::Task
+          task_frame_expr = IR::Member.new(receiver: value_expr, member: "frame", type: type.field("frame"))
+          release_call = IR::ExpressionStmt.new(
+            expression: IR::Call.new(
+              callee: IR::Member.new(receiver: value_expr, member: "release", type: type.field("release")),
+              arguments: [task_frame_expr],
+              type: void_type,
+            ),
+          )
+          [IR::IfStmt.new(condition: task_frame_expr, then_body: [release_call], else_body: nil)]
+
+        when Types::Struct, Types::StructInstance, Types::Union, Types::GenericStructDefinition, Types::VariantArmPayload
+          statements = []
+          type.fields.each do |field_name, field_type|
+            next unless contains_task_type?(field_type)
+
+            field_expr = IR::Member.new(receiver: value_expr, member: field_name, type: field_type)
+            statements.concat(lower_contained_task_release_statements(field_expr, field_type))
+          end
+          statements
+
+        when Types::VariantInstance
+          args_with_task = type.arguments.select { |a| contains_task_type?(a) }
+          if args_with_task.any? && type.definition.name == "Option"
+            kind_expr = IR::Member.new(receiver: value_expr, member: "kind", type: int_type)
+            some_check = IR::Binary.new(
+              operator: "==",
+              left: kind_expr,
+              right: IR::IntegerLiteral.new(value: 0, type: int_type),
+              type: @types.fetch("bool"),
+            )
+            data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
+            some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
+            task_type = args_with_task.first
+            task_value_expr = IR::Member.new(receiver: some_payload_expr, member: "value", type: task_type)
+            release_body = lower_contained_task_release_statements(task_value_expr, task_type)
+            none_assignment = IR::Assignment.new(
+              target: kind_expr,
+              operator: "=",
+              value: IR::IntegerLiteral.new(value: 1, type: int_type),
+            )
+            then_body = release_body + [none_assignment]
+            [IR::IfStmt.new(condition: some_check, then_body:, else_body: nil)]
+          else
+            []
+          end
+
+        when Types::Variant, Types::GenericVariantDefinition
+          statements = []
+          type.arms.each do |arm_name, arm_fields|
+            arm_fields.each do |field_name, field_type|
+              next unless contains_task_type?(field_type)
+              # For variant arms, the data is under .data.<arm_name>
+              data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
+              arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: nil)
+              field_expr = IR::Member.new(receiver: arm_expr, member: field_name, type: field_type)
+              statements.concat(lower_contained_task_release_statements(field_expr, field_type))
+            end
+          end
+          statements
+
+        when Types::GenericInstance
+          if type.name == "Option" && type.arguments.any? { |a| contains_task_type?(a) }
+            kind_expr = IR::Member.new(receiver: value_expr, member: "kind", type: int_type)
+            some_check = IR::Binary.new(
+              operator: "==",
+              left: kind_expr,
+              right: IR::IntegerLiteral.new(value: 0, type: int_type),
+              type: @types.fetch("bool"),
+            )
+            data_expr = IR::Member.new(receiver: value_expr, member: "data", type: nil)
+            some_payload_expr = IR::Member.new(receiver: data_expr, member: "some", type: nil)
+            task_type = type.arguments.first
+            task_value_expr = IR::Member.new(receiver: some_payload_expr, member: "value", type: task_type)
+            release_body = lower_contained_task_release_statements(task_value_expr, task_type)
+            none_assignment = IR::Assignment.new(
+              target: kind_expr,
+              operator: "=",
+              value: IR::IntegerLiteral.new(value: 1, type: int_type),
+            )
+            then_body = release_body + [none_assignment]
+            [IR::IfStmt.new(condition: some_check, then_body:, else_body: nil)]
+          else
+            []
+          end
+
+        when Types::Nullable
+          lower_contained_task_release_statements(value_expr, type.base)
+
+        else
+          []
+        end
+      end
+
+      def lower_frame_fields_task_release(fields, frame_expr)
+        statements = []
+        fields.each_value do |field_info|
+          field_type = field_info[:storage_type] || field_info[:type]
+          next if field_info[:pointer]
+          next if field_info[:field_name].start_with?("local_match_binding_")
+          next unless contains_task_type?(field_type)
+
+          field_expr = async_frame_field_expression(frame_expr, field_info[:field_name], field_type)
+          statements.concat(lower_contained_task_release_statements(field_expr, field_type))
+        end
+        statements
       end
 
       def lower_async_local_decl_statement(statement, field_info:, env:, frame_expr:, raw_frame_expr:, resume_c_name:, async_info:, active_defers: [], loop_flow: nil)
@@ -2444,6 +2592,9 @@ module MilkTea
             target: task_expr,
             operator: "=",
             value: lower_contextual_expression(prepared_task, env:, expected_type: await_info[:task_type]),
+          )
+          lowered << IR::ExpressionStmt.new(
+            expression: IR::Call.new(callee: "mt_async_retain", arguments: [raw_frame_expr], type: @types.fetch("void")),
           )
         end
         lowered << IR::IfStmt.new(
