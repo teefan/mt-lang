@@ -41,23 +41,23 @@ extending Writer:
         return Writer(buffer = vec.Vec[ubyte].with_capacity(capacity))
 
 
-    public editable function write_u8(value: ubyte) -> void:
+    public editable function write_ubyte(value: ubyte) -> void:
         writer_append_byte(ref_of(this), value)
 
 
-    public editable function write_u16(value: ushort) -> void:
+    public editable function write_ushort(value: ushort) -> void:
         writer_append_byte(ref_of(this), ubyte<-(value & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 8) & 0xFF))
 
 
-    public editable function write_u32(value: uint) -> void:
+    public editable function write_uint(value: uint) -> void:
         writer_append_byte(ref_of(this), ubyte<-(value & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 8) & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 16) & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 24) & 0xFF))
 
 
-    public editable function write_u64(value: ulong) -> void:
+    public editable function write_ulong(value: ulong) -> void:
         writer_append_byte(ref_of(this), ubyte<-(value & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 8) & 0xFF))
         writer_append_byte(ref_of(this), ubyte<-((value >> 16) & 0xFF))
@@ -68,30 +68,30 @@ extending Writer:
         writer_append_byte(ref_of(this), ubyte<-((value >> 56) & 0xFF))
 
 
-    public editable function write_i8(value: byte) -> void:
+    public editable function write_byte(value: byte) -> void:
         writer_append_byte(ref_of(this), ubyte<-value)
 
 
-    public editable function write_i16(value: short) -> void:
-        this.write_u16(ushort<-value)
+    public editable function write_short(value: short) -> void:
+        this.write_ushort(ushort<-value)
 
 
-    public editable function write_i32(value: int) -> void:
-        this.write_u32(uint<-value)
+    public editable function write_int(value: int) -> void:
+        this.write_uint(uint<-value)
 
 
-    public editable function write_i64(value: long) -> void:
-        this.write_u64(ulong<-value)
+    public editable function write_long(value: long) -> void:
+        this.write_ulong(ulong<-value)
 
 
-    public editable function write_f32(value: float) -> void:
+    public editable function write_float(value: float) -> void:
         let bits = unsafe: reinterpret[uint](value)
-        this.write_u32(bits)
+        this.write_uint(bits)
 
 
-    public editable function write_f64(value: double) -> void:
+    public editable function write_double(value: double) -> void:
         let bits = unsafe: reinterpret[ulong](value)
-        this.write_u64(bits)
+        this.write_ulong(bits)
 
 
     public editable function write_bool(value: bool) -> void:
@@ -106,12 +106,12 @@ extending Writer:
 
 
     public editable function write_str(value: str) -> void:
-        this.write_u32(uint<-value.len)
+        this.write_uint(uint<-value.len)
         if value.len > 0:
             writer_append_span(ref_of(this), text.as_byte_span(value))
 
 
-    public editable function write_u32_at(position: ptr_uint, value: uint) -> void:
+    public editable function write_uint_at(position: ptr_uint, value: uint) -> void:
         let buffer_span = this.buffer.as_span()
         if position + 4 > buffer_span.len:
             fatal(c"binary.write_u32_at position out of bounds")
@@ -171,11 +171,11 @@ function reader_read_byte(reader: ref[Reader]) -> Result[ubyte, Error]:
 
 
 extending Reader:
-    public editable function read_u8() -> Result[ubyte, Error]:
+    public editable function read_ubyte() -> Result[ubyte, Error]:
         return reader_read_byte(ref_of(this))
 
 
-    public editable function read_u16() -> Result[ushort, Error]:
+    public editable function read_ushort() -> Result[ushort, Error]:
         match reader_check_remaining(ref_of(this), 2):
             Result.failure as payload:
                 return Result[ushort, Error].failure(error = payload.error)
@@ -186,7 +186,7 @@ extending Reader:
                 return Result[ushort, Error].success(value = (high << 8) | low)
 
 
-    public editable function read_u32() -> Result[uint, Error]:
+    public editable function read_uint() -> Result[uint, Error]:
         match reader_check_remaining(ref_of(this), 4):
             Result.failure as payload:
                 return Result[uint, Error].failure(error = payload.error)
@@ -202,7 +202,7 @@ extending Reader:
                 return Result[uint, Error].success(value = value)
 
 
-    public editable function read_u64() -> Result[ulong, Error]:
+    public editable function read_ulong() -> Result[ulong, Error]:
         match reader_check_remaining(ref_of(this), 8):
             Result.failure as payload:
                 return Result[ulong, Error].failure(error = payload.error)
@@ -225,48 +225,48 @@ extending Reader:
                 return Result[ulong, Error].success(value = value)
 
 
-    public editable function read_i8() -> Result[byte, Error]:
-        match this.read_u8():
+    public editable function read_byte() -> Result[byte, Error]:
+        match this.read_ubyte():
             Result.failure as payload:
                 return Result[byte, Error].failure(error = payload.error)
             Result.success as payload:
                 return Result[byte, Error].success(value = byte<-payload.value)
 
 
-    public editable function read_i16() -> Result[short, Error]:
-        match this.read_u16():
+    public editable function read_short() -> Result[short, Error]:
+        match this.read_ushort():
             Result.failure as payload:
                 return Result[short, Error].failure(error = payload.error)
             Result.success as payload:
                 return Result[short, Error].success(value = short<-payload.value)
 
 
-    public editable function read_i32() -> Result[int, Error]:
-        match this.read_u32():
+    public editable function read_int() -> Result[int, Error]:
+        match this.read_uint():
             Result.failure as payload:
                 return Result[int, Error].failure(error = payload.error)
             Result.success as payload:
                 return Result[int, Error].success(value = int<-payload.value)
 
 
-    public editable function read_i64() -> Result[long, Error]:
-        match this.read_u64():
+    public editable function read_long() -> Result[long, Error]:
+        match this.read_ulong():
             Result.failure as payload:
                 return Result[long, Error].failure(error = payload.error)
             Result.success as payload:
                 return Result[long, Error].success(value = long<-payload.value)
 
 
-    public editable function read_f32() -> Result[float, Error]:
-        match this.read_u32():
+    public editable function read_float() -> Result[float, Error]:
+        match this.read_uint():
             Result.failure as payload:
                 return Result[float, Error].failure(error = payload.error)
             Result.success as payload:
                 return Result[float, Error].success(value = unsafe: reinterpret[float](payload.value))
 
 
-    public editable function read_f64() -> Result[double, Error]:
-        match this.read_u64():
+    public editable function read_double() -> Result[double, Error]:
+        match this.read_ulong():
             Result.failure as payload:
                 return Result[double, Error].failure(error = payload.error)
             Result.success as payload:
@@ -274,7 +274,7 @@ extending Reader:
 
 
     public editable function read_bool() -> Result[bool, Error]:
-        match this.read_u8():
+        match this.read_ubyte():
             Result.failure as payload:
                 return Result[bool, Error].failure(error = payload.error)
             Result.success as payload:
@@ -319,7 +319,7 @@ extending Reader:
 
 
     public editable function read_str() -> Result[string.String, Error]:
-        match this.read_u32():
+        match this.read_uint():
             Result.failure as payload:
                 return Result[string.String, Error].failure(error = payload.error)
             Result.success as payload:

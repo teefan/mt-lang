@@ -48,20 +48,20 @@ import std.net.punch as punch
 
 function main() -> int:
     var w = bin.Writer.with_capacity(4)
-    w.write_u8(0x4D)
-    w.write_u8(0x54)
-    w.write_u8(0x50)
-    w.write_u8(0x43)
+    w.write_ubyte(0x4D)
+    w.write_ubyte(0x54)
+    w.write_ubyte(0x50)
+    w.write_ubyte(0x43)
     var valid = w.finish()
     defer valid.release()
     if not punch.is_punch_probe(valid.as_span()):
         return 1
 
     var w2 = bin.Writer.with_capacity(4)
-    w2.write_u8(0x00)
-    w2.write_u8(0x00)
-    w2.write_u8(0x00)
-    w2.write_u8(0x00)
+    w2.write_ubyte(0x00)
+    w2.write_ubyte(0x00)
+    w2.write_ubyte(0x00)
+    w2.write_ubyte(0x00)
     var invalid = w2.finish()
     defer invalid.release()
     if punch.is_punch_probe(invalid.as_span()):

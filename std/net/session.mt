@@ -109,50 +109,50 @@ function chan_to_session_error(source: chan.Error) -> Error:
 
 function build_connect_request(version: uint, key: ulong) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1 + connect_request_payload_bytes)
-    w.write_u8(msg_type_connect_request)
-    w.write_u32(version)
-    w.write_u64(key)
+    w.write_ubyte(msg_type_connect_request)
+    w.write_uint(version)
+    w.write_ulong(key)
     return w.finish()
 
 
 function build_connect_accept(peer_id: uint) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1 + connect_accept_payload_bytes)
-    w.write_u8(msg_type_connect_accept)
-    w.write_u32(peer_id)
+    w.write_ubyte(msg_type_connect_accept)
+    w.write_uint(peer_id)
     return w.finish()
 
 
 function build_connect_reject(reason: ubyte) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(2)
-    w.write_u8(msg_type_connect_reject)
-    w.write_u8(reason)
+    w.write_ubyte(msg_type_connect_reject)
+    w.write_ubyte(reason)
     return w.finish()
 
 
 function build_heartbeat(frame: uint) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1 + heartbeat_payload_bytes)
-    w.write_u8(msg_type_heartbeat)
-    w.write_u32(frame)
+    w.write_ubyte(msg_type_heartbeat)
+    w.write_uint(frame)
     return w.finish()
 
 
 function build_heartbeat_ack(frame: uint) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1 + heartbeat_payload_bytes)
-    w.write_u8(msg_type_heartbeat_ack)
-    w.write_u32(frame)
+    w.write_ubyte(msg_type_heartbeat_ack)
+    w.write_uint(frame)
     return w.finish()
 
 
 function build_disconnect(reason: ubyte) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(2)
-    w.write_u8(msg_type_disconnect)
-    w.write_u8(reason)
+    w.write_ubyte(msg_type_disconnect)
+    w.write_ubyte(reason)
     return w.finish()
 
 
 function build_user_data(payload: span[ubyte]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1 + payload.len)
-    w.write_u8(msg_type_user)
+    w.write_ubyte(msg_type_user)
     w.write_bytes(payload)
     return w.finish()
 
@@ -165,7 +165,7 @@ function generate_handshake_key() -> ulong:
         Result.success as payload:
             var rand = payload.value
             var reader = bin.reader(rand.as_span())
-            match reader.read_u64():
+            match reader.read_ulong():
                 Result.failure:
                     rand.release()
                     return 12345678901234567890

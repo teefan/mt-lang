@@ -327,21 +327,21 @@ extending MuxedSession:
 
 function encode_frame(channel_id: ubyte, type_id: ushort, msg_flags: ubyte, payload: span[ubyte]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(wire_header_size + payload.len)
-    w.write_u8(channel_id)
-    w.write_u16(type_id)
-    w.write_u8(msg_flags)
+    w.write_ubyte(channel_id)
+    w.write_ushort(type_id)
+    w.write_ubyte(msg_flags)
     w.write_bytes(payload)
     return w.finish()
 
 
 function encode_fragment_frame(channel_id: ubyte, type_id: ushort, msg_flags: ubyte, group_id: ushort, frag_index: ushort, total: ushort, payload: span[ubyte]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(wire_header_size + fragment_header_size + payload.len)
-    w.write_u8(channel_id)
-    w.write_u16(type_id)
-    w.write_u8(msg_flags | flag_fragmented)
-    w.write_u16(group_id)
-    w.write_u16(frag_index)
-    w.write_u16(total)
+    w.write_ubyte(channel_id)
+    w.write_ushort(type_id)
+    w.write_ubyte(msg_flags | flag_fragmented)
+    w.write_ushort(group_id)
+    w.write_ushort(frag_index)
+    w.write_ushort(total)
     w.write_bytes(payload)
     return w.finish()
 
@@ -454,11 +454,11 @@ function decode_wire_header(data: span[ubyte]) -> Result[WireHeader, Error]:
     if data.len < wire_header_size:
         return Result[WireHeader, Error].failure(error = mux_error(-1, "mux payload too short"))
     var r = bin.reader(data)
-    let channel_id = r.read_u8() else:
+    let channel_id = r.read_ubyte() else:
         return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
-    let type_id = r.read_u16() else:
+    let type_id = r.read_ushort() else:
         return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
-    let wire_flags = r.read_u8() else:
+    let wire_flags = r.read_ubyte() else:
         return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
     return Result[WireHeader, Error].success(value = WireHeader(
         channel_id = channel_id,

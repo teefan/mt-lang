@@ -108,29 +108,29 @@ function transaction_id_from_bytes(data: bytes.Bytes) -> array[ubyte, 12]:
 public function build_allocate_request(tid: array[ubyte, 12]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(turn_header_len + ptr_uint<-8)
 
-    w.write_u8(0x00)
-    w.write_u8(0x03)
-    w.write_u8(0x00)
-    w.write_u8(0x08)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x03)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x08)
 
-    w.write_u8(0x21)
-    w.write_u8(0x12)
-    w.write_u8(0xA4)
-    w.write_u8(0x42)
+    w.write_ubyte(0x21)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA4)
+    w.write_ubyte(0x42)
 
     var i: ptr_uint = 0
     while i < ptr_uint<-12:
-        w.write_u8(tid[i])
+        w.write_ubyte(tid[i])
         i += 1
 
-    w.write_u8(0x00)
-    w.write_u8(0x19)
-    w.write_u8(0x00)
-    w.write_u8(0x04)
-    w.write_u8(0x11)
-    w.write_u8(0x00)
-    w.write_u8(0x00)
-    w.write_u8(0x00)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x19)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x04)
+    w.write_ubyte(0x11)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x00)
 
     return w.finish()
 
@@ -286,39 +286,39 @@ public function build_send_indication(
             let attr_total: ptr_uint = ptr_uint<-12 + data_len
             var w = bin.Writer.with_capacity(turn_header_len + attr_total)
 
-            w.write_u8(0x00)
-            w.write_u8(0x16)
-            w.write_u8(ubyte<-((ushort<-attr_total >> 8) & 0xFF))
-            w.write_u8(ubyte<-(ushort<-attr_total & 0xFF))
-            w.write_u8(0x21)
-            w.write_u8(0x12)
-            w.write_u8(0xA4)
-            w.write_u8(0x42)
+            w.write_ubyte(0x00)
+            w.write_ubyte(0x16)
+            w.write_ubyte(ubyte<-((ushort<-attr_total >> 8) & 0xFF))
+            w.write_ubyte(ubyte<-(ushort<-attr_total & 0xFF))
+            w.write_ubyte(0x21)
+            w.write_ubyte(0x12)
+            w.write_ubyte(0xA4)
+            w.write_ubyte(0x42)
             var i: ptr_uint = 0
             while i < ptr_uint<-12:
-                w.write_u8(tid[i])
+                w.write_ubyte(tid[i])
                 i += 1
 
-            w.write_u8(0x00)
-            w.write_u8(0x17)
-            w.write_u8(0x00)
-            w.write_u8(0x08)
-            w.write_u8(0x00)
-            w.write_u8(0x01)
-            w.write_u8(ubyte<-((xport >> 8) & 0xFF))
-            w.write_u8(ubyte<-(xport & 0xFF))
-            w.write_u8(ubyte<-((xip >> 24) & 0xFF))
-            w.write_u8(ubyte<-((xip >> 16) & 0xFF))
-            w.write_u8(ubyte<-((xip >> 8) & 0xFF))
-            w.write_u8(ubyte<-(xip & 0xFF))
+            w.write_ubyte(0x00)
+            w.write_ubyte(0x17)
+            w.write_ubyte(0x00)
+            w.write_ubyte(0x08)
+            w.write_ubyte(0x00)
+            w.write_ubyte(0x01)
+            w.write_ubyte(ubyte<-((xport >> 8) & 0xFF))
+            w.write_ubyte(ubyte<-(xport & 0xFF))
+            w.write_ubyte(ubyte<-((xip >> 24) & 0xFF))
+            w.write_ubyte(ubyte<-((xip >> 16) & 0xFF))
+            w.write_ubyte(ubyte<-((xip >> 8) & 0xFF))
+            w.write_ubyte(ubyte<-(xip & 0xFF))
 
-            w.write_u8(0x00)
-            w.write_u8(0x12)
-            w.write_u8(ubyte<-((ushort<-data_len >> 8) & 0xFF))
-            w.write_u8(ubyte<-(ushort<-data_len & 0xFF))
+            w.write_ubyte(0x00)
+            w.write_ubyte(0x12)
+            w.write_ubyte(ubyte<-((ushort<-data_len >> 8) & 0xFF))
+            w.write_ubyte(ubyte<-(ushort<-data_len & 0xFF))
             var j: ptr_uint = 0
             while j < data_len:
-                w.write_u8(data[j])
+                w.write_ubyte(data[j])
                 j += 1
 
             return Result[bytes.Bytes, Error].success(value = w.finish())
@@ -376,7 +376,7 @@ public function parse_data_indication(
             var buf = bin.Writer.with_capacity(alen)
             var k: ptr_uint = 0
             while k < alen:
-                buf.write_u8(data[offset + ptr_uint<-4 + k])
+                buf.write_ubyte(data[offset + ptr_uint<-4 + k])
                 k += 1
             payload = buf.finish()
             found_data = true

@@ -103,38 +103,38 @@ function main() -> int:
     # Build mock allocate success response:
     # Header: 20 bytes (msg_type=0x0103, msg_len=12, cookie, tid)
     var w = bin.Writer.with_capacity(32)
-    w.write_u8(0x01)
-    w.write_u8(0x03)
-    w.write_u8(0x00)
-    w.write_u8(12)
+    w.write_ubyte(0x01)
+    w.write_ubyte(0x03)
+    w.write_ubyte(0x00)
+    w.write_ubyte(12)
 
-    w.write_u8(0x21)
-    w.write_u8(0x12)
-    w.write_u8(0xA4)
-    w.write_u8(0x42)
+    w.write_ubyte(0x21)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA4)
+    w.write_ubyte(0x42)
 
     var j: ptr_uint = 0
     while j < ptr_uint<-12:
-        w.write_u8(tid[j])
+        w.write_ubyte(tid[j])
         j += 1
 
     # XOR-RELAYED-ADDRESS (type 0x0016, len 8)
-    w.write_u8(0x00)
-    w.write_u8(0x16)
-    w.write_u8(0x00)
-    w.write_u8(8)
-    w.write_u8(0)
-    w.write_u8(1)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x16)
+    w.write_ubyte(0x00)
+    w.write_ubyte(8)
+    w.write_ubyte(0)
+    w.write_ubyte(1)
 
     # Relay port: 9999, XOR'd: 0x270F ^ 0x2112 = 0x061D
-    w.write_u8(0x06)
-    w.write_u8(0x1D)
+    w.write_ubyte(0x06)
+    w.write_ubyte(0x1D)
 
     # Relay IP: 192.0.2.1 = 0xC0000201 ^ 0x2112A442 = 0xE112A643
-    w.write_u8(0xE1)
-    w.write_u8(0x12)
-    w.write_u8(0xA6)
-    w.write_u8(0x43)
+    w.write_ubyte(0xE1)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA6)
+    w.write_ubyte(0x43)
 
     var packet = w.finish()
     defer packet.release()

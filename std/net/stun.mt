@@ -58,17 +58,17 @@ function transaction_id_from_bytes(data: bytes.Bytes) -> array[ubyte, 12]:
 
 public function build_binding_request(tid: array[ubyte, 12]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(stun_header_len)
-    w.write_u8(0x00)
-    w.write_u8(0x01)
-    w.write_u8(0x00)
-    w.write_u8(0x00)
-    w.write_u8(0x21)
-    w.write_u8(0x12)
-    w.write_u8(0xA4)
-    w.write_u8(0x42)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x01)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x21)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA4)
+    w.write_ubyte(0x42)
     var i: ptr_uint = 0
     while i < ptr_uint<-12:
-        w.write_u8(tid[i])
+        w.write_ubyte(tid[i])
         i += 1
     return w.finish()
 
