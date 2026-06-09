@@ -2761,6 +2761,14 @@ extending UdpSocket:
         return recv_from_impl(this.handle, max_bytes)
 
 
+    public function set_broadcast(on: bool) -> int:
+        let handle = this.handle else:
+            return -1
+        if on:
+            return libuv.udp_set_broadcast(handle, 1)
+        return libuv.udp_set_broadcast(handle, 0)
+
+
 public function ipv4(ip: str, port: int) -> Result[SocketAddress, Error]:
     var raw = zero[libuv.sockaddr_in]
     let status_code = libuv.ip4_addr(ip, port, raw)

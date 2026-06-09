@@ -48,7 +48,7 @@ struct PacketHeader:
     ack_bits: uint
     packet_flags: ubyte
 
-public struct PendingReliable:
+struct PendingReliable:
     sequence: uint
     payload: bytes.Bytes
     last_sent_frame: uint
@@ -60,7 +60,7 @@ struct ProtocolState:
     received_mask: uint
     pending_reliable: vec.Vec[PendingReliable]
 
-public struct PeerState:
+struct PeerState:
     address: net.SocketAddress
     protocol: ProtocolState
 

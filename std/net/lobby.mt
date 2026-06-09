@@ -16,6 +16,8 @@ const type_join_reject: ushort = 0x0003
 const type_player_joined: ushort = 0x0004
 const type_player_left: ushort = 0x0005
 const type_lobby_info: ushort = 0x0006
+const type_discover_request: ushort = 0x0007
+const type_discover_response: ushort = 0x0008
 
 const reject_reason_full: ubyte = 1
 const reject_reason_banned: ubyte = 2
@@ -48,7 +50,7 @@ public struct LobbyHost:
     slots: vec.Vec[PlayerSlot]
     event_queue: deque.Deque[LobbyEvent]
 
-public struct PlayerSlot:
+struct PlayerSlot:
     player_id: uint
     player_name: string.String
     occupied: bool
@@ -258,13 +260,101 @@ public async function join_lobby(
     return await join_lobby_on(aio.current_runtime(), local_address, remote_address, player_name, config)
 
 
-public function discover_lobbies(
+public async function discover_lobbies_on(
     runtime: aio.Runtime,
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: mux.MuxedConfig
 ) -> Result[vec.Vec[LobbyInfo], Error]:
-    return Result[vec.Vec[LobbyInfo], Error].success(value = vec.Vec[LobbyInfo].create())
+    match mux.mux_connect_on(runtime, local_address, remote_address, config):
+        Result.failure as p:
+            return Result[vec.Vec[LobbyInfo], Error].failure(error = Error(code = p.error.code, message = p.error.message))
+        Result.success as p:
+            var conn = p.value
+            defer conn.release()
+            match await conn.connect_to_peer():
+                Result.failure as pe:
+                    return Result[vec.Vec[LobbyInfo], Error].failure(error = Error(code = pe.error.code, message = pe.error.message))
+                Result.success:
+                    pass
+
+            var empty = bytes.Bytes.empty()
+            let _ = await conn.mux_send(lobby_channel, type_discover_request, empty.as_span(), mux.flag_reliable)
+
+            var frame: uint = 0
+            var result = vec.Vec[LobbyInfo].create()
+            while frame < 120:
+                await conn.tick(frame)
+
+                var drain_rounds: uint = 0
+                while drain_rounds < 5:
+                    let msg_opt = conn.try_recv()
+                    match msg_opt:
+                        Option.some as mp:
+                            var msg = mp.value
+                            if msg.channel_id == lobby_channel and msg.type_id == type_discover_response:
+                                let info_result = decode_lobby_info_payload(msg.payload.as_span())
+                                msg.release()
+                                match info_result:
+                                    Result.success as ip:
+                                        result.push(ip.value)
+                                    Result.failure:
+                                        pass
+                                var disconnect_frame: uint = 0
+                                while disconnect_frame < 30:
+                                    await conn.tick(frame + disconnect_frame)
+                                    disconnect_frame += 1
+                                return Result[vec.Vec[LobbyInfo], Error].success(value = result)
+                            msg.release()
+                        Option.none:
+                            pass
+                    drain_rounds += 1
+                frame += 1
+
+            return Result[vec.Vec[LobbyInfo], Error].success(value = result)
+
+
+public async function discover_lobbies(
+    local_address: net.SocketAddress,
+    remote_address: net.SocketAddress,
+    config: mux.MuxedConfig
+) -> Result[vec.Vec[LobbyInfo], Error]:
+    return await discover_lobbies_on(aio.current_runtime(), local_address, remote_address, config)
+
+
+function encode_lobby_info_payload(w: ref[bin.Writer], info: ref[LobbyInfo]) -> void:
+    w.write_u8(info.player_count)
+    w.write_u8(info.max_players)
+    w.write_str(info.name.as_str())
+
+
+function decode_lobby_info_payload(data: span[ubyte]) -> Result[LobbyInfo, Error]:
+    if data.len < 2:
+        return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info payload truncated"))
+    var r = bin.reader(data)
+    var player_count: ubyte = 0
+    match r.read_u8():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as pc:
+            player_count = pc.value
+    var max_players: ubyte = 0
+    match r.read_u8():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as mp:
+            max_players = mp.value
+    match r.read_str():
+        Result.failure:
+            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+        Result.success as sp:
+            return Result[LobbyInfo, Error].success(value = LobbyInfo(
+                name = sp.value,
+                player_count = player_count,
+                max_players = max_players,
+                player_names = vec.Vec[string.String].create(),
+                game_data = bytes.Bytes.empty()
+            ))
 
 
 function encode_string(value: str) -> bytes.Bytes:
@@ -319,6 +409,10 @@ async function process_lobby_msg_host(host: ref[LobbyHost], msg: ref[mux.MuxedMe
 
     if msg.type_id == type_join_request:
         await handle_join_request(host, msg)
+        return
+
+    if msg.type_id == type_discover_request:
+        await handle_discover_request(host, msg)
         return
 
     msg.release()
@@ -396,6 +490,15 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
             msg.release()
 
             await broadcast_player_joined(host, other_id, player_name.as_str(), slot)
+
+
+async function handle_discover_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
+    var w = bin.Writer.with_capacity(256)
+    encode_lobby_info_payload(ref_of(w), host.info)
+    var payload = w.finish()
+    defer payload.release()
+    let _ = await host.mux.mux_send(msg.peer_id, lobby_channel, type_discover_response, payload.as_span(), mux.flag_reliable)
+    msg.release()
 
 
 function handle_join_accept(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]) -> void:
