@@ -11,7 +11,7 @@
 # ---------------------------------------------------------------------------
 
 import std.async as aio
-import std.linalg
+import std.linear_algebra
 
 # ---------------------------------------------------------------------------
 # 2  Literals
@@ -918,7 +918,7 @@ function vector_demo() -> float:
     # --- extending block method on native vector type
     let squared = v3.squared_len()
 
-    # --- methods from std.linalg import (dot, length, cross, identity, etc.)
+    # --- methods from std.linear_algebra import (dot, length, cross, identity, etc.)
     let dot_val = v3.dot(v3)
     let len_val = v3.length()
     let cross_val = v3.cross(v3)
