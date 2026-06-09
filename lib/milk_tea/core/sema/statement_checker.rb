@@ -586,7 +586,7 @@ module MilkTea
               kind: :local,
               id: @preassigned_local_binding_ids[arm.object_id],
             )
-            arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
+            arm_scopes = arm_scopes + [{ arm.binding_name => binding }]
             record_declaration_binding(arm, binding)
           end
           yield arm, arm_scopes
@@ -617,7 +617,7 @@ module MilkTea
             kind: :local,
             id: @preassigned_local_binding_ids.fetch(arm.object_id),
           )
-          arm_scopes = [{ arm.binding_name => binding }] + arm_scopes
+          arm_scopes = arm_scopes + [{ arm.binding_name => binding }]
           record_declaration_binding(arm, binding)
         end
         check_block(arm.body, scopes: arm_scopes, return_type:, allow_return:)

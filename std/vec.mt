@@ -246,6 +246,22 @@ extending Vec[T]:
             this.len = last_index
             return Option[T].some(value = removed)
 
+    public editable function swap(i: ptr_uint, j: ptr_uint) -> void:
+        if i >= this.len or j >= this.len:
+            return
+
+        let data = this.data else:
+            fatal(c"vec.swap missing storage")
+
+        if i == j:
+            return
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            var temp = read(data_ptr + i)
+            read(data_ptr + i) = read(data_ptr + j)
+            read(data_ptr + j) = temp
+
 
 extending Iter[T]:
     public function iter() -> Iter[T]:

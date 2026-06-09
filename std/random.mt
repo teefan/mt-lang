@@ -123,15 +123,7 @@ extending Rng:
         var i: ptr_uint = n - ptr_uint<-1
         while i > ptr_uint<-0:
             let j = ptr_uint<-this.next_uint_range(uint<-0, uint<-(i + ptr_uint<-1))
-            if j != i:
-                let p_i = items.get(i) else:
-                    break
-                let p_j = items.get(j) else:
-                    break
-                var temp = unsafe: read(p_i)
-                unsafe:
-                    read(p_i) = read(p_j)
-                    read(p_j) = temp
+            items.swap(i, j)
             i -= 1
         return
 

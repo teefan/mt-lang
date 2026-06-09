@@ -3726,4 +3726,34 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  def test_match_arm_binding_shadows_outer_binding_with_same_name
+    source = <<~MT
+      # module demo.nested_match_shadow
+
+      variant Outer:
+          ok(value: str)
+          err(code: ubyte)
+
+      variant Inner:
+          found(count: int)
+          missing
+
+      function main() -> int:
+          let outer = Outer.ok(value = "hello")
+          match outer:
+              Outer.ok as rp:
+                  let inner = Inner.found(count = 42)
+                  match inner:
+                      Inner.found as rp:
+                          return rp.count
+                      Inner.missing:
+                          return -1
+              Outer.err:
+                  return -2
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
 end
