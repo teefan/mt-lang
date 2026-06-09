@@ -579,7 +579,7 @@ module MilkTea
               kind: :local,
               id: @preassigned_local_binding_ids.fetch(arm.object_id),
             )
-            arm_scopes = [{ arm.binding_name => binding }] + scopes
+            arm_scopes = scopes + [{ arm.binding_name => binding }]
             record_declaration_binding(arm, binding)
           end
           [infer_match_expression_arm_value(arm, scopes: arm_scopes, expected_type:), arm.value]
@@ -836,7 +836,7 @@ module MilkTea
           validate_consuming_foreign_expression!(expression.expression, scopes:, root_allowed: false)
           expression.arms.each do |arm|
             validate_consuming_foreign_expression!(arm.pattern, scopes:, root_allowed: false)
-            arm_scopes = arm.binding_name ? [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] + scopes : scopes
+            arm_scopes = arm.binding_name ? scopes + [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] : scopes
             validate_consuming_foreign_expression!(arm.value, scopes: arm_scopes, root_allowed: false)
           end
         when AST::UnsafeExpr
@@ -885,7 +885,7 @@ module MilkTea
           validate_hoistable_foreign_expression!(expression.expression, scopes:, root_hoistable: false)
           expression.arms.each do |arm|
             validate_hoistable_foreign_expression!(arm.pattern, scopes:, root_hoistable: false)
-            arm_scopes = arm.binding_name ? [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] + scopes : scopes
+            arm_scopes = arm.binding_name ? scopes + [{ arm.binding_name => value_binding(name: arm.binding_name, type: @error_type, mutable: false, kind: :local, id: @preassigned_local_binding_ids.fetch(arm.object_id)) }] : scopes
             validate_hoistable_foreign_expression!(arm.value, scopes: arm_scopes, root_hoistable: false)
           end
         when AST::UnsafeExpr
