@@ -38,11 +38,6 @@ module MilkTea
 
             field_key = async_match_binding_field_key(arm)
             field_info = local_fields&.fetch(field_key, nil)
-            if !field_info
-              scrutinee_name = scrutinee_expr.is_a?(IR::Name) ? scrutinee_expr.name.sub(/\A__mt_frame->/, "") : nil
-              scrub_key = "#{scrutinee_name}_#{arm_name}_#{arm.binding_name}"
-              field_info = local_fields&.fetch(scrub_key, nil)
-            end
             if field_info && frame_expr
               target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
               binding_c = async_frame_field_c_name(field_info[:field_name])
