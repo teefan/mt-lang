@@ -1320,6 +1320,12 @@ module MilkTea
             by_c_name = aggregate_decls.each_with_object({}) do |aggregate_decl, declarations|
               declarations[aggregate_decl.c_name] = aggregate_decl
             end
+            variant_decls.each do |variant_decl|
+              variant_decl.arms.each do |arm|
+                next if arm.fields.empty?
+                by_c_name[arm.c_name] = variant_decl
+              end
+            end
             visiting = {}
             visited = {}
             sorted = []
@@ -1380,7 +1386,7 @@ module MilkTea
             when Types::Struct, Types::StructInstance, Types::Union, Types::Variant, Types::VariantInstance, Types::Event, Types::Subscription
               [named_type_c_name(type)]
             when Types::VariantArmPayload
-              [named_type_c_name(type.variant_type)]
+              [named_type_c_name(type), named_type_c_name(type.variant_type)]
             else
               []
             end
