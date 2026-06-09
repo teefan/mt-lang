@@ -29,39 +29,33 @@ public function parse_set_cookie(header_value: str) -> Option[Cookie]:
     if part.len == 0:
         return Option[Cookie].none
 
-    let first_cookie = parse_name_value(part)
-    match first_cookie:
+    var cookie = parse_name_value(part)?
+    match semi:
         Option.none:
-            return Option[Cookie].none
-        Option.some as cookie_payload:
-            var cookie = cookie_payload.value
-
-            match semi:
-                Option.none:
-                    return Option[Cookie].some(value = cookie)
-                Option.some as s:
-                    pos = s.value + 1
-
-            while pos < header_value.len:
-                let next_semi = find_byte_from(header_value, 59, pos)
-                var next_end = header_value.len
-                match next_semi:
-                    Option.none:
-                        pass
-                    Option.some as ns:
-                        next_end = ns.value
-
-                let next_part = header_value.slice(pos, next_end - pos).trim_ascii_whitespace()
-                if next_part.len > 0:
-                    apply_attribute(ref_of(cookie), next_part)
-
-                match next_semi:
-                    Option.none:
-                        pos = header_value.len
-                    Option.some as ns:
-                        pos = ns.value + 1
-
             return Option[Cookie].some(value = cookie)
+        Option.some as s:
+            pos = s.value + 1
+
+    while pos < header_value.len:
+        let next_semi = find_byte_from(header_value, 59, pos)
+        var next_end = header_value.len
+        match next_semi:
+            Option.none:
+                pass
+            Option.some as ns:
+                next_end = ns.value
+
+        let next_part = header_value.slice(pos, next_end - pos).trim_ascii_whitespace()
+        if next_part.len > 0:
+            apply_attribute(ref_of(cookie), next_part)
+
+        match next_semi:
+            Option.none:
+                pos = header_value.len
+            Option.some as ns:
+                pos = ns.value + 1
+
+    return Option[Cookie].some(value = cookie)
 
 
 function parse_name_value(text_value: str) -> Option[Cookie]:

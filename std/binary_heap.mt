@@ -40,13 +40,7 @@ extending BinaryHeap[T]:
 
 
     static function swap(current: ref[BinaryHeap[T]], left_index: ptr_uint, right_index: ptr_uint) -> void:
-        let left = BinaryHeap[T].slot(current, left_index)
-        let right = BinaryHeap[T].slot(current, right_index)
-
-        unsafe:
-            let temp = read(left)
-            read(left) = read(right)
-            read(right) = temp
+        current.values.swap(left_index, right_index)
 
 
     static function sift_up(current: ref[BinaryHeap[T]], start_index: ptr_uint) -> void:

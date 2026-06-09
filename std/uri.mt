@@ -19,24 +19,19 @@ public function path_from_file_uri(uri: str) -> Option[string.String]:
         return Option[string.String].none
 
     let encoded_path = uri.slice(FILE_URI_PREFIX.len, uri.len - FILE_URI_PREFIX.len)
-    let decoded_result = percent_decode(encoded_path)
-    match decoded_result:
+    var decoded = percent_decode(encoded_path)?
+    match owned_utf8_view(decoded):
         Option.none:
+            decoded.release()
             return Option[string.String].none
-        Option.some as payload:
-            var decoded = payload.value
-            match owned_utf8_view(decoded):
-                Option.none:
-                    decoded.release()
-                    return Option[string.String].none
-                Option.some as view_payload:
-                    let decoded_path = view_payload.value
-                    if leading_slash_drive_path(decoded_path):
-                        let normalized = string.String.from_str(decoded_path.slice(1, decoded_path.len - 1))
-                        decoded.release()
-                        return Option[string.String].some(value= normalized)
+        Option.some as view_payload:
+            let decoded_path = view_payload.value
+            if leading_slash_drive_path(decoded_path):
+                let normalized = string.String.from_str(decoded_path.slice(1, decoded_path.len - 1))
+                decoded.release()
+                return Option[string.String].some(value= normalized)
 
-                    return Option[string.String].some(value= decoded)
+            return Option[string.String].some(value= decoded)
 
 
 public function percent_decode(text_value: str) -> Option[string.String]:
