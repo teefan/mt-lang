@@ -323,8 +323,8 @@ public async function discover_lobbies(
 
 
 function encode_lobby_info_payload(w: ref[bin.Writer], info: ref[LobbyInfo]) -> void:
-    w.write_u8(info.player_count)
-    w.write_u8(info.max_players)
+    w.write_ubyte(info.player_count)
+    w.write_ubyte(info.max_players)
     w.write_str(info.name.as_str())
 
 
@@ -333,13 +333,13 @@ function decode_lobby_info_payload(data: span[ubyte]) -> Result[LobbyInfo, Error
         return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info payload truncated"))
     var r = bin.reader(data)
     var player_count: ubyte = 0
-    match r.read_u8():
+    match r.read_ubyte():
         Result.failure:
             return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
-    match r.read_u8():
+    match r.read_ubyte():
         Result.failure:
             return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
         Result.success as mp:
@@ -507,12 +507,12 @@ function handle_join_accept(client: ref[LobbyClient], msg: ref[mux.MuxedMessage]
         msg.release()
         return
     var r = bin.reader(data)
-    match r.read_u32():
+    match r.read_uint():
         Result.failure:
             msg.release()
             return
         Result.success as id_payload:
-            match r.read_u8():
+            match r.read_ubyte():
                 Result.failure:
                     msg.release()
                     return
@@ -550,12 +550,12 @@ function handle_player_joined_client(client: ref[LobbyClient], msg: ref[mux.Muxe
         msg.release()
         return
     var r = bin.reader(data)
-    match r.read_u32():
+    match r.read_uint():
         Result.failure:
             msg.release()
             return
         Result.success as id_payload:
-            match r.read_u8():
+            match r.read_ubyte():
                 Result.failure:
                     msg.release()
                     return
@@ -583,7 +583,7 @@ function handle_player_left_client(client: ref[LobbyClient], msg: ref[mux.MuxedM
         msg.release()
         return
     var r = bin.reader(data)
-    match r.read_u32():
+    match r.read_uint():
         Result.failure:
             msg.release()
             return
@@ -614,9 +614,9 @@ function handle_lobby_info_client(client: ref[LobbyClient], msg: ref[mux.MuxedMe
 
 async function broadcast_player_joined(host: ref[LobbyHost], new_player_id: uint, new_player_name: str, slot: ubyte) -> void:
     var w = bin.Writer.with_capacity(5 + new_player_name.len)
-    w.write_u32(new_player_id)
-    w.write_u8(slot)
-    w.write_u32(uint<-new_player_name.len)
+    w.write_uint(new_player_id)
+    w.write_ubyte(slot)
+    w.write_uint(uint<-new_player_name.len)
     w.write_bytes(text.as_byte_span(new_player_name))
     var payload = w.finish()
     defer payload.release()
@@ -632,14 +632,14 @@ async function broadcast_player_joined(host: ref[LobbyHost], new_player_id: uint
 
 function encode_join_accept(player_id: uint, slot: ubyte) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(5)
-    w.write_u32(player_id)
-    w.write_u8(slot)
+    w.write_uint(player_id)
+    w.write_ubyte(slot)
     return w.finish()
 
 
 function encode_join_reject(reason: ubyte) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(1)
-    w.write_u8(reason)
+    w.write_ubyte(reason)
     return w.finish()
 
 
@@ -671,14 +671,14 @@ const beacon_recv_timeout: uint = 60
 
 public function build_beacon_probe() -> bytes.Bytes:
     var w = bin.Writer.with_capacity(beacon_probe_len)
-    w.write_u8(beacon_magic[0])
-    w.write_u8(beacon_magic[1])
-    w.write_u8(beacon_magic[2])
-    w.write_u8(beacon_magic[3])
-    w.write_u8(beacon_magic[4])
-    w.write_u8(beacon_magic[5])
-    w.write_u8(beacon_magic[6])
-    w.write_u8(beacon_magic[7])
+    w.write_ubyte(beacon_magic[0])
+    w.write_ubyte(beacon_magic[1])
+    w.write_ubyte(beacon_magic[2])
+    w.write_ubyte(beacon_magic[3])
+    w.write_ubyte(beacon_magic[4])
+    w.write_ubyte(beacon_magic[5])
+    w.write_ubyte(beacon_magic[6])
+    w.write_ubyte(beacon_magic[7])
     return w.finish()
 
 
@@ -690,14 +690,14 @@ public function is_beacon_probe(data: span[ubyte]) -> bool:
 
 public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(16)
-    w.write_u8(beacon_magic[0])
-    w.write_u8(beacon_magic[1])
-    w.write_u8(beacon_magic[2])
-    w.write_u8(beacon_magic[3])
-    w.write_u8(beacon_magic[4])
-    w.write_u8(beacon_magic[5])
-    w.write_u8(beacon_magic[6])
-    w.write_u8(beacon_magic[7])
+    w.write_ubyte(beacon_magic[0])
+    w.write_ubyte(beacon_magic[1])
+    w.write_ubyte(beacon_magic[2])
+    w.write_ubyte(beacon_magic[3])
+    w.write_ubyte(beacon_magic[4])
+    w.write_ubyte(beacon_magic[5])
+    w.write_ubyte(beacon_magic[6])
+    w.write_ubyte(beacon_magic[7])
     encode_lobby_info_payload(ref_of(w), info)
     return w.finish()
 
@@ -728,13 +728,13 @@ function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -
         Result.success:
             pass
     var player_count: ubyte = 0
-    match r.read_u8():
+    match r.read_ubyte():
         Result.failure:
             return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
-    match r.read_u8():
+    match r.read_ubyte():
         Result.failure:
             return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
         Result.success as mp:

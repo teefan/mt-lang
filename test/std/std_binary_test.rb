@@ -14,35 +14,35 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u8(0xFF)
-    w.write_u16(0xABCD)
-    w.write_u32(0xDEADBEEF)
-    w.write_u64(0x0123456789ABCDEF)
+    w.write_ubyte(0xFF)
+    w.write_ushort(0xABCD)
+    w.write_uint(0xDEADBEEF)
+    w.write_ulong(0x0123456789ABCDEF)
 
     var reader = bin.reader(w.as_span())
 
-    match reader.read_u8():
+    match reader.read_ubyte():
         Result.failure:
             return 1
         Result.success as payload:
             if payload.value != 0xFF:
                 return 2
 
-    match reader.read_u16():
+    match reader.read_ushort():
         Result.failure:
             return 3
         Result.success as payload:
             if payload.value != 0xABCD:
                 return 4
 
-    match reader.read_u32():
+    match reader.read_uint():
         Result.failure:
             return 5
         Result.success as payload:
             if payload.value != 0xDEADBEEF:
                 return 6
 
-    match reader.read_u64():
+    match reader.read_ulong():
         Result.failure:
             return 7
         Result.success as payload:
@@ -68,35 +68,35 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_i8(byte<--1)
-    w.write_i16(short<--30000)
-    w.write_i32(-2000000000)
-    w.write_i64(-9000000000000000000)
+    w.write_byte(byte<--1)
+    w.write_short(short<--30000)
+    w.write_int(-2000000000)
+    w.write_long(-9000000000000000000)
 
     var reader = bin.reader(w.as_span())
 
-    match reader.read_i8():
+    match reader.read_byte():
         Result.failure:
             return 1
         Result.success as payload:
             if payload.value != byte<--1:
                 return 2
 
-    match reader.read_i16():
+    match reader.read_short():
         Result.failure:
             return 3
         Result.success as payload:
             if payload.value != short<--30000:
                 return 4
 
-    match reader.read_i32():
+    match reader.read_int():
         Result.failure:
             return 5
         Result.success as payload:
             if payload.value != -2000000000:
                 return 6
 
-    match reader.read_i64():
+    match reader.read_long():
         Result.failure:
             return 7
         Result.success as payload:
@@ -122,19 +122,19 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_f32(3.140000104904175)
-    w.write_f64(2.718281828459045)
+    w.write_float(3.140000104904175)
+    w.write_double(2.718281828459045)
 
     var reader = bin.reader(w.as_span())
 
-    match reader.read_f32():
+    match reader.read_float():
         Result.failure:
             return 1
         Result.success as payload:
             if payload.value != 3.140000104904175:
                 return 2
 
-    match reader.read_f64():
+    match reader.read_double():
         Result.failure:
             return 3
         Result.success as payload:
@@ -303,15 +303,15 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u32(42)
+    w.write_uint(42)
     w.reset()
-    w.write_u32(99)
+    w.write_uint(99)
 
     var reader = bin.reader(w.as_span())
     if w.len() != 4:
         return 1
 
-    match reader.read_u32():
+    match reader.read_uint():
         Result.failure:
             return 2
         Result.success as payload:
@@ -342,24 +342,24 @@ import std.binary as bin
 function main() -> int:
     var w = bin.Writer.create()
     let header_size: ptr_uint = 4
-    w.write_u32(0)
+    w.write_uint(0)
 
-    w.write_u8(1)
-    w.write_u8(2)
-    w.write_u8(3)
+    w.write_ubyte(1)
+    w.write_ubyte(2)
+    w.write_ubyte(3)
 
-    w.write_u32_at(0, 9999)
+    w.write_uint_at(0, 9999)
 
     var reader = bin.reader(w.as_span())
 
-    match reader.read_u32():
+    match reader.read_uint():
         Result.failure:
             return 1
         Result.success as payload:
             if payload.value != 9999:
                 return 2
 
-    match reader.read_u8():
+    match reader.read_ubyte():
         Result.failure:
             return 3
         Result.success as payload:
@@ -386,11 +386,11 @@ import std.str as text
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u8(1)
+    w.write_ubyte(1)
 
     var reader = bin.reader(w.as_span())
 
-    match reader.read_u8():
+    match reader.read_ubyte():
         Result.failure:
             return 1
         Result.success:
@@ -399,7 +399,7 @@ function main() -> int:
     if reader.has_more():
         return 2
 
-    match reader.read_u8():
+    match reader.read_ubyte():
         Result.failure:
             return 0
         Result.success:
@@ -423,7 +423,7 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u8(42)
+    w.write_ubyte(42)
     var reader = bin.reader(w.as_span())
 
     match reader.read_bool():
@@ -457,8 +457,8 @@ function main() -> int:
     if w.len() != 0:
         return 2
 
-    w.write_u32(1)
-    w.write_u32(2)
+    w.write_uint(1)
+    w.write_uint(2)
     w.release()
     return 0
 
@@ -478,8 +478,8 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u32(100)
-    w.write_u16(200)
+    w.write_uint(100)
+    w.write_ushort(200)
 
     var reader = bin.reader(w.as_span())
 
@@ -489,7 +489,7 @@ function main() -> int:
     if not reader.has_more():
         return 2
 
-    match reader.read_u32():
+    match reader.read_uint():
         Result.failure:
             return 3
         Result.success:
@@ -498,7 +498,7 @@ function main() -> int:
     if reader.remaining() != 2:
         return 4
 
-    match reader.read_u16():
+    match reader.read_ushort():
         Result.failure:
             return 5
         Result.success:
@@ -529,9 +529,9 @@ import std.binary as bin
 
 function main() -> int:
     var w = bin.Writer.create()
-    w.write_u32(100)
-    w.write_u8(42)
-    w.write_u16(200)
+    w.write_uint(100)
+    w.write_ubyte(42)
+    w.write_ushort(200)
 
     var reader = bin.reader(w.as_span())
 
@@ -541,14 +541,14 @@ function main() -> int:
         Result.success:
             pass
 
-    match reader.read_u8():
+    match reader.read_ubyte():
         Result.failure:
             return 2
         Result.success as p:
             if p.value != 42:
                 return 3
 
-    match reader.read_u16():
+    match reader.read_ushort():
         Result.failure:
             return 4
         Result.success as p:
@@ -579,10 +579,10 @@ import std.str as text
 function main() -> int:
     var w = bin.Writer.create()
     w.write_bool(true)
-    w.write_u32(1234567890)
-    w.write_f32(1.5)
+    w.write_uint(1234567890)
+    w.write_float(1.5)
     w.write_str("mixed")
-    w.write_u16(42)
+    w.write_ushort(42)
 
     var reader = bin.reader(w.as_span())
 
@@ -593,14 +593,14 @@ function main() -> int:
             if not p.value:
                 return 2
 
-    match reader.read_u32():
+    match reader.read_uint():
         Result.failure:
             return 3
         Result.success as p:
             if p.value != 1234567890:
                 return 4
 
-    match reader.read_f32():
+    match reader.read_float():
         Result.failure:
             return 5
         Result.success as p:
@@ -616,7 +616,7 @@ function main() -> int:
             if not s.as_str().equal("mixed"):
                 return 8
 
-    match reader.read_u16():
+    match reader.read_ushort():
         Result.failure:
             return 9
         Result.success as p:

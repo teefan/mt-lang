@@ -93,41 +93,41 @@ function main() -> int:
     # Build a mock binding success response (all fields in big-endian / network byte order)
     var w = bin.Writer.with_capacity(32)
     # Message Type: u16 BE = 0x0101
-    w.write_u8(0x01)
-    w.write_u8(0x01)
+    w.write_ubyte(0x01)
+    w.write_ubyte(0x01)
     # Message Length: u16 BE = 12 (one XOR-MAPPED-ADDRESS attribute: 4 header + 8 data)
-    w.write_u8(0x00)
-    w.write_u8(12)
+    w.write_ubyte(0x00)
+    w.write_ubyte(12)
     # Magic Cookie: u32 BE = 0x2112A442
-    w.write_u8(0x21)
-    w.write_u8(0x12)
-    w.write_u8(0xA4)
-    w.write_u8(0x42)
+    w.write_ubyte(0x21)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA4)
+    w.write_ubyte(0x42)
     # Transaction ID: 12 bytes
     var j: ptr_uint = 0
     while j < ptr_uint<-12:
-        w.write_u8(tid[j])
+        w.write_ubyte(tid[j])
         j += 1
 
     # XOR-MAPPED-ADDRESS attribute
     # Type: u16 BE = 0x0020
-    w.write_u8(0x00)
-    w.write_u8(0x20)
+    w.write_ubyte(0x00)
+    w.write_ubyte(0x20)
     # Length: u16 BE = 8
-    w.write_u8(0x00)
-    w.write_u8(8)
+    w.write_ubyte(0x00)
+    w.write_ubyte(8)
     # Reserved: 0
-    w.write_u8(0)
+    w.write_ubyte(0)
     # Family: IPv4 = 0x01
-    w.write_u8(1)
+    w.write_ubyte(1)
     # X-Port: 12345 xor 0x2112 = 0x3039 xor 0x2112 = 0x112B
-    w.write_u8(0x11)
-    w.write_u8(0x2B)
+    w.write_ubyte(0x11)
+    w.write_ubyte(0x2B)
     # X-Address: 192.0.2.1 = 0xC0000201 xor 0x2112A442 = 0xE112A643
-    w.write_u8(0xE1)
-    w.write_u8(0x12)
-    w.write_u8(0xA6)
-    w.write_u8(0x43)
+    w.write_ubyte(0xE1)
+    w.write_ubyte(0x12)
+    w.write_ubyte(0xA6)
+    w.write_ubyte(0x43)
 
     var packet = w.finish()
     defer packet.release()

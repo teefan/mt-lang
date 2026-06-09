@@ -62,10 +62,10 @@ function matches_any_candidate(source: net.SocketAddress, candidates: vec.Vec[Ca
 
 public function build_punch_probe() -> bytes.Bytes:
     var w = bin.Writer.with_capacity(4)
-    w.write_u8(punch_magic[0])
-    w.write_u8(punch_magic[1])
-    w.write_u8(punch_magic[2])
-    w.write_u8(punch_magic[3])
+    w.write_ubyte(punch_magic[0])
+    w.write_ubyte(punch_magic[1])
+    w.write_ubyte(punch_magic[2])
+    w.write_ubyte(punch_magic[3])
     return w.finish()
 
 

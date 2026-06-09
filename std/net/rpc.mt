@@ -26,10 +26,10 @@ function rpc_error(code: int, msg: str) -> Error:
 
 public function build_call(request_id: uint, payload: span[ubyte]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(header_bytes + payload.len)
-    w.write_u32(request_id)
+    w.write_uint(request_id)
     var i: ptr_uint = 0
     while i < payload.len:
-        w.write_u8(payload[i])
+        w.write_ubyte(payload[i])
         i += 1
     return w.finish()
 
@@ -42,7 +42,7 @@ public function parse_request_id(data: span[ubyte]) -> Result[uint, Error]:
     if data.len < header_bytes:
         return Result[uint, Error].failure(error = rpc_error(err_unexpected, "rpc frame too small"))
     var r = bin.reader(data)
-    match r.read_u32():
+    match r.read_uint():
         Result.failure:
             return Result[uint, Error].failure(error = rpc_error(err_unexpected, "malformed rpc frame"))
         Result.success as rp:
@@ -92,7 +92,7 @@ public async function call_and_wait(
                                 var copy = bin.Writer.with_capacity(result_data.len)
                                 var i: ptr_uint = 0
                                 while i < result_data.len:
-                                    copy.write_u8(result_data[i])
+                                    copy.write_ubyte(result_data[i])
                                     i += 1
                                 return Result[bytes.Bytes, Error].success(value = copy.finish())
                         Result.failure:

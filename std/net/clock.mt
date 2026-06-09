@@ -57,10 +57,10 @@ public function build_request(t1: ulong) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(request_bytes)
     var i: ptr_uint = 0
     while i < ptr_uint<-8:
-        w.write_u8(clock_magic[i])
+        w.write_ubyte(clock_magic[i])
         i += 1
-    w.write_u8(sync_request)
-    w.write_u64(t1)
+    w.write_ubyte(sync_request)
+    w.write_ulong(t1)
     return w.finish()
 
 
@@ -68,11 +68,11 @@ public function build_response(t1_client: ulong, t2_server: ulong) -> bytes.Byte
     var w = bin.Writer.with_capacity(response_bytes)
     var i: ptr_uint = 0
     while i < ptr_uint<-8:
-        w.write_u8(clock_magic[i])
+        w.write_ubyte(clock_magic[i])
         i += 1
-    w.write_u8(sync_response)
-    w.write_u64(t1_client)
-    w.write_u64(t2_server)
+    w.write_ubyte(sync_response)
+    w.write_ulong(t1_client)
+    w.write_ulong(t2_server)
     return w.finish()
 
 
@@ -96,7 +96,7 @@ public function parse_request(data: span[ubyte]) -> Result[ulong, Error]:
             return Result[ulong, Error].failure(error = clock_error(err_bad_packet, "malformed request"))
         Result.success as bp:
             bp.value.release()
-    match r.read_u64():
+    match r.read_ulong():
         Result.failure:
             return Result[ulong, Error].failure(error = clock_error(err_bad_packet, "malformed timestamp"))
         Result.success as tp:
@@ -112,12 +112,12 @@ public function parse_response(data: span[ubyte]) -> Result[ClockSync, Error]:
             return Result[ClockSync, Error].failure(error = clock_error(err_bad_packet, "malformed response"))
         Result.success as bp:
             bp.value.release()
-    match r.read_u64():
+    match r.read_ulong():
         Result.failure:
             return Result[ClockSync, Error].failure(error = clock_error(err_bad_packet, "malformed t1"))
         Result.success as t1_payload:
             let t1_client = t1_payload.value
-            match r.read_u64():
+            match r.read_ulong():
                 Result.failure:
                     return Result[ClockSync, Error].failure(error = clock_error(err_bad_packet, "malformed t2"))
                 Result.success as t2_payload:
