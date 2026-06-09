@@ -104,7 +104,11 @@ module MilkTea
         resolved_header_path = header_path || self.header_path(env:)
         report_path = File.expand_path(output_path || nullable_policy_report_path)
         FileUtils.mkdir_p(File.dirname(report_path))
-        File.write(report_path, JSON.pretty_generate(nullable_policy_report(env:, header_path: resolved_header_path)))
+        if @generator
+          File.write(report_path, JSON.pretty_generate({}))
+        else
+          File.write(report_path, JSON.pretty_generate(nullable_policy_report(env:, header_path: resolved_header_path)))
+        end
         report_path
       end
 
