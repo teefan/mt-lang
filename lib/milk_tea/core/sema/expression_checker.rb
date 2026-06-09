@@ -410,8 +410,16 @@ module MilkTea
 
       def infer_propagate_expression(operand, scopes:, allow_void_success: false)
         source_type = infer_expression(operand, scopes:)
-        raise_sema_error("propagation expects Result[T, E], got #{source_type}") unless result_let_else_type?(source_type)
+        if result_let_else_type?(source_type)
+          infer_result_propagation(source_type, allow_void_success:)
+        elsif option_let_else_type?(source_type)
+          infer_option_propagation(source_type, allow_void_success:)
+        else
+          raise_sema_error("propagation expects Result[T, E] or Option[T], got #{source_type}")
+        end
+      end
 
+      def infer_result_propagation(source_type, allow_void_success:)
         success_type = let_else_success_type(source_type)
         error_type = let_else_error_type(source_type)
         raise_sema_error("propagation requires a non-void Result success type") if success_type == @types.fetch("void") && !allow_void_success
@@ -428,6 +436,22 @@ module MilkTea
         return_error_type = let_else_error_type(return_type)
         unless return_error_type == error_type
           raise_sema_error("propagation error type #{error_type} must match enclosing Result error type #{return_error_type}")
+        end
+
+        success_type
+      end
+
+      def infer_option_propagation(source_type, allow_void_success:)
+        success_type = let_else_success_type(source_type)
+        raise_sema_error("propagation requires a non-void Option success type") if success_type == @types.fetch("void") && !allow_void_success
+
+        context = current_return_context
+        raise_sema_error("propagation is only allowed inside function and proc bodies") unless context
+        raise_sema_error("propagation is not allowed inside defer blocks") unless context[:allow_return]
+
+        return_type = context[:return_type]
+        unless option_let_else_type?(return_type)
+          raise_sema_error("propagation requires enclosing function/proc to return Option[_], got #{return_type}")
         end
 
         success_type

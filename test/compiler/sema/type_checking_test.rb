@@ -207,6 +207,54 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.root_analysis.functions.key?("read_value")
   end
 
+  def test_type_checks_option_propagation_expression
+    source = <<~MT
+      # module demo.opt_propagation
+
+      function find_data() -> Option[int]:
+          return Option[int].some(value = 42)
+
+      function lookup(key: str) -> Option[int]:
+          let value = find_data()?
+          return Option[int].some(value = value + 1)
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("lookup")
+  end
+
+  def test_type_checks_option_propagation_diff_types
+    source = <<~MT
+      # module demo.opt_prop_diff
+
+      function find_str() -> Option[str]:
+          return Option[str].some(value = "hello")
+
+      function count_chars(key: str) -> Option[int]:
+          let s = find_str()?
+          return Option[int].some(value = 42)
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("count_chars")
+  end
+
+  def test_type_checks_option_void_propagation_statement
+    source = <<~MT
+      # module demo.opt_void_stmt
+
+      function maybe_fail() -> Option[int]:
+          return Option[int].some(value = 42)
+
+      function process() -> Option[str]:
+          maybe_fail()?
+          return Option[str].some(value = "ok")
+    MT
+
+    result = check_program_source(source)
+    assert_equal true, result.root_analysis.functions.key?("process")
+  end
+
   def test_type_checks_for_loop_over_custom_iterator_protocol
     source = <<~MT
       # module demo.iterator_for
