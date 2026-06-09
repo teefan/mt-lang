@@ -211,8 +211,6 @@ public async function respond_to_sync(
             recv_task = socket.recv_from(512)
         await aio.sleep(100)
         frame += 1
-        await aio.sleep(100)
-        frame += 1
 
 
 public function tick_clock_new(rate: uint) -> TickClock:
