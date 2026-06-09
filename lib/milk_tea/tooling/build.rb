@@ -69,9 +69,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
@@ -127,7 +127,7 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false)
       manifest = PackageManifest.load(path)
       @package_build = true
       @source_path = manifest.source_path
@@ -163,6 +163,7 @@ module MilkTea
       @package_graph = package_graph
       @module_roots = (module_roots || @package_graph&.source_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)).dup
       @frontend = frontend || RubyFrontend.new
+      @no_cache = no_cache
       @debug = debug
     rescue PackageManifestError => e
       raise BuildError, e.message if package_manifest_required_for?(path)
@@ -189,6 +190,7 @@ module MilkTea
       @package_graph = package_graph
       @module_roots = module_roots || MilkTea::ModuleRoots.roots_for_path(@source_path)
       @frontend = frontend || RubyFrontend.new
+      @no_cache = no_cache
       @debug = debug
     end
 
@@ -209,7 +211,7 @@ module MilkTea
       ensure_compiler_available!
       ensure_supported_backend!
 
-      if @frontend.is_a?(RubyFrontend)
+      if @frontend.is_a?(RubyFrontend) && !@no_cache
         build_cached
       else
         build_uncached

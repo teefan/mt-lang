@@ -875,6 +875,7 @@ module MilkTea
         archive: false,
         locked: false,
         frozen: false,
+        no_cache: false,
       }
       options[:clean] = false if allow_clean
 
@@ -916,6 +917,8 @@ module MilkTea
         when "--frozen"
           options[:locked] = true
           options[:frozen] = true
+        when "--no-cache"
+          options[:no_cache] = true
         when "--clean"
           if allow_clean
             options[:clean] = true
@@ -1254,6 +1257,7 @@ module MilkTea
             --archive                    Also write a .tar.gz archive for the native bundle (implies --bundle).
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
+            --no-cache                   Skip build cache, force rebuild from source.
             --clean                      Remove existing build outputs and exit.
             -I, --include-path PATH      Add an extra module root.
         HELP
@@ -1281,6 +1285,7 @@ module MilkTea
             --platform PLATFORM          linux (default) | windows | wasm.
             --locked                     Resolve dependencies from package.lock.
             --frozen                     Require a current package.lock and use locked resolution.
+            --no-cache                   Skip build cache, force rebuild from source.
             -I, --include-path PATH      Add an extra module root.
         HELP
       "run-module"      => <<~HELP,
@@ -1395,7 +1400,7 @@ module MilkTea
       io.puts("       mtc check PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-Werror] [-I PATH]")
       io.puts("       mtc lower PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc emit-c PATH|DIR [PATH|DIR ...] [--locked] [--frozen] [-I PATH]")
-      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--clean] [-I PATH]")
+      io.puts("       mtc build [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--bundle] [--archive] [--locked] [--frozen] [--no-cache] [--clean] [-I PATH]")
       io.puts("       mtc new NAME")
       io.puts("       mtc run [PATH_OR_PACKAGE] [-o OUTPUT] [--cc COMPILER] [--keep-c C_PATH] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH]")
       io.puts("       mtc run-module MODULE [--cc COMPILER] [--profile debug|release] [--platform linux|windows|wasm] [--locked] [--frozen] [-I PATH] [-- ARGS...]")
