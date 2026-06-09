@@ -823,7 +823,8 @@ module MilkTea
                                 left_type
                               end
         right_type = infer_expression_type(expression.right, env: right_env, expected_type: right_expected_type)
-        harmonize_binary_float_literal_types(expression.left, expression.right, left_type, right_type, env: right_env)
+        left_type, right_type = harmonize_binary_float_literal_types(expression.left, expression.right, left_type, right_type, env: right_env)
+        harmonize_binary_integer_literal_types(expression.left, expression.right, left_type, right_type, env: right_env)
       end
 
       def binary_right_env(expression, env)
@@ -852,6 +853,22 @@ module MilkTea
       def float_literal_expression?(expression)
         expression.is_a?(AST::FloatLiteral) ||
           (expression.is_a?(AST::UnaryOp) && ["+", "-"].include?(expression.operator) && float_literal_expression?(expression.operand))
+      end
+
+      def harmonize_binary_integer_literal_types(left_expression, right_expression, left_type, right_type, env:)
+        if integer_literal_expression?(left_expression) && right_type.is_a?(Types::Primitive) && right_type.integer?
+          left_type = infer_expression_type(left_expression, env:, expected_type: right_type)
+        end
+
+        if integer_literal_expression?(right_expression) && left_type.is_a?(Types::Primitive) && left_type.integer?
+          right_type = infer_expression_type(right_expression, env:, expected_type: left_type)
+        end
+
+        [left_type, right_type]
+      end
+
+      def integer_literal_expression?(expression)
+        expression.is_a?(AST::IntegerLiteral)
       end
 
       def propagating_expected_type(operator, expected_type)
