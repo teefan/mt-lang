@@ -88,6 +88,19 @@ module MilkTea
 
             collect_type_referenced_module_names.each { |mod| active << mod }
 
+            emitted_functions.each do |fn|
+              prefix = module_c_prefix(@program.module_name)
+              if fn.c_name != prefix && !fn.c_name.start_with?("#{prefix}_")
+                candidate = fn.c_name.split("_")
+                candidate.pop
+                active << candidate.join("_")
+              end
+            end
+
+            (@program.structs + @program.unions + @program.variants + @program.opaques).each do |decl|
+              active << decl.source_module if decl.source_module
+            end
+
             loop do
               size_before = active.size
               (@program.structs + @program.unions).each do |decl|
