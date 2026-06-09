@@ -36,9 +36,13 @@ module MilkTea
             fields = scrutinee_type.arm(arm_name)
             payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
 
-            scrutinee_name = scrutinee_expr.is_a?(IR::Name) ? scrutinee_expr.name.sub(/\A__mt_frame->/, "") : nil
-            field_key = "#{scrutinee_name}_#{arm_name}_#{arm.binding_name}"
+            field_key = async_match_binding_field_key(arm)
             field_info = local_fields&.fetch(field_key, nil)
+            if !field_info
+              scrutinee_name = scrutinee_expr.is_a?(IR::Name) ? scrutinee_expr.name.sub(/\A__mt_frame->/, "") : nil
+              scrub_key = "#{scrutinee_name}_#{arm_name}_#{arm.binding_name}"
+              field_info = local_fields&.fetch(scrub_key, nil)
+            end
             if field_info && frame_expr
               target = async_frame_field_expression(frame_expr, field_info[:field_name], field_info[:storage_type])
               binding_c = async_frame_field_c_name(field_info[:field_name])
@@ -888,6 +892,14 @@ module MilkTea
         return "local_#{statement.name}" unless let_else_discard_binding_syntax?(statement)
 
         "local_let_else_discard_#{statement.line}"
+      end
+
+      def async_match_binding_field_key(arm)
+        "match_binding_#{arm.object_id}"
+      end
+
+      def async_match_binding_field_name(arm)
+        "local_match_binding_#{arm.object_id}"
       end
 
       def let_else_storage_c_name(statement, env)

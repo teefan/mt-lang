@@ -21,6 +21,10 @@ module MilkTea
                 lines << "typedef union #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
               when IR::VariantDecl
                 lines << "typedef struct #{aggregate_decl.c_name} #{aggregate_decl.c_name};"
+                aggregate_decl.arms.each do |arm|
+                  next if arm.fields.empty?
+                  lines << "typedef struct #{arm.c_name} #{arm.c_name};"
+                end
               end
             end
             lines
