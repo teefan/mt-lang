@@ -73,13 +73,13 @@ public function build_binding_request(tid: array[ubyte, 12]) -> bytes.Bytes:
     return w.finish()
 
 
-function read_u16_be(data: span[ubyte], offset: ptr_uint) -> ushort:
+function read_ushort_be(data: span[ubyte], offset: ptr_uint) -> ushort:
     let hi = uint<-data[offset]
     let lo = uint<-data[offset + ptr_uint<-1]
     return ushort<-((hi << 8) | lo)
 
 
-function read_u32_be(data: span[ubyte], offset: ptr_uint) -> uint:
+function read_uint_be(data: span[ubyte], offset: ptr_uint) -> uint:
     let b0 = uint<-data[offset]
     let b1 = uint<-data[offset + ptr_uint<-1]
     let b2 = uint<-data[offset + ptr_uint<-2]
@@ -110,12 +110,12 @@ public function parse_binding_response(packet: bytes.Bytes, expected_tid: array[
     if data.len < stun_header_len:
         return Result[StunResult, Error].failure(error = stun_error(err_packet_too_small, "packet too small for STUN header"))
 
-    let msg_type = read_u16_be(data, ptr_uint<-0)
+    let msg_type = read_ushort_be(data, ptr_uint<-0)
     if msg_type != 0x0101:
         return Result[StunResult, Error].failure(error = stun_error(err_not_binding_response, "not a binding success response"))
 
-    var attr_len: ptr_uint = ptr_uint<-read_u16_be(data, ptr_uint<-2)
-    let cookie = read_u32_be(data, ptr_uint<-4)
+    var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, ptr_uint<-2)
+    let cookie = read_uint_be(data, ptr_uint<-4)
     if cookie != stun_magic_cookie:
         return Result[StunResult, Error].failure(error = stun_error(err_bad_cookie, "invalid magic cookie"))
 
@@ -129,16 +129,16 @@ public function parse_binding_response(packet: bytes.Bytes, expected_tid: array[
     while attr_len >= ptr_uint<-4:
         if offset + ptr_uint<-4 > data.len:
             break
-        let attr_type = read_u16_be(data, offset)
-        let alen = ptr_uint<-read_u16_be(data, offset + ptr_uint<-2)
+        let attr_type = read_ushort_be(data, offset)
+        let alen = ptr_uint<-read_ushort_be(data, offset + ptr_uint<-2)
         let padded = (alen + ptr_uint<-3) & (~ptr_uint<-3)
         if offset + ptr_uint<-4 + alen > data.len:
             break
 
         if attr_type == 0x0020 and alen >= ptr_uint<-8 and data[offset + ptr_uint<-5] == 0x01:
-            let xport = read_u16_be(data, offset + ptr_uint<-6)
+            let xport = read_ushort_be(data, offset + ptr_uint<-6)
             let port = xport ^ ushort<-((stun_magic_cookie >> uint<-16) & uint<-0xFFFF)
-            let xaddr = read_u32_be(data, offset + ptr_uint<-8)
+            let xaddr = read_uint_be(data, offset + ptr_uint<-8)
             let ip = xaddr ^ stun_magic_cookie
             var ip_str = format_ipv4(ip)
             defer ip_str.release()

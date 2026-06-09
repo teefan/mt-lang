@@ -166,6 +166,190 @@ function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  def test_lerp_interpolates_between_values
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.net.sync as sync
+
+function main() -> int:
+    var lerp = sync.Lerp(
+        previous = 0.0,
+        target = 100.0,
+        elapsed = 0.0,
+        duration = 1.0
+    )
+
+    # At t=0, should be at previous (0.0)
+    if lerp.current() != 0.0:
+        return 1
+
+    lerp.tick(0.5)
+    # At t=0.5, should be at halfway (50.0)
+    var mid = lerp.current()
+    if mid < 49.0 or mid > 51.0:
+        return 2
+
+    lerp.tick(0.5)
+    # At t=1.0, should be at target (100.0)
+    if lerp.current() != 100.0:
+        return 3
+
+    if not lerp.has_arrived():
+        return 4
+
+    # Set new target from current position
+    lerp.set_target(200.0, 1.0)
+    if lerp.current() != 100.0:
+        return 5
+
+    lerp.tick(1.0)
+    if lerp.current() != 200.0:
+        return 6
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+    assert_equal 0, result.exit_status
+  end
+
+  def test_compressed_u16_roundtrip
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.net.sync as sync
+
+function main() -> int:
+    var c = sync.CompressedUshort(min = 0.0, max = 1000.0)
+
+    var original: float = 500.0
+    var encoded = c.encode(original)
+    var decoded = c.decode(encoded)
+
+    # Should be within precision (range / 65536 ≈ 0.015)
+    if decoded < 499.9 or decoded > 500.1:
+        return 1
+
+    # Min value
+    var lo = c.decode(c.encode(0.0))
+    if lo < -0.1 or lo > 0.1:
+        return 2
+
+    # Max value
+    var hi = c.decode(c.encode(1000.0))
+    if hi < 999.9 or hi > 1000.1:
+        return 3
+
+    # Below min should clamp
+    var clamped = c.decode(c.encode(-500.0))
+    if clamped < -0.1 or clamped > 0.1:
+        return 4
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+    assert_equal 0, result.exit_status
+  end
+
+  def test_compressed_u8_roundtrip
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.net.sync as sync
+
+function main() -> int:
+    var c = sync.CompressedUbyte(min = -1.0, max = 1.0)
+
+    var original: float = 0.5
+    var encoded = c.encode(original)
+    var decoded = c.decode(encoded)
+
+    # Within u8 precision (range / 256 ≈ 0.008)
+    if decoded < 0.48 or decoded > 0.52:
+        return 1
+
+    # Zero should be near zero
+    var zero = c.decode(c.encode(0.0))
+    if zero < -0.02 or zero > 0.02:
+        return 2
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+    assert_equal 0, result.exit_status
+  end
+
+  def test_tick_buffer_push_and_get
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+
+import std.vec as vec
+import std.net.sync as sync
+
+function main() -> int:
+    var buf = sync.TickBuffer[uint](
+        entries = vec.Vec[uint].create(),
+        base_tick = 0
+    )
+
+    buf.push(0, 100)
+    buf.push(1, 200)
+    buf.push(2, 300)
+
+    match buf.get(0):
+        Option.some as r0:
+            if r0.value != 100:
+                return 1
+        Option.none:
+            return 2
+
+    match buf.get(1):
+        Option.some as r1:
+            if r1.value != 200:
+                return 3
+        Option.none:
+            return 4
+
+    match buf.get(2):
+        Option.some as r2:
+            if r2.value != 300:
+                return 5
+        Option.none:
+            return 6
+
+    if buf.earliest_tick() != 0:
+        return 7
+
+    buf.push(1, 999)
+    match buf.get(1):
+        Option.some as r1b:
+            if r1b.value != 999:
+                return 8
+        Option.none:
+            return 9
+
+    return 0
+
+    MT
+
+    result = run_program(source, compiler:)
+    assert_equal 0, result.exit_status
+  end
+
   private
 
   def run_program(source, compiler:)
