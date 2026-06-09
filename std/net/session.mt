@@ -56,6 +56,7 @@ public struct PeerEvent:
     reliable: bool
     reason: ubyte
 
+
 extending PeerEvent:
     public editable function release() -> void:
         if this.kind == PeerEventKind.user_data:
@@ -177,10 +178,7 @@ function generate_handshake_key() -> ulong:
 
 function decode_u32_at(data: span[ubyte], offset: ptr_uint) -> uint:
     unsafe:
-        return uint<-read(data.data + offset) |
-            (uint<-read(data.data + offset + 1) << 8) |
-            (uint<-read(data.data + offset + 2) << 16) |
-            (uint<-read(data.data + offset + 3) << 24)
+        return uint<-read(data.data + offset) |            (uint<-read(data.data + offset + 1) << 8) |            (uint<-read(data.data + offset + 2) << 16) |            (uint<-read(data.data + offset + 3) << 24)
 
 
 function channel_config_for(config: Config) -> chan.Config:

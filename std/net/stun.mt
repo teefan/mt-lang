@@ -105,14 +105,23 @@ function format_ipv4(addr: uint) -> string.String:
     return result
 
 
-public function parse_binding_response(packet: bytes.Bytes, expected_tid: array[ubyte, 12]) -> Result[StunResult, Error]:
+public function parse_binding_response(
+    packet: bytes.Bytes,
+    expected_tid: array[ubyte, 12]
+) -> Result[StunResult, Error]:
     let data = packet.as_span()
     if data.len < stun_header_len:
-        return Result[StunResult, Error].failure(error = stun_error(err_packet_too_small, "packet too small for STUN header"))
+        return Result[StunResult, Error].failure(error = stun_error(
+            err_packet_too_small,
+            "packet too small for STUN header"
+        ))
 
     let msg_type = read_ushort_be(data, ptr_uint<-0)
     if msg_type != 0x0101:
-        return Result[StunResult, Error].failure(error = stun_error(err_not_binding_response, "not a binding success response"))
+        return Result[StunResult, Error].failure(error = stun_error(
+            err_not_binding_response,
+            "not a binding success response"
+        ))
 
     var attr_len: ptr_uint = ptr_uint<-read_ushort_be(data, ptr_uint<-2)
     let cookie = read_uint_be(data, ptr_uint<-4)
@@ -145,14 +154,20 @@ public function parse_binding_response(packet: bytes.Bytes, expected_tid: array[
             let addr_result = net.ipv4(ip_str.as_str(), int<-port)
             match addr_result:
                 Result.failure:
-                    return Result[StunResult, Error].failure(error = stun_error(err_address_failed, "failed to construct address"))
+                    return Result[StunResult, Error].failure(error = stun_error(
+                        err_address_failed,
+                        "failed to construct address"
+                    ))
                 Result.success as addr_payload:
                     return Result[StunResult, Error].success(value = StunResult(public_address = addr_payload.value))
 
         offset = offset + ptr_uint<-4 + padded
         attr_len = attr_len - ptr_uint<-4 - padded
 
-    return Result[StunResult, Error].failure(error = stun_error(err_no_xor_address, "no XOR-MAPPED-ADDRESS attribute found"))
+    return Result[StunResult, Error].failure(error = stun_error(
+        err_no_xor_address,
+        "no XOR-MAPPED-ADDRESS attribute found"
+    ))
 
 
 public async function resolve_public_address(
@@ -162,7 +177,10 @@ public async function resolve_public_address(
     let rand_result = crypto.random_bytes(12)
     match rand_result:
         Result.failure:
-            return Result[StunResult, Error].failure(error = stun_error(err_tid_failed, "failed to generate transaction ID"))
+            return Result[StunResult, Error].failure(error = stun_error(
+                err_tid_failed,
+                "failed to generate transaction ID"
+            ))
         Result.success as rp:
             var tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
@@ -171,7 +189,10 @@ public async function resolve_public_address(
             let send_result = await socket.send_to(request.as_span(), stun_server)
             match send_result:
                 Result.failure:
-                    return Result[StunResult, Error].failure(error = stun_error(err_send_failed, "failed to send STUN request"))
+                    return Result[StunResult, Error].failure(error = stun_error(
+                        err_send_failed,
+                        "failed to send STUN request"
+                    ))
                 Result.success:
                     pass
 

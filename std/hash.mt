@@ -6,7 +6,6 @@
 #  int
 # ---------------------------------------------------------------------------
 
-
 extending int:
     public static function hash(value: const_ptr[int]) -> uint:
         unsafe:
@@ -41,7 +40,6 @@ extending int:
 #  uint
 # ---------------------------------------------------------------------------
 
-
 extending uint:
     public static function hash(value: const_ptr[uint]) -> uint:
         unsafe:
@@ -75,7 +73,6 @@ extending uint:
 #  bool
 # ---------------------------------------------------------------------------
 
-
 extending bool:
     public static function hash(value: const_ptr[bool]) -> uint:
         unsafe:
@@ -103,7 +100,6 @@ extending bool:
 #  float — bitwise hash, exact equal
 # ---------------------------------------------------------------------------
 
-
 extending float:
     public static function hash(value: const_ptr[float]) -> uint:
         unsafe:
@@ -129,7 +125,6 @@ extending float:
 #  double — bitwise hash, exact equal
 # ---------------------------------------------------------------------------
 
-
 extending double:
     public static function hash(value: const_ptr[double]) -> uint:
         unsafe:
@@ -154,7 +149,6 @@ extending double:
 # ---------------------------------------------------------------------------
 #  char
 # ---------------------------------------------------------------------------
-
 
 extending char:
     public static function hash(value: const_ptr[char]) -> uint:

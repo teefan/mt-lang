@@ -250,7 +250,11 @@ module MilkTea
             elsif previous_content_index && line_inside_attribute_application?(lines, previous_content_index)
               0
             elsif extending_block_header_line?(line)
-              2 # exactly 2 blank lines before extending blocks
+              if previous_content_was_comment
+                1 # 1 blank line between a comment block and an extending block
+              else
+                2 # exactly 2 blank lines before extending blocks
+              end
             elsif function_line?(line)
                current_bodyless_function_header = bodyless_function_header_at?(lines, line_index)
                if current_bodyless_function_header

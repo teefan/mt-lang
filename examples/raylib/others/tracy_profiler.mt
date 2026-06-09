@@ -15,6 +15,7 @@ struct GameState:
     ball_speed_y: float
     frame_count: int
 
+
 function init_game() -> GameState:
     return GameState(
         debug = debug.debug_init(),
@@ -25,6 +26,7 @@ function init_game() -> GameState:
         ball_speed_y = 180.0,
         frame_count = 0
     )
+
 
 function main() -> int:
     rl.init_window(SCREEN_WIDTH, SCREEN_HEIGHT, "Tracy Profiler Example")

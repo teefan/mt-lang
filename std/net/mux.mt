@@ -231,7 +231,12 @@ extending MuxedConnection:
                                             pass
 
 
-    public async editable function mux_send(channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+    public async editable function mux_send(
+        channel_id: ubyte,
+        type_id: ushort,
+        data: span[ubyte],
+        send_flags: ubyte
+    ) -> Result[bool, Error]:
         if (send_flags & flag_fragmented) != 0 and data.len > this.config.fragment_size:
             return await send_fragmented_conn(ref_of(this), channel_id, type_id, data, send_flags)
         return await send_single_conn(ref_of(this), channel_id, type_id, data, send_flags)
@@ -310,7 +315,13 @@ extending MuxedSession:
                                             pass
 
 
-    public async editable function mux_send(peer_id: uint, channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+    public async editable function mux_send(
+        peer_id: uint,
+        channel_id: ubyte,
+        type_id: ushort,
+        data: span[ubyte],
+        send_flags: ubyte
+    ) -> Result[bool, Error]:
         if (send_flags & flag_fragmented) != 0 and data.len > this.config.fragment_size:
             return await send_fragmented_session(ref_of(this), peer_id, channel_id, type_id, data, send_flags)
         return await send_single_session(ref_of(this), peer_id, channel_id, type_id, data, send_flags)
@@ -333,7 +344,15 @@ function encode_frame(channel_id: ubyte, type_id: ushort, msg_flags: ubyte, payl
     return w.finish()
 
 
-function encode_fragment_frame(channel_id: ubyte, type_id: ushort, msg_flags: ubyte, group_id: ushort, frag_index: ushort, total: ushort, payload: span[ubyte]) -> bytes.Bytes:
+function encode_fragment_frame(
+    channel_id: ubyte,
+    type_id: ushort,
+    msg_flags: ubyte,
+    group_id: ushort,
+    frag_index: ushort,
+    total: ushort,
+    payload: span[ubyte]
+) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(wire_header_size + fragment_header_size + payload.len)
     w.write_ubyte(channel_id)
     w.write_ushort(type_id)
@@ -345,7 +364,13 @@ function encode_fragment_frame(channel_id: ubyte, type_id: ushort, msg_flags: ub
     return w.finish()
 
 
-async function send_single_conn(mux: ref[MuxedConnection], channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+async function send_single_conn(
+    mux: ref[MuxedConnection],
+    channel_id: ubyte,
+    type_id: ushort,
+    data: span[ubyte],
+    send_flags: ubyte
+) -> Result[bool, Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
     defer frame.release()
     if (send_flags & flag_reliable) != 0:
@@ -355,7 +380,14 @@ async function send_single_conn(mux: ref[MuxedConnection], channel_id: ubyte, ty
     return convert_conn_result(result)
 
 
-async function send_single_session(mux: ref[MuxedSession], peer_id: uint, channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+async function send_single_session(
+    mux: ref[MuxedSession],
+    peer_id: uint,
+    channel_id: ubyte,
+    type_id: ushort,
+    data: span[ubyte],
+    send_flags: ubyte
+) -> Result[bool, Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
     defer frame.release()
     if (send_flags & flag_reliable) != 0:
@@ -365,7 +397,13 @@ async function send_single_session(mux: ref[MuxedSession], peer_id: uint, channe
     return convert_sess_result(result)
 
 
-async function send_fragmented_conn(mux: ref[MuxedConnection], channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+async function send_fragmented_conn(
+    mux: ref[MuxedConnection],
+    channel_id: ubyte,
+    type_id: ushort,
+    data: span[ubyte],
+    send_flags: ubyte
+) -> Result[bool, Error]:
     let group_id = mux.next_group_id
     mux.next_group_id += 1
     let frag_flags = send_flags | flag_fragmented
@@ -399,7 +437,14 @@ async function send_fragmented_conn(mux: ref[MuxedConnection], channel_id: ubyte
     return Result[bool, Error].success(value = true)
 
 
-async function send_fragmented_session(mux: ref[MuxedSession], peer_id: uint, channel_id: ubyte, type_id: ushort, data: span[ubyte], send_flags: ubyte) -> Result[bool, Error]:
+async function send_fragmented_session(
+    mux: ref[MuxedSession],
+    peer_id: uint,
+    channel_id: ubyte,
+    type_id: ushort,
+    data: span[ubyte],
+    send_flags: ubyte
+) -> Result[bool, Error]:
     let group_id = mux.next_group_id
     mux.next_group_id += 1
     let frag_flags = send_flags | flag_fragmented
@@ -615,10 +660,27 @@ function handle_fragment_conn(mux: ref[MuxedConnection], h: WireHeader, data: sp
         let total_lo = ushort<-read(data.data + wire_header_size + 4)
         let total_hi = ushort<-read(data.data + wire_header_size + 5)
         let total = total_lo | (total_hi << 8)
-        assemble_fragment(ref_of(mux.frag_buffers), ref_of(mux.event_queue), mux.config, h, group_id, frag_index, total, data, frame, 0)
+        assemble_fragment(
+            ref_of(mux.frag_buffers),
+            ref_of(mux.event_queue),
+            mux.config,
+            h,
+            group_id,
+            frag_index,
+            total,
+            data,
+            frame,
+            0
+        )
 
 
-function handle_fragment_session(mux: ref[MuxedSession], h: WireHeader, data: span[ubyte], frame: uint, peer_id: uint) -> void:
+function handle_fragment_session(
+    mux: ref[MuxedSession],
+    h: WireHeader,
+    data: span[ubyte],
+    frame: uint,
+    peer_id: uint
+) -> void:
     if data.len < wire_header_size + fragment_header_size:
         return
     unsafe:
@@ -631,10 +693,32 @@ function handle_fragment_session(mux: ref[MuxedSession], h: WireHeader, data: sp
         let total_lo = ushort<-read(data.data + wire_header_size + 4)
         let total_hi = ushort<-read(data.data + wire_header_size + 5)
         let total = total_lo | (total_hi << 8)
-        assemble_fragment(ref_of(mux.frag_buffers), ref_of(mux.event_queue), mux.config, h, group_id, frag_index, total, data, frame, peer_id)
+        assemble_fragment(
+            ref_of(mux.frag_buffers),
+            ref_of(mux.event_queue),
+            mux.config,
+            h,
+            group_id,
+            frag_index,
+            total,
+            data,
+            frame,
+            peer_id
+        )
 
 
-function assemble_fragment(buffers: ref[vec.Vec[FragBuffer]], queue: ref[deque.Deque[MuxedMessage]], config: MuxedConfig, h: WireHeader, group_id: ushort, frag_index: ushort, total: ushort, data: span[ubyte], frame: uint, peer_id: uint) -> void:
+function assemble_fragment(
+    buffers: ref[vec.Vec[FragBuffer]],
+    queue: ref[deque.Deque[MuxedMessage]],
+    config: MuxedConfig,
+    h: WireHeader,
+    group_id: ushort,
+    frag_index: ushort,
+    total: ushort,
+    data: span[ubyte],
+    frame: uint,
+    peer_id: uint
+) -> void:
     let payload_start = wire_header_size + fragment_header_size
     if data.len <= payload_start:
         return
@@ -703,7 +787,13 @@ function assemble_fragment(buffers: ref[vec.Vec[FragBuffer]], queue: ref[deque.D
         buffers.remove(ptr_uint<-buf_index)
 
 
-function copy_bytes(dest: ptr[ubyte], dest_offset: ptr_uint, src_data: span[ubyte], src_offset: ptr_uint, count: ptr_uint) -> void:
+function copy_bytes(
+    dest: ptr[ubyte],
+    dest_offset: ptr_uint,
+    src_data: span[ubyte],
+    src_offset: ptr_uint,
+    count: ptr_uint
+) -> void:
     unsafe:
         var i: ptr_uint = 0
         while i < count:

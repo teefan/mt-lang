@@ -4,16 +4,19 @@ public struct DebugState:
     enabled: bool
     visible: bool
 
+
 public function debug_init() -> DebugState:
     return DebugState(
         enabled = true,
         visible = false
     )
 
+
 public function debug_update(state: ref[DebugState]) -> void:
     let key_f3 = rl.is_key_pressed(rl.KeyboardKey.KEY_F3)
     if key_f3:
         state.visible = not(state.visible)
+
 
 public function debug_draw(state: const_ptr[DebugState], font_size: int) -> void:
     var visible = false

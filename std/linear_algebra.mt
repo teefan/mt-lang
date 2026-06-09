@@ -4,7 +4,6 @@ import std.math as math
 #  vec2 — 2-dimensional float vector
 # ---------------------------------------------------------------------------
 
-
 extending vec2:
     public static function zero() -> vec2:
         return zero[vec2]
@@ -47,7 +46,6 @@ extending vec2:
 # ---------------------------------------------------------------------------
 #  vec3 — 3-dimensional float vector
 # ---------------------------------------------------------------------------
-
 
 extending vec3:
     public static function zero() -> vec3:
@@ -101,7 +99,6 @@ extending vec3:
 #  vec4 — 4-dimensional float vector
 # ---------------------------------------------------------------------------
 
-
 extending vec4:
     public static function zero() -> vec4:
         return zero[vec4]
@@ -147,7 +144,6 @@ extending vec4:
 #  ivec2 — 2-dimensional integer vector
 # ---------------------------------------------------------------------------
 
-
 extending ivec2:
     public static function zero() -> ivec2:
         return zero[ivec2]
@@ -163,7 +159,6 @@ extending ivec2:
 # ---------------------------------------------------------------------------
 #  ivec3 — 3-dimensional integer vector
 # ---------------------------------------------------------------------------
-
 
 extending ivec3:
     public static function zero() -> ivec3:
@@ -181,7 +176,6 @@ extending ivec3:
 #  ivec4 — 4-dimensional integer vector
 # ---------------------------------------------------------------------------
 
-
 extending ivec4:
     public static function zero() -> ivec4:
         return zero[ivec4]
@@ -197,7 +191,6 @@ extending ivec4:
 # ---------------------------------------------------------------------------
 #  mat3 — 3×3 column-major matrix
 # ---------------------------------------------------------------------------
-
 
 extending mat3:
     public static function identity() -> mat3:
@@ -218,7 +211,6 @@ extending mat3:
 # ---------------------------------------------------------------------------
 #  mat4 — 4×4 column-major matrix
 # ---------------------------------------------------------------------------
-
 
 extending mat4:
     public static function identity() -> mat4:
@@ -241,7 +233,6 @@ extending mat4:
 # ---------------------------------------------------------------------------
 #  quat — quaternion
 # ---------------------------------------------------------------------------
-
 
 extending quat:
     public static function identity() -> quat:

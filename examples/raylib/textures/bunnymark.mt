@@ -11,6 +11,7 @@ struct Bunny:
     speed: rl.Vector2
     color: rl.Color
 
+
 function random_bunny_color() -> rl.Color:
     return rl.Color(
         r = ubyte<-rl.get_random_value(50, 240),

@@ -548,6 +548,23 @@ class MilkTeaFormatterTest < Minitest::Test
     refute_includes formatted, "    return\n\nextending Ball:"
   end
 
+  def test_tidy_mode_uses_one_blank_line_between_comment_and_extending_block
+    source = <<~MT
+      function helper() -> void:
+          return
+
+      # draw the ball on screen
+      extending Ball:
+          function draw() -> void:
+              return
+    MT
+
+    formatted = MilkTea::Formatter.format_source(source, path: "demo.mt", mode: :tidy)
+
+    assert_includes formatted, "draw the ball on screen\n\nextending Ball:"
+    refute_includes formatted, "draw the ball on screen\n\n\nextending Ball:"
+  end
+
   def test_tidy_mode_keeps_two_blank_lines_before_multiline_function_definition
     source = <<~MT
       const VERSION: int = 1
