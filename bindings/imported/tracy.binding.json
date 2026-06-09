@@ -153,7 +153,7 @@
         "raw": "___tracy_connected",
         "name": "is_connected",
         "params": [],
-        "return_type": "bool"
+        "return_type": "int"
       },
       {
         "raw": "___tracy_fiber_enter",
