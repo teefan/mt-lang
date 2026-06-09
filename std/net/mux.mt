@@ -112,7 +112,6 @@ public function mux_connect_on(
                 next_group_id = 1,
                 current_frame = 0
             )
-            conn.event_queue = deque.Deque[MuxedMessage].create()
             return Result[MuxedConnection, Error].success(value = conn)
 
 

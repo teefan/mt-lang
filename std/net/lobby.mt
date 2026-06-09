@@ -204,7 +204,6 @@ public function create_lobby_on(
                 slots = slots,
                 event_queue = deque.Deque[LobbyEvent].create()
             )
-            host.event_queue = deque.Deque[LobbyEvent].create()
             return Result[LobbyHost, Error].success(value = host)
 
 
@@ -242,7 +241,6 @@ public async function join_lobby_on(
                 pending_join = true,
                 pending_name = string.String.from_str(player_name)
             )
-            client.event_queue = deque.Deque[LobbyEvent].create()
             match await client.mux.connect_to_peer():
                 Result.failure as pe:
                     return Result[LobbyClient, Error].failure(error = Error(code = pe.error.code, message = pe.error.message))
