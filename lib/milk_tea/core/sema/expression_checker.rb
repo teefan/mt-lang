@@ -491,6 +491,14 @@ module MilkTea
           scopes: right_scopes,
         )
 
+        left_type, right_type = harmonize_binary_integer_literal_types(
+          expression.left,
+          expression.right,
+          left_type,
+          right_type,
+          scopes: right_scopes,
+        )
+
         case expression.operator
         when "and", "or"
           ensure_assignable!(left_type, @types.fetch("bool"), "operator #{expression.operator} requires bool operands")
@@ -740,6 +748,26 @@ module MilkTea
       def float_literal_expression?(expression)
         expression.is_a?(AST::FloatLiteral) ||
           (expression.is_a?(AST::UnaryOp) && ["+", "-"].include?(expression.operator) && float_literal_expression?(expression.operand))
+      end
+
+      def harmonize_binary_integer_literal_types(left_expression, right_expression, left_type, right_type, scopes:)
+        if integer_literal_expression?(left_expression) && right_type.is_a?(Types::Primitive) && right_type.integer?
+          if exact_compile_time_numeric_compatibility?(left_type, left_expression, right_type, scopes:)
+            left_type = infer_expression(left_expression, scopes:, expected_type: right_type)
+          end
+        end
+
+        if integer_literal_expression?(right_expression) && left_type.is_a?(Types::Primitive) && left_type.integer?
+          if exact_compile_time_numeric_compatibility?(right_type, right_expression, left_type, scopes:)
+            right_type = infer_expression(right_expression, scopes:, expected_type: left_type)
+          end
+        end
+
+        [left_type, right_type]
+      end
+
+      def integer_literal_expression?(expression)
+        expression.is_a?(AST::IntegerLiteral)
       end
 
       def propagating_expected_type(operator, expected_type)
