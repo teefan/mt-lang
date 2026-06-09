@@ -124,11 +124,12 @@ public function parse_response(data: span[ubyte]) -> Result[ClockSync, Error]:
                     let t2_svr = t2_payload.value
                     let t4 = libuv.hrtime()
                     let rtt = t4 - t1_client
-                    if t2_svr > t1_client:
-                        let offset = (t2_svr - t1_client) / ulong<-2
+                    let half_rtt = rtt / ulong<-2
+                    if t2_svr > t1_client + half_rtt:
+                        let offset_ns = t2_svr - t1_client - half_rtt
                         return Result[ClockSync, Error].success(
                             value = ClockSync(
-                                offset_us = int<-(offset / ulong<-1000),
+                                offset_us = int<-(offset_ns / ulong<-1000),
                                 rtt_us = ptr_uint<-(rtt / ulong<-1000)
                             )
                         )
@@ -207,6 +208,9 @@ public async function respond_to_sync(
                                 pass
                 Result.failure:
                     pass
+            recv_task = socket.recv_from(512)
+        await aio.sleep(100)
+        frame += 1
         await aio.sleep(100)
         frame += 1
 
