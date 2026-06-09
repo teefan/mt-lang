@@ -25,7 +25,6 @@ extending SyncValue[T]:
     public function has_changed() -> bool:
         return this.dirty
 
-
 public struct SyncList[T]:
     items: vec.Vec[T]
     dirty: bool
@@ -56,7 +55,6 @@ extending SyncList[T]:
 
     public function has_changed() -> bool:
         return this.dirty
-
 
 public struct Lerp:
     previous: float
@@ -89,7 +87,6 @@ extending Lerp:
     public function has_arrived() -> bool:
         return this.elapsed >= this.duration
 
-
 public struct CompressedUshort:
     min: float
     max: float
@@ -110,7 +107,6 @@ extending CompressedUshort:
         let ratio = float<-encoded / 65535.0
         return this.min + ratio * (this.max - this.min)
 
-
 public struct CompressedUbyte:
     min: float
     max: float
@@ -130,7 +126,6 @@ extending CompressedUbyte:
     public function decode(encoded: ubyte) -> float:
         let ratio = float<-encoded / 255.0
         return this.min + ratio * (this.max - this.min)
-
 
 public struct TickBuffer[T]:
     entries: vec.Vec[T]

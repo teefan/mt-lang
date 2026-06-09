@@ -246,6 +246,7 @@ extending Vec[T]:
             this.len = last_index
             return Option[T].some(value = removed)
 
+
     public editable function swap(i: ptr_uint, j: ptr_uint) -> void:
         if i >= this.len or j >= this.len:
             return
