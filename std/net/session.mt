@@ -233,8 +233,6 @@ public function connect_on(
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
             )
-            conn.event_queue = deque.Deque[PeerEvent].create()
-            conn.outgoing = deque.Deque[OutgoingMessage].create()
             return Result[Connection, Error].success(value = conn)
 
 
@@ -266,8 +264,6 @@ public function listen_on(
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
             )
-            session.event_queue = deque.Deque[PeerEvent].create()
-            session.outgoing = deque.Deque[OutgoingMessage].create()
             return Result[Session, Error].success(value = session)
 
 
