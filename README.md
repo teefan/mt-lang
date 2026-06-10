@@ -609,7 +609,7 @@ Handle types expose: `field_handle` has `.name` and `.type`; `member_handle` has
 
 Core modules in `std/`:
 
-- `std.linalg` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
+- `std.linear_algebra` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
 - `std.graph.Graph[T]` — adjacency-list graph with `add_node`, `add_edge`, `has_edge`, `remove_edge`, `neighbors`, `bfs`, `dfs`, `toposort`; directed or undirected; `compile()` converts to CSR-based `DenseGraph[T]` for O(degree) neighbor iteration
 - `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
 - `std.hash` — extends primitive types (`int`, `uint`, `bool`, `float`, `double`, `char`) with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys
@@ -623,7 +623,7 @@ Core modules in `std/`:
 
 **Serialization**: `std.json`, `std.toml`, `std.uri`
 
-**System**: `std.time`, `std.fs`, `std.path`, `std.process`, `std.cli`, `std.log`, `std.stdio`, `std.console`, `std.terminal`
+**System**: `std.time`, `std.fs`, `std.path`, `std.process`, `std.cli`, `std.stdio`, `std.terminal`
 
 **Concurrency**: `std.sync`, `std.thread`, `std.jobs`
 
