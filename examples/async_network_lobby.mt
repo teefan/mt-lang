@@ -16,14 +16,8 @@ struct App:
 async function tick_app(app: ref[App], frame: uint) -> bool:
     match app.game:
         Option.some as hg:
-            stdio.print("A frame=%d\n", uint<-(frame))
-            stdio.flush(null)
             var game = hg.value
-            stdio.print("B\n")
-            stdio.flush(null)
             await game.host.tick(frame)
-            stdio.print("C\n")
-            stdio.flush(null)
             var found = false
             var i: uint = 0
             while i < 10:
@@ -34,7 +28,6 @@ async function tick_app(app: ref[App], frame: uint) -> bool:
                         defer e.release()
                         if e.kind == lobby.LobbyEventKind.player_joined:
                             stdio.print("HOST: joined! ticks=%d\n", uint<-(frame))
-                            stdio.flush(null)
                             found = true
                     Option.none:
                         break
@@ -50,18 +43,16 @@ async function tick_app(app: ref[App], frame: uint) -> bool:
 
 async function main() -> int:
     stdio.print("=== Creating host ===\n")
-    stdio.flush(null)
 
     match net.ipv4("0.0.0.0", 12345):
         Result.failure:
             stdio.print("FAIL: host bind\n")
-            stdio.flush(null)
             return -1
         Result.success as bp:
             var server_addr = bp.value
             defer server_addr.release()
             let config = mux.MuxedConfig.default()
-            var info = lobby.LobbyInfo(
+            let info = lobby.LobbyInfo(
                 name = string.String.from_str("Test"),
                 player_count = 0,
                 max_players = 2,
@@ -71,21 +62,16 @@ async function main() -> int:
             match lobby.create_lobby(server_addr, info, config):
                 Result.failure:
                     stdio.print("FAIL: lobby create\n")
-                    stdio.flush(null)
                     return -2
                 Result.success as lp:
-                    var h = lp.value
-                    var app = App(game = Option[Game].some(value = Game(host = h)))
+                    var app = App(game = Option[Game].some(value = Game(host = lp.value)))
                     stdio.print("HOST OK\n")
-                    stdio.flush(null)
 
                     stdio.print("=== Creating client ===\n")
-                    stdio.flush(null)
 
                     match net.ipv4("127.0.0.1", 12345):
                         Result.failure:
                             stdio.print("FAIL: client addr\n")
-                            stdio.flush(null)
                             return -3
                         Result.success as remote:
                             var remote_addr = remote.value
@@ -93,7 +79,6 @@ async function main() -> int:
                             match net.ipv4("0.0.0.0", 0):
                                 Result.failure:
                                     stdio.print("FAIL: client bind\n")
-                                    stdio.flush(null)
                                     return -4
                                 Result.success as local:
                                     var local_addr = local.value
@@ -101,17 +86,20 @@ async function main() -> int:
                                     match await lobby.join_lobby(local_addr, remote_addr, "P", config):
                                         Result.failure:
                                             stdio.print("FAIL: join\n")
-                                            stdio.flush(null)
                                             return -5
                                         Result.success as jp:
                                             var client = jp.value
                                             defer client.release()
                                             stdio.print("CLIENT OK\n")
-                                            stdio.flush(null)
 
                                             var frame: uint = 0
+                                            var host_done = false
+                                            var done_frame: uint = 0
                                             while true:
-                                                var host_done = await tick_app(ref_of(app), frame)
+                                                if not host_done:
+                                                    host_done = await tick_app(ref_of(app), frame)
+                                                    if host_done:
+                                                        done_frame = frame
                                                 await client.tick(frame)
                                                 var j: uint = 0
                                                 while j < 10:
@@ -122,16 +110,13 @@ async function main() -> int:
                                                             defer e.release()
                                                             if e.kind == lobby.LobbyEventKind.joined:
                                                                 stdio.print("CLIENT: joined at ticks=%d\n", uint<-(frame))
-                                                                stdio.flush(null)
                                                         Option.none:
                                                             break
                                                     j += 1
-                                                if host_done:
-                                                    stdio.print("=== SUCCESS ===\n")
-                                                    stdio.flush(null)
-                                                    return 0
                                                 frame += 1
+                                                if host_done and frame > done_frame + 1:
+                                                    stdio.print("=== SUCCESS ===\n")
+                                                    return 0
                                                 if frame > 1200:
                                                     stdio.print("TIMEOUT\n")
-                                                    stdio.flush(null)
                                                     return -6

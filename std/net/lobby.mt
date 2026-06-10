@@ -503,6 +503,14 @@ async function handle_join_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessa
 
             await broadcast_player_joined(host, other_id, player_name.as_str(), slot)
 
+            host.event_queue.push_back(LobbyEvent(
+                kind = LobbyEventKind.player_joined,
+                player_id = other_id,
+                player_name = string.String.from_str(player_name.as_str()),
+                slot = slot,
+                reason = ubyte<-0
+            ))
+
 
 async function handle_discover_request(host: ref[LobbyHost], msg: ref[mux.MuxedMessage]) -> void:
     var w = bin.Writer.with_capacity(256)
