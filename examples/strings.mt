@@ -38,8 +38,8 @@ function main() -> int:
     # ── format strings f"..." ──
     #
 
-    var name = "MilkTea"
-    var count = 42
+    let name = "MilkTea"
+    let count = 42
     let greeting = f"format:  hello #{name}, count = #{count}"
     stdio.print("%s\n", greeting)
 
@@ -47,8 +47,8 @@ function main() -> int:
     # ── format specifiers ──
     #
 
-    var value = 255
-    var pi = 3.14159
+    let value = 255
+    let pi = 3.14159
     let hex_lo = f"hex lower: #{value:x}"
     let hex_up = f"hex upper: #{value:X}"
     let oct_lo = f"oct lower: #{value:o}"
@@ -100,8 +100,8 @@ function main() -> int:
     # ── format heredoc f<<-TAG ──
     #
 
-    var port = 8080
-    var host = "localhost"
+    let port = 8080
+    let host = "localhost"
     let html = f<<-HTML
         <!DOCTYPE html>
         <html>

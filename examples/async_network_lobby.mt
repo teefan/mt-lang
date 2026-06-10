@@ -1,4 +1,3 @@
-import std.async as aio
 import std.net as net
 import std.net.discovery as net_disc
 import std.net.manager as mgr
@@ -6,6 +5,7 @@ import std.vec as vec
 import std.stdio as stdio
 
 const GAME_PORT: int = 12345
+
 
 async function main() -> int:
     stdio.print("HOST: creating server\n")
@@ -82,7 +82,10 @@ async function main() -> int:
                                                             match ev:
                                                                 Option.some as ev_p:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.player_joined:
-                                                                        stdio.print("HOST: joined ticks=%d\n", uint<-frame)
+                                                                        stdio.print(
+                                                                            "HOST: joined ticks=%d\n",
+                                                                            uint<-frame
+                                                                        )
                                                                         host_ok = true
                                                                 Option.none:
                                                                     break
@@ -93,7 +96,10 @@ async function main() -> int:
                                                             match ev:
                                                                 Option.some as ev_p:
                                                                     if ev_p.value.kind == mgr.NetworkEventKind.connected:
-                                                                        stdio.print("CLIENT: connected id=%d\n", uint<-ev_p.value.player_id)
+                                                                        stdio.print(
+                                                                            "CLIENT: connected id=%d\n",
+                                                                            uint<-ev_p.value.player_id
+                                                                        )
                                                                         client_ok = true
                                                                 Option.none:
                                                                     break
