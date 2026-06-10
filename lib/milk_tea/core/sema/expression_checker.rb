@@ -1356,10 +1356,10 @@ module MilkTea
 
         struct_handle = resolve_struct_handle_argument(arguments.first.value, scopes:)
         field_name = reflection_identifier_name(arguments[1].value, context: "field_of")
-        field_decl = struct_handle.declaration.fields.find { |field| field.name == field_name }
-        raise_sema_error("unknown field #{struct_handle.struct_type}.#{field_name}") unless field_decl
+        field_handle = CompileTime::Reflection.core_field_handle(struct_handle, field_name)
+        raise_sema_error("unknown field #{struct_handle.struct_type}.#{field_name}") unless field_handle
 
-        Types::FieldHandle.new(struct_handle, field_name, field_decl)
+        field_handle
       end
 
 

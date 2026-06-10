@@ -325,68 +325,29 @@ module MilkTea
       end
 
       def evaluate_type_returning_call(expression, scopes:)
-        callee_name = nil
-        type_args = nil
-
-        if expression.is_a?(AST::Call)
-          if expression.callee.is_a?(AST::Identifier)
-            callee_name = expression.callee.name
-          end
-        elsif expression.is_a?(AST::Specialization)
-          if expression.callee.is_a?(AST::Identifier)
-            callee_name = expression.callee.name
-            type_args = expression.arguments
-          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
-            callee_name = expression.callee.callee.name
-            type_args = expression.callee.arguments
-          end
-        end
-
+        callee_name, type_args = extract_type_callee_info(expression)
         return nil unless callee_name
 
-        case callee_name
-        when "ptr", "const_ptr", "ref", "span", "array", "str_buffer", "Task"
-          evaluated_args = (type_args || []).map do |arg|
-            value = arg.value
-            if value.is_a?(AST::Identifier)
-              evaluate_compile_time_const_value(value, scopes:)
-            elsif value.is_a?(AST::TypeRef)
-              resolve_type_ref(value)
-            elsif value.is_a?(AST::IntegerLiteral)
-              Types::LiteralTypeArg.new(value.value)
-            else
-              nil
-            end
-          end
-          return nil if evaluated_args.any?(&:nil?)
+        CompileTime::Reflection.core_evaluate_type_returning(
+          callee_name, type_args,
+          evaluate_value: ->(v) { evaluate_compile_time_const_value(v, scopes:) },
+          resolve_type_ref: ->(tr) { resolve_type_ref(tr) },
+          pointer_to: ->(t) { pointer_to(t) },
+          const_pointer_to: ->(t) { const_pointer_to(t) },
+          top_level_functions: ->(name) { @top_level_functions[name] },
+          evaluate_type_returning_function_body: ->(func, targs) { evaluate_type_returning_function_body(func, targs) },
+        )
+      end
 
-          case callee_name
-          when "ptr"
-            pointer_to(evaluated_args.first)
-          when "const_ptr"
-            const_pointer_to(evaluated_args.first)
-          when "ref"
-            reference_to(evaluated_args.first)
-          when "span"
-            Types::Span.new(evaluated_args.first)
-          when "array"
-            Types::GenericInstance.new("array", evaluated_args)
-          when "str_buffer"
-            Types::GenericInstance.new("str_buffer", evaluated_args)
-          when "Task"
-            Types::Task.new(evaluated_args.first)
+      def extract_type_callee_info(expression)
+        if expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier)
+          [expression.callee.name, nil]
+        elsif expression.is_a?(AST::Specialization)
+          if expression.callee.is_a?(AST::Identifier)
+            [expression.callee.name, expression.arguments]
+          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
+            [expression.callee.callee.name, expression.callee.arguments]
           end
-        else
-          func = @top_level_functions[callee_name]
-          return nil unless func
-          return nil unless func.body_return_type == builtin_type_meta_type
-
-          if type_args && func.ast
-            value = evaluate_type_returning_function_body(func, type_args)
-            return value if value
-          end
-
-          builtin_type_meta_type
         end
       end
 
@@ -500,9 +461,7 @@ module MilkTea
         handle = struct_handle_for_type(type)
         raise_sema_error("fields_of requires a struct type, got #{type}") unless handle
 
-        handle.declaration.fields.map do |field|
-          Types::FieldHandle.new(handle, field.name, field)
-        end
+        CompileTime::Reflection.core_field_handles(handle)
       end
 
       def evaluate_members_of_call(arguments)
@@ -515,9 +474,7 @@ module MilkTea
           raise_sema_error("members_of requires an enum or flags type, got #{type}")
         end
 
-        type.members.map do |member_name, member_value|
-          Types::MemberHandle.new(nil, member_name, member_value)
-        end
+        CompileTime::Reflection.core_member_handles(type)
       end
 
       def evaluate_attributes_of_call(arguments)
