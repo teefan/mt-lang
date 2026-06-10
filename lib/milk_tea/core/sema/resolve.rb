@@ -466,80 +466,50 @@ module MilkTea
       end
 
       def infer_layout_query_type(type_ref, context:)
+        if type_ref.name.parts.join(".") == "field.type"
+          $stderr.puts "!!! infer_layout_query_type called for field.type"
+          $stderr.puts caller.join("\n")
+          exit 1
+        end
         type = resolve_type_ref(type_ref)
         return type if sized_layout_type?(type)
 
-        raise_sema_error("#{context} requires a concrete sized type, got #{type}")
+        raise_sema_error("#{context} requires a concrete sized type, got #{type_ref}")
       end
 
-      def infer_layout_query_type_from_expr(expression, context:, scopes:)
-        if expression.is_a?(AST::Identifier)
-          type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.name]), arguments: [], nullable: false)
-          type = resolve_type_ref(type_ref)
-          return type if sized_layout_type?(type)
-        end
+      def check_layout_type_via_ct(type_ref, context:, scopes:)
+        return false unless scopes && type_ref.name.parts.length >= 1
 
-        if expression.is_a?(AST::MemberAccess)
-          parts = collect_member_access_parts(expression)
-          if parts
-            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
-            type = resolve_type_ref(type_ref)
-            return type if sized_layout_type?(type)
-          end
-        end
+        first_part = type_ref.name.parts.first
+        binding = lookup_value(first_part, scopes)
+        return false unless binding && !binding.const_value.nil?
 
-        if expression.is_a?(AST::Specialization)
-          type_ref = specialization_to_type_ref(expression)
-          if type_ref
-            type = resolve_type_ref(type_ref)
-            return type if sized_layout_type?(type)
-          end
-        end
-
-        if expression.is_a?(AST::UnaryOp) && expression.operator == "?"
-          inner_type = infer_layout_query_type_from_expr(expression.operand, context:, scopes:)
-          return Types::Nullable.new(base: inner_type) if inner_type
-        end
+        expression = build_expression_from_qualified_name(type_ref.name)
+        return false unless expression
 
         ct_value = evaluate_compile_time_const_value(expression, scopes:)
         if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
            ct_value.is_a?(Types::Union) || ct_value.is_a?(Types::Nullable) ||
            ct_value.is_a?(Types::StructInstance)
-          return ct_value if sized_layout_type?(ct_value)
+          if sized_layout_type?(ct_value)
+            return true
+          end
         end
 
-        raise_sema_error("#{context} requires a concrete sized type, got #{expression}")
+        false
       end
 
-      def collect_member_access_parts(expression)
-        parts = []
-        current = expression
-        while current.is_a?(AST::MemberAccess)
-          parts.unshift(current.member)
-          current = current.receiver
+      def build_expression_from_qualified_name(qualified_name)
+        parts = qualified_name.parts
+        return unless parts.length >= 1
+
+        expr = AST::Identifier.new(name: parts.first)
+        parts[1..].each do |part|
+          expr = AST::MemberAccess.new(receiver: expr, member: part)
         end
-        return unless current.is_a?(AST::Identifier)
-
-        parts.unshift(current.name)
-        parts
+        expr
       end
 
-      def specialization_to_type_ref(specialization)
-        return unless specialization.callee.is_a?(AST::Identifier)
-
-        type_args = specialization.arguments.filter_map do |arg|
-          next unless arg.is_a?(AST::TypeArgument)
-          next unless arg.value.is_a?(AST::TypeRef)
-
-          arg
-        end
-
-        AST::TypeRef.new(
-          name: AST::QualifiedName.new(parts: [specialization.callee.name]),
-          arguments: type_args,
-          nullable: false,
-        )
-      end
 
       def infer_offsetof_type(type_ref, field_name, scopes: nil)
         type = resolve_type_ref(type_ref)

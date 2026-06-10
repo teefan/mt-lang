@@ -1190,10 +1190,10 @@ module MilkTea
         when AST::FloatLiteral
           IR::FloatLiteral.new(value: expression.value, type:)
         when AST::SizeofExpr
-          type = resolve_type_from_sizeof_expr(expression.type, env:)
+          type = resolve_type_ref_with_fallback(expression.type, env:)
           type ? IR::SizeofExpr.new(target_type: type, type:) : raise(LoweringError, "size_of argument is not a concrete type")
         when AST::AlignofExpr
-          type = resolve_type_from_sizeof_expr(expression.type, env:)
+          type = resolve_type_ref_with_fallback(expression.type, env:)
           type ? IR::AlignofExpr.new(target_type: type, type:) : raise(LoweringError, "align_of argument is not a concrete type")
         when AST::OffsetofExpr
           target_type = resolve_type_ref(expression.type)
@@ -1471,41 +1471,13 @@ module MilkTea
         owner_type.field_c_name(member)
       end
 
-      def resolve_type_from_sizeof_expr(expression, env:)
-        if expression.is_a?(AST::Identifier)
-          type_ref = AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.name]),
-            arguments: [],
-            nullable: false,
-          )
-          type = resolve_type_ref(type_ref)
-          return type if type
-        end
+      def resolve_type_ref_with_fallback(type_ref, env:)
+        resolve_type_ref(type_ref)
+      rescue LoweringError
+        return unless type_ref.name.parts.length >= 1
 
-        if expression.is_a?(AST::MemberAccess)
-          parts = collect_member_access_parts(expression)
-          if parts
-            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
-            type = resolve_type_ref(type_ref)
-            return type if type
-          end
-        end
-
-        if expression.is_a?(AST::Specialization) && expression.callee.is_a?(AST::Identifier)
-          type_args = expression.arguments.filter_map do |arg|
-            next unless arg.is_a?(AST::TypeArgument)
-            next unless arg.value.is_a?(AST::TypeRef)
-
-            arg
-          end
-          type_ref = AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.callee.name]),
-            arguments: type_args,
-            nullable: false,
-          )
-          type = resolve_type_ref(type_ref)
-          return type if type
-        end
+        expression = build_expression_from_qualified_name(type_ref.name)
+        return unless expression
 
         ct_value = compile_time_const_value(expression, env:)
         if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
@@ -1515,17 +1487,15 @@ module MilkTea
         end
       end
 
-      def collect_member_access_parts(expression)
-        parts = []
-        current = expression
-        while current.is_a?(AST::MemberAccess)
-          parts.unshift(current.member)
-          current = current.receiver
-        end
-        return unless current.is_a?(AST::Identifier)
+      def build_expression_from_qualified_name(qualified_name)
+        parts = qualified_name.parts
+        return unless parts.length >= 1
 
-        parts.unshift(current.name)
-        parts
+        expr = AST::Identifier.new(name: parts.first)
+        parts[1..].each do |part|
+          expr = AST::MemberAccess.new(receiver: expr, member: part)
+        end
+        expr
       end
   end
 end

@@ -1616,7 +1616,7 @@ module MilkTea
         when AST::Identifier
           return nil if env && lookup_value(expression.name, env)
 
-          @types[expression.name]
+          current_type_params[expression.name] || @types[expression.name]
         when AST::MemberAccess
           return nil unless expression.receiver.is_a?(AST::Identifier)
 

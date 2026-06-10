@@ -766,6 +766,7 @@ module MilkTea
 
     class GenericStructDefinition < Base
       attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name
+      attr_accessor :ast_declaration
 
       def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil)
         @name = name
@@ -779,6 +780,7 @@ module MilkTea
         @fields = {}
         @events = {}
         @instances = {}
+        @ast_declaration = nil
       end
 
       def define_fields(fields)
@@ -870,6 +872,7 @@ module MilkTea
 
     class Struct < Base
       attr_reader :name, :module_name, :external, :packed, :alignment, :c_name
+      attr_accessor :ast_declaration
 
       def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil)
         @name = name
@@ -880,6 +883,7 @@ module MilkTea
         @c_name = c_name
         @fields = {}
         @events = {}
+        @ast_declaration = nil
       end
 
       def define_fields(fields)

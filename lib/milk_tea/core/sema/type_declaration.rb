@@ -370,6 +370,7 @@ module MilkTea
             next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::UnionDecl)
 
             struct_type = @types.fetch(decl.name)
+            struct_type.ast_declaration = decl if struct_type.respond_to?(:ast_declaration=)
             type_params = if struct_type.is_a?(Types::GenericStructDefinition)
                             seen = {}
                             struct_type.type_params.each_with_object({}) do |name, params|

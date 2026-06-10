@@ -472,6 +472,7 @@ Supported statements:
 - `inline for` — loop over a compile-time-known array, unrolled at compile time
 - `inline while` — loop with a compile-time-known condition, unrolled at compile time
 - `inline match` — match with a compile-time-known scrutinee, unrolled at compile time
+- `inline if` — if with a compile-time-known condition; only the chosen branch is type-checked and emitted
 - `unsafe`
 - `static_assert`
 - `for`
@@ -678,6 +679,24 @@ Rules:
 - Only the chosen arm is type-checked and emitted.
 - An `inline match` is not required to be exhaustive; unchosen arms are dropped.
 
+### 4.11 Inline if
+
+```mt
+const DEBUG_RENDER: bool = false
+
+function draw() -> void:
+    inline if DEBUG_RENDER:
+        debug_overlay()
+    else:
+        normal_draw()
+```
+
+Rules:
+
+- The condition must be a compile-time constant `bool`.
+- Only the chosen branch is type-checked and emitted. The dead branch may reference types and symbols that do not exist.
+- `inline if` supports `else` and `else if` branches with the same dead-branch elimination.
+
 ## 5. Expressions
 
 ### 5.1 Primary
@@ -685,9 +704,9 @@ Rules:
 - identifier
 - literals
 - parenthesized expression
-- `size_of(T)`
-- `align_of(T)`
-- `offset_of(T, field)`
+- `size_of(T)` — accepts a type name or a compile-time type expression
+- `align_of(T)` — accepts a type name or a compile-time type expression
+- `offset_of(T, field)` — the field argument may be a literal field name or a compile-time `field_handle` expression
 - `proc(...) -> T: ...` — anonymous function expression, e.g. `let fn_ptr = proc(x: int) -> int: return x + 1`
 - `proc(...) -> T: expr` — expression-bodied anonymous function, implicitly returning `expr`
 - `if cond: a else: b`
