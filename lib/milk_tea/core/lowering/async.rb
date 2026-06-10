@@ -1331,6 +1331,18 @@ module MilkTea
           receiver_setup, receiver = normalize_async_expression(target.receiver, counter, env:)
           index_setup, index = normalize_async_expression(target.index, counter, env:)
           [receiver_setup + index_setup, AST::IndexAccess.new(receiver:, index:)]
+        when AST::Call
+          if read_call?(target)
+            setup = []
+            normalized_args = target.arguments.map do |arg|
+              arg_setup, value = normalize_async_expression(arg.value, counter, env:)
+              setup.concat(arg_setup)
+              AST::Argument.new(name: arg.name, value:)
+            end
+            [setup, AST::Call.new(callee: target.callee, arguments: normalized_args)]
+          else
+            raise LoweringError, "unsupported assignment target #{target.class.name}"
+          end
         else
           raise LoweringError, "unsupported assignment target #{target.class.name}"
         end
