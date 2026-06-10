@@ -116,8 +116,8 @@ module MilkTea
     IfBranch = Data.define(:condition, :body, :line, :column, :length) do
       def initialize(condition:, body:, line: nil, column: nil, length: nil) = super
     end
-    IfStmt = Data.define(:branches, :else_body, :line, :else_line, :else_column) do
-      def initialize(branches:, else_body:, line: nil, else_line: nil, else_column: nil) = super
+    IfStmt = Data.define(:branches, :else_body, :inline, :line, :else_line, :else_column) do
+      def initialize(branches:, else_body:, inline: false, line: nil, else_line: nil, else_column: nil) = super
     end
     VariantDecl = Data.define(:name, :type_params, :arms, :visibility, :line) do
       def initialize(name:, type_params:, arms:, visibility:, line: nil) = super

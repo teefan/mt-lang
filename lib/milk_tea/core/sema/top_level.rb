@@ -247,6 +247,29 @@ module MilkTea
             resolve_current_module_const_value(identifier_expression.name)
           end,
           resolve_member_access: lambda do |member_access_expression|
+            if member_access_expression.receiver.is_a?(AST::Identifier) && scopes
+              binding = lookup_value(member_access_expression.receiver.name, scopes)
+              if binding && binding.const_value
+                receiver_value = binding.const_value
+                case receiver_value
+                when Types::FieldHandle
+                  case member_access_expression.member
+                  when "name" then next receiver_value.field_name
+                  when "type" then next resolve_type_ref(receiver_value.field_declaration.type)
+                  end
+                when Types::MemberHandle
+                  case member_access_expression.member
+                  when "name" then next receiver_value.name
+                  when "value" then next receiver_value.value
+                  end
+                when Types::AttributeHandle
+                  case member_access_expression.member
+                  when "name" then next receiver_value.name
+                  end
+                end
+              end
+            end
+
             if (receiver_type = resolve_type_expression(member_access_expression.receiver))
               next resolve_enum_member_const_value(receiver_type, member_access_expression.member)
             end

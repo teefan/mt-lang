@@ -472,16 +472,92 @@ module MilkTea
         raise_sema_error("#{context} requires a concrete sized type, got #{type}")
       end
 
-      def infer_offsetof_type(type_ref, field_name)
+      def infer_layout_query_type_from_expr(expression, context:, scopes:)
+        if expression.is_a?(AST::Identifier)
+          type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts: [expression.name]), arguments: [], nullable: false)
+          type = resolve_type_ref(type_ref)
+          return type if sized_layout_type?(type)
+        end
+
+        if expression.is_a?(AST::MemberAccess)
+          parts = collect_member_access_parts(expression)
+          if parts
+            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
+            type = resolve_type_ref(type_ref)
+            return type if sized_layout_type?(type)
+          end
+        end
+
+        if expression.is_a?(AST::Specialization)
+          type_ref = specialization_to_type_ref(expression)
+          if type_ref
+            type = resolve_type_ref(type_ref)
+            return type if sized_layout_type?(type)
+          end
+        end
+
+        if expression.is_a?(AST::UnaryOp) && expression.operator == "?"
+          inner_type = infer_layout_query_type_from_expr(expression.operand, context:, scopes:)
+          return Types::Nullable.new(base: inner_type) if inner_type
+        end
+
+        ct_value = evaluate_compile_time_const_value(expression, scopes:)
+        if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
+           ct_value.is_a?(Types::Union) || ct_value.is_a?(Types::Nullable) ||
+           ct_value.is_a?(Types::StructInstance)
+          return ct_value if sized_layout_type?(ct_value)
+        end
+
+        raise_sema_error("#{context} requires a concrete sized type, got #{expression}")
+      end
+
+      def collect_member_access_parts(expression)
+        parts = []
+        current = expression
+        while current.is_a?(AST::MemberAccess)
+          parts.unshift(current.member)
+          current = current.receiver
+        end
+        return unless current.is_a?(AST::Identifier)
+
+        parts.unshift(current.name)
+        parts
+      end
+
+      def specialization_to_type_ref(specialization)
+        return unless specialization.callee.is_a?(AST::Identifier)
+
+        type_args = specialization.arguments.filter_map do |arg|
+          next unless arg.is_a?(AST::TypeArgument)
+          next unless arg.value.is_a?(AST::TypeRef)
+
+          arg
+        end
+
+        AST::TypeRef.new(
+          name: AST::QualifiedName.new(parts: [specialization.callee.name]),
+          arguments: type_args,
+          nullable: false,
+        )
+      end
+
+      def infer_offsetof_type(type_ref, field_name, scopes: nil)
         type = resolve_type_ref(type_ref)
         unless layout_aggregate_type?(type)
           raise_sema_error("offset_of requires a struct, union, span, or str type, got #{type}")
         end
 
         field_type = type.field(field_name)
-        raise_sema_error("unknown field #{type}.#{field_name}") unless field_type
+        return type if field_type
 
-        type
+        if scopes
+          binding = lookup_value(field_name, scopes)
+          if binding && binding.storage_type.is_a?(Types::ReflectionHandleType) && binding.storage_type.name == "field_handle"
+            return type
+          end
+        end
+
+        raise_sema_error("unknown field #{type}.#{field_name}")
       end
 
       def sized_layout_type?(type)

@@ -241,14 +241,24 @@ module MilkTea
         when AST::Specialization
           @resolve_call&.call(expression)
         when AST::SizeofExpr
-          type = resolve_layout_type(expression.type)
+          type = resolve_type_from_expr(expression.type)
           type && Layout.size_of(type)
         when AST::AlignofExpr
-          type = resolve_layout_type(expression.type)
+          type = resolve_type_from_expr(expression.type)
           type && Layout.alignment_of(type)
         when AST::OffsetofExpr
           type = resolve_layout_type(expression.type)
-          type && Layout.offset_of(type, expression.field)
+          if type
+            result = Layout.offset_of(type, expression.field)
+            return result if result
+
+            id_expr = AST::Identifier.new(name: expression.field)
+            value = @resolve_identifier&.call(id_expr)
+            if value.is_a?(Types::FieldHandle)
+              return Layout.offset_of(type, value.field_name)
+            end
+          end
+          nil
         when AST::UnaryOp
           evaluate_unary(expression)
         when AST::BinaryOp
@@ -269,6 +279,63 @@ module MilkTea
         return unless @resolve_type_ref
 
         @resolve_type_ref.call(type_ref)
+      end
+
+      def resolve_type_from_expr(expression)
+        if expression.is_a?(AST::Identifier)
+          type_ref_wrapper = AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: [expression.name]),
+            arguments: [],
+            nullable: false,
+          )
+          type = @resolve_type_ref&.call(type_ref_wrapper)
+          return type if type
+        end
+
+        if expression.is_a?(AST::MemberAccess)
+          parts = collect_member_access_parts(expression)
+          if parts
+            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
+            type = @resolve_type_ref&.call(type_ref)
+            return type if type
+          end
+        end
+
+        if expression.is_a?(AST::Specialization) && expression.callee.is_a?(AST::Identifier)
+          type_args = expression.arguments.filter_map do |arg|
+            next unless arg.is_a?(AST::TypeArgument)
+            next unless arg.value.is_a?(AST::TypeRef)
+
+            arg
+          end
+          type_ref = AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: [expression.callee.name]),
+            arguments: type_args,
+            nullable: false,
+          )
+          type = @resolve_type_ref&.call(type_ref)
+          return type if type
+        end
+
+        value = evaluate(expression)
+        return value if value.is_a?(Types::Struct) || value.is_a?(Types::Primitive) ||
+                       value.is_a?(Types::Union) || value.is_a?(Types::Nullable) ||
+                       value.is_a?(Types::StructInstance)
+
+        nil
+      end
+
+      def collect_member_access_parts(expression)
+        parts = []
+        current = expression
+        while current.is_a?(AST::MemberAccess)
+          parts.unshift(current.member)
+          current = current.receiver
+        end
+        return unless current.is_a?(AST::Identifier)
+
+        parts.unshift(current.name)
+        parts
       end
 
       def evaluate_unary(expression)

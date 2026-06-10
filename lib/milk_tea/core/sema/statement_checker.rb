@@ -55,6 +55,11 @@ module MilkTea
           when AST::Assignment
             check_assignment(statement, scopes:)
           when AST::IfStmt
+            if statement.inline
+              check_inline_if_stmt(statement, scopes:, return_type:, allow_return:)
+              next
+            end
+
             false_refinements = {}
             branch_bodies_terminate = []
             statement.branches.each do |branch|
@@ -806,6 +811,7 @@ module MilkTea
             mutable: false,
             kind: :let,
             id: @preassigned_local_binding_ids[statement.bindings.first.object_id],
+            const_value: element,
           )
           with_loop do
             check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
@@ -819,6 +825,18 @@ module MilkTea
 
         with_loop do
           check_block(statement.body, scopes:, return_type:, allow_return:)
+        end
+      end
+
+      def check_inline_if_stmt(statement, scopes:, return_type:, allow_return:)
+        condition_value = evaluate_compile_time_const_value(statement.branches.first.condition, scopes:)
+        raise_sema_error("inline if condition must be a compile-time constant") if condition_value.nil?
+        raise_sema_error("inline if condition must be bool, got #{condition_value.class}") unless condition_value == true || condition_value == false
+
+        if condition_value
+          check_block(statement.branches.first.body, scopes:, return_type:, allow_return:)
+        elsif statement.else_body
+          check_block(statement.else_body, scopes:, return_type:, allow_return:)
         end
       end
 
