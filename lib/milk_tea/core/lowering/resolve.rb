@@ -513,6 +513,11 @@ module MilkTea
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, env:)
+          if array_type?(field_receiver_type) && callee.member == "as_span"
+            return [:array_as_span, nil, callee.receiver, Types::Span.new(array_element_type(field_receiver_type))]
+          end
+
+          member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
           member_type = field_receiver_type.respond_to?(:field) ? field_receiver_type.field(callee.member) : nil
           return [:callable_value, nil, nil, member_type, nil] if callable_type?(member_type)
 
@@ -772,6 +777,8 @@ module MilkTea
             else
               Types::GenericInstance.new("ptr", [infer_expression_type(expression.arguments.fetch(0).value, env:, expected_type: expected_type && pointer_type?(expected_type) ? pointee_type(expected_type) : nil)])
             end
+          when :array_as_span
+            callee_type
           when :fatal
             @types.fetch("void")
           when :get

@@ -855,7 +855,7 @@ For recoverable failures, use `Result[T, E]`. Its `.success(...)` and `.failure(
 
 For repeated pointer-plus-length span construction, use the built-in `span[T](data = ..., len = ...)` form directly. If the pattern repeats often in one codebase, define a small local helper in your own module instead of depending on a standard helper module.
 
-When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly through the existing boundary coercion rules. There is no separate `array.as_span()` method surface.
+When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly through the existing boundary coercion rules. Arrays also expose `.as_span()` for explicit conversion when the target type is not a call boundary.
 
 ### 7.0 Compile-time reflection builtins
 

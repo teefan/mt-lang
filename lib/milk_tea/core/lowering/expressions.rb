@@ -1319,6 +1319,10 @@ module MilkTea
           return lower_compile_time_handle_member(handle, expression.member, type) if handle.is_a?(Types::MemberHandle)
         end
 
+        if array_type?(receiver_type) && expression.member == "as_span"
+          return lower_array_to_span_expression(lower_expression(expression.receiver, env:), type)
+        end
+
         receiver = lower_expression(expression.receiver, env:)
         IR::Member.new(receiver:, member: member_c_name(receiver_type, expression.member), type:)
       end
