@@ -71,6 +71,38 @@ module MilkTea
               @checker.send(:evaluate_compile_time_const_value, ma_expr, scopes:)
             },
             resolve_call: ->(call_expr) {
+              if call_expr.callee.is_a?(AST::Identifier)
+                func = @checker.instance_variable_get(:@top_level_functions)&.fetch(call_expr.callee.name, nil)
+                if func&.ast&.respond_to?(:const) && func.ast.const
+                  begin
+                    initial_vars = {}
+                    func.ast.params.each_with_index do |param, idx|
+                      return nil if idx >= call_expr.arguments.length
+
+                      arg_expr = call_expr.arguments[idx].value
+                      arg_value = case arg_expr
+                                  when AST::Identifier
+                                    @variables[arg_expr.name] || @checker.send(:evaluate_compile_time_const_value, arg_expr, scopes:)
+                                  else
+                                    CompileTime.evaluate(
+                                      arg_expr,
+                                      resolve_identifier: ->(id) { @variables[id.name] || @checker.send(:evaluate_compile_time_const_value, id, scopes:) },
+                                      resolve_member_access: ->(ma) { @checker.send(:evaluate_compile_time_const_value, ma, scopes:) },
+                                      resolve_type_ref: nil,
+                                      resolve_call: nil,
+                                    )
+                                  end
+                      return nil unless arg_value
+
+                      initial_vars[param.name] = arg_value
+                    end
+                    ctx = CompileTime::BlockContext.new(@checker, initial_variables: initial_vars)
+                    ctx.evaluate_block(func.ast.body, scopes:)
+                  rescue CompileTime::ReturnValue => e
+                    e.value
+                  end
+                end
+              end
               @checker.send(:evaluate_compile_time_const_value, call_expr, scopes:)
             },
           )
