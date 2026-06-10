@@ -1462,11 +1462,66 @@ module MilkTea
           when "attributes_of"
             evaluate_attributes_of_call(expression.arguments, env:)
           else
-            nil
+            evaluate_type_returning_call(expression, env:)
           end
         when AST::Specialization
           if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
             evaluate_attribute_arg_call(expression.arguments, env:)
+          else
+            evaluate_type_returning_call(expression, env:)
+          end
+        else
+          evaluate_type_returning_call(expression, env:)
+        end
+      end
+
+      def evaluate_type_returning_call(expression, env:)
+        callee_name = nil
+        type_args = nil
+
+        if expression.is_a?(AST::Call)
+          callee_name = expression.callee.name if expression.callee.is_a?(AST::Identifier)
+        elsif expression.is_a?(AST::Specialization)
+          if expression.callee.is_a?(AST::Identifier)
+            callee_name = expression.callee.name
+            type_args = expression.arguments
+          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
+            callee_name = expression.callee.callee.name
+            type_args = expression.callee.arguments
+          end
+        end
+
+        return nil unless callee_name
+
+        case callee_name
+        when "ptr", "const_ptr", "span", "array", "str_buffer", "Task"
+          evaluated_args = (type_args || []).map do |arg|
+            value = arg.value
+            if value.is_a?(AST::Identifier)
+              compile_time_const_value(value, env:)
+            elsif value.is_a?(AST::TypeRef)
+              resolve_type_ref(value)
+            elsif value.is_a?(AST::IntegerLiteral)
+              Types::LiteralTypeArg.new(value.value)
+            end
+          end
+          return nil if evaluated_args.any?(&:nil?)
+
+          case callee_name
+          when "ptr"
+            pointer_to(evaluated_args.first)
+          when "const_ptr"
+            const_pointer_to(evaluated_args.first)
+          when "ref"
+            reference_to(evaluated_args.first)
+          when "span"
+            Types::Span.new(evaluated_args.first)
+          when "array"
+            Types::GenericInstance.new("array", evaluated_args)
+          when "str_buffer"
+            Types::GenericInstance.new("str_buffer", evaluated_args)
+          when "Task"
+            Types::Task.new(evaluated_args.first)
           end
         else
           nil

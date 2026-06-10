@@ -919,9 +919,11 @@ module MilkTea
       end
 
       def let_else_storage_c_name(statement, env)
-        return c_local_name(statement.name) unless let_else_discard_binding_syntax?(statement)
+        return fresh_c_temp_name(env, "let_else_discard") if let_else_discard_binding_syntax?(statement)
 
-        fresh_c_temp_name(env, "let_else_discard")
+        return fresh_c_temp_name(env, "_") if statement.name == "_"
+
+        c_local_name(statement.name)
       end
 
       def let_else_success_type(type)

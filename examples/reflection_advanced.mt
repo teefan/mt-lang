@@ -410,8 +410,8 @@ function main() -> int:
     if code != 0:
         return code
     code = test_sizeof_nullable()
-    let _ = test_sizeof_field_type[Vec3]()
-    let _ = test_sizeof_generic[uint]()
+    code = test_sizeof_field_type[Vec3]()
+    code = test_sizeof_generic[uint]()
 
     code = test_offsetof_literal()
     if code != 0:
@@ -419,8 +419,8 @@ function main() -> int:
     code = test_offsetof_packed()
     if code != 0:
         return code
-    let _ = test_offsetof_inline_for[Vec3]()
-    let _ = test_offsetof_generic[Entity]()
+    code = test_offsetof_inline_for[Vec3]()
+    code = test_offsetof_generic[Entity]()
 
     let nf = count_fields[Entity]()
     let nm = first_field_name[Vec3]()
@@ -445,7 +445,7 @@ function main() -> int:
     if code != 0:
         return code
 
-    let _ = test_inline_for_if[Entity]()
+    code = test_inline_for_if[Entity]()
     code = test_double_inline_for()
     if code != 0:
         return code
@@ -453,12 +453,12 @@ function main() -> int:
     code = test_alignof_literal()
     if code != 0:
         return code
-    let _ = test_alignof_field[CompactHeader]()
+    var _align = test_alignof_field[CompactHeader]()
 
     var ts = TaggedStruct(data = uint<-0)
-    let _ = reflect_constrained[TaggedStruct](ref_of(ts))
+    code = reflect_constrained[TaggedStruct](ref_of(ts))
     code = test_nullable_ptr()
-    let _ = test_zero_and_reflect[Vec3]()
-    let _ = first_field_offset[CompactHeader]()
+    code = test_zero_and_reflect[Vec3]()
+    var fo: ptr_uint = first_field_offset[CompactHeader]()
 
     return 0
