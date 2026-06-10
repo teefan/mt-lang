@@ -423,6 +423,7 @@ function typed_sizes[T]() -> ptr_uint:
             total = total + ptr_uint<-1
     return total
 
+
 function test_type_dispatch() -> int:
     let cs = typed_sizes[CompactHeader]()
     if cs != ptr_uint<-4:
