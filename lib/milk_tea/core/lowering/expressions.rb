@@ -1190,11 +1190,24 @@ module MilkTea
         when AST::FloatLiteral
           IR::FloatLiteral.new(value: expression.value, type:)
         when AST::SizeofExpr
-          IR::SizeofExpr.new(target_type: resolve_type_ref(expression.type), type:)
+          type = resolve_type_from_sizeof_expr(expression.type, env:)
+          type ? IR::SizeofExpr.new(target_type: type, type:) : raise(LoweringError, "size_of argument is not a concrete type")
         when AST::AlignofExpr
-          IR::AlignofExpr.new(target_type: resolve_type_ref(expression.type), type:)
+          type = resolve_type_from_sizeof_expr(expression.type, env:)
+          type ? IR::AlignofExpr.new(target_type: type, type:) : raise(LoweringError, "align_of argument is not a concrete type")
         when AST::OffsetofExpr
-          IR::OffsetofExpr.new(target_type: resolve_type_ref(expression.type), field: expression.field, type:)
+          target_type = resolve_type_ref(expression.type)
+          binding = lookup_value(expression.field, env)
+          if binding && binding[:const_value].is_a?(Types::FieldHandle)
+            offset = CompileTime::Layout.offset_of(target_type, binding[:const_value].field_name)
+            if offset
+              IR::IntegerLiteral.new(value: offset, type:)
+            else
+              IR::OffsetofExpr.new(target_type:, field: binding[:const_value].field_name, type:)
+            end
+          else
+            IR::OffsetofExpr.new(target_type:, field: expression.field, type:)
+          end
         when AST::StringLiteral
           IR::StringLiteral.new(value: expression.value, type:, cstring: expression.cstring)
         when AST::FormatString
@@ -1456,6 +1469,63 @@ module MilkTea
         end
 
         owner_type.field_c_name(member)
+      end
+
+      def resolve_type_from_sizeof_expr(expression, env:)
+        if expression.is_a?(AST::Identifier)
+          type_ref = AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: [expression.name]),
+            arguments: [],
+            nullable: false,
+          )
+          type = resolve_type_ref(type_ref)
+          return type if type
+        end
+
+        if expression.is_a?(AST::MemberAccess)
+          parts = collect_member_access_parts(expression)
+          if parts
+            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
+            type = resolve_type_ref(type_ref)
+            return type if type
+          end
+        end
+
+        if expression.is_a?(AST::Specialization) && expression.callee.is_a?(AST::Identifier)
+          type_args = expression.arguments.filter_map do |arg|
+            next unless arg.is_a?(AST::TypeArgument)
+            next unless arg.value.is_a?(AST::TypeRef)
+
+            arg
+          end
+          type_ref = AST::TypeRef.new(
+            name: AST::QualifiedName.new(parts: [expression.callee.name]),
+            arguments: type_args,
+            nullable: false,
+          )
+          type = resolve_type_ref(type_ref)
+          return type if type
+        end
+
+        ct_value = compile_time_const_value(expression, env:)
+        if ct_value.is_a?(Types::Struct) || ct_value.is_a?(Types::Primitive) ||
+           ct_value.is_a?(Types::Union) || ct_value.is_a?(Types::Nullable) ||
+           ct_value.is_a?(Types::StructInstance)
+          ct_value
+        end
+      end
+
+      def collect_member_access_parts(expression)
+        parts = []
+        current = expression
+        while current.is_a?(AST::MemberAccess)
+          parts.unshift(current.member)
+          current = current.receiver
+        end
+        return unless current.is_a?(AST::Identifier)
+
+        parts.unshift(current.name)
+        parts
       end
   end
 end

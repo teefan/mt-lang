@@ -216,6 +216,11 @@ module MilkTea
               lowered << IR::Assignment.new(target:, operator: statement.operator, value:)
             end
           when AST::IfStmt
+            if statement.inline
+              lowered.concat(lower_inline_if_stmt(statement, env: local_env, active_defers:, return_type:, allow_return:))
+              next
+            end
+
             false_refinements = {}
             branch_entries = []
 
@@ -610,6 +615,19 @@ module MilkTea
         end
 
         lowered
+      end
+
+      def lower_inline_if_stmt(statement, env:, active_defers:, return_type:, allow_return:)
+        condition_value = compile_time_const_value(statement.branches.first.condition, env:)
+        return [] unless condition_value == true || condition_value == false
+
+        if condition_value
+          lower_block(statement.branches.first.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
+        elsif statement.else_body
+          lower_block(statement.else_body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
+        else
+          []
+        end
       end
 
       def lower_inline_match_stmt(statement, env:, active_defers:, return_type:, allow_return:)

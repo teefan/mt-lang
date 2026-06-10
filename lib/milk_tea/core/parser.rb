@@ -1438,8 +1438,10 @@ module MilkTea
         parse_inline_while_stmt(token)
       elsif match(:match)
         parse_inline_match_stmt(token)
+      elsif match(:if)
+        parse_inline_if_stmt(token)
       else
-        raise error(peek, "expected for, while, or match after inline")
+        raise error(peek, "expected for, while, match, or if after inline")
       end
     end
 
@@ -1503,6 +1505,21 @@ module MilkTea
       return AST::MatchStmt.new(expression: expression || recovery_error_expr(e), arms: arms + recovered_arms, inline: true, line:, column: token.column, length: token.lexeme.length) if recovered_arms
 
       recovery_error_stmt(e)
+    end
+
+    def parse_inline_if_stmt(inline_token)
+      token = previous
+      line = token.line
+      branches = [parse_if_branch(token)]
+
+      while check(:else) && check_next(:if)
+        advance
+        advance
+        branches << parse_if_branch(previous)
+      end
+
+      else_body = match(:else) ? parse_else_branch_body : nil
+      AST::IfStmt.new(branches:, else_body:, inline: true, line:)
     end
 
     def parse_assignment_or_expression_stmt
@@ -1895,15 +1912,15 @@ module MilkTea
 
     def parse_sizeof_expr
       consume(:lparen, "expected '(' after size_of")
-      type = parse_type_ref
-      consume(:rparen, "expected ')' after size_of type")
+      type = parse_expression
+      consume(:rparen, "expected ')' after size_of argument")
       AST::SizeofExpr.new(type:)
     end
 
     def parse_alignof_expr
       consume(:lparen, "expected '(' after align_of")
-      type = parse_type_ref
-      consume(:rparen, "expected ')' after align_of type")
+      type = parse_expression
+      consume(:rparen, "expected ')' after align_of argument")
       AST::AlignofExpr.new(type:)
     end
 
@@ -2207,7 +2224,7 @@ module MilkTea
       return false if next_idx >= @tokens.length
 
       next_token = @tokens[next_idx]
-      %i[for while match].include?(next_token.type)
+      %i[for while match if].include?(next_token.type)
     end
 
     def check_when_start?
