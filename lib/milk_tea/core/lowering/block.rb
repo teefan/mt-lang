@@ -618,11 +618,13 @@ module MilkTea
       end
 
       def lower_inline_if_stmt(statement, env:, active_defers:, return_type:, allow_return:)
-        condition_value = compile_time_const_value(statement.branches.first.condition, env:)
-        return [] unless condition_value == true || condition_value == false
+        chosen_branch = statement.branches.find do |branch|
+          ct_value = compile_time_const_value(branch.condition, env:)
+          ct_value == true
+        end
 
-        if condition_value
-          lower_block(statement.branches.first.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
+        if chosen_branch
+          lower_block(chosen_branch.body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
         elsif statement.else_body
           lower_block(statement.else_body, env:, active_defers:, return_type:, loop_flow: nil, allow_return:)
         else

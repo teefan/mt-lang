@@ -413,13 +413,13 @@ function typed_sizes[T]() -> ptr_uint:
     inline for field in fields_of(T):
         inline if field.type == float:
             total = total + ptr_uint<-4
-        inline if field.type == uint:
+        else if field.type == uint:
             total = total + ptr_uint<-4
-        inline if field.type == ushort:
+        else if field.type == ushort:
             total = total + ptr_uint<-2
-        inline if field.type == ubyte:
+        else if field.type == ubyte:
             total = total + ptr_uint<-1
-        inline if field.type == byte:
+        else if field.type == byte:
             total = total + ptr_uint<-1
     return total
 
