@@ -407,7 +407,7 @@ function libuv_error(code: int) -> Error:
     return Error(code = code, message = take_owned_message(text.cstr_as_str(libuv.strerror(code))))
 
 
-function net_error(message: str) -> Error:
+public function net_error(message: str) -> Error:
     return Error(code = -1, message = take_owned_message(message))
 
 

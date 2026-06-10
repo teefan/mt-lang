@@ -5,8 +5,20 @@ import std.deque as deque
 import std.mem.heap as heap
 import std.net as net
 import std.net.session as sess
-import std.string as string
 import std.vec as vec
+
+public struct MuxedSendOptions:
+    reliable: bool
+    fragmented: bool
+
+extending MuxedSendOptions:
+    public function to_flags() -> ubyte:
+        var send_flags: ubyte = 0
+        if this.reliable:
+            send_flags |= flag_reliable
+        if this.fragmented:
+            send_flags |= flag_fragmented
+        return send_flags
 
 public const flag_reliable: ubyte = 0x01
 public const flag_fragmented: ubyte = 0x04
@@ -62,20 +74,6 @@ struct WireHeader:
     type_id: ushort
     msg_flags: ubyte
 
-public struct Error:
-    code: int
-    message: string.String
-
-
-function mux_error(code: int, message: str) -> Error:
-    return Error(code = code, message = string.String.from_str(message))
-
-
-extending Error:
-    public editable function release() -> void:
-        this.message.release()
-
-
 extending MuxedConfig:
     public static function default() -> MuxedConfig:
         return MuxedConfig(
@@ -94,14 +92,14 @@ public function mux_connect_on(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: MuxedConfig
-) -> Result[MuxedConnection, Error]:
+) -> Result[MuxedConnection, net.Error]:
     let payload_size = config.fragment_size + wire_header_size + fragment_header_size + 32
     let session_config = sess.Config.default(payload_size)
     let conn_result = sess.connect_on(runtime, local_address, remote_address, session_config)
     match conn_result:
         Result.failure as p:
-            return Result[MuxedConnection, Error].failure(
-                error = Error(code = p.error.code, message = p.error.message)
+            return Result[MuxedConnection, net.Error].failure(
+                error = p.error
             )
         Result.success as p:
             var conn = MuxedConnection(
@@ -112,32 +110,42 @@ public function mux_connect_on(
                 next_group_id = 1,
                 current_frame = 0
             )
-            return Result[MuxedConnection, Error].success(value = conn)
+            return Result[MuxedConnection, net.Error].success(value = conn)
 
 
-public function mux_connect(
+public async function mux_connect(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: MuxedConfig
-) -> Result[MuxedConnection, Error]:
-    return mux_connect_on(aio.current_runtime(), local_address, remote_address, config)
+) -> Result[MuxedConnection, net.Error]:
+    match mux_connect_on(aio.current_runtime(), local_address, remote_address, config):
+        Result.failure as p:
+            return Result[MuxedConnection, net.Error].failure(error = p.error)
+        Result.success as p:
+            var mux_conn = p.value
+            match await mux_conn.connect_to_peer():
+                Result.failure as cp:
+                    mux_conn.release()
+                    return Result[MuxedConnection, net.Error].failure(error = cp.error)
+                Result.success:
+                    return Result[MuxedConnection, net.Error].success(value = mux_conn)
 
 
 public function mux_listen_on(
     runtime: aio.Runtime,
     local_address: net.SocketAddress,
     config: MuxedConfig
-) -> Result[MuxedSession, Error]:
+) -> Result[MuxedSession, net.Error]:
     let payload_size = config.fragment_size + wire_header_size + fragment_header_size + 32
     let session_config = sess.Config.default(payload_size)
     let listen_result = sess.listen_on(runtime, local_address, session_config)
     match listen_result:
         Result.failure as p:
-            return Result[MuxedSession, Error].failure(
-                error = Error(code = p.error.code, message = p.error.message)
+            return Result[MuxedSession, net.Error].failure(
+                error = p.error
             )
         Result.success as p:
-            return Result[MuxedSession, Error].success(value = MuxedSession(
+            return Result[MuxedSession, net.Error].success(value = MuxedSession(
                 session = p.value,
                 config = config,
                 event_queue = deque.Deque[MuxedMessage].create(),
@@ -150,7 +158,7 @@ public function mux_listen_on(
 public function mux_listen(
     local_address: net.SocketAddress,
     config: MuxedConfig
-) -> Result[MuxedSession, Error]:
+) -> Result[MuxedSession, net.Error]:
     return mux_listen_on(aio.current_runtime(), local_address, config)
 
 
@@ -175,44 +183,44 @@ extending MuxedConnection:
         return this.conn.peer_address()
 
 
-    public async editable function connect_to_peer() -> Result[bool, Error]:
+    public async editable function connect_to_peer() -> Result[bool, net.Error]:
         match await this.conn.connect_to_peer():
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         this.current_frame = frame
         let conn_result = await this.conn.tick(frame)
         drain_incoming_conn(ref_of(this))
         prune_frag_buffers(ref_of(this.frag_buffers), frame, this.config.fragment_timeout_frames)
         match conn_result:
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
     public editable function try_recv() -> Option[MuxedMessage]:
         return this.event_queue.pop_front()
 
 
-    public async editable function recv() -> Result[Option[MuxedMessage], Error]:
+    public async editable function recv() -> Result[Option[MuxedMessage], net.Error]:
         while true:
             let ev = this.try_recv()
             match ev:
                 Option.some as p:
-                    return Result[Option[MuxedMessage], Error].success(
+                    return Result[Option[MuxedMessage], net.Error].success(
                         value = Option[MuxedMessage].some(value = p.value)
                     )
                 Option.none:
                     let sess_result = await this.conn.recv()
                     match sess_result:
                         Result.failure as p:
-                            return Result[Option[MuxedMessage], Error].failure(
-                                error = Error(code = p.error.code, message = p.error.message)
+                            return Result[Option[MuxedMessage], net.Error].failure(
+                                error = p.error
                             )
                         Result.success as sess_p:
                             match sess_p.value:
@@ -224,7 +232,7 @@ extending MuxedConnection:
                                     let queued = this.try_recv()
                                     match queued:
                                         Option.some as q:
-                                            return Result[Option[MuxedMessage], Error].success(
+                                            return Result[Option[MuxedMessage], net.Error].success(
                                                 value = Option[MuxedMessage].some(value = q.value)
                                             )
                                         Option.none:
@@ -236,18 +244,18 @@ extending MuxedConnection:
         type_id: ushort,
         data: span[ubyte],
         send_flags: ubyte
-    ) -> Result[bool, Error]:
+    ) -> Result[bool, net.Error]:
         if (send_flags & flag_fragmented) != 0 and data.len > this.config.fragment_size:
             return await send_fragmented_conn(ref_of(this), channel_id, type_id, data, send_flags)
         return await send_single_conn(ref_of(this), channel_id, type_id, data, send_flags)
 
 
-    public async editable function disconnect() -> Result[bool, Error]:
+    public async editable function disconnect() -> Result[bool, net.Error]:
         match await this.conn.disconnect_peer():
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
 extending MuxedSession:
@@ -267,36 +275,36 @@ extending MuxedSession:
         return this.session.peer_count()
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         this.current_frame = frame
         let sess_result = await this.session.tick(frame)
         drain_incoming_session(ref_of(this))
         prune_frag_buffers(ref_of(this.frag_buffers), frame, this.config.fragment_timeout_frames)
         match sess_result:
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
     public editable function try_recv() -> Option[MuxedMessage]:
         return this.event_queue.pop_front()
 
 
-    public async editable function recv() -> Result[Option[MuxedMessage], Error]:
+    public async editable function recv() -> Result[Option[MuxedMessage], net.Error]:
         while true:
             let ev = this.try_recv()
             match ev:
                 Option.some as p:
-                    return Result[Option[MuxedMessage], Error].success(
+                    return Result[Option[MuxedMessage], net.Error].success(
                         value = Option[MuxedMessage].some(value = p.value)
                     )
                 Option.none:
                     let sess_result = await this.session.recv()
                     match sess_result:
                         Result.failure as p:
-                            return Result[Option[MuxedMessage], Error].failure(
-                                error = Error(code = p.error.code, message = p.error.message)
+                            return Result[Option[MuxedMessage], net.Error].failure(
+                                error = p.error
                             )
                         Result.success as sess_p:
                             match sess_p.value:
@@ -308,7 +316,7 @@ extending MuxedSession:
                                     let queued = this.try_recv()
                                     match queued:
                                         Option.some as q:
-                                            return Result[Option[MuxedMessage], Error].success(
+                                            return Result[Option[MuxedMessage], net.Error].success(
                                                 value = Option[MuxedMessage].some(value = q.value)
                                             )
                                         Option.none:
@@ -321,18 +329,18 @@ extending MuxedSession:
         type_id: ushort,
         data: span[ubyte],
         send_flags: ubyte
-    ) -> Result[bool, Error]:
+    ) -> Result[bool, net.Error]:
         if (send_flags & flag_fragmented) != 0 and data.len > this.config.fragment_size:
             return await send_fragmented_session(ref_of(this), peer_id, channel_id, type_id, data, send_flags)
         return await send_single_session(ref_of(this), peer_id, channel_id, type_id, data, send_flags)
 
 
-    public async editable function kick(peer_id: uint, reason: ubyte) -> Result[bool, Error]:
+    public async editable function kick(peer_id: uint, reason: ubyte) -> Result[bool, net.Error]:
         match await this.session.kick(peer_id, reason):
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
 function encode_frame(channel_id: ubyte, type_id: ushort, msg_flags: ubyte, payload: span[ubyte]) -> bytes.Bytes:
@@ -370,14 +378,14 @@ async function send_single_conn(
     type_id: ushort,
     data: span[ubyte],
     send_flags: ubyte
-) -> Result[bool, Error]:
+) -> Result[bool, net.Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
     defer frame.release()
     if (send_flags & flag_reliable) != 0:
         let result = await mux.conn.send_reliable(frame.as_span(), 0)
-        return convert_conn_result(result)
+        return result
     let result = await mux.conn.send(frame.as_span())
-    return convert_conn_result(result)
+    return result
 
 
 async function send_single_session(
@@ -387,14 +395,14 @@ async function send_single_session(
     type_id: ushort,
     data: span[ubyte],
     send_flags: ubyte
-) -> Result[bool, Error]:
+) -> Result[bool, net.Error]:
     var frame = encode_frame(channel_id, type_id, send_flags, data)
     defer frame.release()
     if (send_flags & flag_reliable) != 0:
         let result = await mux.session.send_reliable(peer_id, frame.as_span(), 0)
-        return convert_sess_result(result)
+        return result
     let result = await mux.session.send(peer_id, frame.as_span())
-    return convert_sess_result(result)
+    return result
 
 
 async function send_fragmented_conn(
@@ -403,7 +411,7 @@ async function send_fragmented_conn(
     type_id: ushort,
     data: span[ubyte],
     send_flags: ubyte
-) -> Result[bool, Error]:
+) -> Result[bool, net.Error]:
     let group_id = mux.next_group_id
     mux.next_group_id += 1
     let frag_flags = send_flags | flag_fragmented
@@ -434,7 +442,7 @@ async function send_fragmented_conn(
         offset += chunk_len
         remaining -= chunk_len
         frag_index += 1
-    return Result[bool, Error].success(value = true)
+    return Result[bool, net.Error].success(value = true)
 
 
 async function send_fragmented_session(
@@ -444,7 +452,7 @@ async function send_fragmented_session(
     type_id: ushort,
     data: span[ubyte],
     send_flags: ubyte
-) -> Result[bool, Error]:
+) -> Result[bool, net.Error]:
     let group_id = mux.next_group_id
     mux.next_group_id += 1
     let frag_flags = send_flags | flag_fragmented
@@ -475,36 +483,20 @@ async function send_fragmented_session(
         offset += chunk_len
         remaining -= chunk_len
         frag_index += 1
-    return Result[bool, Error].success(value = true)
+    return Result[bool, net.Error].success(value = true)
 
 
-function convert_conn_result(result: Result[bool, sess.Error]) -> Result[bool, Error]:
-    match result:
-        Result.failure as p:
-            return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
-        Result.success as p:
-            return Result[bool, Error].success(value = p.value)
-
-
-function convert_sess_result(result: Result[bool, sess.Error]) -> Result[bool, Error]:
-    match result:
-        Result.failure as p:
-            return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
-        Result.success as p:
-            return Result[bool, Error].success(value = p.value)
-
-
-function decode_wire_header(data: span[ubyte]) -> Result[WireHeader, Error]:
+function decode_wire_header(data: span[ubyte]) -> Result[WireHeader, net.Error]:
     if data.len < wire_header_size:
-        return Result[WireHeader, Error].failure(error = mux_error(-1, "mux payload too short"))
+        return Result[WireHeader, net.Error].failure(error = net.net_error("mux payload too short"))
     var r = bin.reader(data)
     let channel_id = r.read_ubyte() else:
-        return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
+        return Result[WireHeader, net.Error].failure(error = net.net_error("mux malformed header"))
     let type_id = r.read_ushort() else:
-        return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
+        return Result[WireHeader, net.Error].failure(error = net.net_error("mux malformed header"))
     let wire_flags = r.read_ubyte() else:
-        return Result[WireHeader, Error].failure(error = mux_error(-1, "mux malformed header"))
-    return Result[WireHeader, Error].success(value = WireHeader(
+        return Result[WireHeader, net.Error].failure(error = net.net_error("mux malformed header"))
+    return Result[WireHeader, net.Error].success(value = WireHeader(
         channel_id = channel_id,
         type_id = type_id,
         msg_flags = wire_flags

@@ -32,10 +32,6 @@ public enum ConnectionState: int
     connecting = 1
     connected = 2
 
-public struct Error:
-    code: int
-    message: string.String
-
 public struct Config:
     max_payload_bytes: ptr_uint
     protocol_version: uint
@@ -62,8 +58,8 @@ extending PeerEvent:
         if this.kind == PeerEventKind.user_data:
             this.payload.release()
 
-type ChanMessageTask = Task[Result[Option[chan.Message], chan.Error]]
-type ChanHostMessageTask = Task[Result[Option[chan.HostMessage], chan.Error]]
+type ChanMessageTask = Task[Result[Option[chan.Message], net.Error]]
+type ChanHostMessageTask = Task[Result[Option[chan.HostMessage], net.Error]]
 
 public struct Connection:
     channel: chan.Channel
@@ -100,12 +96,6 @@ struct OutgoingMessage:
     reliable: bool
 
 
-function session_error(code: int, message: str) -> Error:
-    return Error(code = code, message = string.String.from_str(message))
-
-
-function chan_to_session_error(source: chan.Error) -> Error:
-    return Error(code = source.code, message = source.message)
 
 
 function build_connect_request(version: uint, key: ulong) -> bytes.Bytes:
@@ -158,22 +148,22 @@ function build_user_data(payload: span[ubyte]) -> bytes.Bytes:
     return w.finish()
 
 
-function generate_handshake_key() -> ulong:
+function generate_handshake_key() -> Result[ulong, net.Error]:
     let key_result = crypto.random_bytes(8)
     match key_result:
-        Result.failure:
-            return 12345678901234567890
+        Result.failure as p:
+            return Result[ulong, net.Error].failure(error = net.Error(code = -1, message = p.error.message))
         Result.success as payload:
             var rand = payload.value
             var reader = bin.reader(rand.as_span())
             match reader.read_ulong():
-                Result.failure:
+                Result.failure as rp:
                     rand.release()
-                    return 12345678901234567890
+                    return Result[ulong, net.Error].failure(error = net.Error(code = rp.error.code, message = rp.error.message))
                 Result.success as read_payload:
                     let value = read_payload.value
                     rand.release()
-                    return value
+                    return Result[ulong, net.Error].success(value = value)
 
 
 function decode_u32_at(data: span[ubyte], offset: ptr_uint) -> uint:
@@ -189,9 +179,6 @@ function channel_config_for(config: Config) -> chan.Config:
     )
 
 
-extending Error:
-    public editable function release() -> void:
-        this.message.release()
 
 
 extending Config:
@@ -211,12 +198,12 @@ public function connect_on(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: Config
-) -> Result[Connection, Error]:
+) -> Result[Connection, net.Error]:
     let channel_config = channel_config_for(config)
-    let channel_result = chan.bind_connect_on(runtime, local_address, remote_address, channel_config)
+    let channel_result = chan.connect_on(runtime, local_address, remote_address, channel_config)
     match channel_result:
         Result.failure as payload:
-            return Result[Connection, Error].failure(error = chan_to_session_error(payload.error))
+            return Result[Connection, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
         Result.success as payload:
             var conn = Connection(
                 channel = payload.value,
@@ -231,27 +218,37 @@ public function connect_on(
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
             )
-            return Result[Connection, Error].success(value = conn)
+            return Result[Connection, net.Error].success(value = conn)
 
 
-public function connect(
+public async function connect(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: Config
-) -> Result[Connection, Error]:
-    return connect_on(aio.current_runtime(), local_address, remote_address, config)
+) -> Result[Connection, net.Error]:
+    match connect_on(aio.current_runtime(), local_address, remote_address, config):
+        Result.failure as p:
+            return Result[Connection, net.Error].failure(error = p.error)
+        Result.success as p:
+            var conn = p.value
+            match await conn.connect_to_peer():
+                Result.failure as cp:
+                    conn.release()
+                    return Result[Connection, net.Error].failure(error = cp.error)
+                Result.success:
+                    return Result[Connection, net.Error].success(value = conn)
 
 
 public function listen_on(
     runtime: aio.Runtime,
     local_address: net.SocketAddress,
     config: Config
-) -> Result[Session, Error]:
+) -> Result[Session, net.Error]:
     let channel_config = channel_config_for(config)
     let channel_result = chan.listen_on(runtime, local_address, channel_config)
     match channel_result:
         Result.failure as payload:
-            return Result[Session, Error].failure(error = chan_to_session_error(payload.error))
+            return Result[Session, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
         Result.success as payload:
             var session = Session(
                 host = payload.value,
@@ -262,10 +259,10 @@ public function listen_on(
                 event_queue = deque.Deque[PeerEvent].create(),
                 outgoing = deque.Deque[OutgoingMessage].create()
             )
-            return Result[Session, Error].success(value = session)
+            return Result[Session, net.Error].success(value = session)
 
 
-public function listen(local_address: net.SocketAddress, config: Config) -> Result[Session, Error]:
+public function listen(local_address: net.SocketAddress, config: Config) -> Result[Session, net.Error]:
     return listen_on(aio.current_runtime(), local_address, config)
 
 
@@ -305,7 +302,7 @@ extending Connection:
         start_recv_if_idle(ref_of(this))
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         start_recv_if_idle(ref_of(this))
 
         if this.state == ConnectionState.connected:
@@ -336,19 +333,19 @@ extending Connection:
         process_pending_recv_conn(ref_of(this))
         await drain_outgoing_conn(ref_of(this))
 
-        return Result[bool, Error].success(value = this.state == ConnectionState.connected)
+        return Result[bool, net.Error].success(value = this.state == ConnectionState.connected)
 
 
     public editable function try_recv() -> Option[PeerEvent]:
         return this.event_queue.pop_front()
 
 
-    public async editable function recv() -> Result[Option[PeerEvent], Error]:
+    public async editable function recv() -> Result[Option[PeerEvent], net.Error]:
         while true:
             let ev = this.try_recv()
             match ev:
                 Option.some as payload:
-                    return Result[Option[PeerEvent], Error].success(
+                    return Result[Option[PeerEvent], net.Error].success(
                         value = Option[PeerEvent].some(value = payload.value)
                     )
                 Option.none:
@@ -357,15 +354,15 @@ extending Connection:
                     let ready = this.try_recv()
                     match ready:
                         Option.some as ready_payload:
-                            return Result[Option[PeerEvent], Error].success(
+                            return Result[Option[PeerEvent], net.Error].success(
                                 value = Option[PeerEvent].some(value = ready_payload.value)
                             )
                         Option.none:
                             let recv_result = await this.channel.recv()
                             match recv_result:
                                 Result.failure as payload:
-                                    return Result[Option[PeerEvent], Error].failure(
-                                        error = chan_to_session_error(payload.error)
+                                    return Result[Option[PeerEvent], net.Error].failure(
+                                        error = net.Error(code = payload.error.code, message = payload.error.message)
                                     )
                                 Result.success as recv_payload:
                                     let msg_opt = recv_payload.value
@@ -379,62 +376,69 @@ extending Connection:
                                             let ev2 = this.try_recv()
                                             match ev2:
                                                 Option.some as p2:
-                                                    return Result[Option[PeerEvent], Error].success(
+                                                    return Result[Option[PeerEvent], net.Error].success(
                                                         value = Option[PeerEvent].some(value = p2.value)
                                                     )
                                                 Option.none:
                                                     pass
 
 
-    public async editable function send(data: span[ubyte]) -> Result[bool, Error]:
+    public async editable function send(data: span[ubyte]) -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, Error].failure(error = session_error(-2, "session not connected"))
+            return Result[bool, net.Error].failure(error = net.Error(code = -2, message = string.String.from_str("session not connected")))
 
         var framed = build_user_data(data)
         defer framed.release()
         let send_result = await this.channel.send(framed.as_span())
         match send_result:
             Result.failure as payload:
-                return Result[bool, Error].failure(error = chan_to_session_error(payload.error))
+                return Result[bool, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
             Result.success:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function send_reliable(data: span[ubyte], frame: uint) -> Result[bool, Error]:
+    public async editable function send_reliable(data: span[ubyte], frame: uint) -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, Error].failure(error = session_error(-2, "session not connected"))
+            return Result[bool, net.Error].failure(error = net.Error(code = -2, message = string.String.from_str("session not connected")))
 
         var framed = build_user_data(data)
         defer framed.release()
         let send_result = await this.channel.send_reliable(framed.as_span(), frame)
         match send_result:
             Result.failure as payload:
-                return Result[bool, Error].failure(error = chan_to_session_error(payload.error))
+                return Result[bool, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
             Result.success:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function connect_to_peer() -> Result[bool, Error]:
+    public async editable function connect_to_peer() -> Result[bool, net.Error]:
         if this.state != ConnectionState.disconnected:
-            return Result[bool, Error].failure(error = session_error(-3, "session already connected or connecting"))
+            return Result[bool, net.Error].failure(error = net.Error(code = -3, message = string.String.from_str("session already connected or connecting")))
 
         this.state = ConnectionState.connecting
 
-        var req = build_connect_request(this.protocol_version, generate_handshake_key())
+        var key: ulong = 0
+        match generate_handshake_key():
+            Result.failure as kp:
+                this.state = ConnectionState.disconnected
+                return Result[bool, net.Error].failure(error = kp.error)
+            Result.success as ksp:
+                key = ksp.value
+        var req = build_connect_request(this.protocol_version, key)
         defer req.release()
         let send_result = await this.channel.send_reliable(req.as_span(), this.last_heartbeat_sent)
         match send_result:
             Result.failure as send_payload:
                 this.state = ConnectionState.disconnected
-                return Result[bool, Error].failure(error = chan_to_session_error(send_payload.error))
+                return Result[bool, net.Error].failure(error = send_payload.error)
             Result.success:
                 this.frame_since_last_recv = 0
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function disconnect_peer() -> Result[bool, Error]:
+    public async editable function disconnect_peer() -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, Error].failure(error = session_error(-4, "session not connected"))
+            return Result[bool, net.Error].failure(error = net.Error(code = -4, message = string.String.from_str("session not connected")))
 
         var d = build_disconnect(disconnect_reason_local)
         defer d.release()
@@ -442,9 +446,9 @@ extending Connection:
         this.state = ConnectionState.disconnected
         match send_result:
             Result.failure:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
             Result.success:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
 
 
 function start_recv_if_idle(conn: ref[Connection]) -> void:
@@ -554,12 +558,12 @@ function handle_incoming_conn(conn: ref[Connection], msg: ref[chan.Message]) -> 
     msg.release()
 
 
-async function drain_outgoing_conn(conn: ref[Connection]) -> Result[bool, Error]:
+async function drain_outgoing_conn(conn: ref[Connection]) -> Result[bool, net.Error]:
     while true:
         let msg = conn.outgoing.pop_front()
         match msg:
             Option.none:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
             Option.some as payload:
                 var outgoing = payload.value
                 defer outgoing.release()
@@ -609,7 +613,7 @@ extending Session:
         start_recv_if_idle_session(ref_of(this))
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         start_recv_if_idle_session(ref_of(this))
 
         var peer_index: ptr_uint = 0
@@ -663,19 +667,19 @@ extending Session:
         await drain_outgoing_session(ref_of(this))
 
         let connected_count = connected_peer_count(ref_of(this))
-        return Result[bool, Error].success(value = connected_count > 0)
+        return Result[bool, net.Error].success(value = connected_count > 0)
 
 
     public editable function try_recv() -> Option[PeerEvent]:
         return this.event_queue.pop_front()
 
 
-    public async editable function recv() -> Result[Option[PeerEvent], Error]:
+    public async editable function recv() -> Result[Option[PeerEvent], net.Error]:
         while true:
             let ev = this.try_recv()
             match ev:
                 Option.some as payload:
-                    return Result[Option[PeerEvent], Error].success(
+                    return Result[Option[PeerEvent], net.Error].success(
                         value = Option[PeerEvent].some(value = payload.value)
                     )
                 Option.none:
@@ -684,15 +688,15 @@ extending Session:
                     let ready = this.try_recv()
                     match ready:
                         Option.some as ready_payload:
-                            return Result[Option[PeerEvent], Error].success(
+                            return Result[Option[PeerEvent], net.Error].success(
                                 value = Option[PeerEvent].some(value = ready_payload.value)
                             )
                         Option.none:
                             let recv_result = await this.host.recv()
                             match recv_result:
                                 Result.failure as payload:
-                                    return Result[Option[PeerEvent], Error].failure(
-                                        error = chan_to_session_error(payload.error)
+                                    return Result[Option[PeerEvent], net.Error].failure(
+                                        error = net.Error(code = payload.error.code, message = payload.error.message)
                                     )
                                 Result.success as recv_payload:
                                     let msg_opt = recv_payload.value
@@ -706,18 +710,18 @@ extending Session:
                                             let ev2 = this.try_recv()
                                             match ev2:
                                                 Option.some as p2:
-                                                    return Result[Option[PeerEvent], Error].success(
+                                                    return Result[Option[PeerEvent], net.Error].success(
                                                         value = Option[PeerEvent].some(value = p2.value)
                                                     )
                                                 Option.none:
                                                     pass
 
 
-    public async editable function send(peer_id: uint, data: span[ubyte]) -> Result[bool, Error]:
+    public async editable function send(peer_id: uint, data: span[ubyte]) -> Result[bool, net.Error]:
         let peer_address_result = find_peer_address(ref_of(this), peer_id)
         match peer_address_result:
             Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
+                return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
                 defer address.release()
@@ -726,16 +730,16 @@ extending Session:
                 let send_result = await this.host.send(address, framed.as_span())
                 match send_result:
                     Result.failure as send_payload:
-                        return Result[bool, Error].failure(error = chan_to_session_error(send_payload.error))
+                        return Result[bool, net.Error].failure(error = net.Error(code = send_payload.error.code, message = send_payload.error.message))
                     Result.success:
-                        return Result[bool, Error].success(value = true)
+                        return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function send_reliable(peer_id: uint, data: span[ubyte], frame: uint) -> Result[bool, Error]:
+    public async editable function send_reliable(peer_id: uint, data: span[ubyte], frame: uint) -> Result[bool, net.Error]:
         let peer_address_result = find_peer_address(ref_of(this), peer_id)
         match peer_address_result:
             Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
+                return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
                 defer address.release()
@@ -744,16 +748,16 @@ extending Session:
                 let send_result = await this.host.send_reliable(address, framed.as_span(), frame)
                 match send_result:
                     Result.failure as send_payload:
-                        return Result[bool, Error].failure(error = chan_to_session_error(send_payload.error))
+                        return Result[bool, net.Error].failure(error = net.Error(code = send_payload.error.code, message = send_payload.error.message))
                     Result.success:
-                        return Result[bool, Error].success(value = true)
+                        return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function kick(peer_id: uint, reason: ubyte) -> Result[bool, Error]:
+    public async editable function kick(peer_id: uint, reason: ubyte) -> Result[bool, net.Error]:
         let peer_address_result = find_peer_address(ref_of(this), peer_id)
         match peer_address_result:
             Result.failure as payload:
-                return Result[bool, Error].failure(error = payload.error)
+                return Result[bool, net.Error].failure(error = payload.error)
             Result.success as payload:
                 var address = payload.value
                 defer address.release()
@@ -771,10 +775,10 @@ extending Session:
                     peer_id = peer_id,
                     reason = reason
                 ))
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
 
 
-function find_peer_address(session: ref[Session], peer_id: uint) -> Result[net.SocketAddress, Error]:
+function find_peer_address(session: ref[Session], peer_id: uint) -> Result[net.SocketAddress, net.Error]:
     var peer_index: ptr_uint = 0
     while peer_index < session.peers.len():
         let peer_ptr = session.peers.get(peer_index) else:
@@ -791,15 +795,15 @@ function find_peer_address(session: ref[Session], peer_id: uint) -> Result[net.S
                     match copy_result:
                         Result.failure as copy_err:
                             let copy_message = copy_err.error.message.as_str()
-                            return Result[net.SocketAddress, Error].failure(
-                                error = session_error(-5, copy_message)
+                            return Result[net.SocketAddress, net.Error].failure(
+                                error = net.Error(code = -5, message = string.String.from_str(copy_message))
                             )
                         Result.success as addr_payload:
-                            return Result[net.SocketAddress, Error].success(value = addr_payload.value)
+                            return Result[net.SocketAddress, net.Error].success(value = addr_payload.value)
                 host_peer_index += 1
         peer_index += 1
 
-    return Result[net.SocketAddress, Error].failure(error = session_error(-6, "session peer not found"))
+    return Result[net.SocketAddress, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
 
 
 function start_recv_if_idle_session(session: ref[Session]) -> void:
@@ -978,7 +982,7 @@ function handle_connect_request(session: ref[Session], msg: ref[chan.HostMessage
     ))
 
 
-function find_peer_by_address(session: ref[Session], address: net.SocketAddress) -> Result[uint, Error]:
+function find_peer_by_address(session: ref[Session], address: net.SocketAddress) -> Result[uint, net.Error]:
     var index: ptr_uint = 0
     while index < session.host.peers.len():
         let host_peer_ptr = session.host.peers.get(index) else:
@@ -988,20 +992,20 @@ function find_peer_by_address(session: ref[Session], address: net.SocketAddress)
         if same_address:
             if index < session.peers.len():
                 let session_peer_ptr = session.peers.get(index) else:
-                    return Result[uint, Error].failure(error = session_error(-6, "session peer not found"))
-                return Result[uint, Error].success(value = unsafe: read(session_peer_ptr).peer_id)
-            return Result[uint, Error].failure(error = session_error(-6, "session peer not found"))
+                    return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
+                return Result[uint, net.Error].success(value = unsafe: read(session_peer_ptr).peer_id)
+            return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
         index += 1
 
-    return Result[uint, Error].failure(error = session_error(-6, "session peer not found"))
+    return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
 
 
-async function drain_outgoing_session(session: ref[Session]) -> Result[bool, Error]:
+async function drain_outgoing_session(session: ref[Session]) -> Result[bool, net.Error]:
     while true:
         let msg = session.outgoing.pop_front()
         match msg:
             Option.none:
-                return Result[bool, Error].success(value = true)
+                return Result[bool, net.Error].success(value = true)
             Option.some as payload:
                 var outgoing = payload.value
                 defer outgoing.release()
