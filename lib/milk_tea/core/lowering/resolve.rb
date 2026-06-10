@@ -1476,55 +1476,29 @@ module MilkTea
       end
 
       def evaluate_type_returning_call(expression, env:)
-        callee_name = nil
-        type_args = nil
-
-        if expression.is_a?(AST::Call)
-          callee_name = expression.callee.name if expression.callee.is_a?(AST::Identifier)
-        elsif expression.is_a?(AST::Specialization)
-          if expression.callee.is_a?(AST::Identifier)
-            callee_name = expression.callee.name
-            type_args = expression.arguments
-          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
-            callee_name = expression.callee.callee.name
-            type_args = expression.callee.arguments
-          end
-        end
-
+        callee_name, type_args = extract_type_callee_info(expression)
         return nil unless callee_name
 
-        case callee_name
-        when "ptr", "const_ptr", "span", "array", "str_buffer", "Task"
-          evaluated_args = (type_args || []).map do |arg|
-            value = arg.value
-            if value.is_a?(AST::Identifier)
-              compile_time_const_value(value, env:)
-            elsif value.is_a?(AST::TypeRef)
-              resolve_type_ref(value)
-            elsif value.is_a?(AST::IntegerLiteral)
-              Types::LiteralTypeArg.new(value.value)
-            end
-          end
-          return nil if evaluated_args.any?(&:nil?)
+        CompileTime::Reflection.core_evaluate_type_returning(
+          callee_name, type_args,
+          evaluate_value: ->(v) { compile_time_const_value(v, env:) },
+          resolve_type_ref: ->(tr) { resolve_type_ref(tr) },
+          pointer_to: ->(t) { pointer_to(t) },
+          const_pointer_to: ->(t) { const_pointer_to(t) },
+          top_level_functions: ->(name) { nil },
+          evaluate_type_returning_function_body: nil,
+        )
+      end
 
-          case callee_name
-          when "ptr"
-            pointer_to(evaluated_args.first)
-          when "const_ptr"
-            const_pointer_to(evaluated_args.first)
-          when "ref"
-            reference_to(evaluated_args.first)
-          when "span"
-            Types::Span.new(evaluated_args.first)
-          when "array"
-            Types::GenericInstance.new("array", evaluated_args)
-          when "str_buffer"
-            Types::GenericInstance.new("str_buffer", evaluated_args)
-          when "Task"
-            Types::Task.new(evaluated_args.first)
+      def extract_type_callee_info(expression)
+        if expression.is_a?(AST::Call) && expression.callee.is_a?(AST::Identifier)
+          [expression.callee.name, nil]
+        elsif expression.is_a?(AST::Specialization)
+          if expression.callee.is_a?(AST::Identifier)
+            [expression.callee.name, expression.arguments]
+          elsif expression.callee.is_a?(AST::Specialization) && expression.callee.callee.is_a?(AST::Identifier)
+            [expression.callee.callee.name, expression.callee.arguments]
           end
-        else
-          nil
         end
       end
 
@@ -1537,10 +1511,7 @@ module MilkTea
         field_name = reflection_identifier_name(arguments[1].value)
         return nil unless field_name
 
-        field_declaration = struct_handle.declaration.fields.find { |field| field.name == field_name }
-        return nil unless field_declaration
-
-        Types::FieldHandle.new(struct_handle, field_name, field_declaration)
+        CompileTime::Reflection.core_field_handle(struct_handle, field_name)
       end
 
       def evaluate_fields_of_call(arguments, env:)
@@ -1549,9 +1520,7 @@ module MilkTea
         struct_handle = resolve_struct_handle_argument(arguments.first.value, env:)
         return nil unless struct_handle
 
-        struct_handle.declaration.fields.map do |field|
-          Types::FieldHandle.new(struct_handle, field.name, field)
-        end
+        CompileTime::Reflection.core_field_handles(struct_handle)
       end
 
       def evaluate_members_of_call(arguments, env:)
@@ -1562,9 +1531,7 @@ module MilkTea
 
         return nil unless type.is_a?(Types::Enum) || type.is_a?(Types::Flags)
 
-        type.members.map do |member_name, member_value|
-          Types::MemberHandle.new(nil, member_name, member_value)
-        end
+        CompileTime::Reflection.core_member_handles(type)
       end
 
       def evaluate_attributes_of_call(arguments, env:)

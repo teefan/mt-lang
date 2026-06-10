@@ -422,5 +422,81 @@ module MilkTea
         (value.is_a?(Integer) && value.zero?) || (value.is_a?(Float) && value.zero?)
       end
     end
+
+    module Reflection
+      def self.core_field_handle(struct_handle, field_name)
+        field_decl = struct_handle.declaration.fields.find { |f| f.name == field_name }
+        return nil unless field_decl
+
+        Types::FieldHandle.new(struct_handle, field_name, field_decl)
+      end
+
+      def self.core_field_handles(struct_handle)
+        struct_handle.declaration.fields.map { |f| Types::FieldHandle.new(struct_handle, f.name, f) }
+      end
+
+      def self.core_member_handles(type)
+        type.members.map { |name, value| Types::MemberHandle.new(nil, name, value) }
+      end
+
+      def self.core_evaluate_type_returning(
+        callee_name, type_args,
+        evaluate_value:,
+        resolve_type_ref:,
+        pointer_to:,
+        const_pointer_to:,
+        top_level_functions:,
+        evaluate_type_returning_function_body: nil
+      )
+        case callee_name
+        when "ptr", "const_ptr", "span", "array", "str_buffer", "Task"
+          evaluated_args = (type_args || []).map do |arg|
+            value = arg.value
+            if value.is_a?(AST::Identifier)
+              evaluate_value.call(value)
+            elsif value.is_a?(AST::TypeRef)
+              resolve_type_ref.call(value)
+            elsif value.is_a?(AST::IntegerLiteral)
+              Types::LiteralTypeArg.new(value.value)
+            end
+          end
+          return nil if evaluated_args.any?(&:nil?)
+
+          case callee_name
+          when "ptr" then pointer_to.call(evaluated_args.first)
+          when "const_ptr" then const_pointer_to.call(evaluated_args.first)
+          when "span" then Types::Span.new(evaluated_args.first)
+          when "array" then Types::GenericInstance.new("array", evaluated_args)
+          when "str_buffer" then Types::GenericInstance.new("str_buffer", evaluated_args)
+          when "Task" then Types::Task.new(evaluated_args.first)
+          end
+        else
+          func = top_level_functions.call(callee_name)
+          return nil unless func
+          return nil unless func.body_return_type == Types::BUILTIN_TYPE_META_TYPE
+
+          if type_args && func.ast && evaluate_type_returning_function_body
+            value = evaluate_type_returning_function_body.call(func, type_args)
+            return value if value
+          end
+
+          Types::BUILTIN_TYPE_META_TYPE
+        end
+      end
+
+      def self.core_evaluate_const_function_body(func, arguments, evaluate_arg:, block_evaluator:)
+        return nil unless func.ast.params.length == arguments.length
+
+        initial_vars = {}
+        func.ast.params.each_with_index do |param, idx|
+          arg_value = evaluate_arg.call(arguments[idx].value)
+          return nil unless arg_value
+
+          initial_vars[param.name] = arg_value
+        end
+
+        block_evaluator.call(func.ast.body, initial_vars)
+      end
+    end
   end
 end
