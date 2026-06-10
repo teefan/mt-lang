@@ -244,7 +244,10 @@ module MilkTea
               return binding.const_value unless binding&.const_value.nil?
             end
 
-            resolve_current_module_const_value(identifier_expression.name)
+            value = resolve_current_module_const_value(identifier_expression.name)
+            return value if value
+
+            @types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
             if member_access_expression.receiver.is_a?(AST::Identifier) && scopes
