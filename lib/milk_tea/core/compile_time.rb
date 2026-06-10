@@ -97,9 +97,9 @@ module MilkTea
                       initial_vars[param.name] = arg_value
                     end
                     ctx = CompileTime::BlockContext.new(@checker, initial_variables: initial_vars)
-                    ctx.evaluate_block(func.ast.body, scopes:)
+                    next ctx.evaluate_block(func.ast.body, scopes:)
                   rescue CompileTime::ReturnValue => e
-                    e.value
+                    next e.value
                   end
                 end
               end

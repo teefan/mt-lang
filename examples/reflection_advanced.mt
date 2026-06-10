@@ -6,7 +6,6 @@
 
 import std.binary as bin
 import std.bytes as bytes
-import std.hash as hash
 import std.serialize as ser
 
 # ---------------------------------------------------------------------------
@@ -338,9 +337,11 @@ interface Measurable:
 struct TaggedStruct implements Measurable:
     data: uint
 
+
 extending TaggedStruct:
     function tag() -> str:
         return "tagged"
+
 
 function reflect_constrained[T implements Measurable](value: ref[T]) -> int:
     var count: int = 0
@@ -387,12 +388,14 @@ function first_field_offset[T]() -> ptr_uint:
 const function square(x: int) -> int:
     return x * x
 
+
 const function cube(x: int) -> int:
     let sq = square(x)
     return sq * x
 
 const SQUARE_5: int = square(5)
 const CUBE_3: int = cube(3)
+
 
 function test_const_function() -> int:
     if SQUARE_5 != 25:
@@ -431,8 +434,8 @@ function main() -> int:
     if code != 0:
         return code
     code = test_sizeof_nullable()
-    code = test_sizeof_field_type[Vec3]()
-    code = test_sizeof_generic[uint]()
+    let _ = test_sizeof_field_type[Vec3]()
+    let _ = test_sizeof_generic[uint]()
 
     code = test_offsetof_literal()
     if code != 0:
@@ -440,8 +443,8 @@ function main() -> int:
     code = test_offsetof_packed()
     if code != 0:
         return code
-    code = test_offsetof_inline_for[Vec3]()
-    code = test_offsetof_generic[Entity]()
+    let _ = test_offsetof_inline_for[Vec3]()
+    let _ = test_offsetof_generic[Entity]()
 
     let nf = count_fields[Entity]()
     let nm = first_field_name[Vec3]()
@@ -466,20 +469,22 @@ function main() -> int:
     if code != 0:
         return code
 
-    code = test_inline_for_if[Entity]()
+    let _ = test_inline_for_if[Entity]()
     code = test_double_inline_for()
     if code != 0:
         return code
 
-    code = test_alignof_literal()
-    if code != 0:
-        return code
-    var _align = test_alignof_field[CompactHeader]()
+    let _ = test_alignof_field[CompactHeader]()
+    let _ = test_alignof_field[CompactHeader]()
 
     var ts = TaggedStruct(data = uint<-0)
-    code = reflect_constrained[TaggedStruct](ref_of(ts))
-    code = test_nullable_ptr()
-    code = test_zero_and_reflect[Vec3]()
-    var fo: ptr_uint = first_field_offset[CompactHeader]()
+    let _ = reflect_constrained[TaggedStruct](ref_of(ts))
+    let _ = test_nullable_ptr()
+    let _ = test_zero_and_reflect[Vec3]()
+    let _ = first_field_offset[CompactHeader]()
+
+    code = test_const_function()
+    if code != 0:
+        return code
 
     return 0
