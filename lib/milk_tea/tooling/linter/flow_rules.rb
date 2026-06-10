@@ -351,7 +351,7 @@ module MilkTea
                 path: @path,
                 line: stmt.line,
                 column: stmt.column,
-                length: stmt.length || "for".length,
+                length: (stmt.respond_to?(:length) ? stmt.length : nil) || "for".length,
                 code: "loop-single-iteration",
                 message: "loop body always exits on the first iteration - consider iterating directly without a loop",
                 severity: :warning
