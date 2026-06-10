@@ -292,13 +292,13 @@ module MilkTea
         end
 
         if next_tok&.type == :dot && facts
-          if (binding = local_semantic_value_binding(facts, tok, allow_same_line_future: parameter_declaration))
-            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
-          end
-
           return [:type, []] if facts.types.key?(name)
           return [:type, []] if facts.interfaces.key?(name)
           return [:namespace, []] if facts.imports.key?(name)
+
+          if (binding = local_semantic_value_binding(facts, tok, allow_same_line_future: parameter_declaration))
+            return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
+          end
 
           if (binding = facts.values[name])
             return semantic_value_binding_entry(binding)
