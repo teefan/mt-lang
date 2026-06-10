@@ -645,7 +645,7 @@ type FileHandle = ptr[libc.FILE]
 
 ### Generics
 
-Generics are useful, but they must stay boring. The compile-time surface is documented in [Compile-Time Evaluation](compile-time.md); generic bodies participate in that surface by using `when`, `inline for`, `inline while`, `inline match`, `inline if`, `type`-returning functions, and block-bodied `const` initializers (`const X -> T: ...`) at the lexical positions where the compile-time rules allow them.
+Generics are useful, but they must stay boring. The compile-time surface is documented in [Compile-Time Evaluation](compile-time.md); generic bodies participate in that surface by using `when`, `inline for`, `inline while`, `inline match`, `inline if`, `type`-returning functions, `const function`, and block-bodied `const` initializers (`const X -> T: ...`) at the lexical positions where the compile-time rules allow them.
 
 Allowed in v1:
 

@@ -143,6 +143,7 @@ Word operators:
 Top-level declarations:
 
 - `const`
+- `const function` — compile-time-evaluable function
 - `var`
 - `type`
 - `attribute`
@@ -413,6 +414,24 @@ function make_default[T]() -> T:
 function boot_screen[T implements ScreenState]() -> T:
     return default[T]
 ```
+
+### 3.7a `const function`
+
+A `const function` is evaluable at compile time and follows the same body restrictions as a block-bodied `const`. When called from a compile-time context, the call is constant-folded to its computed value:
+
+```mt
+const function square(x: int) -> int:
+    return x * x
+
+const SQUARE_5: int = square(5)  # folded to 25 at compile time
+```
+
+Rules:
+
+- The body must be evaluable at compile time (literals, `const` values, arithmetic, `if`/`else`, `while`, `for`, `let`/`var`, calls to other `const` functions, and whitelisted builtins).
+- Generates a normal runtime function as well — callable from ordinary runtime code.
+- Called from `const` initializers, `when` discriminants, `inline for` bodies, and other compile-time contexts.
+- Recursive calls between `const` functions are supported.
 
 ### 3.8 External functions
 

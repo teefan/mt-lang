@@ -94,6 +94,7 @@ Common punctuation and operators:
 Supported top-level declarations:
 
 - `const` (expression form and block-bodied form with `->`)
+- `const function` — compile-time-evaluable function, callable from compile-time and runtime
 - `var`
 - `type`
 - `attribute`
@@ -288,6 +289,19 @@ Ordinary functions:
 - Return type defaults to `void` if omitted.
 - Generic functions are supported.
 - Generic function and method type parameters may use `implements` constraints.
+
+`const function`:
+
+A `const function` is evaluable at compile time. Its body follows the same restrictions as a block-bodied `const`. When called from a compile-time context (`const`, `when`, `inline if`, `inline for`), the call is constant-folded:
+
+```mt
+const function square(x: int) -> int:
+    return x * x
+
+const RESULT: int = square(5)   # folded to 25 at compile time
+```
+
+`const function` also generates a normal runtime function, callable from ordinary runtime code.
 
 External functions:
 
@@ -635,7 +649,7 @@ Core modules in `std/`:
 - `std.linear_algebra` — extends native vector/matrix/quaternion types with `dot`, `cross`, `length`, `normalized`, `lerp`, `identity`, `transpose`, `conjugate` (pure Mt, no C dependency beyond `std.math` for `sqrt`)
 - `std.graph.Graph[T]` — adjacency-list graph with `add_node`, `add_edge`, `has_edge`, `remove_edge`, `neighbors`, `bfs`, `dfs`, `toposort`; directed or undirected; `compile()` converts to CSR-based `DenseGraph[T]` for O(degree) neighbor iteration
 - `std.str` — extends `str` with `byte_at`, `equal`, `starts_with`, `ends_with`, `find_substring`, `is_valid_utf8`, `slice`, `to_cstr`, `hash`, `order`
-- `std.hash` — extends primitive types (`int`, `uint`, `bool`, `float`, `double`, `char`) with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys
+- `std.hash` — extends primitive types (`int`, `uint`, `bool`, `float`, `double`, `char`) with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys. Also provides generic `hash_struct[T]`, `equal_struct[T]`, `order_struct[T]` using compile-time reflection.
 - `std.cstring` — C string helpers (`cstr_len`, `cstr_as_str`)
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
 - `std.string.String` — growable owned UTF-8 text
