@@ -1,4 +1,3 @@
-import std.async as aio
 import std.net.mux as mux
 import std.net.session as sess
 import std.vec as vec

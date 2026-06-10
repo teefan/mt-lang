@@ -217,7 +217,7 @@ public async function allocate(
                 error = turn_error(err_tid_failed, "failed to generate transaction ID")
             )
         Result.success as rp:
-            var tid = transaction_id_from_bytes(rp.value)
+            let tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
             var request = build_allocate_request(tid)
             defer request.release()
@@ -231,7 +231,7 @@ public async function allocate(
                     pass
 
             var frame: uint = 0
-            var recv_task = socket.recv_from(512)
+            let recv_task = socket.recv_from(512)
             while frame < 40:
                 if aio.completed(recv_task):
                     let recv_result = aio.result(recv_task)
@@ -409,7 +409,7 @@ public async function send_data(
                 error = turn_error(err_tid_failed, "failed to generate transaction ID")
             )
         Result.success as rp:
-            var tid = transaction_id_from_bytes(rp.value)
+            let tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
             let build_result = build_send_indication(tid, peer, payload)
             match build_result:
@@ -432,7 +432,7 @@ public async function recv_data(
     socket: net.UdpSocket
 ) -> Result[TurnDatagram, Error]:
     var frame: uint = 0
-    var recv_task = socket.recv_from(4096)
+    let recv_task = socket.recv_from(4096)
     while frame < 40:
         if aio.completed(recv_task):
             let recv_result = aio.result(recv_task)

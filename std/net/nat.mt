@@ -1,4 +1,3 @@
-import std.async as aio
 import std.net as net
 import std.net.stun as stun
 import std.string as string

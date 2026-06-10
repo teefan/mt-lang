@@ -79,6 +79,16 @@ function work_as_req(work: ptr[NativeWorkRequest]) -> ptr[NativeRequest]:
     return unsafe: ptr[NativeRequest]<-work
 
 
+function close_all_handles_cb(handle: ptr[NativeHandle], arg: ptr[void]) -> void:
+    if libuv.is_closing(handle) == 0:
+        libuv.close(handle, close_all_handles_close_cb)
+    unsafe: ptr[void]<-arg
+
+
+function close_all_handles_close_cb(handle: ptr[NativeHandle]) -> void:
+    unsafe: ptr[void]<-handle
+
+
 function noop_waiter(frame: ptr[void]) -> void:
     unsafe: ptr[void]<-frame
 
@@ -385,14 +395,21 @@ public function release_runtime(runtime: ref[Runtime]) -> int:
     if not runtime.active:
         return 0
 
+    var is_current = false
     if current_runtime_active and current_runtime.loop == runtime.loop:
-        runtime_deactivate()
+        is_current = true
 
     if runtime.loop == null:
         runtime.active = false
+        if is_current:
+            runtime_deactivate()
         return 0
 
     let loop = unsafe: ptr[NativeLoopHandle]<-runtime.loop
+
+    var dummy: int = 0
+    libuv.walk(loop, close_all_handles_cb, unsafe: ptr[void]<-ptr_of(dummy))
+
     var close_status = libuv.loop_close(loop)
     while close_status != 0:
         libuv.run(loop, libuv.uv_run_mode.UV_RUN_DEFAULT)
@@ -401,6 +418,10 @@ public function release_runtime(runtime: ref[Runtime]) -> int:
     unsafe: heap.release_bytes(ptr[void]<-loop)
     runtime.loop = null
     runtime.active = false
+
+    if is_current:
+        runtime_deactivate()
+
     return 0
 
 
@@ -483,7 +504,6 @@ public function wait[T](root: proc() -> Task[T]) -> T:
     var runtime = runtime_create()
     runtime_activate(runtime)
     defer runtime_release(ref_of(runtime))
-    defer runtime_deactivate()
     return wait_on[T](runtime, root())
 
 
@@ -495,7 +515,6 @@ public function run(root: proc() -> Task[void]) -> void:
     var runtime = runtime_create()
     runtime_activate(runtime)
     defer runtime_release(ref_of(runtime))
-    defer runtime_deactivate()
     run_on(runtime, root())
 
 
@@ -506,7 +525,6 @@ public function with_runtime[T](body: proc(runtime: Runtime) -> T) -> T:
     var runtime = runtime_create()
     runtime_activate(runtime)
     defer runtime_release(ref_of(runtime))
-    defer runtime_deactivate()
     return body(runtime)
 
 
@@ -518,5 +536,4 @@ public function run_with_runtime(body: proc(runtime: Runtime) -> void) -> void:
     var runtime = runtime_create()
     runtime_activate(runtime)
     defer runtime_release(ref_of(runtime))
-    defer runtime_deactivate()
     body(runtime)

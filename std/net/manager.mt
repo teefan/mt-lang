@@ -327,11 +327,11 @@ public function create_server(
         Result.failure as p:
             return Result[NetworkManager, net.Error].failure(error = p.error)
         Result.success as session_p:
-            let manager = NetworkManager(
+            let mgr = NetworkManager(
                 is_server = true,
                 max_players = config.max_players,
                 mux_session = session_p.value,
-                mux_connection = zero[mux.MuxedConnection],
+                mux_connection = unsafe: zero[mux.MuxedConnection],
                 local_player_id = uint<-0,
                 players = vec.Vec[PlayerState].create(),
                 next_player_id = uint<-1,
@@ -341,7 +341,7 @@ public function create_server(
                 config = config,
                 stored_peer_id_events = deque.Deque[PlayerJoinEvent].create()
             )
-            return Result[NetworkManager, net.Error].success(value = manager)
+            return Result[NetworkManager, net.Error].success(value = mgr)
 
 
 public function create_client(
@@ -354,10 +354,10 @@ public function create_client(
         Result.failure as p:
             return Result[NetworkManager, net.Error].failure(error = p.error)
         Result.success as mux_conn_p:
-            let manager = NetworkManager(
+            let client_mgr = NetworkManager(
                 is_server = false,
                 max_players = config.max_players,
-                mux_session = zero[mux.MuxedSession],
+                mux_session = unsafe: zero[mux.MuxedSession],
                 mux_connection = mux_conn_p.value,
                 local_player_id = uint<-0,
                 players = vec.Vec[PlayerState].create(),
@@ -368,7 +368,7 @@ public function create_client(
                 config = config,
                 stored_peer_id_events = deque.Deque[PlayerJoinEvent].create()
             )
-            return Result[NetworkManager, net.Error].success(value = manager)
+            return Result[NetworkManager, net.Error].success(value = client_mgr)
 
 
 async function tick_server(manager: ref[NetworkManager], frame: uint) -> Result[bool, net.Error]:

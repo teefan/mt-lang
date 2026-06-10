@@ -20,6 +20,7 @@ public struct ServerInfo:
     max_players: ubyte
     game_name: string.String
 
+
 extending ServerInfo:
     public editable function release() -> void:
         this.address.release()

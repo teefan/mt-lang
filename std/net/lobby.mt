@@ -185,7 +185,7 @@ public function create_lobby_on(
             while i < info.max_players:
                 slots.push(PlayerSlot(player_id = uint<-0, player_name = string.String.create(), occupied = false))
                 i += 1
-            var host = LobbyHost(
+            let host = LobbyHost(
                 mux = p.value,
                 info = info,
                 slots = slots,
@@ -263,7 +263,7 @@ public async function discover_lobbies_on(
                 Result.success:
                     pass
 
-            var empty = bytes.Bytes.empty()
+            let empty = bytes.Bytes.empty()
             let _ = await conn.mux_send(lobby_channel, type_discover_request, empty.as_span(), mux.flag_reliable)
 
             var frame: uint = 0
@@ -592,7 +592,7 @@ function handle_player_joined_client(client: ref[LobbyClient], msg: ref[mux.Muxe
                             msg.release()
                             return
                         Result.success as name_payload:
-                            var name = name_payload.value
+                            let name = name_payload.value
                             msg.release()
                             client.event_queue.push_back(LobbyEvent(
                                 kind = LobbyEventKind.player_joined,
@@ -793,7 +793,7 @@ public async function respond_to_beacon(
     socket: net.UdpSocket,
     info: ref[LobbyInfo]
 ) -> void:
-    var recv_task = socket.recv_from(1500)
+    let recv_task = socket.recv_from(1500)
     var frame: uint = 0
     while frame < beacon_recv_timeout:
         if aio.completed(recv_task):

@@ -155,7 +155,7 @@ public async function measure_offset(
             pass
 
     var frame: uint = 0
-    var recv_task = socket.recv_from(512)
+    let recv_task = socket.recv_from(512)
     while frame < 40:
         if aio.completed(recv_task):
             let recv_result = aio.result(recv_task)
