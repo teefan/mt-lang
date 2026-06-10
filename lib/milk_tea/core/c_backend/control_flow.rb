@@ -10,6 +10,7 @@ module MilkTea
 
             label = statements.last
             return unless label.is_a?(IR::LabelStmt)
+            return unless label.name.include?("loop_continue")
 
             label.name
           end
