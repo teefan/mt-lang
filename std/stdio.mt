@@ -22,6 +22,7 @@ public foreign function remove(path: str as cstr) -> int = c.remove
 public foreign function read_char(stream: File?) -> int = c.fgetc
 public foreign function write_char(ch: int, stream: File?) -> int = c.fputc
 public foreign function read_line(buffer: ptr[char], max_count: int, stream: File?) -> ptr[char]? = c.fgets
+public foreign function print_string(text: str as cstr) -> int = c.puts
 public foreign function write_string(text: str as cstr, stream: File?) -> int = c.fputs
 public foreign function read_bytes(buffer: ptr[void], element_size: ptr_uint, count: ptr_uint, stream: File?) -> ptr_uint = c.fread
 public foreign function write_bytes(buffer: const_ptr[void], element_size: ptr_uint, count: ptr_uint, stream: File?) -> ptr_uint = c.fwrite

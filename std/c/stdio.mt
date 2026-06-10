@@ -24,6 +24,7 @@ external function remove(path: cstr) -> int
 external function fgetc(stream: FILE?) -> int
 external function fputc(ch: int, stream: FILE?) -> int
 external function fgets(text: ptr[char], count: int, stream: FILE?) -> ptr[char]?
+external function puts(text: cstr) -> int
 external function fputs(text: cstr, stream: FILE?) -> int
 external function fread(buffer: ptr[void], element_size: ptr_uint, count: ptr_uint, stream: FILE?) -> ptr_uint
 external function fwrite(buffer: const_ptr[void], element_size: ptr_uint, count: ptr_uint, stream: FILE?) -> ptr_uint
