@@ -64,19 +64,6 @@ public struct LobbyClient:
     pending_join: bool
     pending_name: string.String
 
-public struct Error:
-    code: int
-    message: string.String
-
-
-function lobby_error(code: int, message: str) -> Error:
-    return Error(code = code, message = string.String.from_str(message))
-
-
-extending Error:
-    public editable function release() -> void:
-        this.message.release()
-
 
 extending LobbyInfo:
     public editable function release() -> void:
@@ -110,14 +97,14 @@ extending LobbyHost:
         return this.mux.session.local_address()
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         let mux_result = await this.mux.tick(frame)
         await drain_lobby_host(ref_of(this))
         match mux_result:
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
     public editable function try_recv() -> Option[LobbyEvent]:
@@ -128,12 +115,12 @@ extending LobbyHost:
         return this.info
 
 
-    public async editable function kick_player(player_id: uint, reason: ubyte) -> Result[bool, Error]:
+    public async editable function kick_player(player_id: uint, reason: ubyte) -> Result[bool, net.Error]:
         match await this.mux.kick(player_id, reason):
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
 extending LobbyClient:
@@ -161,26 +148,26 @@ extending LobbyClient:
         return this.lobby_info
 
 
-    public async editable function tick(frame: uint) -> Result[bool, Error]:
+    public async editable function tick(frame: uint) -> Result[bool, net.Error]:
         let mux_result = await this.mux.tick(frame)
         await drain_lobby_client(ref_of(this))
         match mux_result:
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
     public editable function try_recv() -> Option[LobbyEvent]:
         return this.event_queue.pop_front()
 
 
-    public async editable function leave() -> Result[bool, Error]:
+    public async editable function leave() -> Result[bool, net.Error]:
         match await this.mux.disconnect():
             Result.failure as p:
-                return Result[bool, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+                return Result[bool, net.Error].failure(error = p.error)
             Result.success as p:
-                return Result[bool, Error].success(value = p.value)
+                return Result[bool, net.Error].success(value = p.value)
 
 
 public function create_lobby_on(
@@ -188,10 +175,10 @@ public function create_lobby_on(
     local_address: net.SocketAddress,
     info: LobbyInfo,
     config: mux.MuxedConfig
-) -> Result[LobbyHost, Error]:
+) -> Result[LobbyHost, net.Error]:
     match mux.mux_listen_on(runtime, local_address, config):
         Result.failure as p:
-            return Result[LobbyHost, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            return Result[LobbyHost, net.Error].failure(error = p.error)
         Result.success as p:
             var slots = vec.Vec[PlayerSlot].create()
             var i: ubyte = 0
@@ -204,14 +191,14 @@ public function create_lobby_on(
                 slots = slots,
                 event_queue = deque.Deque[LobbyEvent].create()
             )
-            return Result[LobbyHost, Error].success(value = host)
+            return Result[LobbyHost, net.Error].success(value = host)
 
 
 public function create_lobby(
     local_address: net.SocketAddress,
     info: LobbyInfo,
     config: mux.MuxedConfig
-) -> Result[LobbyHost, Error]:
+) -> Result[LobbyHost, net.Error]:
     return create_lobby_on(aio.current_runtime(), local_address, info, config)
 
 
@@ -221,10 +208,10 @@ public async function join_lobby_on(
     remote_address: net.SocketAddress,
     player_name: str,
     config: mux.MuxedConfig
-) -> Result[LobbyClient, Error]:
+) -> Result[LobbyClient, net.Error]:
     match mux.mux_connect_on(runtime, local_address, remote_address, config):
         Result.failure as p:
-            return Result[LobbyClient, Error].failure(error = Error(code = p.error.code, message = p.error.message))
+            return Result[LobbyClient, net.Error].failure(error = p.error)
         Result.success as p:
             var client = LobbyClient(
                 mux = p.value,
@@ -243,13 +230,10 @@ public async function join_lobby_on(
             )
             match await client.mux.connect_to_peer():
                 Result.failure as pe:
-                    return Result[LobbyClient, Error].failure(error = Error(
-                        code = pe.error.code,
-                        message = pe.error.message
-                    ))
+                    return Result[LobbyClient, net.Error].failure(error = pe.error)
                 Result.success:
                     pass
-            return Result[LobbyClient, Error].success(value = client)
+            return Result[LobbyClient, net.Error].success(value = client)
 
 
 public async function join_lobby(
@@ -257,7 +241,7 @@ public async function join_lobby(
     remote_address: net.SocketAddress,
     player_name: str,
     config: mux.MuxedConfig
-) -> Result[LobbyClient, Error]:
+) -> Result[LobbyClient, net.Error]:
     return await join_lobby_on(aio.current_runtime(), local_address, remote_address, player_name, config)
 
 
@@ -266,22 +250,16 @@ public async function discover_lobbies_on(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: mux.MuxedConfig
-) -> Result[vec.Vec[LobbyInfo], Error]:
+) -> Result[vec.Vec[LobbyInfo], net.Error]:
     match mux.mux_connect_on(runtime, local_address, remote_address, config):
         Result.failure as p:
-            return Result[vec.Vec[LobbyInfo], Error].failure(error = Error(
-                code = p.error.code,
-                message = p.error.message
-            ))
+            return Result[vec.Vec[LobbyInfo], net.Error].failure(error = p.error)
         Result.success as p:
             var conn = p.value
             defer conn.release()
             match await conn.connect_to_peer():
                 Result.failure as pe:
-                    return Result[vec.Vec[LobbyInfo], Error].failure(error = Error(
-                        code = pe.error.code,
-                        message = pe.error.message
-                    ))
+                    return Result[vec.Vec[LobbyInfo], net.Error].failure(error = pe.error)
                 Result.success:
                     pass
 
@@ -311,21 +289,21 @@ public async function discover_lobbies_on(
                                 while disconnect_frame < 30:
                                     await conn.tick(frame + disconnect_frame)
                                     disconnect_frame += 1
-                                return Result[vec.Vec[LobbyInfo], Error].success(value = result)
+                                return Result[vec.Vec[LobbyInfo], net.Error].success(value = result)
                             msg.release()
                         Option.none:
                             pass
                     drain_rounds += 1
                 frame += 1
 
-            return Result[vec.Vec[LobbyInfo], Error].success(value = result)
+            return Result[vec.Vec[LobbyInfo], net.Error].success(value = result)
 
 
 public async function discover_lobbies(
     local_address: net.SocketAddress,
     remote_address: net.SocketAddress,
     config: mux.MuxedConfig
-) -> Result[vec.Vec[LobbyInfo], Error]:
+) -> Result[vec.Vec[LobbyInfo], net.Error]:
     return await discover_lobbies_on(aio.current_runtime(), local_address, remote_address, config)
 
 
@@ -335,27 +313,27 @@ function encode_lobby_info_payload(w: ref[bin.Writer], info: ref[LobbyInfo]) -> 
     w.write_str(info.name.as_str())
 
 
-function decode_lobby_info_payload(data: span[ubyte]) -> Result[LobbyInfo, Error]:
+function decode_lobby_info_payload(data: span[ubyte]) -> Result[LobbyInfo, net.Error]:
     if data.len < 2:
-        return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info payload truncated"))
+        return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info payload truncated")))
     var r = bin.reader(data)
     var player_count: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as mp:
             max_players = mp.value
     match r.read_str():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as sp:
-            return Result[LobbyInfo, Error].success(value = LobbyInfo(
+            return Result[LobbyInfo, net.Error].success(value = LobbyInfo(
                 name = sp.value,
                 player_count = player_count,
                 max_players = max_players,
@@ -370,13 +348,13 @@ function encode_string(value: str) -> bytes.Bytes:
     return w.finish()
 
 
-function decode_string(data: span[ubyte]) -> Result[string.String, Error]:
+function decode_string(data: span[ubyte]) -> Result[string.String, net.Error]:
     var r = bin.reader(data)
     match r.read_str():
         Result.failure:
-            return Result[string.String, Error].failure(error = lobby_error(-1, "lobby malformed string"))
+            return Result[string.String, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby malformed string")))
         Result.success as p:
-            return Result[string.String, Error].success(value = p.value)
+            return Result[string.String, net.Error].success(value = p.value)
 
 
 async function drain_lobby_host(host: ref[LobbyHost]) -> void:
@@ -737,48 +715,48 @@ public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:
     return w.finish()
 
 
-public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, Error]:
+public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, net.Error]:
     if data.len < ptr_uint<-10:
-        return Result[LobbyInfo, Error].failure(
-            error = lobby_error(-1, "beacon response too short")
+        return Result[LobbyInfo, net.Error].failure(
+            error = net.Error(code = -1, message = string.String.from_str("beacon response too short"))
         )
     var r = bin.reader(data)
     match r.read_bytes(beacon_probe_len):
         Result.failure:
-            return Result[LobbyInfo, Error].failure(
-                error = lobby_error(-1, "beacon response malformed")
+            return Result[LobbyInfo, net.Error].failure(
+                error = net.Error(code = -1, message = string.String.from_str("beacon response malformed"))
             )
         Result.success as bp:
             bp.value.release()
     return decode_lobby_info_payload_offset(data, ptr_uint<-beacon_probe_len)
 
 
-function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, Error]:
+function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, net.Error]:
     if data.len < offset + ptr_uint<-2:
-        return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info payload truncated"))
+        return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info payload truncated")))
     var r = bin.reader(data)
     match r.read_bytes(offset):
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success:
             pass
     var player_count: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as mp:
             max_players = mp.value
     match r.read_str():
         Result.failure:
-            return Result[LobbyInfo, Error].failure(error = lobby_error(-1, "lobby info malformed"))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
         Result.success as sp:
-            return Result[LobbyInfo, Error].success(value = LobbyInfo(
+            return Result[LobbyInfo, net.Error].success(value = LobbyInfo(
                 name = sp.value,
                 player_count = player_count,
                 max_players = max_players,
