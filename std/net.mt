@@ -161,6 +161,8 @@ struct ShutdownState:
 struct UdpSocketState:
     handle: ptr[NativeUdpHandle]?
     receive_state: ptr[UdpReceiveState]?
+    pending_send_count: ptr_uint
+    closing: bool
 
 struct UdpSendState:
     ready: bool
@@ -176,6 +178,7 @@ struct UdpSendState:
     destination: SocketAddress
     destination_owned: bool
     released: bool
+    socket: ptr[UdpSocketState]?
 
 struct UdpReceiveState:
     ready: bool
@@ -1836,6 +1839,16 @@ function finish_udp_send(
             read(state).waiter_registered = false
             notify = true
 
+    unsafe:
+        let socket = read(state).socket
+        if socket != null[ptr[UdpSocketState]]:
+            read(state).socket = null
+            read(socket).pending_send_count -= 1
+            if read(socket).closing and read(socket).pending_send_count == 0:
+                let h = read(socket).handle
+                if h != null[ptr[NativeUdpHandle]]:
+                    close_udp_socket_handle(h)
+
     if notify and waiter_frame != null[ptr[void]]:
         waiter(unsafe: ptr[void]<-waiter_frame)
         return
@@ -1896,6 +1909,7 @@ function udp_send_impl(
         read(state).destination = zero[SocketAddress]
         read(state).destination_owned = false
         read(state).released = false
+        read(state).socket = null
 
     let live_handle = handle else:
         finish_udp_send(state, Result[ptr_uint, Error].failure(error= net_error("udp socket is released")), -1, true)
@@ -1949,9 +1963,56 @@ function udp_send_impl(
         read(buffers) = libuv.buf_init(ptr[char]<-copied_data, uint<-copied.len)
         libuv.req_set_data(udp_send_req_as_base(req), ptr[void]<-state)
 
+    let socket_raw = libuv.handle_get_data(udp_as_handle(live_handle))
+    if socket_raw == null[ptr[void]]:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+            heap.release(buffers)
+            read(state).buffers = null
+            var payload = read(state).data
+            payload.release()
+            read(state).data = bytes.Bytes.empty()
+            if read(state).destination_owned:
+                var target = read(state).destination
+                target.release()
+                read(state).destination_owned = false
+        finish_udp_send(state, Result[ptr_uint, Error].failure(error= net_error("udp socket state is missing")), -1, true)
+        return udp_send_task(state)
+
+    let socket_state = unsafe: ptr[UdpSocketState]<-socket_raw
+    if unsafe: read(socket_state).closing:
+        unsafe:
+            heap.release_bytes(ptr[void]<-req)
+            read(state).req = null
+            heap.release(buffers)
+            read(state).buffers = null
+            var payload = read(state).data
+            payload.release()
+            read(state).data = bytes.Bytes.empty()
+            if read(state).destination_owned:
+                var target = read(state).destination
+                target.release()
+                read(state).destination_owned = false
+        finish_udp_send(state, Result[ptr_uint, Error].failure(error= net_error("udp socket is closing")), -1, true)
+        return udp_send_task(state)
+
+    unsafe:
+        read(socket_state).pending_send_count += 1
+        read(state).socket = socket_state
+
     let queue_status = libuv.udp_send(req, live_handle, buffers, 1, remote_address, udp_send_callback)
     if queue_status != 0:
         unsafe:
+            let sock = read(state).socket
+            if sock != null[ptr[UdpSocketState]]:
+                read(state).socket = null
+                read(sock).pending_send_count -= 1
+                if read(sock).closing and read(sock).pending_send_count == 0:
+                    let h = read(sock).handle
+                    if h != null[ptr[NativeUdpHandle]]:
+                        close_udp_socket_handle(h)
+
             heap.release_bytes(ptr[void]<-req)
             read(state).req = null
             heap.release(buffers)
@@ -2755,6 +2816,19 @@ extending TcpListener:
 extending UdpSocket:
     public editable function release() -> void:
         let handle = this.handle else:
+            return
+
+        let state_raw = libuv.handle_get_data(udp_as_handle(handle))
+        if state_raw == null[ptr[void]]:
+            this.handle = null
+            close_raw_udp_handle(handle)
+            return
+
+        let state = unsafe: ptr[UdpSocketState]<-state_raw
+        if unsafe: read(state).pending_send_count > ptr_uint<-0:
+            unsafe:
+                read(state).closing = true
+            this.handle = null
             return
 
         this.handle = null
