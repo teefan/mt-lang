@@ -1,122 +1,112 @@
-import std.stdio as stdio
-import std.net as net
-import std.net.lobby as lobby
-import std.net.mux as mux
-import std.string as string
-import std.vec as vec
-import std.bytes as bytes
 import std.async as aio
+import std.net as net
+import std.net.discovery as net_disc
+import std.net.manager as mgr
+import std.vec as vec
+import std.stdio as stdio
 
-struct Game:
-    host: lobby.LobbyHost
-
-struct App:
-    game: Option[Game]
-
-async function tick_app(app: ref[App], frame: uint) -> bool:
-    match app.game:
-        Option.some as hg:
-            var game = hg.value
-            await game.host.tick(frame)
-            var found = false
-            var i: uint = 0
-            while i < 10:
-                let ev = game.host.try_recv()
-                match ev:
-                    Option.some as evp:
-                        var e = evp.value
-                        defer e.release()
-                        if e.kind == lobby.LobbyEventKind.player_joined:
-                            stdio.print("HOST: joined! ticks=%d\n", uint<-(frame))
-                            found = true
-                    Option.none:
-                        break
-                i += 1
-            if found:
-                game.host.release()
-                app.game = Option[Game].none
-                return true
-            app.game = Option[Game].some(value = game)
-            return false
-        Option.none:
-            return false
+const GAME_PORT: int = 12345
 
 async function main() -> int:
-    stdio.print("=== Creating host ===\n")
+    stdio.print("HOST: creating server\n")
 
-    match net.ipv4("0.0.0.0", 12345):
+    match net.ipv4("0.0.0.0", GAME_PORT):
         Result.failure:
-            stdio.print("FAIL: host bind\n")
+            stdio.print("FAIL: addr\n")
             return -1
-        Result.success as bp:
-            var server_addr = bp.value
-            defer server_addr.release()
-            let config = mux.MuxedConfig.default()
-            let info = lobby.LobbyInfo(
-                name = string.String.from_str("Test"),
-                player_count = 0,
-                max_players = 2,
-                player_names = vec.Vec[string.String].create(),
-                game_data = bytes.Bytes.empty()
-            )
-            match lobby.create_lobby(server_addr, info, config):
+        Result.success as addr_p:
+            let config = mgr.NetworkConfig.default(ptr_uint<-1400)
+            match mgr.create_server(addr_p.value, config):
                 Result.failure:
-                    stdio.print("FAIL: lobby create\n")
+                    stdio.print("FAIL: server\n")
                     return -2
-                Result.success as lp:
-                    var app = App(game = Option[Game].some(value = Game(host = lp.value)))
-                    stdio.print("HOST OK\n")
+                Result.success as mgr_p:
+                    var host_mgr = mgr_p.value
+                    stdio.print("HOST: listening\n")
 
-                    stdio.print("=== Creating client ===\n")
+                    stdio.print("HOST: starting announce\n")
+                    var _announce = net_disc.announce(GAME_PORT, ubyte<-4, "Test")
 
-                    match net.ipv4("127.0.0.1", 12345):
+                    stdio.print("CLIENT: discovering\n")
+                    match await net_disc.discover(GAME_PORT, uint<-120):
                         Result.failure:
-                            stdio.print("FAIL: client addr\n")
+                            stdio.print("FAIL: discover\n")
+                            host_mgr.release()
                             return -3
-                        Result.success as remote:
-                            var remote_addr = remote.value
-                            defer remote_addr.release()
-                            match net.ipv4("0.0.0.0", 0):
-                                Result.failure:
-                                    stdio.print("FAIL: client bind\n")
-                                    return -4
-                                Result.success as local:
-                                    var local_addr = local.value
-                                    defer local_addr.release()
-                                    match await lobby.join_lobby(local_addr, remote_addr, "P", config):
-                                        Result.failure:
-                                            stdio.print("FAIL: join\n")
-                                            return -5
-                                        Result.success as jp:
-                                            var client = jp.value
-                                            defer client.release()
-                                            stdio.print("CLIENT OK\n")
+                        Result.success as servers_p:
+                            var servers = servers_p.value
+                            defer servers.release()
 
-                                            var frame: uint = 0
-                                            var host_done = false
-                                            var done_frame: uint = 0
-                                            while true:
-                                                if not host_done:
-                                                    host_done = await tick_app(ref_of(app), frame)
-                                                    if host_done:
-                                                        done_frame = frame
-                                                await client.tick(frame)
-                                                var j: uint = 0
-                                                while j < 10:
-                                                    let ev = client.try_recv()
-                                                    match ev:
-                                                        Option.some as evp:
-                                                            var e = evp.value
-                                                            defer e.release()
-                                                            if e.kind == lobby.LobbyEventKind.joined:
-                                                                stdio.print("CLIENT: joined at ticks=%d\n", uint<-(frame))
-                                                        Option.none:
-                                                            break
-                                                    j += 1
-                                                frame += 1
-                                                if host_done and frame > done_frame + 1:
-                                                    stdio.print("=== SUCCESS ===\n")
-                                                    return 0
-                                                if frame > 1200:
-                                                    stdio.print("TIMEOUT\n")
-                                                    return -6
+                            if servers.len() == ptr_uint<-0:
+                                stdio.print("FAIL: no servers\n")
+                                host_mgr.release()
+                                return -4
+
+                            let first_ptr = servers.get(ptr_uint<-0) else:
+                                stdio.print("FAIL: get server\n")
+                                host_mgr.release()
+                                return -5
+
+                            let info = unsafe: read(first_ptr)
+                            stdio.print("CLIENT: found server\n")
+
+                            match net.ipv4("127.0.0.1", 0):
+                                Result.failure:
+                                    stdio.print("FAIL: local addr\n")
+                                    host_mgr.release()
+                                    return -6
+                                Result.success as la_p:
+                                    match net.ipv4("127.0.0.1", info.game_port):
+                                        Result.failure:
+                                            stdio.print("FAIL: remote addr\n")
+                                            host_mgr.release()
+                                            return -7
+                                        Result.success as sa_p:
+                                            let cli_cfg = mgr.NetworkConfig.default(ptr_uint<-1400)
+                                            match mgr.create_client(la_p.value, sa_p.value, cli_cfg):
+                                                Result.failure:
+                                                    stdio.print("FAIL: client\n")
+                                                    host_mgr.release()
+                                                    return -8
+                                                Result.success as cli_p:
+                                                    var client_mgr = cli_p.value
+                                                    stdio.print("CLIENT: connecting\n")
+
+                                                    var host_ok = false
+                                                    var client_ok = false
+                                                    var frame: uint = 0
+                                                    while frame < 600:
+                                                        let _ = await host_mgr.tick(frame)
+                                                        while true:
+                                                            let ev = host_mgr.try_recv()
+                                                            match ev:
+                                                                Option.some as ev_p:
+                                                                    if ev_p.value.kind == mgr.NetworkEventKind.player_joined:
+                                                                        stdio.print("HOST: joined ticks=%d\n", uint<-frame)
+                                                                        host_ok = true
+                                                                Option.none:
+                                                                    break
+
+                                                        let _ = await client_mgr.tick(frame)
+                                                        while true:
+                                                            let ev = client_mgr.try_recv()
+                                                            match ev:
+                                                                Option.some as ev_p:
+                                                                    if ev_p.value.kind == mgr.NetworkEventKind.connected:
+                                                                        stdio.print("CLIENT: connected id=%d\n", uint<-ev_p.value.player_id)
+                                                                        client_ok = true
+                                                                Option.none:
+                                                                    break
+
+                                                        if host_ok and client_ok:
+                                                            stdio.print("SUCCESS\n")
+                                                            client_mgr.release()
+                                                            host_mgr.release()
+                                                            return 0
+
+                                                        frame += 1
+
+                                                    stdio.print("FAIL: timeout\n")
+                                                    client_mgr.release()
+                                                    host_mgr.release()
+                                                    return -9
