@@ -129,6 +129,9 @@ module MilkTea
             ],
             type:,
           )
+        when :array_as_span
+          receiver_type = infer_expression_type(receiver, env:)
+          lower_array_to_span_expression(lower_expression(receiver, env:), type)
         when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
           event_type = infer_expression_type(receiver, env:)
           runtime = ensure_event_runtime(event_type)

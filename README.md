@@ -540,7 +540,7 @@ Type constructors:
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
 
-When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. There is no separate `array.as_span()` method surface.
+When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
 
 Nullability:
 

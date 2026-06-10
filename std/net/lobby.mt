@@ -315,23 +315,35 @@ function encode_lobby_info_payload(w: ref[bin.Writer], info: ref[LobbyInfo]) -> 
 
 function decode_lobby_info_payload(data: span[ubyte]) -> Result[LobbyInfo, net.Error]:
     if data.len < 2:
-        return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info payload truncated")))
+        return Result[LobbyInfo, net.Error].failure(error = net.Error(
+            code = -1,
+            message = string.String.from_str("lobby info payload truncated")
+        ))
     var r = bin.reader(data)
     var player_count: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as mp:
             max_players = mp.value
     match r.read_str():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as sp:
             return Result[LobbyInfo, net.Error].success(value = LobbyInfo(
                 name = sp.value,
@@ -352,7 +364,10 @@ function decode_string(data: span[ubyte]) -> Result[string.String, net.Error]:
     var r = bin.reader(data)
     match r.read_str():
         Result.failure:
-            return Result[string.String, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby malformed string")))
+            return Result[string.String, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby malformed string")
+            ))
         Result.success as p:
             return Result[string.String, net.Error].success(value = p.value)
 
@@ -684,14 +699,7 @@ const beacon_recv_timeout: uint = 60
 
 public function build_beacon_probe() -> bytes.Bytes:
     var w = bin.Writer.with_capacity(beacon_probe_len)
-    w.write_ubyte(beacon_magic[0])
-    w.write_ubyte(beacon_magic[1])
-    w.write_ubyte(beacon_magic[2])
-    w.write_ubyte(beacon_magic[3])
-    w.write_ubyte(beacon_magic[4])
-    w.write_ubyte(beacon_magic[5])
-    w.write_ubyte(beacon_magic[6])
-    w.write_ubyte(beacon_magic[7])
+    w.write_bytes(beacon_magic.as_span())
     return w.finish()
 
 
@@ -703,14 +711,7 @@ public function is_beacon_probe(data: span[ubyte]) -> bool:
 
 public function build_beacon_response(info: ref[LobbyInfo]) -> bytes.Bytes:
     var w = bin.Writer.with_capacity(16)
-    w.write_ubyte(beacon_magic[0])
-    w.write_ubyte(beacon_magic[1])
-    w.write_ubyte(beacon_magic[2])
-    w.write_ubyte(beacon_magic[3])
-    w.write_ubyte(beacon_magic[4])
-    w.write_ubyte(beacon_magic[5])
-    w.write_ubyte(beacon_magic[6])
-    w.write_ubyte(beacon_magic[7])
+    w.write_bytes(beacon_magic.as_span())
     encode_lobby_info_payload(ref_of(w), info)
     return w.finish()
 
@@ -733,28 +734,43 @@ public function parse_beacon_response(data: span[ubyte]) -> Result[LobbyInfo, ne
 
 function decode_lobby_info_payload_offset(data: span[ubyte], offset: ptr_uint) -> Result[LobbyInfo, net.Error]:
     if data.len < offset + ptr_uint<-2:
-        return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info payload truncated")))
+        return Result[LobbyInfo, net.Error].failure(error = net.Error(
+            code = -1,
+            message = string.String.from_str("lobby info payload truncated")
+        ))
     var r = bin.reader(data)
     match r.read_bytes(offset):
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success:
             pass
     var player_count: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as pc:
             player_count = pc.value
     var max_players: ubyte = 0
     match r.read_ubyte():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as mp:
             max_players = mp.value
     match r.read_str():
         Result.failure:
-            return Result[LobbyInfo, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("lobby info malformed")))
+            return Result[LobbyInfo, net.Error].failure(error = net.Error(
+                code = -1,
+                message = string.String.from_str("lobby info malformed")
+            ))
         Result.success as sp:
             return Result[LobbyInfo, net.Error].success(value = LobbyInfo(
                 name = sp.value,

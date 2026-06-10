@@ -327,6 +327,10 @@ module MilkTea
         method_receiver_type = infer_method_receiver_type(expression.receiver, scopes:, member_name: expression.member)
         return @error_type if error_type?(field_receiver_type) || error_type?(method_receiver_type)
 
+        if array_type?(field_receiver_type) && expression.member == "as_span"
+          element_type = array_element_type(field_receiver_type)
+          return Types::Span.new(element_type)
+        end
         if char_array_removed_text_method?(method_receiver_type, expression.member)
           raise_sema_error("#{method_receiver_type}.#{expression.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")
         end
@@ -816,6 +820,10 @@ module MilkTea
         when :str_buffer_clear, :str_buffer_assign, :str_buffer_append, :str_buffer_assign_format, :str_buffer_append_format,
           :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr
           check_str_buffer_method_call(callable_kind, receiver, expression.arguments, scopes:)
+        when :array_as_span
+          raise_sema_error("as_span does not support named arguments") if expression.arguments.any?(&:name)
+          raise_sema_error("as_span expects 0 arguments, got #{expression.arguments.length}") unless expression.arguments.empty?
+          Types::Span.new(array_element_type(callable))
         when :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait
           check_event_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
@@ -1166,6 +1174,11 @@ module MilkTea
           end
 
           field_receiver_type = infer_field_receiver_type(callee.receiver, scopes:)
+          if array_type?(field_receiver_type) && callee.member == "as_span"
+            return [:array_as_span, field_receiver_type, callee.receiver]
+          end
+
+          return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
           return [:callable_value, field_receiver_type.field(callee.member), nil] if aggregate_type?(field_receiver_type) && callable_type?(field_receiver_type.field(callee.member))
 
           if (imported_module = imported_module_with_private_method(method_receiver_type, callee.member))

@@ -7,19 +7,6 @@ import std.net as net
 import std.net.session as sess
 import std.vec as vec
 
-public struct MuxedSendOptions:
-    reliable: bool
-    fragmented: bool
-
-extending MuxedSendOptions:
-    public function to_flags() -> ubyte:
-        var send_flags: ubyte = 0
-        if this.reliable:
-            send_flags |= flag_reliable
-        if this.fragmented:
-            send_flags |= flag_fragmented
-        return send_flags
-
 public const flag_reliable: ubyte = 0x01
 public const flag_fragmented: ubyte = 0x04
 
@@ -29,6 +16,10 @@ public const type_peer_left: ushort = 0xFFFD
 
 const wire_header_size: ptr_uint = 4
 const fragment_header_size: ptr_uint = 6
+
+public struct MuxedSendOptions:
+    reliable: bool
+    fragmented: bool
 
 public struct MuxedConfig:
     fragment_size: ptr_uint
@@ -73,6 +64,17 @@ struct WireHeader:
     channel_id: ubyte
     type_id: ushort
     msg_flags: ubyte
+
+
+extending MuxedSendOptions:
+    public function to_flags() -> ubyte:
+        var send_flags: ubyte = 0
+        if this.reliable:
+            send_flags |= flag_reliable
+        if this.fragmented:
+            send_flags |= flag_fragmented
+        return send_flags
+
 
 extending MuxedConfig:
     public static function default() -> MuxedConfig:

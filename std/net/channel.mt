@@ -61,7 +61,6 @@ struct PeerState:
     protocol: ProtocolState
 
 
-
 function encode_uint(value: uint) -> array[ubyte, 4]:
     return array[ubyte, 4](
         ubyte<-((value >> 24) & 255),
@@ -170,7 +169,10 @@ function build_packet(
 
 function decode_header(packet: bytes.Bytes) -> Result[PacketHeader, net.Error]:
     if packet.len < header_bytes:
-        return Result[PacketHeader, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("udp channel packet is too small")))
+        return Result[PacketHeader, net.Error].failure(error = net.Error(
+            code = -1,
+            message = string.String.from_str("udp channel packet is too small")
+        ))
 
     let packet_span = packet.as_span()
     let magic = decode_uint(packet_span, 0)
@@ -387,7 +389,10 @@ public function connect_on(
                 Result.success as connect_payload:
                     if not connect_payload.value:
                         socket.release()
-                        return Result[Channel, net.Error].failure(error = net.Error(code = -1, message = string.String.from_str("udp connect did not complete")))
+                        return Result[Channel, net.Error].failure(error = net.Error(
+                            code = -1,
+                            message = string.String.from_str("udp connect did not complete")
+                        ))
                     return Result[Channel, net.Error].success(value = wrap_connected(socket, config))
 
 
@@ -418,8 +423,6 @@ public function listen_on(
 
 public function listen(local_address: net.SocketAddress, config: Config) -> Result[Host, net.Error]:
     return listen_on(aio.current_runtime(), local_address, config)
-
-
 
 
 extending Config:
@@ -489,7 +492,10 @@ extending Channel:
         let protocol = unsafe: ptr[ProtocolState]<-ptr_of(this.protocol)
         let pending_len = unsafe: read(protocol).pending_reliable.len()
         if pending_len >= pending_window_limit(this.config):
-            return Result[uint, net.Error].failure(error = net.Error(code = -3, message = string.String.from_str("udp channel reliable window is full")))
+            return Result[uint, net.Error].failure(error = net.Error(
+                code = -3,
+                message = string.String.from_str("udp channel reliable window is full")
+            ))
 
         let sequence = allocate_sequence(protocol)
         let send_result = await send_connected_packet(this.socket, protocol, sequence, reliable_flag, content)
@@ -621,7 +627,10 @@ extending Host:
         return total
 
 
-    public async editable function send(destination: net.SocketAddress, content: span[ubyte]) -> Result[uint, net.Error]:
+    public async editable function send(
+        destination: net.SocketAddress,
+        content: span[ubyte]
+    ) -> Result[uint, net.Error]:
         if content.len > this.config.max_payload_bytes:
             return Result[uint, net.Error].failure(error = net.Error(
                 code = -2,
@@ -672,7 +681,10 @@ extending Host:
                 let protocol = unsafe: ptr[ProtocolState]<-ptr_of(read(peer_ptr).protocol)
                 let pending_len = unsafe: read(protocol).pending_reliable.len()
                 if pending_len >= pending_window_limit(this.config):
-                    return Result[uint, net.Error].failure(error = net.Error(code = -3, message = string.String.from_str("udp channel reliable window is full")))
+                    return Result[uint, net.Error].failure(error = net.Error(
+                        code = -3,
+                        message = string.String.from_str("udp channel reliable window is full")
+                    ))
 
                 let sequence = allocate_sequence(protocol)
                 let send_result = await send_packet_to(
@@ -727,17 +739,26 @@ extending Host:
                                     match ack_result:
                                         Result.failure as ack_payload:
                                             datagram.release()
-                                            return Result[Option[HostMessage], net.Error].failure(error = ack_payload.error)
+                                            return Result[
+                                                Option[HostMessage],
+                                                net.Error
+                                            ].failure(error = ack_payload.error)
                                         Result.success as ack_payload:
                                             ack_payload.value
 
                                 if (header.packet_flags & ack_only_flag) != 0:
                                     datagram.release()
-                                    return Result[Option[HostMessage], net.Error].success(value = Option[HostMessage].none)
+                                    return Result[
+                                        Option[HostMessage],
+                                        net.Error
+                                    ].success(value = Option[HostMessage].none)
 
                                 if not is_new:
                                     datagram.release()
-                                    return Result[Option[HostMessage], net.Error].success(value = Option[HostMessage].none)
+                                    return Result[
+                                        Option[HostMessage],
+                                        net.Error
+                                    ].success(value = Option[HostMessage].none)
 
                                 let payload = copy_payload(datagram.data)
                                 datagram.data.release()

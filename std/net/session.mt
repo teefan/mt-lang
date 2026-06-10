@@ -27,6 +27,9 @@ const connect_request_payload_bytes: ptr_uint = 12
 const connect_accept_payload_bytes: ptr_uint = 4
 const heartbeat_payload_bytes: ptr_uint = 4
 
+type ChanMessageTask = Task[Result[Option[chan.Message], net.Error]]
+type ChanHostMessageTask = Task[Result[Option[chan.HostMessage], net.Error]]
+
 public enum ConnectionState: int
     disconnected = 0
     connecting = 1
@@ -51,15 +54,6 @@ public struct PeerEvent:
     payload: bytes.Bytes
     reliable: bool
     reason: ubyte
-
-
-extending PeerEvent:
-    public editable function release() -> void:
-        if this.kind == PeerEventKind.user_data:
-            this.payload.release()
-
-type ChanMessageTask = Task[Result[Option[chan.Message], net.Error]]
-type ChanHostMessageTask = Task[Result[Option[chan.HostMessage], net.Error]]
 
 public struct Connection:
     channel: chan.Channel
@@ -96,6 +90,10 @@ struct OutgoingMessage:
     reliable: bool
 
 
+extending PeerEvent:
+    public editable function release() -> void:
+        if this.kind == PeerEventKind.user_data:
+            this.payload.release()
 
 
 function build_connect_request(version: uint, key: ulong) -> bytes.Bytes:
@@ -159,7 +157,10 @@ function generate_handshake_key() -> Result[ulong, net.Error]:
             match reader.read_ulong():
                 Result.failure as rp:
                     rand.release()
-                    return Result[ulong, net.Error].failure(error = net.Error(code = rp.error.code, message = rp.error.message))
+                    return Result[ulong, net.Error].failure(error = net.Error(
+                        code = rp.error.code,
+                        message = rp.error.message
+                    ))
                 Result.success as read_payload:
                     let value = read_payload.value
                     rand.release()
@@ -168,7 +169,7 @@ function generate_handshake_key() -> Result[ulong, net.Error]:
 
 function decode_u32_at(data: span[ubyte], offset: ptr_uint) -> uint:
     unsafe:
-        return uint<-read(data.data + offset) |            (uint<-read(data.data + offset + 1) << 8) |            (uint<-read(data.data + offset + 2) << 16) |            (uint<-read(data.data + offset + 3) << 24)
+        return uint<-read(data.data + offset) | (uint<-read(data.data + offset + 1) << 8) | (uint<-read(data.data + offset + 2) << 16) | (uint<-read(data.data + offset + 3) << 24)
 
 
 function channel_config_for(config: Config) -> chan.Config:
@@ -177,8 +178,6 @@ function channel_config_for(config: Config) -> chan.Config:
         max_pending_reliable = config.max_pending_reliable,
         resend_after_frames = config.resend_after_frames
     )
-
-
 
 
 extending Config:
@@ -203,7 +202,10 @@ public function connect_on(
     let channel_result = chan.connect_on(runtime, local_address, remote_address, channel_config)
     match channel_result:
         Result.failure as payload:
-            return Result[Connection, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
+            return Result[Connection, net.Error].failure(error = net.Error(
+                code = payload.error.code,
+                message = payload.error.message
+            ))
         Result.success as payload:
             var conn = Connection(
                 channel = payload.value,
@@ -248,7 +250,10 @@ public function listen_on(
     let channel_result = chan.listen_on(runtime, local_address, channel_config)
     match channel_result:
         Result.failure as payload:
-            return Result[Session, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
+            return Result[Session, net.Error].failure(error = net.Error(
+                code = payload.error.code,
+                message = payload.error.message
+            ))
         Result.success as payload:
             var session = Session(
                 host = payload.value,
@@ -385,35 +390,50 @@ extending Connection:
 
     public async editable function send(data: span[ubyte]) -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, net.Error].failure(error = net.Error(code = -2, message = string.String.from_str("session not connected")))
+            return Result[bool, net.Error].failure(error = net.Error(
+                code = -2,
+                message = string.String.from_str("session not connected")
+            ))
 
         var framed = build_user_data(data)
         defer framed.release()
         let send_result = await this.channel.send(framed.as_span())
         match send_result:
             Result.failure as payload:
-                return Result[bool, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
+                return Result[bool, net.Error].failure(error = net.Error(
+                    code = payload.error.code,
+                    message = payload.error.message
+                ))
             Result.success:
                 return Result[bool, net.Error].success(value = true)
 
 
     public async editable function send_reliable(data: span[ubyte], frame: uint) -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, net.Error].failure(error = net.Error(code = -2, message = string.String.from_str("session not connected")))
+            return Result[bool, net.Error].failure(error = net.Error(
+                code = -2,
+                message = string.String.from_str("session not connected")
+            ))
 
         var framed = build_user_data(data)
         defer framed.release()
         let send_result = await this.channel.send_reliable(framed.as_span(), frame)
         match send_result:
             Result.failure as payload:
-                return Result[bool, net.Error].failure(error = net.Error(code = payload.error.code, message = payload.error.message))
+                return Result[bool, net.Error].failure(error = net.Error(
+                    code = payload.error.code,
+                    message = payload.error.message
+                ))
             Result.success:
                 return Result[bool, net.Error].success(value = true)
 
 
     public async editable function connect_to_peer() -> Result[bool, net.Error]:
         if this.state != ConnectionState.disconnected:
-            return Result[bool, net.Error].failure(error = net.Error(code = -3, message = string.String.from_str("session already connected or connecting")))
+            return Result[bool, net.Error].failure(error = net.Error(
+                code = -3,
+                message = string.String.from_str("session already connected or connecting")
+            ))
 
         this.state = ConnectionState.connecting
 
@@ -438,7 +458,10 @@ extending Connection:
 
     public async editable function disconnect_peer() -> Result[bool, net.Error]:
         if this.state != ConnectionState.connected:
-            return Result[bool, net.Error].failure(error = net.Error(code = -4, message = string.String.from_str("session not connected")))
+            return Result[bool, net.Error].failure(error = net.Error(
+                code = -4,
+                message = string.String.from_str("session not connected")
+            ))
 
         var d = build_disconnect(disconnect_reason_local)
         defer d.release()
@@ -730,12 +753,19 @@ extending Session:
                 let send_result = await this.host.send(address, framed.as_span())
                 match send_result:
                     Result.failure as send_payload:
-                        return Result[bool, net.Error].failure(error = net.Error(code = send_payload.error.code, message = send_payload.error.message))
+                        return Result[bool, net.Error].failure(error = net.Error(
+                            code = send_payload.error.code,
+                            message = send_payload.error.message
+                        ))
                     Result.success:
                         return Result[bool, net.Error].success(value = true)
 
 
-    public async editable function send_reliable(peer_id: uint, data: span[ubyte], frame: uint) -> Result[bool, net.Error]:
+    public async editable function send_reliable(
+        peer_id: uint,
+        data: span[ubyte],
+        frame: uint
+    ) -> Result[bool, net.Error]:
         let peer_address_result = find_peer_address(ref_of(this), peer_id)
         match peer_address_result:
             Result.failure as payload:
@@ -748,7 +778,10 @@ extending Session:
                 let send_result = await this.host.send_reliable(address, framed.as_span(), frame)
                 match send_result:
                     Result.failure as send_payload:
-                        return Result[bool, net.Error].failure(error = net.Error(code = send_payload.error.code, message = send_payload.error.message))
+                        return Result[bool, net.Error].failure(error = net.Error(
+                            code = send_payload.error.code,
+                            message = send_payload.error.message
+                        ))
                     Result.success:
                         return Result[bool, net.Error].success(value = true)
 
@@ -803,7 +836,10 @@ function find_peer_address(session: ref[Session], peer_id: uint) -> Result[net.S
                 host_peer_index += 1
         peer_index += 1
 
-    return Result[net.SocketAddress, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
+    return Result[net.SocketAddress, net.Error].failure(error = net.Error(
+        code = -6,
+        message = string.String.from_str("session peer not found")
+    ))
 
 
 function start_recv_if_idle_session(session: ref[Session]) -> void:
@@ -992,12 +1028,21 @@ function find_peer_by_address(session: ref[Session], address: net.SocketAddress)
         if same_address:
             if index < session.peers.len():
                 let session_peer_ptr = session.peers.get(index) else:
-                    return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
+                    return Result[uint, net.Error].failure(error = net.Error(
+                        code = -6,
+                        message = string.String.from_str("session peer not found")
+                    ))
                 return Result[uint, net.Error].success(value = unsafe: read(session_peer_ptr).peer_id)
-            return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
+            return Result[uint, net.Error].failure(error = net.Error(
+                code = -6,
+                message = string.String.from_str("session peer not found")
+            ))
         index += 1
 
-    return Result[uint, net.Error].failure(error = net.Error(code = -6, message = string.String.from_str("session peer not found")))
+    return Result[uint, net.Error].failure(error = net.Error(
+        code = -6,
+        message = string.String.from_str("session peer not found")
+    ))
 
 
 async function drain_outgoing_session(session: ref[Session]) -> Result[bool, net.Error]:
