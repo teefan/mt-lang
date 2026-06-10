@@ -241,10 +241,10 @@ module MilkTea
         when AST::Specialization
           @resolve_call&.call(expression)
         when AST::SizeofExpr
-          type = resolve_type_from_expr(expression.type)
+          type = resolve_layout_type(expression.type)
           type && Layout.size_of(type)
         when AST::AlignofExpr
-          type = resolve_type_from_expr(expression.type)
+          type = resolve_layout_type(expression.type)
           type && Layout.alignment_of(type)
         when AST::OffsetofExpr
           type = resolve_layout_type(expression.type)
@@ -279,43 +279,11 @@ module MilkTea
         return unless @resolve_type_ref
 
         @resolve_type_ref.call(type_ref)
-      end
+      rescue => e
+        return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
 
-      def resolve_type_from_expr(expression)
-        if expression.is_a?(AST::Identifier)
-          type_ref_wrapper = AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.name]),
-            arguments: [],
-            nullable: false,
-          )
-          type = @resolve_type_ref&.call(type_ref_wrapper)
-          return type if type
-        end
-
-        if expression.is_a?(AST::MemberAccess)
-          parts = collect_member_access_parts(expression)
-          if parts
-            type_ref = AST::TypeRef.new(name: AST::QualifiedName.new(parts:), arguments: [], nullable: false)
-            type = @resolve_type_ref&.call(type_ref)
-            return type if type
-          end
-        end
-
-        if expression.is_a?(AST::Specialization) && expression.callee.is_a?(AST::Identifier)
-          type_args = expression.arguments.filter_map do |arg|
-            next unless arg.is_a?(AST::TypeArgument)
-            next unless arg.value.is_a?(AST::TypeRef)
-
-            arg
-          end
-          type_ref = AST::TypeRef.new(
-            name: AST::QualifiedName.new(parts: [expression.callee.name]),
-            arguments: type_args,
-            nullable: false,
-          )
-          type = @resolve_type_ref&.call(type_ref)
-          return type if type
-        end
+        expression = build_compile_time_expression_from_qualified_name(type_ref.name)
+        return unless expression
 
         value = evaluate(expression)
         return value if value.is_a?(Types::Struct) || value.is_a?(Types::Primitive) ||
@@ -325,17 +293,15 @@ module MilkTea
         nil
       end
 
-      def collect_member_access_parts(expression)
-        parts = []
-        current = expression
-        while current.is_a?(AST::MemberAccess)
-          parts.unshift(current.member)
-          current = current.receiver
-        end
-        return unless current.is_a?(AST::Identifier)
+      def build_compile_time_expression_from_qualified_name(qualified_name)
+        parts = qualified_name.parts
+        return unless parts.length >= 1
 
-        parts.unshift(current.name)
-        parts
+        expr = ::MilkTea::AST::Identifier.new(name: parts.first)
+        parts[1..].each do |part|
+          expr = ::MilkTea::AST::MemberAccess.new(receiver: expr, member: part)
+        end
+        expr
       end
 
       def evaluate_unary(expression)

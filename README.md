@@ -354,6 +354,7 @@ Supported statements:
 - `inline for` — loop over a compile-time-known array, unrolled at compile time
 - `inline while` — loop with a compile-time-known condition, unrolled at compile time
 - `inline match` — match with a compile-time-known scrutinee, unrolled at compile time
+- `inline if` — if with a compile-time-known condition; only the chosen branch is type-checked and emitted
 - `pass`
 - `break`
 - `continue`
@@ -451,6 +452,20 @@ inline while n < 1024:
 
 `inline match` unrolls a match with a compile-time-known scrutinee; only the chosen arm emits code. It is not required to be exhaustive.
 
+`inline if` branches on a compile-time-known boolean condition:
+
+```mt
+const DEBUG_RENDER: bool = false
+
+function draw() -> void:
+    inline if DEBUG_RENDER:
+        debug_overlay()
+```
+
+- The condition must be a compile-time constant.
+- Only the chosen branch is type-checked and emitted. The dead branch may reference types and symbols that do not exist.
+- `inline if` supports `else` and `else if` branches; the chosen branch follows the same dead-elimination rule.
+
 ## 9. Expressions And Operators
 
 Primary expressions:
@@ -461,6 +476,14 @@ Primary expressions:
 - `size_of(T)`
 - `align_of(T)`
 - `offset_of(T, field)`
+
+`size_of` and `offset_of` accept compile-time expressions for the type and field arguments respectively, enabling generic per-field introspection through `inline for`:
+
+```mt
+inline for field in fields_of(Point):
+    let s = size_of(field.type)
+    let o = offset_of(Point, field)
+```
 - `proc(...) -> T: ...`
 - `proc(...) -> T: expr` for a single expression body, implicitly returned
 - `if cond: a else: b`
@@ -621,7 +644,7 @@ Core modules in `std/`:
 
 **Collections**: `std.vec.Vec[T]`, `std.deque.Deque[T]`, `std.map.Map[K,V]`, `std.set.Set[T]`, `std.ordered_map.OrderedMap[K,V]`, `std.ordered_set.OrderedSet[T]`, `std.binary_heap.BinaryHeap[T]`, `std.priority_queue.PriorityQueue[T]`, `std.linked_map.LinkedMap[K,V]`, `std.linked_set.LinkedSet[T]`, `std.counter.Counter[T]`, `std.multiset.MultiSet[T]`, `std.queue.Queue[T]`, `std.stack.Stack[T]`
 
-**Serialization**: `std.json`, `std.toml`, `std.uri`
+**Serialization**: `std.json`, `std.toml`, `std.uri`, `std.serialize`
 
 **System**: `std.time`, `std.fs`, `std.path`, `std.process`, `std.cli`, `std.stdio`, `std.terminal`
 
@@ -629,7 +652,7 @@ Core modules in `std/`:
 
 **AI/State**: `std.fsm` (finite state machine), `std.goap` (goal-oriented action planning), `std.behavior_tree`
 
-**Networking**: `std.http`, `std.tls`, `std.net`
+**Networking**: `std.http`, `std.tls`, `std.net` (see also `std.net.manager`, `std.net.discovery`)
 
 **Compression**: `std.gzip`, `std.tar`
 

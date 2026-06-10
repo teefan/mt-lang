@@ -1912,15 +1912,15 @@ module MilkTea
 
     def parse_sizeof_expr
       consume(:lparen, "expected '(' after size_of")
-      type = parse_expression
-      consume(:rparen, "expected ')' after size_of argument")
+      type = parse_type_ref
+      consume(:rparen, "expected ')' after size_of type")
       AST::SizeofExpr.new(type:)
     end
 
     def parse_alignof_expr
       consume(:lparen, "expected '(' after align_of")
-      type = parse_expression
-      consume(:rparen, "expected ')' after align_of argument")
+      type = parse_type_ref
+      consume(:rparen, "expected ')' after align_of type")
       AST::AlignofExpr.new(type:)
     end
 

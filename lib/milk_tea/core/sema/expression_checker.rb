@@ -139,10 +139,14 @@ module MilkTea
           when AST::FloatLiteral
             infer_float_literal(expression, expected_type)
           when AST::SizeofExpr
-            infer_layout_query_type_from_expr(expression.type, context: "size_of", scopes:)
+            unless check_layout_type_via_ct(expression.type, context: "size_of", scopes:)
+              infer_layout_query_type(expression.type, context: "size_of")
+            end
             @types.fetch("ptr_uint")
           when AST::AlignofExpr
-            infer_layout_query_type_from_expr(expression.type, context: "align_of", scopes:)
+            unless check_layout_type_via_ct(expression.type, context: "align_of", scopes:)
+              infer_layout_query_type(expression.type, context: "align_of")
+            end
             @types.fetch("ptr_uint")
           when AST::OffsetofExpr
             infer_offsetof_type(expression.type, expression.field, scopes:)
@@ -1427,6 +1431,8 @@ module MilkTea
       end
 
       def struct_declaration_for_type(type)
+        return type.ast_declaration if type.respond_to?(:ast_declaration) && type.ast_declaration
+
         return nil unless type.respond_to?(:module_name)
         if type.module_name == @module_name
           return @ast.declarations.find do |decl|
