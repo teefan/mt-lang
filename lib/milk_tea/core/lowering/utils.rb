@@ -899,15 +899,15 @@ module MilkTea
       end
 
       def async_local_decl_field_key(statement)
-        return statement.name unless let_else_discard_binding_syntax?(statement)
+        return "__discard_#{statement.line}" if statement.name == "_"
 
-        "__let_else_discard_#{statement.line}"
+        statement.name
       end
 
       def async_local_decl_field_name(statement)
-        return "local_#{statement.name}" unless let_else_discard_binding_syntax?(statement)
+        return "local_discard_#{statement.line}" if statement.name == "_"
 
-        "local_let_else_discard_#{statement.line}"
+        "local_#{statement.name}"
       end
 
       def async_match_binding_field_key(arm)
