@@ -72,7 +72,7 @@ module MilkTea
             },
             resolve_call: ->(call_expr) {
               if call_expr.callee.is_a?(AST::Identifier)
-                func = @checker.instance_variable_get(:@top_level_functions)&.fetch(call_expr.callee.name, nil)
+                func = @checker.top_level_function(call_expr.callee.name)
                 if func&.ast&.respond_to?(:const) && func.ast.const
                   begin
                     initial_vars = {}

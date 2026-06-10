@@ -327,6 +327,10 @@ module MilkTea
         evaluate_top_level_const_value(name)
       end
 
+      def top_level_function(name)
+        @top_level_functions[name]
+      end
+
       def resolve_imported_module_const_value(import_name, value_name)
         imported_module = @imports[import_name]
         return unless imported_module
