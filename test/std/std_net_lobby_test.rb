@@ -135,17 +135,12 @@ async function main() -> int:
                                 Result.success as client_local:
                                     var cl = client_local.value
                                     defer cl.release()
-                                    match mux.mux_connect(cl, resolved, config):
+                                    match await mux.mux_connect(cl, resolved, config):
                                         Result.failure:
                                             return 5
                                         Result.success as conn_payload:
                                             var conn = conn_payload.value
                                             defer conn.release()
-                                            match await conn.connect_to_peer():
-                                                Result.failure:
-                                                    return 6
-                                                Result.success:
-                                                    pass
 
                                             var frame: uint = 0
                                             var discovered: bool = false

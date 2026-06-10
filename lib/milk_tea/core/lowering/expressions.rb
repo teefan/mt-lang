@@ -1190,11 +1190,11 @@ module MilkTea
         when AST::FloatLiteral
           IR::FloatLiteral.new(value: expression.value, type:)
         when AST::SizeofExpr
-          type = resolve_type_ref_with_fallback(expression.type, env:)
-          type ? IR::SizeofExpr.new(target_type: type, type:) : raise(LoweringError, "size_of argument is not a concrete type")
+          target_type = resolve_type_ref_with_fallback(expression.type, env:)
+          target_type ? IR::SizeofExpr.new(target_type:, type:) : raise(LoweringError, "size_of argument is not a concrete type")
         when AST::AlignofExpr
-          type = resolve_type_ref_with_fallback(expression.type, env:)
-          type ? IR::AlignofExpr.new(target_type: type, type:) : raise(LoweringError, "align_of argument is not a concrete type")
+          target_type = resolve_type_ref_with_fallback(expression.type, env:)
+          target_type ? IR::AlignofExpr.new(target_type:, type:) : raise(LoweringError, "align_of argument is not a concrete type")
         when AST::OffsetofExpr
           target_type = resolve_type_ref(expression.type)
           binding = lookup_value(expression.field, env)

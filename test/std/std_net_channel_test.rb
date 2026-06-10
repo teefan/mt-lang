@@ -73,7 +73,7 @@ async function main() -> int:
                                     var right_local = local_payload.value
                                     defer right_local.release()
 
-                                    match channel.bind_connect(left_bind_address, right_local, config):
+                                    match channel.connect(left_bind_address, right_local, config):
                                         Result.failure as left_payload:
                                             var error = left_payload.error
                                             defer error.release()
@@ -210,7 +210,7 @@ async function main() -> int:
                                     var right_local = local_payload.value
                                     defer right_local.release()
 
-                                    match channel.bind_connect(left_bind_address, right_local, config):
+                                    match channel.connect(left_bind_address, right_local, config):
                                         Result.failure as left_payload:
                                             var error = left_payload.error
                                             defer error.release()
@@ -400,7 +400,7 @@ async function main() -> int:
                                             var right_bind_address = right_bind_payload.value
                                             defer right_bind_address.release()
 
-                                            match channel.bind_connect(left_bind_address, host_local, config):
+                                            match channel.connect(left_bind_address, host_local, config):
                                                 Result.failure as left_payload:
                                                     var error = left_payload.error
                                                     defer error.release()
@@ -409,7 +409,7 @@ async function main() -> int:
                                                     var left = left_payload.value
                                                     defer left.release()
 
-                                                    match channel.bind_connect(right_bind_address, host_local, config):
+                                                    match channel.connect(right_bind_address, host_local, config):
                                                         Result.failure as right_payload:
                                                             var error = right_payload.error
                                                             defer error.release()

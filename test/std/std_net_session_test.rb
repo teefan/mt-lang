@@ -43,18 +43,13 @@ async function main() -> int:
                                 Result.success as client_local:
                                     var cl = client_local.value
                                     defer cl.release()
-                                    let conn_result = sess.connect(cl, resolved, config)
+                                    let conn_result = await sess.connect(cl, resolved, config)
                                     match conn_result:
                                         Result.failure:
                                             return 5
                                         Result.success as conn_payload:
                                             var client = conn_payload.value
                                             defer client.release()
-                                            match await client.connect_to_peer():
-                                                Result.failure:
-                                                    return 6
-                                                Result.success:
-                                                    pass
 
                                             var frame: uint = 0
                                             while frame < 60:
