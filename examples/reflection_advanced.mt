@@ -381,7 +381,28 @@ function first_field_offset[T]() -> ptr_uint:
     return ptr_uint<-0
 
 # ---------------------------------------------------------------------------
-# 12  MAIN
+# 12  const function — compile-time-evaluable functions
+# ---------------------------------------------------------------------------
+
+const function square(x: int) -> int:
+    return x * x
+
+const function cube(x: int) -> int:
+    let sq = square(x)
+    return sq * x
+
+const SQUARE_5: int = square(5)
+const CUBE_3: int = cube(3)
+
+function test_const_function() -> int:
+    if SQUARE_5 != 25:
+        return 701
+    if CUBE_3 != 27:
+        return 702
+    return 0
+
+# ---------------------------------------------------------------------------
+# 13  MAIN
 # ---------------------------------------------------------------------------
 
 function main() -> int:

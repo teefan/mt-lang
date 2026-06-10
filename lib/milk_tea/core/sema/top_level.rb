@@ -304,9 +304,14 @@ module MilkTea
           when "members_of"
             evaluate_members_of_call(expression.arguments)
           when "attributes_of"
-            evaluate_attributes_of_call(expression.arguments)
+            evaluate_attributes_of_call(expression.arguments, scopes: scopes || [])
           else
-            evaluate_type_returning_call(expression, scopes:)
+            func = @top_level_functions[expression.callee.name]
+            if func&.ast&.respond_to?(:const) && func.ast.const
+              evaluate_const_function_body(func, expression.arguments, scopes:)
+            else
+              evaluate_type_returning_call(expression, scopes:)
+            end
           end
         when AST::Specialization
           if expression.callee.callee.is_a?(AST::Identifier) && expression.callee.callee.name == "attribute_arg"
@@ -400,6 +405,36 @@ module MilkTea
           else
             return nil
           end
+        end
+
+        ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
+        ctx.evaluate_block(func.ast.body, scopes: nil)
+      rescue CompileTime::ReturnValue => e
+        e.value
+      rescue CompileTime::Error => e
+        raise_sema_error(e.message)
+      end
+
+      def evaluate_const_function_body(func, arguments, scopes:)
+        return nil unless func.ast.params.length == arguments.length
+
+        initial_vars = {}
+        func.ast.params.each_with_index do |param, idx|
+          arg_expr = arguments[idx].value
+          arg_value = if scopes
+                        evaluate_compile_time_const_value(arg_expr, scopes:)
+                      else
+                        CompileTime.evaluate(
+                          arg_expr,
+                          resolve_identifier: lambda { |id| resolve_current_module_const_value(id.name) },
+                          resolve_member_access: nil,
+                          resolve_type_ref: lambda { |tr| resolve_type_ref(tr) },
+                          resolve_call: nil,
+                        )
+                      end
+          return nil unless arg_value
+
+          initial_vars[param.name] = arg_value
         end
 
         ctx = CompileTime::BlockContext.new(self, initial_variables: initial_vars)
