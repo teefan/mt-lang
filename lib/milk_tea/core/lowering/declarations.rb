@@ -12,15 +12,16 @@ module MilkTea
 
           next if type == Types::BUILTIN_TYPE_META_TYPE
 
-          needs_direct_literal = decl.block_body || decl.value.is_a?(AST::ExpressionList)
+          if const_value && (decl.value.is_a?(AST::Call) || decl.value.is_a?(AST::Specialization))
+            value = lower_const_value_literal(type, const_value)
+          elsif const_value && (decl.block_body || decl.value.is_a?(AST::ExpressionList))
+            value = lower_const_value_literal(type, const_value)
+          elsif decl.block_body || decl.value.is_a?(AST::ExpressionList)
+            value = IR::IntegerLiteral.new(value: 0, type:)
+          else
+            value = lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
+          end
 
-          value = if needs_direct_literal && const_value
-                    lower_const_value_literal(type, const_value)
-                  elsif needs_direct_literal
-                    IR::IntegerLiteral.new(value: 0, type:)
-                  else
-                    lower_static_storage_initializer(decl.value, env: empty_env, expected_type: type)
-                  end
           IR::Constant.new(name: decl.name, c_name: value_c_name(decl.name), type:, value:)
         end
       end
