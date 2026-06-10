@@ -182,7 +182,7 @@ public async function resolve_public_address(
                 "failed to generate transaction ID"
             ))
         Result.success as rp:
-            var tid = transaction_id_from_bytes(rp.value)
+            let tid = transaction_id_from_bytes(rp.value)
             rp.value.release()
             var request = build_binding_request(tid)
             defer request.release()
@@ -197,7 +197,7 @@ public async function resolve_public_address(
                     pass
 
             var frame: uint = 0
-            var recv_task = socket.recv_from(512)
+            let recv_task = socket.recv_from(512)
             while frame < 40:
                 if aio.completed(recv_task):
                     let recv_result = aio.result(recv_task)

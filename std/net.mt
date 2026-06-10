@@ -2081,6 +2081,11 @@ function udp_receive_cleanup_and_release(state: ptr[UdpReceiveState]) -> void:
 function udp_receive_release(frame: ptr[void]) -> void:
     let state = udp_receive_state(frame)
     if unsafe: read(state).ready:
+        let socket = unsafe: read(state).socket
+        if socket != null[ptr[UdpSocketState]]:
+            let live_socket = unsafe: ptr[UdpSocketState]<-socket
+            if unsafe: read(live_socket).receive_state == state:
+                unsafe: read(live_socket).receive_state = null
         udp_receive_cleanup_and_release(state)
         return
 

@@ -104,7 +104,7 @@ public function mux_connect_on(
                 error = p.error
             )
         Result.success as p:
-            var conn = MuxedConnection(
+            let conn = MuxedConnection(
                 conn = p.value,
                 config = config,
                 event_queue = deque.Deque[MuxedMessage].create(),
@@ -722,7 +722,7 @@ function assemble_fragment(
 
     let buf_index = find_frag_buffer(buffers, peer_id, group_id)
     if buf_index < 0:
-        var full_size = ptr_uint<-total * config.fragment_size
+        let full_size = ptr_uint<-total * config.fragment_size
         var buf = bytes.Bytes.empty()
         if full_size > 0:
             let buf_data = heap.must_alloc[ubyte](full_size)

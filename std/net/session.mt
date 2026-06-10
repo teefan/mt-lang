@@ -207,7 +207,7 @@ public function connect_on(
                 message = payload.error.message
             ))
         Result.success as payload:
-            var conn = Connection(
+            let conn = Connection(
                 channel = payload.value,
                 state = ConnectionState.disconnected,
                 protocol_version = config.protocol_version,
@@ -255,7 +255,7 @@ public function listen_on(
                 message = payload.error.message
             ))
         Result.success as payload:
-            var session = Session(
+            let session = Session(
                 host = payload.value,
                 config = config,
                 next_peer_id = 1,
@@ -276,7 +276,9 @@ extending Connection:
         match this.pending_recv:
             Option.some as task_opt:
                 let task = task_opt.value
-                task.release(task.frame)
+                let raw_frame = unsafe: reinterpret[ptr_int](task.frame)
+                if raw_frame != 0:
+                    task.release(task.frame)
             Option.none:
                 pass
         this.pending_recv = Option[ChanMessageTask].none
@@ -612,7 +614,9 @@ extending Session:
         match this.pending_recv:
             Option.some as task_opt:
                 let task = task_opt.value
-                task.release(task.frame)
+                let raw_frame = unsafe: reinterpret[ptr_int](task.frame)
+                if raw_frame != 0:
+                    task.release(task.frame)
             Option.none:
                 pass
         this.pending_recv = Option[ChanHostMessageTask].none
