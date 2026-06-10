@@ -91,8 +91,8 @@ module MilkTea
     InterfaceMethodDecl = Data.define(:name, :params, :return_type, :kind, :async, :attributes, :line, :column) do
       def initialize(name:, params:, return_type:, kind:, async:, attributes: [], line: nil, column: nil) = super
     end
-    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :attributes, :line, :column) do
-      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, attributes: [], line: nil, column: nil) = super
+    FunctionDef = Data.define(:name, :type_params, :params, :return_type, :body, :visibility, :async, :const, :attributes, :line, :column) do
+      def initialize(name:, type_params:, params:, return_type:, body:, visibility:, async:, const: false, attributes: [], line: nil, column: nil) = super
     end
     MethodDef = Data.define(:name, :type_params, :params, :return_type, :body, :kind, :visibility, :async, :attributes, :line, :column) do
       def initialize(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes: [], line: nil, column: nil) = super

@@ -154,7 +154,11 @@ module MilkTea
         parse_attribute_decl(visibility:)
       elsif match(:const)
         reject_attributes!(attributes)
-        parse_const_decl(visibility:)
+        if match(:function)
+          parse_function_def(visibility:, const: true, attributes:)
+        else
+          parse_const_decl(visibility:)
+        end
       elsif match(:var)
         reject_attributes!(attributes)
         parse_var_decl(visibility:)
@@ -317,7 +321,11 @@ module MilkTea
         raise error(previous, "attribute is not allowed in external files")
       elsif match(:const)
         reject_attributes!(attributes)
-        parse_const_decl(visibility: nil)
+        if match(:function)
+          parse_function_def(visibility:, const: true, attributes:)
+        else
+          parse_const_decl(visibility: nil)
+        end
       elsif match(:event)
         reject_attributes!(attributes)
         raise error(previous, "event is not allowed in external files")
@@ -623,12 +631,12 @@ module MilkTea
       end
     end
 
-    def parse_function_def(visibility: :private, async: false, attributes: [])
+    def parse_function_def(visibility: :private, async: false, const: false, attributes: [])
       line = previous.line
       name_token = consume_name("expected function name")
       name = name_token.lexeme
       type_params, params, return_type, body = parse_callable_signature
-      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, attributes:, line:, column: name_token.column)
+      AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, const:, attributes:, line:, column: name_token.column)
     end
 
     def parse_method_def(attributes: [])
