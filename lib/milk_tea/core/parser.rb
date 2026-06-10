@@ -1853,6 +1853,9 @@ module MilkTea
           consume(:rparen, "expected ')' after expression")
           first
         end
+      elsif keyword_token?(peek)
+        advance
+        AST::Identifier.new(name: previous.lexeme, line: previous.line, column: previous.column)
       else
         raise error(peek, "expected expression")
       end
@@ -2218,7 +2221,7 @@ module MilkTea
     end
 
     def check_inline_stmt_start?
-      return false unless check(:identifier) && peek.lexeme == "inline"
+      return false unless check(:inline)
 
       next_idx = @current + 1
       return false if next_idx >= @tokens.length

@@ -282,15 +282,28 @@ module MilkTea
   
             visit_expression(part.expression)
           end
-        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral,
-             AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
+        when AST::IntegerLiteral, AST::FloatLiteral, AST::StringLiteral, AST::BooleanLiteral, AST::NullLiteral
           nil
+        when AST::SizeofExpr, AST::AlignofExpr
+          visit_type_ref(expression.type)
+        when AST::OffsetofExpr
+          mark_used(expression.field)
         else
           nil
         end
       end
       def visit_type_argument(argument)
         visit_expression(argument.value) if argument.respond_to?(:value)
+      end
+      def visit_type_ref(type_ref)
+        return unless type_ref
+
+        type_ref.name.parts.each { |part| mark_used(part) }
+        type_ref.arguments.each do |argument|
+          next unless argument.respond_to?(:value)
+
+          visit_type_ref(argument.value) if argument.value.is_a?(AST::TypeRef)
+        end
       end
       def visit_assignment_target(target)
         case target

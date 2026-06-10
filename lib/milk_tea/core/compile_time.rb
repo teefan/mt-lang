@@ -279,7 +279,7 @@ module MilkTea
         return unless @resolve_type_ref
 
         @resolve_type_ref.call(type_ref)
-      rescue => e
+      rescue
         return unless type_ref.respond_to?(:name) && type_ref.name.parts.length >= 1
 
         expression = build_compile_time_expression_from_qualified_name(type_ref.name)

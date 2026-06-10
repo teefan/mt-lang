@@ -31,6 +31,7 @@ module MilkTea
       "implements" => :implements,
       "include" => :include,
       "in" => :in,
+      "inline" => :inline,
       "inout" => :inout,
       "import" => :import,
       "interface" => :interface,

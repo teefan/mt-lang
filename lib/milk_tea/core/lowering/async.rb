@@ -930,7 +930,6 @@ module MilkTea
         return [] unless contains_task_type?(type)
 
         void_type = @types.fetch("void")
-        void_ptr = pointer_to(void_type)
         int_type = @types.fetch("int")
 
         case type
