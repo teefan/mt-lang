@@ -405,7 +405,32 @@ function test_const_function() -> int:
     return 0
 
 # ---------------------------------------------------------------------------
-# 13  MAIN
+# 13  Type-level dispatch — inline if with field.type comparison
+# ---------------------------------------------------------------------------
+
+function typed_sizes[T]() -> ptr_uint:
+    var total: ptr_uint = 0
+    inline for field in fields_of(T):
+        inline if field.type == float:
+            total = total + ptr_uint<-4
+        inline if field.type == uint:
+            total = total + ptr_uint<-4
+        inline if field.type == ushort:
+            total = total + ptr_uint<-2
+        inline if field.type == ubyte:
+            total = total + ptr_uint<-1
+        inline if field.type == byte:
+            total = total + ptr_uint<-1
+    return total
+
+function test_type_dispatch() -> int:
+    let cs = typed_sizes[CompactHeader]()
+    if cs != ptr_uint<-4:
+        return 801
+    return 0
+
+# ---------------------------------------------------------------------------
+# 14  MAIN
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -484,6 +509,10 @@ function main() -> int:
     let _ = first_field_offset[CompactHeader]()
 
     code = test_const_function()
+    if code != 0:
+        return code
+
+    code = test_type_dispatch()
     if code != 0:
         return code
 

@@ -236,6 +236,7 @@ module MilkTea
       return left == right if left.is_a?(Numeric) && right.is_a?(Numeric)
       return left == right if left.is_a?(String) && right.is_a?(String)
       return left == right if boolean_value?(left) && boolean_value?(right)
+      return left == right if left.is_a?(Types::Base) && right.is_a?(Types::Base)
 
       nil
     end

@@ -1397,7 +1397,10 @@ module MilkTea
               return binding[:const_value] unless binding&.fetch(:const_value, nil).nil?
             end
 
-            resolve_current_module_const_value(identifier_expression.name)
+            value = resolve_current_module_const_value(identifier_expression.name)
+            return value if value
+
+            @types[identifier_expression.name]
           end,
           resolve_member_access: lambda do |member_access_expression|
             if (receiver_value = CompileTime.evaluate(
