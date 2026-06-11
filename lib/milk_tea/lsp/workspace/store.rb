@@ -138,6 +138,21 @@ module MilkTea
           log_error("LSP workspace index error #{root_uri}: #{e.message}")
         end
 
+        def rename_indexed_file(old_uri, new_uri)
+          @document_state_mutex.synchronize do
+            content = @indexed_documents.delete(old_uri)
+            if content
+              @indexed_documents[new_uri] = content
+            end
+            @document_sources.delete(old_uri)
+            if @indexed_documents.key?(new_uri)
+              set_document_source(new_uri, 'workspace-file')
+            end
+          end
+          invalidate_cache(old_uri, clear_last_good: true)
+          invalidate_cache(new_uri)
+        end
+
         def shutdown
           stop_definition_warmup
         end
