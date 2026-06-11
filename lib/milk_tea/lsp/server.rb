@@ -9,6 +9,7 @@ require 'thread'
 require 'uri'
 
 
+require_relative "server/call_hierarchy"
 require_relative "server/code_actions"
 require_relative "server/completion"
 require_relative "server/configuration"
@@ -196,6 +197,7 @@ module MilkTea
 
       private
 
+      include ServerCallHierarchy
       include ServerCodeActions
       include ServerCompletion
       include ServerConfiguration
@@ -246,6 +248,9 @@ module MilkTea
         @handlers['textDocument/completion']        = method(:handle_completion)
         @handlers['completionItem/resolve']         = method(:handle_completion_resolve)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
+        @handlers['textDocument/prepareCallHierarchy'] = method(:handle_prepare_call_hierarchy)
+        @handlers['callHierarchy/incomingCalls']     = method(:handle_incoming_calls)
+        @handlers['callHierarchy/outgoingCalls']     = method(:handle_outgoing_calls)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
         @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)
