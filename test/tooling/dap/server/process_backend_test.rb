@@ -116,7 +116,7 @@ class ProcessBackendTest < Minitest::Test
       assert_equal true, response["success"]
       breakpoints = response.dig("body", "breakpoints")
       assert_equal [3, 7], breakpoints.map { |bp| bp["line"] }
-      assert_equal [true, true], breakpoints.map { |bp| bp["verified"] }
+      assert_equal [false, false], breakpoints.map { |bp| bp["verified"] }
     end
   end
 

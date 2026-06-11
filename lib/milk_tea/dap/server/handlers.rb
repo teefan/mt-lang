@@ -55,14 +55,6 @@ module MilkTea
             end
           end
 
-          # Emit reason: "new" events for every breakpoint (lldb-dap handles its own)
-          breakpoints.each do |bp|
-            write_event("breakpoint", {
-              reason: "new",
-              breakpoint: bp
-            })
-          end
-
           write_response(message, { breakpoints: breakpoints })
         end
 
