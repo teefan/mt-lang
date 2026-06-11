@@ -326,9 +326,18 @@ module MilkTea
 
       def render_hover_markdown(info)
         lines = []
+
+        signature = info[:signature].to_s
+        shortened, modules = shorten_qualified_types(signature)
+
         lines << "```milk-tea"
-        lines << info[:signature]
+        lines << shortened
         lines << "```"
+
+        unless modules.empty?
+          prefix = modules.length == 1 ? 'From' : 'From'
+          lines << "*#{prefix} #{modules.join(', ')}*"
+        end
 
         rendered_doc_comment = false
         if info[:doc_comment].is_a?(Hash)
@@ -355,6 +364,17 @@ module MilkTea
         end
 
         lines.join("\n")
+      end
+
+      def shorten_qualified_types(signature)
+        modules = []
+        shortened = signature.gsub(/\b([a-z_][\w]*(?:\.[a-z_][\w]*)*\.)([A-Z]\w*(?:\[[^\]]*\])?(?:\s*\|\s*(?:[a-z_][\w]*(?:\.[a-z_][\w]*)*\.)?[A-Z]\w*(?:\[[^\]]*\])?)*)\b/) do
+          prefix = $1
+          mod_name = prefix.delete_suffix('.')
+          modules << mod_name unless modules.include?(mod_name)
+          $2
+        end
+        [shortened, modules]
       end
 
       def append_structured_doc_comment_markdown(lines, doc_comment)
