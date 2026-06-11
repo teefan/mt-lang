@@ -77,6 +77,9 @@ module MilkTea
                 willRename: {
                   filters: [{ pattern: { glob: '**/*.mt' }, scheme: 'file' }]
                 }
+              },
+              didChangeWatchedFiles: {
+                dynamicRegistration: true
               }
             }
           }
