@@ -7,6 +7,7 @@ module MilkTea
         private
 
       def handle_initialize(params)
+        @pull_diagnostics_active = true
         @root_uri = params['rootUri']
         @workspace.workspace_root_path = uri_to_path(@root_uri)
         apply_configuration_settings(params['initializationOptions'])

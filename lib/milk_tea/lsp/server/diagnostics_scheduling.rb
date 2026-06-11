@@ -118,12 +118,16 @@ module MilkTea
           end
 
           if publish
-            @diagnostics_perf[:published] += 1 if perf_logging?
-            @protocol.write_notification('textDocument/publishDiagnostics', {
-              uri: uri,
-              diagnostics: diagnostics
-            })
-            notify_diagnostic_errors(uri, diagnostics)
+            if defined?(@pull_diagnostics_active) && @pull_diagnostics_active
+              @diagnostics_perf[:collected_for_pull] += 1 if perf_logging?
+            else
+              @diagnostics_perf[:published] += 1 if perf_logging?
+              @protocol.write_notification('textDocument/publishDiagnostics', {
+                uri: uri,
+                diagnostics: diagnostics
+              })
+              notify_diagnostic_errors(uri, diagnostics)
+            end
           elsif perf_logging?
             @diagnostics_perf[:dropped_stale] += 1
           end
