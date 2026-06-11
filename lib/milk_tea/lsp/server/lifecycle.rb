@@ -49,7 +49,7 @@ module MilkTea
             },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],
-              resolveProvider: false
+              resolveProvider: true
             },
             renameProvider: { prepareProvider: true },
             workspaceSymbolProvider: true,
