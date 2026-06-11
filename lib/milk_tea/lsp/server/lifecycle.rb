@@ -46,6 +46,9 @@ module MilkTea
             codeActionProvider: {
               codeActionKinds: ['quickFix', 'source.fixAll']
             },
+            codeLensProvider: {
+              resolveProvider: true
+            },
             inlayHintProvider: true,
             semanticTokensProvider: {
               legend: {
