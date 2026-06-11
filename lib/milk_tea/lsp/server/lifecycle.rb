@@ -31,6 +31,7 @@ module MilkTea
             documentSymbolProvider: true,
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
+            foldingRangeProvider: true,
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']
