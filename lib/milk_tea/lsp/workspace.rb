@@ -56,6 +56,8 @@ module MilkTea
         @dependency_module_name_by_uri = {}
         @dependency_imports_by_uri = {}
         @reverse_import_dependents = Hash.new { |hash, key| hash[key] = Set.new }
+        @full_reverse_index_built = false
+        @full_reverse_index_built = false
         # Definition index: name -> { uri:, token: } — built lazily from symbols cache.
         # Caches known matching definitions without forcing a full-workspace index
         # build on the first global lookup.

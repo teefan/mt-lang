@@ -152,6 +152,27 @@ module MilkTea
           results
         end
 
+        def find_all_references_in(name, uris)
+          results = []
+          uris.each do |doc_uri|
+            toks = get_tokens(doc_uri)
+            next unless toks
+
+            toks.each do |tok|
+              next unless tok.type == :identifier && tok.lexeme == name
+
+              results << {
+                uri:   doc_uri,
+                range: {
+                  start: { line: tok.line - 1, character: tok.column - 1 },
+                  end:   { line: tok.line - 1, character: tok.column - 1 + name.length }
+                }
+              }
+            end
+          end
+          results
+        end
+
         private
 
         # ── Cache management ────────────────────────────────────────────────────
