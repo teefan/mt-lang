@@ -36,13 +36,20 @@ module MilkTea
         branch = 'none'
         item_count = 0
 
+        prefix = measure_perf_stage(stages, 'prefix') { current_word_prefix(uri, lsp_line, lsp_char) }
+
+        import_items = measure_perf_stage(stages, 'import_context') { import_completions(uri, lsp_line, lsp_char) }
+        if import_items
+          branch = 'import'
+          item_count = import_items.length
+          return { isIncomplete: false, items: import_items }
+        end
+
         facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
         unless facts
           branch = 'no-facts'
           return { isIncomplete: false, items: [] }
         end
-
-        prefix = measure_perf_stage(stages, 'prefix') { current_word_prefix(uri, lsp_line, lsp_char) }
 
         # When user is typing after '.', return module members or method completions.
         dot_recv = nil
@@ -609,6 +616,84 @@ module MilkTea
       rescue StandardError => e
         warn "Error in completion resolve handler: #{e.message}"
         params
+      end
+
+      def import_completions(uri, lsp_line, lsp_char)
+        content = @workspace.get_content(uri)
+        lines = content.split("\n", -1)
+        line = lines[lsp_line] || ''
+        stripped = line.lstrip
+        return nil unless stripped.start_with?('import ')
+
+        import_kw_pos = line.index('import ')
+        after_import = line[(import_kw_pos + 7)..].to_s
+
+        if after_import.include?(' as ')
+          alias_pos = after_import.index(' as ')
+          cursor_in_import = lsp_char - import_kw_pos - 7
+          return nil if cursor_in_import > alias_pos
+          after_import = after_import[0...alias_pos]
+        end
+
+        cursor_in_import = lsp_char - import_kw_pos - 7
+        cursor_in_import = [[cursor_in_import, after_import.length].min, 0].max
+
+        path_typed = after_import[0...cursor_in_import].strip
+
+        segments = path_typed.split('.', -1)
+        dir_segments = segments[0...-1]
+        filter = segments.last.to_s
+
+        current_path = uri_to_path(uri)
+        return nil unless current_path
+
+        roots = MilkTea::ModuleRoots.roots_for_path(current_path)
+        fs_dir = dir_segments.join(File::SEPARATOR)
+
+        modules = {}
+        filter_lower = filter.downcase
+
+        roots.each do |root|
+          search_dir = fs_dir.empty? ? root : File.join(root, fs_dir)
+          next unless File.directory?(search_dir)
+
+          Dir.children(search_dir).sort.each do |name|
+            next if name.start_with?('.')
+            full_path = File.join(search_dir, name)
+
+            if name.end_with?('.mt')
+              mod_name = name.delete_suffix('.mt')
+              next if mod_name.start_with?('.')
+              next if full_path == current_path
+              next unless filter.empty? || mod_name.downcase.start_with?(filter_lower)
+              modules[mod_name] = mod_name
+            elsif File.directory?(full_path) && module_dir_contains_mt?(full_path)
+              next unless filter.empty? || name.downcase.start_with?(filter_lower)
+              modules[name] = name
+            end
+          end
+        end
+
+        return nil if modules.empty?
+
+        modules.values.sort.map do |mod_name|
+          {
+            label:      mod_name,
+            kind:       9,
+            detail:     "module #{mod_name}",
+            insertText: mod_name,
+            sortText:   "0_#{mod_name}",
+            data:       completion_data(mod_name),
+          }
+        end
+      end
+
+      def module_dir_contains_mt?(dir)
+        Dir.children(dir).any? do |name|
+          next false if name.start_with?('.')
+          full = File.join(dir, name)
+          name.end_with?('.mt') || (File.directory?(full) && module_dir_contains_mt?(full))
+        end
       end
       end
     end
