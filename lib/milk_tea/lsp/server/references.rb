@@ -165,6 +165,9 @@ module MilkTea
             }
           elsif include_declaration && node.respond_to?(:name) && node.name == name && module_level_declaration_node?(node)
             range = declaration_name_range(node)
+            unless range
+              range = declaration_name_range_fallback(node, uri, name)
+            end
             next unless range
 
             results << {
@@ -240,6 +243,20 @@ module MilkTea
           node.is_a?(AST::EnumDecl) ||
           node.is_a?(AST::FlagsDecl) ||
           node.is_a?(AST::OpaqueDecl)
+      end
+
+      def declaration_name_range_fallback(node, uri, name)
+        return nil unless node.respond_to?(:line) && node.line
+
+        row = get_content_line(uri, node.line - 1)
+        return nil unless row
+
+        col = row.index(/\b#{Regexp.escape(name)}\b/)
+        return nil unless col
+
+        { name: name, line: node.line, column: col + 1, length: name.length }
+      rescue StandardError
+        nil
       end
 
       def handle_document_highlight(params)
