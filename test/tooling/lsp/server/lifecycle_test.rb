@@ -36,6 +36,7 @@ class LifecycleTest < Minitest::Test
       assert_kind_of Hash, capabilities["renameProvider"]
       assert_kind_of Hash, capabilities["signatureHelpProvider"]
       assert_kind_of Hash, capabilities["completionProvider"]
+      assert_kind_of Hash, capabilities["codeLensProvider"]
       assert_equal true, capabilities["workspaceSymbolProvider"]
       workspace_folders = capabilities.dig("workspace", "workspaceFolders")
       assert_equal true, workspace_folders["supported"]
@@ -261,7 +262,7 @@ class LifecycleTest < Minitest::Test
     end
   end
 
-  def test_code_lens_returns_empty_when_disabled
+  def test_code_lens_returns_lenses_for_functions
     with_shared_server do |client|
       client.send_request("initialize", { "rootUri" => nil, "capabilities" => {} })
       uri = "file:///tmp/lsp_codelens_test.mt"
@@ -271,9 +272,11 @@ class LifecycleTest < Minitest::Test
       response = client.send_request("textDocument/codeLens", {
         "textDocument" => { "uri" => uri }
       })
-      error = response.fetch("error")
-      assert_equal(-32_601, error["code"])
-      assert_includes(error["message"], "Method not found")
+      lenses = response.fetch("result")
+      names = lenses.map { |lens| lens.dig("data", "name") }
+      assert_equal 2, lenses.length
+      assert_includes names, "add"
+      assert_includes names, "main"
     end
   end
 
