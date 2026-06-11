@@ -22,8 +22,9 @@ module MilkTea
     class Server
       ADAPTER_CAPABILITIES = {
         supportsConfigurationDoneRequest: true,
-        supportsFunctionBreakpoints: false,
+        supportsFunctionBreakpoints: true,
         supportsConditionalBreakpoints: false,
+        supportsHitConditionalBreakpoints: false,
         supportsPauseRequest: true,
         supportsEvaluateForHovers: false,
         supportsSetVariable: false,
