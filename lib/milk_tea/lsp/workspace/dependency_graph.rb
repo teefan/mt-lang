@@ -106,6 +106,7 @@ module MilkTea
           @dependency_module_name_by_uri.clear
           @dependency_imports_by_uri.clear
           @reverse_import_dependents.clear
+          @full_reverse_index_built = false
         end
 
         def update_dependency_index(uri, facts)
@@ -239,6 +240,37 @@ module MilkTea
             end
           end
           open_document_uris
+        end
+
+        public
+
+        def reverse_import_dependents_for(module_name)
+          ensure_full_reverse_import_index
+          @reverse_import_dependents[module_name]
+        end
+
+        private
+
+        def ensure_full_reverse_import_index
+          return if @full_reverse_index_built
+
+          all_uris = @document_state_mutex.synchronize do
+            (@indexed_documents.keys + @open_documents.keys).uniq
+          end
+
+          all_uris.each do |uri|
+            next if @dependency_imports_by_uri.key?(uri)
+
+            imported = dependency_index_imports_for(uri)
+            next unless imported
+
+            @dependency_imports_by_uri[uri] = imported
+            imported.each do |mod_name|
+              @reverse_import_dependents[mod_name] << uri
+            end
+          end
+
+          @full_reverse_index_built = true
         end
       end
     end

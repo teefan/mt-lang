@@ -42,6 +42,23 @@ module MilkTea
           end
         end
 
+        if facts && module_level_name?(facts, token.lexeme)
+          refs = measure_perf_stage(stages, 'module_refs') { module_level_reference_locations(uri, token.lexeme, facts, include_declaration: include_declaration) }
+          result_count = refs.length
+          result_state = refs.empty? ? 'miss' : 'hit'
+          return refs
+        end
+
+        unless facts
+          ast = @workspace.get_ast(uri)
+          if ast && module_level_ast_name?(ast, token.lexeme)
+            refs = measure_perf_stage(stages, 'module_refs') { module_level_reference_locations(uri, token.lexeme, nil, include_declaration: include_declaration) }
+            result_count = refs.length
+            result_state = refs.empty? ? 'miss' : 'hit'
+            return refs
+          end
+        end
+
         refs = measure_perf_stage(stages, 'refs_scan') { @workspace.find_all_references(token.lexeme) }
         if include_declaration
           result_count = refs.length
@@ -111,6 +128,118 @@ module MilkTea
       rescue StandardError => e
         warn "Error in documentLink/resolve handler: #{e.message}"
         params
+      end
+
+      def module_level_name?(facts, name)
+        return true if facts.functions.key?(name) || facts.types.key?(name) || facts.values.key?(name)
+
+        facts.methods.each_value do |methods|
+          return true if methods.key?(name) || methods.key?("static:#{name}")
+        end
+        false
+      end
+
+      def module_level_ast_name?(ast, name)
+        each_ast_node(ast) do |node|
+          return true if module_level_declaration_node?(node) && node.respond_to?(:name) && node.name == name
+        end
+        false
+      end
+
+      def module_level_reference_locations(uri, name, facts, include_declaration:)
+        ast = @workspace.get_ast(uri)
+        return [] unless ast
+
+        results = []
+        each_ast_node(ast) do |node|
+          if node.is_a?(AST::Identifier) && node.name == name
+            range = ast_name_range(node.name, node.line, node.column)
+            next unless range
+
+            results << {
+              uri: uri,
+              range: {
+                start: { line: range[:line] - 1, character: range[:column] - 1 },
+                end: { line: range[:line] - 1, character: range[:column] - 1 + name.length },
+              },
+            }
+          elsif include_declaration && node.respond_to?(:name) && node.name == name && module_level_declaration_node?(node)
+            range = declaration_name_range(node)
+            next unless range
+
+            results << {
+              uri: uri,
+              range: {
+                start: { line: range[:line] - 1, character: range[:column] - 1 },
+                end: { line: range[:line] - 1, character: range[:column] - 1 + name.length },
+              },
+            }
+          elsif node.is_a?(AST::MemberAccess) && node.member == name && node.line && node.column
+            row = get_content_line(uri, node.line - 1)
+            if row
+              member_col = find_member_column_in_line(row, node.column, name)
+              if member_col
+                results << {
+                  uri: uri,
+                  range: {
+                    start: { line: node.line - 1, character: member_col },
+                    end: { line: node.line - 1, character: member_col + name.length },
+                  },
+                }
+              end
+            end
+          end
+        end
+
+        if facts&.module_name
+          importing_uris = @workspace.reverse_import_dependents_for(facts.module_name)
+          if importing_uris && !importing_uris.empty?
+            cross_refs = @workspace.find_all_references_in(name, importing_uris.to_a - [uri])
+            results.concat(cross_refs)
+          end
+        end
+
+        results.uniq { |r| [r[:uri], r.dig(:range, :start, :line), r.dig(:range, :start, :character)] }
+      end
+
+      def get_content_line(uri, lsp_line)
+        content = @workspace.get_content(uri)
+        return nil unless content
+
+        content.split("\n", -1)[lsp_line]
+      rescue StandardError
+        nil
+      end
+
+      def find_member_column_in_line(line, receiver_start_col, member_name)
+        idx = receiver_start_col
+        while idx < line.length && line[idx] =~ /[A-Za-z0-9_.]/
+          idx += 1
+        end
+
+        dot_idx = line.index('.', receiver_start_col)
+        return nil unless dot_idx && dot_idx < idx
+
+        member_start = dot_idx + 1
+        match = line[member_start, member_name.length]
+        return nil unless match == member_name
+
+        member_start
+      end
+
+      def module_level_declaration_node?(node)
+        node.is_a?(AST::FunctionDef) ||
+          node.is_a?(AST::MethodDef) ||
+          node.is_a?(AST::ExternFunctionDecl) ||
+          node.is_a?(AST::ForeignFunctionDecl) ||
+          node.is_a?(AST::ConstDecl) ||
+          node.is_a?(AST::VarDecl) ||
+          node.is_a?(AST::TypeAliasDecl) ||
+          node.is_a?(AST::StructDecl) ||
+          node.is_a?(AST::UnionDecl) ||
+          node.is_a?(AST::EnumDecl) ||
+          node.is_a?(AST::FlagsDecl) ||
+          node.is_a?(AST::OpaqueDecl)
       end
 
       def handle_document_highlight(params)
