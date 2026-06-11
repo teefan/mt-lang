@@ -33,6 +33,7 @@ module MilkTea
             documentRangeFormattingProvider: true,
             foldingRangeProvider: true,
             callHierarchyProvider: true,
+            typeHierarchyProvider: true,
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']

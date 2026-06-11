@@ -25,6 +25,7 @@ require_relative "server/rename"
 require_relative "server/semantic_tokens"
 require_relative "server/signature_help"
 require_relative "server/text_documents"
+require_relative "server/type_hierarchy"
 require_relative "server/utilities"
 
 module MilkTea
@@ -213,6 +214,7 @@ module MilkTea
       include ServerSemanticTokens
       include ServerSignatureHelp
       include ServerTextDocuments
+      include ServerTypeHierarchy
       include ServerUtilities
 
       # ── Handler registration ─────────────────────────────────────────────────
@@ -255,6 +257,9 @@ module MilkTea
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
         @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
+        @handlers['textDocument/prepareTypeHierarchy'] = method(:handle_prepare_type_hierarchy)
+        @handlers['typeHierarchy/supertypes']        = method(:handle_supertypes)
+        @handlers['typeHierarchy/subtypes']          = method(:handle_subtypes)
         @handlers['textDocument/prepareRename']     = method(:handle_prepare_rename)
         @handlers['textDocument/rename']            = method(:handle_rename)
 
