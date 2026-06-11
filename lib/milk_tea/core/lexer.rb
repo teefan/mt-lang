@@ -1030,6 +1030,11 @@ module MilkTea
           return index + 1
         end
 
+        if @recovery_errors
+          @recovery_errors << LexError.new("unexpected character #{lexeme.inspect}", line: line_number, column: start + 1, path: @path)
+          return index + 1
+        end
+
         raise LexError.new("unexpected character #{lexeme.inspect}", line: line_number, column: start + 1, path: @path)
       end
 
