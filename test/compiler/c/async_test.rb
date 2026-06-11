@@ -364,7 +364,7 @@ class AsyncTest < Minitest::Test
     generated = generate_c_from_program_source(source)
 
     assert_match(/demo_async_status_void_codegen___async_main__frame/, generated)
-    assert_match(/local_let_else_discard_\d+/, generated)
+    assert_match(/local_discard_\d+/, generated)
     assert_match(/if \(.*kind == Result_void_int_kind_failure\)/, generated)
     assert_match(/data\.failure\.error;/, generated)
   end

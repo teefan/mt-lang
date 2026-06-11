@@ -23,9 +23,11 @@ module MilkTea
                 end
                 record_local_completion_snapshot(statement_end_line(statement), 1_000_000, nested_scopes)
               rescue SemaError => e
-                # Propagate as-is if position is already attached (set by an inner
-                # check_block call on a nested statement) or if this statement type
-                # carries no line information.
+                if @collecting_errors
+                  @structural_errors << e
+                  next
+                end
+
                 raise e unless e.line.nil?
 
                 stmt_line = statement.respond_to?(:line) ? statement.line : nil

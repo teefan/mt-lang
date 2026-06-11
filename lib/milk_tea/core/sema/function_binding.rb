@@ -418,22 +418,26 @@ module MilkTea
         @top_level_functions.each_value do |binding|
           next if @checked_function_bindings[binding.object_id]
 
+          prev_count = @structural_errors.length
           begin
             check_function(binding)
           rescue SemaError => e
             errors << e
           end
+          errors.concat(@structural_errors[prev_count..].to_a)
         end
 
         @methods.each_value do |method_map|
           method_map.each_value do |binding|
             next if @checked_function_bindings[binding.object_id]
 
+            prev_count = @structural_errors.length
             begin
               check_function(binding)
             rescue SemaError => e
               errors << e
             end
+            errors.concat(@structural_errors[prev_count..].to_a)
           end
         end
       end
