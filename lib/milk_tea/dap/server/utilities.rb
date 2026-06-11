@@ -34,6 +34,7 @@ module MilkTea
           @handlers["source"] = method(:handle_source)
           @handlers["loadedSources"] = method(:handle_loaded_sources)
           @handlers["restart"] = method(:handle_restart)
+          @handlers["cancel"] = method(:handle_cancel)
         end
 
         def process_message(message)

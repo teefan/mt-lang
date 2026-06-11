@@ -14,16 +14,13 @@ module MilkTea
 
           @session.initialize!
 
-          capabilities = ADAPTER_CAPABILITIES
           if default_backend_kind == "lldb-dap"
             start_lldb_backend({})
             backend_response = ensure_backend_initialized(message["arguments"] || {})
             return write_backend_response(message, backend_response) unless backend_response["success"]
-
-            capabilities = effective_adapter_capabilities
           end
 
-          write_response(message, capabilities)
+          write_response(message, effective_adapter_capabilities)
 
           write_event("initialized")
         end
@@ -349,6 +346,19 @@ module MilkTea
           return write_backend_response(message, backend_request("restart", message["arguments"] || {})) if using_lldb_backend?
 
           write_error_response(message, "restart is not supported by the process backend")
+        end
+
+        def handle_cancel(message)
+          args = message["arguments"] || {}
+          request_id = args["requestId"] || args["progressId"]
+
+          if using_lldb_backend?
+            backend_response = backend_request("cancel", { "requestId" => request_id }.compact)
+            write_backend_response(message, backend_response)
+          else
+            join_background_threads(timeout: 0.1)
+            write_response(message, {})
+          end
         end
       end
     end
