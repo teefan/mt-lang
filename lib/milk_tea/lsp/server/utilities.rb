@@ -383,6 +383,27 @@ module MilkTea
         before_end = (line < end_line) || (line == end_line && char <= end_char)
         after_start && before_end
       end
+
+      def show_message(type, message)
+        @protocol.write_notification("window/showMessage", {
+          type: MESSAGE_TYPES[type] || type,
+          message: message,
+        })
+      end
+
+      def log_message(type, message)
+        @protocol.write_notification("window/logMessage", {
+          type: MESSAGE_TYPES[type] || type,
+          message: message,
+        })
+      end
+
+      MESSAGE_TYPES = {
+        error:   1,
+        warning: 2,
+        info:    3,
+        log:     4,
+      }.freeze
       end
     end
   end

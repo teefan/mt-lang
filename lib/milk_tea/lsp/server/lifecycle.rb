@@ -68,6 +68,8 @@ module MilkTea
 
       def handle_initialized(_params)
         @workspace.index_workspace(@root_uri) if @root_uri
+        document_count = @workspace.all_documents.length
+        log_message(:info, "Milk Tea LSP ready — #{document_count} document#{document_count == 1 ? '' : 's'} indexed")
         nil
       end
 

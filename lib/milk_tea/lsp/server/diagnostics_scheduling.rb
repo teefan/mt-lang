@@ -123,6 +123,7 @@ module MilkTea
               uri: uri,
               diagnostics: diagnostics
             })
+            notify_diagnostic_errors(uri, diagnostics)
           elsif perf_logging?
             @diagnostics_perf[:dropped_stale] += 1
           end
@@ -207,6 +208,19 @@ module MilkTea
         @diagnostics_mutex.synchronize do
           @diagnostics_pending.key?(uri) || @diagnostics_enqueued.include?(uri)
         end
+      end
+
+      def notify_diagnostic_errors(uri, diagnostics)
+        errors = diagnostics.select { |d| d.is_a?(Hash) && (d["severity"] || d[:severity]) == 1 }
+        return if errors.empty?
+
+        @notified_error_uris ||= Set.new
+        return if @notified_error_uris.include?(uri)
+
+        @notified_error_uris.add(uri)
+        path = uri_to_path(uri) || uri
+        short_path = path.split("/").last(1).join
+        show_message(:warning, "#{short_path}: #{errors.length} error#{errors.length == 1 ? '' : 's'}")
       end
       end
     end
