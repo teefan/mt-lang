@@ -100,6 +100,7 @@ module MilkTea
         @dependency_resolution_mode = normalized
         @workspace.dependency_resolution_mode = normalized
         @diagnostic_report_cache.clear
+        @workspace_diagnostic_cache.clear
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
@@ -114,6 +115,7 @@ module MilkTea
         @platform_override = normalized
         @workspace.platform_override = normalized
         @diagnostic_report_cache.clear
+        @workspace_diagnostic_cache.clear
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|
@@ -127,6 +129,7 @@ module MilkTea
 
         @workspace.strict_current_root_diagnostics_enabled = normalized
         @diagnostic_report_cache.clear
+        @workspace_diagnostic_cache.clear
         open_uris = @workspace.open_document_uris
         invalidate_document_caches_for(open_uris)
         open_uris.each do |uri|

@@ -490,6 +490,40 @@ module MilkTea
         warn "Error in documentDiagnostic handler: #{e.message}"
         { kind: 'full', items: [] }
       end
+
+      def handle_workspace_diagnostic(params)
+        previous_ids = params['previousResultIds'] || []
+        prev_map = previous_ids.each_with_object({}) do |entry, h|
+          h[entry['uri']] = entry['resultId'] if entry.is_a?(Hash) && entry['uri']
+        end
+
+        all_uris = @workspace.all_documents
+        items = all_uris.filter_map do |uri|
+          content = @workspace.get_content(uri)
+          next if content.empty?
+
+          diagnostics = @workspace.collect_diagnostics(uri)
+          fingerprint = diagnostics_fingerprint(content, diagnostics)
+          result_id = next_diagnostic_result_id(uri, fingerprint)
+
+          cached = @workspace_diagnostic_cache[uri]
+          if cached && cached[:result_id] == prev_map[uri] && cached[:fingerprint] == fingerprint
+            { uri: uri, kind: 'unchanged', resultId: result_id, items: [] }
+          else
+            @workspace_diagnostic_cache[uri] = { result_id: result_id, fingerprint: fingerprint }
+            { uri: uri, kind: 'full', resultId: result_id, items: diagnostics }
+          end
+        end
+
+        { items: items }
+      rescue StandardError => e
+        warn "Error in workspace/diagnostic handler: #{e.message}"
+        { items: [] }
+      end
+
+      def refresh_workspace_diagnostics
+        @protocol.write_notification('workspace/diagnostic/refresh', nil)
+      end
       end
     end
   end

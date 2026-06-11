@@ -79,6 +79,10 @@ module LSPServerTestHelpers
     def write_error(id, code, message)
       @errors << { "id" => id, "code" => code, "message" => message }
     end
+
+    def send_request(method, params, &_callback)
+      @notifications << { "method" => method, "params" => params }
+    end
   end
 
   class ScriptedProtocol
@@ -103,6 +107,9 @@ module LSPServerTestHelpers
 
     def write_error(id, code, message)
       @errors << { "id" => id, "code" => code, "message" => message }
+    end
+
+    def send_request(_method, _params, &_callback)
     end
   end
 

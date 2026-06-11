@@ -399,6 +399,38 @@ module MilkTea
         })
       end
 
+      def show_message_request(type, message, actions:, &callback)
+        if @protocol.respond_to?(:send_request)
+          @protocol.send_request('window/showMessageRequest', {
+            type: MESSAGE_TYPES[type] || type,
+            message: message,
+            actions: actions.map { |title| { title: title } }
+          }) do |result, error|
+            if error
+              callback.call(nil)
+            elsif result.is_a?(Hash) && result['title']
+              callback.call(result['title'])
+            else
+              callback.call(nil)
+            end
+          end
+        else
+          Protocol.send_request('window/showMessageRequest', {
+            type: MESSAGE_TYPES[type] || type,
+            message: message,
+            actions: actions.map { |title| { title: title } }
+          }) do |result, error|
+            if error
+              callback.call(nil)
+            elsif result.is_a?(Hash) && result['title']
+              callback.call(result['title'])
+            else
+              callback.call(nil)
+            end
+          end
+        end
+      end
+
       MESSAGE_TYPES = {
         error:   1,
         warning: 2,
