@@ -61,7 +61,7 @@ module MilkTea
             backend_response = backend_request(command, message["arguments"] || {})
             write_backend_response(message, backend_response)
           else
-            write_error_response(message, "Unsupported command: #{command}")
+            write_error_response(message, "Command '#{command}' is not supported by the process backend. Use the lldb-dap backend for full debugging features.")
           end
 
           elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0) * 1000).round(1)

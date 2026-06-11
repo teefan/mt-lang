@@ -47,6 +47,22 @@ module MilkTea
             return write_backend_response(message, backend_response)
           end
 
+          # Process backend: mark breakpoints unverified
+          if default_backend_kind == "process"
+            breakpoints.each do |bp|
+              bp["verified"] = false
+              bp["message"] = "Process backend runs without a debugger; set breakpoints via lldb-dap backend instead."
+            end
+          end
+
+          # Emit reason: "new" events for every breakpoint (lldb-dap handles its own)
+          breakpoints.each do |bp|
+            write_event("breakpoint", {
+              reason: "new",
+              breakpoint: bp
+            })
+          end
+
           write_response(message, { breakpoints: breakpoints })
         end
 

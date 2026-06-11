@@ -29,6 +29,7 @@ module MilkTea
         supportsEvaluateForHovers: false,
         supportsSetVariable: false,
         supportsTerminateRequest: true,
+        supportTerminateDebuggee: true,
         supportsLoadedSourcesRequest: true,
         exceptionBreakpointFilters: [],
       }.freeze
