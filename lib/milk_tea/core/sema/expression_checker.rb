@@ -555,9 +555,13 @@ module MilkTea
 
           @types.fetch("bool")
         when "==", "!="
-          if struct_instance_type?(left_type) || struct_instance_type?(right_type)
-            name = struct_instance_type?(left_type) ? left_type : right_type
-            raise_sema_error("operator #{expression.operator} is not supported for struct type #{name}; use equal[#{name}](...) instead")
+          unless c_natively_equality_comparable_type?(left_type) && c_natively_equality_comparable_type?(right_type)
+            bad_type = c_natively_equality_comparable_type?(right_type) ? left_type : right_type
+            if struct_instance_type?(bad_type)
+              raise_sema_error("operator #{expression.operator} is not supported for struct type #{bad_type}; use equal[#{bad_type}](...) instead")
+            else
+              raise_sema_error("operator #{expression.operator} is not supported for type #{bad_type}")
+            end
           end
           unless common_numeric_type(left_type, right_type) || types_compatible?(left_type, right_type) || types_compatible?(right_type, left_type)
             raise_sema_error("operator #{expression.operator} requires comparable types, got #{left_type} and #{right_type}")
