@@ -497,7 +497,7 @@ module MilkTea
           h[entry['uri']] = entry['resultId'] if entry.is_a?(Hash) && entry['uri']
         end
 
-        all_uris = @workspace.all_documents
+        all_uris = @workspace.open_document_uris
         items = all_uris.filter_map do |uri|
           content = @workspace.get_content(uri)
           next if content.empty?

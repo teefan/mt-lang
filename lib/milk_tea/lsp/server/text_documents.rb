@@ -70,6 +70,8 @@ module MilkTea
         cancel_diagnostics(uri)
         @workspace.close_document(uri)
         invalidate_document_caches(uri)
+        @diagnostic_report_cache.delete(uri)
+        @workspace_diagnostic_cache.delete(uri)
         refresh_open_document_dependency_state(uri)
         @protocol.write_notification('textDocument/publishDiagnostics', {
           uri: uri,
