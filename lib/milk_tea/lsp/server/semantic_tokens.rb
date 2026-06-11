@@ -41,6 +41,13 @@ module MilkTea
 
         @semantic_tokens_cache[uri] = { content_hash: cache_key, data: data }
 
+        result_id = next_semantic_token_result_id(uri)
+        @semantic_tokens_delta_cache[uri] = {
+          result_id: result_id,
+          content_hash: cache_key,
+          entries: semantic_entries,
+        }
+
         elapsed = elapsed_ms(total_start)
         short_uri = shorten_uri(uri) || uri
         log_perf_breakdown('textDocument/semanticTokens/full', elapsed,
@@ -50,6 +57,40 @@ module MilkTea
       rescue StandardError => e
         warn "Error in semanticTokens/full handler: #{e.message}"
         { data: [] }
+      end
+
+      def handle_semantic_tokens_delta(params)
+        uri = params.dig('textDocument', 'uri')
+        previous_result_id = params['previousResultId']
+        return handle_semantic_tokens_full(params) unless uri && previous_result_id
+
+        cached = @semantic_tokens_delta_cache[uri]
+        unless cached && cached[:result_id] == previous_result_id
+          return handle_semantic_tokens_full(params)
+        end
+
+        content = @workspace.get_content(uri)
+        cache_key = content.hash
+        if cached[:content_hash] == cache_key
+          return { resultId: cached[:result_id], edits: [] }
+        end
+
+        tokens = @workspace.get_tokens(uri) || []
+        facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
+        new_entries = build_semantic_token_entries(tokens, facts)
+
+        new_result_id = next_semantic_token_result_id(uri)
+        @semantic_tokens_delta_cache[uri] = {
+          result_id: new_result_id,
+          content_hash: cache_key,
+          entries: new_entries,
+        }
+
+        edits = compute_semantic_tokens_edits(cached[:entries], new_entries)
+        { resultId: new_result_id, edits: edits }
+      rescue StandardError => e
+        warn "Error in semanticTokens/full/delta handler: #{e.message}"
+        handle_semantic_tokens_full(params)
       end
 
       def handle_semantic_tokens_range(params)
@@ -1470,7 +1511,7 @@ module MilkTea
         prev_line = 0
         prev_char = 0
 
-        entries.each_with_index do |entry, idx|
+        entries.each do |entry|
           delta_line = entry[:line] - prev_line
           delta_start = delta_line.zero? ? entry[:start_char] - prev_char : entry[:start_char]
           type_index = SEMANTIC_TOKEN_TYPES.index(entry[:type].to_s) || 0
@@ -1487,6 +1528,62 @@ module MilkTea
         end
 
         data
+      end
+
+      def next_semantic_token_result_id(uri)
+        @semantic_token_result_counter ||= 0
+        @semantic_token_result_counter += 1
+        "#{uri}:#{@semantic_token_result_counter}"
+      end
+
+      def compute_semantic_tokens_edits(old_entries, new_entries)
+        return [] if old_entries == new_entries
+
+        prefix = find_semantic_token_common_prefix(old_entries, new_entries)
+        suffix = find_semantic_token_common_suffix(old_entries, new_entries, prefix)
+
+        old_mid = old_entries.length - prefix - suffix
+        new_mid = new_entries.length - prefix - suffix
+
+        if old_mid.zero? && new_mid.zero?
+          return []
+        end
+
+        start_offset = prefix * 5
+        delete_count = old_mid * 5
+        insert_tokens = encode_semantic_tokens(new_entries[prefix...(new_entries.length - suffix)])
+
+        [{ start: start_offset, deleteCount: delete_count, data: insert_tokens }]
+      end
+
+      def find_semantic_token_common_prefix(old_entries, new_entries)
+        limit = [old_entries.length, new_entries.length].min
+        prefix = 0
+        while prefix < limit && semantic_token_entry_equal?(old_entries[prefix], new_entries[prefix])
+          prefix += 1
+        end
+        prefix
+      end
+
+      def find_semantic_token_common_suffix(old_entries, new_entries, prefix)
+        old_limit = old_entries.length - prefix
+        new_limit = new_entries.length - prefix
+        limit = [old_limit, new_limit].min
+        suffix = 0
+        while suffix < limit &&
+              semantic_token_entry_equal?(old_entries[old_entries.length - 1 - suffix],
+                                          new_entries[new_entries.length - 1 - suffix])
+          suffix += 1
+        end
+        suffix
+      end
+
+      def semantic_token_entry_equal?(a, b)
+        a[:line] == b[:line] &&
+          a[:start_char] == b[:start_char] &&
+          a[:length] == b[:length] &&
+          a[:type] == b[:type] &&
+          a[:modifiers] == b[:modifiers]
       end
 
       def semantic_modifiers_bitset(modifiers)
