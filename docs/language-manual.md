@@ -1149,6 +1149,7 @@ The auto-fix column corresponds to `mtc lint --fix`.
 | `dead-assignment` | warning | — | Assigned value is overwritten before any read |
 | `duplicate-if-condition` | warning | — | `if`/`else if` branch repeats a previous condition and is unreachable |
 | `directional-ffi-arg` | hint | — | Legacy `ptr_of` / `ref_of` / `out` call-site wrapper is redundant for directional FFI parameters |
+| `doc-tag` | hint | — | `##` documentation comment tag (`@param`, `@return`, `@throws`, `@see`) is invalid or inconsistent with the declaration |
 | `event-capacity` | warning | — | Event capacity may copy too many listeners to stack on emit |
 | `line-too-long` | warning | — | Source line exceeds configured maximum length |
 | `loop-single-iteration` | warning | — | Loop body always exits on the first iteration |
