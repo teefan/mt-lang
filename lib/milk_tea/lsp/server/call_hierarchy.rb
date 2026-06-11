@@ -56,7 +56,23 @@ module MilkTea
           target_name = data["name"] || data[:name]
           return [] if target_name.to_s.empty?
 
-          refs = @workspace.find_all_references(target_name)
+          target_uri = data["uri"] || data[:uri]
+          candidate_uris = nil
+          if target_uri
+            target_facts = @workspace.get_facts(target_uri)
+            if target_facts&.module_name
+              importing = @workspace.reverse_import_dependents_for(target_facts.module_name)
+              if importing && !importing.empty?
+                candidate_uris = importing.to_a + [target_uri]
+              end
+            end
+          end
+
+          refs = if candidate_uris
+                   @workspace.find_all_references_in(target_name, candidate_uris)
+                 else
+                   @workspace.find_all_references(target_name)
+                 end
           return [] if refs.empty?
 
           caller_map = {}

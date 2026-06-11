@@ -15,7 +15,20 @@ module MilkTea
       end
 
       def handle_type_definition(params)
-        handle_definition_request('textDocument/typeDefinition', params, error_label: 'typeDefinition')
+        stages = new_perf_stages
+        total_start = stages ? monotonic_time : nil
+        uri = params.dig('textDocument', 'uri')
+        result_state = 'miss'
+
+        location = resolve_type_definition_location(params, stages: stages)
+        result_state = location ? 'hit' : 'miss'
+        location
+      rescue StandardError => e
+        result_state = 'error'
+        warn "Error in typeDefinition handler: #{e.message}"
+        nil
+      ensure
+        log_request_stage_breakdown('textDocument/typeDefinition', total_start, uri: uri, stages: stages, summary: "result=#{result_state}")
       end
 
       def handle_implementation(params)
@@ -240,6 +253,51 @@ module MilkTea
         end
 
         nil
+      end
+
+      def resolve_type_definition_location(params, stages: nil)
+        uri      = params['textDocument']['uri']
+        lsp_line = params['position']['line']
+        lsp_char = params['position']['character']
+
+        context = measure_perf_stage(stages, 'context') { token_context_at(uri, lsp_line, lsp_char) }
+        token = context&.fetch(:token, nil)
+        return nil unless token&.type == :identifier
+
+        name = token.lexeme
+        tokens = context[:tokens]
+        token_index = context[:token_index]
+
+        import_info = token_index ? measure_perf_stage(stages, 'import_path') { import_path_info_at(tokens, token_index) } : nil
+        if import_info
+          return module_definition_location(uri, import_info[:module_name])
+        end
+
+        facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
+        return nil unless facts
+
+        dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
+        imported_module_name = dot_receiver ? (facts.imports[dot_receiver]&.name || imported_module_name_from_ast(uri, dot_receiver)) : nil
+
+        if facts.types.key?(name)
+          return module_member_definition_location(uri, facts.module_name, name)
+        end
+
+        if facts.interfaces.key?(name)
+          return module_member_definition_location(uri, facts.module_name, name)
+        end
+
+        if token_index && imported_module_name && module_member_access_info(tokens, token_index)
+          return module_member_definition_location(uri, imported_module_name, name) ||
+                 module_definition_location(uri, imported_module_name)
+        end
+
+        if imported_module_name
+          module_member_definition_location(uri, imported_module_name, name) ||
+            module_definition_location(uri, imported_module_name)
+        else
+          module_member_definition_location(uri, facts.module_name, name)
+        end
       end
 
       def resolve_implementation_locations(params, stages: nil)

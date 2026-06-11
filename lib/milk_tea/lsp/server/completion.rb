@@ -423,7 +423,23 @@ module MilkTea
       end
 
       def static_type_method_references(target, include_declaration:)
-        refs = @workspace.find_all_references(target[:binding].name)
+        name = target[:binding].name
+        target_uri = target[:location][:uri]
+
+        candidate_uris = nil
+        if target_uri
+          target_facts = @workspace.get_facts(target_uri)
+          if target_facts&.module_name
+            importing = @workspace.reverse_import_dependents_for(target_facts.module_name)
+            candidate_uris = importing.to_a + [target_uri] if importing && !importing.empty?
+          end
+        end
+
+        refs = if candidate_uris
+                 @workspace.find_all_references_in(name, candidate_uris)
+               else
+                 @workspace.find_all_references(name)
+               end
         refs.filter do |ref|
           if location_matches_reference?(target[:location], ref)
             include_declaration
