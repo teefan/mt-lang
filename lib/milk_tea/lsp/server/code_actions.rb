@@ -494,7 +494,7 @@ module MilkTea
       def handle_workspace_diagnostic(params)
         previous_ids = params['previousResultIds'] || []
         prev_map = previous_ids.each_with_object({}) do |entry, h|
-          h[entry['uri']] = entry['resultId'] if entry.is_a?(Hash) && entry['uri']
+          h[entry['uri']] = entry['value'] if entry.is_a?(Hash) && entry['uri']
         end
 
         all_uris = @workspace.open_document_uris
