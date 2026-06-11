@@ -4,12 +4,33 @@ module MilkTea
   module LSP
     class Server
       module ServerCompletion
+        COMPLETION_KEYWORDS = %w[
+          let var const function async struct enum flags variant union
+          type interface opaque if while for match return import public static
+          extending external fn event attribute defer break continue pass
+          unsafe consuming implements include link foreign module proc
+          editable in out inout as
+        ].freeze
+
         private
+
+        def completion_data(name)
+          { uri: @current_completion_uri || '', name: }
+        end
+
+        def snippet_for_callable(label, params)
+          return "#{label}()" if params.empty?
+          return nil if params.length > 5
+
+          stops = params.each_with_index.map { |p, i| "${#{i + 1}:#{p.name}}" }
+          "#{label}(#{stops.join(', ')})"
+        end
 
       def handle_completion(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
         uri      = params['textDocument']['uri']
+        @current_completion_uri = uri
         lsp_line = params['position']['line']
         lsp_char = params['position']['character']
         branch = 'none'
@@ -39,13 +60,19 @@ module MilkTea
               module_binding.functions.each do |fname, binding|
                 next unless prefix.empty? || fname.start_with?(prefix)
                 params_str = format_params(binding.type.params)
-                result << {
+                item = {
                   label:      fname,
                   kind:       3,  # Function
                   detail:     "function #{fname}(#{params_str}) -> #{binding.type.return_type}",
                   insertText: fname,
-                  sortText:   "0_#{fname}"
+                  sortText:   "0_#{fname}",
+                  data:       completion_data(fname),
                 }
+                if (snippet = snippet_for_callable(fname, binding.type.params))
+                  item[:insertText] = snippet
+                  item[:insertTextFormat] = 2
+                end
+                result << item
               end
               module_binding.values.each do |vname, binding|
                 next unless prefix.empty? || vname.start_with?(prefix)
@@ -54,7 +81,8 @@ module MilkTea
                   kind:       6,  # Variable
                   detail:     "#{vname}: #{binding.type}",
                   insertText: vname,
-                  sortText:   "1_#{vname}"
+                  sortText:   "1_#{vname}",
+                  data:       completion_data(vname),
                 }
               end
               module_binding.types.each do |tname, _type|
@@ -64,7 +92,8 @@ module MilkTea
                   kind:       7,  # Class
                   detail:     "type #{tname}",
                   insertText: tname,
-                  sortText:   "2_#{tname}"
+                  sortText:   "2_#{tname}",
+                  data:       completion_data(tname),
                 }
               end
               result
@@ -87,7 +116,8 @@ module MilkTea
                     kind:       20, # EnumMember
                     detail:     "#{receiver_label}.#{mname}",
                     insertText: mname,
-                    sortText:   "0_#{mname}"
+                    sortText:   "0_#{mname}",
+                    data:       completion_data(mname),
                   }
                 end
               end
@@ -106,7 +136,8 @@ module MilkTea
                     kind:       20, # EnumMember
                     detail:     "#{receiver_label}.#{aname}",
                     insertText: aname,
-                    sortText:   "0_#{aname}"
+                    sortText:   "0_#{aname}",
+                    data:       completion_data(aname),
                   }
                 end
               end
@@ -119,6 +150,23 @@ module MilkTea
               branch = 'type-receiver'
               item_count = items.length
               return { isIncomplete: false, items: items }
+            end
+          end
+
+          if dot_recv_path && dot_recv_path.include?('.')
+            segments = dot_recv_path.split('.', 2)
+            mod_alias = segments.first
+            value_name = segments[1]
+            if mod_alias && value_name && (mod_binding = facts.imports[mod_alias])
+              if (val_binding = mod_binding.values[value_name])
+                receiver_type = measure_perf_stage(stages, 'imported_value_receiver') { val_binding.type }
+                items = measure_perf_stage(stages, 'build') { completion_items_for_value_receiver(facts, receiver_type, prefix) }
+                unless items.empty?
+                  branch = 'imported-value-receiver'
+                  item_count = items.length
+                  return { isIncomplete: false, items: items }
+                end
+              end
             end
           end
 
@@ -140,13 +188,19 @@ module MilkTea
                 next unless prefix.empty? || mname.start_with?(prefix)
 
                 params_str = format_params(binding.type.params)
-                result << {
+                item = {
                   label:      mname,
                   kind:       2,  # Method
                   detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
                   insertText: mname,
-                  sortText:   "0_#{mname}"
+                  sortText:   "0_#{mname}",
+                  data:       completion_data(mname),
                 }
+                if (snippet = snippet_for_callable(mname, binding.type.params))
+                  item[:insertText] = snippet
+                  item[:insertTextFormat] = 2
+                end
+                result << item
               end
             end
             result
@@ -170,9 +224,14 @@ module MilkTea
               kind:         3,  # Function
               detail:       "function #{name}(#{params_str}) -> #{binding.type.return_type}",
               insertText:   name,
-              insertTextFormat: 1,
-              sortText:     "0_#{name}"
+              sortText:     "0_#{name}",
+              data:         completion_data(name),
             }
+
+            if (snippet = snippet_for_callable(name, binding.type.params))
+              entry[:insertText] = snippet
+              entry[:insertTextFormat] = 2
+            end
 
             docs = completion_function_documentation(uri, name, cache: function_docs_cache)
             unless docs.empty?
@@ -202,8 +261,8 @@ module MilkTea
               kind:         kind,
               detail:       "type #{name}",
               insertText:   name,
-              insertTextFormat: 1,
-              sortText:     "1_#{name}"
+              sortText:     "1_#{name}",
+              data:         completion_data(name),
             }
           end
 
@@ -216,8 +275,8 @@ module MilkTea
               kind:         9,  # Module
               detail:       "module #{module_binding.name}",
               insertText:   name,
-              insertTextFormat: 1,
-              sortText:     "2_#{name}"
+              sortText:     "2_#{name}",
+              data:         completion_data(name),
             }
           end
 
@@ -230,8 +289,21 @@ module MilkTea
               kind:         6,  # Variable
               detail:       "#{name}: #{binding.type}",
               insertText:   name,
-              insertTextFormat: 1,
-              sortText:     "3_#{name}"
+              sortText:     "3_#{name}",
+              data:         completion_data(name),
+            }
+          end
+
+          COMPLETION_KEYWORDS.each do |kw|
+            next unless prefix.empty? || kw.start_with?(prefix)
+
+            result << {
+              label:      kw,
+              kind:       14, # Keyword
+              detail:     "keyword #{kw}",
+              insertText: kw,
+              sortText:   "9_#{kw}",
+              data:       completion_data(kw),
             }
           end
 
@@ -256,13 +328,19 @@ module MilkTea
           next unless prefix.empty? || display_name.start_with?(prefix)
 
           params_str = format_params(binding.type.params)
-          {
+          item = {
             label:      display_name,
             kind:       2,  # Method
             detail:     "#{display_name}(#{params_str}) -> #{binding.type.return_type}",
             insertText: display_name,
-            sortText:   "0_#{display_name}"
+            sortText:   "0_#{display_name}",
+            data:       completion_data(display_name),
           }
+          if (snippet = snippet_for_callable(display_name, binding.type.params))
+            item[:insertText] = snippet
+            item[:insertTextFormat] = 2
+          end
+          item
         end
       end
 
@@ -407,7 +485,8 @@ module MilkTea
               kind:       10, # Property
               detail:     "#{fname}: #{ftype}",
               insertText: fname,
-              sortText:   "0_#{fname}"
+              sortText:   "0_#{fname}",
+              data:       completion_data(fname),
             }
           end
         end
@@ -418,13 +497,19 @@ module MilkTea
           next unless prefix.empty? || mname.start_with?(prefix)
 
           params_str = format_params(binding.type.params)
-          items << {
+          item = {
             label:      mname,
             kind:       2,  # Method
             detail:     "#{mname}(#{params_str}) -> #{binding.type.return_type}",
             insertText: mname,
-            sortText:   "1_#{mname}"
+            sortText:   "1_#{mname}",
+            data:       completion_data(mname),
           }
+          if (snippet = snippet_for_callable(mname, binding.type.params))
+            item[:insertText] = snippet
+            item[:insertTextFormat] = 2
+          end
+          items << item
         end
 
         items
@@ -503,6 +588,27 @@ module MilkTea
 
       def pointer_type_name?(type)
         type.is_a?(Types::GenericInstance) && %w[ptr const_ptr].include?(type.name) && type.arguments.length == 1
+      end
+
+      def handle_completion_resolve(params)
+        data = params['data']
+        return params unless data.is_a?(Hash)
+
+        name = data['name']
+        return params if name.to_s.empty?
+
+        uri = data['uri'] || ''
+        definition_entry = @workspace.find_definition_token_global(name, preferred_uri: uri)
+        return params unless definition_entry
+
+        doc_comment = @workspace.doc_comment_data_for_definition(definition_entry[:uri], definition_entry[:token])
+        docs = signature_help_markdown_for_doc_comment(doc_comment)
+        return params if docs.empty?
+
+        params.merge('documentation' => { 'kind' => 'markdown', 'value' => docs })
+      rescue StandardError => e
+        warn "Error in completion resolve handler: #{e.message}"
+        params
       end
       end
     end

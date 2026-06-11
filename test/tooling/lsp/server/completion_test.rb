@@ -427,7 +427,8 @@ class CompletionTest < Minitest::Test
       labels = result["items"].map { |i| i["label"] }
       assert_includes labels, "add"
       assert_includes labels, "main"
-      result["items"].each { |item| assert_equal 3, item["kind"] }
+      function_items = result["items"].select { |i| %w[add main].include?(i["label"]) }
+      function_items.each { |item| assert_equal 3, item["kind"] }
     end
   end
 

@@ -241,6 +241,7 @@ module MilkTea
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
         @handlers['textDocument/completion']        = method(:handle_completion)
+        @handlers['completionItem/resolve']         = method(:handle_completion_resolve)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
