@@ -55,7 +55,7 @@ module MilkTea
       "double" => "double",
     }.freeze
 
-    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
+    def self.generate(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false, strip_leading_underscores: false)
       generate_with_report(
         module_name:,
         header_path:,
@@ -76,10 +76,11 @@ module MilkTea
         function_return_type_overrides:,
         field_type_overrides:,
         allow_static_inline_functions:,
+        strip_leading_underscores:,
       ).fetch(:source)
     end
 
-    def self.generate_with_report(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false)
+    def self.generate_with_report(module_name:, header_path:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], link_libraries: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], clang: ENV.fetch("CLANG", "clang"), clang_args: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, allow_static_inline_functions: false, strip_leading_underscores: false)
       Generator.new(
         module_name:,
         header_path:,
@@ -100,11 +101,12 @@ module MilkTea
         function_return_type_overrides:,
         field_type_overrides:,
         allow_static_inline_functions:,
+        strip_leading_underscores:,
       ).generate_with_report
     end
 
     class Generator
-      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, excluded_declaration_names:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_name_overrides:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:, allow_static_inline_functions:)
+      def initialize(module_name:, header_path:, tracked_header_paths:, tracked_header_prefixes:, declaration_name_prefixes:, excluded_declaration_names:, link_libraries:, include_directives:, bindgen_defines:, bindgen_include_directives:, module_imports:, clang:, clang_args:, type_name_overrides:, type_overrides:, function_param_type_overrides:, function_return_type_overrides:, field_type_overrides:, allow_static_inline_functions:, strip_leading_underscores: false)
         @module_name = module_name
         @header_path = File.expand_path(header_path)
         @tracked_header_paths = ([header_path] + tracked_header_paths).map { |path| File.expand_path(path) }.uniq.freeze
@@ -124,6 +126,7 @@ module MilkTea
         @function_return_type_overrides = normalize_function_return_type_overrides(function_return_type_overrides)
         @field_type_overrides = normalize_field_type_overrides(field_type_overrides)
         @allow_static_inline_functions = allow_static_inline_functions
+        @strip_leading_underscores = strip_leading_underscores
         @record_aliases = {}
         @record_aliases_by_tag_name = {}
         @enum_aliases = {}

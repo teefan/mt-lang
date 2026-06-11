@@ -7,9 +7,9 @@ module MilkTea
     class Error < StandardError; end
 
     class Binding
-      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :excluded_declaration_names, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_name_overrides, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library
+      attr_reader :name, :module_name, :binding_path, :include_directives, :bindgen_defines, :bindgen_include_directives, :module_imports, :link_libraries, :header_candidates, :tracked_header_paths, :tracked_header_prefixes, :declaration_name_prefixes, :excluded_declaration_names, :env_var, :clang_args, :compiler_flags, :implementation_defines, :type_name_overrides, :type_overrides, :function_param_type_overrides, :function_return_type_overrides, :field_type_overrides, :vendored_library, :strip_leading_underscores
 
-      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil, generator: nil, allow_static_inline_functions: false)
+      def initialize(name:, module_name:, binding_path:, header_candidates:, tracked_header_paths: [], tracked_header_prefixes: [], declaration_name_prefixes: [], excluded_declaration_names: [], include_directives: nil, bindgen_defines: [], bindgen_include_directives: [], module_imports: [], link_libraries: [], link_flags: [], env_var: nil, clang: nil, clang_args: [], compiler_flags: [], implementation_defines: [], type_name_overrides: {}, type_overrides: {}, function_param_type_overrides: {}, function_return_type_overrides: {}, field_type_overrides: {}, vendored_library: nil, prepare: nil, generator: nil, allow_static_inline_functions: false, strip_leading_underscores: false)
         @name = name.to_s
         @module_name = module_name
         @binding_path = File.expand_path(binding_path.to_s)
@@ -38,6 +38,7 @@ module MilkTea
         @prepare = prepare
         @generator = generator
         @allow_static_inline_functions = allow_static_inline_functions
+        @strip_leading_underscores = strip_leading_underscores
       end
 
       def task_name
@@ -202,6 +203,7 @@ module MilkTea
         kwargs[:declaration_name_prefixes] = declaration_name_prefixes unless declaration_name_prefixes.empty?
         kwargs[:excluded_declaration_names] = excluded_declaration_names unless excluded_declaration_names.empty?
         kwargs[:allow_static_inline_functions] = true if @allow_static_inline_functions
+        kwargs[:strip_leading_underscores] = true if @strip_leading_underscores
         kwargs
       end
 

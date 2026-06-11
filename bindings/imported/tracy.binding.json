@@ -24,7 +24,7 @@
     "strip_prefix": "tracy_",
     "overrides": [
       {
-        "raw": "___tracy_emit_zone_begin",
+        "raw": "tracy_emit_zone_begin",
         "name": "zone_begin",
         "params": [
           { "name": "srcloc", "type": "const_ptr[SourceLocation]?" },
@@ -33,7 +33,7 @@
         "return_type": "Zone"
       },
       {
-        "raw": "___tracy_emit_zone_end",
+        "raw": "tracy_emit_zone_end",
         "name": "zone_end",
         "params": [
           { "name": "zone", "type": "Zone" }
@@ -41,7 +41,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_zone_text",
+        "raw": "tracy_emit_zone_text",
         "name": "zone_text",
         "params": [
           { "name": "zone", "type": "const_ptr[Zone]" },
@@ -51,7 +51,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_zone_name",
+        "raw": "tracy_emit_zone_name",
         "name": "zone_name",
         "params": [
           { "name": "zone", "type": "const_ptr[Zone]" },
@@ -61,7 +61,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_zone_value",
+        "raw": "tracy_emit_zone_value",
         "name": "zone_value",
         "params": [
           { "name": "zone", "type": "const_ptr[Zone]" },
@@ -70,7 +70,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_frame_mark",
+        "raw": "tracy_emit_frame_mark",
         "name": "frame_mark",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" }
@@ -78,7 +78,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_frame_mark_start",
+        "raw": "tracy_emit_frame_mark_start",
         "name": "frame_mark_start",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" }
@@ -86,7 +86,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_frame_mark_end",
+        "raw": "tracy_emit_frame_mark_end",
         "name": "frame_mark_end",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" }
@@ -94,7 +94,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_plot",
+        "raw": "tracy_emit_plot",
         "name": "plot",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" },
@@ -103,7 +103,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_plot_float",
+        "raw": "tracy_emit_plot_float",
         "name": "plot_float",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" },
@@ -112,7 +112,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_plot_int",
+        "raw": "tracy_emit_plot_int",
         "name": "plot_int",
         "params": [
           { "name": "name", "type": "str", "boundary_type": "cstr" },
@@ -121,7 +121,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_message",
+        "raw": "tracy_emit_message",
         "name": "message",
         "params": [
           { "name": "text", "type": "str", "boundary_type": "cstr" },
@@ -131,7 +131,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_message_l",
+        "raw": "tracy_emit_message_l",
         "name": "message_l",
         "params": [
           { "name": "text", "type": "str", "boundary_type": "cstr" },
@@ -140,7 +140,7 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_emit_message_lc",
+        "raw": "tracy_emit_message_lc",
         "name": "message_lc",
         "params": [
           { "name": "text", "type": "str", "boundary_type": "cstr" },
@@ -150,13 +150,13 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_connected",
+        "raw": "tracy_connected",
         "name": "is_connected",
         "params": [],
         "return_type": "int"
       },
       {
-        "raw": "___tracy_fiber_enter",
+        "raw": "tracy_fiber_enter",
         "name": "fiber_enter",
         "params": [
           { "name": "fiber", "type": "str", "boundary_type": "cstr" }
@@ -164,19 +164,19 @@
         "return_type": "void"
       },
       {
-        "raw": "___tracy_fiber_leave",
+        "raw": "tracy_fiber_leave",
         "name": "fiber_leave",
         "params": [],
         "return_type": "void"
       },
       {
-        "raw": "___tracy_startup_profiler",
+        "raw": "tracy_startup_profiler",
         "name": "startup",
         "params": [],
         "return_type": "void"
       },
       {
-        "raw": "___tracy_shutdown_profiler",
+        "raw": "tracy_shutdown_profiler",
         "name": "shutdown",
         "params": [],
         "return_type": "void"

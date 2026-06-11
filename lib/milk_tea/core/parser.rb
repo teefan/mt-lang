@@ -723,13 +723,17 @@ module MilkTea
       params = nil
       variadic = false
       return_type = nil
+      mapping = nil
       with_type_param_names(type_params.map(&:name)) do
         params, variadic = parse_foreign_params(allow_variadic: true)
         consume(:arrow, "expected '->' before external function return type")
         return_type = parse_type_ref
+        if match(:equal)
+          mapping = parse_expression
+        end
       end
       consume_end_of_statement
-      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, attributes:, line:)
+      AST::ExternFunctionDecl.new(name:, type_params:, params:, return_type:, variadic:, attributes:, line:, mapping:)
     end
 
     def parse_foreign_function_decl(visibility: :private, attributes: [])

@@ -1506,7 +1506,7 @@ module MilkTea
           raise LoweringError, "foreign function #{function_binding.name} cannot be used as a value" if foreign_function_binding?(function_binding)
 
           if function_binding.external
-            return IR::Name.new(name: function_binding.name, type:, pointer: false)
+            return IR::Name.new(name: external_function_c_name(function_binding), type:, pointer: false)
           end
 
           return IR::Name.new(

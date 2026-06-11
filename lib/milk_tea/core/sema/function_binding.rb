@@ -177,6 +177,9 @@ module MilkTea
               @top_level_functions[decl.name] = declare_function_binding(decl)
             when AST::ExternFunctionDecl
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)
+              if decl.mapping && !decl.mapping.is_a?(AST::StringLiteral)
+                raise_sema_error("external function #{decl.name} mapping must be a c-string literal")
+              end
               @top_level_functions[decl.name] = declare_function_binding(decl, external: true)
             when AST::ForeignFunctionDecl
               ensure_available_value_name!(decl.name, kind_label: "function", line: decl.line, column: decl.respond_to?(:column) ? decl.column : nil)

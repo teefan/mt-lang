@@ -403,7 +403,7 @@ module MilkTea
           if @functions.key?(callee.name)
             binding = specialize_function_binding(@functions.fetch(callee.name), arguments, env)
             callee_name = if binding.external
-                            binding.name
+                            external_function_c_name(binding)
                           else
                             function_binding_c_name(binding, module_name: @module_name)
                           end
@@ -441,7 +441,7 @@ module MilkTea
               binding = specialize_function_binding(imported_module.functions.fetch(callee.member), arguments, env)
               return [:function, function_binding_c_name(binding, module_name: imported_module.name), nil, binding.type, binding] unless binding.external
 
-              return [:function, binding.name, nil, binding.type, binding]
+              return [:function, external_function_c_name(binding), nil, binding.type, binding]
             end
             imported_type = imported_module.types[callee.member]
             if imported_type.is_a?(Types::Struct) || imported_type.is_a?(Types::StringView) || task_type?(imported_type) || imported_type.is_a?(Types::Vector) || imported_type.is_a?(Types::Matrix) || imported_type.is_a?(Types::Quaternion)
@@ -588,7 +588,7 @@ module MilkTea
             end
 
             if function_binding.external
-              return [:function, function_binding.name, nil, function_binding.type, function_binding]
+              return [:function, external_function_c_name(function_binding), nil, function_binding.type, function_binding]
             end
 
             return [:function, function_binding_c_name(function_binding, module_name: function_binding.owner.module_name), nil, function_binding.type, function_binding]
@@ -1261,7 +1261,7 @@ module MilkTea
         yield method_binding, method_analysis, method_entry_receiver_type
 
         callee_name = if method_binding.external
-                        method_binding.name
+                        external_function_c_name(method_binding)
                       else
                         function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
                       end
@@ -1298,7 +1298,7 @@ module MilkTea
         yield method_binding, method_analysis, method_entry_receiver_type
 
         callee_name = if method_binding.external
-                        method_binding.name
+                        external_function_c_name(method_binding)
                       else
                         function_binding_c_name(method_binding, module_name: method_analysis.module_name, receiver_type: method_entry_receiver_type)
                       end

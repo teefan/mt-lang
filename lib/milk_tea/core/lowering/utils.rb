@@ -1283,6 +1283,12 @@ module MilkTea
         module_function_c_name(module_name, binding.name, type_arguments: binding.type_arguments)
       end
 
+      def external_function_c_name(binding)
+        return binding.ast.mapping.value if binding.external && binding.ast.is_a?(AST::ExternFunctionDecl) && binding.ast.mapping
+
+        binding.name
+      end
+
       def value_c_name(name)
         module_value_c_name(@module_name, name)
       end
