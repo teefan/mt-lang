@@ -40,9 +40,17 @@ module MilkTea
 
         def close_document(uri)
           # Keep indexed snapshot available for workspace-level features.
+          path = uri_to_path(uri)
           @document_state_mutex.synchronize do
             @open_documents.delete(uri)
             @document_sources.delete(uri)
+            if path && File.file?(path)
+              begin
+                @indexed_documents[uri] = File.read(path)
+              rescue StandardError
+                nil
+              end
+            end
           end
           invalidate_cache(uri, clear_last_good: true)
         end
