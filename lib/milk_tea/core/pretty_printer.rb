@@ -312,7 +312,9 @@ module MilkTea
         when AST::ExternFunctionDecl
           emit_attribute_applications(declaration.attributes)
           header_idx = @lines.length
-          line("#{render_function_signature(declaration, prefix: 'external ')}")
+          line = "#{render_function_signature(declaration, prefix: 'external ')}"
+          line += " = #{render_expression(declaration.mapping)}" if declaration.mapping
+          line(line)
         when AST::ForeignFunctionDecl
           emit_attribute_applications(declaration.attributes)
           header_idx = @lines.length

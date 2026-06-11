@@ -6,6 +6,12 @@ module MilkTea
       module GeneratorEmitter
         private
 
+        def emitted_name(raw_name)
+          return raw_name unless @strip_leading_underscores
+
+          raw_name.sub(/\A_+/, "")
+        end
+
         def emit_module(declarations)
           declarations = synthetic_declarations_for(declarations) + declarations
 
@@ -45,15 +51,16 @@ module MilkTea
           when "struct", "union"
             emit_aggregate_declaration(declaration[:kind], declaration[:name], declaration[:node])
           when "opaque"
-            line = "opaque #{declaration[:name]}"
+            name = emitted_name(declaration[:name])
+            line = "opaque #{name}"
             line += " = c#{declaration[:c_name].inspect}" if declaration[:c_name]
             [line]
           when "enum", "flags"
-            emit_enum_declaration(declaration[:kind], declaration[:name], declaration[:node])
+            emit_enum_declaration(declaration[:kind], emitted_name(declaration[:name]), declaration[:node])
           when "type_alias"
-            ["type #{declaration[:name]} = #{declaration[:mapped_type]}"]
+            ["type #{emitted_name(declaration[:name])} = #{declaration[:mapped_type]}"]
           when "const"
-            ["const #{declaration[:name]}: #{declaration[:type]} = #{declaration[:value]}"]
+            ["const #{emitted_name(declaration[:name])}: #{declaration[:type]} = #{declaration[:value]}"]
           when "function"
             emit_function_declaration(declaration)
           else
@@ -63,26 +70,29 @@ module MilkTea
 
         def emit_aggregate_declaration(kind, name, node)
           explicit_c_name = aggregate_explicit_c_name(name, node)
-          header = "#{kind} #{name}"
+          stripped = emitted_name(name)
+          header = "#{kind} #{stripped}"
           header += " = c#{explicit_c_name.inspect}" if explicit_c_name
           header += ":"
           lines = [header]
           fields = Array(node["inner"]).select { |child| child["kind"] == "FieldDecl" }
           fields.each do |field|
             field_type = aggregate_field_type(field, owner_name: name, aggregate_node: node)
-            mt_name, = bindgen_field_name(aggregate_field_name(field, aggregate_node: node))
+            mt_name, = bindgen_field_name(emitted_name(aggregate_field_name(field, aggregate_node: node)))
             lines << "    #{mt_name}: #{field_type}"
           end
           lines
         end
 
         def bindgen_field_name(name)
+          name = emitted_name(name)
           return [name, nil] unless Token::KEYWORDS.key?(name)
 
           ["#{name}_", nil]
         end
 
         def bindgen_param_name(name)
+          name = emitted_name(name)
           return [name, nil] unless generated_binding_name_conflict?(name)
 
           ["#{name}_", nil]
@@ -240,12 +250,18 @@ module MilkTea
         end
 
         def emit_function_declaration(declaration)
+          original_name = declaration[:name]
+          stripped_name = emitted_name(original_name)
           params = declaration[:params].map do |param|
-            emitted_name, = bindgen_param_name(param[:name])
-            "#{emitted_name}: #{param[:type]}"
+            param_name, = bindgen_param_name(param[:name])
+            "#{param_name}: #{param[:type]}"
           end
           params << "..." if declaration[:variadic]
-          ["external function #{declaration[:name]}(#{params.join(', ')}) -> #{declaration[:return_type]}"]
+          line = "external function #{stripped_name}(#{params.join(', ')}) -> #{declaration[:return_type]}"
+          if stripped_name != original_name
+            line += " = c#{original_name.inspect}"
+          end
+          [line]
         end
 
         def lower_constant_expression(node, expected_type:, context:)
