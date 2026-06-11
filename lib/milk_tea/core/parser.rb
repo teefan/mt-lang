@@ -393,34 +393,35 @@ module MilkTea
       consume_end_of_statement
       AST::ConstDecl.new(name:, type:, value:, visibility:, line:)
     rescue ParseError => e
-      raise unless @recovery_errors && name && type
+      raise unless @recovery_errors && name
 
       @recovery_errors << e
       synchronize_to_statement_boundary
-      AST::ConstDecl.new(name:, type:, value: recovery_error_expr(e), visibility:, line:)
+      AST::ConstDecl.new(name:, type: type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:)
     end
 
     def parse_var_decl(visibility: :private)
       line = previous.line
       name = nil
       var_type = nil
-      name = consume_name("expected variable name").lexeme
+      name_token = consume_name("expected variable name")
+      name = name_token.lexeme
       var_type = match(:colon) ? parse_type_ref : nil
       value = if match(:equal)
                 parse_expression
               else
-                raise error(peek, "module variable without initializer requires a type") unless var_type
+                raise error(name_token, "module variable without initializer requires a type") unless var_type
 
                 nil
               end
       consume_end_of_statement
       AST::VarDecl.new(name:, type: var_type, value:, visibility:, line:)
     rescue ParseError => e
-      raise unless @recovery_errors && name && var_type
+      raise unless @recovery_errors && name
 
       @recovery_errors << e
       synchronize_to_statement_boundary
-      AST::VarDecl.new(name:, type: var_type, value: recovery_error_expr(e), visibility:, line:)
+      AST::VarDecl.new(name:, type: var_type || recovery_error_expr(e), value: recovery_error_expr(e), visibility:, line:)
     end
 
     def parse_event_decl(visibility: :private)
@@ -502,6 +503,13 @@ module MilkTea
       field_type = parse_type_ref
       consume_end_of_statement
       [:field, AST::Field.new(name: field_name, type: field_type, attributes: field_attributes, line: field_token.line, column: field_token.column)]
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      synchronize_to_statement_boundary
+      field_name_error = (field_name if defined?(field_name)) || "error"
+      [:field, AST::Field.new(name: field_name_error, type: recovery_error_expr(e), attributes: field_attributes, line: e.token&.line || 1, column: e.token&.column || 1)]
     end
 
     def parse_union_decl(visibility: :private)
@@ -798,6 +806,13 @@ module MilkTea
       param_type = parse_type_ref
 
       AST::Param.new(name: name_token.lexeme, type: param_type, line: name_token.line, column: name_token.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      param_name = name_token&.lexeme || "error"
+      error_type = recovery_error_expr(e)
+      AST::Param.new(name: param_name, type: error_type, line: name_token&.line || 1, column: name_token&.column || 1)
     end
 
     def parse_attribute_applications
@@ -874,6 +889,13 @@ module MilkTea
       boundary_type = match(:as) ? parse_type_ref : nil
 
       AST::ForeignParam.new(name: name_token.lexeme, type: param_type, mode:, boundary_type:)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      param_name = name_token&.lexeme || "error"
+      error_type = recovery_error_expr(e)
+      AST::ForeignParam.new(name: param_name, type: error_type, mode: mode || :plain, boundary_type: nil)
     end
 
     def parse_type_ref
@@ -1021,12 +1043,10 @@ module MilkTea
       statements = []
       skip_newlines
       until check(:dedent) || eof?
-        if check(:indent)
-          raise error(unexpected_statement_block_indent_token, "unexpected indentation in statement block")
-        end
-
         if @recovery_errors
           begin
+            raise error(unexpected_statement_block_indent_token, "unexpected indentation in statement block") if check(:indent)
+
             statements << parse_statement
           rescue ParseError => e
             @recovery_errors << e
@@ -1039,6 +1059,8 @@ module MilkTea
                           end
           end
         else
+          raise error(unexpected_statement_block_indent_token, "unexpected indentation in statement block") if check(:indent)
+
           statements << parse_statement
         end
         skip_newlines
