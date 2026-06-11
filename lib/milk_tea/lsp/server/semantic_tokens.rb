@@ -52,6 +52,39 @@ module MilkTea
         { data: [] }
       end
 
+      def handle_semantic_tokens_range(params)
+        uri = params.dig("textDocument", "uri")
+        range = params["range"]
+        return { data: [] } unless uri && range
+
+        content = @workspace.get_content(uri)
+        return { data: [] } unless content
+
+        tokens = @workspace.get_tokens(uri) || []
+        return { data: [] } if tokens.empty?
+
+        start_line = range.dig("start", "line") + 1
+        end_line = range.dig("end", "line") + 1
+
+        range_tokens = tokens.select do |t|
+          t.line >= start_line && t.line <= end_line &&
+            ![:newline, :indent, :dedent, :eof].include?(t.type)
+        end
+
+        facts = @workspace.get_facts(uri, allow_last_good_fallback: semantic_tokens_allow_last_good_fallback?(uri))
+        semantic_entries = build_semantic_token_entries(range_tokens, facts)
+
+        entries_in_range = semantic_entries.select do |entry|
+          entry[:line] >= start_line && entry[:line] <= end_line
+        end
+
+        data = encode_semantic_tokens(entries_in_range)
+        { data: data }
+      rescue StandardError => e
+        warn "Error in semanticTokens/range handler: #{e.message}"
+        { data: [] }
+      end
+
       def build_semantic_token_entries(tokens, facts = nil)
         # Precompute line → non-trivia tokens index so non_trivia_tokens_on_line
         # is O(1) per call instead of O(n), turning the overall build from O(n²) to O(n).

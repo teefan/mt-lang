@@ -34,6 +34,11 @@ module MilkTea
             foldingRangeProvider: true,
             callHierarchyProvider: true,
             typeHierarchyProvider: true,
+            selectionRangeProvider: true,
+            documentOnTypeFormattingProvider: {
+              firstTriggerCharacter: "\n",
+              moreTriggerCharacter: []
+            },
             signatureHelpProvider: {
               triggerCharacters: ['(', ','],
               retriggerCharacters: [',']
@@ -48,7 +53,7 @@ module MilkTea
                 tokenModifiers: SEMANTIC_TOKEN_MODIFIERS
               },
               full: true,
-              range: false
+              range: true
             },
             completionProvider: {
               triggerCharacters: ['.', '(', ' '],

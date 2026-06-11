@@ -20,8 +20,10 @@ require_relative "server/formatting"
 require_relative "server/hover"
 require_relative "server/inlay_hints"
 require_relative "server/lifecycle"
+require_relative "server/on_type_formatting"
 require_relative "server/references"
 require_relative "server/rename"
+require_relative "server/selection_range"
 require_relative "server/semantic_tokens"
 require_relative "server/signature_help"
 require_relative "server/text_documents"
@@ -209,8 +211,10 @@ module MilkTea
       include ServerHover
       include ServerInlayHints
       include ServerLifecycle
+      include ServerOnTypeFormatting
       include ServerReferences
       include ServerRename
+      include ServerSelectionRange
       include ServerSemanticTokens
       include ServerSignatureHelp
       include ServerTextDocuments
@@ -246,6 +250,7 @@ module MilkTea
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
+        @handlers['textDocument/onTypeFormatting']   = method(:handle_on_type_formatting)
         @handlers['textDocument/foldingRange']       = method(:handle_folding_range)
         @handlers['textDocument/completion']        = method(:handle_completion)
         @handlers['completionItem/resolve']         = method(:handle_completion_resolve)
@@ -255,6 +260,8 @@ module MilkTea
         @handlers['callHierarchy/outgoingCalls']     = method(:handle_outgoing_calls)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
+        @handlers['textDocument/semanticTokens/range'] = method(:handle_semantic_tokens_range)
+        @handlers['textDocument/selectionRange']     = method(:handle_selection_range)
         @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareTypeHierarchy'] = method(:handle_prepare_type_hierarchy)
