@@ -717,6 +717,10 @@ module MilkTea
         type.is_a?(Types::Primitive) && type.integer?
       end
 
+      def struct_instance_type?(type)
+        type.is_a?(Types::Struct) || type.is_a?(Types::Variant)
+      end
+
       def collection_loop_type(type)
         super
       end
