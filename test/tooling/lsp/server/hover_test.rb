@@ -1328,7 +1328,8 @@ class HoverTest < Minitest::Test
           "position" => { "line" => hover_line, "character" => p_char },
         })
         p_hover_value = p_hover.dig("result", "contents", "value")
-        assert_includes p_hover_value, "let p: main.Point (immutable)"
+        assert_includes p_hover_value, "let p: Point (immutable)"
+        assert_includes p_hover_value, "From main"
 
         x_hover = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => uri },
@@ -1894,7 +1895,8 @@ class HoverTest < Minitest::Test
           "position" => { "line" => access_line, "character" => values_char }
         })
         values_hover_value = values_hover.dig("result", "contents", "value")
-        assert_includes values_hover_value, "field values: std.foo.Bucket[T, ptr_uint]"
+        assert_includes values_hover_value, "field values: Bucket[T, ptr_uint]"
+        assert_includes values_hover_value, "From std.foo"
 
         method_hover = client.send_request("textDocument/hover", {
           "textDocument" => { "uri" => main_uri },
@@ -1946,7 +1948,8 @@ class HoverTest < Minitest::Test
         "position" => { "line" => line, "character" => snapshot_character }
       })
       snapshot_hover_value = snapshot_hover.dig("result", "contents", "value")
-      assert_includes snapshot_hover_value, "field snapshot: main.Game"
+      assert_includes snapshot_hover_value, "field snapshot: Game"
+      assert_includes snapshot_hover_value, "From main"
 
       snapshot_definition = client.send_request("textDocument/definition", {
         "textDocument" => { "uri" => uri },
@@ -2049,7 +2052,8 @@ class HoverTest < Minitest::Test
       })
       hover_value = hover.dig("result", "contents", "value")
       assert_includes hover_value, "KEY_ENTER"
-      assert_includes hover_value, "rl.KeyboardKey"
+      assert_includes hover_value, "KeyboardKey"
+      assert_includes hover_value, "From rl"
       assert_includes hover_value, "257"
       assert_includes hover_value, "std/c/raylib.mt"
 
