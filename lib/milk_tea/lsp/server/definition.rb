@@ -279,11 +279,7 @@ module MilkTea
         dot_receiver = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
         imported_module_name = dot_receiver ? (facts.imports[dot_receiver]&.name || imported_module_name_from_ast(uri, dot_receiver)) : nil
 
-        if facts.types.key?(name)
-          return module_member_definition_location(uri, facts.module_name, name)
-        end
-
-        if facts.interfaces.key?(name)
+        if facts.types.key?(name) || facts.interfaces.key?(name)
           return module_member_definition_location(uri, facts.module_name, name)
         end
 
@@ -292,12 +288,12 @@ module MilkTea
                  module_definition_location(uri, imported_module_name)
         end
 
-        if imported_module_name
-          module_member_definition_location(uri, imported_module_name, name) ||
-            module_definition_location(uri, imported_module_name)
-        else
-          module_member_definition_location(uri, facts.module_name, name)
+        if imported_module_name && (facts.types.key?(imported_module_name) || facts.interfaces.key?(imported_module_name))
+          return module_member_definition_location(uri, imported_module_name, name) ||
+                 module_definition_location(uri, imported_module_name)
         end
+
+        handle_definition_request('textDocument/typeDefinition', params, error_label: 'typeDefinition')
       end
 
       def resolve_implementation_locations(params, stages: nil)
