@@ -14,6 +14,7 @@ require_relative "server/completion"
 require_relative "server/configuration"
 require_relative "server/definition"
 require_relative "server/diagnostics_scheduling"
+require_relative "server/folding_range"
 require_relative "server/formatting"
 require_relative "server/hover"
 require_relative "server/inlay_hints"
@@ -200,6 +201,7 @@ module MilkTea
       include ServerConfiguration
       include ServerDefinition
       include ServerDiagnosticsScheduling
+      include ServerFoldingRange
       include ServerFormatting
       include ServerHover
       include ServerInlayHints
@@ -240,6 +242,7 @@ module MilkTea
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
         @handlers['textDocument/formatting']        = method(:handle_formatting)
         @handlers['textDocument/rangeFormatting']   = method(:handle_range_formatting)
+        @handlers['textDocument/foldingRange']       = method(:handle_folding_range)
         @handlers['textDocument/completion']        = method(:handle_completion)
         @handlers['completionItem/resolve']         = method(:handle_completion_resolve)
         @handlers['textDocument/codeAction']        = method(:handle_code_action)
