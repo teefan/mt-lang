@@ -154,6 +154,7 @@ module MilkTea
         @platform_override = nil
         @handlers = {}
         @diagnostic_report_cache = {}
+        @workspace_diagnostic_cache = {}
         @semantic_tokens_cache = {}
         @semantic_tokens_delta_cache = {}
         @fixall_cache = {}
@@ -271,6 +272,7 @@ module MilkTea
         @handlers['textDocument/semanticTokens/range'] = method(:handle_semantic_tokens_range)
         @handlers['textDocument/selectionRange']     = method(:handle_selection_range)
         @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)
+        @handlers['workspace/diagnostic']            = method(:handle_workspace_diagnostic)
         @handlers['textDocument/signatureHelp']     = method(:handle_signature_help)
         @handlers['textDocument/prepareTypeHierarchy'] = method(:handle_prepare_type_hierarchy)
         @handlers['typeHierarchy/supertypes']        = method(:handle_supertypes)
@@ -292,14 +294,16 @@ module MilkTea
         params = message['params'] || {}
         id     = message['id']
 
-        if message.key?('id')
+        if message.key?('id') && !message.key?('method')
+          Protocol.handle_response(message)
+        elsif message.key?('id')
           handle_request(method_name, params, id)
         else
           handle_notification(method_name, params)
         end
       rescue StandardError => e
         warn "Error processing message: #{e.message}"
-        @protocol.write_error(id, -32_603, 'Internal server error') if id
+        @protocol.write_error(id, -32_603, 'Internal server error') if id && message.key?('method')
       end
 
       def handle_request(method_name, params, id)

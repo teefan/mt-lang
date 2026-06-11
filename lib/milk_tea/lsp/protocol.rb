@@ -9,6 +9,33 @@ module MilkTea
     class Protocol
       INVALID_MESSAGE = Object.new.freeze
       @write_mutex = Mutex.new
+      @outgoing_mutex = Mutex.new
+      @outgoing_id_counter = 1
+
+      def self.outgoing_requests
+        @outgoing_requests ||= {}
+      end
+
+      def self.send_request(method, params, &callback)
+        id = @outgoing_mutex.synchronize { i = @outgoing_id_counter; @outgoing_id_counter += 1; i }
+        @outgoing_mutex.synchronize { outgoing_requests[id] = callback }
+        write_message({ jsonrpc: '2.0', id: id, method: method, params: params })
+        id
+      rescue StandardError => e
+        @outgoing_mutex.synchronize { outgoing_requests.delete(id) }
+        warn "Protocol error sending request #{method}: #{e.message}"
+        nil
+      end
+
+      def self.handle_response(message)
+        id = message['id']
+        callback = @outgoing_mutex.synchronize { outgoing_requests.delete(id) }
+        return unless callback
+
+        callback.call(message['result'], message['error'])
+      rescue StandardError => e
+        warn "Protocol error handling response: #{e.message}"
+      end
 
       def self.read_message
         headers = {}

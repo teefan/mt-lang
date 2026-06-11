@@ -16,7 +16,7 @@ module MilkTea
             textDocumentSync: {
               openClose: true,
               change: 2,
-              save: { includeText: false }
+              save: { includeText: true }
             },
             hoverProvider: true,
             definitionProvider: true,
@@ -64,6 +64,10 @@ module MilkTea
             },
             renameProvider: { prepareProvider: true },
             workspaceSymbolProvider: true,
+            diagnosticProvider: {
+              interFileDependencies: true,
+              workspaceDiagnostics: true
+            },
             workspace: {
               workspaceFolders: {
                 supported: true,
