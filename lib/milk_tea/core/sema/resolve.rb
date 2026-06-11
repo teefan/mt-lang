@@ -721,6 +721,21 @@ module MilkTea
         type.is_a?(Types::Struct) || type.is_a?(Types::Variant)
       end
 
+      def c_natively_equality_comparable_type?(type)
+        return true if type.is_a?(Types::Primitive)
+        return true if type.is_a?(Types::EnumBase)
+        return true if type.is_a?(Types::Opaque)
+        return true if type.is_a?(Types::Nullable)
+        return true if type.is_a?(Types::Null)
+        return true if type.is_a?(Types::Function)
+        return true if type.is_a?(Types::Error)
+        return true if type.is_a?(Types::StringView)
+        return true if pointer_type?(type)
+        return true if ref_type?(type)
+
+        false
+      end
+
       def collection_loop_type(type)
         super
       end
