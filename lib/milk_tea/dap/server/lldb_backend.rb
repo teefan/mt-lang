@@ -353,6 +353,12 @@ module MilkTea
             @backend_capabilities.transform_keys { |key| key.to_sym }
           )
           capabilities[:supportsSetVariable] = true if backend_supports_set_variable? || backend_supports_set_expression?
+
+          backend_filters = @backend_capabilities["exceptionBreakpointFilters"]
+          if backend_filters.is_a?(Array) && !backend_filters.empty?
+            capabilities[:exceptionBreakpointFilters] = backend_filters
+          end
+
           capabilities
         end
 
