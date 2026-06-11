@@ -252,6 +252,7 @@ module MilkTea
         @handlers['textDocument/implementation']    = method(:handle_implementation)
         @handlers['textDocument/references']        = method(:handle_references)
         @handlers['textDocument/documentLink']      = method(:handle_document_link)
+        @handlers['documentLink/resolve']           = method(:handle_document_link_resolve)
         @handlers['textDocument/documentHighlight'] = method(:handle_document_highlight)
         @handlers['textDocument/documentSymbol']    = method(:handle_document_symbols)
         @handlers['textDocument/formatting']        = method(:handle_formatting)
@@ -285,6 +286,7 @@ module MilkTea
         @handlers['workspace/didChangeWorkspaceFolders'] = method(:handle_did_change_workspace_folders)
         @handlers['workspace/didChangeConfiguration'] = method(:handle_did_change_configuration)
         @handlers['workspace/didChangeWatchedFiles'] = method(:handle_did_change_watched_files)
+        @handlers['workspace/willRenameFiles'] = method(:handle_will_rename_files)
       end
 
       # ── Message dispatch ─────────────────────────────────────────────────────

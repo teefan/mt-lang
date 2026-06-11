@@ -25,7 +25,7 @@ module MilkTea
             implementationProvider: true,
             referencesProvider: true,
             documentLinkProvider: {
-              resolveProvider: false
+              resolveProvider: true
             },
             documentHighlightProvider: true,
             documentSymbolProvider: true,
@@ -72,6 +72,11 @@ module MilkTea
               workspaceFolders: {
                 supported: true,
                 changeNotifications: true,
+              },
+              fileOperations: {
+                willRename: {
+                  filters: [{ pattern: { glob: '**/*.mt' }, scheme: 'file' }]
+                }
               }
             }
           }
@@ -124,6 +129,18 @@ module MilkTea
 
         @workspace.open_document_uris.each do |uri|
           schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)
+        end
+        nil
+      end
+
+      def handle_will_rename_files(params)
+        files = params['files'] || []
+        files.each do |file|
+          old_uri = file['oldUri']
+          new_uri = file['newUri']
+          next unless old_uri && new_uri
+
+          @workspace.rename_indexed_file(old_uri, new_uri)
         end
         nil
       end

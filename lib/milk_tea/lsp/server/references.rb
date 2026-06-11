@@ -93,6 +93,26 @@ module MilkTea
         []
       end
 
+      def handle_document_link_resolve(params)
+        target = params['target']
+        if target && target.start_with?('file://')
+          path = uri_to_path(target)
+          if path && File.file?(path)
+            first_line = File.open(path, &:readline).strip rescue nil
+            params.merge(
+              'tooltip' => first_line ? "#{path}\n#{first_line}" : path
+            )
+          else
+            params
+          end
+        else
+          params
+        end
+      rescue StandardError => e
+        warn "Error in documentLink/resolve handler: #{e.message}"
+        params
+      end
+
       def handle_document_highlight(params)
         uri      = params['textDocument']['uri']
         lsp_line = params['position']['line']
