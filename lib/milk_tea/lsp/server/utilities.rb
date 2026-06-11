@@ -197,6 +197,7 @@ module MilkTea
 
       def invalidate_document_caches(uri)
         @semantic_tokens_cache.delete(uri)
+        @semantic_tokens_delta_cache.delete(uri)
         @fixall_cache.delete(uri)
       end
 

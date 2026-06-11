@@ -55,7 +55,7 @@ module MilkTea
                 tokenTypes: SEMANTIC_TOKEN_TYPES,
                 tokenModifiers: SEMANTIC_TOKEN_MODIFIERS
               },
-              full: true,
+              full: { delta: true },
               range: true
             },
             completionProvider: {
@@ -75,8 +75,10 @@ module MilkTea
       end
 
       def handle_initialized(_params)
-        @workspace.index_workspace(@root_uri) if @root_uri
+        progress = create_progress(title: 'Indexing workspace', message: 'Scanning source files...')
+        @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) } if @root_uri
         document_count = @workspace.all_documents.length
+        progress.done(message: "#{document_count} document#{document_count == 1 ? '' : 's'} indexed")
         log_message(:info, "Milk Tea LSP ready — #{document_count} document#{document_count == 1 ? '' : 's'} indexed")
         nil
       end
@@ -111,7 +113,10 @@ module MilkTea
         end
 
         @workspace.workspace_root_path = uri_to_path(@root_uri)
-        @workspace.index_workspace(@root_uri) if @root_uri
+        progress = create_progress(title: 'Reindexing workspace', message: 'Scanning source files...')
+        @workspace.index_workspace(@root_uri) { |pct, msg| progress.report(percentage: pct, message: msg) } if @root_uri
+        doc_count = @workspace.all_documents.length
+        progress.done(message: "#{doc_count} document#{doc_count == 1 ? '' : 's'} indexed")
 
         @workspace.open_document_uris.each do |uri|
           schedule_diagnostics(uri, force: true, lint_tier: :full) unless @workspace.background_document?(uri)

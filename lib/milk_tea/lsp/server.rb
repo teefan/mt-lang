@@ -22,6 +22,7 @@ require_relative "server/hover"
 require_relative "server/inlay_hints"
 require_relative "server/lifecycle"
 require_relative "server/on_type_formatting"
+require_relative "server/progress"
 require_relative "server/references"
 require_relative "server/rename"
 require_relative "server/selection_range"
@@ -154,6 +155,7 @@ module MilkTea
         @handlers = {}
         @diagnostic_report_cache = {}
         @semantic_tokens_cache = {}
+        @semantic_tokens_delta_cache = {}
         @fixall_cache = {}
         @definition_file_token_cache = {}
         @definition_file_ast_cache = {}
@@ -214,6 +216,7 @@ module MilkTea
       include ServerInlayHints
       include ServerLifecycle
       include ServerOnTypeFormatting
+      include ServerProgress
       include ServerReferences
       include ServerRename
       include ServerSelectionRange
@@ -264,6 +267,7 @@ module MilkTea
         @handlers['callHierarchy/outgoingCalls']     = method(:handle_outgoing_calls)
         @handlers['textDocument/inlayHint']         = method(:handle_inlay_hint)
         @handlers['textDocument/semanticTokens/full'] = method(:handle_semantic_tokens_full)
+        @handlers['textDocument/semanticTokens/full/delta'] = method(:handle_semantic_tokens_delta)
         @handlers['textDocument/semanticTokens/range'] = method(:handle_semantic_tokens_range)
         @handlers['textDocument/selectionRange']     = method(:handle_selection_range)
         @handlers['textDocument/diagnostic']         = method(:handle_document_diagnostic)

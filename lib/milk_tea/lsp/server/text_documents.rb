@@ -15,6 +15,7 @@ module MilkTea
         open_stats = @workspace.open_document(uri, content)
         open_ms = elapsed_ms(open_start)
         @semantic_tokens_cache.delete(uri)
+        @semantic_tokens_delta_cache.delete(uri)
         @fixall_cache.delete(uri)
         diagnostics_start = monotonic_time
         schedule_diagnostics(uri, lint_tier: :full) unless @workspace.background_document?(uri)
@@ -56,6 +57,7 @@ module MilkTea
         previous_source = @workspace.set_document_source(uri, source)
         if previous_source == 'background-document' && source != 'background-document' && !@workspace.get_content(uri).empty?
           @semantic_tokens_cache.delete(uri)
+          @semantic_tokens_delta_cache.delete(uri)
           @fixall_cache.delete(uri)
           schedule_diagnostics(uri, force: true, lint_tier: :full)
         end

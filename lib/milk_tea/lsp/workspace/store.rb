@@ -114,11 +114,13 @@ module MilkTea
         end
 
         # Index all .mt files under root_uri so they are available for workspace-wide queries.
-        def index_workspace(root_uri)
+        def index_workspace(root_uri, &progress)
           root_path = uri_to_path(root_uri)
           return unless root_path && File.directory?(root_path)
 
-          Dir.glob(File.join(root_path, '**', '*.mt')).sort.each do |path|
+          paths = Dir.glob(File.join(root_path, '**', '*.mt')).sort
+          total = paths.length
+          paths.each_with_index do |path, idx|
             file_uri = path_to_uri(path)
             @document_state_mutex.synchronize do
               @indexed_documents[file_uri] ||= begin
@@ -126,6 +128,10 @@ module MilkTea
               rescue StandardError
                 nil
               end
+            end
+            if progress && total > 0
+              pct = ((idx + 1) * 100 / total).clamp(0, 100)
+              progress.call(pct, "#{idx + 1}/#{total} files")
             end
           end
         rescue StandardError => e
