@@ -72,9 +72,9 @@ function main() -> int:
         if vbo != 0:
             gl.delete_buffer_short(1, ptr_of(vbo))
         if vao != 0:
-            gl.delete_vertex_arrays(1, ptr_of(vao))
+            gl.delete_vertex_array_short(1, ptr_of(vao))
 
-    gl.gen_vertex_arrays(1, ptr_of(vao))
+    gl.gen_vertex_array_short(1, ptr_of(vao))
     gl.bind_vertex_array(vao)
     gl.gen_buffer_short(1, ptr_of(vbo))
     gl.bind_buffer(uint<-gl.ARRAY_BUFFER, vbo)
@@ -122,7 +122,7 @@ function main() -> int:
         gl.uniform_4_float_values(color_location, 1, ptr_of(color_values[0]))
         gl.uniform_matrix_4_float_values(matrix_mvp_location, 1, ubyte<-gl.FALSE, ptr_of(mvp_values[0]))
         gl.bind_vertex_array(vao)
-        gl.draw_arrays(uint<-gl.POINTS, 0, MAX_PARTICLES)
+        gl.draw_array_short(uint<-gl.POINTS, 0, MAX_PARTICLES)
         gl.bind_vertex_array(0)
         gl.use_program(0)
 
