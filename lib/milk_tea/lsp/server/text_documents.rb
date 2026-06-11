@@ -73,10 +73,12 @@ module MilkTea
         @diagnostic_report_cache.delete(uri)
         @workspace_diagnostic_cache.delete(uri)
         refresh_open_document_dependency_state(uri)
-        @protocol.write_notification('textDocument/publishDiagnostics', {
-          uri: uri,
-          diagnostics: []
-        })
+        unless defined?(@pull_diagnostics_active) && @pull_diagnostics_active
+          @protocol.write_notification('textDocument/publishDiagnostics', {
+            uri: uri,
+            diagnostics: []
+          })
+        end
         nil
       end
 
