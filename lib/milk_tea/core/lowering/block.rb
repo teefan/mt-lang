@@ -300,6 +300,90 @@ module MilkTea
             end
 
             if scrutinee_type.is_a?(Types::Variant)
+              if statement.arms.any? { |arm| arm.pattern.is_a?(AST::Call) }
+                kind_type = @types.fetch("int")
+                arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
+                @match_label_counter ||= 0
+                @match_label_counter += 1
+                m = @match_label_counter
+                match_end_label = "__mt_match_#{m}_end"
+                arm_next_label = "__mt_match_#{m}_arm_next"
+
+                statement.arms.each_with_index do |arm, arm_index|
+                  arm_local_env = duplicate_env(local_env)
+                  arm_name = variant_match_arm_name_from_pattern(arm.pattern) unless wildcard_arm_pattern?(arm.pattern)
+
+                  # Emit label for all arms except the first (catches previous arm's goto)
+                  if arm_index > 0
+                    lowered << IR::LabelStmt.new(name: "__mt_match_#{m}_arm_#{arm_index}")
+                  end
+
+                  if arm_name && !wildcard_arm_pattern?(arm.pattern)
+                    tag_value = IR::Name.new(name: enum_member_c_name(scrutinee_type, "kind_#{arm_name}"), type: kind_type, pointer: false)
+                    tag_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
+                    goto_label = if arm_index < statement.arms.length - 1
+                                   "__mt_match_#{m}_arm_#{arm_index + 1}"
+                                 else
+                                   arm_next_label
+                                 end
+                    tag_check = IR::Binary.new(operator: "!=", left: tag_expr, right: tag_value, type: @types.fetch("bool"))
+                    lowered << IR::IfStmt.new(condition: tag_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
+                  end
+
+                  if arm_name && !wildcard_arm_pattern?(arm.pattern) && scrutinee_type.has_payload?(arm_name)
+                    fields = scrutinee_type.arm(arm_name)
+                    payload_type = Types::VariantArmPayload.new(scrutinee_type, arm_name, fields)
+                    data_expr = IR::Member.new(receiver: expression, member: "data", type: nil)
+                    arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
+                    payload_c_name = fresh_c_temp_name(arm_local_env, "match_payload")
+                    arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, c_name: payload_c_name, mutable: true, pointer: false)
+                    lowered << IR::LocalDecl.new(name: payload_c_name, c_name: payload_c_name, type: payload_type, value: arm_expr)
+
+                    if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
+                      arm.pattern.arguments.each do |arg|
+                        next if arg.name
+                        next unless arg.value.is_a?(AST::Identifier)
+
+                        field_name = arg.value.name
+                        next unless fields.key?(field_name)
+
+                        field_type = fields[field_name]
+                        binding_c = c_local_name(field_name)
+                        field_expr = IR::Member.new(receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false), member: field_name, type: field_type)
+                        lowered << IR::LocalDecl.new(name: binding_c, c_name: binding_c, type: field_type, value: field_expr)
+                        arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, c_name: binding_c, mutable: false, pointer: false)
+                      end
+                    end
+                  end
+
+                  # Handle as-binding for regular (non-Call) arms in the struct pattern branch
+                  if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+                    binding_c = c_local_name(arm.binding_name)
+                    if arm_name && scrutinee_type.has_payload?(arm_name)
+                      # Payload was already extracted above; reference the existing temp
+                      payload_key = "__mt_payload"
+                      if arm_local_env[:scopes].last.key?(payload_key)
+                        payload_binding = arm_local_env[:scopes].last[payload_key]
+                        arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], c_name: binding_c, mutable: true, pointer: false)
+                      end
+                    end
+                  end
+
+                  body = lower_block(
+                    arm.body,
+                    env: arm_local_env,
+                    active_defers: active_defers + local_defers,
+                    return_type:,
+                    loop_flow: arm_loop_flow,
+                    allow_return:,
+                  )
+                  lowered.concat(body)
+                  lowered << IR::GotoStmt.new(label: match_end_label)
+                end
+
+                lowered << IR::LabelStmt.new(name: arm_next_label)
+                lowered << IR::LabelStmt.new(name: match_end_label)
+              else
               kind_type = @types.fetch("int")
               kind_expr = IR::Member.new(receiver: expression, member: "kind", type: kind_type)
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
@@ -334,6 +418,7 @@ module MilkTea
                 end
               end
               lowered << IR::SwitchStmt.new(expression: kind_expr, cases:, exhaustive: true)
+              end  # inner if/else for struct patterns
             else
               arm_loop_flow = switch_loop_flow(loop_flow, local_defers)
               cases = statement.arms.map do |arm|

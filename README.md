@@ -393,6 +393,25 @@ Rules:
 - Enum and variant matches must be exhaustive unless `_` is present.
 - Integer matches require `_`.
 - Variant payload arms may bind with `as name`.
+- Variant payload arms may destructure fields inline with struct patterns: `Variant.arm(field > 0, other)` — comparisons are guards (arm skipped if false), identifiers are bindings (field becomes a local), and `field = value` is an equality guard.
+
+```mt
+match token:
+    Token.ident(text):
+        use_name(text)
+    Token.number as n:
+        use_value(n.value)
+    Token.eof:
+        return
+```
+
+Struct pattern rules:
+
+- Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm.
+- Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
+- Bindings (`position`) create immutable local variables bound to the field value.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness.
+- For variant payload arms, struct patterns compose with `as name` bindings.
 
 Loop forms:
 

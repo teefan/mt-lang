@@ -166,6 +166,17 @@ module MilkTea
             statement.arms.each do |arm|
               preassign_local_binding_ids_in_expression(arm.pattern)
               @preassigned_local_binding_ids[arm.object_id] ||= allocate_binding_id if arm.binding_name
+
+              # Preassign binding IDs for struct pattern bindings
+              if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
+                arm.pattern.arguments.each do |arg|
+                  next if arg.name
+                  next unless arg.value.is_a?(AST::Identifier)
+
+                  @preassigned_local_binding_ids[arg.object_id] ||= allocate_binding_id
+                end
+              end
+
               preassign_local_binding_ids_in_statements(arm.body || [])
             end
           when AST::UnsafeStmt
