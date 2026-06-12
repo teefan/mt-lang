@@ -97,6 +97,8 @@ module MilkTea
             end
           when AST::StaticAssert
             check_static_assert(statement, scopes:)
+          when AST::EmitStmt
+            check_emit_stmt(statement)
           when AST::ForStmt
             if statement.inline
               check_inline_for_stmt(statement, scopes:, return_type:, allow_return:)
@@ -811,6 +813,10 @@ module MilkTea
         raise_sema_error("static_assert message must be str or cstr, got #{message_type}")
       end
 
+      def check_emit_stmt(statement)
+        raise_sema_error("emit is only allowed inside const function or inline blocks") unless @compile_time_depth.positive?
+      end
+
       def check_range_expr_loop(expression, scopes:)
         start_type = infer_expression(expression.start_expr, scopes:)
         stop_type = infer_expression(expression.end_expr, scopes:)
@@ -888,7 +894,9 @@ module MilkTea
             const_value: element,
           )
           with_loop do
-            check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
+            with_compile_time do
+              check_block(statement.body, scopes: loop_scopes, return_type:, allow_return:)
+            end
           end
         end
       end
@@ -898,7 +906,9 @@ module MilkTea
         raise_sema_error("inline while condition must be a compile-time constant") if condition.nil?
 
         with_loop do
-          check_block(statement.body, scopes:, return_type:, allow_return:)
+          with_compile_time do
+            check_block(statement.body, scopes:, return_type:, allow_return:)
+          end
         end
       end
 
@@ -911,9 +921,13 @@ module MilkTea
         end
 
         if chosen_branch
-          check_block(chosen_branch.body, scopes:, return_type:, allow_return:)
+          with_compile_time do
+            check_block(chosen_branch.body, scopes:, return_type:, allow_return:)
+          end
         elsif statement.else_body
-          check_block(statement.else_body, scopes:, return_type:, allow_return:)
+          with_compile_time do
+            check_block(statement.else_body, scopes:, return_type:, allow_return:)
+          end
         end
       end
 
@@ -927,7 +941,9 @@ module MilkTea
         end
 
         if chosen_arm
-          check_block(chosen_arm.body, scopes:, return_type:, allow_return:)
+          with_compile_time do
+            check_block(chosen_arm.body, scopes:, return_type:, allow_return:)
+          end
         end
       end
 

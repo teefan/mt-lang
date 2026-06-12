@@ -54,6 +54,13 @@ module MilkTea
         @loop_depth -= 1
       end
 
+      def with_compile_time
+        @compile_time_depth += 1
+        yield
+      ensure
+        @compile_time_depth -= 1
+      end
+
       def with_loop_barrier
         previous_loop_depth = @loop_depth
         @loop_depth = 0

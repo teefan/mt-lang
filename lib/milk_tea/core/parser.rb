@@ -1097,6 +1097,8 @@ module MilkTea
         parse_unsafe_stmt
       elsif match(:static_assert)
         parse_static_assert
+      elsif match(:emit)
+        parse_emit_stmt
       elsif match(:for)
         parse_for_stmt
       elsif match(:while)
@@ -1347,6 +1349,19 @@ module MilkTea
       consume(:rparen, "expected ')' after static_assert message")
       consume_end_of_statement
       AST::StaticAssert.new(condition:, message:, line:)
+    end
+
+    def parse_emit_stmt
+      line = previous.line
+      column = previous.column
+      decl = parse_declaration
+      AST::EmitStmt.new(declaration: decl, line:, column:)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      synchronize_to_statement_boundary
+      AST::EmitStmt.new(declaration: AST::ErrorExpr.new(message: e.message), line:, column:)
     end
 
     def parse_for_stmt

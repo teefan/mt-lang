@@ -543,6 +543,8 @@ module MilkTea
             else
               lowered.concat(prepared_cleanups.flat_map(&:itself))
             end
+          when AST::EmitStmt
+            lowered.concat(lower_emit_stmt(statement, env: local_env))
           when AST::WhenStmt
             discriminant = compile_time_const_value(statement.discriminant)
             chosen_branch = statement.branches.find do |branch|
@@ -744,6 +746,60 @@ module MilkTea
         else
           @types.fetch("int")
         end
+      end
+
+      def lower_emit_stmt(statement, env:)
+        decl = statement.declaration
+        case decl
+        when AST::FunctionDef
+          lower_emitted_function(decl, env:)
+        when AST::StructDecl
+          lower_emitted_struct(decl)
+        when AST::ConstDecl
+          lower_emitted_const(decl, env:)
+        else
+          raise LoweringError, "emit is not supported for #{decl.class.name}"
+        end
+      end
+
+      def lower_emitted_function(decl, env:)
+        params = []
+        param_setup = []
+        return_type = decl.return_type ? resolve_type_ref(decl.return_type) : @types.fetch("void")
+        c_name = "#{@module_prefix}#{decl.name}"
+
+        decl.params.each do |param|
+          param_type = param.type ? resolve_type_ref(param.type) : @types.fetch("int")
+          param_c_name = c_local_name(param.name)
+          params << IR::Param.new(name: param.name, c_name: param_c_name, type: param_type, pointer: false)
+          env[:scopes].last[param.name] = local_binding(type: param_type, c_name: param_c_name, mutable: false, pointer: false)
+        end
+
+        body = lower_block(decl.body, env:, active_defers: [], return_type:, loop_flow: nil, allow_return: true)
+        body = param_setup + body
+        func = IR::Function.new(name: decl.name, c_name:, params:, return_type:, body:, entry_point: false, method_receiver_param: false)
+        @emitted_declarations << func
+        []
+      end
+
+      def lower_emitted_struct(decl)
+        fields = decl.fields.map do |field|
+          field_type = field.type ? resolve_type_ref(field.type) : @types.fetch("int")
+          IR::Field.new(name: field.name, type: field_type)
+        end
+        c_name = "#{@module_prefix}#{decl.name}"
+        struct_decl = IR::StructDecl.new(name: decl.name, c_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
+        @emitted_declarations << struct_decl
+        []
+      end
+
+      def lower_emitted_const(decl, env:)
+        value = lower_static_storage_initializer(decl.value, env:, expected_type: decl.type ? resolve_type_ref(decl.type) : nil)
+        type = decl.type ? resolve_type_ref(decl.type) : infer_expression_type(decl.value, env:)
+        c_name = value_c_name(decl.name)
+        constant = IR::Constant.new(name: decl.name, c_name:, type:, value:)
+        @emitted_declarations << constant
+        []
       end
   end
 end

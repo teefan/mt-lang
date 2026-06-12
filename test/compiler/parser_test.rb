@@ -3104,4 +3104,24 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
   end
 
+  def test_parses_emit_function_inside_const_function
+    source = <<~MT
+      const function generate() -> void:
+          emit function helper() -> int:
+              return 42
+      function main() -> int:
+          return helper()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    const_fn = ast.declarations.first
+    assert_instance_of MilkTea::AST::FunctionDef, const_fn
+    assert const_fn.const
+
+    body = const_fn.body
+    emit_stmt = body.first
+    assert_instance_of MilkTea::AST::EmitStmt, emit_stmt
+    assert_instance_of MilkTea::AST::FunctionDef, emit_stmt.declaration
+  end
+
 end

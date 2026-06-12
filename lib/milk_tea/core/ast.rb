@@ -144,6 +144,9 @@ module MilkTea
     StaticAssert = Data.define(:condition, :message, :line) do
       def initialize(condition:, message:, line: nil) = super
     end
+    EmitStmt = Data.define(:declaration, :line, :column) do
+      def initialize(declaration:, line: nil, column: nil) = super
+    end
     ForBinding = Data.define(:name, :line, :column) do
       def initialize(name:, line: nil, column: nil) = super
     end
