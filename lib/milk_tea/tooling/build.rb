@@ -209,7 +209,13 @@ module MilkTea
         FileUtils.rm_f(DebugMap.sidecar_path_for(@output_path))
       end
       clean_bundle_archive
+      clean_cache
       target_path
+    end
+
+    def clean_cache
+      cache_dir = File.join(MilkTea.data_root.to_s, "tmp", "mtc-cache")
+      FileUtils.rm_rf(cache_dir) if File.exist?(cache_dir)
     end
 
     def build
@@ -470,13 +476,20 @@ module MilkTea
 
       @cached = false
 
+      method_defs_hash = compute_method_defs_hash(program)
+      previous_method_defs = cache.fetch_method_defs
+      if previous_method_defs && previous_method_defs != method_defs_hash
+        cache.invalidate_all_module_ir
+      end
+
       module_changes = detect_module_changes(program, cache, source_files)
       if module_changes.any? { |_, v| v == :changed }
         changed = module_changes.select { |_, v| v == :changed }.keys
         warn "    #{changed.length} of #{module_changes.length} module(s) changed" if $VERBOSE || ENV["MTC_VERBOSE"]
       end
 
-      ir_program = Lowering.lower(program)
+      ir_program, modules = Lowering.lower_incremental(program)
+
       Build.ensure_program_has_entrypoint!(program, ir_program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives:)
 
@@ -484,9 +497,47 @@ module MilkTea
 
       cache.store_program(key, c_source: compiled_c, frontend_modules:)
 
+      source_files.each do |path, content|
+        analysis = program.analyses_by_path[path]
+        next unless analysis
+
+        path_key = cache.module_key(path, content)
+        fragment = modules[analysis.module_name]
+        cache.store_module_ir(path_key, fragment) if fragment
+      end
+
+      cache.store_method_defs(method_defs_hash)
       update_module_caches(program, cache, source_files)
 
       [compiled_c, frontend_modules, ir_program]
+    end
+
+    def reverse_import_graph(program)
+      graph = Hash.new { |h, k| h[k] = [] }
+      program.analyses_by_path.each do |path, analysis|
+        module_name = analysis.module_name.to_s
+        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
+        ast_imports.each do |import|
+          imported_name = import.path.to_s
+          graph[imported_name] << module_name
+        end
+      end
+      graph
+    end
+
+    def compute_method_defs_hash(program)
+      hasher = Digest::SHA256.new
+      program.analyses_by_path.values.each do |analysis|
+        analysis.ast.declarations.grep(AST::ExtendingBlock).each do |block|
+          type_name = block.type_name.respond_to?(:name) ? block.type_name.name.parts.join(".") : block.type_name.to_s
+          block.methods.each do |method|
+            hasher << analysis.module_name.to_s << "\0"
+            hasher << type_name << "\0"
+            hasher << method.kind.to_s << "\0" << method.name << "\0"
+          end
+        end
+      end
+      hasher.hexdigest
     end
 
     def detect_module_changes(program, cache, source_files)
