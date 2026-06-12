@@ -1877,7 +1877,11 @@ module MilkTea
         raise_sema_error("const_ptr_of requires a safe lvalue source") unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_expression(expression, scopes:)
-        raise_sema_error("const_ptr_of cannot target ref values") if contains_ref_type?(source_type)
+        if contains_ref_type?(source_type)
+          unless (source_type.is_a?(Types::Struct) || source_type.is_a?(Types::StructInstance)) && source_type.lifetime_params&.any?
+            raise_sema_error("const_ptr_of cannot target ref values")
+          end
+        end
 
         source_type
       end
@@ -1886,7 +1890,11 @@ module MilkTea
         raise_sema_error("ref_of requires a mutable safe lvalue source") unless safe_reference_source_expression?(expression, scopes:)
 
         source_type = infer_lvalue(expression, scopes:)
-        raise_sema_error("ref_of cannot target ref values") if contains_ref_type?(source_type)
+        if contains_ref_type?(source_type)
+          unless (source_type.is_a?(Types::Struct) || source_type.is_a?(Types::StructInstance)) && source_type.lifetime_params&.any?
+            raise_sema_error("ref_of cannot target ref values")
+          end
+        end
 
         source_type
       end

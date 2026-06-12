@@ -1032,7 +1032,52 @@ function soa_demo() -> float:
     return first_x + second_x + first_y
 
 # ---------------------------------------------------------------------------
-# 26  Entrypoint
+# 26  Compile-time code generation (emit)
+# ---------------------------------------------------------------------------
+
+const function generate_helpers() -> void:
+    emit function zero_meaning() -> int:
+        return 0
+
+    emit struct Helpers:
+        value: int
+
+
+function emit_demo() -> void:
+    # const function generate_helpers emits zero_meaning + Helpers into the module.
+    # The emitted declarations appear in the lowered IR. Calls to emitted
+    # functions require the const function to be processed first by lowering.
+    pass
+
+# ---------------------------------------------------------------------------
+# 27  Lifetime-annotated refs with non-owning structs
+# ---------------------------------------------------------------------------
+
+struct Buffer[@a]:
+    data: ref[@a, span[ubyte]]
+
+
+function buffer_advance(buf: ref[Buffer]) -> void:
+    # non-owning struct can be passed by ref as function parameter
+    pass
+
+
+function lifetime_demo() -> void:
+    var storage: array[ubyte, 128]
+    var sp = span[ubyte](data = ptr_of(storage[0]), len = 128)
+    var buf = Buffer(data = ref_of(sp))
+    buffer_advance(ref_of(buf))
+
+# ---------------------------------------------------------------------------
+# 28  struct.with() partial field update
+# ---------------------------------------------------------------------------
+
+function with_demo() -> Vec2:
+    let v = Vec2(x = 1.0, y = 2.0)
+    return v.with(x = 10.0)
+
+# ---------------------------------------------------------------------------
+# 29  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -1056,9 +1101,12 @@ function main() -> int:
     format_demo()
     heredoc_fmt_demo()
     str_buffer_demo()
+    lifetime_demo()
 
     var npc = NPC.default()
     interface_demo(ref_of(npc))
+
+    total += int<-(with_demo().x) + int<-(with_demo().y)
     nullability_demo()
 
     total += aio.wait(async_child())
