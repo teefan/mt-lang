@@ -1039,15 +1039,15 @@ const function generate_helpers() -> void:
     emit function zero_meaning() -> int:
         return 0
 
-    emit struct Helpers:
-        value: int
+    emit function hex_prefix() -> str:
+        return "0x"
 
 
-function emit_demo() -> void:
-    # const function generate_helpers emits zero_meaning + Helpers into the module.
-    # The emitted declarations appear in the lowered IR. Calls to emitted
-    # functions require the const function to be processed first by lowering.
-    pass
+function emit_demo() -> int:
+    let meaning = zero_meaning()
+    let prefix = hex_prefix()
+    let _p = prefix
+    return meaning
 
 # ---------------------------------------------------------------------------
 # 27  Lifetime-annotated refs with non-owning structs
@@ -1089,6 +1089,7 @@ function main() -> int:
     total += proc_demo()
     total += generics_demo()
     total += comptime_demo()
+    total += emit_demo()
 
     total += int<-(vector_demo())
     total += int<-(matrix_demo())
