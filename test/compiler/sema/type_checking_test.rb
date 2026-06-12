@@ -3804,4 +3804,267 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("main")
   end
 
+  # ── Inline compile-time statements ────────────────────────────────────────
+
+  def test_type_checks_inline_if_with_const_true
+    source = <<~MT
+      # module demo.main
+
+      const FLAG: bool = true
+
+      function main() -> int:
+          inline if FLAG:
+              return 1
+          else:
+              return 0
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_inline_if_with_const_false
+    source = <<~MT
+      # module demo.main
+
+      const FLAG: bool = false
+
+      function main() -> int:
+          inline if FLAG:
+              return 1
+          else:
+              return 0
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_inline_for_over_fields_of
+    source = <<~MT
+      # module demo.main
+
+      struct Point:
+          x: float
+          y: float
+
+      function check() -> void:
+          inline for field in fields_of(Point):
+              static_assert(size_of(field.type) > 0, "bad field")
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("check")
+  end
+
+  def test_type_checks_inline_match_with_const_enum
+    source = <<~MT
+      # module demo.main
+
+      const BACKEND: Backend = Backend.gl
+
+      enum Backend: ubyte
+          gl = 0
+          metal = 1
+          vulkan = 2
+
+      function draw() -> void:
+          inline match BACKEND:
+              Backend.gl:
+                  return
+              Backend.metal:
+                  return
+              Backend.vulkan:
+                  return
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("draw")
+  end
+
+  def test_type_checks_when_stmt_with_const_enum
+    source = <<~MT
+      # module demo.main
+
+      const TARGET: TargetOs = TargetOs.linux
+
+      enum TargetOs: ubyte
+          linux = 0
+          windows = 1
+
+      function label() -> str:
+          when TARGET:
+              TargetOs.linux:
+                  return "linux"
+              TargetOs.windows:
+                  return "windows"
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("label")
+  end
+
+  # ── Const function ────────────────────────────────────────────────────────
+
+  def test_type_checks_const_function_call_from_const
+    source = <<~MT
+      # module demo.main
+
+      const function square(x: int) -> int:
+          return x * x
+
+      const V: int = square(5)
+
+      function main() -> int:
+          return V
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("square")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_const_function_at_runtime
+    source = <<~MT
+      # module demo.main
+
+      const function twice(x: int) -> int:
+          return x * 2
+
+      function main() -> int:
+          return twice(5)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("twice")
+  end
+
+  # ── Native math types ─────────────────────────────────────────────────────
+
+  def test_type_checks_vec3_construction
+    source = <<~MT
+      # module demo.main
+
+      function direction() -> vec3:
+          return vec3(x = 1.0, y = 0.0, z = 0.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("direction")
+  end
+
+  def test_type_checks_vec3_field_access
+    source = <<~MT
+      # module demo.main
+
+      function get_y(v: vec3) -> float:
+          return v.y
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("get_y")
+  end
+
+  def test_type_checks_vec3_add
+    source = <<~MT
+      # module demo.main
+
+      function add(a: vec3, b: vec3) -> vec3:
+          return a + b
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("add")
+  end
+
+  def test_type_checks_vec3_scalar_multiply
+    source = <<~MT
+      # module demo.main
+
+      function scale(v: vec3, s: float) -> vec3:
+          return v * s
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("scale")
+  end
+
+  def test_type_checks_ivec2_construction
+    source = <<~MT
+      # module demo.main
+
+      function pos() -> ivec2:
+          return ivec2(x = 1, y = 2)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("pos")
+  end
+
+  def test_type_checks_mat4_construction
+    source = <<~MT
+      # module demo.main
+
+      function identity() -> mat4:
+          return mat4(
+              col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+              col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+              col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+              col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+          )
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("identity")
+  end
+
+  def test_type_checks_quat_construction
+    source = <<~MT
+      # module demo.main
+
+      function identity() -> quat:
+          return quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("identity")
+  end
+
+  # ── SoA ───────────────────────────────────────────────────────────────────
+
+  def test_type_checks_soa_type_and_index_access
+    source = <<~MT
+      # module demo.main
+
+      struct Particle:
+          x: float
+          y: float
+
+      function sum_x(data: SoA[Particle, 16]) -> float:
+          var total: float = 0.0
+          for i in 0..16:
+              total += data[i].x
+          return total
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("sum_x")
+  end
+
+  # ── order[T] ──────────────────────────────────────────────────────────────
+
+  def test_type_checks_order_builtin_for_int
+    source = <<~MT
+      # module demo.main
+
+      import std.hash
+
+      function compare(a: int, b: int) -> int:
+          return order[int](a, b)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("compare")
+  end
+
 end
