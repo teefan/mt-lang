@@ -167,4 +167,53 @@ static inline int mt_semaphore_try_wait(mt_semaphore* handle) {
   return uv_sem_trywait(&handle->native);
 }
 
+typedef struct mt_atomic_uint {
+  unsigned int value;
+} mt_atomic_uint;
+
+static inline int mt_atomic_uint_create(mt_atomic_uint** out_atomic, unsigned int initial_value) {
+  if (out_atomic != NULL) {
+    *out_atomic = NULL;
+  }
+
+  mt_atomic_uint* atomic = (mt_atomic_uint*) malloc(sizeof(mt_atomic_uint));
+  if (atomic == NULL) {
+    return UV_ENOMEM;
+  }
+
+  atomic->value = initial_value;
+  if (out_atomic != NULL) {
+    *out_atomic = atomic;
+  }
+  return 0;
+}
+
+static inline void mt_atomic_uint_destroy(mt_atomic_uint* handle) {
+  if (handle == NULL) {
+    return;
+  }
+
+  free(handle);
+}
+
+static inline unsigned int mt_atomic_uint_load(mt_atomic_uint* atomic) {
+  return __atomic_load_n(&atomic->value, __ATOMIC_SEQ_CST);
+}
+
+static inline void mt_atomic_uint_store(mt_atomic_uint* atomic, unsigned int new_value) {
+  __atomic_store_n(&atomic->value, new_value, __ATOMIC_SEQ_CST);
+}
+
+static inline unsigned int mt_atomic_uint_fetch_add(mt_atomic_uint* atomic, unsigned int delta) {
+  return __atomic_fetch_add(&atomic->value, delta, __ATOMIC_SEQ_CST);
+}
+
+static inline unsigned int mt_atomic_uint_fetch_sub(mt_atomic_uint* atomic, unsigned int delta) {
+  return __atomic_fetch_sub(&atomic->value, delta, __ATOMIC_SEQ_CST);
+}
+
+static inline bool mt_atomic_uint_compare_exchange(mt_atomic_uint* atomic, unsigned int* expected, unsigned int desired) {
+  return __atomic_compare_exchange_n(&atomic->value, expected, desired, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+}
+
 #endif

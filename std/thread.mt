@@ -128,3 +128,9 @@ extending Thread:
         heap.release(handle)
         this.handle = null
         return Result[bool, Error].success(value = true)
+
+
+public function sleep_ms(milliseconds: uint) -> void:
+    usleep(milliseconds * uint<-1000)
+
+external function usleep(__useconds: uint) -> int

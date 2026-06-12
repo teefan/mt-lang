@@ -16,6 +16,9 @@ public struct Condition:
 public struct Semaphore:
     handle: ptr[c.mt_semaphore]?
 
+public struct AtomicUint:
+    handle: ptr[c.mt_atomic_uint]?
+
 
 function libuv_error(code: int) -> Error:
     return Error(code = code, message = string.String.from_str(text.cstr_as_str(libuv.strerror(code))))
@@ -144,3 +147,48 @@ extending Semaphore:
 
     public function try_wait() -> bool:
         return c.mt_semaphore_try_wait(semaphore_handle(this.handle)) == 0
+
+
+public function create_atomic_uint(initial_value: uint) -> AtomicUint:
+    var handle: ptr[c.mt_atomic_uint]? = null
+    let status_code = c.mt_atomic_uint_create(handle, initial_value)
+    if status_code != 0:
+        fatal(c"sync.create_atomic_uint failed")
+
+    return AtomicUint(handle = handle)
+
+
+function atomic_handle(handle: ptr[c.mt_atomic_uint]?) -> ptr[c.mt_atomic_uint]:
+    let live_handle = handle else:
+        fatal(c"sync AtomicUint is released")
+
+    return live_handle
+
+
+extending AtomicUint:
+    public editable function release() -> void:
+        let handle = this.handle else:
+            return
+
+        c.mt_atomic_uint_destroy(handle)
+        this.handle = null
+
+
+    public function load() -> uint:
+        return c.mt_atomic_uint_load(atomic_handle(this.handle))
+
+
+    public editable function store(new_value: uint) -> void:
+        c.mt_atomic_uint_store(atomic_handle(this.handle), new_value)
+
+
+    public editable function fetch_add(delta: uint) -> uint:
+        return c.mt_atomic_uint_fetch_add(atomic_handle(this.handle), delta)
+
+
+    public editable function fetch_sub(delta: uint) -> uint:
+        return c.mt_atomic_uint_fetch_sub(atomic_handle(this.handle), delta)
+
+
+    public editable function compare_exchange(expected: ref[uint], desired: uint) -> bool:
+        return c.mt_atomic_uint_compare_exchange(atomic_handle(this.handle), ptr_of(expected), desired)

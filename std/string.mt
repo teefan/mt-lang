@@ -81,6 +81,13 @@ extending String:
             return left_view.as_str().equal(right_view.as_str())
 
 
+    public static function order(left: const_ptr[String], right: const_ptr[String]) -> int:
+        unsafe:
+            let left_view = read(left)
+            let right_view = read(right)
+            return left_view.as_str().compare(right_view.as_str())
+
+
     public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
