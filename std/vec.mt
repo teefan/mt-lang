@@ -321,3 +321,105 @@ extending Iter[T]:
 
             if predicate(current):
                 total += 1
+
+
+    public editable function sort() -> void:
+        if this.len <= 1:
+            return
+
+        let data = this.data else:
+            fatal(c"vec.sort missing storage")
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            var gap = this.len
+            while true:
+                gap = gap * 10 / 13
+                if gap < 1:
+                    gap = 1
+
+                var i = gap
+                while i < this.len:
+                    var j = i
+                    let temp = read(data_ptr + j)
+                    while j >= gap and order[T](read(data_ptr + j - gap), temp) > 0:
+                        read(data_ptr + j) = read(data_ptr + j - gap)
+                        j -= gap
+
+                    read(data_ptr + j) = temp
+                    i += 1
+
+                if gap == 1:
+                    break
+
+
+    public editable function sort_by(comparator: proc(left: ptr[T], right: ptr[T]) -> int) -> void:
+        if this.len <= 1:
+            return
+
+        let data = this.data else:
+            fatal(c"vec.sort_by missing storage")
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            var gap = this.len
+            while true:
+                gap = gap * 10 / 13
+                if gap < 1:
+                    gap = 1
+
+                var i = gap
+                while i < this.len:
+                    var j = i
+                    let temp = read(data_ptr + j)
+                    while j >= gap and comparator(ref_of(read(data_ptr + j - gap)), ref_of(temp)) > 0:
+                        read(data_ptr + j) = read(data_ptr + j - gap)
+                        j -= gap
+
+                    read(data_ptr + j) = temp
+                    i += 1
+
+                if gap == 1:
+                    break
+
+
+    public function binary_search(target: ptr[T]) -> Option[ptr_uint]:
+        let data = this.data else:
+            fatal(c"vec.binary_search missing storage")
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            var low: ptr_uint = 0
+            var high = this.len
+            while low < high:
+                let mid = low + (high - low) / 2
+                let cmp = order[T](target, data_ptr + mid)
+                if cmp < 0:
+                    high = mid
+                else if cmp > 0:
+                    low = mid + 1
+                else:
+                    return Option[ptr_uint].some(value = mid)
+
+            return Option[ptr_uint].none
+
+
+    public function binary_search_by(target: ptr[T], comparator: proc(target: ptr[T], element: ptr[T]) -> int) -> Option[ptr_uint]:
+        let data = this.data else:
+            fatal(c"vec.binary_search_by missing storage")
+
+        unsafe:
+            let data_ptr = ptr[T]<-data
+            var low: ptr_uint = 0
+            var high = this.len
+            while low < high:
+                let mid = low + (high - low) / 2
+                let cmp = comparator(target, data_ptr + mid)
+                if cmp < 0:
+                    high = mid
+                else if cmp > 0:
+                    low = mid + 1
+                else:
+                    return Option[ptr_uint].some(value = mid)
+
+            return Option[ptr_uint].none
