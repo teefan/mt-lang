@@ -367,6 +367,9 @@ module MilkTea
             walk_stmts_for_loop_check(stmt.body) if stmt.body
           when AST::DeferStmt
             walk_stmts_for_loop_check(stmt.body) if stmt.body
+          when AST::WhenStmt
+            stmt.branches.each { |b| walk_stmts_for_loop_check(b.body) }
+            walk_stmts_for_loop_check(stmt.else_body) if stmt.else_body
           end
         end
       end

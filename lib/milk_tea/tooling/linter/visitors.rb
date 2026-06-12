@@ -198,6 +198,14 @@ module MilkTea
           visit_expression(statement.condition)
         when AST::BreakStmt, AST::ContinueStmt
           nil
+        when AST::WhenStmt
+          visit_expression(statement.discriminant)
+          statement.branches.each do |branch|
+            with_scope { visit_statement_list(branch.body) }
+          end
+          with_scope { visit_statement_list(statement.else_body) } if statement.else_body
+        when AST::ErrorBlockStmt
+          with_scope { visit_statement_list(statement.body) } if statement.body
         else
           nil
         end
@@ -543,6 +551,18 @@ module MilkTea
           stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
         when AST::ReturnStmt
           collect_borrows_from_expr(stmt.value, names) if stmt.value
+        when AST::MatchStmt
+          collect_borrows_from_expr(stmt.expression, names)
+          stmt.arms.each { |arm| arm.body.each { |s| collect_borrows_from_stmt(s, names) } }
+        when AST::UnsafeStmt
+          stmt.body.each { |s| collect_borrows_from_stmt(s, names) }
+        when AST::DeferStmt
+          collect_borrows_from_expr(stmt.expression, names) if stmt.expression
+          stmt.body&.each { |s| collect_borrows_from_stmt(s, names) }
+        when AST::WhenStmt
+          collect_borrows_from_expr(stmt.discriminant, names)
+          stmt.branches.each { |b| b.body.each { |s| collect_borrows_from_stmt(s, names) } }
+          stmt.else_body&.each { |s| collect_borrows_from_stmt(s, names) }
         end
       end
   
@@ -596,6 +616,15 @@ module MilkTea
           stmt.body.each { |s| collect_writes_from_stmt(s, names) }
         when AST::ForStmt
           stmt.body.each { |s| collect_writes_from_stmt(s, names) }
+        when AST::MatchStmt
+          stmt.arms.each { |arm| arm.body.each { |s| collect_writes_from_stmt(s, names) } }
+        when AST::WhenStmt
+          stmt.branches.each { |b| b.body.each { |s| collect_writes_from_stmt(s, names) } }
+          stmt.else_body&.each { |s| collect_writes_from_stmt(s, names) }
+        when AST::UnsafeStmt
+          stmt.body.each { |s| collect_writes_from_stmt(s, names) }
+        when AST::DeferStmt
+          stmt.body&.each { |s| collect_writes_from_stmt(s, names) }
         end
       end
   
@@ -641,6 +670,29 @@ module MilkTea
           nil
         when AST::ReturnStmt
           find_borrow_location_in_expr(stmt.value, name) if stmt.value
+        when AST::MatchStmt
+          location = find_borrow_location_in_expr(stmt.expression, name)
+          return location if location
+          stmt.arms.each do |arm|
+            arm.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          end
+          nil
+        when AST::UnsafeStmt
+          stmt.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          nil
+        when AST::DeferStmt
+          location = find_borrow_location_in_expr(stmt.expression, name) if stmt.expression
+          return location if location
+          stmt.body&.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          nil
+        when AST::WhenStmt
+          location = find_borrow_location_in_expr(stmt.discriminant, name)
+          return location if location
+          stmt.branches.each do |b|
+            b.body.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          end
+          stmt.else_body&.each { |s| location = find_borrow_location_in_stmt(s, name); return location if location }
+          nil
         end
       end
   
