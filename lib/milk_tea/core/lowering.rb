@@ -21,13 +21,13 @@ module MilkTea
   class Lowering
     def self.lower(program)
       lowerer = Lowerer.new(program)
-      ir_program, _modules = lowerer.lower_and_assemble
+      ir_program, _modules, _synths = lowerer.lower_and_assemble
       ir_program
     end
 
-    def self.lower_incremental(program, cached: nil)
+    def self.lower_incremental(program, cached: nil, cached_synthetics: nil)
       lowerer = Lowerer.new(program)
-      lowerer.lower_and_assemble(cached:)
+      lowerer.lower_and_assemble(cached:, cached_synthetics:)
     end
   end
 
@@ -68,21 +68,29 @@ module MilkTea
     end
 
     def lower
-      lower_and_assemble
+      ir_program, _modules, _synths = lower_and_assemble
+      ir_program
     end
 
-    def lower_and_assemble(cached: nil)
-      modules = lower_modules(cached:)
-      [assemble_modules(modules), modules]
+    def lower_and_assemble(cached: nil, cached_synthetics: nil)
+      modules, per_module_synthetics = lower_modules(cached:, cached_synthetics:)
+      [assemble_modules(modules), modules, per_module_synthetics]
     end
 
-    def lower_modules(cached: nil)
+    def lower_modules(cached: nil, cached_synthetics: nil)
       if @program.root_analysis.module_kind == :raw_module
         raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
       end
 
+      per_module_synthetics = {}
       per_module_funcs = Hash.new { |h, k| h[k] = [] }
       modules = {}
+
+      cached_synthetics&.each do |_module_name, synths|
+        @synthetic_structs.concat(synths[:structs] || [])
+        @synthetic_enums.concat(synths[:enums] || [])
+        @synthetic_functions.concat(synths[:functions] || [])
+      end
 
       cached&.each do |module_name, cached_ir|
         modules[module_name] = cached_ir.with(functions: [])
@@ -96,6 +104,10 @@ module MilkTea
 
         prepare_analysis(analysis, source_path: path)
         collect_structs
+
+        synth_before_s = @synthetic_structs.length
+        synth_before_e = @synthetic_enums.length
+        synth_before_f = @synthetic_functions.length
 
         modules[analysis.module_name] = IR::Program.new(
           module_name: analysis.module_name,
@@ -112,6 +124,12 @@ module MilkTea
           source_path: path,
         )
         per_module_funcs[analysis.module_name].concat(lower_functions)
+
+        per_module_synthetics[analysis.module_name] = {
+          structs: @synthetic_structs[synth_before_s..] || [],
+          enums: @synthetic_enums[synth_before_e..] || [],
+          functions: @synthetic_functions[synth_before_f..] || [],
+        }
       end
 
       pending = true
@@ -123,17 +141,41 @@ module MilkTea
 
           prepare_analysis(analysis, source_path: path)
           ensure_events_for_analysis(analysis)
+
+          synth_before_s = @synthetic_structs.length
+          synth_before_e = @synthetic_enums.length
+          synth_before_f = @synthetic_functions.length
+
           newly_lowered = lower_functions
           next if newly_lowered.empty?
 
           per_module_funcs[analysis.module_name].concat(newly_lowered)
+
+          delta = {
+            structs: @synthetic_structs[synth_before_s..] || [],
+            enums: @synthetic_enums[synth_before_e..] || [],
+            functions: @synthetic_functions[synth_before_f..] || [],
+          }
+          existing = per_module_synthetics[analysis.module_name]
+          per_module_synthetics[analysis.module_name] = existing ? merge_synthetics(existing, delta) : delta
+
           pending = true
         end
       end
 
-      modules.transform_values do |fragment|
+      modules.transform_values! do |fragment|
         fragment.with(functions: per_module_funcs[fragment.module_name])
       end
+
+      [modules, per_module_synthetics]
+    end
+
+    def merge_synthetics(a, b)
+      {
+        structs: (a[:structs] || []) + (b[:structs] || []),
+        enums: (a[:enums] || []) + (b[:enums] || []),
+        functions: (a[:functions] || []) + (b[:functions] || []),
+      }
     end
 
     def ensure_events_for_analysis(analysis)
@@ -163,9 +205,9 @@ module MilkTea
       all_functions = modules.values.flat_map(&:functions)
 
       all_opaques.concat(lower_imported_external_opaques)
-      all_structs.concat(@synthetic_structs)
-      all_enums.concat(@synthetic_enums)
-      all_functions.concat(@synthetic_functions)
+      all_structs.concat(@synthetic_structs.uniq { |s| s.c_name })
+      all_enums.concat(@synthetic_enums.uniq { |e| e.c_name })
+      all_functions.concat(@synthetic_functions.uniq { |f| f.c_name })
 
       IR::Program.new(
         module_name: @program.root_analysis.module_name,
