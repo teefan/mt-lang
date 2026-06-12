@@ -105,6 +105,14 @@ extending Map[K, V]:
             return const_ptr_of(read(ptr[Node[K, V]]<-node).key)
 
 
+    public function get_or_else(key: K, default: V) -> V:
+        let value_ptr = this.get(key) else:
+            return default
+
+        unsafe:
+            return read(value_ptr)
+
+
     public function iter() -> Entries[K, V]:
         return this.entries()
 

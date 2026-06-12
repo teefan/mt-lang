@@ -88,6 +88,22 @@ extending String:
             return left_view.as_str().compare(right_view.as_str())
 
 
+    public function starts_with(prefix: str) -> bool:
+        return this.as_str().starts_with(prefix)
+
+
+    public function ends_with(suffix: str) -> bool:
+        return this.as_str().ends_with(suffix)
+
+
+    public function find_substring(needle: str) -> Option[ptr_uint]:
+        return this.as_str().find_substring(needle)
+
+
+    public function contains_substring(needle: str) -> bool:
+        return this.as_str().contains_substring(needle)
+
+
     public editable function reserve(min_capacity: ptr_uint) -> void:
         if min_capacity <= this.capacity:
             return
