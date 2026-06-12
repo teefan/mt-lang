@@ -181,6 +181,7 @@ module MilkTea
                                       packed: decl.packed,
                                       alignment: decl.alignment,
                                       c_name: decl.c_name,
+                                      lifetime_params: decl.lifetime_params,
                                     )
                                   else
                                     Types::GenericStructDefinition.new(
@@ -191,6 +192,7 @@ module MilkTea
                                       packed: decl.packed,
                                       alignment: decl.alignment,
                                       c_name: decl.c_name,
+                                      lifetime_params: decl.lifetime_params,
                                     )
                                   end
             when AST::UnionDecl

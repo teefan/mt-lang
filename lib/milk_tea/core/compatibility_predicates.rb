@@ -371,7 +371,13 @@ module MilkTea
     end
 
     def ref_type?(type)
-      type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+      type.is_a?(Types::GenericInstance) && type.name == "ref" && [1, 2].include?(type.arguments.length)
+    end
+
+    def ref_lifetime(type)
+      return unless type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 2
+
+      type.arguments.first
     end
 
     def task_type?(type)
@@ -399,7 +405,7 @@ module MilkTea
     def referenced_type(type)
       return unless ref_type?(type)
 
-      type.arguments.first
+      type.arguments.length == 1 ? type.arguments.first : type.arguments[1]
     end
 
     def const_pointer_to(type)
@@ -542,10 +548,13 @@ module MilkTea
         error.call("const_ptr type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
         error.call("const_ptr cannot target ref types") if contains_ref_type?(arguments.first)
       when "ref"
-        error.call("ref requires exactly one type argument") unless arguments.length == 1
-        error.call("ref type argument must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
-        error.call("ref cannot target void") if arguments.first.is_a?(Types::Primitive) && arguments.first.void?
-        error.call("ref cannot target another ref type") if contains_ref_type?(arguments.first)
+        unless [1, 2].include?(arguments.length)
+          error.call("ref requires exactly one type argument")
+        end
+        type_arg = arguments.length == 1 ? arguments.first : arguments[1]
+        error.call("ref type argument must be a type") if type_arg.is_a?(Types::LiteralTypeArg)
+        error.call("ref cannot target void") if type_arg.is_a?(Types::Primitive) && type_arg.void?
+        error.call("ref cannot target another ref type") if contains_ref_type?(type_arg)
       when "span"
         error.call("span requires exactly one type argument") unless arguments.length == 1
         error.call("span element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
