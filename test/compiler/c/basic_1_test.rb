@@ -2826,4 +2826,18 @@ function main() -> int:
     assert_match(/\.z = 20\.0f/, generated)
   end
 
+  def test_generate_c_for_struct_with_lifetime_ref_field
+    source = <<~MT
+      struct Cursor[@a]:
+          data: ref[@a, span[ubyte]]
+          position: ptr_uint
+
+      function advance(c: ref[Cursor]) -> void:
+          pass
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/mt_span_ubyte \*data/, generated)
+  end
+
 end

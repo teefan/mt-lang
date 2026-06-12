@@ -4129,4 +4129,51 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("reset")
   end
 
+  def test_type_checks_struct_with_lifetime_ref_field
+    source = <<~MT
+      # module demo.lifetime_ref
+
+      struct Cursor[@a]:
+          data: ref[@a, span[ubyte]]
+          position: ptr_uint
+
+      function advance(c: ref[Cursor]) -> void:
+          pass
+    MT
+
+    result = check_source(source)
+    assert result.types.key?("Cursor")
+    assert result.functions.key?("advance")
+  end
+
+  def test_type_checks_non_owning_struct_as_local
+    source = <<~MT
+      # module demo.non_owning_local
+
+      struct Slice[@a]:
+          data: ref[@a, span[ubyte]]
+
+      function process(s: ref[Slice]) -> void:
+          pass
+    MT
+
+    result = check_source(source)
+    assert result.types.key?("Slice")
+  end
+
+  def test_type_checks_struct_with_lifetime_and_type_params
+    source = <<~MT
+      # module demo.lifetime_generic
+
+      struct Container[@a, T]:
+          data: ref[@a, span[T]]
+
+      function use(c: ref[Container[int]]) -> void:
+          pass
+    MT
+
+    result = check_source(source)
+    assert result.types.key?("Container")
+  end
+
 end

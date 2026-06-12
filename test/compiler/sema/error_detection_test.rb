@@ -2609,4 +2609,30 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/emit is only allowed inside const function or inline blocks/, error.message)
   end
 
+  # ── lifetime ref type errors ────────────────────────────────────────────
+
+  def test_rejects_lifetime_ref_with_undeclared_lifetime
+    source = <<~MT
+      # module demo.bad_lifetime
+
+      struct Bad:
+          data: ref[@a, int]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/uses lifetime @a not declared on struct/, error.message)
+  end
+
+  def test_rejects_bare_ref_in_struct_field
+    source = <<~MT
+      # module demo.bare_ref_field
+
+      struct Holder:
+          value: ref[int]
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/cannot store ref types/, error.message)
+  end
+
 end

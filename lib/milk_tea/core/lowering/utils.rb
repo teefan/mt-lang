@@ -330,7 +330,10 @@ module MilkTea
         when Types::Nullable
           stored_ref_supported_type?(type.base, visited)
         when Types::GenericInstance
-          return false if ref_type?(type)
+          if ref_type?(type)
+            lt = ref_lifetime(type)
+            return !!lt  # lifetime-ref is supported by default; bare ref is not
+          end
 
           type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited) }
         when Types::Span

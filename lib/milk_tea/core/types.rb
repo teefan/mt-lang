@@ -963,6 +963,7 @@ module MilkTea
           packed: definition.packed,
           alignment: definition.alignment,
           c_name: definition.c_name,
+          lifetime_params: definition.lifetime_params,
         )
         @definition = definition
         @arguments = arguments.freeze

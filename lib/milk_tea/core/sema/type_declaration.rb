@@ -402,7 +402,13 @@ module MilkTea
 
               begin
                 field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
-                validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}")
+                if decl.respond_to?(:lifetime_params) && (lt = ref_lifetime(field_type))
+                  unless decl.lifetime_params.include?(lt)
+                    raise_sema_error("field #{decl.name}.#{field.name} uses lifetime #{lt} not declared on struct")
+                  end
+                end
+                allow_lts = decl.respond_to?(:lifetime_params) ? decl.lifetime_params : []
+                validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}", allow_lifetimes: allow_lts)
                 unless proc_storage_supported_type?(field_type)
                   raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
                 end
