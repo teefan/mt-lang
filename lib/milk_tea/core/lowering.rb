@@ -20,7 +20,14 @@ module MilkTea
 
   class Lowering
     def self.lower(program)
-      Lowerer.new(program).lower
+      lowerer = Lowerer.new(program)
+      ir_program, _modules = lowerer.lower_and_assemble
+      ir_program
+    end
+
+    def self.lower_incremental(program, cached: nil)
+      lowerer = Lowerer.new(program)
+      lowerer.lower_and_assemble(cached:)
     end
   end
 
@@ -61,72 +68,131 @@ module MilkTea
     end
 
     def lower
+      lower_and_assemble
+    end
+
+    def lower_and_assemble(cached: nil)
+      modules = lower_modules(cached:)
+      [assemble_modules(modules), modules]
+    end
+
+    def lower_modules(cached: nil)
       if @program.root_analysis.module_kind == :raw_module
         raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
       end
 
-      includes = collect_includes
+      per_module_funcs = Hash.new { |h, k| h[k] = [] }
+      modules = {}
 
-      constants = []
-      globals = []
-      opaques = []
-      structs = []
-      unions = []
-      enums = []
-      static_asserts = []
-      functions = []
+      cached&.each do |module_name, cached_ir|
+        modules[module_name] = cached_ir.with(functions: [])
+        per_module_funcs[module_name] = cached_ir.functions.dup
+        cached_ir.functions.each { |f| @lowered_function_c_names[f.c_name] = true }
+      end
 
       @program.analyses_by_path.each_pair do |path, analysis|
         next if analysis.module_kind == :raw_module
+        next if modules.key?(analysis.module_name)
 
         prepare_analysis(analysis, source_path: path)
         collect_structs
 
-        constants.concat(lower_constants)
-        globals.concat(lower_globals)
-        opaques.concat(lower_opaques)
-        structs.concat(lower_structs)
-        unions.concat(lower_unions)
-        enums.concat(lower_enums)
-        static_asserts.concat(lower_static_asserts)
-        functions.concat(lower_functions)
+        modules[analysis.module_name] = IR::Program.new(
+          module_name: analysis.module_name,
+          includes: [],
+          constants: lower_constants.dup,
+          globals: lower_globals.dup,
+          opaques: lower_opaques.dup,
+          structs: lower_structs.dup,
+          unions: lower_unions.dup,
+          enums: lower_enums.dup,
+          variants: lower_variants.dup,
+          static_asserts: lower_static_asserts.dup,
+          functions: [],
+          source_path: path,
+        )
+        per_module_funcs[analysis.module_name].concat(lower_functions)
       end
 
-      pending_functions = true
-      while pending_functions
-        pending_functions = false
+      pending = true
+      while pending
+        pending = false
 
         @program.analyses_by_path.each_pair do |path, analysis|
           next if analysis.module_kind == :raw_module
 
           prepare_analysis(analysis, source_path: path)
+          ensure_events_for_analysis(analysis)
           newly_lowered = lower_functions
           next if newly_lowered.empty?
 
-          functions.concat(newly_lowered)
-          pending_functions = true
+          per_module_funcs[analysis.module_name].concat(newly_lowered)
+          pending = true
         end
       end
 
-      opaques.concat(lower_imported_external_opaques)
-      structs.concat(@synthetic_structs)
-      enums.concat(@synthetic_enums)
-      functions.concat(@synthetic_functions)
+      modules.transform_values do |fragment|
+        fragment.with(functions: per_module_funcs[fragment.module_name])
+      end
+    end
+
+    def ensure_events_for_analysis(analysis)
+      analysis.ast.declarations.grep(AST::EventDecl).each do |decl|
+        event_type = analysis.values.fetch(decl.name).type
+        ensure_event_runtime(event_type)
+      end
+    end
+
+    def assemble_modules(modules)
+      if @program.root_analysis.module_kind == :raw_module
+        raise LoweringError, "cannot emit C for external file #{@program.root_analysis.module_name}"
+      end
+
+      regenerate_cross_module_synthetics
+
+      includes = collect_includes
+
+      all_constants = modules.values.flat_map(&:constants)
+      all_globals = modules.values.flat_map(&:globals)
+      all_opaques = modules.values.flat_map(&:opaques)
+      all_structs = modules.values.flat_map(&:structs)
+      all_unions = modules.values.flat_map(&:unions)
+      all_enums = modules.values.flat_map(&:enums)
+      all_variants = modules.values.flat_map(&:variants)
+      all_static_asserts = modules.values.flat_map(&:static_asserts)
+      all_functions = modules.values.flat_map(&:functions)
+
+      all_opaques.concat(lower_imported_external_opaques)
+      all_structs.concat(@synthetic_structs)
+      all_enums.concat(@synthetic_enums)
+      all_functions.concat(@synthetic_functions)
 
       IR::Program.new(
         module_name: @program.root_analysis.module_name,
         includes:,
-        constants:,
-        globals:,
-        opaques:,
-        structs:,
-        unions:,
-        enums:,
-        variants: lower_variants,
-        static_asserts:,
-        functions:,
+        constants: all_constants,
+        globals: all_globals,
+        opaques: all_opaques,
+        structs: all_structs,
+        unions: all_unions,
+        enums: all_enums,
+        variants: all_variants,
+        static_asserts: all_static_asserts,
+        functions: all_functions,
         source_path: @program.root_path,
       )
+    end
+
+    def regenerate_cross_module_synthetics
+      @program.analyses_by_path.each_pair do |path, analysis|
+        next if analysis.module_kind == :raw_module
+
+        prepare_analysis(analysis, source_path: path)
+        analysis.ast.declarations.grep(AST::EventDecl).each do |decl|
+          event_type = analysis.values.fetch(decl.name).type
+          ensure_event_runtime(event_type) if event_type.is_a?(Types::Event)
+        end
+      end
     end
 
     private

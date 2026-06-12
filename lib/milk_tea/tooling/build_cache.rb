@@ -129,6 +129,50 @@ module MilkTea
       FileUtils.rm_rf(dir) if File.exist?(dir)
     end
 
+    def store_module_ir(key, ir_program)
+      dir = File.join(@cache_root, "modules", key[0, 2], key)
+      FileUtils.mkdir_p(dir)
+      File.write(File.join(dir, "ir.bin"), Marshal.dump(ir_program))
+    end
+
+    def fetch_module_ir(key)
+      path = File.join(@cache_root, "modules", key[0, 2], key, "ir.bin")
+      return unless File.exist?(path)
+
+      Marshal.load(File.read(path, mode: "rb"))
+    rescue TypeError, ArgumentError
+      nil
+    end
+
+    def method_defs_key(methods_hash_string)
+      hasher = Digest::SHA256.new
+      hasher << backend_version << "\0"
+      hasher << methods_hash_string << "\0"
+      hasher.hexdigest
+    end
+
+    def store_method_defs(key)
+      dir = File.join(@cache_root, "method_defs")
+      FileUtils.mkdir_p(dir)
+      data = { key: }
+      File.write(File.join(dir, "key.json"), JSON.generate(data))
+    end
+
+    def fetch_method_defs
+      path = File.join(@cache_root, "method_defs", "key.json")
+      return unless File.exist?(path)
+
+      raw = JSON.parse(File.read(path), symbolize_names: true)
+      raw.fetch(:key)
+    rescue JSON::ParserError, KeyError
+      nil
+    end
+
+    def invalidate_all_module_ir
+      dir = File.join(@cache_root, "modules")
+      FileUtils.rm_rf(dir) if File.exist?(dir)
+    end
+
     def binary_key(c_source:, cc:, compiler_flags:, link_flags:)
       hasher = Digest::SHA256.new
       hasher << c_source << "\0"
