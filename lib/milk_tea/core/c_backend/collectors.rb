@@ -69,7 +69,9 @@ module MilkTea
             end
 
             if ref_type?(type)
-              return c_declaration_parts(type.arguments.first, "*#{name}")
+              ref_arguments = type.arguments
+              ref_target = ref_arguments.length == 1 ? ref_arguments.first : ref_arguments[1]
+              return c_declaration_parts(ref_target, "*#{name}")
             end
 
             [c_type(type), name]
@@ -1584,9 +1586,9 @@ module MilkTea
 
               "const #{c_type(type.arguments.first)}*"
             when "ref"
-              raise LoweringError, "ref requires exactly one type argument" unless type.arguments.length == 1
+              raise LoweringError, "ref requires at least one type argument" unless [1, 2].include?(type.arguments.length)
 
-              "#{c_type(type.arguments.first)}*"
+              "#{c_type(type.arguments.length == 1 ? type.arguments.first : type.arguments[1])}*"
             when "str_buffer"
               raise LoweringError, "str_buffer requires exactly one type argument" unless str_buffer_type?(type)
 
@@ -1613,7 +1615,7 @@ module MilkTea
           end
 
           def ref_type?(type)
-            type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+            type.is_a?(Types::GenericInstance) && type.name == "ref" && [1, 2].include?(type.arguments.length)
           end
 
           def array_type?(type)

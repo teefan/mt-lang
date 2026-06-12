@@ -251,7 +251,12 @@ module MilkTea
 
           return Types::SoA.new(arguments[0], count: arguments[1].value) if name == "SoA"
 
+          arguments = [type_ref.lifetime] + arguments if name == "ref" && type_ref.lifetime
           return Types::GenericInstance.new(name, arguments)
+        end
+
+        if parts.length == 1 && type_ref.lifetime
+          raise_sema_error("lifetime annotations are only valid on ref types, got #{type_ref.name}", type_ref)
         end
 
         if parts.length == 1

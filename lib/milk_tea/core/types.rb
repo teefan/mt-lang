@@ -765,10 +765,10 @@ module MilkTea
     end
 
     class GenericStructDefinition < Base
-      attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name
+      attr_reader :name, :type_params, :type_param_constraints, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params
       attr_accessor :ast_declaration
 
-      def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil)
+      def initialize(name, type_params, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil, lifetime_params: [])
         @name = name
         @type_params = type_params.freeze
         @type_param_constraints = {}.freeze
@@ -777,6 +777,7 @@ module MilkTea
         @packed = packed
         @alignment = alignment
         @c_name = c_name
+        @lifetime_params = lifetime_params.freeze
         @fields = {}
         @events = {}
         @instances = {}
@@ -871,16 +872,17 @@ module MilkTea
     end
 
     class Struct < Base
-      attr_reader :name, :module_name, :external, :packed, :alignment, :c_name
+      attr_reader :name, :module_name, :external, :packed, :alignment, :c_name, :lifetime_params
       attr_accessor :ast_declaration
 
-      def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil)
+      def initialize(name, module_name: nil, external: false, packed: false, alignment: nil, c_name: nil, lifetime_params: [])
         @name = name
         @module_name = module_name
         @external = external
         @packed = packed
         @alignment = alignment
         @c_name = c_name
+        @lifetime_params = lifetime_params.freeze
         @fields = {}
         @events = {}
         @ast_declaration = nil
