@@ -534,6 +534,9 @@ module MilkTea
           end
         when AST::StaticAssert
           line("static_assert(#{render_expression(statement.condition)}, #{render_expression(statement.message)})")
+        when AST::EmitStmt
+          line("emit")
+          with_indent { emit_declaration(statement.declaration) }
         when AST::ForStmt
           line("for #{statement.name} in #{render_expression(statement.iterable)}:")
           with_indent do

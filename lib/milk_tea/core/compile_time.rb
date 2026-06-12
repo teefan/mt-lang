@@ -45,6 +45,9 @@ module MilkTea
             evaluate_expression(statement.expression, scopes:)
           when AST::PassStmt, AST::BreakStmt, AST::ContinueStmt
             # no-op at compile time
+          when AST::EmitStmt
+            # evaluated during lowering
+            result = nil
           else
             result = nil
           end

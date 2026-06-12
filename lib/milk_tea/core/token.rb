@@ -20,6 +20,7 @@ module MilkTea
       "editable" => :editable,
       "enum" => :enum,
       "else" => :else,
+      "emit" => :emit,
       "event" => :event,
       "external" => :external,
       "false" => :false,

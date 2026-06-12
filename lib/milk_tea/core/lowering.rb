@@ -64,6 +64,7 @@ module MilkTea
       @subscription_runtime_emitted = false
       @event_error_enum_emitted = false
       @lowered_function_c_names = {}
+      @emitted_declarations = []
       @method_definitions = build_method_definitions
     end
 
@@ -208,6 +209,18 @@ module MilkTea
       all_structs.concat(@synthetic_structs.uniq { |s| s.c_name })
       all_enums.concat(@synthetic_enums.uniq { |e| e.c_name })
       all_functions.concat(@synthetic_functions.uniq { |f| f.c_name })
+
+      # Add emit-generated declarations
+      @emitted_declarations.each do |emitted|
+        case emitted
+        when IR::Function
+          all_functions << emitted
+        when IR::StructDecl
+          all_structs << emitted
+        when IR::Constant
+          all_constants << emitted
+        end
+      end
 
       IR::Program.new(
         module_name: @program.root_analysis.module_name,

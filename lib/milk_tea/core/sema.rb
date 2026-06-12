@@ -232,6 +232,7 @@ module MilkTea
         @error_type = Types::Error.new
         @loop_depth = 0
         @unsafe_depth = 0
+        @compile_time_depth = 0
         @foreign_mapping_depth = 0
         @async_function_depth = 0
         @proc_expression_depth = 0

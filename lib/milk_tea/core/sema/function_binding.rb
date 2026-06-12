@@ -475,7 +475,17 @@ module MilkTea
               validate_async_function_body!(binding.ast.body) if binding.async
               preassign_local_binding_ids(binding.ast.body)
               run_nullability_pre_pass(binding, scopes)
-              if binding.async
+              if binding.ast.respond_to?(:const) && binding.ast.const
+                with_compile_time do
+                  if binding.async
+                    with_async_function do
+                      check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
+                    end
+                  else
+                    check_block(binding.ast.body, scopes:, return_type: binding.type.return_type)
+                  end
+                end
+              elsif binding.async
                 with_async_function do
                   check_block(binding.ast.body, scopes:, return_type: binding.body_return_type)
                 end

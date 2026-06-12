@@ -2594,4 +2594,19 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/requires named arguments/, error.message)
   end
 
+  # ── emit statement errors ─────────────────────────────────────────────────
+
+  def test_rejects_emit_outside_compile_time_context
+    source = <<~MT
+      # module demo.emit_bad
+
+      function test() -> void:
+          emit function helper() -> int:
+              return 42
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/emit is only allowed inside const function or inline blocks/, error.message)
+  end
+
 end
