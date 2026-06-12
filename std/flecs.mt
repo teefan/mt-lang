@@ -654,7 +654,7 @@ public foreign function query_get_group_info(query: const_ptr[ecs_query_t], grou
 public foreign function query_count(query: const_ptr[ecs_query_t]) -> ecs_query_count_t = c.ecs_query_count
 public foreign function query_is_true(query: const_ptr[ecs_query_t]) -> bool = c.ecs_query_is_true
 public foreign function query_get_cache_query(query: const_ptr[ecs_query_t]) -> const_ptr[ecs_query_t] = c.ecs_query_get_cache_query
-public foreign function emit(world: ptr[ecs_world_t], desc: ptr[ecs_event_desc_t]) -> void = c.ecs_emit
+public foreign function emit_(world: ptr[ecs_world_t], desc: ptr[ecs_event_desc_t]) -> void = c.ecs_emit
 public foreign function enqueue(world: ptr[ecs_world_t], desc: ptr[ecs_event_desc_t]) -> void = c.ecs_enqueue
 public foreign function observer_init(world: ptr[ecs_world_t], desc: const_ptr[ecs_observer_desc_t]) -> ecs_entity_t = c.ecs_observer_init
 public foreign function observer_get(world: const_ptr[ecs_world_t], observer: ptr_uint) -> const_ptr[ecs_observer_t] = c.ecs_observer_get
