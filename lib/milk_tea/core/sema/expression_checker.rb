@@ -840,6 +840,8 @@ module MilkTea
           check_event_method_call(callable_kind, receiver, expression.arguments, scopes:)
         when :struct
           check_aggregate_construction(callable, expression.arguments, scopes:)
+        when :struct_with
+          check_struct_with_call(callable, receiver, expression.arguments, scopes:)
         when :variant_arm_ctor
           check_variant_arm_construction(callable, expression.arguments, scopes:)
         when :array
@@ -1172,6 +1174,10 @@ module MilkTea
           method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:, member_name: callee.member)
           method = lookup_method(method_receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
+
+          if callee.member == "with" && struct_with_target_type?(method_receiver_type)
+            return [:struct_with, method_receiver_type, callee.receiver]
+          end
 
           if char_array_removed_text_method?(method_receiver_type, callee.member)
             raise_sema_error("#{method_receiver_type}.#{callee.member} is not available; array[char, N] is raw storage, use str_buffer[N] or an explicit helper")

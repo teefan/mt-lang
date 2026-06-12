@@ -2562,4 +2562,36 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/compile-time constant/, error.message)
   end
 
+  def test_rejects_struct_with_unknown_field
+    source = <<~MT
+      # module demo.with_bad_field
+
+      struct Point:
+          x: float
+          y: float
+
+      function bad(p: Point) -> Point:
+          return p.with(bad = 5.0)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/unknown field/, error.message)
+  end
+
+  def test_rejects_struct_with_positional_argument
+    source = <<~MT
+      # module demo.with_pos
+
+      struct Point:
+          x: float
+          y: float
+
+      function bad(p: Point) -> Point:
+          return p.with(5.0)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/requires named arguments/, error.message)
+  end
+
 end

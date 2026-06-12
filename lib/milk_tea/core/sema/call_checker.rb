@@ -77,6 +77,33 @@ module MilkTea
         struct_type
       end
 
+      def check_struct_with_call(struct_type, _receiver_expression, arguments, scopes:)
+        display_name = aggregate_display_name(struct_type)
+
+        raise_sema_error("struct.with() requires named arguments") unless arguments.all?(&:name)
+
+        provided = {}
+        arguments.each do |argument|
+          field_type = struct_type.field(argument.name)
+          raise_sema_error("unknown field #{display_name}.#{argument.name}") unless field_type
+          raise_sema_error("duplicate field #{display_name}.#{argument.name}") if provided.key?(argument.name)
+
+          actual_type = infer_expression(argument.value, scopes:, expected_type: field_type)
+          ensure_assignable!(
+            actual_type,
+            field_type,
+            "field #{display_name}.#{argument.name} expects #{field_type}, got #{actual_type}",
+            expression: argument.value,
+            external_numeric: struct_type.respond_to?(:external) && struct_type.external,
+            external_pointer_null: struct_type.respond_to?(:external) && struct_type.external,
+            contextual_int_to_float: contextual_int_to_float_target?(field_type),
+          )
+          provided[argument.name] = true
+        end
+
+        struct_type
+      end
+
       def check_variant_arm_construction(callable, arguments, scopes:)
         variant_type, arm_name = callable
         fields = variant_type.arm(arm_name)
