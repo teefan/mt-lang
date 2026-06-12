@@ -93,6 +93,7 @@ module MilkTea
     def initialize(module_roots: [MilkTea.root], package_graph: nil, shared_cache: nil, source_overrides: nil, platform: nil)
       @module_roots = module_roots.map { |root| File.expand_path(root.to_s) }
       @ast_cache = {}
+      @parse_cache = {}
       @analysis_cache = {}
       @collecting_analysis_cache = {}
       @checking_paths = []
@@ -117,8 +118,10 @@ module MilkTea
       previous_platform = @platform
       @platform ||= self.class.platform_suffix_for_path(requested_path)
       root_path = self.class.resolve_source_path(requested_path, platform: @platform, error_class: ModuleLoadError)
-      root_analysis = check_path(root_path)
 
+      check_program_parallel(root_path)
+
+      root_analysis = @analysis_cache.fetch(root_path)
       analyses_by_module_name = @analysis_cache.each_value.each_with_object({}) do |analysis, modules|
         next unless analysis.module_name
 
@@ -133,6 +136,94 @@ module MilkTea
       )
     ensure
       @platform = previous_platform
+    end
+
+    def check_program_parallel(root_path)
+      # Phase 1: Parse all transitive modules (sequential)
+      parse_all(root_path)
+
+      # Phase 2: Build dependency graph from parsed ASTs
+      graph = {}
+      @parse_cache.each_key do |resolved_path|
+        ast = @parse_cache[resolved_path]
+        deps = ast.imports.map do |import|
+          resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
+        end
+        graph[resolved_path] = deps
+      end
+
+      # Phase 3: Topological sort into independent levels
+      levels = topo_sort_levels(graph)
+
+      # Phase 4: Check each level (parallel within level, sequential across levels)
+      levels.each do |level_paths|
+        if level_paths.length == 1
+          check_path(level_paths.first)
+        else
+          check_level_parallel(level_paths)
+        end
+      end
+    end
+
+    def parse_all(resolved_path)
+      return if @parse_cache.key?(resolved_path)
+
+      if @checking_paths.include?(resolved_path)
+        raise ModuleLoadError.new("cyclic import detected", path: resolved_path)
+      end
+
+      @checking_paths << resolved_path
+      ast = load_file(resolved_path)
+      @parse_cache[resolved_path] = ast
+
+      ast.imports.each do |import|
+        import_path = resolve_module_path(import.path.to_s, importer_path: resolved_path, importer_module_name: ast.module_name.to_s)
+        parse_all(import_path)
+      end
+    ensure
+      @checking_paths.pop if @checking_paths.last == resolved_path
+    end
+
+    def topo_sort_levels(graph)
+      in_degree = {}
+      graph.each_key { |node| in_degree[node] = 0 }
+      graph.each_value do |deps|
+        deps.each { |dep| in_degree[dep] = (in_degree[dep] || 0) + 1 }
+      end
+
+      levels = []
+      remaining = graph.keys.to_set
+      until remaining.empty?
+        level = remaining.select { |node| (in_degree[node] || 0) == 0 }
+        break if level.empty?
+
+        levels << level
+        level.each do |node|
+          remaining.delete(node)
+          (graph[node] || []).each { |dep| in_degree[dep] -= 1 }
+        end
+      end
+      levels
+    end
+
+    def check_level_parallel(paths)
+      threads = paths.map do |resolved_path|
+        Thread.new do
+          Thread.current[:resolved_path] = resolved_path
+          begin
+            analysis = check_path(resolved_path)
+            Thread.current[:analysis] = analysis
+          rescue ModuleLoadError, PackageLockError, SemaError => e
+            Thread.current[:error] = e
+          end
+        end
+      end
+
+      threads.each(&:join)
+
+      paths.zip(threads).each do |resolved_path, t|
+        raise t[:error] if t[:error]
+      end
     end
 
     def import_graph(program)
