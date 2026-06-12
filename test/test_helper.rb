@@ -151,8 +151,24 @@ module MilkTeaStaticHttpServerHelper
 	end
 end
 
+module MilkTeaCompilerTestHelpers
+  def source_relative_path(source, default: File.join("demo", "main.mt"))
+    source.each_line do |line|
+      next if line.strip.empty?
+
+      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
+      return File.join(*match[1].split(".")) + ".mt" if match
+
+      break
+    end
+
+    default
+  end
+end
+
 class Minitest::Test
-	include MilkTeaStaticHttpServerHelper
+  include MilkTeaCompilerTestHelpers
+  include MilkTeaStaticHttpServerHelper
 
 	def with_singleton_method_override(object, method_name, implementation)
 		singleton_class = class << object; self; end

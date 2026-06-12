@@ -55,19 +55,6 @@ class MilkTeaNullableCallbackFFITest < Minitest::Test
 
   private
 
-  def source_relative_path(source, default: File.join("demo", "main.mt"))
-    source.each_line do |line|
-      next if line.strip.empty?
-
-      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
-      return File.join(*match[1].split(".")) + ".mt" if match
-
-      break
-    end
-
-    default
-  end
-
   def root_source
     <<~MT
       import std.sample as sample

@@ -777,7 +777,7 @@ module MilkTea
 
       def evaluate_when_discriminant(expression)
         value = evaluate_compile_time_const_value(expression, scopes: [])
-        raise_sema_error("when discriminant must be a compile-time constant", expression:) if value.nil?
+        raise_sema_error("when discriminant must be a compile-time constant", expression) if value.nil?
 
         value
       end

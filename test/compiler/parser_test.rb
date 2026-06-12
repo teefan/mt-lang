@@ -2780,4 +2780,328 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::ReturnStmt, recovered_match.arms[0].body[0]
   end
 
+  # ── Inline compile-time statements ────────────────────────────────────────
+
+  def test_parses_when_stmt_with_enum
+    source = <<~MT
+      function handle() -> int:
+          when FAVORITE:
+              Color.red:
+                  return 1
+              Color.blue:
+                  return 2
+          return 0
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    when_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::WhenStmt, when_stmt
+    assert_instance_of MilkTea::AST::Identifier, when_stmt.discriminant
+    assert_equal "FAVORITE", when_stmt.discriminant.name
+    assert_equal 2, when_stmt.branches.length
+    assert_nil when_stmt.else_body
+  end
+
+  def test_parses_when_stmt_with_else_as_fallback_arm
+    source = <<~MT
+      function handle() -> int:
+          when FLAG:
+              A:
+                  return 1
+              else:
+                  return 2
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    when_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::WhenStmt, when_stmt
+    assert_equal 2, when_stmt.branches.length
+  end
+
+  def test_parses_when_stmt_with_exhaustive_enum
+    source = <<~MT
+      function label() -> str:
+          when TARGET:
+              Backend.gl:
+                  return "gl"
+              Backend.metal:
+                  return "metal"
+              Backend.vulkan:
+                  return "vulkan"
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    when_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::WhenStmt, when_stmt
+    assert_instance_of MilkTea::AST::Identifier, when_stmt.discriminant
+    assert_equal "TARGET", when_stmt.discriminant.name
+    assert_equal 3, when_stmt.branches.length
+  end
+
+  def test_parses_when_stmt_at_module_level_returns_stmt
+    source = <<~MT
+      function pick() -> int:
+          when FLAG:
+              Kind.a:
+                  return 1
+              Kind.b:
+                  return 2
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    when_stmt = main_fn.body.first
+    assert_instance_of MilkTea::AST::WhenStmt, when_stmt
+    assert_equal 2, when_stmt.branches.length
+  end
+
+  def test_parses_inline_if
+    source = <<~MT
+      function debug() -> void:
+          inline if DEBUG_MODE:
+              log("debug on")
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    if_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert if_stmt.inline
+    assert_nil if_stmt.else_body
+  end
+
+  def test_parses_inline_if_else
+    source = <<~MT
+      function draw() -> void:
+          inline if RENDER:
+              fancy()
+          else:
+              simple()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    if_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert if_stmt.inline
+    refute_nil if_stmt.else_body
+  end
+
+  def test_parses_inline_if_else_if
+    source = <<~MT
+      function draw() -> void:
+          inline if A:
+              path_a()
+          else if B:
+              path_b()
+          else:
+              fallback()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    if_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::IfStmt, if_stmt
+    assert if_stmt.inline
+    assert_equal 2, if_stmt.branches.length
+    refute_nil if_stmt.else_body
+  end
+
+  def test_parses_inline_for
+    source = <<~MT
+      function validate() -> void:
+          inline for field in fields_of(Particle):
+              static_assert(field.type == float, "bad")
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    for_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::ForStmt, for_stmt
+    assert for_stmt.inline
+    assert_equal "field", for_stmt.binding.name
+  end
+
+  def test_parses_inline_while
+    source = <<~MT
+      function pow() -> int:
+          var n: int = 1
+          inline while n < 1024:
+              n = n * 2
+          return n
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    while_stmt = main_fn.body[1]
+
+    assert_instance_of MilkTea::AST::WhileStmt, while_stmt
+    assert while_stmt.inline
+  end
+
+  def test_parses_inline_match
+    source = <<~MT
+      function draw(backend: Backend) -> void:
+          inline match BACKEND:
+              Backend.gl:
+                  gl_draw()
+              Backend.metal:
+                  metal_draw()
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    match_stmt = main_fn.body.first
+
+    assert_instance_of MilkTea::AST::MatchStmt, match_stmt
+    assert match_stmt.inline
+    assert_equal 2, match_stmt.arms.length
+  end
+
+  def test_parses_const_function
+    source = <<~MT
+      const function square(x: int) -> int:
+          return x * x
+
+      const RESULT: int = square(5)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    const_fn = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::FunctionDef, const_fn
+    assert const_fn.const
+  end
+
+  def test_parses_const_function_block_body
+    source = <<~MT
+      const NEXT -> int:
+          var n: int = 1
+          while n < 1024:
+              n = n * 2
+          return n
+
+      function main() -> int:
+          return NEXT
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    const_decl = ast.declarations.first
+
+    assert_instance_of MilkTea::AST::ConstDecl, const_decl
+    refute_nil const_decl.block_body
+  end
+
+  # ── Native math types ─────────────────────────────────────────────────────
+
+  def test_parses_vec3_type_and_constructor
+    source = <<~MT
+      function direction() -> vec3:
+          return vec3(x = 1.0, y = 0.0, z = 0.0)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.first
+    assert_instance_of MilkTea::AST::FunctionDef, main_fn
+  end
+
+  def test_parses_ivec4_type
+    source = <<~MT
+      function make_ivec() -> ivec4:
+          return ivec4(x = 1, y = 0, z = 0, w = 1)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
+  def test_parses_mat4_type_and_constructor
+    source = <<~MT
+      function identity() -> mat4:
+          return mat4(
+              col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+              col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+              col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+              col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+          )
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
+  def test_parses_quat_type_and_constructor
+    source = <<~MT
+      function identity() -> quat:
+          return quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
+  # ── SoA ───────────────────────────────────────────────────────────────────
+
+  def test_parses_soa_type_and_index
+    source = <<~MT
+      struct Particle:
+          x: float
+          y: float
+
+      function sum_x(data: SoA[Particle, 16]) -> float:
+          var total: float = 0.0
+          for i in 0..16:
+              total += data[i].x
+          return total
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    main_fn = ast.declarations.last
+    assert_instance_of MilkTea::AST::FunctionDef, main_fn
+  end
+
+  # ── order[T] ──────────────────────────────────────────────────────────────
+
+  def test_parses_order_builtin
+    source = <<~MT
+      function compare(a: int, b: int) -> int:
+          return order[int](a, b)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
+  # ── size_of / align_of with generic type ──────────────────────────────────
+
+  def test_parses_size_of_with_generic_type
+    source = <<~MT
+      function size[T]() -> ptr_uint:
+          return size_of(T)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
+  def test_parses_align_of_with_generic_type
+    source = <<~MT
+      function alignment[T]() -> ptr_uint:
+          return align_of(T)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    assert_instance_of MilkTea::AST::FunctionDef, ast.declarations.first
+  end
+
 end

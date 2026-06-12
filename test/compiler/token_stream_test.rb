@@ -41,4 +41,19 @@ class MilkTeaTokenStreamTest < Minitest::Test
     assert_equal 1, updated.trailing_trivia.length
     assert_equal "# trailing", updated.trailing_trivia.first.text
   end
+
+  def test_empty_syntax_token_stream
+    stream = MilkTea::SyntaxTokenStream.new([])
+    assert_equal 0, stream.length
+    assert_equal [], stream.to_a
+  end
+
+  def test_token_with_appended_trivia_preserves_original
+    token = MilkTea::Token.new(type: :identifier, lexeme: "x", literal: nil, line: 1, column: 1, start_offset: 0, end_offset: 1, leading_trivia: [], trailing_trivia: [])
+    trivia = MilkTea::TriviaToken.new(kind: :spaces, text: " ", line: 1, column: 2, start_offset: 1, end_offset: 2)
+    updated = token.with_appended_trailing_trivia(trivia)
+
+    assert_equal 0, token.trailing_trivia.length
+    assert_equal 1, updated.trailing_trivia.length
+  end
 end

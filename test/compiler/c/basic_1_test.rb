@@ -2661,4 +2661,152 @@ function main() -> int:
     assert_match(/__mt_loop_break_\d+:;/, generated)
   end
 
+  # ── Inline compile-time statements ────────────────────────────────────────
+
+  def test_generate_c_for_inline_if_const_true
+    source = <<~MT
+      const DEBUG: bool = true
+
+      function main() -> int:
+          inline if DEBUG:
+              return 1
+          else:
+              return 2
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/return 1;/, generated)
+    refute_match(/return 2;/, generated)
+  end
+
+  def test_generate_c_for_inline_if_const_false
+    source = <<~MT
+      const DEBUG: bool = false
+
+      function main() -> int:
+          inline if DEBUG:
+              return 1
+          else:
+              return 2
+    MT
+
+    generated = generate_c_from_source(source)
+    refute_match(/return 1;/, generated)
+    assert_match(/return 2;/, generated)
+  end
+
+  def test_generate_c_for_when_stmt
+    source = <<~MT
+      const TARGET: Kind = Kind.a
+
+      enum Kind: ubyte
+          a = 0
+          b = 1
+
+      function label() -> str:
+          when TARGET:
+              Kind.a:
+                  return "a"
+              Kind.b:
+                  return "b"
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/"a"/, generated)
+    refute_match(/"b"/, generated)
+  end
+
+  # ── Const function ────────────────────────────────────────────────────────
+
+  def test_generate_c_for_const_function_folded
+    source = <<~MT
+      const function square(x: int) -> int:
+          return x * x
+
+      const RESULT: int = square(5)
+
+      function main() -> int:
+          return RESULT
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/25/, generated)
+  end
+
+  def test_generate_c_for_const_function_runtime
+    source = <<~MT
+      const function add_one(x: int) -> int:
+          return x + 1
+
+      function main() -> int:
+          return add_one(41)
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/add_one/, generated)
+  end
+
+  # ── Native math types ─────────────────────────────────────────────────────
+
+  def test_generate_c_for_vec3_construction
+    source = <<~MT
+      function direction() -> vec3:
+          return vec3(x = 1.0, y = 0.0, z = 0.0)
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/vec3/, generated)
+  end
+
+  def test_generate_c_for_vec3_add
+    source = <<~MT
+      function add(a: vec3, b: vec3) -> vec3:
+          return a + b
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/vec3/, generated)
+  end
+
+  def test_generate_c_for_mat4_identity
+    source = <<~MT
+      function identity() -> mat4:
+          return mat4(
+              col0 = vec4(x = 1.0, y = 0.0, z = 0.0, w = 0.0),
+              col1 = vec4(x = 0.0, y = 1.0, z = 0.0, w = 0.0),
+              col2 = vec4(x = 0.0, y = 0.0, z = 1.0, w = 0.0),
+              col3 = vec4(x = 0.0, y = 0.0, z = 0.0, w = 1.0),
+          )
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/mat4/, generated)
+  end
+
+  def test_generate_c_for_quat_identity
+    source = <<~MT
+      function identity() -> quat:
+          return quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/quat/, generated)
+  end
+
+  # ── SoA ───────────────────────────────────────────────────────────────────
+
+  def test_generate_c_for_soa_type_declaration
+    source = <<~MT
+      struct Particle:
+          x: float
+          y: float
+
+      function sum_x(data: SoA[Particle, 16]) -> float:
+          return data[0].x
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/mt_soa_/, generated)
+  end
+
 end

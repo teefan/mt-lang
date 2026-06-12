@@ -3,20 +3,6 @@ require_relative "../../test_helper"
 
 module CodegenTestHelpers
 
-
-  def source_relative_path(source, default: "program.mt")
-    source.each_line do |line|
-      next if line.strip.empty?
-
-      match = line.match(/^\s*#\s*module\s+([A-Za-z0-9_.]+)\s*$/)
-      return File.join(*match[1].split(".")) + ".mt" if match
-
-      break
-    end
-
-    default
-  end
-
   def generate_c_from_source(source)
     Dir.mktmpdir("milk-tea-codegen") do |dir|
       root_path = File.join(dir, source_relative_path(source))

@@ -457,4 +457,56 @@ class BuiltinTest < Minitest::Test
     assert_match(/unknown callable err/, err_error.message)
   end
 
+  def test_order_builtin_accepts_primitive_integer_types
+    source = <<~MT
+      # module demo.order_accept
+
+      import std.hash
+
+      function main() -> int:
+          let left: int = 1
+          let right: int = 3
+          let cmp = order[int](left, right)
+          if cmp < 0:
+              return -1
+          else if cmp > 0:
+              return 1
+          else:
+              return 0
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_order_builtin_accepts_uint
+    source = <<~MT
+      # module demo.order_uint
+
+      import std.hash
+
+      function main() -> int:
+          let a: uint = 10
+          let b: uint = 5
+          return order[uint](a, b)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_order_builtin_rejects_without_import
+    source = <<~MT
+      # module demo.order_noimport
+
+      function main() -> int:
+          let a: int = 1
+          let b: int = 2
+          return order[int](a, b)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/requires associated function/, error.message)
+  end
+
 end

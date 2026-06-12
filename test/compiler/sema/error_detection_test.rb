@@ -2484,4 +2484,82 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/get requires an addressable array value/, error.message)
   end
 
+  # ── Inline compile-time statement errors ───────────────────────────────────
+
+  def test_rejects_inline_if_with_runtime_condition
+    source = <<~MT
+      # module demo.main
+
+      function main(flag: bool) -> int:
+          inline if flag:
+              return 1
+          else:
+              return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/inline if condition must be a compile-time constant/, error.message)
+  end
+
+  def test_rejects_inline_if_with_non_bool_const
+    source = <<~MT
+      # module demo.main
+
+      const X: int = 42
+
+      function main() -> int:
+          inline if X:
+              return 1
+          else:
+              return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/inline if condition must be bool/, error.message)
+  end
+
+  def test_rejects_inline_while_with_runtime_condition
+    source = <<~MT
+      # module demo.main
+
+      function main(limit: int) -> int:
+          var n: int = 1
+          inline while n < limit:
+              n = n * 2
+          return n
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/must be a compile-time constant/, error.message)
+  end
+
+  def test_rejects_inline_for_with_runtime_iterable
+    source = <<~MT
+      # module demo.main
+
+      function main(items: span[int]) -> void:
+          inline for item in items:
+              return
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/inline for iterable must be a compile-time constant/, error.message)
+  end
+
+  def test_rejects_when_with_runtime_discriminant
+    source = <<~MT
+      # module demo.main
+
+      function main(os: int) -> int:
+          when os:
+              1:
+                  return 1
+              2:
+                  return 2
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/compile-time constant/, error.message)
+  end
+
 end
