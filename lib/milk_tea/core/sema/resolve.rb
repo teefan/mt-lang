@@ -1489,9 +1489,9 @@ module MilkTea
         frozen_scope
       end
 
-      def validate_stored_ref_type!(type, context)
-        return unless contains_ref_type?(type)
-        return if stored_ref_supported_type?(type)
+      def validate_stored_ref_type!(type, context, allow_lifetimes: [])
+        return unless contains_ref_type?(type, allow_lifetimes:)
+        return if stored_ref_supported_type?(type, allow_lifetimes:)
 
         if callable_type?(type) || contains_callable_ref_type?(type)
           raise_sema_error("#{context} cannot store ref types outside callable parameter positions")
@@ -1500,7 +1500,7 @@ module MilkTea
         raise_sema_error("#{context} cannot store ref types")
       end
 
-      def stored_ref_supported_type?(type, visited = {})
+      def stored_ref_supported_type?(type, visited = {}, allow_lifetimes: [])
         return true unless type
 
         visit_key = [type.class, type.object_id]
@@ -1509,25 +1509,29 @@ module MilkTea
         visited[visit_key] = true
         case type
         when Types::Nullable
-          stored_ref_supported_type?(type.base, visited)
+          stored_ref_supported_type?(type.base, visited, allow_lifetimes:)
         when Types::GenericInstance
-          return false if ref_type?(type)
+          if ref_type?(type)
+            lt = ref_lifetime(type)
+            return true if lt && allow_lifetimes.include?(lt)
+            return false
+          end
 
-          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited) }
+          type.arguments.all? { |argument| argument.is_a?(Types::LiteralTypeArg) || stored_ref_supported_type?(argument, visited, allow_lifetimes:) }
         when Types::Span
-          stored_ref_supported_type?(type.element_type, visited)
+          stored_ref_supported_type?(type.element_type, visited, allow_lifetimes:)
         when Types::Task
-          stored_ref_supported_type?(type.result_type, visited)
+          stored_ref_supported_type?(type.result_type, visited, allow_lifetimes:)
         when Types::Struct, Types::Union
-          type.fields.each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited) }
+          type.fields.each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited, allow_lifetimes:) }
         when Types::StructInstance, Types::VariantInstance
-          type.arguments.all? { |argument| stored_ref_supported_type?(argument, visited) }
+          type.arguments.all? { |argument| stored_ref_supported_type?(argument, visited, allow_lifetimes:) }
         when Types::Variant
-          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited) } }
+          type.arm_names.all? { |arm_name| type.arm(arm_name).each_value.all? { |field_type| stored_ref_supported_type?(field_type, visited, allow_lifetimes:) } }
         when Types::Proc, Types::Function
           callable_param_ref_supported?(type)
         else
-          !contains_ref_type?(type)
+          !contains_ref_type?(type, allow_lifetimes:)
         end
       end
 
@@ -1649,7 +1653,12 @@ module MilkTea
       end
 
       def validate_return_ref_type!(type, function_name:)
-        raise_sema_error("function #{function_name} cannot return ref types") if contains_ref_type?(type)
+        if contains_ref_type?(type)
+          if (type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)) && type.fields.any?
+            raise_sema_error("function #{function_name} cannot return non-owning struct #{type.name} (contains borrowed ref)")
+          end
+          raise_sema_error("function #{function_name} cannot return ref types")
+        end
       end
 
       def validate_return_proc_type!(type, function_name:)
@@ -1660,6 +1669,7 @@ module MilkTea
 
       def validate_local_ref_type!(type, local_name)
         return if ref_type?(type)
+        return if (type.is_a?(Types::Struct) || type.is_a?(Types::StructInstance)) && type.fields.any? && contains_ref_type?(type)
         return if stored_ref_supported_type?(type)
 
         if contains_ref_type?(type)

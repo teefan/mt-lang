@@ -2243,10 +2243,11 @@ module MilkTea
                  elsif name == "SoA"
                    validate_generic_type!(name, args)
                    Types::SoA.new(args.fetch(0), count: args.fetch(1).value)
-                 else
-                   validate_generic_type!(name, args)
-                   Types::GenericInstance.new(name, args)
-                 end
+                  else
+                    validate_generic_type!(name, args)
+                    args = [type_ref.lifetime] + args if name == "ref" && type_ref.lifetime
+                    Types::GenericInstance.new(name, args)
+                  end
                elsif parts.length == 1 && type_params.key?(parts.first)
                  type_params.fetch(parts.first)
                elsif parts.length == 1

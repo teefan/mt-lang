@@ -448,7 +448,7 @@ module MilkTea
       end
     end
 
-    def contains_ref_type?(type, visited = {})
+    def contains_ref_type?(type, visited = {}, allow_lifetimes: [])
       return false unless type
 
       visit_key = [type.class, type.object_id]
@@ -457,29 +457,33 @@ module MilkTea
       visited[visit_key] = true
       case type
       when Types::Nullable
-        contains_ref_type?(type.base, visited)
+        contains_ref_type?(type.base, visited, allow_lifetimes:)
       when Types::GenericInstance
-        return true if ref_type?(type)
+        if ref_type?(type)
+          lt = ref_lifetime(type)
+          return false if lt && allow_lifetimes.include?(lt)
+          return true
+        end
 
-        type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited) }
+        type.arguments.any? { |argument| !argument.is_a?(Types::LiteralTypeArg) && contains_ref_type?(argument, visited, allow_lifetimes:) }
       when Types::Span
-        contains_ref_type?(type.element_type, visited)
+        contains_ref_type?(type.element_type, visited, allow_lifetimes:)
       when Types::Task
-        contains_ref_type?(type.result_type, visited)
+        contains_ref_type?(type.result_type, visited, allow_lifetimes:)
       when Types::Struct, Types::Union
-        type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited) }
+        type.fields.each_value.any? { |field_type| contains_ref_type?(field_type, visited, allow_lifetimes:) }
       when Types::StructInstance
-        type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
+        type.arguments.any? { |argument| contains_ref_type?(argument, visited, allow_lifetimes:) }
       when Types::Variant
-        type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited) } }
+        type.arm_names.any? { |arm_name| type.arm(arm_name).each_value.any? { |field_type| contains_ref_type?(field_type, visited, allow_lifetimes:) } }
       when Types::VariantInstance
-        type.arguments.any? { |argument| contains_ref_type?(argument, visited) }
+        type.arguments.any? { |argument| contains_ref_type?(argument, visited, allow_lifetimes:) }
       when Types::Proc
-        type.params.any? { |param| contains_ref_type?(param.type, visited) } || contains_ref_type?(type.return_type, visited)
+        type.params.any? { |param| contains_ref_type?(param.type, visited, allow_lifetimes:) } || contains_ref_type?(type.return_type, visited, allow_lifetimes:)
       when Types::Function
-        type.params.any? { |param| contains_ref_type?(param.type, visited) } ||
-          contains_ref_type?(type.return_type, visited) ||
-          (type.receiver_type && contains_ref_type?(type.receiver_type, visited))
+        type.params.any? { |param| contains_ref_type?(param.type, visited, allow_lifetimes:) } ||
+          contains_ref_type?(type.return_type, visited, allow_lifetimes:) ||
+          (type.receiver_type && contains_ref_type?(type.receiver_type, visited, allow_lifetimes:))
       else
         false
       end
@@ -554,7 +558,11 @@ module MilkTea
         type_arg = arguments.length == 1 ? arguments.first : arguments[1]
         error.call("ref type argument must be a type") if type_arg.is_a?(Types::LiteralTypeArg)
         error.call("ref cannot target void") if type_arg.is_a?(Types::Primitive) && type_arg.void?
-        error.call("ref cannot target another ref type") if contains_ref_type?(type_arg)
+        if contains_ref_type?(type_arg)
+          unless (type_arg.is_a?(Types::Struct) || type_arg.is_a?(Types::StructInstance)) && type_arg.lifetime_params&.any?
+            error.call("ref cannot target another ref type")
+          end
+        end
       when "span"
         error.call("span requires exactly one type argument") unless arguments.length == 1
         error.call("span element type must be a type") if arguments.first.is_a?(Types::LiteralTypeArg)
