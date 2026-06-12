@@ -434,21 +434,138 @@ module MilkTea
   
       def collect_method_only_import_uses(source_file)
         return Set.new unless @sema_facts
-  
-        called_members = Set.new
+        return Set.new unless @sema_facts.respond_to?(:binding_resolution) && @sema_facts.binding_resolution
+
+        binding_resolution = @sema_facts.binding_resolution
+        import_module_names = @sema_facts.imports.each_with_object({}) do |(local_name, imported_module), map|
+          map[imported_module.name] = local_name
+        end
+
+        used = Set.new
         source_file.declarations.each do |decl|
-          collect_called_members_from_declaration(decl, called_members)
+          collect_indirect_import_uses_from_declaration(decl, used, binding_resolution, import_module_names)
         end
-        return Set.new if called_members.empty?
-  
-        @sema_facts.imports.each_with_object(Set.new) do |(local_name, imported_module), used|
-          method_names = imported_module.methods.each_value.each_with_object(Set.new) do |bindings, names|
-            names.merge(bindings.keys)
-          end
-          used << local_name unless (called_members & method_names).empty?
-        end
+        used
       end
   
+      def collect_indirect_import_uses_from_declaration(decl, used, binding_resolution, import_module_names)
+        case decl
+        when AST::FunctionDef, AST::MethodDef
+          decl.body.each { |stmt| collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names) }
+        when AST::ExtendingBlock
+          decl.methods.each { |m| collect_indirect_import_uses_from_declaration(m, used, binding_resolution, import_module_names) }
+        when AST::ConstDecl, AST::VarDecl
+          collect_indirect_import_uses_from_expr(decl.value, used, binding_resolution, import_module_names) if decl.value
+        when AST::ForeignFunctionDecl
+          collect_indirect_import_uses_from_expr(decl.mapping, used, binding_resolution, import_module_names) if decl.mapping
+        end
+      end
+
+      def collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names)
+        case stmt
+        when AST::LocalDecl
+          collect_indirect_import_uses_from_expr(stmt.value, used, binding_resolution, import_module_names) if stmt.value
+        when AST::Assignment
+          collect_indirect_import_uses_from_expr(stmt.target, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(stmt.value, used, binding_resolution, import_module_names)
+        when AST::IfStmt
+          stmt.branches.each do |branch|
+            collect_indirect_import_uses_from_expr(branch.condition, used, binding_resolution, import_module_names)
+            branch.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+          end
+          stmt.else_body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::MatchStmt
+          collect_indirect_import_uses_from_expr(stmt.expression, used, binding_resolution, import_module_names)
+          stmt.arms.each { |arm| arm.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) } }
+        when AST::ForStmt
+          stmt.iterables.each { |iterable| collect_indirect_import_uses_from_expr(iterable, used, binding_resolution, import_module_names) }
+          stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::WhileStmt
+          collect_indirect_import_uses_from_expr(stmt.condition, used, binding_resolution, import_module_names)
+          stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::UnsafeStmt
+          stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::DeferStmt
+          collect_indirect_import_uses_from_expr(stmt.expression, used, binding_resolution, import_module_names) if stmt.expression
+          stmt.body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::ReturnStmt
+          collect_indirect_import_uses_from_expr(stmt.value, used, binding_resolution, import_module_names) if stmt.value
+        when AST::ExpressionStmt
+          collect_indirect_import_uses_from_expr(stmt.expression, used, binding_resolution, import_module_names)
+        when AST::StaticAssert
+          collect_indirect_import_uses_from_expr(stmt.condition, used, binding_resolution, import_module_names)
+        end
+      end
+
+      def collect_indirect_import_uses_from_expr(expr, used, binding_resolution, import_module_names)
+        case expr
+        when nil then nil
+        when AST::MemberAccess
+          collect_indirect_import_uses_from_expr(expr.receiver, used, binding_resolution, import_module_names)
+        when AST::IndexAccess
+          collect_indirect_import_uses_from_expr(expr.receiver, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(expr.index, used, binding_resolution, import_module_names)
+        when AST::Specialization
+          collect_indirect_import_uses_from_expr(expr.callee, used, binding_resolution, import_module_names)
+        when AST::Call
+          if expr.callee.is_a?(AST::MemberAccess)
+            import_alias = receiver_import_alias(expr.callee.receiver, binding_resolution, import_module_names)
+            used << import_alias if import_alias
+          end
+          collect_indirect_import_uses_from_expr(expr.callee, used, binding_resolution, import_module_names)
+          expr.arguments.each { |argument| collect_indirect_import_uses_from_expr(argument.value, used, binding_resolution, import_module_names) }
+        when AST::UnaryOp
+          collect_indirect_import_uses_from_expr(expr.operand, used, binding_resolution, import_module_names)
+        when AST::BinaryOp
+          collect_indirect_import_uses_from_expr(expr.left, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(expr.right, used, binding_resolution, import_module_names)
+        when AST::RangeExpr
+          collect_indirect_import_uses_from_expr(expr.start_expr, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(expr.end_expr, used, binding_resolution, import_module_names)
+        when AST::ExpressionList
+          expr.elements.each { |element| collect_indirect_import_uses_from_expr(element, used, binding_resolution, import_module_names) }
+        when AST::IfExpr
+          collect_indirect_import_uses_from_expr(expr.condition, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(expr.then_expression, used, binding_resolution, import_module_names)
+          collect_indirect_import_uses_from_expr(expr.else_expression, used, binding_resolution, import_module_names)
+        when AST::ProcExpr
+          expr.body.each { |stmt| collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names) }
+        when AST::AwaitExpr
+          collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
+        when AST::UnsafeExpr
+          collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
+        when AST::FormatString
+          expr.parts.each { |part| collect_indirect_import_uses_from_expr(part.expression, used, binding_resolution, import_module_names) if part.is_a?(AST::FormatExprPart) }
+        end
+      end
+
+      def receiver_import_alias(receiver, binding_resolution, import_module_names)
+        case receiver
+        when AST::Identifier
+          binding_id = binding_resolution.identifier_binding_ids[receiver.object_id]
+          return nil unless binding_id
+
+          type = binding_resolution.binding_types[binding_id]
+          return nil unless type
+
+          module_name = type_module_name(type)
+          return nil unless module_name
+
+          import_module_names[module_name]
+        end
+      end
+
+      def type_module_name(type)
+        if type.respond_to?(:definition)
+          definition = type.definition
+          if definition.respond_to?(:module_name) && definition.module_name
+            return definition.module_name
+          end
+        end
+
+        type.respond_to?(:module_name) ? type.module_name : nil
+      end
+
       def collect_names_from_declaration(decl, used)
         case decl
         when AST::FunctionDef, AST::MethodDef
