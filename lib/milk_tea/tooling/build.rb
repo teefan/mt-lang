@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "fileutils"
 require "rubygems/package"
 require "tempfile"
@@ -228,11 +229,12 @@ module MilkTea
     private
 
     def build_static_library
+      cache = @no_cache ? nil : BuildCache.new(root: MilkTea.root)
       emit_line_directives = line_directives_required?
-      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(emit_line_directives:)
+      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(cache:, emit_line_directives:)
       prepare_bindings(frontend_modules)
 
-      object_path = compile_to_object(compiled_c || saved_c)
+      object_path = compile_or_cache_object(cache, compiled_c || saved_c)
       archive_path = @output_path
       command = darwin_target? ? ["libtool", "-static", "-o", archive_path, object_path] : ["ar", "rcs", archive_path, object_path]
       stdout, stderr, status = Open3.capture3(*command)
@@ -243,13 +245,14 @@ module MilkTea
     end
 
     def build_shared_library
+      cache = @no_cache ? nil : BuildCache.new(root: MilkTea.root)
       emit_line_directives = line_directives_required?
-      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(emit_line_directives:)
+      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(cache:, emit_line_directives:)
       prepare_bindings(frontend_modules)
       compiler_flags = collect_compiler_flags(frontend_modules)
       link_flags = collect_link_flags(frontend_modules)
 
-      object_path = compile_to_object(compiled_c || saved_c, pic: true)
+      object_path = compile_or_cache_object(cache, compiled_c || saved_c, pic: true)
       shared_flags = darwin_target? ? ["-dynamiclib"] : ["-shared"]
       command = [@cc, *shared_flags, "-o", @output_path, object_path, *link_flags, *compiler_flags]
       stdout, stderr, status = Open3.capture3(*command)
@@ -259,28 +262,71 @@ module MilkTea
       Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: nil, archive_path: nil, cached: false)
     end
 
-    def prepare_program(emit_line_directives:)
-      loader = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform)
+    def prepare_program(cache:, emit_line_directives:)
+      loader = ModuleLoader.new(
+        module_roots: @module_roots,
+        package_graph: @package_graph,
+        shared_cache: cache&.shared_analysis_cache,
+        platform: @platform,
+      )
       program = loader.check_program(@resolved_source_path)
+
+      # Check program-level cache for C source
+      source_files = program.analyses_by_path.keys.each_with_object({}) { |p, h| h[p] = File.read(p, mode: "rb") }
+      if cache
+        key = cache.program_key(source_files: source_files.to_a)
+        cached = cache.fetch_program(key)
+        if cached
+          frontend_modules = cached.frontend_modules
+          return [source_files, program, cached.c_source, cached.c_source, frontend_modules, nil]
+        end
+      end
+
       ir_program = Lowering.lower(program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives:)
       saved_c = CBackend.emit(ir_program, emit_line_directives: false)
-      source_files = program.analyses_by_path.keys.each_with_object({}) { |p, h| h[p] = File.read(p, mode: "rb") }
+
       frontend_modules = Build.send(:frontend_modules, program)
+
+      if cache
+        cache.store_program(key, c_source: compiled_c, frontend_modules:)
+      end
+
       [source_files, program, compiled_c, saved_c, frontend_modules, ir_program]
     end
 
-    def compile_to_object(source, pic: false)
-      c_path = File.join(Dir.mktmpdir("milk-tea-build"), "source.c")
-      object_path = "#{c_path}.o"
+    def compile_or_cache_object(cache, source, pic: false)
+      return compile_to_object(source, pic:) unless cache
+
+      hasher = Digest::SHA256.new
+      hasher << source << "\0"
+      hasher << (pic ? "pic" : "nopic") << "\0"
+      hasher << @cc << "\0"
+      key = hasher.hexdigest
+
+      object_path = File.join(cache_cache_dir, "objects", key[0, 2], key, "object.o")
+      return object_path if File.exist?(object_path)
+
+      FileUtils.mkdir_p(File.dirname(object_path))
+      compile_to_object_at(source, object_path, pic:)
+      object_path
+    end
+
+    def compile_to_object_at(source, output_path, pic: false)
+      c_path = "#{output_path}.c"
       File.write(c_path, source)
       profile_flags = profile_compiler_flags
       pic_flags = pic ? ["-fPIC"] : []
       std_c_include_flag = "-I#{MilkTea.root.join('std/c')}"
-      command = [@cc, "-std=c11", "-c", *pic_flags, *profile_flags, std_c_include_flag, c_path, "-o", object_path]
+      command = [@cc, "-std=c11", "-c", *pic_flags, *profile_flags, std_c_include_flag, c_path, "-o", output_path]
       stdout, stderr, status = Open3.capture3(*command)
+      FileUtils.rm_f(c_path)
       raise BuildError, "C compilation failed:\n#{stdout}#{stderr}" unless status.success?
-      object_path
+      output_path
+    end
+
+    def cache_cache_dir
+      File.join(MilkTea.data_root.to_s, "tmp", "mtc-cache")
     end
 
     def darwin_target?
