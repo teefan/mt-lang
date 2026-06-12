@@ -15,14 +15,15 @@ require_relative "sema/resolve"
 
 module MilkTea
   class SemaError < StandardError
-    attr_reader :line, :column, :length, :path
+    attr_reader :line, :column, :length, :path, :suggestion
 
-    def initialize(msg = nil, line: nil, column: nil, length: nil, path: nil)
+    def initialize(msg = nil, line: nil, column: nil, length: nil, path: nil, suggestion: nil)
       super(msg)
       @line = line
       @column = column
       @length = length
       @path = path
+      @suggestion = suggestion
     end
 
     def to_diagnostic(path: nil)
@@ -184,8 +185,8 @@ module MilkTea
       struct_handle field_handle callable_handle attribute_handle member_handle type
     ]).freeze
 
-    def self.check(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
-      Checker.new(ast, imported_modules:, allow_missing_imports:, path:).check
+    def self.check(ast, imported_modules: {}, allow_missing_imports: false, path: nil, global_import_index: {})
+      Checker.new(ast, imported_modules:, allow_missing_imports:, path:, global_import_index:).check
     end
 
     # LSP-oriented entry point: runs all sema phases and collects every error
@@ -210,11 +211,12 @@ module MilkTea
 
       attr_reader :module_name
 
-      def initialize(ast, imported_modules: {}, allow_missing_imports: false, path: nil)
+      def initialize(ast, imported_modules: {}, allow_missing_imports: false, path: nil, global_import_index: {})
         @ast = ast
         @path = path
         @imported_modules = imported_modules
         @allow_missing_imports = allow_missing_imports
+        @global_import_index = global_import_index
         @module_name = ast.module_name&.to_s
         @module_kind = ast.module_kind
         @const_declarations = ast.declarations.grep(AST::ConstDecl).each_with_object({}) { |decl, result| result[decl.name] = decl }

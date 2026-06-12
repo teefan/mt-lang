@@ -9,7 +9,11 @@ module MilkTea
         case expression
         when AST::Identifier
           binding = lookup_value(expression.name, scopes)
-          raise_sema_error("unknown name #{expression.name}") unless binding
+          unless binding
+            scoped_names = scopes.flat_map { |s| s.is_a?(Hash) ? s.keys : [] }.map(&:to_s)
+            suggestion = suggest_name(expression.name, scoped_names)
+            raise_sema_error("unknown name #{expression.name}", expression, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
+          end
           record_identifier_binding(expression, binding)
           raise_sema_error("cannot assign to immutable #{expression.name}") unless binding.mutable
 
@@ -277,7 +281,13 @@ module MilkTea
           return @types.fetch(expression.name)
         end
 
-        raise_sema_error("unknown name #{expression.name}")
+        if @functions && @types && scopes
+          func_names = @functions.keys.map(&:to_s)
+          type_names = @types.keys.map(&:to_s)
+          scoped_names = scopes.flat_map { |s| s.is_a?(Hash) ? s.keys : [] }.map(&:to_s)
+          suggestion = suggest_name(expression.name, func_names + type_names + scoped_names)
+        end
+        raise_sema_error("unknown name #{expression.name}", expression, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
       end
 
       def infer_member_access(expression, scopes:, expected_type: nil)

@@ -88,6 +88,47 @@ module MilkTea
       hasher.hexdigest
     end
 
+    def module_key(source_path, source_content)
+      hasher = Digest::SHA256.new
+      hasher << backend_version << "\0"
+      hasher << source_path << "\0" << source_content << "\0"
+      hasher.hexdigest
+    end
+
+    def module_state_path(key)
+      File.join(@cache_root, "modules", key[0, 2], key, "state.json")
+    end
+
+    def store_module_state(key, module_name:, source_key:, dependencies:)
+      dir = File.join(@cache_root, "modules", key[0, 2], key)
+      FileUtils.mkdir_p(dir)
+      state = {
+        module_name: module_name.to_s,
+        source_key: source_key,
+        dependencies: dependencies,
+      }
+      File.write(File.join(dir, "state.json"), JSON.generate(state))
+    end
+
+    def fetch_module_state(key)
+      path = module_state_path(key)
+      return unless File.exist?(path)
+
+      raw = JSON.parse(File.read(path), symbolize_names: true)
+      {
+        module_name: raw.fetch(:module_name),
+        source_key: raw.fetch(:source_key),
+        dependencies: raw.fetch(:dependencies),
+      }
+    rescue JSON::ParserError, KeyError
+      nil
+    end
+
+    def invalidate_module(key)
+      dir = File.join(@cache_root, "modules", key[0, 2], key)
+      FileUtils.rm_rf(dir) if File.exist?(dir)
+    end
+
     def binary_key(c_source:, cc:, compiler_flags:, link_flags:)
       hasher = Digest::SHA256.new
       hasher << c_source << "\0"

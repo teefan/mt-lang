@@ -53,7 +53,19 @@ module MilkTea
         "   #{bold}|#{reset}",
         "#{line.to_s.rjust(5)} #{bold}|#{reset} #{stripped}",
         "      #{bold}|#{reset} #{sev_color}#{indent}#{highlight}#{reset}",
+        *error_suggestion_lines(error, color, bold, cyan, reset),
       ].join("\n")
+    end
+
+    def self.error_suggestion_lines(error, color, bold, cyan, reset)
+      suggestion = error.respond_to?(:suggestion) ? error.suggestion : nil
+      return [] unless suggestion
+
+      suggestions = suggestion.is_a?(Array) ? suggestion : [suggestion]
+      suggestions.map do |s|
+        label = color ? "#{bold}#{cyan}note#{reset}#{bold}:#{reset}" : "note:"
+        "  #{label} #{s}"
+      end
     end
 
     def self.read_source(path)
