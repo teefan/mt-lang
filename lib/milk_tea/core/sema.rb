@@ -277,6 +277,7 @@ module MilkTea
         resolve_variant_arms
         declare_top_level_values
         validate_attribute_applications
+        collect_emit_declarations
         declare_functions
         check_interface_conformances
         check_top_level_values
@@ -285,6 +286,46 @@ module MilkTea
         check_functions
 
         build_analysis
+      end
+
+      def collect_emit_declarations
+        collect_emit_from_declarations(@ast.declarations)
+      end
+
+      def collect_emit_from_declarations(declarations)
+        declarations.each do |decl|
+          case decl
+          when AST::FunctionDef
+            next unless decl.const && decl.body
+
+            decl.body.each do |stmt|
+              next unless stmt.is_a?(AST::EmitStmt)
+
+              emit_decl = stmt.declaration
+              next if emit_decl.is_a?(AST::ErrorExpr)
+
+              @ast.declarations << emit_decl
+              collect_emit_from_node(emit_decl)
+            end
+          when AST::StructDecl, AST::ExtendingBlock
+            # no emit in structs/extending blocks (body is fields/methods, not statements)
+          end
+        end
+      end
+
+      def collect_emit_from_node(node)
+        case node
+        when AST::FunctionDef
+          node.body&.each do |stmt|
+            if stmt.is_a?(AST::EmitStmt)
+              nested = stmt.declaration
+              next if nested.is_a?(AST::ErrorExpr)
+
+              @ast.declarations << nested
+              collect_emit_from_node(nested)
+            end
+          end
+        end
       end
 
       # Like check, but collects per-function errors instead of raising at first.
@@ -307,6 +348,7 @@ module MilkTea
         catch_structural { resolve_variant_arms }
         catch_structural { declare_top_level_values }
         catch_structural { validate_attribute_applications }
+        catch_structural { collect_emit_declarations }
         catch_structural { declare_functions }
         catch_structural { check_interface_conformances }
 
