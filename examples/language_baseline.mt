@@ -347,6 +347,17 @@ function statements_demo() -> int:
         TokenKind.eof:
             result += 0
 
+    # --- match over variant with struct pattern (field binding)
+    let tk2 = TokenKind.ident(name = "struct-match")
+    match tk2:
+        TokenKind.ident(name):
+            if name == "struct-match":
+                result += 1
+        TokenKind.number as n:
+            result += n.value
+        TokenKind.eof:
+            result += 0
+
     # --- match over integer
     match result:
         0:

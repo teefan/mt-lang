@@ -22,8 +22,13 @@ module MilkTea
       end
 
       def variant_match_arm_name_from_pattern(pattern)
-        # pattern is TypeName.arm_name or module.TypeName.arm_name
-        pattern.is_a?(AST::MemberAccess) ? pattern.member : nil
+        callee = case pattern
+                 when AST::Call
+                   pattern.callee
+                 else
+                   pattern
+                 end
+        callee.is_a?(AST::MemberAccess) ? callee.member : nil
       end
 
       def async_variant_match_arm_binding(arm, scrutinee_expr, scrutinee_type, env:, frame_expr: nil, local_fields: nil)

@@ -571,11 +571,19 @@ module MilkTea
 
           arm_name = variant_match_arm_name(arm.pattern, scrutinee_type)
           raise_sema_error("match arm must be a variant arm of #{scrutinee_type}") unless arm_name
-          raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
-
-          covered_arms[arm_name] = true
 
           arm_scopes = scopes.dup
+          has_guards = false
+
+          if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
+            has_guards = check_struct_match_pattern(arm.pattern.arguments, arm_name, scrutinee_type, arm_scopes, scopes:, arm:)
+          end
+
+          unless has_guards
+            raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
+            covered_arms[arm_name] = true
+          end
+
           if arm.binding_name
             ensure_non_reserved_primitive_name!(arm.binding_name, kind_label: "match binding", line: arm.binding_line, column: arm.binding_column)
             fields = scrutinee_type.arm(arm_name)
@@ -630,13 +638,20 @@ module MilkTea
 
       def variant_match_arm_name(pattern, scrutinee_type)
         # Pattern must be `TypeName.arm_name` or `module.TypeName.arm_name`
-        return nil unless pattern.is_a?(AST::MemberAccess)
+        # For struct patterns, the pattern is Call(MemberAccess(...), args) — unwrap the callee
+        callee = case pattern
+                 when AST::Call
+                   pattern.callee
+                 else
+                   pattern
+                 end
+        return nil unless callee.is_a?(AST::MemberAccess)
 
-        member = pattern.member
+        member = callee.member
         return nil unless scrutinee_type.arm_names.include?(member)
 
         # Verify the receiver resolves to the scrutinee variant type
-        receiver_type = resolve_type_expression(pattern.receiver)
+        receiver_type = resolve_type_expression(callee.receiver)
         return member if receiver_type == scrutinee_type
 
         if scrutinee_type.is_a?(Types::VariantInstance) && receiver_type.is_a?(Types::GenericVariantDefinition)
@@ -647,6 +662,65 @@ module MilkTea
         return nil unless receiver_type.name == scrutinee_type.name && receiver_type.module_name == scrutinee_type.module_name
 
         member
+      end
+
+      def check_struct_match_pattern(arguments, arm_name, scrutinee_type, arm_scopes, scopes:, arm:)
+        payload_fields = scrutinee_type.arm(arm_name)
+        raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload fields for struct pattern") if payload_fields.nil? || payload_fields.empty?
+
+        has_guards = false
+        seen_fields = {}
+
+        arguments.each do |arg|
+          if arg.name
+            # Equality pattern: kind = Kind.boss
+            field_name = arg.name
+            raise_sema_error("unknown field #{scrutinee_type}.#{arm_name}.#{field_name}") unless payload_fields.key?(field_name)
+            raise_sema_error("duplicate field #{field_name} in struct pattern") if seen_fields.key?(field_name)
+            seen_fields[field_name] = true
+            has_guards = true
+
+            field_type = payload_fields[field_name]
+            actual_type = infer_expression(arg.value, scopes:, expected_type: field_type)
+            ensure_assignable!(actual_type, field_type, "field #{field_name} expects #{field_type}, got #{actual_type}", expression: arg.value)
+          elsif arg.value.is_a?(AST::Identifier)
+            # Binding: position
+            field_name = arg.value.name
+            raise_sema_error("unknown field #{scrutinee_type}.#{arm_name}.#{field_name}") unless payload_fields.key?(field_name)
+            raise_sema_error("duplicate field #{field_name} in struct pattern") if seen_fields.key?(field_name)
+            seen_fields[field_name] = true
+
+            field_type = payload_fields[field_name]
+            binding = value_binding(
+              name: field_name,
+              type: field_type,
+              mutable: false,
+              kind: :local,
+              id: @preassigned_local_binding_ids[arg.object_id],
+            )
+            arm_scopes.last[field_name] = binding
+          elsif arg.value.is_a?(AST::BinaryOp) && arg.value.left.is_a?(AST::Identifier)
+            # Guard: hp > 0
+            field_name = arg.value.left.name
+            raise_sema_error("unknown field #{scrutinee_type}.#{arm_name}.#{field_name}") unless payload_fields.key?(field_name)
+            raise_sema_error("duplicate field #{field_name} in struct pattern") if seen_fields.key?(field_name)
+            seen_fields[field_name] = true
+            has_guards = true
+
+            field_type = payload_fields[field_name]
+            comparison_operators = ["==", "!=", "<", "<=", ">", ">="]
+            unless comparison_operators.include?(arg.value.operator)
+              raise_sema_error("unsupported guard operator '#{arg.value.operator}' in struct pattern; use ==, !=, <, <=, >, or >=", expression: arg.value)
+            end
+
+            operand_type = infer_expression(arg.value.right, scopes:, expected_type: field_type)
+            ensure_assignable!(operand_type, field_type, "guard comparison expects #{field_type}, got #{operand_type}", expression: arg.value.right)
+          else
+            raise_sema_error("invalid field pattern in struct match arm; expected field name, comparison, or equality", expression: arg.value)
+          end
+        end
+
+        has_guards
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)

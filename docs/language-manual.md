@@ -514,7 +514,7 @@ Condition must be `bool`.
 Scrutinee types supported:
 
 - Enum: arm patterns must be members of that enum.
-- Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name`.
+- Variant: arm patterns must be arms of that variant; a payload arm may bind its fields with `as name` or destructure them inline with struct patterns.
 - Integer (`byte`, `short`, `int`, `long`, `ubyte`, `ushort`, `uint`, `ulong`, `ptr_int`, `ptr_uint`): arm patterns must be integer literals.
 
 `_` is a wildcard arm that matches any value not covered by preceding arms. It maps to a C `default:` case.
@@ -550,6 +550,31 @@ match token:
     Token.eof:
         return
 ```
+
+#### Struct patterns in variant match arms
+
+When a variant arm carries payload fields, those fields may be destructured inline. Inside `VariantName.arm_name(...)`, each argument is one of:
+
+- **Binding:** a bare field name creates an immutable local bound to that field.
+- **Guard:** `field comparison_op expr` extracts the field and skips the arm if the condition is false. Supported operators: `==`, `!=`, `<`, `<=`, `>`, `>=`.
+- **Equality pattern:** `field = expr` is a shorthand guard — the arm matches only when the field equals the expression value.
+
+```mt
+match entity:
+    Entity.player(hp > 0, position):
+        render(position)
+    Entity.player:
+        remove()
+    Entity.enemy:
+        return
+```
+
+Rules for struct patterns:
+
+- Each field name must appear at most once per arm.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. An arm with only bindings and no guards counts as exhaustive.
+- Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
+- Struct patterns do not apply to enum or integer match scrutinees.
 
 ### 4.3 Loops
 
