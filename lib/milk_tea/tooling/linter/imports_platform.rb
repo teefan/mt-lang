@@ -494,6 +494,12 @@ module MilkTea
           collect_indirect_import_uses_from_expr(stmt.expression, used, binding_resolution, import_module_names)
         when AST::StaticAssert
           collect_indirect_import_uses_from_expr(stmt.condition, used, binding_resolution, import_module_names)
+        when AST::WhenStmt
+          collect_indirect_import_uses_from_expr(stmt.discriminant, used, binding_resolution, import_module_names)
+          stmt.branches.each { |b| b.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) } }
+          stmt.else_body&.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) }
+        when AST::ErrorBlockStmt
+          stmt.body.each { |child| collect_indirect_import_uses_from_stmt(child, used, binding_resolution, import_module_names) } if stmt.body
         end
       end
 
@@ -528,6 +534,9 @@ module MilkTea
           collect_indirect_import_uses_from_expr(expr.condition, used, binding_resolution, import_module_names)
           collect_indirect_import_uses_from_expr(expr.then_expression, used, binding_resolution, import_module_names)
           collect_indirect_import_uses_from_expr(expr.else_expression, used, binding_resolution, import_module_names)
+        when AST::MatchExpr
+          collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
+          expr.arms.each { |arm| collect_indirect_import_uses_from_expr(arm.value, used, binding_resolution, import_module_names) }
         when AST::ProcExpr
           expr.body.each { |stmt| collect_indirect_import_uses_from_stmt(stmt, used, binding_resolution, import_module_names) }
         when AST::AwaitExpr
@@ -536,6 +545,10 @@ module MilkTea
           collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
         when AST::FormatString
           expr.parts.each { |part| collect_indirect_import_uses_from_expr(part.expression, used, binding_resolution, import_module_names) if part.is_a?(AST::FormatExprPart) }
+        when AST::SizeofExpr, AST::AlignofExpr
+          nil
+        when AST::OffsetofExpr
+          collect_indirect_import_uses_from_expr(expr.receiver, used, binding_resolution, import_module_names)
         end
       end
 
@@ -553,6 +566,12 @@ module MilkTea
 
           import_module_names[module_name]
         end
+      end
+
+      def collect_qualified_name_root(name, used)
+        return unless name.respond_to?(:parts) && name.parts.any?
+
+        used << name.parts.first
       end
 
       def type_module_name(type)
@@ -573,10 +592,12 @@ module MilkTea
           collect_names_from_type(decl.return_type, used) if decl.return_type
           decl.body.each { |stmt| collect_names_from_statement(stmt, used) }
         when AST::ExtendingBlock
+          collect_names_from_type(decl.type_name, used)
           decl.methods.each { |m| collect_names_from_declaration(m, used) }
         when AST::StructDecl
           decl.fields.each { |f| collect_names_from_type(f.type, used) }
           decl.events.each { |event| collect_names_from_type(event.payload_type, used) if event.payload_type }
+          decl.implements&.each { |iface| collect_qualified_name_root(iface, used) }
         when AST::UnionDecl
           decl.fields.each { |f| collect_names_from_type(f.type, used) }
         when AST::TypeAliasDecl
@@ -593,6 +614,19 @@ module MilkTea
           decl.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
           collect_names_from_type(decl.return_type, used) if decl.return_type
           collect_names_from_expr(decl.mapping, used) if decl.mapping
+        when AST::EnumDecl, AST::FlagsDecl
+          collect_names_from_type(decl.backing_type, used) if decl.backing_type
+        when AST::InterfaceDecl
+          decl.methods.each do |method|
+            method.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
+            collect_names_from_type(method.return_type, used) if method.return_type
+          end
+        when AST::VariantDecl
+          decl.arms.each do |arm|
+            arm.fields.each { |f| collect_names_from_type(f.type, used) }
+          end
+        when AST::OpaqueDecl
+          decl.implements&.each { |iface| collect_qualified_name_root(iface, used) }
         end
       end
   
@@ -633,6 +667,12 @@ module MilkTea
           collect_names_from_expr(stmt.expression, used)
         when AST::StaticAssert
           collect_names_from_expr(stmt.condition, used)
+        when AST::WhenStmt
+          collect_names_from_expr(stmt.discriminant, used)
+          stmt.branches.each { |b| b.body.each { |s| collect_names_from_statement(s, used) } }
+          stmt.else_body&.each { |s| collect_names_from_statement(s, used) }
+        when AST::ErrorBlockStmt
+          stmt.body.each { |s| collect_names_from_statement(s, used) } if stmt.body
         end
       end
   
@@ -662,6 +702,12 @@ module MilkTea
           collect_names_from_expr(expr.condition, used)
           collect_names_from_expr(expr.then_expression, used)
           collect_names_from_expr(expr.else_expression, used)
+        when AST::MatchExpr
+          collect_names_from_expr(expr.expression, used)
+          expr.arms.each do |arm|
+            collect_names_from_expr(arm.pattern, used)
+            collect_names_from_expr(arm.value, used)
+          end
         when AST::ProcExpr
           expr.params.each { |p| collect_names_from_type(p.type, used) if p.respond_to?(:type) && p.type }
           expr.body.each { |s| collect_names_from_statement(s, used) }
@@ -669,6 +715,10 @@ module MilkTea
         when AST::UnsafeExpr then collect_names_from_expr(expr.expression, used)
         when AST::FormatString
           expr.parts.each { |p| collect_names_from_expr(p.expression, used) if p.is_a?(AST::FormatExprPart) }
+        when AST::SizeofExpr, AST::AlignofExpr
+          collect_names_from_type(expr.type, used)
+        when AST::OffsetofExpr
+          collect_names_from_expr(expr.receiver, used)
         end
       end
   
@@ -685,91 +735,6 @@ module MilkTea
         end
       end
   
-      def collect_called_members_from_declaration(decl, called_members)
-        case decl
-        when AST::FunctionDef, AST::MethodDef
-          decl.body.each { |stmt| collect_called_members_from_statement(stmt, called_members) }
-        when AST::ExtendingBlock
-          decl.methods.each { |method| collect_called_members_from_declaration(method, called_members) }
-        when AST::ConstDecl, AST::VarDecl
-          collect_called_members_from_expr(decl.value, called_members) if decl.value
-        end
-      end
-  
-      def collect_called_members_from_statement(stmt, called_members)
-        case stmt
-        when AST::LocalDecl
-          collect_called_members_from_expr(stmt.value, called_members) if stmt.value
-        when AST::Assignment
-          collect_called_members_from_expr(stmt.target, called_members)
-          collect_called_members_from_expr(stmt.value, called_members)
-        when AST::IfStmt
-          stmt.branches.each do |branch|
-            collect_called_members_from_expr(branch.condition, called_members)
-            branch.body.each { |child| collect_called_members_from_statement(child, called_members) }
-          end
-          stmt.else_body&.each { |child| collect_called_members_from_statement(child, called_members) }
-        when AST::MatchStmt
-          collect_called_members_from_expr(stmt.expression, called_members)
-          stmt.arms.each { |arm| arm.body.each { |child| collect_called_members_from_statement(child, called_members) } }
-        when AST::ForStmt
-          stmt.iterables.each { |iterable| collect_called_members_from_expr(iterable, called_members) }
-          stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
-        when AST::WhileStmt
-          collect_called_members_from_expr(stmt.condition, called_members)
-          stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
-        when AST::UnsafeStmt
-          stmt.body.each { |child| collect_called_members_from_statement(child, called_members) }
-        when AST::DeferStmt
-          collect_called_members_from_expr(stmt.expression, called_members) if stmt.expression
-          stmt.body&.each { |child| collect_called_members_from_statement(child, called_members) }
-        when AST::ReturnStmt
-          collect_called_members_from_expr(stmt.value, called_members) if stmt.value
-        when AST::ExpressionStmt
-          collect_called_members_from_expr(stmt.expression, called_members)
-        when AST::StaticAssert
-          collect_called_members_from_expr(stmt.condition, called_members)
-        end
-      end
-  
-      def collect_called_members_from_expr(expr, called_members)
-        case expr
-        when nil then nil
-        when AST::MemberAccess
-          collect_called_members_from_expr(expr.receiver, called_members)
-        when AST::IndexAccess
-          collect_called_members_from_expr(expr.receiver, called_members)
-          collect_called_members_from_expr(expr.index, called_members)
-        when AST::Specialization
-          collect_called_members_from_expr(expr.callee, called_members)
-        when AST::Call
-          called_members << expr.callee.member if expr.callee.is_a?(AST::MemberAccess)
-          collect_called_members_from_expr(expr.callee, called_members)
-          expr.arguments.each { |argument| collect_called_members_from_expr(argument.value, called_members) }
-        when AST::UnaryOp
-          collect_called_members_from_expr(expr.operand, called_members)
-        when AST::BinaryOp
-          collect_called_members_from_expr(expr.left, called_members)
-          collect_called_members_from_expr(expr.right, called_members)
-        when AST::RangeExpr
-          collect_called_members_from_expr(expr.start_expr, called_members)
-          collect_called_members_from_expr(expr.end_expr, called_members)
-        when AST::ExpressionList
-          expr.elements.each { |element| collect_called_members_from_expr(element, called_members) }
-        when AST::IfExpr
-          collect_called_members_from_expr(expr.condition, called_members)
-          collect_called_members_from_expr(expr.then_expression, called_members)
-          collect_called_members_from_expr(expr.else_expression, called_members)
-        when AST::ProcExpr
-          expr.body.each { |stmt| collect_called_members_from_statement(stmt, called_members) }
-        when AST::AwaitExpr
-          collect_called_members_from_expr(expr.expression, called_members)
-        when AST::UnsafeExpr
-          collect_called_members_from_expr(expr.expression, called_members)
-        when AST::FormatString
-          expr.parts.each { |part| collect_called_members_from_expr(part.expression, called_members) if part.is_a?(AST::FormatExprPart) }
-        end
-      end
     end
   end
 end
