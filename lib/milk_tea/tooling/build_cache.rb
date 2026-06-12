@@ -129,17 +129,22 @@ module MilkTea
       FileUtils.rm_rf(dir) if File.exist?(dir)
     end
 
-    def store_module_ir(key, ir_program)
+    def store_module_ir(key, ir_program, synthetics: nil)
       dir = File.join(@cache_root, "modules", key[0, 2], key)
       FileUtils.mkdir_p(dir)
-      File.write(File.join(dir, "ir.bin"), Marshal.dump(ir_program))
+      data = { ir: ir_program }
+      data[:synthetics] = synthetics if synthetics && synthetics.values.any? { |v| v.any? }
+      File.write(File.join(dir, "ir.bin"), Marshal.dump(data))
     end
 
     def fetch_module_ir(key)
       path = File.join(@cache_root, "modules", key[0, 2], key, "ir.bin")
       return unless File.exist?(path)
 
-      Marshal.load(File.read(path, mode: "rb"))
+      data = Marshal.load(File.read(path, mode: "rb"))
+      return data.fetch(:ir) unless data.is_a?(Hash)
+
+      [data.fetch(:ir), data[:synthetics] || {}]
     rescue TypeError, ArgumentError
       nil
     end

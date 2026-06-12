@@ -488,7 +488,42 @@ module MilkTea
         warn "    #{changed.length} of #{module_changes.length} module(s) changed" if $VERBOSE || ENV["MTC_VERBOSE"]
       end
 
-      ir_program, modules = Lowering.lower_incremental(program)
+      rgraph = reverse_import_graph(program)
+      changed_names = module_changes.select { |_, v| v == :changed }.map { |k, _| k.to_s }
+      invalidated = {}
+      changed_names.each { |mod| invalidated[mod] = true }
+      changed_names.each do |mod|
+        (rgraph[mod] || []).each { |dep| invalidated[dep] = true }
+      end
+
+      preload = {}
+      preload_synthetics = {}
+      module_changes.each do |module_name, status|
+        next unless status == :unchanged
+        next if invalidated.key?(module_name.to_s)
+
+        path = program.analyses_by_path.keys.find { |p| program.analyses_by_path[p].module_name.to_s == module_name.to_s }
+        next unless path
+
+        module_content = source_files[path]
+        next unless module_content
+
+        path_key = cache.module_key(path, module_content)
+        cached_data = cache.fetch_module_ir(path_key)
+        next unless cached_data
+
+        if cached_data.is_a?(Array)
+          ir, synths = cached_data
+          preload[module_name.to_s] = ir
+          preload_synthetics[module_name.to_s] = synths || {}
+        end
+      end
+
+      ir_program, modules, per_module_synthetics = Lowering.lower_incremental(
+        program,
+        cached: preload.empty? ? nil : preload,
+        cached_synthetics: preload_synthetics.empty? ? nil : preload_synthetics,
+      )
 
       Build.ensure_program_has_entrypoint!(program, ir_program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives:)
@@ -500,10 +535,12 @@ module MilkTea
       source_files.each do |path, content|
         analysis = program.analyses_by_path[path]
         next unless analysis
+        next if preload.key?(analysis.module_name.to_s)
 
         path_key = cache.module_key(path, content)
         fragment = modules[analysis.module_name]
-        cache.store_module_ir(path_key, fragment) if fragment
+        synths = per_module_synthetics[analysis.module_name]
+        cache.store_module_ir(path_key, fragment, synthetics: synths) if fragment
       end
 
       cache.store_method_defs(method_defs_hash)
