@@ -393,6 +393,41 @@ module MilkTea
                 }
               }
             end
+
+            # "match on Foo is missing cases: A, B, C"
+            if message =~ /\Amatch on (\S+) is missing cases: (.+)\z/
+              _scrutinee_type = $1
+              missing = $2.split(', ').map(&:strip).reject(&:empty?)
+              next if missing.empty?
+
+              indent = source_line[/\A\s*/] || ''
+              arm_indent = indent + '    '
+              body_indent = arm_indent + '    '
+              new_arms = missing.map do |arm_name|
+                "#{arm_indent}#{arm_name}:\n#{body_indent}return\n"
+              end.join
+              full_indent = indent.empty? ? '' : indent
+
+              match_end_line = find_match_end_line(lines, diag_line - 1)
+              insert_line = match_end_line || diag_line - 1
+
+              actions << {
+                title: "Add missing match #{missing.length == 1 ? 'arm' : 'arms'}: #{missing.join(', ')}",
+                kind: 'quickFix',
+                diagnostics: [diag],
+                edit: {
+                  changes: {
+                    uri => [{
+                      range: {
+                        start: { line: insert_line, character: 0 },
+                        end:   { line: insert_line, character: 0 }
+                      },
+                      newText: new_arms
+                    }]
+                  }
+                }
+              }
+            end
           end
         end
         end # want_quickfix
@@ -523,6 +558,19 @@ module MilkTea
 
       def refresh_workspace_diagnostics
         @protocol.write_notification('workspace/diagnostic/refresh', nil)
+      end
+
+      def find_match_end_line(lines, match_start_idx)
+        return nil if match_start_idx >= lines.length
+
+        match_indent = lines[match_start_idx][/\A\s*/].length
+        (match_start_idx + 1...lines.length).each do |i|
+          line = lines[i]
+          next if line.strip.empty?
+          line_indent = line[/\A\s*/].length
+          return i if line_indent <= match_indent
+        end
+        nil
       end
       end
     end
