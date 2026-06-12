@@ -431,6 +431,11 @@ module MilkTea
           elsif (type = @types[callee.name]).is_a?(Types::Struct) || type.is_a?(Types::StringView) || task_type?(type) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
             [ :struct_literal, nil, nil, type ]
           else
+            emit_fn = @emitted_declarations.find { |d| d.is_a?(IR::Function) && d.name == callee.name }
+            if emit_fn
+              return [:function, emit_fn.c_name, nil, emit_fn.return_type, nil]
+            end
+
             raise LoweringError, "unknown callee #{callee.name}"
           end
         when AST::MemberAccess

@@ -30,6 +30,7 @@ module MilkTea
       def types_compatible?(actual_type, expected_type, expression: nil, scopes: nil, external_numeric: false, external_pointer_null: false, contextual_int_to_float: false)
         return true if error_type?(actual_type) || error_type?(expected_type)
         return true if actual_type == expected_type
+        return true if ref_types_compatible?(actual_type, expected_type)
         return true if null_assignable_to?(actual_type, expected_type)
         return true if external_pointer_null && external_typed_null_pointer_compatibility?(actual_type, expected_type)
         return true if expected_type.is_a?(Types::Nullable) && actual_type == expected_type.base
@@ -46,6 +47,12 @@ module MilkTea
         return true if quat_vec4_compatible?(actual_type, expected_type)
 
         false
+      end
+
+      def ref_types_compatible?(actual_type, expected_type)
+        return false unless ref_type?(actual_type) && ref_type?(expected_type)
+
+        referenced_type(actual_type) == referenced_type(expected_type)
       end
 
       def quat_vec4_compatible?(a, b)
