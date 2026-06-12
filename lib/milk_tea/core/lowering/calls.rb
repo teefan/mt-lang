@@ -216,6 +216,33 @@ module MilkTea
             )
           end
           IR::AggregateLiteral.new(type:, fields:)
+        when :struct_with
+          explicit_names = expression.arguments.each_with_object({}) { |a, h| h[a.name] = a }
+          lowered_receiver = lower_expression(receiver, env:)
+          field_hash = callee_type.respond_to?(:fields) ? callee_type.fields : {}
+          fields = field_hash.map do |field_name, field_type|
+            if (explicit_arg = explicit_names[field_name])
+              IR::AggregateField.new(
+                name: field_name,
+                value: lower_contextual_expression(
+                  explicit_arg.value,
+                  env:,
+                  expected_type: field_type,
+                  contextual_int_to_float: contextual_int_to_float_target?(field_type),
+                ),
+              )
+            else
+              IR::AggregateField.new(
+                name: field_name,
+                value: IR::Member.new(
+                  receiver: lowered_receiver,
+                  member: field_name,
+                  type: field_type,
+                ),
+              )
+            end
+          end
+          IR::AggregateLiteral.new(type: callee_type, fields:)
         when :variant_arm_ctor
           _, _, _, variant_type, (_, arm_name) = resolve_callee(expression.callee, env, arguments: expression.arguments)
           arm_fields = variant_type.arm(arm_name)

@@ -378,6 +378,10 @@ module MilkTea
       type.is_a?(Types::Task)
     end
 
+    def struct_with_target_type?(type)
+      type.is_a?(Types::Struct) || type.is_a?(Types::Vector) || type.is_a?(Types::Matrix) || type.is_a?(Types::Quaternion)
+    end
+
     def proc_type?(type)
       type.is_a?(Types::Proc)
     end

@@ -503,6 +503,10 @@ module MilkTea
             ]
           end
 
+          if callee.member == "with" && struct_with_target_type?(resolved_receiver_type)
+            return [:struct_with, nil, callee.receiver, resolved_receiver_type]
+          end
+
           if (str_buffer_method = str_buffer_method_kind(resolved_receiver_type, callee.member))
             return [str_buffer_method, nil, callee.receiver, str_buffer_method_type(str_buffer_method, resolved_receiver_type)]
           end
@@ -760,7 +764,7 @@ module MilkTea
             :compile_time_builtin,
             :cast, :reinterpret, :zero, :hash, :equal, :order
             callee_type.return_type
-          when :struct_literal, :array, :variant_arm_ctor
+          when :struct_literal, :struct_with, :array, :variant_arm_ctor
             callee_type
           when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)

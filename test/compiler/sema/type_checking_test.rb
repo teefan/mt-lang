@@ -4067,4 +4067,66 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("compare")
   end
 
+  # ── struct.with() ─────────────────────────────────────────────────────────
+
+  def test_type_checks_struct_with_single_field
+    source = <<~MT
+      # module demo.with_single
+
+      struct Point:
+          x: float
+          y: float
+
+      function translate(p: Point) -> Point:
+          return p.with(x = p.x + 1.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("translate")
+  end
+
+  def test_type_checks_struct_with_multiple_fields
+    source = <<~MT
+      # module demo.with_multi
+
+      struct Point:
+          x: float
+          y: float
+          z: float
+
+      function move(p: Point) -> Point:
+          return p.with(x = 100.0, z = 200.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("move")
+  end
+
+  def test_type_checks_vec3_with
+    source = <<~MT
+      # module demo.vec_with
+
+      function translate(v: vec3) -> vec3:
+          return v.with(x = v.x + 1.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("translate")
+  end
+
+  def test_type_checks_quat_with
+    source = <<~MT
+      # module demo.quat_with
+
+      function make_identity() -> quat:
+          return quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
+
+      function reset(q: quat) -> quat:
+          return q.with(w = 1.0)
+    MT
+
+    result = check_source(source)
+    assert_equal true, result.functions.key?("reset")
+  end
+
 end

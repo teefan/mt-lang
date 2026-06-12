@@ -2809,4 +2809,21 @@ function main() -> int:
     assert_match(/mt_soa_/, generated)
   end
 
+  def test_generate_c_for_struct_with_partial_update
+    source = <<~MT
+      struct Point:
+          x: float
+          y: float
+          z: float
+
+      function move(p: Point) -> Point:
+          return p.with(x = 10.0, z = 20.0)
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/\.x = 10\.0f/, generated)
+    assert_match(/\.y = p\.y/, generated)
+    assert_match(/\.z = 20\.0f/, generated)
+  end
+
 end
