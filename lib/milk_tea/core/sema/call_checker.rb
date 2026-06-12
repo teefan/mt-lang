@@ -787,7 +787,8 @@ module MilkTea
             end
           else
             unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: binding.external, expression: foreign_argument_expression(argument))
-              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}")
+              suggestion = explicit_cast_suggestion(actual_type, parameter.type)
+              raise_sema_error("argument #{parameter.name} to #{binding.name} expects #{parameter.type}, got #{actual_type}", suggestion:)
             end
           end
         end
@@ -816,7 +817,8 @@ module MilkTea
           argument = arguments.fetch(index)
           actual_type = infer_expression(argument.value, scopes:, expected_type: parameter.type)
           unless call_argument_compatible?(actual_type, parameter.type, scopes:, external: false, expression: argument.value)
-            raise_sema_error("argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}")
+            suggestion = explicit_cast_suggestion(actual_type, parameter.type)
+            raise_sema_error("argument #{parameter.name || index} to #{describe_expression(callee_expression)} expects #{parameter.type}, got #{actual_type}", argument, suggestion:)
           end
         end
 

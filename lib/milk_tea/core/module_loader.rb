@@ -135,6 +135,32 @@ module MilkTea
       @platform = previous_platform
     end
 
+    def import_graph(program)
+      graph = {}
+      program.analyses_by_path.each do |path, analysis|
+        module_name = analysis.module_name.to_s
+        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
+        deps = ast_imports.map { |import| import.path.to_s }
+        graph[module_name] = deps
+      end
+      graph
+    end
+
+    def reverse_import_graph(program)
+      reverse = {}
+      program.analyses_by_path.each do |path, analysis|
+        module_name = analysis.module_name.to_s
+        reverse[module_name] ||= []
+        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
+        ast_imports.each do |import|
+          imported = import.path.to_s
+          reverse[imported] ||= []
+          reverse[imported] << module_name unless reverse[imported].include?(module_name)
+        end
+      end
+      reverse
+    end
+
     def imported_modules_for_ast(ast, importer_path: nil)
       modules = {}
 
@@ -146,6 +172,29 @@ module MilkTea
 
       install_async_runtime_dependency!(ast, modules, importer_path:, collecting_errors: false)
       modules.freeze
+    end
+
+    def build_global_import_index(ast)
+      index = {}
+      current_imports = ast.imports.map { |import| import.path.to_s }.to_set
+
+      @analysis_cache.each_value do |analysis|
+        next unless analysis
+        next unless analysis.module_name
+
+        mod_name = analysis.module_name.to_s
+        next if current_imports.include?(mod_name)
+        next if mod_name == ast.module_name.to_s
+
+        types = analysis.respond_to?(:types) ? analysis.types : {}
+        types.each_key do |type_name|
+          type_str = type_name.to_s
+          index[type_str] ||= []
+          index[type_str] << mod_name unless index[type_str].include?(mod_name)
+        end
+      end
+
+      index
     end
 
     def imported_modules_for_ast_collecting_errors(ast, importer_path: nil)
@@ -215,7 +264,8 @@ module MilkTea
       ast = load_file(resolved_path)
       imported_modules = imported_modules_for_ast(ast, importer_path: resolved_path)
 
-      analysis = Sema.check(ast, imported_modules:, path: resolved_path)
+      global_index = build_global_import_index(ast)
+      analysis = Sema.check(ast, imported_modules:, path: resolved_path, global_import_index: global_index)
       @analysis_cache[resolved_path] = analysis
 
       if use_shared_cache?

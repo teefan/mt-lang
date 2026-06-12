@@ -258,7 +258,14 @@ module MilkTea
           return type_params.fetch(parts.first) if type_params.key?(parts.first)
 
           type = @types[parts.first]
-          raise_sema_error("unknown type #{parts.first}", type_ref) unless type
+          unless type
+            type_names = @types.keys
+            suggestion = suggest_name(parts.first, type_names)
+            unless suggestion
+              suggestion = import_suggestion_for_type(parts.first)
+            end
+            raise_sema_error("unknown type #{parts.first}", type_ref, suggestion: suggestion ? "did you mean '#{suggestion}'?" : nil)
+          end
           raise_sema_error("generic type #{parts.first} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
@@ -276,7 +283,7 @@ module MilkTea
           return type
         end
 
-        raise_sema_error("unknown type #{type_ref.name}", type_ref)
+        raise_sema_error("unknown type #{type_ref.name}", type_ref, suggestion: import_suggestion_for_type(type_ref.name))
       end
 
       def resolve_type_argument(argument, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
@@ -359,13 +366,38 @@ module MilkTea
         line ||= source_line(expression)
         column ||= source_column(expression)
 
-        raise SemaError.new(message, line:, column:, path: @path) unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
+        unless types_compatible?(actual_type, expected_type, expression:, scopes:, external_numeric:, external_pointer_null:, contextual_int_to_float:)
+          suggestion = explicit_cast_suggestion(actual_type, expected_type)
+          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
+        end
+      end
+
+      def explicit_cast_suggestion(actual_type, expected_type)
+        if castable_primitive?(actual_type) && castable_primitive?(expected_type)
+          return nil if actual_type == expected_type
+          "use an explicit cast: `#{expected_type}<-(value)`"
+        end
+
+        if actual_type.is_a?(Types::Nullable) && expected_type.is_a?(Types::Nullable)
+          explicit_cast_suggestion(actual_type.base, expected_type.base)
+        else
+          nil
+        end
+      end
+
+      def castable_primitive?(type)
+        return castable_primitive?(type.base) if type.is_a?(Types::Nullable)
+
+        type.is_a?(Types::Primitive) || type.is_a?(Types::Enum) || type.is_a?(Types::Flags)
       end
 
       def ensure_argument_assignable!(actual_type, expected_type, external:, message:, expression: nil, scopes: nil)
         line = source_line(expression)
         column = source_column(expression)
-        raise SemaError.new(message, line:, column:, path: @path) unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
+        unless argument_types_compatible?(actual_type, expected_type, external:, expression:, scopes:)
+          suggestion = explicit_cast_suggestion(actual_type, expected_type)
+          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
+        end
       end
 
       def with_error_node(node)
@@ -390,12 +422,12 @@ module MilkTea
         @error_node_stack.reverse_each.find { |node| !node.nil? }
       end
 
-      def raise_sema_error(message, node = nil, line: nil, column: nil, length: nil)
+      def raise_sema_error(message, node = nil, line: nil, column: nil, length: nil, suggestion: nil)
         target = node || current_error_node
         line ||= source_line(target)
         column ||= source_column(target)
         length ||= source_length(target)
-        raise SemaError.new(message, line:, column:, length:, path: @path)
+        raise SemaError.new(message, line:, column:, length:, path: @path, suggestion:)
       end
 
       def source_line(node)
@@ -1991,6 +2023,60 @@ module MilkTea
         @declaration_binding_ids[node.object_id] = binding.id
       end
 
+
+      def suggest_name(wrong, candidates, max_distance: 2)
+        return nil if wrong.nil? || wrong.to_s.empty? || candidates.nil? || candidates.empty?
+
+        wrong_str = wrong.to_s
+        closest = nil
+        closest_dist = max_distance + 1
+        candidates.each do |candidate|
+          next if candidate.nil?
+          cand_str = candidate.to_s
+          next if cand_str.empty? || cand_str == wrong_str
+          dist = levenshtein(wrong_str, cand_str)
+          if dist < closest_dist
+            closest_dist = dist
+            closest = cand_str
+          end
+        end
+        closest_dist <= max_distance ? closest : nil
+      end
+
+      def levenshtein(s, t)
+        m = s.length
+        n = t.length
+        return m if n.zero?
+        return n if m.zero?
+        d = Array.new(m + 1) { Array.new(n + 1, 0) }
+        (0..m).each { |i| d[i][0] = i }
+        (0..n).each { |j| d[0][j] = j }
+        (1..m).each do |i|
+          (1..n).each do |j|
+            cost = s[i - 1] == t[j - 1] ? 0 : 1
+            d[i][j] = [d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost].min
+          end
+        end
+        d[m][n]
+      end
+
+      def import_suggestion_for_type(type_name)
+        return nil if @global_import_index.nil? || @global_import_index.empty?
+
+        type_str = type_name.to_s
+        return nil if type_str.empty?
+
+        if @global_import_index.key?(type_str)
+          entry = @global_import_index[type_str]
+          return nil if entry.nil?
+          module_path = entry.is_a?(Array) ? entry.first : entry
+          if module_path && !@imports.key?(module_path.to_s.split(".").first) && !@imports.key?(module_path.to_s)
+            return "type '#{type_str}' is available via 'import #{module_path}'"
+          end
+        end
+
+        nil
+      end
 
 
     end

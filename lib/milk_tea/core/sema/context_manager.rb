@@ -25,11 +25,12 @@ module MilkTea
           return
         end
 
+        suggestion = "wrap in an unsafe block: `unsafe: <expression>`"
         if line || column
-          raise SemaError.new(message, line:, column:, path: @path)
+          raise SemaError.new(message, line:, column:, path: @path, suggestion:)
         end
 
-        raise_sema_error(message)
+        raise_sema_error(message, suggestion:)
       end
 
       def with_foreign_mapping_context

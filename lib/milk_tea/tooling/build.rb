@@ -356,6 +356,13 @@ module MilkTea
       end
 
       @cached = false
+
+      module_changes = detect_module_changes(program, cache, source_files)
+      if module_changes.any? { |_, v| v == :changed }
+        changed = module_changes.select { |_, v| v == :changed }.keys
+        warn "    #{changed.length} of #{module_changes.length} module(s) changed" if $VERBOSE || ENV["MTC_VERBOSE"]
+      end
+
       ir_program = Lowering.lower(program)
       Build.ensure_program_has_entrypoint!(program, ir_program)
       compiled_c = CBackend.emit(ir_program, emit_line_directives:)
@@ -364,7 +371,50 @@ module MilkTea
 
       cache.store_program(key, c_source: compiled_c, frontend_modules:)
 
+      update_module_caches(program, cache, source_files)
+
       [compiled_c, frontend_modules, ir_program]
+    end
+
+    def detect_module_changes(program, cache, source_files)
+      changes = {}
+      loader = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform)
+
+      program.analyses_by_path.each do |path, analysis|
+        module_name = analysis.module_name.to_s
+        content = source_files[path]
+        next unless content
+
+        module_key = cache.module_key(path, content)
+        state = cache.fetch_module_state(module_key)
+
+        if state.nil? || state[:source_key] != module_key
+          changes[module_name] = :changed
+        else
+          changes[module_name] = :unchanged
+        end
+      end
+
+      changes
+    end
+
+    def update_module_caches(program, cache, source_files)
+      program.analyses_by_path.each do |path, analysis|
+        content = source_files[path]
+        next unless content
+
+        module_name = analysis.module_name.to_s
+        module_key = cache.module_key(path, content)
+        ast_imports = analysis.ast.respond_to?(:imports) ? analysis.ast.imports : []
+        deps = ast_imports.map { |import| import.path.to_s }
+
+        cache.store_module_state(
+          module_key,
+          module_name: module_name,
+          source_key: module_key,
+          dependencies: deps,
+        )
+      end
     end
 
     def compile_frontend_saved_c(compiled_c, emit_line_directives)
