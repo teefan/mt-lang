@@ -210,11 +210,11 @@ module MilkTea
 
     Result = Data.define(:stdout, :stderr, :exit_status, :output_path, :c_path, :compiler, :link_flags, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false)
-      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:, argv:, no_cache:).run
+    def self.run(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable)
+      new(path, output_path:, cc:, keep_c_path:, module_roots:, package_graph:, frontend:, profile:, platform:, bundle:, archive:, browser_opener:, preview_server_class:, preview_started:, argv:, no_cache:, kind:).run
     end
 
-    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false)
+    def initialize(path, output_path:, cc:, keep_c_path:, module_roots: nil, package_graph: nil, frontend: nil, profile: nil, platform: nil, bundle: false, archive: false, browser_opener: nil, preview_server_class: nil, preview_started: nil, argv: [], no_cache: false, kind: :executable)
       @input_path = File.expand_path(path)
       @output_path = output_path ? File.expand_path(output_path) : nil
       @cc = cc

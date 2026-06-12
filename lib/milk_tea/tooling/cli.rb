@@ -876,6 +876,7 @@ module MilkTea
         locked: false,
         frozen: false,
         no_cache: false,
+        kind: :executable,
       }
       options[:clean] = false if allow_clean
 
@@ -919,6 +920,19 @@ module MilkTea
           options[:frozen] = true
         when "--no-cache"
           options[:no_cache] = true
+        when "--kind"
+          value = @argv.shift
+          return missing_option_value(option) unless value
+
+          options[:kind] = case value
+                           when "executable", "exe", "bin" then :executable
+                           when "static", "staticlib" then :static
+                           when "shared", "dylib", "dll", "so" then :shared
+                           else
+                             @err.puts("unknown build kind #{value}; expected executable|static|shared")
+                             print_usage(@err)
+                             return nil
+                           end
         when "--clean"
           if allow_clean
             options[:clean] = true

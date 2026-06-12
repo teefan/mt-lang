@@ -69,9 +69,9 @@ module MilkTea
 
     Result = Data.define(:output_path, :c_path, :compiler, :link_flags, :profile, :platform, :bundle_root, :archive_path, :cached)
 
-    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false)
+    def self.build(path, output_path: nil, cc: ENV.fetch("CC", "cc"), keep_c_path: nil, raw_bindings: nil, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, kind: :executable)
       raw_bindings ||= default_raw_bindings
-      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:).build
+      new(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots:, package_graph:, frontend:, debug:, profile:, platform:, bundle:, archive:, no_cache:, kind:).build
     end
 
     def self.clean(path, output_path: nil, profile: nil, platform: nil, bundle: false, archive: false)
@@ -127,7 +127,11 @@ module MilkTea
     end
     private_class_method :default_raw_bindings
 
-    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false)
+    def initialize(path, output_path:, cc:, keep_c_path:, raw_bindings:, module_roots: nil, package_graph: nil, frontend: nil, debug: false, profile: nil, platform: nil, bundle: false, archive: false, no_cache: false, kind: :executable)
+      @kind = case kind
+              when :executable, :static, :shared then kind
+              else raise BuildError, "unknown build kind #{kind}; expected executable|static|shared"
+              end
       manifest = PackageManifest.load(path)
       @package_build = true
       @source_path = manifest.source_path
@@ -135,7 +139,7 @@ module MilkTea
       @package_name = manifest.package_name
       @archive = archive
       @bundle = bundle || archive
-      if manifest.package_kind == :library
+      if manifest.package_kind == :library && @kind == :executable
         raise BuildError, "cannot build library package #{manifest.package_name} as an executable"
       end
       unless @source_path
@@ -211,6 +215,9 @@ module MilkTea
       ensure_compiler_available!
       ensure_supported_backend!
 
+      return build_static_library if @kind == :static
+      return build_shared_library if @kind == :shared
+
       if @frontend.is_a?(RubyFrontend) && !@no_cache
         build_cached
       else
@@ -219,6 +226,66 @@ module MilkTea
     end
 
     private
+
+    def build_static_library
+      emit_line_directives = line_directives_required?
+      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(emit_line_directives:)
+      prepare_bindings(frontend_modules)
+
+      object_path = compile_to_object(compiled_c || saved_c)
+      archive_path = @output_path
+      command = darwin_target? ? ["libtool", "-static", "-o", archive_path, object_path] : ["ar", "rcs", archive_path, object_path]
+      stdout, stderr, status = Open3.capture3(*command)
+      raise BuildError, "archiver failed:\n#{stdout}#{stderr}" unless status.success?
+
+      generate_header(program) if program
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags: [], profile: @profile, platform: @platform, bundle_root: nil, archive_path: nil, cached: false)
+    end
+
+    def build_shared_library
+      emit_line_directives = line_directives_required?
+      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(emit_line_directives:)
+      prepare_bindings(frontend_modules)
+      compiler_flags = collect_compiler_flags(frontend_modules)
+      link_flags = collect_link_flags(frontend_modules)
+
+      object_path = compile_to_object(compiled_c || saved_c, pic: true)
+      shared_flags = darwin_target? ? ["-dynamiclib"] : ["-shared"]
+      command = [@cc, *shared_flags, "-o", @output_path, object_path, *link_flags, *compiler_flags]
+      stdout, stderr, status = Open3.capture3(*command)
+      raise BuildError, "shared library link failed:\n#{stdout}#{stderr}" unless status.success?
+
+      generate_header(program) if program
+      Result.new(output_path: @output_path, c_path: nil, compiler: @cc, link_flags:, profile: @profile, platform: @platform, bundle_root: nil, archive_path: nil, cached: false)
+    end
+
+    def prepare_program(emit_line_directives:)
+      loader = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform)
+      program = loader.check_program(@resolved_source_path)
+      ir_program = Lowering.lower(program)
+      compiled_c = CBackend.emit(ir_program, emit_line_directives:)
+      saved_c = CBackend.emit(ir_program, emit_line_directives: false)
+      source_files = program.analyses_by_path.keys.each_with_object({}) { |p, h| h[p] = File.read(p, mode: "rb") }
+      frontend_modules = Build.send(:frontend_modules, program)
+      [source_files, program, compiled_c, saved_c, frontend_modules, ir_program]
+    end
+
+    def compile_to_object(source, pic: false)
+      c_path = File.join(Dir.mktmpdir("milk-tea-build"), "source.c")
+      object_path = "#{c_path}.o"
+      File.write(c_path, source)
+      profile_flags = profile_compiler_flags
+      pic_flags = pic ? ["-fPIC"] : []
+      std_c_include_flag = "-I#{MilkTea.root.join('std/c')}"
+      command = [@cc, "-std=c11", "-c", *pic_flags, *profile_flags, std_c_include_flag, c_path, "-o", object_path]
+      stdout, stderr, status = Open3.capture3(*command)
+      raise BuildError, "C compilation failed:\n#{stdout}#{stderr}" unless status.success?
+      object_path
+    end
+
+    def darwin_target?
+      @platform == :darwin || RUBY_PLATFORM =~ /darwin/
+    end
 
     def build_cached
       cache = BuildCache.new(root: MilkTea.root)
