@@ -474,7 +474,7 @@ module MilkTea
     def parse_struct_decl(packed: false, alignment: nil, visibility: :private, attributes: [])
       line = previous.line
       name = consume_name("expected struct name").lexeme
-      type_params = parse_declaration_type_params
+      lifetime_params, type_params = parse_struct_decl_params
       implements = parse_implements_clause
       c_name = parse_optional_explicit_c_name
       packed, alignment = parse_struct_layout_attributes(attributes) if attributes.any?
@@ -483,7 +483,50 @@ module MilkTea
       end
       fields = members.filter_map { |kind, member| member if kind == :field }
       events = members.filter_map { |kind, member| member if kind == :event }
-      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, attributes:, packed:, alignment:, visibility:, line:)
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:)
+    end
+
+    def parse_struct_decl_params
+      return [[], []] unless match(:lbracket)
+
+      lifetime_params = []
+      type_params = []
+
+      loop do
+        break if check(:rbracket)
+
+        if match(:at)
+          name_token = consume_name("expected lifetime name after @")
+          lifetime_params << "@#{name_token.lexeme}"
+        else
+          name_token = consume_name("expected type parameter name")
+          if match(:colon)
+            value_type = parse_type_ref
+            type_params << AST::ValueTypeParam.new(
+              name: name_token.lexeme,
+              type: value_type,
+              line: name_token.line,
+              column: name_token.column,
+              length: name_token.lexeme.length,
+            )
+          else
+            constraints = parse_type_param_constraints
+            type_params << AST::TypeParam.new(
+              name: name_token.lexeme,
+              constraints:,
+              line: name_token.line,
+              column: name_token.column,
+              length: name_token.lexeme.length,
+            )
+          end
+        end
+
+        break unless match(:comma)
+        next if check(:rbracket)
+      end
+
+      consume(:rbracket, "expected ']' after struct parameters")
+      [lifetime_params, type_params]
     end
 
     def parse_struct_member
@@ -905,7 +948,13 @@ module MilkTea
       first_token = peek
       name = parse_qualified_name
       arguments = []
+      lifetime = nil
       if match(:lbracket)
+        if match(:at)
+          lt_token = consume_name("expected lifetime name after @")
+          lifetime = "@#{lt_token.lexeme}"
+          consume(:comma, "expected ',' after lifetime in type arguments")
+        end
         arguments = parse_comma_separated_until(:rbracket) do
           AST::TypeArgument.new(value: parse_type_argument)
         end
@@ -915,7 +964,7 @@ module MilkTea
       nullable = match(:question)
       type_name = name.to_s
       length = type_name.length + (nullable ? 1 : 0)
-      AST::TypeRef.new(name:, arguments:, nullable:, line: first_token.line, column: first_token.column, length:)
+      AST::TypeRef.new(name:, arguments:, nullable:, lifetime:, line: first_token.line, column: first_token.column, length:)
     end
 
     def parse_function_type_ref

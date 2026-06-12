@@ -259,7 +259,7 @@ module MilkTea
           header_idx = @lines.length
           header = +""
           header << visibility_prefix(declaration)
-          header << "struct #{declaration.name}#{render_type_params(declaration.type_params)}"
+          header << "struct #{declaration.name}#{render_struct_params(declaration.lifetime_params, declaration.type_params)}"
           header << render_implements_clause(declaration.implements)
           header << " = c#{declaration.c_name.inspect}" if declaration.c_name
           header << ":"
@@ -404,6 +404,15 @@ module MilkTea
           "#{type_param.name} #{render_type_param_constraints(type_param.constraints)}"
         end
         "[#{rendered.join(', ')}]"
+      end
+
+      def render_struct_params(lifetime_params, type_params)
+        parts = []
+        parts.push(*lifetime_params) if lifetime_params&.any?
+        parts.concat(type_params.map(&:name))
+        return "" if parts.empty?
+
+        "[#{parts.join(', ')}]"
       end
 
       def render_type_param_constraints(constraints)
@@ -669,9 +678,10 @@ module MilkTea
         case type
         when AST::TypeRef
           text = type.name.to_s
-          unless type.arguments.empty?
-            text += "[#{type.arguments.map { |argument| render_type_argument(argument.value) }.join(', ')}]"
-          end
+          args = []
+          args << type.lifetime if type.lifetime
+          args.concat(type.arguments.map { |argument| render_type_argument(argument.value) })
+          text += "[#{args.join(', ')}]" unless args.empty?
           type.nullable ? "#{text}?" : text
         when AST::FunctionType
           "fn(#{type.params.map { |param| render_param(param) }.join(', ')}) -> #{render_type(type.return_type)}"
@@ -862,10 +872,15 @@ module MilkTea
 
       def emit_struct(struct_decl)
         header = "struct #{binding_name(struct_decl.name, struct_decl.c_name)}"
+        params = []
+        if struct_decl.respond_to?(:lifetime_params) && struct_decl.lifetime_params&.any?
+          params.push(*struct_decl.lifetime_params)
+        end
         modifiers = []
-        modifiers << "packed" if struct_decl.packed
-        modifiers << "align(#{struct_decl.alignment})" if struct_decl.alignment
-        header += " [#{modifiers.join(', ')}]" unless modifiers.empty?
+        modifiers << "packed" if struct_decl.respond_to?(:packed) && struct_decl.packed
+        modifiers << "align(#{struct_decl.alignment})" if struct_decl.respond_to?(:alignment) && struct_decl.alignment
+        params.concat(modifiers) unless modifiers.empty?
+        header += " [#{params.join(', ')}]" unless params.empty?
         header += ":"
         line(header)
         with_indent do

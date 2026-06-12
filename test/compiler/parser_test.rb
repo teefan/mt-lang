@@ -3124,4 +3124,47 @@ class MilkTeaParserTest < Minitest::Test
     assert_instance_of MilkTea::AST::FunctionDef, emit_stmt.declaration
   end
 
+  def test_parses_struct_with_lifetime_param
+    source = <<~MT
+      struct Cursor[@a]:
+          data: ref[@a, span[ubyte]]
+          position: ptr_uint
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct_decl = ast.declarations.first
+    assert_instance_of MilkTea::AST::StructDecl, struct_decl
+    assert_equal ["@a"], struct_decl.lifetime_params
+    assert_equal ["data", "position"], struct_decl.fields.map(&:name)
+
+    data_field = struct_decl.fields.first
+    assert_equal "ref", data_field.type.name.to_s
+    assert_equal "@a", data_field.type.lifetime
+  end
+
+  def test_parses_struct_with_lifetime_and_type_params
+    source = <<~MT
+      struct Container[@a, T]:
+          data: ref[@a, span[T]]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct_decl = ast.declarations.first
+    assert_equal ["@a"], struct_decl.lifetime_params
+    assert_equal ["T"], struct_decl.type_params.map(&:name)
+  end
+
+  def test_parses_ref_type_without_lifetime_is_unchanged
+    source = <<~MT
+      function foo(x: ref[int]) -> void:
+          pass
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    param_type = fn.params.first.type
+    assert_equal "ref", param_type.name.to_s
+    assert_nil param_type.lifetime
+  end
+
 end

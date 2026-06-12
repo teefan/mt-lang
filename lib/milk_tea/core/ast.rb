@@ -19,17 +19,19 @@ module MilkTea
       def initialize(name:, type:, line: nil, column: nil, length: nil) = super
     end
     TypeArgument = Data.define(:value)
-    class TypeRef < Data.define(:name, :arguments, :nullable, :line, :column, :length)
-      def initialize(name:, arguments:, nullable:, line: nil, column: nil, length: nil) = super
+    class TypeRef < Data.define(:name, :arguments, :nullable, :lifetime, :line, :column, :length)
+      def initialize(name:, arguments:, nullable:, lifetime: nil, line: nil, column: nil, length: nil) = super
 
       def to_s
         text = name.to_s
-        unless arguments.empty?
-          rendered_arguments = arguments.map do |argument|
-            value = argument.value
-            value.respond_to?(:to_s) ? value.to_s : value.inspect
-          end
-          text += "[#{rendered_arguments.join(', ')}]"
+        args = []
+        args << lifetime if lifetime
+        args.concat(arguments.map do |argument|
+          value = argument.value
+          value.respond_to?(:to_s) ? value.to_s : value.inspect
+        end)
+        unless args.empty?
+          text += "[#{args.join(', ')}]"
         end
         nullable ? "#{text}?" : text
       end
@@ -63,8 +65,8 @@ module MilkTea
     AttributeApplication = Data.define(:name, :arguments, :line, :column) do
       def initialize(name:, arguments:, line: nil, column: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :attributes, :packed, :alignment, :visibility, :line) do
-      def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], attributes: [], packed:, alignment:, visibility:, line: nil) = super
+    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :attributes, :packed, :alignment, :visibility, :lifetime_params, :line) do
+      def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], attributes: [], packed:, alignment:, visibility:, lifetime_params: [], line: nil) = super
     end
     UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
       def initialize(name:, c_name:, fields:, visibility:, line: nil) = super
