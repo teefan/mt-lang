@@ -134,6 +134,7 @@ module MilkTea
         arrow shift_left shift_right plus_equal minus_equal star_equal slash_equal percent_equal
         amp_equal pipe_equal caret_equal shift_left_equal shift_right_equal
         equal_equal bang_equal less_equal greater_equal ellipsis
+        at dot_dot
       ].to_set.freeze
       DIAGNOSTICS_WORKER_COUNT = Integer(ENV.fetch('MILK_TEA_LSP_DIAGNOSTICS_WORKERS', '2')).clamp(1, 8)
 

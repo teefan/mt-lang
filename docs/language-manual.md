@@ -232,14 +232,14 @@ Rules for `let ... else:` and `var ... else:`:
 - `Result[void, E]` uses the same surface via `let _ = expr else:`
 - the `else` block must exit control flow (`return`, `break`, `continue`, or another terminating path)
 
-Tuple destructuring:
+Tuple and struct destructuring:
 
 ```mt
 let (a, b) = pair()
-let (x, y) = (1, 2)
+let Vec2(x, y) = get_position()
 ```
 
-Destructuring binds each element of a tuple to a separate immutable local. The binding count must match the tuple element count.
+Tuple destructuring binds each element by position. Struct destructuring binds each field by name against the source struct's declared field order.
 
 Postfix Result propagation:
 

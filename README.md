@@ -159,6 +159,16 @@ let (a, b) = pair()
 let (x, y) = (1, 2)
 ```
 
+Struct destructuring:
+
+```mt
+struct Vec2:
+    x: float
+    y: float
+let p = Vec2(x = 1.0, y = 2.0)
+let Vec2(x, y) = p
+```
+
 Rules for `let ... else:` and `var ... else:`:
 
 - Both `let` and `var` support an `else` block.
