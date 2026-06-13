@@ -1130,6 +1130,41 @@ function dyn_demo() -> float:
     return area
 
 # ---------------------------------------------------------------------------
+# 31  Tuples — positional, named, destructuring
+# ---------------------------------------------------------------------------
+
+function tuple_demo() -> int:
+    # --- positional tuple construction and field access
+    let pair = (42, 7)
+    let sum_pos = pair._0 + pair._1
+
+    # --- named tuple construction and field access
+    let point = (x = 10, y = 20)
+    let sum_named = point.x + point.y
+
+    # --- tuple return type
+    let result = get_coords()
+    let coords_x = result._0
+    let coords_y = result._1
+
+    # --- destructuring
+    let (a, b) = result
+    let sum_dest = a + b
+
+    # --- destructure with swap-like pattern
+    var v1 = 1
+    var v2 = 2
+    var swapped = (v2, v1)
+    let (left, rite) = swapped
+    let ord = left + rite
+
+    return sum_pos + sum_named + coords_x + coords_y + sum_dest + ord
+
+
+function get_coords() -> (int, int):
+    return (50, 60)
+
+# ---------------------------------------------------------------------------
 # 30  Entrypoint
 # ---------------------------------------------------------------------------
 
@@ -1165,6 +1200,7 @@ function main() -> int:
 
     total += named_args_demo()
     total += int<-(dyn_demo())
+    total += tuple_demo()
 
     total += aio.wait(async_child())
     total += aio.wait(async_demo())

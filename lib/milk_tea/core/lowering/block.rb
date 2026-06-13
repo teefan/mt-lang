@@ -35,6 +35,11 @@ module MilkTea
             )
             lowered << IR::BlockStmt.new(body:)
           when AST::LocalDecl
+            if statement.destructure_bindings
+              lower_destructure_decl(statement, env: local_env, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
+              next
+            end
+
             storage_type = if statement.else_body
                               infer_expression_type(statement.value, env: local_env)
                             elsif statement.type
@@ -854,6 +859,25 @@ module MilkTea
         struct_decl = IR::StructDecl.new(name: decl.name, c_name:, fields:, packed: decl.respond_to?(:packed) ? decl.packed : false, alignment: nil)
         @emitted_declarations << struct_decl
         []
+      end
+
+      def lower_destructure_decl(statement, env:, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
+        tuple_type = infer_expression_type(statement.value, env:)
+        setup, prepared_value, cleanups = prepare_expression_with_cleanups(statement.value, env:, expected_type: tuple_type)
+        lowered.concat(setup)
+        value = lower_contextual_expression(prepared_value, env:, expected_type: tuple_type)
+
+        temp_name = fresh_c_temp_name(env, "destructure_val")
+        lowered << IR::LocalDecl.new(name: temp_name, c_name: temp_name, type: tuple_type, value:)
+
+        statement.destructure_bindings.each_with_index do |name, index|
+          field_name = tuple_type.field_names[index]
+          field_type = tuple_type.element_types[index]
+          field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: tuple_type, pointer: false), member: field_name, type: field_type)
+          decl_c_name = c_local_name(name)
+          lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
+          env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+        end
       end
 
       def lower_emitted_const(decl, env:)

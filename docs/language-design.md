@@ -195,6 +195,17 @@ var name_input: str_buffer[64]
 const max_players: int = 4
 ```
 
+Tuple literal and destructuring:
+
+```mt
+let pair = (42, "hello")         # positional tuple
+let point = (x = 10, y = 20)     # named tuple
+let (a, b) = pair                # destructure positional
+let (x, y) = point               # destructure named
+```
+
+A function can return a tuple type: `function pair() -> (int, str):`.
+
 Local type inference is allowed when the initializer makes the type obvious:
 
 ```mt
@@ -516,6 +527,7 @@ str_buffer[N]   # fixed-capacity mutable UTF-8 text buffer
 ptr[T]           # raw pointer
 span[T]          # pointer + length view
 fn(A, B) -> R    # function pointer type
+(T, U)           # tuple type (positional or named fields)
 ```
 
 Examples:

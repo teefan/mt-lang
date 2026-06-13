@@ -152,6 +152,13 @@ let _ = initialize() else:
     return 1
 ```
 
+Tuple destructuring:
+
+```mt
+let (a, b) = pair()
+let (x, y) = (1, 2)
+```
+
 Rules for `let ... else:` and `var ... else:`:
 
 - Both `let` and `var` support an `else` block.
@@ -513,6 +520,7 @@ Primary expressions:
 - identifiers
 - literals
 - parenthesized expressions
+- tuple literal: `(a, b)` — positional; `(x = 1, y = 2)` — named
 - `size_of(T)`
 - `align_of(T)`
 - `offset_of(T, field)`
@@ -604,6 +612,7 @@ Type constructors:
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
+- `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
 

@@ -946,6 +946,7 @@ module MilkTea
       return parse_function_type_ref if match(:fn)
       return parse_proc_type_ref if match(:proc)
       return parse_dyn_type_ref if match(:dyn)
+      return parse_tuple_type_ref if check(:lparen)
 
       first_token = peek
       if match(:at)
@@ -993,6 +994,24 @@ module MilkTea
       consume(:rbracket, "expected ']' after interface name")
       nullable = match(:question)
       AST::DynType.new(interface:, nullable:, line: first_token.line, column: first_token.column, length: 3)
+    end
+
+    def parse_tuple_type_ref
+      match(:lparen)
+      first_type = parse_type_ref
+      if match(:comma)
+        element_types = [first_type]
+        loop do
+          element_types << parse_type_ref
+          break unless match(:comma)
+        end
+        consume(:rparen, "expected ')' after tuple type elements")
+        nullable = match(:question)
+        AST::TupleType.new(element_types:, nullable:)
+      else
+        consume(:rparen, "expected ')' after type")
+        first_type
+      end
     end
 
     def parse_callable_type_ref(keyword:, param_context:)
@@ -1194,15 +1213,26 @@ module MilkTea
       name_token = nil
       name = nil
       var_type = nil
-      name_token = consume_name("expected local variable name")
-      name = name_token.lexeme
+
+      destructure_bindings = nil
+      if check(:lparen)
+        destructure_bindings = parse_destructure_pattern
+      else
+        name_token = consume_name("expected local variable name")
+        name = name_token.lexeme
+      end
+
       var_type = match(:colon) ? parse_type_ref : nil
       value = nil
       else_binding = nil
       else_body = nil
       else_started = false
 
-      if match(:equal)
+      if destructure_bindings
+        consume(:equal, "expected '=' after destructure pattern")
+        value = parse_expression
+        consume_end_of_statement
+      elsif match(:equal)
         value = parse_expression
         if match(:else)
           else_started = true
@@ -1222,7 +1252,7 @@ module MilkTea
         consume_end_of_statement
       end
 
-      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token.column)
+      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token&.column || line, destructure_bindings:)
     rescue ParseError => e
       raise unless @recovery_errors && name
 
@@ -1253,6 +1283,18 @@ module MilkTea
         line:,
         column: name_token.column,
       )
+    end
+
+    def parse_destructure_pattern
+      match(:lparen)
+      bindings = []
+      loop do
+        token = consume_name("expected binding name in destructure pattern")
+        bindings << token.lexeme
+        break unless match(:comma)
+      end
+      consume(:rparen, "expected ')' after destructure pattern")
+      bindings
     end
 
     def parse_if_stmt
@@ -1954,12 +1996,26 @@ module MilkTea
       elsif match(:lparen)
         line = previous.line
         column = previous.column
-        first = parse_expression
+        first = if check_name && check_next(:equal)
+                  name_token = advance
+                  consume(:equal, "expected '=' after named tuple field")
+                  AST::Argument.new(name: name_token.lexeme, value: parse_expression)
+                else
+                  parse_expression
+                end
         if match(:comma)
           elements = [first]
           loop do
-            elements << parse_expression
+            if check_name && check_next(:equal)
+              name_token = advance
+              consume(:equal, "expected '=' after named tuple field")
+              value = parse_expression
+              elements << AST::Argument.new(name: name_token.lexeme, value:)
+            else
+              elements << parse_expression
+            end
             break unless match(:comma)
+            break if check(:rparen)
           end
           consume(:rparen, "expected ')' after tuple elements")
           AST::ExpressionList.new(elements:, line:, column:)

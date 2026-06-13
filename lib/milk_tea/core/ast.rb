@@ -39,6 +39,9 @@ module MilkTea
     end
     FunctionType = Data.define(:params, :return_type)
     ProcType = Data.define(:params, :return_type)
+    TupleType = Data.define(:element_types, :nullable) do
+      def initialize(element_types:, nullable: false) = super
+    end
     DynType = Data.define(:interface, :nullable, :line, :column, :length) do
       def initialize(interface:, nullable: false, line: nil, column: nil, length: nil) = super
     end
@@ -113,8 +116,8 @@ module MilkTea
       def initialize(name:, type:, line: nil, column: nil) = super
     end
     ForeignParam = Data.define(:name, :type, :mode, :boundary_type)
-    LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else) do
-      def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil, recovered_else: false) = super
+    LocalDecl = Data.define(:kind, :name, :type, :value, :else_binding, :else_body, :line, :column, :recovered_else, :destructure_bindings) do
+      def initialize(kind:, name:, type:, value:, else_binding: nil, else_body: nil, line: nil, column: nil, recovered_else: false, destructure_bindings: nil) = super
     end
     Assignment = Data.define(:target, :operator, :value, :line) do
       def initialize(target:, operator:, value:, line: nil) = super

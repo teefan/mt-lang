@@ -1027,6 +1027,42 @@ module MilkTea
         ]
       end
 
+      private def ensure_tuple_struct(tuple_type)
+        return unless tuple_type.is_a?(Types::Tuple)
+
+        @registered_tuple_types ||= {}
+        return if @registered_tuple_types[tuple_type]
+
+        c_name = tuple_type_name(tuple_type)
+        return if @synthetic_structs.any? { |s| s.c_name == c_name }
+
+        fields = tuple_type.element_types.each_with_index.map do |et, i|
+          IR::Field.new(name: tuple_type.field_names[i], type: et)
+        end
+        @synthetic_structs << IR::StructDecl.new(
+          name: tuple_type.to_s,
+          c_name: c_name,
+          fields: fields,
+          packed: false,
+          alignment: nil,
+        )
+        @registered_tuple_types[tuple_type] = true
+      end
+
+      private def tuple_type_name(type)
+        sanitized = type.element_types.map { |et| sanitize_type_name_for_tuple(et) }.join("_")
+        base = "mt_tuple_#{sanitized}"
+        default_names = type.element_types.each_with_index.map { |_, i| "_#{i}" }
+        if type.field_names != default_names
+          base << "_" << type.field_names.map { |n| sanitize_type_name_for_tuple(n) }.join("_")
+        end
+        base
+      end
+
+      private def sanitize_type_name_for_tuple(type)
+        type.to_s.gsub(/[^a-zA-Z0-9]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
+      end
+
       def prepare_if_expression_for_inline_lowering(expression, env:, expected_type: nil)
         condition_setup, condition = prepare_expression_for_inline_lowering(expression.condition, env:, expected_type: @types.fetch("bool"))
         then_env = env_with_refinements(env, flow_refinements(expression.condition, truthy: true, env:))
@@ -1282,6 +1318,19 @@ module MilkTea
           lower_call(expression, env:, type:)
         when AST::Specialization
           lower_specialization(expression, env:, type:)
+        when AST::ExpressionList
+          ensure_tuple_struct(type)
+          fields = expression.elements.each_with_index.map do |element, index|
+            if element.is_a?(AST::Argument)
+              element_type = type.element_types[index]
+              field_name = element.name
+              IR::AggregateField.new(name: field_name, value: lower_expression(element.value, env:, expected_type: element_type))
+            else
+              element_type = type.element_types[index]
+              IR::AggregateField.new(name: "_#{index}", value: lower_expression(element, env:, expected_type: element_type))
+            end
+          end
+          IR::AggregateLiteral.new(type:, fields:)
         else
           raise LoweringError, "unsupported expression #{expression.class.name}"
         end

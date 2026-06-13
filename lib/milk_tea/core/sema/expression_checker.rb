@@ -213,12 +213,25 @@ module MilkTea
             if expected_type && expected_type.is_a?(Types::GenericInstance) && expected_type.name == "array"
               element_type = expected_type.arguments.first
               expression.elements.each do |element|
-                actual = infer_expression(element, scopes:, expected_type: element_type)
-                ensure_assignable!(actual, element_type, "array element type mismatch: expected #{element_type}, got #{actual}", expression: element)
+                value = element.is_a?(AST::Argument) ? element.value : element
+                actual = infer_expression(value, scopes:, expected_type: element_type)
+                ensure_assignable!(actual, element_type, "array element type mismatch: expected #{element_type}, got #{actual}", expression: value)
               end
               expected_type
             else
-              raise_sema_error("expression list can only be used as the right-hand side of a range index assignment")
+              names = []
+              element_types = []
+              expression.elements.each do |element|
+                if element.is_a?(AST::Argument)
+                  names << element.name
+                  element_types << infer_expression(element.value, scopes:)
+                else
+                  names << nil
+                  element_types << infer_expression(element, scopes:)
+                end
+              end
+              has_named = names.any?
+              Types::Tuple.new(element_types, field_names: has_named ? names : nil)
             end
           else
             raise_sema_error("unsupported expression #{expression.class.name}")
