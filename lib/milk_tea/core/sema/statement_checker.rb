@@ -670,6 +670,15 @@ module MilkTea
         payload_fields = scrutinee_type.arm(arm_name)
         raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload fields for struct pattern") if payload_fields.nil? || payload_fields.empty?
 
+        # Nested struct detection: if arm has exactly one field whose type is a struct,
+        # auto-destructure through to the struct's own fields.
+        if payload_fields.size == 1
+          single_field_type = payload_fields.values.first
+          if single_field_type.is_a?(Types::Struct)
+            payload_fields = single_field_type.fields
+          end
+        end
+
         has_guards = false
         seen_fields = {}
 

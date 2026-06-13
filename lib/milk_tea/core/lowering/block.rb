@@ -339,17 +339,38 @@ module MilkTea
                     arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, c_name: payload_c_name, mutable: true, pointer: false)
                     lowered << IR::LocalDecl.new(name: payload_c_name, c_name: payload_c_name, type: payload_type, value: arm_expr)
 
+                    # Detect nested struct pattern: if arm has exactly one field whose
+                    # type is a struct, auto-destructure through to that struct's fields.
+                    nested_struct_fields = nil
+                    nested_struct_c_name = nil
+                    nested_struct_type = nil
+                    if fields.size == 1 && fields.values.first.is_a?(Types::Struct)
+                      nested_struct_type = fields.values.first
+                      nested_struct_fields = nested_struct_type.fields
+                      single_field_name = fields.keys.first
+                      nested_struct_c_name = fresh_c_temp_name(arm_local_env, "match_struct")
+                      struct_expr = IR::Member.new(
+                        receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false),
+                        member: single_field_name,
+                        type: nested_struct_type,
+                      )
+                      lowered << IR::LocalDecl.new(name: nested_struct_c_name, c_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+                    end
+
                     if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
+                      pattern_fields = nested_struct_fields || fields
+                      pattern_receiver_name = nested_struct_c_name || payload_c_name
+                      pattern_receiver_type = nested_struct_type || payload_type
                       arm.pattern.arguments.each do |arg|
                         next if arg.name
                         next unless arg.value.is_a?(AST::Identifier)
 
                         field_name = arg.value.name
-                        next unless fields.key?(field_name)
+                        next unless pattern_fields.key?(field_name)
 
-                        field_type = fields[field_name]
+                        field_type = pattern_fields[field_name]
                         binding_c = c_local_name(field_name)
-                        field_expr = IR::Member.new(receiver: IR::Name.new(name: payload_c_name, type: payload_type, pointer: false), member: field_name, type: field_type)
+                        field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
                         lowered << IR::LocalDecl.new(name: binding_c, c_name: binding_c, type: field_type, value: field_expr)
                         arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, c_name: binding_c, mutable: false, pointer: false)
                       end

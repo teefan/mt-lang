@@ -947,11 +947,16 @@ module MilkTea
       return parse_proc_type_ref if match(:proc)
 
       first_token = peek
+      if match(:at)
+        lt_token = consume_name("expected lifetime name after @")
+        return AST::TypeRef.new(name: AST::QualifiedName.new(parts: ["@#{lt_token.lexeme}"]), arguments: [], nullable: false, lifetime: nil, line: first_token.line, column: first_token.column, length: lt_token.lexeme.length + 1)
+      end
       name = parse_qualified_name
       arguments = []
       lifetime = nil
       if match(:lbracket)
-        if match(:at) && name.to_s == "ref"
+        if check(:at) && name.to_s == "ref"
+          match(:at)
           lt_token = consume_name("expected lifetime name after @")
           lifetime = "@#{lt_token.lexeme}"
           consume(:comma, "expected ',' after lifetime in type arguments")

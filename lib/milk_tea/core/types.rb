@@ -24,6 +24,8 @@ module MilkTea
       case type
       when TypeVar
         substitutions.fetch(type.name, type)
+      when LifetimeRef
+        substitutions.fetch(type.name, type)
       when Nullable
         Nullable.new(substitute_type_variables(type.base, substitutions))
       when GenericInstance
@@ -522,7 +524,31 @@ module MilkTea
       alias == eql?
 
       def hash
-        [self.class, name].hash
+
+        @name.hash
+      end
+
+      def to_s
+        name
+      end
+    end
+
+    class LifetimeRef < Base
+      attr_reader :name
+
+      def initialize(name)
+        @name = name
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(LifetimeRef) && other.name == name
+      end
+
+      alias == eql?
+
+      def hash
+        @name.hash
       end
 
       def to_s
@@ -857,6 +883,9 @@ module MilkTea
         return @instances[key] if @instances.key?(key)
 
         substitutions = type_params.zip(arguments).to_h
+        lifetime_params.each do |lt|
+          substitutions[lt] = arguments.find { |a| a.is_a?(LifetimeRef) && a.name == lt } || LifetimeRef.new(lt)
+        end
         instance = StructInstance.new(self, arguments)
         @instances[key] = instance
         instance.define_fields(
