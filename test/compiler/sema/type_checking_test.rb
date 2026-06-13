@@ -4563,4 +4563,148 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  # ── variant struct patterns ────────────────────────────────────────────────
+
+  def test_type_checks_variant_match_struct_pattern_binding
+    source = <<~MT
+      # module demo.variant_binding
+
+      variant Entity:
+          player(hp: int, position: int)
+          enemy(id: int)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp, position):
+                  return hp + position
+              Entity.enemy(id):
+                  return id
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_variant_match_struct_pattern_guard
+    source = <<~MT
+      # module demo.variant_guard
+
+      variant Entity:
+          player(hp: int, name: str)
+          enemy(id: int)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp > 0, name):
+                  return 1
+              Entity.player(hp, name):
+                  return hp
+              Entity.enemy(id):
+                  return id
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_variant_match_struct_pattern_equality
+    source = <<~MT
+      # module demo.variant_equality
+
+      enum Kind: ubyte
+          boss = 1
+          minion = 2
+
+      variant Entity:
+          monster(kind: Kind, hp: int)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.monster(kind = Kind.boss, hp):
+                  return hp
+              Entity.monster(hp):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_variant_match_struct_pattern_with_as_binding
+    source = <<~MT
+      # module demo.variant_as_binding
+
+      variant Entity:
+          player(hp: int, position: int)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp > 0) as p:
+                  return p.hp + p.position
+              Entity.player as p:
+                  return p.hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_variant_match_struct_pattern_mixed
+    source = <<~MT
+      # module demo.variant_mixed
+
+      variant Entity:
+          player(hp: int, alive: bool, name: str)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp, alive = true, name):
+                  return hp
+              Entity.player(hp, name):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_variant_match_nested_struct_auto_destructure
+    source = <<~MT
+      # module demo.variant_nested
+
+      struct Pos:
+          x: int
+          y: int
+
+      variant Entity:
+          positioned(loc: Pos)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.positioned(x, y):
+                  return x + y
+              Entity.empty:
+                  return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end

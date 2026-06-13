@@ -2930,4 +2930,75 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/first argument.*must be a non-null pointer/, error.message)
   end
 
+  # ── variant struct patterns ────────────────────────────────────────────────
+
+  def test_rejects_struct_pattern_with_unknown_field
+    source = <<~MT
+      # module demo.bad_struct_pattern_field
+
+      variant Entity:
+          player(hp: int, name: str)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp, unknown_field):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown field/, error.message)
+  end
+
+  def test_rejects_struct_pattern_with_duplicate_field
+    source = <<~MT
+      # module demo.bad_struct_dup_field
+
+      variant Entity:
+          player(hp: int, name: str)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp, hp):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/duplicate field/, error.message)
+  end
+
+  def test_rejects_struct_pattern_with_invalid_guard_operator
+    source = <<~MT
+      # module demo.bad_struct_guard_op
+
+      variant Entity:
+          player(hp: int, name: str)
+          empty
+
+      function main(e: Entity) -> int:
+          match e:
+              Entity.player(hp + 0, name):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unsupported guard operator/, error.message)
+  end
+
 end

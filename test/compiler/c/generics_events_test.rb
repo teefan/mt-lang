@@ -959,4 +959,179 @@ function main() -> int:
     assert_equal 20, result.exit_status
   end
 
+  # ── variant struct patterns runtime ────────────────────────────────────────
+
+  def test_run_program_with_variant_struct_pattern_binding
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_binding_runtime
+
+      variant Entity:
+          player(hp: int, position: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.player(hp = 5, position = 3)
+          match entity:
+              Entity.player(hp, position):
+                  return hp + position
+              Entity.empty:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 8, result.exit_status
+  end
+
+  def test_run_program_with_variant_struct_pattern_guard_fallthrough
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_guard_runtime
+
+      variant Entity:
+          player(hp: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.player(hp = 8)
+          match entity:
+              Entity.player(hp):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 8, result.exit_status
+  end
+
+  def test_run_program_with_variant_binding_and_wildcard
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_wildcard_runtime
+
+      variant Entity:
+          player(hp: int, position: int)
+          enemy(id: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.player(hp = 5, position = 3)
+          match entity:
+              Entity.player(hp, position):
+                  return hp + position
+              _:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 8, result.exit_status
+  end
+
+  def test_run_program_with_variant_guard_skip_when_condition_false
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_guard_skip_runtime
+
+      variant Entity:
+          player(hp: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.player(hp = 3)
+          match entity:
+              Entity.player(hp > 5):
+                  return 10
+              Entity.player(hp):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 3, result.exit_status
+  end
+
+  def test_run_program_with_variant_guard_match_when_condition_true
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_guard_match_runtime
+
+      variant Entity:
+          player(hp: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.player(hp = 8)
+          match entity:
+              Entity.player(hp > 5):
+                  return 10
+              Entity.player(hp):
+                  return hp
+              Entity.empty:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+  end
+
+  def test_run_program_with_variant_equality_skip_when_not_equal
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.variant_equality_skip_runtime
+
+      enum Kind: ubyte
+          boss = 1
+          minion = 2
+
+      variant Entity:
+          monster(kind: Kind, hp: int)
+          empty
+
+      function main() -> int:
+          var entity = Entity.monster(kind = Kind.minion, hp = 7)
+          match entity:
+              Entity.monster(kind = Kind.boss, hp):
+                  return 10
+              Entity.monster(kind = Kind.minion, hp):
+                  return hp
+              _:
+                  return 0
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 7, result.exit_status
+  end
+
 end
