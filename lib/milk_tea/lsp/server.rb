@@ -55,7 +55,7 @@ module MilkTea
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[
         ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default
-        field_of callable_of has_attribute attribute_of attribute_arg
+        field_of callable_of has_attribute attribute_of attribute_arg adapt get
       ].to_set.freeze
       BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       BUILTIN_CALL_HOVER_INFO = {
@@ -78,6 +78,10 @@ module MilkTea
         'read' => {
           signature: 'builtin read(value) -> T',
           docs: '`read(value)` projects a `ref[T]` or pointer-like value to its referent.'
+        },
+        'adapt' => {
+          signature: 'builtin adapt[Interface](value) -> dyn[Interface]',
+          docs: '`adapt[Interface](value)` constructs a `dyn[Interface]` runtime interface value. Compile-time verified: the value\'s type must implement the interface.'
         },
         'field_of' => {
           signature: 'builtin field_of(Type, field_name) -> field_handle',
