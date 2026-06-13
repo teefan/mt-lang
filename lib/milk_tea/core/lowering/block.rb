@@ -365,6 +365,8 @@ module MilkTea
                       if arm_local_env[:scopes].last.key?(payload_key)
                         payload_binding = arm_local_env[:scopes].last[payload_key]
                         arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], c_name: binding_c, mutable: true, pointer: false)
+                        payload_ref = IR::Name.new(name: payload_binding[:c_name], type: payload_binding[:type], pointer: false)
+                        lowered << IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_binding[:type], value: payload_ref)
                       end
                     end
                   end

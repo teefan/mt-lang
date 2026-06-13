@@ -951,7 +951,7 @@ module MilkTea
       arguments = []
       lifetime = nil
       if match(:lbracket)
-        if match(:at)
+        if match(:at) && name.to_s == "ref"
           lt_token = consume_name("expected lifetime name after @")
           lifetime = "@#{lt_token.lexeme}"
           consume(:comma, "expected ',' after lifetime in type arguments")

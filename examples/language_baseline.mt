@@ -1128,4 +1128,7 @@ function main() -> int:
     total += aio.wait(async_child())
     total += aio.wait(async_demo())
 
+    var dblr = Doubler(value = 0)
+    total += apply_converter[Doubler](ref_of(dblr), 3)
+
     return total
