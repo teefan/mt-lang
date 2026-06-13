@@ -761,11 +761,17 @@ module MilkTea
         raise_sema_error("variant arm #{scrutinee_type}.#{arm_name} has no payload fields for struct pattern") if payload_fields.nil? || payload_fields.empty?
 
         # Nested struct detection: if arm has exactly one field whose type is a struct,
-        # auto-destructure through to the struct's own fields.
+        # auto-destructure through to the struct's own fields, but only when none of
+        # the arguments reference the arm's own field name directly.
         if payload_fields.size == 1
-          single_field_type = payload_fields.values.first
-          if single_field_type.is_a?(Types::Struct)
-            payload_fields = single_field_type.fields
+          native_field = payload_fields.keys.first
+          has_native_reference = arguments.any? do |arg|
+            name = arg.name || (arg.value.is_a?(AST::Identifier) ? arg.value.name : nil)
+            name == native_field
+          end
+          unless has_native_reference
+            single_field_type = payload_fields.values.first
+            payload_fields = single_field_type.fields if single_field_type.is_a?(Types::Struct)
           end
         end
 
