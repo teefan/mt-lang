@@ -790,4 +790,173 @@ function main() -> int:
     assert_equal 0, result.exit_status
   end
 
+  # ── subscribe_once / stateful subscribe ────────────────────────────────────
+
+  def test_generate_c_for_event_subscribe_once_stateless
+    source = <<~MT
+      # module demo.subscribe_once_codegen
+
+      event ready[4]
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return ready.subscribe_once(on_ready)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/mt_event_demo_subscribe_once_codegen_ready_4__subscribe_once/, generated)
+  end
+
+  def test_generate_c_for_event_subscribe_stateful
+    source = <<~MT
+      # module demo.subscribe_stateful_codegen
+
+      struct Counter:
+          value: int
+
+      event ticked[4]
+
+      function on_tick(state: ptr[Counter]) -> void:
+          return
+
+      function main(state: ptr[Counter]) -> Result[Subscription, EventError]:
+          return ticked.subscribe(state, on_tick)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/mt_event_demo_subscribe_stateful_codegen_ticked_4__subscribe_stateful/, generated)
+  end
+
+  def test_generate_c_for_event_subscribe_once_stateful
+    source = <<~MT
+      # module demo.subscribe_once_stateful_codegen
+
+      struct State:
+          value: int
+
+      event fired[4](int)
+
+      function on_fire(state: ptr[State], payload: int) -> void:
+          return
+
+      function main(state: ptr[State]) -> Result[Subscription, EventError]:
+          return fired.subscribe_once(state, on_fire)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/subscribe_once_stateful/, generated)
+  end
+
+  def test_run_program_with_event_subscribe_once
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.subscribe_once_runtime
+
+      event ready[4]
+
+      function on_ready() -> void:
+          return
+
+      function main() -> int:
+          let _ = ready.subscribe_once(on_ready) else:
+              return 1
+          ready.emit()
+          return 10
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+  end
+
+  def test_run_program_with_event_stateful_subscribe
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.stateful_subscribe_runtime
+
+      struct Counter:
+          count: int
+
+      event ticked[4]
+
+      function on_tick(state: ptr[Counter]) -> void:
+          unsafe:
+              state.count += 1
+
+      function main() -> int:
+          var c = Counter(count = 0)
+          ticked.subscribe(ptr_of(c), on_tick)
+          ticked.emit()
+          return c.count
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 1, result.exit_status
+  end
+
+  # ── inline while / inline match codegen ────────────────────────────────────
+
+  def test_generate_c_for_inline_match_only_emits_chosen_arm
+    source = <<~MT
+      # module demo.inline_match_codegen
+
+      const CHOICE: int = 2
+
+      function main() -> int:
+          inline match CHOICE:
+              1:
+                  return 10
+              2:
+                  return 20
+              _:
+                  return 30
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/return 20/, generated)
+    refute_match(/return 10/, generated)
+    refute_match(/return 30/, generated)
+  end
+
+  def test_run_program_with_inline_match
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~MT
+      # module demo.inline_match_runtime
+
+      const CHOICE: int = 2
+
+      function main() -> int:
+          inline match CHOICE:
+              1:
+                  return 10
+              2:
+                  return 20
+              _:
+                  return 30
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 20, result.exit_status
+  end
+
 end
