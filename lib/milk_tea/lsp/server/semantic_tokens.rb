@@ -359,7 +359,7 @@ module MilkTea
           return [:typeParameter, []] if type_parameter_reference_token?(facts, tokens, index)
         end
 
-        return [:property, []] if named_argument_label_token?(tokens, index)
+        return [:parameter, []] if named_argument_label_token?(tokens, index)
 
         if facts && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(facts, tok))
           return generic_binding

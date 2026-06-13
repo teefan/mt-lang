@@ -1092,7 +1092,19 @@ function with_demo() -> Vec2:
     return v.with(x = 10.0)
 
 # ---------------------------------------------------------------------------
-# 29  dyn[InterfaceName] — runtime interface values
+# 29  Named arguments at call sites
+# ---------------------------------------------------------------------------
+
+function configure(host: str, port: int, debug: bool) -> void:
+    pass
+
+function named_args_demo() -> int:
+    configure("localhost", port = 8080, debug = false)
+    configure(host = "other", port = 3000, debug = true)
+    return 1
+
+# ---------------------------------------------------------------------------
+# 30  dyn[InterfaceName] — runtime interface values
 # ---------------------------------------------------------------------------
 
 interface Shape:
@@ -1151,6 +1163,7 @@ function main() -> int:
     total += int<-(with_demo().x) + int<-(with_demo().y)
     nullability_demo()
 
+    total += named_args_demo()
     total += int<-(dyn_demo())
 
     total += aio.wait(async_child())

@@ -773,20 +773,67 @@ module MilkTea
 
         field_name = tokens[token_index].lexeme
         receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
-        return nil unless receiver_type.respond_to?(:field)
+        if receiver_type.respond_to?(:field)
+          field_type = receiver_type.field(field_name)
+          if field_type
+            source_location = field_definition_location(current_uri, receiver_type, field_name)
+            return {
+              signature: field_hover_signature(field_name, field_type),
+              docs: nil,
+              source: hover_source_label_from_location(source_location),
+              source_uri: hover_source_uri_from_location(source_location),
+              source_line: hover_source_line_from_location(source_location),
+            }
+          end
+        end
 
-        field_type = receiver_type.field(field_name)
-        return nil unless field_type
-
-        source_location = field_definition_location(current_uri, receiver_type, field_name)
+        param_info = named_argument_parameter_info(facts, tokens, token_index)
+        return nil unless param_info
 
         {
-          signature: field_hover_signature(field_name, field_type),
+          signature: param_info[:signature],
           docs: nil,
-          source: hover_source_label_from_location(source_location),
-          source_uri: hover_source_uri_from_location(source_location),
-          source_line: hover_source_line_from_location(source_location),
+          source: nil,
+          source_uri: nil,
+          source_line: nil,
         }
+      end
+
+      def named_argument_parameter_info(facts, tokens, token_index)
+        receiver_name = named_argument_callee_name(tokens, token_index)
+        return nil unless receiver_name
+
+        field_name = tokens[token_index].lexeme
+
+        if facts.functions.key?(receiver_name)
+          func = facts.functions[receiver_name]
+          func.type.params.each do |param|
+            next unless param.name == field_name
+            return { signature: "#{field_name}: #{param.type}" }
+          end
+        end
+
+        facts.methods.each_value do |methods|
+          method = methods[receiver_name]
+          next unless method
+          method.type.params.each do |param|
+            next unless param.name == field_name
+            return { signature: "#{field_name}: #{param.type}" }
+          end
+        end
+
+        nil
+      end
+
+      def named_argument_callee_name(tokens, token_index)
+        opener_index = parameter_list_opener_index(tokens, token_index)
+        return nil unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return nil unless head_index
+        return nil unless tokens[head_index].type == :identifier
+
+        tokens[head_index].lexeme
       end
 
       def field_declaration_receiver_info(facts, tokens, token_index)

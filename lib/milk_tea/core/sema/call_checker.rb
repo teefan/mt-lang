@@ -768,10 +768,7 @@ module MilkTea
       end
 
       def check_function_call(binding, arguments, scopes:)
-        if arguments.any?(&:name)
-          raise_sema_error("function #{binding.name} does not support named arguments")
-        end
-
+        arguments = canonicalize_call_arguments(arguments, binding.type.params, binding.name)
         expected_params = binding.type.params
         unless call_arity_matches?(binding.type, arguments.length)
           raise_sema_error(arity_error_message(binding.type, binding.name, arguments.length))
@@ -805,9 +802,7 @@ module MilkTea
         @mutating_argument_identifier_ids[argument.value.object_id] = true
       end
       def check_callable_value_call(function_type, arguments, scopes:, callee_expression:)
-        if arguments.any?(&:name)
-          raise_sema_error("#{describe_expression(callee_expression)} does not support named arguments")
-        end
+        arguments = canonicalize_call_arguments(arguments, function_type.params, describe_expression(callee_expression))
 
         unless call_arity_matches?(function_type, arguments.length)
           raise_sema_error(arity_error_message(function_type, describe_expression(callee_expression), arguments.length))
@@ -975,15 +970,7 @@ module MilkTea
         Types::Dyn.new(interface, interface.type_arguments || [])
       end
 
-      def resolve_adapt_interface(type_arg)
-        parts = type_arg.name.parts
-        type_args = type_arg.arguments.map { |a| a.value }
-        interface_ref = AST::QualifiedName.new(parts:, type_arguments: type_args)
-        resolve_interface_ref(interface_ref)
-      end
-
       def check_dyn_method_call(method_binding, _receiver, arguments, scopes:)
-        raise_sema_error("method call on dyn value does not support named arguments") if arguments.any?(&:name)
         raise_sema_error("#{method_binding.name} expects #{method_binding.params.length} arguments, got #{arguments.length}") unless arguments.length == method_binding.params.length
 
         method_binding.params.each_with_index do |param, index|
@@ -995,6 +982,38 @@ module MilkTea
             expression: arguments[index].value,
           )
         end
+      end
+
+      def resolve_adapt_interface(type_arg)
+        parts = type_arg.name.parts
+        type_args = type_arg.arguments.map { |a| a.value }
+        interface_ref = AST::QualifiedName.new(parts:, type_arguments: type_args)
+        resolve_interface_ref(interface_ref)
+      end
+
+      def canonicalize_call_arguments(arguments, params, context_name)
+        return arguments unless arguments.any?(&:name)
+
+        named_seen = false
+        by_position = Array.new(params.length)
+        param_names = params.map(&:name)
+
+        arguments.each_with_index do |arg, _idx|
+          if arg.name
+            named_seen = true
+            raise_sema_error("duplicate named argument '#{arg.name}' in call to #{context_name}") if by_position.any? { |slot| slot&.name == arg.name }
+            param_idx = param_names.index(arg.name)
+            raise_sema_error("unknown parameter '#{arg.name}' for #{context_name}") unless param_idx
+            by_position[param_idx] = arg
+          else
+            raise_sema_error("positional argument after named argument in call to #{context_name}") if named_seen
+            param_idx = _idx
+            raise_sema_error("#{context_name} expects #{params.length} arguments, got #{arguments.length}") if param_idx >= params.length
+            by_position[param_idx] = arg
+          end
+        end
+
+        by_position.reject(&:nil?)
       end
     end
   end

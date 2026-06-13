@@ -79,6 +79,11 @@ module MilkTea
         return nil if token_index && module_declaration_info_at(tokens, token_index)
         return nil if token_index && builtin_hover_info(token.lexeme, tokens, token_index)
 
+        if token_index && named_argument_label_token?(tokens, token_index)
+          location = named_argument_definition_location(uri, token.lexeme, tokens, token_index, stages:)
+          return location if location
+        end
+
         import_info = token_index ? measure_perf_stage(stages, 'import_path') { import_path_info_at(tokens, token_index) } : nil
         if import_info
           return module_definition_location(uri, import_info[:module_name])
@@ -705,6 +710,43 @@ module MilkTea
       def same_interface_binding?(left, right)
         left.name == right.name && left.module_name == right.module_name
       end
+      end
+      def named_argument_definition_location(uri, name, tokens, token_index, stages: nil)
+        return nil unless named_argument_label_token?(tokens, token_index)
+
+        callee_name = named_argument_callee_name(tokens, token_index)
+        return nil unless callee_name
+
+        facts = measure_perf_stage(stages, 'definition_facts') { @workspace.get_facts(uri) }
+        return nil unless facts
+
+        func = facts.functions[callee_name]
+        return nil unless func
+
+        param = func.ast.params.find { |p| p.name == name }
+        return nil unless param
+
+        range = ast_name_range(name, param.line, param.column)
+        return nil unless range
+
+        {
+          uri: uri,
+          range: {
+            start: { line: range[:line] - 1, character: range[:column] - 1 },
+            end: { line: range[:line] - 1, character: range[:column] - 1 + name.length },
+          },
+        }
+      end
+
+      def named_argument_callee_name(tokens, token_index)
+        opener_index = parameter_list_opener_index(tokens, token_index)
+        return nil unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return nil unless head_index
+        return nil unless tokens[head_index].type == :identifier
+
+        tokens[head_index].lexeme
       end
     end
   end
