@@ -83,6 +83,34 @@ module MilkTea
           signature: 'builtin adapt[Interface](value) -> dyn[Interface]',
           docs: '`adapt[Interface](value)` constructs a `dyn[Interface]` runtime interface value. Compile-time verified: the value\'s type must implement the interface.'
         },
+        'reinterpret' => {
+          signature: 'builtin reinterpret[T](value) -> T',
+          docs: '`reinterpret[T](value)` reinterprets the bits of `value` as type `T` without conversion. Requires `unsafe`.'
+        },
+        'array' => {
+          signature: 'builtin array[T, N](elements...) -> array[T, N]',
+          docs: '`array[T, N]` constructs a fixed-size array from elements. Omitted trailing elements default to zero.'
+        },
+        'span' => {
+          signature: 'builtin span[T](data, len) -> span[T]',
+          docs: '`span[T](data = ..., len = ...)` constructs a borrowed pointer-plus-length view over contiguous memory.'
+        },
+        'zero' => {
+          signature: 'builtin zero[T] -> T',
+          docs: '`zero[T]` returns a zero-initialized value of type `T`. All bits are set to zero.'
+        },
+        'default' => {
+          signature: 'builtin default[T] -> T',
+          docs: '`default[T]` calls `T.default()` to produce a semantic default value. Requires an accessible `default()` associated function on `T`.'
+        },
+        'get' => {
+          signature: 'builtin get(collection, index) -> ptr[T]?',
+          docs: '`get(collection, index)` performs recoverable bounds-checked indexing, returning `ptr[T]?` (null on out-of-bounds) instead of aborting.'
+        },
+        'attribute_arg' => {
+          signature: 'builtin attribute_arg[T](handle) -> T',
+          docs: '`attribute_arg[T](handle)` returns the `T`-typed argument of a resolved `attribute_handle`. The attribute must declare an argument of type `T`.'
+        },
         'field_of' => {
           signature: 'builtin field_of(Type, field_name) -> field_handle',
           docs: '`field_of(Type, field_name)` returns a compile-time handle for the named field on a struct type.'

@@ -769,21 +769,22 @@ module MilkTea
 
       def resolve_named_argument_label_hover_info(current_uri, facts, tokens, token_index)
         receiver_info = named_argument_label_receiver_info(facts, tokens, token_index)
-        return nil unless receiver_info
 
         field_name = tokens[token_index].lexeme
-        receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
-        if receiver_type.respond_to?(:field)
-          field_type = receiver_type.field(field_name)
-          if field_type
-            source_location = field_definition_location(current_uri, receiver_type, field_name)
-            return {
-              signature: field_hover_signature(field_name, field_type),
-              docs: nil,
-              source: hover_source_label_from_location(source_location),
-              source_uri: hover_source_uri_from_location(source_location),
-              source_line: hover_source_line_from_location(source_location),
-            }
+        if receiver_info
+          receiver_type = project_field_receiver_type_for_completion(receiver_info[:type])
+          if receiver_type.respond_to?(:field)
+            field_type = receiver_type.field(field_name)
+            if field_type
+              source_location = field_definition_location(current_uri, receiver_type, field_name)
+              return {
+                signature: field_hover_signature(field_name, field_type),
+                docs: nil,
+                source: hover_source_label_from_location(source_location),
+                source_uri: hover_source_uri_from_location(source_location),
+                source_line: hover_source_line_from_location(source_location),
+              }
+            end
           end
         end
 
@@ -792,10 +793,10 @@ module MilkTea
 
         {
           signature: param_info[:signature],
-          docs: nil,
-          source: nil,
-          source_uri: nil,
-          source_line: nil,
+          docs: param_info[:docs],
+          source: param_info[:source],
+          source_uri: param_info[:source_uri],
+          source_line: param_info[:source_line],
         }
       end
 
@@ -809,7 +810,7 @@ module MilkTea
           func = facts.functions[receiver_name]
           func.type.params.each do |param|
             next unless param.name == field_name
-            return { signature: "#{field_name}: #{param.type}" }
+            return named_argument_param_result(field_name, param, func.ast)
           end
         end
 
@@ -818,11 +819,48 @@ module MilkTea
           next unless method
           method.type.params.each do |param|
             next unless param.name == field_name
-            return { signature: "#{field_name}: #{param.type}" }
+            return named_argument_param_result(field_name, param, method.ast)
           end
         end
 
         nil
+      end
+
+      def named_argument_param_result(field_name, param, callable_ast)
+        param_ast = callable_ast.params.find { |p| p.name == field_name }
+        source_location = param_ast ? ast_name_range(field_name, param_ast.line, param_ast.column) : nil
+        doc_tags = callable_ast.respond_to?(:doc_comment) ? param_doc_for_name(callable_ast, field_name) : nil
+
+        {
+          signature: "#{field_name}: #{param.type}",
+          docs: doc_tags,
+          source: hover_source_label_from_location(source_location),
+          source_uri: hover_source_uri_from_location(source_location),
+          source_line: hover_source_line_from_location(source_location),
+        }
+      end
+
+      def param_doc_for_name(callable_ast, param_name)
+        return nil unless callable_ast.respond_to?(:doc_comment)
+        return nil unless callable_ast.doc_comment
+
+        lines = callable_ast.doc_comment.lines
+        param_lines = []
+        in_param = false
+        lines.each do |line|
+          if line =~ /@param\s+#{Regexp.escape(param_name)}\b/
+            in_param = true
+            param_lines << line.sub(/^\s*##\s*@param\s+#{Regexp.escape(param_name)}\s*/, "")
+            next
+          end
+          if in_param
+            if line =~ /@param\b/
+              break
+            end
+            param_lines << line.sub(/^\s*##\s*/, "")
+          end
+        end
+        param_lines.join(" ").strip.empty? ? nil : param_lines.join(" ").strip
       end
 
       def named_argument_callee_name(tokens, token_index)
@@ -1146,7 +1184,9 @@ module MilkTea
         return nil unless info
 
         next_index = next_non_trivia_token_index(tokens, token_index + 1)
-        return nil unless next_index && tokens[next_index].type == :lparen
+        return nil unless next_index
+        next_type = tokens[next_index].type
+        return nil unless next_type == :lparen || next_type == :lbracket
 
         info
       end
