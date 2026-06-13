@@ -488,7 +488,7 @@
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|dyn)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|dyn|emit|inline)\\b"
     },
 
     "keyword-operator": {

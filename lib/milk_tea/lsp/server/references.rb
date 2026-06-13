@@ -21,6 +21,14 @@ module MilkTea
           return []
         end
 
+        context = measure_perf_stage(stages, 'token_context') { token_context_at(uri, lsp_line, lsp_char) }
+        if context
+          tokens = context[:tokens]
+          token_index = context[:token_index]
+          named_arg_refs = named_argument_label_references(uri, token.lexeme, tokens, token_index, include_declaration:, stages:)
+          return named_arg_refs if named_arg_refs
+        end
+
         facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
         include_declaration = params.dig('context', 'includeDeclaration') != false
         target = facts ? measure_perf_stage(stages, 'static_target') { resolve_static_type_reference_target(uri, token, facts) } : nil
@@ -358,6 +366,60 @@ module MilkTea
       rescue StandardError
         nil
       end
+      end
+      def named_argument_label_references(uri, name, tokens, token_index, include_declaration:, stages: nil)
+        return nil unless named_argument_label_token?(tokens, token_index)
+
+        callee_name = named_argument_callee_name(tokens, token_index)
+        return nil unless callee_name
+
+        facts = measure_perf_stage(stages, 'nav_ref_facts') { @workspace.get_facts(uri) }
+        return nil unless facts
+
+        func = facts.functions[callee_name]
+        return nil unless func
+
+        param = func.ast.params.find { |p| p.name == name }
+        return nil unless param
+
+        range = declaration_name_range(param)
+        unless range
+          range = ast_name_range(name, param.line, param.column)
+        end
+        return [] unless range
+
+        declaration_location = {
+          uri: uri,
+          range: {
+            start: { line: range[:line] - 1, character: range[:column] - 1 },
+            end: { line: range[:line] - 1, character: range[:column] - 1 + name.length },
+          },
+        }
+
+        refs = if include_declaration
+                 [declaration_location]
+               else
+                 []
+               end
+
+        token = OpenStruct.new(lexeme: name, type: :identifier, line: param.line, column: param.column)
+        scoped_refs = scoped_local_reference_locations(uri, token, param.line - 1, param.column - 1, facts, include_declaration: false)
+        if scoped_refs
+          refs.concat(scoped_refs)
+        else
+          refs
+        end
+      end
+
+      def named_argument_callee_name(tokens, token_index)
+        opener_index = parameter_list_opener_index(tokens, token_index)
+        return nil unless opener_index
+
+        head_index = previous_non_trivia_token_index(tokens, opener_index)
+        return nil unless head_index
+        return nil unless tokens[head_index].type == :identifier
+
+        tokens[head_index].lexeme
       end
     end
   end
