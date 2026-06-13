@@ -1083,8 +1083,7 @@ module MilkTea
 
       def type_parameter_reference_token?(facts, tokens, index)
         tok = tokens[index]
-        names = type_parameter_names_in_scope(facts, tok.line)
-        return false unless names.include?(tok.lexeme) || names.include?("@#{tok.lexeme}")
+        return false unless type_parameter_names_in_scope(facts, tok.line).include?(tok.lexeme)
         return false if type_parameter_declaration_token?(facts, tokens, index)
 
         identifier_in_type_parameter_reference_position?(tokens, index)
@@ -1149,6 +1148,8 @@ module MilkTea
             } if depth.zero?
           when :comma
             expect_name = true if depth == 1
+          when :at
+            expect_name = false if depth == 1
           when :implements
             expect_name = false if depth == 1
           else
