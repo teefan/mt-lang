@@ -528,7 +528,10 @@ module MilkTea
           if arguments.length == 2 && arguments.none?(&:name)
             state_type = infer_expression(arguments[0].value, scopes:)
             unless pointer_type?(state_type)
-              raise_sema_error("first argument to #{receiver_type}.#{method_name} stateful overload must be a non-null pointer, got #{state_type}")
+              suggestion = if arguments[0].value.is_a?(AST::Identifier)
+                             "use ptr_of(#{arguments[0].value.name})"
+                           end
+              raise_sema_error("first argument to #{receiver_type}.#{method_name} stateful overload must be a non-null pointer, got #{state_type}", arguments[0].value, suggestion:)
             end
 
             state_pointed_type = state_type.arguments.first
