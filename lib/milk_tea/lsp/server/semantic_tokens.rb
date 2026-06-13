@@ -346,7 +346,7 @@ module MilkTea
         end
 
         if prev_tok && [:let, :var].include?(prev_tok.type)
-          return [:variable, ['declaration']]
+          return [:variable, ['declaration']] unless next_tok&.type == :lparen
         end
 
         if prev_tok&.type == :for
@@ -363,8 +363,8 @@ module MilkTea
           return [:typeParameter, []] if type_parameter_reference_token?(facts, tokens, index)
         end
 
-        return [:parameter, []] if named_argument_label_token?(tokens, index) && !named_argument_label_in_type_constructor?(tokens, index, facts)
         return [:property, []] if named_argument_label_token?(tokens, index) && named_argument_label_in_type_constructor?(tokens, index, facts)
+        return [:parameter, []] if named_argument_label_token?(tokens, index)
 
         if facts && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(facts, tok))
           return generic_binding
@@ -1083,7 +1083,8 @@ module MilkTea
 
       def type_parameter_reference_token?(facts, tokens, index)
         tok = tokens[index]
-        return false unless type_parameter_names_in_scope(facts, tok.line).include?(tok.lexeme)
+        names = type_parameter_names_in_scope(facts, tok.line)
+        return false unless names.include?(tok.lexeme) || names.include?("@#{tok.lexeme}")
         return false if type_parameter_declaration_token?(facts, tokens, index)
 
         identifier_in_type_parameter_reference_position?(tokens, index)
