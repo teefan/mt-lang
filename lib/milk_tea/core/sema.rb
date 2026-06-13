@@ -88,7 +88,35 @@ module MilkTea
       end
     end
     InterfaceMethodBinding = Data.define(:name, :params, :return_type, :kind, :async, :ast)
-    InterfaceBinding = Data.define(:name, :methods, :ast, :module_name)
+    InterfaceBinding = Data.define(:name, :methods, :ast, :module_name, :type_arguments) do
+      def initialize(name:, methods:, ast:, module_name:, type_arguments: nil) = super
+    end
+
+    GenericInterfaceBinding = Data.define(:name, :type_params, :type_param_constraints, :methods, :ast, :module_name) do
+      def instantiate(arguments)
+        raise ArgumentError, "#{name} expects #{type_params.length} type arguments, got #{arguments.length}" unless arguments.length == type_params.length
+
+        substitutions = type_params.zip(arguments).to_h
+        substituted_methods = methods.transform_values do |method|
+          InterfaceMethodBinding.new(
+            name: method.name,
+            params: method.params.map { |p| Types::Parameter.new(p.name, Types.substitute_type_variables(p.type, substitutions)) },
+            return_type: Types.substitute_type_variables(method.return_type, substitutions),
+            kind: method.kind,
+            async: method.async,
+            ast: method.ast,
+          )
+        end
+
+        InterfaceBinding.new(
+          name:,
+          methods: substituted_methods.freeze,
+          ast:,
+          module_name:,
+          type_arguments: arguments.freeze,
+        )
+      end
+    end
     AttributeBinding = Data.define(:name, :targets, :params, :module_name, :builtin, :ast)
     ResolvedAttributeApplication = Data.define(:binding, :argument_values)
     AttributePresenceKey = Data.define(:target, :attribute_module_name, :attribute_name)

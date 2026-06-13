@@ -171,6 +171,21 @@ function describe[T implements Damageable and Named](target: ref[T]) -> str:
 function make_default[T]() -> T:
     return default[T]
 
+# --- generic interface with type parameters and implements constraint
+
+interface Converter[T, U]:
+    function convert(x: T) -> U
+
+struct Doubler implements Converter[int, int]:
+    value: int
+
+extending Doubler:
+    function convert(x: int) -> int:
+        return x * 2
+
+function apply_converter[T implements Converter[int, int]](c: ref[T], v: int) -> int:
+    return c.convert(v)
+
 # ---------------------------------------------------------------------------
 # 5  Custom attributes and compile-time reflection
 # ---------------------------------------------------------------------------

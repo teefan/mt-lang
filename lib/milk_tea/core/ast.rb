@@ -2,7 +2,8 @@
 
 module MilkTea
   module AST
-    class QualifiedName < Data.define(:parts)
+    class QualifiedName < Data.define(:parts, :type_arguments)
+      def initialize(parts:, type_arguments: []) = super
       def to_s
         parts.join(".")
       end
@@ -84,8 +85,8 @@ module MilkTea
     OpaqueDecl = Data.define(:name, :implements, :c_name, :visibility, :line) do
       def initialize(name:, implements:, c_name:, visibility:, line: nil) = super
     end
-    InterfaceDecl = Data.define(:name, :methods, :visibility, :line) do
-      def initialize(name:, methods:, visibility:, line: nil) = super
+    InterfaceDecl = Data.define(:name, :type_params, :methods, :visibility, :line) do
+      def initialize(name:, type_params: [], methods:, visibility:, line: nil) = super
     end
     ExtendingBlock = Data.define(:type_name, :methods, :line) do
       def initialize(type_name:, methods:, line: nil) = super

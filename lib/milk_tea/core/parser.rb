@@ -637,11 +637,12 @@ module MilkTea
     def parse_interface_decl(visibility: :private)
       line = previous.line
       name = consume_name("expected interface name").lexeme
+      type_params = parse_declaration_type_params
       methods = parse_named_block do
         method_attributes = parse_attribute_applications
         parse_interface_method_decl(attributes: method_attributes)
       end
-      AST::InterfaceDecl.new(name:, methods:, visibility:, line:)
+      AST::InterfaceDecl.new(name:, type_params:, methods:, visibility:, line:)
     end
 
     def parse_extending_block
@@ -1061,10 +1062,10 @@ module MilkTea
 
     def parse_type_param_constraint(interface_constraint_mode)
       if match(:implements)
-        return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true]
+        return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name_with_type_arguments), true]
       end
 
-      return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name), true] if interface_constraint_mode
+      return [AST::TypeParamConstraint.new(kind: :interface, interface_ref: parse_qualified_name_with_type_arguments), true] if interface_constraint_mode
 
       [nil, interface_constraint_mode]
     end
@@ -1072,8 +1073,8 @@ module MilkTea
     def parse_implements_clause
       return [] unless match(:implements)
 
-      implements = [parse_qualified_name]
-      implements << parse_qualified_name while match(:comma)
+      implements = [parse_qualified_name_with_type_arguments]
+      implements << parse_qualified_name_with_type_arguments while match(:comma)
       implements
     end
 
@@ -2040,6 +2041,23 @@ module MilkTea
         parts << consume_path_component("expected identifier after '.'").lexeme
       end
       AST::QualifiedName.new(parts:)
+    end
+
+    def parse_qualified_name_with_type_arguments
+      parts = [consume_path_component("expected identifier").lexeme]
+      while match(:dot)
+        parts << consume_path_component("expected identifier after '.'").lexeme
+      end
+      type_arguments = if match(:lbracket)
+                         args = parse_comma_separated_until(:rbracket) do
+                           parse_type_ref
+                         end
+                         consume(:rbracket, "expected ']' after type arguments")
+                         args
+                       else
+                         []
+                       end
+      AST::QualifiedName.new(parts:, type_arguments:)
     end
 
     def consume_path_component(message)

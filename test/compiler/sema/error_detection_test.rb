@@ -2635,4 +2635,40 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/cannot store ref types/, error.message)
   end
 
+  # ── generic interface errors ──────────────────────────────────────────────
+
+  def test_rejects_generic_interface_without_type_arguments
+    source = <<~MT
+      # module demo.gen_iface_bad
+
+      interface Mapper[T]:
+          function map(x: T) -> T
+
+      struct Bad implements Mapper:
+          value: int
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/generic interface Mapper requires type arguments/, error.message)
+  end
+
+  def test_rejects_implementor_with_wrong_signature
+    source = <<~MT
+      # module demo.wrong_sig
+
+      interface Mapper[T]:
+          function map(x: T) -> T
+
+      struct Bad implements Mapper[int]:
+          value: float
+
+      extending Bad:
+          function map(x: float) -> float:
+              return x
+    MT
+
+    error = assert_raises(MilkTea::SemaError) { check_source(source) }
+    assert_match(/signature does not match/, error.message)
+  end
+
 end

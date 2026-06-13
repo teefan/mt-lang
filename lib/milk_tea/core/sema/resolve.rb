@@ -132,25 +132,29 @@ module MilkTea
       def resolve_interface_ref(interface_ref)
         parts = interface_ref.parts
 
-        if parts.length == 1
-          interface = @interfaces[parts.first]
-          raise_sema_error("unknown interface #{parts.first}") unless interface
+        interface = if parts.length == 1
+                      @interfaces[parts.first]
+                    elsif parts.length == 2 && @imports.key?(parts.first)
+                      imported_module = @imports.fetch(parts.first)
+                      raw = imported_module.interfaces[parts.last]
+                      if imported_module.private_interface?(parts.last)
+                        raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
+                      end
+                      raw
+                    end
 
-          return interface
+        raise_sema_error("unknown interface #{interface_ref}") unless interface
+
+        if interface_ref.type_arguments.any?
+          raise_sema_error("interface #{interface.name} is not generic") unless interface.is_a?(GenericInterfaceBinding)
+
+          arguments = interface_ref.type_arguments.map { |arg| resolve_type_ref(arg) }
+          interface.instantiate(arguments)
+        else
+          raise_sema_error("generic interface #{interface.name} requires type arguments") if interface.is_a?(GenericInterfaceBinding)
+
+          interface
         end
-
-        if parts.length == 2 && @imports.key?(parts.first)
-          imported_module = @imports.fetch(parts.first)
-          interface = imported_module.interfaces[parts.last]
-          if imported_module.private_interface?(parts.last)
-            raise_sema_error("#{parts.first}.#{parts.last} is private to module #{imported_module.name}")
-          end
-          raise_sema_error("unknown interface #{interface_ref}") unless interface
-
-          return interface
-        end
-
-        raise_sema_error("unknown interface #{interface_ref}")
       end
 
       def interface_implementation_key(type)

@@ -4176,4 +4176,40 @@ class TypeCheckingTest < Minitest::Test
     assert result.types.key?("Container")
   end
 
+  def test_type_checks_generic_interface_with_implementor
+    source = <<~MT
+      # module demo.gen_iface
+
+      interface Mapper[T]:
+          function map(x: T) -> T
+
+      struct Doubler implements Mapper[int]:
+          value: int
+
+      extending Doubler:
+          function map(x: int) -> int:
+              return x * 2
+    MT
+
+    result = check_source(source)
+    assert result.interfaces.key?("Mapper")
+    assert result.types.key?("Doubler")
+  end
+
+  def test_type_checks_constrained_generic_with_interface
+    source = <<~MT
+      # module demo.constrained
+
+      interface Converter[T, U]:
+          function convert(x: T) -> U
+
+      function transform[T implements Converter[int, int]](c: ref[T], v: int) -> int:
+          return c.convert(v)
+    MT
+
+    result = check_source(source)
+    assert result.interfaces.key?("Converter")
+    assert result.functions.key?("transform")
+  end
+
 end
