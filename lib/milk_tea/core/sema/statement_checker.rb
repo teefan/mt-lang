@@ -230,7 +230,17 @@ module MilkTea
 
       def check_local_decl_destructure(statement, scopes:, return_type:, allow_return:)
         value_type = infer_expression(statement.value, scopes:)
-        raise_sema_error("destructure requires a tuple, got #{value_type}") unless value_type.is_a?(Types::Tuple)
+
+        if statement.destructure_type_name
+          check_local_decl_struct_destructure(statement, value_type, scopes:)
+        elsif value_type.is_a?(Types::Tuple)
+          check_local_decl_tuple_destructure(statement, value_type, scopes:)
+        else
+          raise_sema_error("destructure requires a tuple or struct, got #{value_type}")
+        end
+      end
+
+      def check_local_decl_tuple_destructure(statement, value_type, scopes:)
         raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but tuple has #{value_type.element_types.length} elements") unless statement.destructure_bindings.length == value_type.element_types.length
 
         current_scope = current_actual_scope(scopes)
@@ -238,6 +248,33 @@ module MilkTea
           raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
           ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)
           field_type = value_type.element_types[index]
+          current_scope[name] = value_binding(
+            name:,
+            type: field_type,
+            mutable: false,
+            kind: :let,
+            id: @preassigned_local_binding_ids[statement.object_id],
+          )
+          record_declaration_binding(statement, current_scope[name])
+        end
+      end
+
+      def check_local_decl_struct_destructure(statement, value_type, scopes:)
+        type_name = statement.destructure_type_name
+        struct_type = @types[type_name]
+        raise_sema_error("unknown type #{type_name} for struct destructure") unless struct_type
+        raise_sema_error("#{type_name} is not a struct") unless struct_type.is_a?(Types::Struct) || struct_type.is_a?(Types::Tuple)
+        ensure_assignable!(value_type, struct_type, "cannot destructure #{value_type} as #{type_name}")
+
+        fields = struct_type.fields
+        raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but #{type_name} has #{fields.length} fields") unless statement.destructure_bindings.length == fields.length
+
+        current_scope = current_actual_scope(scopes)
+        statement.destructure_bindings.each do |name|
+          raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
+          raise_sema_error("unknown field #{type_name}.#{name}") unless fields.key?(name)
+          ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)
+          field_type = fields[name]
           current_scope[name] = value_binding(
             name:,
             type: field_type,

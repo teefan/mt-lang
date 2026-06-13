@@ -1215,7 +1215,11 @@ module MilkTea
       var_type = nil
 
       destructure_bindings = nil
+      destructure_type_name = nil
       if check(:lparen)
+        destructure_bindings = parse_destructure_pattern
+      elsif check_name && check_next(:lparen)
+        destructure_type_name = advance.lexeme
         destructure_bindings = parse_destructure_pattern
       else
         name_token = consume_name("expected local variable name")
@@ -1252,7 +1256,7 @@ module MilkTea
         consume_end_of_statement
       end
 
-      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token&.column || line, destructure_bindings:)
+      AST::LocalDecl.new(kind:, name:, type: var_type, value:, else_binding:, else_body:, line:, column: name_token&.column || line, destructure_bindings:, destructure_type_name:)
     rescue ParseError => e
       raise unless @recovery_errors && name
 

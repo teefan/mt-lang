@@ -202,6 +202,7 @@ let pair = (42, "hello")         # positional tuple
 let point = (x = 10, y = 20)     # named tuple
 let (a, b) = pair                # destructure positional
 let (x, y) = point               # destructure named
+let Vec2(x, y) = get_position()  # struct destructure
 ```
 
 A function can return a tuple type: `function pair() -> (int, str):`.

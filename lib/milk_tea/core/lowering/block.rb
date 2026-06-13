@@ -862,21 +862,35 @@ module MilkTea
       end
 
       def lower_destructure_decl(statement, env:, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
-        tuple_type = infer_expression_type(statement.value, env:)
-        setup, prepared_value, cleanups = prepare_expression_with_cleanups(statement.value, env:, expected_type: tuple_type)
+        value_type = infer_expression_type(statement.value, env:)
+        setup, prepared_value, cleanups = prepare_expression_with_cleanups(statement.value, env:, expected_type: value_type)
         lowered.concat(setup)
-        value = lower_contextual_expression(prepared_value, env:, expected_type: tuple_type)
+        value = lower_contextual_expression(prepared_value, env:, expected_type: value_type)
 
         temp_name = fresh_c_temp_name(env, "destructure_val")
-        lowered << IR::LocalDecl.new(name: temp_name, c_name: temp_name, type: tuple_type, value:)
+        lowered << IR::LocalDecl.new(name: temp_name, c_name: temp_name, type: value_type, value:)
 
-        statement.destructure_bindings.each_with_index do |name, index|
-          field_name = tuple_type.field_names[index]
-          field_type = tuple_type.element_types[index]
-          field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: tuple_type, pointer: false), member: field_name, type: field_type)
-          decl_c_name = c_local_name(name)
-          lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
-          env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+        if statement.destructure_type_name
+          # Struct destructure: find fields by name in the struct type
+          destructure_type = value_type
+          fields = destructure_type.fields
+          statement.destructure_bindings.each do |name|
+            field_type = fields[name]
+            field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: destructure_type, pointer: false), member: name, type: field_type)
+            decl_c_name = c_local_name(name)
+            lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
+            env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+          end
+        else
+          # Tuple destructure: index by position
+          statement.destructure_bindings.each_with_index do |name, index|
+            field_name = value_type.field_names[index]
+            field_type = value_type.element_types[index]
+            field_expr = IR::Member.new(receiver: IR::Name.new(name: temp_name, type: value_type, pointer: false), member: field_name, type: field_type)
+            decl_c_name = c_local_name(name)
+            lowered << IR::LocalDecl.new(name: decl_c_name, c_name: decl_c_name, type: field_type, value: field_expr)
+            env[:scopes].last[name] = local_binding(type: field_type, c_name: decl_c_name, mutable: false, pointer: false)
+          end
         end
       end
 

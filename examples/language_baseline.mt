@@ -1158,7 +1158,12 @@ function tuple_demo() -> int:
     let (left, rite) = swapped
     let ord = left + rite
 
-    return sum_pos + sum_named + coords_x + coords_y + sum_dest + ord
+    # --- struct destructuring
+    var vec = Vec2(x = 1.0, y = 2.0)
+    let Vec2(x, y) = vec
+    let sum_struct = int<-(x + y)
+
+    return sum_pos + sum_named + coords_x + coords_y + sum_dest + ord + sum_struct
 
 
 function get_coords() -> (int, int):
