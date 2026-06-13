@@ -1134,4 +1134,130 @@ function main() -> int:
     assert_equal 7, result.exit_status
   end
 
+  # ── heredoc format string codegen ──────────────────────────────────────────
+
+  def test_generate_c_for_format_heredoc_literal
+    source = <<~'MT'
+      # module demo.heredoc_fmt_codegen
+
+      function main(count: int) -> ptr_uint:
+          let text = f<<-FMT
+          count=#{count}
+          FMT
+          return text.len
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/count=/, generated)
+    assert_match(/mt_format_str_make/, generated)
+  end
+
+  def test_run_program_with_format_heredoc_literal
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.heredoc_fmt_runtime
+
+      function main() -> int:
+          let text = f<<-FMT
+          hello
+          FMT
+          return int<-text.len
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 6, result.exit_status
+  end
+
+  # ── flags composite alias codegen ──────────────────────────────────────────
+
+  def test_generate_c_for_flags_composite_alias
+    source = <<~'MT'
+      # module demo.flags_composite_codegen
+
+      flags Mask: uint
+          a = 1 << 0
+          b = 1 << 1
+          both = Mask.a | Mask.b
+
+      function main() -> Mask:
+          return Mask.both
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/Mask_both/, generated)
+  end
+
+  def test_run_program_with_flags_composite_alias
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.flags_composite_runtime
+
+      flags Mask: uint
+          a = 1 << 0
+          b = 1 << 1
+          both = Mask.a | Mask.b
+
+      function main() -> int:
+          return int<-(Mask.both)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 3, result.exit_status
+  end
+
+  # ── array.as_span codegen ──────────────────────────────────────────────────
+
+  def test_generate_c_for_array_as_span
+    source = <<~'MT'
+      # module demo.array_as_span_codegen
+
+      function first(arr: array[int, 4]) -> int:
+          let sp = arr.as_span()
+          return sp[0]
+
+      function main() -> int:
+          var data = array[int, 4](10, 20, 30, 40)
+          return first(data)
+    MT
+
+    generated = generate_c_from_program_source(source)
+
+    assert_match(/as_span/, generated)
+  end
+
+  def test_run_program_with_array_as_span
+    compiler = ENV.fetch("CC", "cc")
+    skip "C compiler not available: #{compiler}" unless compiler_available?(compiler)
+
+    source = <<~'MT'
+      # module demo.array_as_span_runtime
+
+      function first(arr: array[int, 4]) -> int:
+          let sp = arr.as_span()
+          return sp[0]
+
+      function main() -> int:
+          var data = array[int, 4](10, 20, 30, 40)
+          return first(data)
+    MT
+
+    result = run_program_from_source(source, compiler:)
+
+    assert_equal "", result.stdout
+    assert_equal "", result.stderr
+    assert_equal 10, result.exit_status
+  end
+
 end
