@@ -1112,8 +1112,10 @@ extending Circle:
 function dyn_demo() -> float:
     var c = Circle(radius = 5.0)
     var s: dyn[Shape] = adapt[Shape](ref_of(c))
-    let _s = s
-    return c.area()
+    let label = s.label()
+    let area = s.area()
+    let _l = label
+    return area
 
 # ---------------------------------------------------------------------------
 # 30  Entrypoint

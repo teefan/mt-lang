@@ -492,7 +492,7 @@ module MilkTea
             interface = resolved_receiver_type.interface_binding
             method_binding = interface.methods[callee.member]
             raise LoweringError, "no method '#{callee.member}' on interface #{interface.name}" unless method_binding
-            return [:dyn_method, nil, callee.receiver, method_binding, resolved_receiver_type]
+            return [:dyn_method, nil, callee.receiver, method_binding, nil]
           end
 
           dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
