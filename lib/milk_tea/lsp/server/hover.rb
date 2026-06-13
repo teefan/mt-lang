@@ -1054,8 +1054,15 @@ module MilkTea
         builtin_call_hover_info(name, tokens, token_index)
       end
 
+      def builtin_in_member_access_context?(tokens, token_index)
+        prev_index = previous_non_trivia_token_index(tokens, token_index)
+        prev_index && tokens[prev_index].type == :dot
+      end
+
       def builtin_value_specialization_info(name, tokens, token_index)
         return nil unless %w[zero default reinterpret].include?(name)
+
+        return nil if builtin_in_member_access_context?(tokens, token_index)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -1135,6 +1142,8 @@ module MilkTea
       def builtin_specialized_call_hover_info(name, tokens, token_index)
         return nil unless BUILTIN_ASSOCIATED_HOOK_NAMES.include?(name) || name == 'attribute_arg'
 
+        return nil if builtin_in_member_access_context?(tokens, token_index)
+
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
 
@@ -1182,6 +1191,8 @@ module MilkTea
       def builtin_call_hover_info(name, tokens, token_index)
         info = BUILTIN_CALL_HOVER_INFO[name]
         return nil unless info
+
+        return nil if builtin_in_member_access_context?(tokens, token_index)
 
         next_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless next_index

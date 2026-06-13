@@ -363,7 +363,8 @@ module MilkTea
           return [:typeParameter, []] if type_parameter_reference_token?(facts, tokens, index)
         end
 
-        return [:parameter, []] if named_argument_label_token?(tokens, index)
+        return [:parameter, []] if named_argument_label_token?(tokens, index) && !named_argument_label_in_type_constructor?(tokens, index, facts)
+        return [:property, []] if named_argument_label_token?(tokens, index) && named_argument_label_in_type_constructor?(tokens, index, facts)
 
         if facts && prev_tok&.type != :dot && (generic_binding = generic_function_lexical_binding_semantic(facts, tok))
           return generic_binding
@@ -483,6 +484,44 @@ module MilkTea
         prev_tok = previous_non_trivia_token(tokens, index)
         next_tok = next_non_trivia_token(tokens, index + 1)
         next_tok&.type == :equal && prev_tok && [:lparen, :comma].include?(prev_tok.type)
+      end
+
+      def named_argument_label_in_type_constructor?(tokens, index, facts)
+        return false unless facts
+
+        opener_index = parameter_list_opener_index(tokens, index)
+        return false unless opener_index
+
+        callee_index = previous_non_trivia_token_index(tokens, opener_index)
+        return false unless callee_index
+
+        if tokens[callee_index].type == :rbracket
+          lbracket_index = matching_opener_index(tokens, callee_index)
+          return false unless lbracket_index
+          callee_index = previous_non_trivia_token_index(tokens, lbracket_index)
+        end
+
+        return false unless callee_index && tokens[callee_index].type == :identifier
+
+        callee_name = tokens[callee_index].lexeme
+        return true if facts.types.key?(callee_name) || facts.interfaces.key?(callee_name)
+
+        dot_index = previous_non_trivia_token_index(tokens, callee_index)
+        return false unless dot_index && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index
+
+        if tokens[receiver_index].type == :rbracket
+          lbracket_index = matching_opener_index(tokens, receiver_index)
+          return false unless lbracket_index
+          receiver_index = previous_non_trivia_token_index(tokens, lbracket_index)
+        end
+
+        return false unless receiver_index && tokens[receiver_index].type == :identifier
+
+        receiver_name = tokens[receiver_index].lexeme
+        facts.types.key?(receiver_name) || facts.interfaces.key?(receiver_name)
       end
 
       def match_arm_binding_token?(tokens, index)

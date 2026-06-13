@@ -17,7 +17,7 @@ module MilkTea
           uri = params["textDocument"]["uri"]
           position = params["position"]
           lsp_line = position["line"]
-          lsp_char = position["character"]
+          _lsp_char = position["character"]
 
           content = @workspace.get_content(uri)
           return [] unless content

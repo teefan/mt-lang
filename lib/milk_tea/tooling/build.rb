@@ -237,7 +237,7 @@ module MilkTea
     def build_static_library
       cache = @no_cache ? nil : BuildCache.new(root: MilkTea.root)
       emit_line_directives = line_directives_required?
-      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(cache:, emit_line_directives:)
+      _source_files, program, compiled_c, saved_c, frontend_modules, _ir_program = prepare_program(cache:, emit_line_directives:)
       prepare_bindings(frontend_modules)
 
       object_path = compile_or_cache_object(cache, compiled_c || saved_c)
@@ -253,7 +253,7 @@ module MilkTea
     def build_shared_library
       cache = @no_cache ? nil : BuildCache.new(root: MilkTea.root)
       emit_line_directives = line_directives_required?
-      source_files, program, compiled_c, saved_c, frontend_modules, ir_program = prepare_program(cache:, emit_line_directives:)
+      _source_files, program, compiled_c, saved_c, frontend_modules, _ir_program = prepare_program(cache:, emit_line_directives:)
       prepare_bindings(frontend_modules)
       compiler_flags = collect_compiler_flags(frontend_modules)
       link_flags = collect_link_flags(frontend_modules)
@@ -579,7 +579,6 @@ module MilkTea
 
     def detect_module_changes(program, cache, source_files)
       changes = {}
-      loader = ModuleLoader.new(module_roots: @module_roots, package_graph: @package_graph, platform: @platform)
 
       program.analyses_by_path.each do |path, analysis|
         module_name = analysis.module_name.to_s

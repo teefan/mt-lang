@@ -406,33 +406,31 @@ module MilkTea
               new_arms = missing.map do |arm_name|
                 "#{arm_indent}#{arm_name}:\n#{body_indent}return\n"
               end.join
-              full_indent = indent.empty? ? '' : indent
 
               match_end_line = find_match_end_line(lines, diag_line - 1)
               insert_line = match_end_line || diag_line - 1
 
-                actions << {
-                  title: "Add missing match #{missing.length == 1 ? 'arm' : 'arms'}: #{missing.join(', ')}",
-                  kind: 'quickFix',
-                  diagnostics: [diag],
-                  edit: {
-                    changes: {
-                      uri => [{
-                        range: {
-                          start: { line: insert_line, character: 0 },
-                          end:   { line: insert_line, character: 0 }
-                        },
-                        newText: new_arms
-                      }]
-                    }
+              actions << {
+                title: "Add missing match #{missing.length == 1 ? 'arm' : 'arms'}: #{missing.join(', ')}",
+                kind: 'quickFix',
+                diagnostics: [diag],
+                edit: {
+                  changes: {
+                    uri => [{
+                      range: {
+                        start: { line: insert_line, character: 0 },
+                        end:   { line: insert_line, character: 0 }
+                      },
+                      newText: new_arms
+                    }]
                   }
                 }
-              end
+              }
             end
 
             # "unknown type X" or "unknown name Y" with import suggestion
             if message =~ /\Aunknown (?:type|callable) (\S+)\z/
-              type_name = $1
+              _type_name = $1
               suggestion = diag.dig('data', 'suggestion')
               next unless suggestion.is_a?(String)
 
@@ -442,7 +440,7 @@ module MilkTea
                 next unless parts.length >= 2
 
                 import_module = parts[0..-2].join('.')
-                import_type = parts.last
+                _import_type = parts.last
 
                 actions << {
                   title: "Import #{full_path}",
@@ -462,6 +460,7 @@ module MilkTea
                 }
               end
             end
+          end
         end
         end # want_quickfix
         quickfix_ms = elapsed_ms(quickfix_start)

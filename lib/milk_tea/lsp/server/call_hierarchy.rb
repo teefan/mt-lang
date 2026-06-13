@@ -29,7 +29,6 @@ module MilkTea
 
           dot_recv = @workspace.find_dot_receiver(uri, lsp_line, lsp_char)
           if dot_recv
-            dot_recv_path = @workspace.find_dot_receiver_path(uri, lsp_line, lsp_char)
             if (module_binding = facts.imports[dot_recv])
               if module_binding.functions.key?(func_name)
                 return [build_call_hierarchy_item(func_name, uri, module_binding.functions[func_name], facts)]
