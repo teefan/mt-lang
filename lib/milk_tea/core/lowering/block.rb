@@ -557,7 +557,7 @@ module MilkTea
               contextual_int_to_float: contextual_int_to_float_target?(return_type),
             ) : nil
             if prepared_cleanups.any? && cstr_trackable_type?(return_type)
-              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use fmt.format(...) when ownership must escape"
+              raise LoweringError, "formatted string temporaries cannot be returned as borrowed text; use std.fmt.format(f\"...\") when ownership must escape"
             end
 
             cleanup = prepared_cleanups.flat_map(&:itself) + cleanup_statements(local_defers, active_defers)

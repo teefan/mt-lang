@@ -278,6 +278,7 @@ module MilkTea
 
         raise_sema_error("module #{expression.name} cannot be used as a value") if @imports.key?(expression.name)
         if @types.key?(expression.name)
+          return Types::BUILTIN_TYPE_META_TYPE if expected_type.is_a?(Types::TypeType)
           return @types.fetch(expression.name)
         end
 

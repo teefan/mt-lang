@@ -2012,19 +2012,8 @@ class ErrorDetectionTest < Minitest::Test
   end
 
   def test_rejects_ref_storage_and_escape_types
-    field_source = <<~MT
-      # module demo.bad_field
-
-      struct Holder:
-          value: ref[int]
-    MT
-
-    field_error = assert_raises(MilkTea::SemaError) do
-      check_source(field_source)
-    end
-
-    assert_match(/field Holder\.value cannot store ref types/, field_error.message)
-
+    # ref[T] in struct fields is now accepted (implicit lifetime generation)
+    # but it is still rejected in module variables and function returns
     extern_source = <<~MT
       # module demo.bad_param
 
@@ -2623,12 +2612,10 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/uses lifetime @a not declared on struct/, error.message)
   end
 
-  def test_rejects_bare_ref_in_struct_field
+  def test_rejects_bare_ref_in_module_variable
     source = <<~MT
-      # module demo.bare_ref_field
-
-      struct Holder:
-          value: ref[int]
+      # module demo.bad_ref_var
+      var bad_ref: ref[int]
     MT
 
     error = assert_raises(MilkTea::SemaError) { check_source(source) }

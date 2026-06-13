@@ -1525,6 +1525,10 @@ module MilkTea
           raise_sema_error("#{context} cannot store ref types outside callable parameter positions")
         end
 
+        if context.start_with?("field ")
+          raise_sema_error("#{context} cannot store ref types; declare a lifetime on the struct and use ref[@lt, T] (e.g. struct MyStruct[@a]: field: ref[@a, SomeType])")
+        end
+
         raise_sema_error("#{context} cannot store ref types")
       end
 

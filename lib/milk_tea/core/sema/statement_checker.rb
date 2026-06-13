@@ -556,6 +556,7 @@ module MilkTea
       def each_variant_match_arm(statement, scrutinee_type, scopes:)
         covered_arms = {}
         wildcard_seen = false
+        equality_cover_table = {}
         statement.arms.each do |arm|
           if arm.pattern.is_a?(AST::ErrorExpr)
             yield arm, scopes
@@ -576,14 +577,17 @@ module MilkTea
 
           arm_scopes = scopes.dup
           has_guards = false
+          equality_cover = {}
 
           if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
-            has_guards = check_struct_match_pattern(arm.pattern.arguments, arm_name, scrutinee_type, arm_scopes, scopes:, arm:)
+            has_guards, equality_cover = check_struct_match_pattern(arm.pattern.arguments, arm_name, scrutinee_type, arm_scopes, scopes:, arm:)
           end
 
           unless has_guards
             raise_sema_error("duplicate match arm #{scrutinee_type}.#{arm_name}") if covered_arms.key?(arm_name)
             covered_arms[arm_name] = true
+          else
+            equality_cover_table[arm_name] = merge_equality_cover(equality_cover_table[arm_name], equality_cover)
           end
 
           if arm.binding_name
@@ -607,12 +611,34 @@ module MilkTea
           yield arm, arm_scopes
         end
 
+        equality_cover_table.each do |arm_name, field_covers|
+          next if covered_arms.key?(arm_name)
+          payload_fields = scrutinee_type.arm(arm_name)
+          next unless payload_fields
+          covered = field_covers.any? do |field_name, covered_members|
+            field_type = payload_fields[field_name]
+            next unless field_type.is_a?(Types::Enum)
+            all_members = field_type.members
+            all_members.any? && (all_members - covered_members).empty?
+          end
+          covered_arms[arm_name] = true if covered
+        end
+
         return if wildcard_seen
 
         missing_arms = scrutinee_type.arm_names - covered_arms.keys
         return if missing_arms.empty?
 
         raise_sema_error("match on #{scrutinee_type} is missing cases: #{missing_arms.join(', ')}")
+      end
+
+      def merge_equality_cover(existing, new_cover)
+        return new_cover unless existing
+        merged = existing.dup
+        new_cover.each do |field, members|
+          merged[field] = (merged[field] || []) + members
+        end
+        merged
       end
 
       def check_recovered_match_stmt(statement, scopes:, return_type:, allow_return:)
@@ -681,6 +707,7 @@ module MilkTea
 
         has_guards = false
         seen_fields = {}
+        equality_cover = {}
 
         arguments.each do |arg|
           if arg.name
@@ -694,6 +721,11 @@ module MilkTea
             field_type = payload_fields[field_name]
             actual_type = infer_expression(arg.value, scopes:, expected_type: field_type)
             ensure_assignable!(actual_type, field_type, "field #{field_name} expects #{field_type}, got #{actual_type}", expression: arg.value)
+
+            if field_type.is_a?(Types::Enum) && arg.value.is_a?(AST::MemberAccess)
+              equality_cover[field_name] = [] unless equality_cover.key?(field_name)
+              equality_cover[field_name] << arg.value.member
+            end
           elsif arg.value.is_a?(AST::Identifier)
             # Binding: position
             field_name = arg.value.name
@@ -731,7 +763,7 @@ module MilkTea
           end
         end
 
-        has_guards
+        [has_guards, equality_cover]
       end
 
       def check_for_stmt(statement, scopes:, return_type:, allow_return:)

@@ -418,6 +418,8 @@ module MilkTea
             fields = {}
             events = {}
 
+            auto_lifetimes = []
+
             decl.fields.each do |field|
               raise_sema_error("duplicate field #{decl.name}.#{field.name}") if fields.key?(field.name)
               raise_sema_error("duplicate member #{decl.name}.#{field.name}") if events.key?(field.name)
@@ -432,12 +434,20 @@ module MilkTea
 
               begin
                 field_type = resolve_type_ref(field.type, type_params:, type_param_constraints:)
+
+                # Auto-generate implicit lifetimes for bare ref[T] in struct fields
+                if ref_type_without_lifetime?(field_type)
+                  auto_lt_name = "@_mt_#{auto_lifetimes.length}"
+                  auto_lifetimes << auto_lt_name
+                  type_params[auto_lt_name] = Types::LifetimeRef.new(auto_lt_name)
+                  field_type = Types::GenericInstance.new("ref", [auto_lt_name] + field_type.arguments)
+                end
                 if decl.respond_to?(:lifetime_params) && (lt = ref_lifetime(field_type))
-                  unless decl.lifetime_params.include?(lt)
+                  unless decl.lifetime_params.include?(lt) || auto_lifetimes.include?(lt)
                     raise_sema_error("field #{decl.name}.#{field.name} uses lifetime #{lt} not declared on struct")
                   end
                 end
-                allow_lts = decl.respond_to?(:lifetime_params) ? decl.lifetime_params : []
+                allow_lts = decl.respond_to?(:lifetime_params) ? (decl.lifetime_params + auto_lifetimes) : []
                 validate_stored_ref_type!(field_type, "field #{decl.name}.#{field.name}", allow_lifetimes: allow_lts)
                 unless proc_storage_supported_type?(field_type)
                   raise_sema_error("field #{decl.name}.#{field.name} uses unsupported proc nesting")
