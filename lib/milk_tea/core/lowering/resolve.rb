@@ -841,6 +841,20 @@ module MilkTea
           end
         when AST::RangeExpr
           raise LoweringError, "range expression is not valid in this context; use it as a for-loop iterable"
+        when AST::ExpressionList
+          names = []
+          element_types = []
+          expression.elements.each do |element|
+            if element.is_a?(AST::Argument)
+              names << element.name
+              element_types << infer_expression_type(element.value, env:)
+            else
+              names << nil
+              element_types << infer_expression_type(element, env:)
+            end
+          end
+          has_named = names.any?
+          Types::Tuple.new(element_types, field_names: has_named ? names : nil)
         else
           raise LoweringError, "unsupported expression type #{expression.class.name}"
         end
@@ -2258,6 +2272,22 @@ module MilkTea
           raise LoweringError, "generic interface requires type arguments" if interface.respond_to?(:instantiate)
           type_arguments = interface.respond_to?(:type_arguments) ? (interface.type_arguments || []) : []
           return Types::Dyn.new(interface, type_arguments)
+        end
+
+        if type_ref.is_a?(AST::TupleType)
+          names = []
+          element_types = []
+          type_ref.element_types.each do |et|
+            if et.is_a?(AST::Argument)
+              names << et.name
+              element_types << resolve_type_ref(et.value, type_params:)
+            else
+              names << nil
+              element_types << resolve_type_ref(et, type_params:)
+            end
+          end
+          has_named = names.any?
+          return Types::Tuple.new(element_types, field_names: has_named ? names : nil)
         end
 
         parts = type_ref.name.parts

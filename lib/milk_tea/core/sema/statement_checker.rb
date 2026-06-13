@@ -169,6 +169,11 @@ module MilkTea
       end
 
       def check_local_decl(statement, scopes:, return_type:, allow_return:)
+        if statement.destructure_bindings
+          check_local_decl_destructure(statement, scopes:, return_type:, allow_return:)
+          return
+        end
+
         current_scope = current_actual_scope(scopes)
         discard_binding = statement.name == "_" || let_else_discard_binding_syntax?(statement)
         raise_sema_error("duplicate local #{statement.name}") if !discard_binding && current_scope.key?(statement.name)
@@ -220,6 +225,27 @@ module MilkTea
             id: @preassigned_local_binding_ids[statement.object_id],
           )
           record_declaration_binding(statement, current_scope[statement.name])
+        end
+      end
+
+      def check_local_decl_destructure(statement, scopes:, return_type:, allow_return:)
+        value_type = infer_expression(statement.value, scopes:)
+        raise_sema_error("destructure requires a tuple, got #{value_type}") unless value_type.is_a?(Types::Tuple)
+        raise_sema_error("destructure pattern has #{statement.destructure_bindings.length} bindings but tuple has #{value_type.element_types.length} elements") unless statement.destructure_bindings.length == value_type.element_types.length
+
+        current_scope = current_actual_scope(scopes)
+        statement.destructure_bindings.each_with_index do |name, index|
+          raise_sema_error("duplicate local #{name} in destructure") if current_scope.key?(name)
+          ensure_non_reserved_primitive_name!(name, kind_label: "local", line: statement.line, column: statement.column)
+          field_type = value_type.element_types[index]
+          current_scope[name] = value_binding(
+            name:,
+            type: field_type,
+            mutable: false,
+            kind: :let,
+            id: @preassigned_local_binding_ids[statement.object_id],
+          )
+          record_declaration_binding(statement, current_scope[name])
         end
       end
 
@@ -400,6 +426,7 @@ module MilkTea
         element_type = infer_index_result_type(receiver_type, @types.fetch("ptr_uint"))
 
         statement.value.elements.each_with_index do |elem, i|
+          elem = elem.is_a?(AST::Argument) ? elem.value : elem
           validate_consuming_foreign_expression!(elem, scopes:, root_allowed: false)
           elem_type = infer_expression(elem, scopes:, expected_type: element_type)
           ensure_assignable!(

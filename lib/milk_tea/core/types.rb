@@ -1520,6 +1520,46 @@ module MilkTea
       end
     end
 
+    class Tuple < Base
+      attr_reader :element_types, :field_names
+
+      def initialize(element_types, field_names: nil)
+        @element_types = element_types.freeze
+        @field_names = (field_names || element_types.each_with_index.map { |_, i| "_#{i}" }).freeze
+        @fields = @field_names.each_with_index.each_with_object({}) do |(name, index), h|
+          h[name] = element_types[index]
+        end.freeze
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Tuple) && other.element_types == element_types && other.field_names == field_names
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, element_types, field_names].hash
+      end
+
+      def fields
+        @fields
+      end
+
+      def field(name)
+        @fields[name]
+      end
+
+      def to_s
+        if field_names == element_types.each_with_index.map { |_, i| "_#{i}" }
+          "(#{element_types.map(&:to_s).join(', ')})"
+        else
+          fields_parts = field_names.each_with_index.map { |n, i| "#{n}: #{element_types[i]}" }
+          "(#{fields_parts.join(', ')})"
+        end
+      end
+    end
+
     class Dyn < Base
       attr_reader :interface_binding, :type_arguments
 

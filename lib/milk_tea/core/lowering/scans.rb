@@ -179,6 +179,46 @@ module MilkTea
         @union_types = {}
       end
 
+      def collect_tuple_structs(analysis)
+        return unless analysis
+
+        analysis.functions.each_value do |func|
+          r_collect_tuple_from_type(func.type.return_type)
+          func.type.params.each { |p| r_collect_tuple_from_type(p.type) }
+        end
+        analysis.types.each_value do |type|
+          next unless type.respond_to?(:fields)
+          type.fields.each_value { |ft| r_collect_tuple_from_type(ft) }
+        end
+      end
+
+      private def r_collect_tuple_from_type(type)
+        return unless type
+        return if @collected_tuple_types&.key?(type.object_id)
+
+        if type.is_a?(Types::Tuple)
+          @collected_tuple_types ||= {}
+          @collected_tuple_types[type.object_id] = true
+
+          c_name = "mt_tuple_" + type.element_types.map { |et| sanitize_type_name_for_tuple(et) }.join("_")
+          return if @synthetic_structs.any? { |s| s.c_name == c_name }
+
+          @synthetic_structs << IR::StructDecl.new(
+            name: type.to_s,
+            c_name: c_name,
+            fields: type.element_types.each_with_index.map { |et, i| IR::Field.new(name: "_#{i}", type: et) },
+            packed: false,
+            alignment: nil,
+          )
+        end
+
+        type.element_types.each { |et| r_collect_tuple_from_type(et) } if type.is_a?(Types::Tuple)
+      end
+
+      private def sanitize_type_name_for_tuple(type)
+        type.to_s.gsub(/[^a-zA-Z0-9]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
+      end
+
       def build_method_definitions
         @program.analyses_by_path.values.each_with_object({}) do |analysis, definitions|
           analysis.ast.declarations.grep(AST::ExtendingBlock).each do |extending_block|

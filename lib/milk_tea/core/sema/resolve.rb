@@ -204,7 +204,7 @@ module MilkTea
 
       def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
         base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:)
-        return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType)
+        return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType) || type_ref.is_a?(AST::TupleType)
 
         raise_sema_error("ref types are non-null and cannot be nullable", type_ref) if type_ref.nullable && ref_type?(base)
 
@@ -233,6 +233,22 @@ module MilkTea
           type = Types::Dyn.new(interface, type_arguments)
           type = Types::Nullable.new(type) if type_ref.nullable
           return type
+        end
+
+        if type_ref.is_a?(AST::TupleType)
+          names = []
+          element_types = []
+          type_ref.element_types.each do |et|
+            if et.is_a?(AST::Argument)
+              names << et.name
+              element_types << resolve_type_ref(et.value, type_params:, type_param_constraints:)
+            else
+              names << nil
+              element_types << resolve_type_ref(et, type_params:, type_param_constraints:)
+            end
+          end
+          has_named = names.any?
+          return Types::Tuple.new(element_types, field_names: has_named ? names : nil)
         end
 
         parts = type_ref.name.parts
@@ -651,7 +667,7 @@ module MilkTea
       end
 
       def aggregate_type?(type)
-        type.is_a?(Types::Struct) || span_type?(type) || string_view_type?(type) || task_type?(type) || vector_type?(type) || matrix_type?(type) || quaternion_type?(type)
+        type.is_a?(Types::Struct) || type.is_a?(Types::Tuple) || span_type?(type) || string_view_type?(type) || task_type?(type) || vector_type?(type) || matrix_type?(type) || quaternion_type?(type)
       end
 
       def vector_type?(type)

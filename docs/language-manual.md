@@ -232,6 +232,15 @@ Rules for `let ... else:` and `var ... else:`:
 - `Result[void, E]` uses the same surface via `let _ = expr else:`
 - the `else` block must exit control flow (`return`, `break`, `continue`, or another terminating path)
 
+Tuple destructuring:
+
+```mt
+let (a, b) = pair()
+let (x, y) = (1, 2)
+```
+
+Destructuring binds each element of a tuple to a separate immutable local. The binding count must match the tuple element count.
+
 Postfix Result propagation:
 
 ```mt
@@ -756,6 +765,7 @@ Rules:
 - identifier
 - literals
 - parenthesized expression
+- tuple literal: `(a, b)` — positional; `(x = 1, y = 2)` — named
 - `size_of(T)` — accepts a type name or a compile-time type expression
 - `align_of(T)` — accepts a type name or a compile-time type expression
 - `offset_of(T, field)` — the field argument may be a literal field name or a compile-time `field_handle` expression
@@ -840,6 +850,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `Result[T, E]`
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
 - `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
+- `(T, U)` — tuple type. Positional fields auto-named `_0`, `_1`. Named fields use `(x = T, y = U)`. Copy by value, returns supported.
 
 ### 6.3 Nullability
 

@@ -138,6 +138,9 @@ module MilkTea
             when Types::SoA
               base = soa_type_name(type)
               pointer ? "#{base}*" : base
+            when Types::Tuple
+              base = tuple_type_name(type)
+              pointer ? "#{base}*" : base
             else
               raise LoweringError, "unsupported C type #{type.class.name}"
             end
@@ -416,6 +419,55 @@ module MilkTea
               soa_types << type
               visited[type.object_id] = true
             end
+          end
+
+          def collect_tuple_types
+            tuple_types = []
+            visited = {}
+
+            emitted_functions.each do |function|
+              r_collect_tuple_type(function.return_type, tuple_types, visited)
+              function.params.each do |param|
+                r_collect_tuple_type(param.type, tuple_types, visited)
+              end
+              collect_tuple_from_statements(function.body, tuple_types, visited)
+            end
+
+            @program.structs.each do |struct_decl|
+              struct_decl.fields.each do |field|
+                r_collect_tuple_type(field.type, tuple_types, visited)
+              end
+            end
+
+            tuple_types.uniq
+          end
+
+          def collect_tuple_from_statements(statements, tuple_types, visited)
+            statements&.each do |stmt|
+              case stmt
+              when IR::LocalDecl
+                r_collect_tuple_type(stmt.type, tuple_types, visited)
+              when IR::BlockStmt
+                collect_tuple_from_statements(stmt.body, tuple_types, visited)
+              when IR::IfStmt
+                collect_tuple_from_statements(stmt.then_body, tuple_types, visited)
+                collect_tuple_from_statements(stmt.else_body, tuple_types, visited)
+              when IR::WhileStmt
+                collect_tuple_from_statements(stmt.body, tuple_types, visited)
+              when IR::ForStmt
+                collect_tuple_from_statements(stmt.body, tuple_types, visited)
+              end
+            end
+          end
+
+          def r_collect_tuple_type(type, tuple_types, visited)
+            return unless type
+            return if visited[type.object_id]
+            return unless type.is_a?(Types::Tuple)
+
+            tuple_types << type
+            visited[type.object_id] = true
+            type.element_types.each { |et| r_collect_tuple_type(et, tuple_types, visited) }
           end
 
           def collect_generic_struct_decls
@@ -1521,6 +1573,16 @@ module MilkTea
           def soa_type_name(type)
             element_name = sanitize_identifier(type.element_type.respond_to?(:name) ? type.element_type.name : type.element_type.to_s)
             "mt_soa_#{element_name}_#{type.count}"
+          end
+
+          def tuple_type_name(type)
+            sanitized = type.element_types.map { |et| sanitize_identifier(et.to_s) }.join("_")
+            base = "mt_tuple_#{sanitized}"
+            default_names = type.element_types.each_with_index.map { |_, i| "_#{i}" }
+            if type.field_names != default_names
+              base << "_" << type.field_names.map { |n| sanitize_identifier(n) }.join("_")
+            end
+            base
           end
 
           def task_type_name(type)
