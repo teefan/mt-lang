@@ -268,6 +268,10 @@ module MilkTea
           return [:string, []]
         end
 
+        if tok.type == :comment
+          return [:comment, []]
+        end
+
         if [:integer, :float].include?(tok.type)
           return [:number, []]
         end
