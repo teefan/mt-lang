@@ -183,8 +183,8 @@ return Result[Output, Error].success(value= lowered)
 
 Callable and `ref[...]` rules:
 
-- Plain stored `ref[T]` values are rejected in constants, module variables, struct or union fields, and nested local storage such as arrays or other generic containers.
-- `ref[@a, T]` with a lifetime parameter declared on the struct is allowed in struct fields: `struct Cursor[@a]: data: ref[@a, span[ubyte]]`. Non-owning structs (those containing a ref field) inherit ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage.
+- Plain stored `ref[T]` values are rejected in constants, module variables, and nested local storage such as arrays or other generic containers.
+- In struct or union fields, bare `ref[T]` auto-generates an implicit lifetime parameter. The struct becomes non-owning, inheriting ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage. Explicit lifetime parameters (`struct Cursor[@a]: data: ref[@a, span[ubyte]]`) are still supported when the lifetime needs to be shared across multiple fields.
 - Ordinary local bindings may still hold a direct `ref[T]` value, for example `let handle = ref_of(counter)`.
 - `fn(...)` and `proc(...)` parameter types may use `ref[...]` directly in parameter position.
 - Stored callable values may use `ref[...]` only in direct callable parameter positions. This includes `fn(...)` values and `proc(...)` closure values stored in locals, struct fields, and generic containers such as `array[...]`.
@@ -417,7 +417,7 @@ Struct pattern rules:
 - Guards (`hp > 0`, `level >= 3`) skip the arm if the condition is false; the match tries the next arm.
 - Equality patterns (`kind = Kind.boss`) skip the arm if the field does not equal the value.
 - Bindings (`position`) create immutable local variables bound to the field value.
-- Guards and equality patterns are refutable: they do not count toward exhaustiveness.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive.
 - For variant payload arms, struct patterns compose with `as name` bindings.
 
 Loop forms:

@@ -259,8 +259,8 @@ type Callback = fn(level: int, message: cstr) -> void
 
 Callable and `ref[...]` rules:
 
-- Plain stored `ref[T]` values are rejected in constants, module variables, struct or union fields, and nested local storage such as arrays or other generic containers.
-- `ref[@a, T]` with a lifetime parameter declared on the struct is allowed in struct fields: `struct Cursor[@a]: data: ref[@a, span[ubyte]]`. Non-owning structs (those containing a ref field) inherit ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage. Composition requires the outer struct to also declare the matching lifetime.
+- Plain stored `ref[T]` values are rejected in constants, module variables, and nested local storage such as arrays or other generic containers.
+- In struct or union fields, bare `ref[T]` auto-generates an implicit lifetime parameter. The struct becomes non-owning and inherits ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage. Explicit lifetimes (`ref[@a, T]`) are still supported when the lifetime needs to be shared across fields.
 - Ordinary local bindings may still hold a direct `ref[T]` value, for example `let handle = ref_of(counter)`.
 - `fn(...)` and `proc(...)` parameter types may use `ref[...]` directly in parameter position.
 - Stored callable values may use `ref[...]` only in direct callable parameter positions. This includes `fn(...)` values and `proc(...)` closure values stored in locals, struct fields, and generic containers such as `array[...]`.
@@ -580,7 +580,7 @@ match entity:
 Rules for struct patterns:
 
 - Each field name must appear at most once per arm.
-- Guards and equality patterns are refutable: they do not count toward exhaustiveness. An arm with only bindings and no guards counts as exhaustive.
+- Guards and equality patterns are refutable: they do not count toward exhaustiveness. Exception: when equality patterns for an enum-typed field collectively cover every member of the enum, the arm is considered exhaustive. An arm with only bindings and no guards counts as exhaustive.
 - Struct patterns compose with `as name` bindings: `Entity.player(hp > 0) as p` binds both `hp` (guard-checked) and `p` (the full payload struct).
 - Struct patterns do not apply to enum or integer match scrutinees.
 

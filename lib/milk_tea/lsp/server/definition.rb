@@ -6,6 +6,11 @@ module MilkTea
       module ServerDefinition
         private
 
+      def is_builtin_name?(name, tokens, token_index)
+        return false unless token_index
+        builtin_hover_info(name, tokens, token_index)
+      end
+
       def handle_definition(params)
         handle_definition_request('textDocument/definition', params, error_label: 'definition')
       end
@@ -77,7 +82,6 @@ module MilkTea
         tokens = context[:tokens]
         token_index = context[:token_index]
         return nil if token_index && module_declaration_info_at(tokens, token_index)
-        return nil if token_index && builtin_hover_info(token.lexeme, tokens, token_index)
 
         if token_index && named_argument_label_token?(tokens, token_index)
           location = named_argument_definition_location(uri, token.lexeme, tokens, token_index, stages:)
@@ -138,6 +142,8 @@ module MilkTea
 
           return facts_location if facts_location
         end
+
+        return nil if token_index && is_builtin_name?(token.lexeme, tokens, token_index)
 
         if facts && token_index && !facts_location
           local_location = measure_perf_stage(stages, 'local_binding') do

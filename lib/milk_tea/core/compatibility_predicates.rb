@@ -374,6 +374,10 @@ module MilkTea
       type.is_a?(Types::GenericInstance) && type.name == "ref" && [1, 2].include?(type.arguments.length)
     end
 
+    def ref_type_without_lifetime?(type)
+      type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 1
+    end
+
     def ref_lifetime(type)
       return unless type.is_a?(Types::GenericInstance) && type.name == "ref" && type.arguments.length == 2
 
