@@ -173,6 +173,7 @@ module MilkTea
         @types = analysis.types
         @values = analysis.values
         @functions = analysis.functions
+        @interfaces = analysis.interfaces
         @opaque_types = {}
         @struct_types = {}
         @union_types = {}

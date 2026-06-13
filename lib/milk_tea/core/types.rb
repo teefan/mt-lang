@@ -1520,6 +1520,39 @@ module MilkTea
       end
     end
 
+    class Dyn < Base
+      attr_reader :interface_binding, :type_arguments
+
+      def initialize(interface_binding, type_arguments = [])
+        @interface_binding = interface_binding
+        @type_arguments = type_arguments
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(Dyn) && other.interface_binding == interface_binding && other.type_arguments == type_arguments
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, interface_binding, type_arguments].hash
+      end
+
+      def to_s
+        if type_arguments.any?
+          "dyn[#{interface_binding.name}[#{type_arguments.map(&:to_s).join(', ')}]]"
+        else
+          "dyn[#{interface_binding.name}]"
+        end
+      end
+
+      def field(name)
+        void_ptr = GenericInstance.new("ptr", [Primitive.new("void")])
+        { "data" => void_ptr, "vtable" => void_ptr }[name]
+      end
+    end
+
     BUILTIN_OPTION_TYPE = GenericVariantDefinition.new("Option", ["T"]).define_arms(
       "some" => { "value" => TypeVar.new("T") },
       "none" => {},

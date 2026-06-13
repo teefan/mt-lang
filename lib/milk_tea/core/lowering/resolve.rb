@@ -487,6 +487,14 @@ module MilkTea
           end
 
           resolved_receiver_type = infer_method_receiver_type(callee.receiver, env:, member_name: callee.member)
+
+          if dyn_type?(resolved_receiver_type)
+            interface = resolved_receiver_type.interface_binding
+            method_binding = interface.methods[callee.member]
+            raise LoweringError, "no method '#{callee.member}' on interface #{interface.name}" unless method_binding
+            return [:dyn_method, nil, callee.receiver, method_binding, resolved_receiver_type]
+          end
+
           dispatch_receiver_type = method_dispatch_receiver_type(resolved_receiver_type)
           method_entry_receiver_type = resolved_receiver_type
           method_entry = @method_definitions[[resolved_receiver_type, callee.member]]
@@ -582,6 +590,19 @@ module MilkTea
 
           if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "attribute_arg"
             return [:compile_time_builtin, "attribute_arg", nil, compile_time_builtin_specialization_function_type(callee)]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "adapt"
+            raise LoweringError, "adapt requires exactly one type argument" unless callee.arguments.length == 1
+
+            type_arg = callee.arguments.first.value
+            raise LoweringError, "adapt type argument must be a type" unless type_arg.is_a?(AST::TypeRef)
+
+            parts = type_arg.name.parts
+            type_args = type_arg.arguments.map { |a| a.value }
+            interface = resolve_interface_ref(AST::QualifiedName.new(parts:, type_arguments: type_args))
+            dyn_type = Types::Dyn.new(interface, interface.respond_to?(:type_arguments) ? (interface.type_arguments || []) : [])
+            return [:adapt, nil, nil, dyn_type, interface]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, env:))
@@ -767,9 +788,10 @@ module MilkTea
             :str_buffer_len, :str_buffer_capacity, :str_buffer_as_str, :str_buffer_as_cstr,
             :event_subscribe, :event_subscribe_once, :event_unsubscribe, :event_emit, :event_wait,
             :compile_time_builtin,
-            :cast, :reinterpret, :zero, :hash, :equal, :order
+            :cast, :reinterpret, :zero, :hash, :equal, :order,
+            :dyn_method
             callee_type.return_type
-          when :struct_literal, :struct_with, :array, :variant_arm_ctor
+          when :struct_literal, :struct_with, :array, :variant_arm_ctor, :adapt
             callee_type
           when :ref_of
             argument_type = infer_expression_type(expression.arguments.fetch(0).value, env:)
@@ -2231,6 +2253,13 @@ module MilkTea
           return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:))
         end
 
+        if type_ref.is_a?(AST::DynType)
+          interface = resolve_interface_ref(type_ref.interface)
+          raise LoweringError, "generic interface requires type arguments" if interface.respond_to?(:instantiate)
+          type_arguments = interface.respond_to?(:type_arguments) ? (interface.type_arguments || []) : []
+          return Types::Dyn.new(interface, type_arguments)
+        end
+
         parts = type_ref.name.parts
         base = if type_ref.arguments.any?
                  name = parts.join(".")
@@ -2311,6 +2340,24 @@ module MilkTea
         when "name" then @types["str"]
         when "value" then @types["int"]
         else @error_type
+        end
+      end
+
+      def resolve_interface_ref(interface_ref)
+        parts = interface_ref.parts
+        interface = if parts.length == 1
+                      @interfaces[parts.first]
+                    elsif parts.length == 2 && @imports.key?(parts.first)
+                      @imports.fetch(parts.first).interfaces[parts.last]
+                    end
+        raise LoweringError, "unknown interface #{interface_ref}" unless interface
+
+        if interface_ref.type_arguments.any?
+          raise LoweringError, "interface #{interface.name} is not generic" unless interface.respond_to?(:instantiate)
+          type_args = interface_ref.type_arguments.map { |arg| resolve_type_ref(arg) }
+          interface.instantiate(type_args)
+        else
+          interface
         end
       end
   end

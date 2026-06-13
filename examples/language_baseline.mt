@@ -1092,7 +1092,31 @@ function with_demo() -> Vec2:
     return v.with(x = 10.0)
 
 # ---------------------------------------------------------------------------
-# 29  Entrypoint
+# 29  dyn[InterfaceName] — runtime interface values
+# ---------------------------------------------------------------------------
+
+interface Shape:
+    function area() -> float
+    function label() -> str
+
+struct Circle implements Shape:
+    radius: float
+
+extending Circle:
+    function area() -> float:
+        return 3.14159 * this.radius * this.radius
+
+    function label() -> str:
+        return "circle"
+
+function dyn_demo() -> float:
+    var c = Circle(radius = 5.0)
+    var s: dyn[Shape] = adapt[Shape](ref_of(c))
+    let _s = s
+    return c.area()
+
+# ---------------------------------------------------------------------------
+# 30  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -1124,6 +1148,8 @@ function main() -> int:
 
     total += int<-(with_demo().x) + int<-(with_demo().y)
     nullability_demo()
+
+    total += int<-(dyn_demo())
 
     total += aio.wait(async_child())
     total += aio.wait(async_demo())

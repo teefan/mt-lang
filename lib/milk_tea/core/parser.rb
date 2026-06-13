@@ -945,6 +945,7 @@ module MilkTea
     def parse_type_ref
       return parse_function_type_ref if match(:fn)
       return parse_proc_type_ref if match(:proc)
+      return parse_dyn_type_ref if match(:dyn)
 
       first_token = peek
       if match(:at)
@@ -983,6 +984,15 @@ module MilkTea
       parse_callable_type_ref(keyword: "proc", param_context: "proc type parameters") do |params, return_type|
         AST::ProcType.new(params:, return_type:)
       end
+    end
+
+    def parse_dyn_type_ref
+      first_token = previous
+      consume(:lbracket, "expected '[' after dyn")
+      interface = parse_qualified_name_with_type_arguments
+      consume(:rbracket, "expected ']' after interface name")
+      nullable = match(:question)
+      AST::DynType.new(interface:, nullable:, line: first_token.line, column: first_token.column, length: 3)
     end
 
     def parse_callable_type_ref(keyword:, param_context:)
@@ -2380,7 +2390,7 @@ module MilkTea
     end
 
     def builtin_specialization_target?(expression)
-      expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr ref].include?(expression.name)
+      expression.is_a?(AST::Identifier) && %w[array reinterpret span zero ptr const_ptr ref adapt].include?(expression.name)
     end
 
     def parse_diagnostic_hint?(error)

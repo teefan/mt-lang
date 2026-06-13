@@ -270,6 +270,8 @@ Interface rules:
 - Interface methods do not have bodies.
 - Bare interface names are not runtime storage types.
 - Interfaces are used by `implements` and constrained generics, not as runtime value types.
+- Runtime interface values use `dyn[InterfaceName]` — a fat pointer carrying a data pointer and a vtable pointer. Construct with `adapt[Interface](value: ref[T])`, which verifies `T implements Interface` at compile time.
+- Generic interfaces instantiated through `dyn` must be fully specified: `dyn[Mapper[int]]` is valid; `dyn[Mapper]` is rejected.
 - Conformance with generic interfaces uses type substitution: `struct Foo implements Mapper[int]` checks that `Foo`'s methods match `Mapper`'s methods with `T` replaced by `int`.
 
 Method kinds:
@@ -601,6 +603,7 @@ Type constructors:
 - `fn(params...) -> R`
 - `proc(params...) -> R`
 - `SoA[T, N]` — Structure-of-Arrays: each struct field becomes a separate array of length `N`; access `soa[i].field` reads from column `field` at row `i`
+- `dyn[InterfaceName]` — runtime interface value (fat pointer: `{ void* data, void* vtable }`). Constructed via `adapt[Interface](value: ref[T])`. @see §6.
 
 When a `span[T]` is expected, an addressable `array[T, N]` value may be passed directly via implicit boundary coercion. For explicit conversion, `array.as_span()` returns `span[T]` without requiring a boundary context.
 
@@ -643,6 +646,7 @@ Special recognized callables:
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 - `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
+- `adapt[I](value)` — constructs a `dyn[I]` runtime interface value; verifies `value`'s type implements interface `I` at compile time
 
 Reference and pointer notes:
 
@@ -837,12 +841,11 @@ Built-in event operations:
 
 `EventError` is a built-in enum with a single member `full`, returned when listener capacity is exhausted.
 
-## 16. Common V1 Rejections
+## 16. Common Rejections
 
-Current v1 rejects:
+Current compiler rejects:
 
 - interface methods with `async` or generic signatures
-- runtime interface value types such as `Damageable` as a field, local, parameter, or return type
 - legacy `in` / `out` / `inout` markers at call sites
 - consuming foreign calls with `consuming` parameters outside top-level expression statements
 - external functions that are generic, async, or array-taking / array-returning

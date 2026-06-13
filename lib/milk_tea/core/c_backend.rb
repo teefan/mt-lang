@@ -92,7 +92,7 @@ module MilkTea
 
       opaque_decls = @program.opaques
       aggregate_decls = sort_aggregate_decls(
-        emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_str_buffer_decls,
+        emitted_aggregate_structs + collect_generic_struct_decls + collect_task_decls + collect_proc_decls + collect_dyn_decls + collect_str_buffer_decls,
         emitted_aggregate_unions,
         emitted_aggregate_variants + collect_generic_variant_decls,
       )

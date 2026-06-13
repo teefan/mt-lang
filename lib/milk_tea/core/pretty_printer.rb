@@ -689,6 +689,12 @@ module MilkTea
           "fn(#{type.params.map { |param| render_param(param) }.join(', ')}) -> #{render_type(type.return_type)}"
         when AST::ProcType
           "proc(#{type.params.map { |param| render_param(param) }.join(', ')}) -> #{render_type(type.return_type)}"
+        when AST::DynType
+          if type.interface.type_arguments.any?
+            "dyn[#{type.interface.parts.join('.')}[#{type.interface.type_arguments.map { |a| render_type(a) }.join(', ')}]]"
+          else
+            "dyn[#{type.interface.parts.join('.')}]"
+          end
         else
           type.to_s
         end

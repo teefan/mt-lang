@@ -226,6 +226,15 @@ module MilkTea
           return Types::Proc.new(params:, return_type: resolve_type_ref(type_ref.return_type, type_params:, type_param_constraints:))
         end
 
+        if type_ref.is_a?(AST::DynType)
+          interface = resolve_interface_ref(type_ref.interface)
+          raise_sema_error("generic interface #{interface.name} requires type arguments") if interface.is_a?(GenericInterfaceBinding)
+          type_arguments = interface.type_arguments || []
+          type = Types::Dyn.new(interface, type_arguments)
+          type = Types::Nullable.new(type) if type_ref.nullable
+          return type
+        end
+
         parts = type_ref.name.parts
 
         if type_ref.arguments.any?
