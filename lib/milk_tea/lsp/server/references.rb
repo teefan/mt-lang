@@ -21,6 +21,8 @@ module MilkTea
           return []
         end
 
+        include_declaration = params.dig('context', 'includeDeclaration') != false
+
         context = measure_perf_stage(stages, 'token_context') { token_context_at(uri, lsp_line, lsp_char) }
         if context
           tokens = context[:tokens]
@@ -30,7 +32,6 @@ module MilkTea
         end
 
         facts = measure_perf_stage(stages, 'facts') { @workspace.get_facts(uri) }
-        include_declaration = params.dig('context', 'includeDeclaration') != false
         target = facts ? measure_perf_stage(stages, 'static_target') { resolve_static_type_reference_target(uri, token, facts) } : nil
         if target
           refs = measure_perf_stage(stages, 'static_refs') { static_type_method_references(target, include_declaration: include_declaration) }
@@ -409,17 +410,6 @@ module MilkTea
         else
           refs
         end
-      end
-
-      def named_argument_callee_name(tokens, token_index)
-        opener_index = parameter_list_opener_index(tokens, token_index)
-        return nil unless opener_index
-
-        head_index = previous_non_trivia_token_index(tokens, opener_index)
-        return nil unless head_index
-        return nil unless tokens[head_index].type == :identifier
-
-        tokens[head_index].lexeme
       end
     end
   end

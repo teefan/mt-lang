@@ -2728,4 +2728,141 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/positional argument after named/, error.message)
   end
 
+  # ── dyn / adapt ────────────────────────────────────────────────────────────
+
+  def test_rejects_adapt_on_type_without_interface_impl
+    source = <<~MT
+      # module demo.bad_adapt
+      interface Damageable:
+          function hp() -> int
+
+      struct Item:
+          value: int
+
+      function main() -> int:
+          var item = Item(value = 1)
+          var h: dyn[Damageable] = adapt[Damageable](ref_of(item))
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/does not implement/, error.message)
+  end
+
+  def test_rejects_adapt_with_wrong_number_of_arguments
+    source = <<~MT
+      # module demo.bad_adapt_args
+      interface Shape:
+          function area() -> float
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      function main() -> int:
+          var c = Circle(radius = 1.0)
+          var s: dyn[Shape] = adapt[Shape](ref_of(c), 0)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/adapt expects 1 argument/, error.message)
+  end
+
+  def test_rejects_adapt_with_named_arguments
+    source = <<~MT
+      # module demo.bad_adapt_named
+      interface Shape:
+          function area() -> float
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      function main() -> int:
+          var c = Circle(radius = 1.0)
+          var s: dyn[Shape] = adapt[Shape](value = ref_of(c))
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/adapt does not support named arguments/, error.message)
+  end
+
+  def test_rejects_dyn_with_uninstantiated_generic_interface
+    source = <<~MT
+      # module demo.bad_dyn_generic
+      interface Mapper[T]:
+          function map(x: T) -> T
+
+      function main() -> int:
+          var m: dyn[Mapper]
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/requires.*type argument/, error.message)
+  end
+
+  def test_rejects_bare_interface_name_as_local_type
+    source = <<~MT
+      # module demo.bad_bare_iface
+      interface Damageable:
+          function hp() -> int
+
+      struct NPC implements Damageable:
+          hp: int
+
+      extending NPC:
+          function hp() -> int:
+              return this.hp
+
+      function main() -> int:
+          var x: Damageable
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown type/, error.message)
+  end
+
+  def test_rejects_adapt_with_wrong_type_argument_kind
+    source = <<~MT
+      # module demo.bad_adapt_type_arg
+      interface Shape:
+          function area() -> float
+
+      function main() -> int:
+          var x: dyn[Shape] = adapt[42](x)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/adapt type argument must be a type/, error.message)
+  end
+
 end

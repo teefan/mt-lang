@@ -737,17 +737,6 @@ module MilkTea
           },
         }
       end
-
-      def named_argument_callee_name(tokens, token_index)
-        opener_index = parameter_list_opener_index(tokens, token_index)
-        return nil unless opener_index
-
-        head_index = previous_non_trivia_token_index(tokens, opener_index)
-        return nil unless head_index
-        return nil unless tokens[head_index].type == :identifier
-
-        tokens[head_index].lexeme
-      end
     end
   end
 end

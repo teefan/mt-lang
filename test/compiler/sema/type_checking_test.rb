@@ -4260,4 +4260,231 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("configure")
   end
 
+  # ── dyn / adapt ────────────────────────────────────────────────────────────
+
+  def test_type_checks_dyn_interface_local
+    source = <<~MT
+      # module demo.dyn_local
+      interface Shape:
+          function area() -> float
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      function main() -> int:
+          var c = Circle(radius = 1.0)
+          var s: dyn[Shape] = adapt[Shape](ref_of(c))
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_method_call
+    source = <<~MT
+      # module demo.dyn_call
+      interface Shape:
+          function area() -> float
+          function label() -> str
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+          function label() -> str:
+              return "circle"
+
+      function main() -> int:
+          var c = Circle(radius = 1.0)
+          var s: dyn[Shape] = adapt[Shape](ref_of(c))
+          let a = s.area()
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_interface_as_function_parameter
+    source = <<~MT
+      # module demo.dyn_param
+      interface Damageable:
+          function hp() -> int
+
+      struct NPC implements Damageable:
+          hp: int
+
+      extending NPC:
+          function hp() -> int:
+              return this.hp
+
+      function inspect(handler: dyn[Damageable]) -> int:
+          return handler.hp()
+
+      function main() -> int:
+          var n = NPC(hp = 10)
+          let h: dyn[Damageable] = adapt[Damageable](ref_of(n))
+          return inspect(h)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_interface_as_return_type
+    source = <<~MT
+      # module demo.dyn_return
+      interface Shape:
+          function area() -> float
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      function make_circle(r: float) -> dyn[Shape]:
+          var c = Circle(radius = r)
+          return adapt[Shape](ref_of(c))
+
+      function main() -> int:
+          var s: dyn[Shape] = make_circle(1.0)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_interface_nullable
+    source = <<~MT
+      # module demo.dyn_nullable
+      interface Shape:
+          function area() -> float
+
+      function noop(handler: dyn[Shape]?) -> void:
+          return
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      function main() -> int:
+          noop(null)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_with_generic_interface
+    source = <<~MT
+      # module demo.dyn_generic
+      interface Mapper[T]:
+          function map(x: T) -> T
+
+      struct Doubler implements Mapper[int]:
+          value: int
+
+      extending Doubler:
+          function map(x: int) -> int:
+              return x * 2
+
+      function main() -> int:
+          var d = Doubler(value = 0)
+          var m: dyn[Mapper[int]] = adapt[Mapper[int]](ref_of(d))
+          let result = m.map(3)
+          return result
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_as_struct_field
+    source = <<~MT
+      # module demo.dyn_field
+      interface Shape:
+          function area() -> float
+
+      struct Circle implements Shape:
+          radius: float
+
+      extending Circle:
+          function area() -> float:
+              return 3.14 * this.radius * this.radius
+
+      struct Holder:
+          shape: dyn[Shape]
+
+      function main() -> int:
+          var c = Circle(radius = 2.0)
+          var holder = Holder(shape = adapt[Shape](ref_of(c)))
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_dyn_with_multiple_interface_methods
+    source = <<~MT
+      # module demo.dyn_multi
+      interface Damageable:
+          function hp() -> int
+          editable function take_damage(amount: int) -> void
+
+      struct NPC implements Damageable:
+          hp: int
+
+      extending NPC:
+          function hp() -> int:
+              return this.hp
+          editable function take_damage(amount: int):
+              this.hp -= amount
+
+      function main() -> int:
+          var n = NPC(hp = 10)
+          var h: dyn[Damageable] = adapt[Damageable](ref_of(n))
+          let current = h.hp()
+          return current
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_adapt_with_opaque_type
+    source = <<~MT
+      # module demo.dyn_opaque
+      interface Closable:
+          function close() -> void
+
+      opaque Handle implements Closable
+
+      extending Handle:
+          function close():
+              return
+
+      function main(ref_handle: ref[Handle]) -> void:
+          var h: dyn[Closable] = adapt[Closable](ref_handle)
+          return
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end
