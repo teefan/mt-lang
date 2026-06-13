@@ -274,6 +274,55 @@ function main() -> int:
     assert_match(/#line \d+ ".*\.mt"/, generated)
   end
 
+  def test_generate_c_emits_line_directives_in_nested_blocks
+    source = <<~MT
+      # module demo.line_directives_2
+
+      function nested_test(flag: bool) -> int:
+          if flag:
+              let x: int = 1
+              return x
+          else:
+              let y: int = 2
+              return y
+    MT
+
+    generated = generate_c_from_source(source)
+    line_directives = generated.scan(/#line \d+/)
+    assert_operator line_directives.length, :>, 2, "expected multiple #line directives for nested blocks"
+  end
+
+  def test_generate_c_emits_line_directives_with_module_source
+    source = <<~MT
+      # module demo.line_directives_3
+
+      function source_trace(limit: int) -> int:
+          var total: int = 0
+          var i: int = 0
+          while i < limit:
+              total += i
+              i += 1
+          return total
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/#line \d+ ".*line_directives_3\.mt"/, generated)
+    assert_match(/#line \d+ ".*\.mt"/, generated)
+  end
+
+  def test_generate_c_debug_profile_includes_line_directives
+    source = <<~MT
+      # module demo.debug_profile
+
+      function mul(a: int, b: int) -> int:
+          let product = a * b
+          return product
+    MT
+
+    generated = generate_c_from_source(source)
+    assert_match(/#line \d+ ".*\.mt"/, generated)
+  end
+
   def test_generate_c_for_loop_over_custom_iterator_protocol
     source = <<~MT
       # module demo.iterator_for
