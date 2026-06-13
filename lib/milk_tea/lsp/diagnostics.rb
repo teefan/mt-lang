@@ -397,7 +397,7 @@ module MilkTea
         start_char = [column.to_i - 1, 0].max
         end_char = start_char + [length.to_i, 1].max
 
-        {
+        diagnostic = {
           range: {
             start: {
               line: (line.to_i - 1),
@@ -416,6 +416,10 @@ module MilkTea
             stage: diagnostic_stage(error)
           }
         }
+        if error.respond_to?(:suggestion) && error.suggestion
+          diagnostic[:data][:suggestion] = error.suggestion
+        end
+        diagnostic
       end
 
       def self.format_import_error(error, import, content: nil)

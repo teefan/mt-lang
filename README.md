@@ -68,7 +68,7 @@ Comments:
 Supported literals:
 
 - integers: `42`, `0xff`, `0b1010`, `_` separators allowed
-- floats: `3.14`, `1.2e-3`
+- floats: `3.14`, `1.2e-3`, `1.0f` (float suffix), `1.0d` (double suffix)
 - booleans: `true`, `false`
 - string: `"hello"` -> `str`
 - cstring: `c"hello"` -> `cstr`
@@ -112,6 +112,7 @@ Supported top-level declarations:
 - `foreign function`
 - `event`
 - `static_assert(...)`
+- `emit` — compile-time code generation inside `const function` or `inline` bodies
 - `when` (compile-time conditional; may appear at module level or inside function bodies)
 
 File-kind note:
@@ -183,6 +184,7 @@ return Result[Output, Error].success(value= lowered)
 Callable and `ref[...]` rules:
 
 - Plain stored `ref[T]` values are rejected in constants, module variables, struct or union fields, and nested local storage such as arrays or other generic containers.
+- `ref[@a, T]` with a lifetime parameter declared on the struct is allowed in struct fields: `struct Cursor[@a]: data: ref[@a, span[ubyte]]`. Non-owning structs (those containing a ref field) inherit ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage.
 - Ordinary local bindings may still hold a direct `ref[T]` value, for example `let handle = ref_of(counter)`.
 - `fn(...)` and `proc(...)` parameter types may use `ref[...]` directly in parameter position.
 - Stored callable values may use `ref[...]` only in direct callable parameter positions. This includes `fn(...)` values and `proc(...)` closure values stored in locals, struct fields, and generic containers such as `array[...]`.
@@ -235,7 +237,7 @@ Rules:
 
 - `struct` and `opaque` may declare nominal interface conformance with `implements`.
 - `attribute[target, ...]` declares reusable declaration attributes for `struct`, `field`, and `callable` targets.
-- Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed` and `align(bytes)` are predefined struct attributes.
+- Attributes are applied with one or more leading `@[name(...)]` blocks. Built-in `packed`, `align(bytes)`, and `deprecated(message)` are predefined attributes.
 - `variant` arms may carry named payload fields.
 - Payload arm construction uses named fields: `Token.ident(text = "hello")`.
 - No-payload arms are bare member expressions: `Token.eof`.
@@ -374,6 +376,7 @@ Supported statements:
 - `continue`
 - `return`
 - `defer`
+- `emit` — only inside `const function` or `inline for/while/if/match` bodies
 - expression statement
 
 Rules:
@@ -526,6 +529,7 @@ Postfix forms:
 - member access: `a.b`
 - indexing: `a[i]`
 - call: `f(x)`
+- partial field update: `v.with(x = 10.0)` — returns a copy with specified fields replaced
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
 - explicit specialization is only accepted on bare or module-qualified names; `value.member[32](...)` remains indexed-call syntax, so value-member calls rely on inference instead of explicit literal specialization
 
@@ -671,6 +675,7 @@ Core modules in `std/`:
 - `std.hash` — extends primitive types (`int`, `uint`, `bool`, `float`, `double`, `char`) with canonical `hash`/`equal`/`order` hooks; import once to use primitives as Map/Set/BinaryHeap/OrderedMap keys. Also provides generic `hash_struct[T]`, `equal_struct[T]`, `order_struct[T]` using compile-time reflection.
 - `std.cstring` — C string helpers (`cstr_len`, `cstr_as_str`)
 - `std.math` — `sqrt`, `sin`, `cos`, `abs`, `pow`, etc. via C math
+- `std.encoding` — UTF-8 validation (`is_valid_utf8`, `utf8_codepoint_count`, `decode_utf8_codepoint`, `utf8_overlong_check`)
 - `std.string.String` — growable owned UTF-8 text
 - `std.mem.heap`, `std.mem.arena`, `std.mem.pool`, `std.mem.stack` — allocators
 - `std.async` — task runtime (`sleep`, `work`, `completed`, `result`, `wait`, `run`)

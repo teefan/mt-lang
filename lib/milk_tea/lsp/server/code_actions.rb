@@ -411,24 +411,57 @@ module MilkTea
               match_end_line = find_match_end_line(lines, diag_line - 1)
               insert_line = match_end_line || diag_line - 1
 
-              actions << {
-                title: "Add missing match #{missing.length == 1 ? 'arm' : 'arms'}: #{missing.join(', ')}",
-                kind: 'quickFix',
-                diagnostics: [diag],
-                edit: {
-                  changes: {
-                    uri => [{
-                      range: {
-                        start: { line: insert_line, character: 0 },
-                        end:   { line: insert_line, character: 0 }
-                      },
-                      newText: new_arms
-                    }]
+                actions << {
+                  title: "Add missing match #{missing.length == 1 ? 'arm' : 'arms'}: #{missing.join(', ')}",
+                  kind: 'quickFix',
+                  diagnostics: [diag],
+                  edit: {
+                    changes: {
+                      uri => [{
+                        range: {
+                          start: { line: insert_line, character: 0 },
+                          end:   { line: insert_line, character: 0 }
+                        },
+                        newText: new_arms
+                      }]
+                    }
                   }
                 }
-              }
+              end
             end
-          end
+
+            # "unknown type X" or "unknown name Y" with import suggestion
+            if message =~ /\Aunknown (?:type|callable) (\S+)\z/
+              type_name = $1
+              suggestion = diag.dig('data', 'suggestion')
+              next unless suggestion.is_a?(String)
+
+              if suggestion =~ /did you mean ['"]([^'"]+)['"]/
+                full_path = $1
+                parts = full_path.split('.')
+                next unless parts.length >= 2
+
+                import_module = parts[0..-2].join('.')
+                import_type = parts.last
+
+                actions << {
+                  title: "Import #{full_path}",
+                  kind: 'quickFix',
+                  diagnostics: [diag],
+                  edit: {
+                    changes: {
+                      uri => [{
+                        range: {
+                          start: { line: 0, character: 0 },
+                          end:   { line: 0, character: 0 }
+                        },
+                        newText: "import #{import_module}\n"
+                      }]
+                    }
+                  }
+                }
+              end
+            end
         end
         end # want_quickfix
         quickfix_ms = elapsed_ms(quickfix_start)

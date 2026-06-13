@@ -111,7 +111,7 @@ Rules for documentation comments:
 Supported literals:
 
 - integer: `42`, `0xff`, `0b1010`, with `_` separators
-- float: `3.14`, `1.2e-3`, `1.1920929E-7`
+- float: `3.14`, `1.2e-3`, `1.1920929E-7`, `1.0f` (float suffix), `1.0d` (double suffix)
 - string: `"hello"` (`str`)
 - cstring: `c"hello"` (`cstr`)
 - heredoc string: `<<-TAG ... TAG` (`str`)
@@ -161,6 +161,7 @@ Top-level declarations:
 - `foreign function`
 - `event`
 - `static_assert(...)`
+- `emit` — compile-time code generation inside `const function` or `inline` bodies
 
 File-kind note:
 
@@ -258,6 +259,7 @@ type Callback = fn(level: int, message: cstr) -> void
 Callable and `ref[...]` rules:
 
 - Plain stored `ref[T]` values are rejected in constants, module variables, struct or union fields, and nested local storage such as arrays or other generic containers.
+- `ref[@a, T]` with a lifetime parameter declared on the struct is allowed in struct fields: `struct Cursor[@a]: data: ref[@a, span[ubyte]]`. Non-owning structs (those containing a ref field) inherit ref-like restrictions: allowed as function params and local `let` variables, rejected as returns and module storage. Composition requires the outer struct to also declare the matching lifetime.
 - Ordinary local bindings may still hold a direct `ref[T]` value, for example `let handle = ref_of(counter)`.
 - `fn(...)` and `proc(...)` parameter types may use `ref[...]` directly in parameter position.
 - Stored callable values may use `ref[...]` only in direct callable parameter positions. This includes `fn(...)` values and `proc(...)` closure values stored in locals, struct fields, and generic containers such as `array[...]`.
@@ -320,7 +322,7 @@ Arm constructors:
 - Payload arm: `Token.ident(text = "hello")` — field names with `=`.
 - No-payload arm: `Token.eof` — accessed as a bare member expression.
 
-Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes:
+Declaration attributes use a leading `@[name(...)]` surface. User-defined attributes are declared with explicit targets such as `attribute[field] rename(name: str)`. Built-in `packed` and `align(bytes)` are predefined struct attributes; `deprecated(message: str)` is predefined and targets function, struct, const, enum, flags, union, variant, and event:
 
 ```mt
 @[packed]
@@ -501,6 +503,7 @@ Supported statements:
 - `continue`
 - `return`
 - `defer`
+- `emit` — compile-time code generation; only valid inside `const function` or `inline for/while/if/match` bodies
 - expression statement
 
 ### 4.1 If
@@ -760,6 +763,7 @@ Rules:
 - member access: `a.b`
 - indexing: `a[i]`
 - call: `f(x)`
+- partial field update: `v.with(x = 10.0)` — returns a copy with specified fields replaced; supported on structs and native types (vector, matrix, quaternion)
 - specialization: `name[T]`, `name[32]`, `mod.name[T]`
 - explicit specialization is only accepted on bare or module-qualified names; `value.member[32](...)` remains indexed-call syntax, so value-member calls rely on inference instead of explicit literal specialization
 
