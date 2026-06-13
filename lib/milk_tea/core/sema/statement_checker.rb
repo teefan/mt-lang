@@ -721,7 +721,7 @@ module MilkTea
             field_type = payload_fields[field_name]
             comparison_operators = ["==", "!=", "<", "<=", ">", ">="]
             unless comparison_operators.include?(arg.value.operator)
-              raise_sema_error("unsupported guard operator '#{arg.value.operator}' in struct pattern; use ==, !=, <, <=, >, or >=", expression: arg.value)
+              raise_sema_error("unsupported guard operator '#{arg.value.operator}' in struct pattern; use ==, !=, <, <=, >, or >=", arg.value)
             end
 
             operand_type = infer_expression(arg.value.right, scopes:, expected_type: field_type)

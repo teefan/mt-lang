@@ -337,10 +337,10 @@ module MilkTea
                     arm_expr = IR::Member.new(receiver: data_expr, member: arm_name, type: payload_type)
                     payload_c_name = fresh_c_temp_name(arm_local_env, "match_payload")
                     arm_local_env[:scopes].last["__mt_payload"] = local_binding(type: payload_type, c_name: payload_c_name, mutable: true, pointer: false)
-                    lowered << IR::LocalDecl.new(name: payload_c_name, c_name: payload_c_name, type: payload_type, value: arm_expr)
 
-                    # Detect nested struct pattern: if arm has exactly one field whose
-                    # type is a struct, auto-destructure through to that struct's fields.
+                    arm_body_ir = []
+                    arm_body_ir << IR::LocalDecl.new(name: payload_c_name, c_name: payload_c_name, type: payload_type, value: arm_expr)
+
                     nested_struct_fields = nil
                     nested_struct_c_name = nil
                     nested_struct_type = nil
@@ -354,13 +354,42 @@ module MilkTea
                         member: single_field_name,
                         type: nested_struct_type,
                       )
-                      lowered << IR::LocalDecl.new(name: nested_struct_c_name, c_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
+                      arm_body_ir << IR::LocalDecl.new(name: nested_struct_c_name, c_name: nested_struct_c_name, type: nested_struct_type, value: struct_expr)
                     end
 
                     if arm.pattern.is_a?(AST::Call) && !arm.pattern.arguments.empty?
                       pattern_fields = nested_struct_fields || fields
                       pattern_receiver_name = nested_struct_c_name || payload_c_name
                       pattern_receiver_type = nested_struct_type || payload_type
+
+                      # Phase 1: Emit guard / equality checks (goto next arm on failure)
+                      arm.pattern.arguments.each do |arg|
+                        # Guard: hp > 0
+                        if !arg.name && arg.value.is_a?(AST::BinaryOp) && arg.value.left.is_a?(AST::Identifier)
+                          field_name = arg.value.left.name
+                          next unless pattern_fields.key?(field_name)
+
+                          field_type = pattern_fields[field_name]
+                          field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                          rhs_expr = lower_expression(arg.value.right, env: arm_local_env, expected_type: field_type)
+                          guard_condition = IR::Binary.new(operator: arg.value.operator, left: field_expr, right: rhs_expr, type: @types.fetch("bool"))
+                          arm_body_ir << IR::IfStmt.new(condition: guard_condition, then_body: [], else_body: [IR::GotoStmt.new(label: goto_label)])
+                        end
+
+                        # Equality: kind = Kind.boss
+                        if arg.name
+                          field_name = arg.name
+                          next unless pattern_fields.key?(field_name)
+
+                          field_type = pattern_fields[field_name]
+                          field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
+                          value_expr = lower_expression(arg.value, env: arm_local_env, expected_type: field_type)
+                          eq_check = IR::Binary.new(operator: "!=", left: field_expr, right: value_expr, type: @types.fetch("bool"))
+                          arm_body_ir << IR::IfStmt.new(condition: eq_check, then_body: [IR::GotoStmt.new(label: goto_label)], else_body: [])
+                        end
+                      end
+
+                      # Phase 2: Emit bindings (bare identifiers)
                       arm.pattern.arguments.each do |arg|
                         next if arg.name
                         next unless arg.value.is_a?(AST::Identifier)
@@ -371,37 +400,48 @@ module MilkTea
                         field_type = pattern_fields[field_name]
                         binding_c = c_local_name(field_name)
                         field_expr = IR::Member.new(receiver: IR::Name.new(name: pattern_receiver_name, type: pattern_receiver_type, pointer: false), member: field_name, type: field_type)
-                        lowered << IR::LocalDecl.new(name: binding_c, c_name: binding_c, type: field_type, value: field_expr)
+                        arm_body_ir << IR::LocalDecl.new(name: binding_c, c_name: binding_c, type: field_type, value: field_expr)
                         arm_local_env[:scopes].last[field_name] = local_binding(type: field_type, c_name: binding_c, mutable: false, pointer: false)
                       end
                     end
-                  end
 
-                  # Handle as-binding for regular (non-Call) arms in the struct pattern branch
-                  if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
-                    binding_c = c_local_name(arm.binding_name)
-                    if arm_name && scrutinee_type.has_payload?(arm_name)
-                      # Payload was already extracted above; reference the existing temp
-                      payload_key = "__mt_payload"
-                      if arm_local_env[:scopes].last.key?(payload_key)
-                        payload_binding = arm_local_env[:scopes].last[payload_key]
-                        arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], c_name: binding_c, mutable: true, pointer: false)
-                        payload_ref = IR::Name.new(name: payload_binding[:c_name], type: payload_binding[:type], pointer: false)
-                        lowered << IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_binding[:type], value: payload_ref)
+                    # Handle as-binding
+                    if arm.binding_name && !wildcard_arm_pattern?(arm.pattern)
+                      binding_c = c_local_name(arm.binding_name)
+                      if arm_name && scrutinee_type.has_payload?(arm_name)
+                        payload_key = "__mt_payload"
+                        if arm_local_env[:scopes].last.key?(payload_key)
+                          payload_binding = arm_local_env[:scopes].last[payload_key]
+                          arm_local_env[:scopes].last[arm.binding_name] = local_binding(type: payload_binding[:type], c_name: binding_c, mutable: true, pointer: false)
+                          payload_ref = IR::Name.new(name: payload_binding[:c_name], type: payload_binding[:type], pointer: false)
+                          arm_body_ir << IR::LocalDecl.new(name: arm.binding_name, c_name: binding_c, type: payload_binding[:type], value: payload_ref)
+                        end
                       end
                     end
-                  end
 
-                  body = lower_block(
-                    arm.body,
-                    env: arm_local_env,
-                    active_defers: active_defers + local_defers,
-                    return_type:,
-                    loop_flow: arm_loop_flow,
-                    allow_return:,
-                  )
-                  lowered.concat(body)
-                  lowered << IR::GotoStmt.new(label: match_end_label)
+                    body = lower_block(
+                      arm.body,
+                      env: arm_local_env,
+                      active_defers: active_defers + local_defers,
+                      return_type:,
+                      loop_flow: arm_loop_flow,
+                      allow_return:,
+                    )
+                    arm_body_ir.concat(body)
+                    arm_body_ir << IR::GotoStmt.new(label: match_end_label)
+
+                    lowered << IR::BlockStmt.new(body: arm_body_ir)
+                  else
+                    body = lower_block(
+                      arm.body,
+                      env: arm_local_env,
+                      active_defers: active_defers + local_defers,
+                      return_type:,
+                      loop_flow: arm_loop_flow,
+                      allow_return:,
+                    )
+                    lowered << IR::BlockStmt.new(body: body + [IR::GotoStmt.new(label: match_end_label)])
+                  end
                 end
 
                 lowered << IR::LabelStmt.new(name: arm_next_label)
