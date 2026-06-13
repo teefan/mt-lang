@@ -2865,4 +2865,69 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/adapt type argument must be a type/, error.message)
   end
 
+  # ── event subscribe_once / stateful errors ─────────────────────────────────
+
+  def test_rejects_subscribe_once_with_wrong_arg_count
+    source = <<~MT
+      # module demo.bad_subscribe_once_args
+
+      event ready[4]
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return ready.subscribe_once(on_ready, 0, 1)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/subscribe_once expects 1 or 2 arguments/, error.message)
+  end
+
+  def test_rejects_subscribe_once_with_named_arguments
+    source = <<~MT
+      # module demo.bad_subscribe_once_named
+
+      event ready[4]
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return ready.subscribe_once(listener = on_ready)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/does not support named arguments/, error.message)
+  end
+
+  def test_rejects_subscribe_stateful_with_non_pointer_state
+    source = <<~MT
+      # module demo.bad_stateful_state
+
+      struct State:
+          value: int
+
+      event ticked[4]
+
+      function on_tick(state: ptr[State]) -> void:
+          return
+
+      function main(s: ref[State]) -> Result[Subscription, EventError]:
+          return ticked.subscribe(s, on_tick)
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/first argument.*must be a non-null pointer/, error.message)
+  end
+
 end

@@ -4487,4 +4487,80 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  # ── event subscribe_once / stateful subscribe ──────────────────────────────
+
+  def test_type_checks_event_subscribe_once_stateless
+    source = <<~MT
+      # module demo.subscribe_once_stateless
+
+      event ready[4]
+
+      function on_ready() -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return ready.subscribe_once(on_ready)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_event_subscribe_once_with_payload
+    source = <<~MT
+      # module demo.subscribe_once_payload
+
+      event resized[8](int)
+
+      function on_resize(value: int) -> void:
+          return
+
+      function main() -> Result[Subscription, EventError]:
+          return resized.subscribe_once(on_resize)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_event_subscribe_stateful
+    source = <<~MT
+      # module demo.subscribe_stateful
+
+      struct Counter:
+          value: int
+
+      event ticked[4]
+
+      function on_tick(state: ptr[Counter]) -> void:
+          return
+
+      function main(state: ptr[Counter]) -> Result[Subscription, EventError]:
+          return ticked.subscribe(state, on_tick)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_event_subscribe_once_stateful
+    source = <<~MT
+      # module demo.subscribe_once_stateful
+
+      struct State:
+          value: int
+
+      event fired[4](int)
+
+      function on_fire(state: ptr[State], payload: int) -> void:
+          return
+
+      function main(state: ptr[State]) -> Result[Subscription, EventError]:
+          return fired.subscribe_once(state, on_fire)
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end
