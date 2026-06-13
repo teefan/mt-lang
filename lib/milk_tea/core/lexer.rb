@@ -475,10 +475,15 @@ module MilkTea
       elsif line[index, 6] == "double" && !identifier_part?(line[index + 6].to_s)
         type = :float
         index += 6
+      elsif type == :float && line[index] == "f" && !identifier_part?((line[index + 1] || " ").to_s)
+        index += 1
+      elsif type == :float && line[index] == "d" && !identifier_part?((line[index + 1] || " ").to_s)
+        index += 1
       end
 
       lexeme = line[start...index]
-      literal = type == :integer ? parse_integer(lexeme) : lexeme.delete("_").delete_suffix("float").delete_suffix("double").to_f
+      normalized = lexeme.delete("_").delete_suffix("float").delete_suffix("double").delete_suffix("f").delete_suffix("d")
+      literal = type == :integer ? parse_integer(lexeme) : normalized.to_f
       @tokens << token(type, lexeme, literal, line_number, start + 1, start_offset: line_offset + start, end_offset: line_offset + index)
       index
     end

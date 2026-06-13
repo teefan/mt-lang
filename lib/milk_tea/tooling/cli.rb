@@ -667,7 +667,7 @@ module MilkTea
       locked = options.delete(:locked)
       bundle = options[:bundle]
       package_graph = package_graph_for(path, locked:)
-      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend: @build_frontend, **options)
+      result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend: @build_frontend, **options.except(:timings))
       cache_annotation = result.cached ? " (cached)" : ""
       if bundle
         @out.puts("built #{path} -> #{File.dirname(result.output_path)}#{cache_annotation}")
@@ -751,7 +751,7 @@ module MilkTea
         frontend: @build_frontend,
         preview_started:,
         argv: @argv.dup,
-        **options
+        **options.except(:timings)
       )
       unless @out.equal?($stdout) || preview_notice_emitted
         @out.write(result.stdout)
@@ -877,6 +877,7 @@ module MilkTea
         frozen: false,
         no_cache: false,
         kind: :executable,
+        timings: false,
       }
       options[:clean] = false if allow_clean
 
@@ -920,6 +921,8 @@ module MilkTea
           options[:frozen] = true
         when "--no-cache"
           options[:no_cache] = true
+        when "--timings"
+          options[:timings] = true
         when "--kind"
           value = @argv.shift
           return missing_option_value(option) unless value

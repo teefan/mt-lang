@@ -155,7 +155,7 @@ module MilkTea
       end
     end
 
-    BUILTIN_ATTRIBUTE_NAMES = %w[packed align].freeze
+    BUILTIN_ATTRIBUTE_NAMES = %w[packed align deprecated].freeze
 
     def self.builtin_attribute_binding(name, types)
       case name
@@ -173,6 +173,15 @@ module MilkTea
           name: "align",
           targets: [:struct].freeze,
           params: [Types::Parameter.new("bytes", types.fetch("ptr_uint"))].freeze,
+          module_name: nil,
+          builtin: true,
+          ast: nil,
+        )
+      when "deprecated"
+        AttributeBinding.new(
+          name: "deprecated",
+          targets: %i[function struct const enum flags union variant event].freeze,
+          params: [Types::Parameter.new("message", types.fetch("str"))].freeze,
           module_name: nil,
           builtin: true,
           ast: nil,

@@ -85,6 +85,19 @@ module MilkTea
       def to_diagnostic
         Diagnostic.new(path:, line:, column:, length:, code:, message:, severity:, symbol_name:)
       end
+
+      def as_json(*)
+        {
+          path:,
+          line:,
+          column:,
+          length:,
+          code:,
+          message:,
+          severity: severity.to_s,
+          symbol_name:,
+        }.compact
+      end
     end
     # binding_kind: :local | :param
     # allow_prefer_let: true only for `var` locals — flag prefer-let if never mutated
