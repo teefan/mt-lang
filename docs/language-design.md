@@ -1061,7 +1061,7 @@ The raw layer should be inspectable and boring. Handwritten wrappers are optiona
 
 ### Imported foreign declarations
 
-The focused follow-on proposal for reducing imported-call friction without adding helper-wrapper sprawl lives in [Foreign Call Ergonomics V2](foreign-call-ergonomics.md).
+Foreign call ergonomics are implemented directly through `foreign function` declarations with boundary projections (`as`), parameter modes (`in`, `out`, `inout`, `consuming`), and mapping expressions — no separate follow-on proposal document is needed.
 
 Most application code should call imported foreign declarations, not raw `std.c.*` bindings.
 

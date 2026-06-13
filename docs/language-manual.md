@@ -162,6 +162,7 @@ Top-level declarations:
 - `event`
 - `static_assert(...)`
 - `emit` — compile-time code generation inside `const function` or `inline` bodies
+- `when` — compile-time conditional; may appear at module level or inside function bodies
 
 File-kind note:
 
