@@ -4212,4 +4212,52 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("transform")
   end
 
+  def test_named_function_arguments
+    source = <<~MT
+      function draw(x: int, y: int, color: str) -> void:
+          pass
+
+      function main() -> int:
+          draw(color = "red", x = 10, y = 20)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("draw")
+  end
+
+  def test_named_method_arguments
+    source = <<~MT
+      struct Renderer:
+          value: int
+
+      extending Renderer:
+          function render(width: int, height: int) -> void:
+              pass
+
+      function main() -> int:
+          var r = Renderer(value = 0)
+          r.render(height = 480, width = 640)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.types.key?("Renderer")
+  end
+
+  def test_partial_named_arguments
+    source = <<~MT
+      function configure(host: str, port: int, debug: bool) -> void:
+          pass
+
+      function main() -> int:
+          configure("localhost", 8080, debug = true)
+          configure("localhost", port = 8080, debug = true)
+          return 0
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("configure")
+  end
+
 end

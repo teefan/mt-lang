@@ -3239,4 +3239,31 @@ class MilkTeaParserTest < Minitest::Test
     assert type.nullable
   end
 
+  def test_parses_named_call_arguments
+    source = <<~MT
+      function main() -> void:
+          draw(width = 640, height = 480)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    call = fn.body.first
+    assert_instance_of MilkTea::AST::ExpressionStmt, call
+    assert_equal "width", call.expression.arguments[0].name
+    assert_equal "height", call.expression.arguments[1].name
+  end
+
+  def test_parses_mixed_positional_and_named_arguments
+    source = <<~MT
+      function main() -> void:
+          draw(640, height = 480)
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    call = fn.body.first
+    assert_nil call.expression.arguments[0].name
+    assert_equal "height", call.expression.arguments[1].name
+  end
+
 end

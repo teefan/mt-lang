@@ -2671,4 +2671,61 @@ class ErrorDetectionTest < Minitest::Test
     assert_match(/signature does not match/, error.message)
   end
 
+  def test_named_argument_unknown_parameter
+    source = <<~MT
+      ## module demo.named_err
+
+      function draw(x: int) -> void:
+          pass
+
+      function main() -> int:
+          draw(unknown = 1)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/unknown parameter 'unknown'/, error.message)
+  end
+
+  def test_named_argument_duplicate_name
+    source = <<~MT
+      ## module demo.dup_name
+
+      function draw(x: int, y: int) -> void:
+          pass
+
+      function main() -> int:
+          draw(x = 1, x = 2)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/duplicate named argument/, error.message)
+  end
+
+  def test_positional_argument_after_named
+    source = <<~MT
+      ## module demo.pos_after
+
+      function draw(x: int, y: int) -> void:
+          pass
+
+      function main() -> int:
+          draw(x = 1, 2)
+          return 0
+    MT
+
+    error = assert_raises(MilkTea::SemaError) do
+      check_source(source)
+    end
+
+    assert_match(/positional argument after named/, error.message)
+  end
+
 end
