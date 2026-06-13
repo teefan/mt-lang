@@ -3193,4 +3193,50 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal [], iface.type_params
   end
 
+  def test_parses_dyn_type
+    source = <<~MT
+      function main() -> void:
+          var handler: dyn[Damageable]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    decl = fn.body.first
+    type = decl.type
+
+    assert_instance_of MilkTea::AST::DynType, type
+    assert_equal "Damageable", type.interface.to_s
+    assert_empty type.interface.type_arguments
+  end
+
+  def test_parses_dyn_generic_interface_type
+    source = <<~MT
+      function main() -> void:
+          var m: dyn[Mapper[int]]
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    decl = fn.body.first
+    type = decl.type
+
+    assert_instance_of MilkTea::AST::DynType, type
+    assert_equal "Mapper", type.interface.to_s
+    assert_equal 1, type.interface.type_arguments.length
+  end
+
+  def test_parses_dyn_type_nullable
+    source = <<~MT
+      function main() -> void:
+          var handler: dyn[Damageable]?
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    fn = ast.declarations.first
+    decl = fn.body.first
+    type = decl.type
+
+    assert type.nullable
+  end
+
 end

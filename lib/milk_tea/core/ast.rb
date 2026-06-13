@@ -39,6 +39,9 @@ module MilkTea
     end
     FunctionType = Data.define(:params, :return_type)
     ProcType = Data.define(:params, :return_type)
+    DynType = Data.define(:interface, :nullable, :line, :column, :length) do
+      def initialize(interface:, nullable: false, line: nil, column: nil, length: nil) = super
+    end
     SourceFile = Data.define(:module_name, :module_kind, :imports, :directives, :declarations, :line) do
       def initialize(module_name:, module_kind:, imports:, directives:, declarations:, line: nil) = super
     end

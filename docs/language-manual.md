@@ -357,7 +357,9 @@ Rules:
 - Interface methods do not have bodies.
 - `public` is allowed on the interface declaration, not on individual interface methods.
 - Bare interface names are not runtime storage types; they are contracts used by `implements` and constrained generics.
+- Runtime interface values use the `dyn[InterfaceName]` type constructor. A `dyn[I]` value is a fat pointer carrying a data pointer and a vtable pointer. Construct with `adapt[I](value: ref[T])` which verifies `T implements I` at compile time.
 - Conformance uses type substitution: `struct Foo implements Mapper[int]` checks methods against `Mapper` with `T = int`.
+- Generic interfaces instantiated through `dyn` must be fully specified: `dyn[Mapper[int]]` is valid; `dyn[Mapper]` is rejected.
 
 ### 3.6 Methods
 
@@ -836,6 +838,7 @@ let q = quat(x = 0.0, y = 0.0, z = 0.0, w = 1.0)
 - `Option[T]`
 - `Result[T, E]`
 - `SoA[T, N]` — Structure-of-Arrays: transforms `T`'s fields into separate arrays of length `N`; access as `soa[i].field`
+- `dyn[InterfaceName]` — runtime interface value (fat pointer: data + vtable). Constructed via `adapt[Interface](value: ref[T])`. @see §3.5.
 
 ### 6.3 Nullability
 
@@ -909,6 +912,7 @@ Special recognized callables:
 - `array[T, N](...)`
 - `span[T](data = ..., len = ...)`
 - `get(coll, index)` — recoverable array/span indexing returning `ptr[T]?`; null on out‑of‑bounds instead of aborting
+- `adapt[I](value)` — constructs a `dyn[I]` runtime interface value; verifies `value`'s type implements `I` at compile time
 
 `default[T]` requires an accessible zero-argument associated function `T.default()` that returns `T`.
 

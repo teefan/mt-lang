@@ -380,6 +380,10 @@ module MilkTea
       type.arguments.first
     end
 
+    def dyn_type?(type)
+      type.is_a?(Types::Dyn)
+    end
+
     def task_type?(type)
       type.is_a?(Types::Task)
     end

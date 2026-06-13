@@ -103,6 +103,9 @@ module MilkTea
             when Types::Proc
               base = proc_type_name(type)
               pointer ? "#{base}*" : base
+            when Types::Dyn
+              base = dyn_type_name(type)
+              pointer ? "#{base}*" : base
             when Types::Function
               base = c_declaration(type, "")
               pointer ? "#{base}*" : base
@@ -1523,6 +1526,98 @@ module MilkTea
 
           def proc_type_name(type)
             "mt_proc_#{sanitize_identifier(type.to_s)}"
+          end
+
+          def dyn_type_name(type)
+            "mt_dyn_#{sanitize_identifier(type.interface_binding.name)}"
+          end
+
+          def collect_dyn_decls
+            void_ptr = Types::GenericInstance.new("ptr", [Types::Primitive.new("void")])
+            collect_dyn_types.map do |type|
+              IR::StructDecl.new(
+                name: type.to_s,
+                c_name: dyn_type_name(type),
+                fields: [
+                  IR::Field.new(name: "data", type: void_ptr),
+                  IR::Field.new(name: "vtable", type: void_ptr),
+                ],
+                packed: false,
+                alignment: nil,
+              )
+            end
+          end
+
+          def collect_dyn_types
+            dyn_types = []
+            seen = []
+
+            collect_type = lambda do |type|
+              return unless type
+              case type
+              when Types::Dyn
+                name = type.interface_binding.name
+                unless seen.include?(name)
+                  seen << name
+                  dyn_types << type
+                end
+              when Types::Nullable
+                collect_type.call(type.base)
+              when Types::GenericInstance
+                type.arguments.each { |arg| collect_type.call(arg) unless arg.is_a?(Types::LiteralTypeArg) }
+              when Types::Span
+                collect_type.call(type.element_type)
+              when Types::Task
+                collect_type.call(type.result_type)
+              when Types::Function
+                type.params.each { |p| collect_type.call(p.type) }
+                collect_type.call(type.return_type)
+              when Types::Proc
+                type.params.each { |p| collect_type.call(p.type) }
+                collect_type.call(type.return_type)
+              when Types::StructInstance
+                type.arguments.each { |arg| collect_type.call(arg) }
+              when Types::VariantInstance
+                type.arguments.each { |arg| collect_type.call(arg) }
+              end
+            end
+
+            collect_in_stmt = lambda do |stmt|
+              case stmt
+              when IR::LocalDecl
+                collect_type.call(stmt.type)
+              when IR::BlockStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::IfStmt
+                stmt.then_body.each { |s| collect_in_stmt.call(s) }
+                stmt.else_body&.each { |s| collect_in_stmt.call(s) }
+              when IR::WhileStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::ForStmt
+                stmt.body.each { |s| collect_in_stmt.call(s) }
+              when IR::SwitchStmt
+                stmt.cases.each { |c| c.body.each { |s| collect_in_stmt.call(s) } }
+              end
+            end
+
+            if @program
+              @program.constants.each { |c| collect_type.call(c.type) }
+              @program.globals.each { |g| collect_type.call(g.type) }
+              @program.structs.each { |s| s.fields.each { |f| collect_type.call(f.type) } }
+              @program.unions.each { |u| u.fields.each { |f| collect_type.call(f.type) } }
+              @program.functions.each do |f|
+                collect_type.call(f.return_type)
+                f.params.each { |p| collect_type.call(p.type) }
+                body = f.body
+                if body.is_a?(IR::BlockStmt)
+                  body.body.each { |s| collect_in_stmt.call(s) }
+                elsif body.is_a?(Array)
+                  body.each { |s| collect_in_stmt.call(s) }
+                end
+              end
+            end
+
+            dyn_types
           end
 
           def named_type_c_name(type)

@@ -956,6 +956,46 @@ module MilkTea
 
         resolve_attribute_name_argument(expression.arguments[1].value)
       end
+
+      def check_adapt_call(interface, arguments, scopes:)
+        raise_sema_error("adapt does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("adapt expects 1 argument, got #{arguments.length}") unless arguments.length == 1
+
+        argument = arguments.first
+        concrete_type = infer_expression(argument.value, scopes:)
+        concrete_type = referenced_type(concrete_type) if ref_type?(concrete_type)
+        unless concrete_type.is_a?(Types::Struct) || concrete_type.is_a?(Types::Opaque) || concrete_type.is_a?(Types::StructInstance)
+          raise_sema_error("adapt requires a struct or opaque type, got #{concrete_type}")
+        end
+
+        unless type_implements_interface?(concrete_type, interface)
+          raise_sema_error("#{concrete_type} does not implement #{interface.name}")
+        end
+
+        Types::Dyn.new(interface, interface.type_arguments || [])
+      end
+
+      def resolve_adapt_interface(type_arg)
+        parts = type_arg.name.parts
+        type_args = type_arg.arguments.map { |a| a.value }
+        interface_ref = AST::QualifiedName.new(parts:, type_arguments: type_args)
+        resolve_interface_ref(interface_ref)
+      end
+
+      def check_dyn_method_call(method_binding, _receiver, arguments, scopes:)
+        raise_sema_error("method call on dyn value does not support named arguments") if arguments.any?(&:name)
+        raise_sema_error("#{method_binding.name} expects #{method_binding.params.length} arguments, got #{arguments.length}") unless arguments.length == method_binding.params.length
+
+        method_binding.params.each_with_index do |param, index|
+          actual_type = infer_expression(arguments[index].value, scopes:, expected_type: param.type)
+          ensure_assignable!(
+            actual_type,
+            param.type,
+            "argument #{index + 1} of #{method_binding.name} expects #{param.type}, got #{actual_type}",
+            expression: arguments[index].value,
+          )
+        end
+      end
     end
   end
 end

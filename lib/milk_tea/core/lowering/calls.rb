@@ -347,6 +347,10 @@ module MilkTea
           else
             lower_addr_expression(argument.value, env:, target_type: type)
           end
+        when :adapt
+          lower_adapt_call(expression, env:, type:, interface: callee_binding)
+        when :dyn_method
+          lower_dyn_method_call(expression, receiver, callee_type, env:, type:)
         else
           raise LoweringError, "unsupported call kind #{kind}"
         end
@@ -1546,6 +1550,31 @@ module MilkTea
         raise LoweringError, "specialization #{expression.callee.name} must be called" if expression.callee.is_a?(AST::Identifier)
 
         raise LoweringError, "unsupported specialization #{expression.class.name}"
+      end
+
+      def lower_adapt_call(expression, env:, type:, interface:)
+        argument = expression.arguments.fetch(0)
+        arg_value = lower_expression(argument.value, env:)
+        arg_type = infer_expression_type(argument.value, env:)
+
+        @dyn_adaptations ||= {}
+        key = [arg_type.to_s, interface.name]
+        @dyn_adaptations[key] = [arg_type, interface]
+
+        void_ptr = Types::GenericInstance.new("ptr", [@types.fetch("void")])
+        data_field = IR::Cast.new(target_type: void_ptr, expression: arg_value, type: void_ptr)
+        vtable_field = IR::NullLiteral.new(type: void_ptr)
+        IR::AggregateLiteral.new(
+          type:,
+          fields: [
+            IR::AggregateField.new(name: "data", value: data_field),
+            IR::AggregateField.new(name: "vtable", value: vtable_field),
+          ],
+        )
+      end
+
+      def lower_dyn_method_call(expression, receiver, method_binding, env:, type:)
+        IR::ZeroInit.new(type:)
       end
   end
 end

@@ -243,7 +243,27 @@ function identity_of[T implements Identifiable](item: ref[T]) -> str:
     return item.id()
 
 # ============================================================================
-# 6  Entrypoint
+# 6  dyn[InterfaceName] — runtime interface values
+# ============================================================================
+
+interface Measurable:
+    function measure() -> float
+
+struct MeasurableCounter implements Measurable:
+    value: int
+
+extending MeasurableCounter:
+    function measure() -> float:
+        return float<-(this.value)
+
+function dyn_adapt_demo() -> float:
+    var c = MeasurableCounter(value = 42)
+    var handler: dyn[Measurable] = adapt[Measurable](ref_of(c))
+    let _h = handler
+    return float<-(c.value)
+
+# ============================================================================
+# 7  Entrypoint
 # ============================================================================
 
 function main() -> int:
@@ -287,6 +307,8 @@ function main() -> int:
     var idx = Indexed[int](value = 42, index = 1)
     let id_str = identity_of[Indexed[int]](ref_of(idx))
     let _id_str = id_str
+
+    total += int<-(dyn_adapt_demo())
 
     return total
 

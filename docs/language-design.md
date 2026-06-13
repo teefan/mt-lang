@@ -343,7 +343,7 @@ There is no witness table or vtable for constrained generics.
 
 Bare interface names are not runtime value types in v1.
 That means surfaces such as `var x: Damageable`, `array[Damageable, 10]`, fields of interface type, and returns of bare interface type are invalid.
-If Milk Tea later grows runtime polymorphic interface values, that surface must be spelled separately, for example `dyn Damageable`, so the dynamic cost stays visible in source.
+Milk Tea supports runtime polymorphic interface values through `dyn[InterfaceName]`. The `dyn` keyword follows the same type constructor pattern as `ptr[T]`, `ref[T]`, and `span[T]`, making the indirection cost explicit in source.
 
 Because fixed arrays copy by value, mutating interface-constrained collection code should usually take `span[T]` or `ref[array[T, N]]` rather than `array[T, N]` by value.
 

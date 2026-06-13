@@ -888,6 +888,11 @@ module MilkTea
           check_get_call(expression.arguments, scopes:)
         when :attribute_arg
           check_attribute_arg_call(callable, expression.arguments, scopes:)
+        when :dyn_method
+          check_dyn_method_call(callable, receiver, expression.arguments, scopes:)
+          callable.return_type
+        when :adapt
+          check_adapt_call(callable, expression.arguments, scopes:)
         else
           raise_sema_error("#{describe_expression(expression.callee)} is not callable")
         end
@@ -1182,6 +1187,15 @@ module MilkTea
           end
 
           method_receiver_type = infer_method_receiver_type(callee.receiver, scopes:, member_name: callee.member)
+
+          if dyn_type?(method_receiver_type)
+            interface = method_receiver_type.interface_binding
+            method_binding = interface.methods[callee.member]
+            raise_sema_error("no method '#{callee.member}' on interface #{interface.name}") unless method_binding
+            raise_sema_error("cannot call static method '#{callee.member}' on dyn value") if method_binding.kind == :static
+            return [:dyn_method, method_binding, callee.receiver]
+          end
+
           method = lookup_method(method_receiver_type, callee.member)
           return [:method, method, callee.receiver] if method
 
@@ -1283,6 +1297,16 @@ module MilkTea
             raise_sema_error("attribute_arg type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
 
             return [:attribute_arg, resolve_type_ref(type_arg), nil]
+          end
+
+          if callee.callee.is_a?(AST::Identifier) && callee.callee.name == "adapt"
+            raise_sema_error("adapt requires exactly one type argument") unless callee.arguments.length == 1
+
+            type_arg = callee.arguments.first.value
+            raise_sema_error("adapt type argument must be a type") unless type_arg.is_a?(AST::TypeRef)
+
+            interface = resolve_adapt_interface(type_arg)
+            return [:adapt, interface, nil]
           end
 
           if (callable_resolution = resolve_specialized_callable_binding(callee, scopes:))
