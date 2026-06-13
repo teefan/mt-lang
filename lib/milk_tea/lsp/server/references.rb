@@ -42,8 +42,10 @@ module MilkTea
           end
         end
 
-        if facts && module_level_name?(facts, token.lexeme)
-          refs = measure_perf_stage(stages, 'module_refs') { module_level_reference_locations(uri, token.lexeme, facts, include_declaration: include_declaration) }
+        level_kind = facts ? module_level_name?(facts, token.lexeme) : false
+        if level_kind
+          cross_file = level_kind == :function
+          refs = measure_perf_stage(stages, 'module_refs') { module_level_reference_locations(uri, token.lexeme, facts, include_declaration: include_declaration, cross_file_allowed: cross_file) }
           result_count = refs.length
           result_state = refs.empty? ? 'miss' : 'hit'
           return refs
@@ -131,12 +133,24 @@ module MilkTea
       end
 
       def module_level_name?(facts, name)
-        return true if facts.functions.key?(name) || facts.types.key?(name) || facts.values.key?(name)
+        return :function if facts.functions.key?(name) || facts.types.key?(name) || facts.values.key?(name)
 
         facts.methods.each_value do |methods|
-          return true if methods.key?(name) || methods.key?("static:#{name}")
+          return :method if methods.key?(name) || methods.key?("static:#{name}")
         end
+
+        facts.interfaces.each_value do |interface|
+          if interface.respond_to?(:methods) && interface.methods.key?(name)
+            return :interface_method
+          end
+        end
+
         false
+      end
+
+      def module_level_name_kind(facts, name)
+        result = module_level_name?(facts, name)
+        result.is_a?(Symbol) ? result : nil
       end
 
       def module_level_ast_name?(ast, name)
@@ -146,13 +160,16 @@ module MilkTea
         false
       end
 
-      def module_level_reference_locations(uri, name, facts, include_declaration:)
+      def module_level_reference_locations(uri, name, facts, include_declaration:, cross_file_allowed: true)
         ast = @workspace.get_ast(uri)
         return [] unless ast
 
         results = []
+        binding_ids = facts ? facts.binding_resolution&.identifier_binding_ids : nil
         each_ast_node(ast) do |node|
           if node.is_a?(AST::Identifier) && node.name == name
+            next if binding_ids&.key?(node.object_id)
+
             range = ast_name_range(node.name, node.line, node.column)
             next unless range
 
@@ -194,7 +211,7 @@ module MilkTea
           end
         end
 
-        if facts&.module_name
+        if cross_file_allowed && facts&.module_name
           importing_uris = @workspace.reverse_import_dependents_for(facts.module_name)
           if importing_uris && !importing_uris.empty?
             cross_refs = @workspace.find_all_references_in(name, importing_uris.to_a - [uri])
@@ -233,6 +250,7 @@ module MilkTea
       def module_level_declaration_node?(node)
         node.is_a?(AST::FunctionDef) ||
           node.is_a?(AST::MethodDef) ||
+          node.is_a?(AST::InterfaceMethodDecl) ||
           node.is_a?(AST::ExternFunctionDecl) ||
           node.is_a?(AST::ForeignFunctionDecl) ||
           node.is_a?(AST::ConstDecl) ||

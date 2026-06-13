@@ -488,7 +488,7 @@
 
     "keyword-declaration": {
       "name": "keyword.declaration.milk-tea",
-      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link)\\b"
+      "match": "\\b(module|import|function|fn|proc|struct|union|enum|flags|variant|opaque|interface|extending|type|attribute|const|let|var|event|external|foreign|static|static_assert|compiler_flag|include|link|dyn)\\b"
     },
 
     "keyword-operator": {
@@ -503,7 +503,7 @@
 
     "keyword-builtin": {
       "name": "support.function.builtin.milk-tea",
-      "match": "\\b(ref_of|const_ptr_of|ptr_of|read|fatal|reinterpret|zero|default|field_of|callable_of|has_attribute|attribute_of|attribute_arg)\\b"
+      "match": "\\b(ref_of|const_ptr_of|ptr_of|read|fatal|reinterpret|zero|default|field_of|callable_of|has_attribute|attribute_of|attribute_arg|adapt|get)\\b"
     },
 
     "type-primitive": {
