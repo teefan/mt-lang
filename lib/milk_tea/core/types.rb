@@ -1553,6 +1553,35 @@ module MilkTea
       end
     end
 
+    class DynVtable < Base
+      attr_reader :c_name, :interface_name, :fields
+
+      def initialize(interface_name, fields = {})
+        @interface_name = interface_name
+        @c_name = "mt_vtable_#{interface_name}"
+        @fields = fields
+        freeze
+      end
+
+      def eql?(other)
+        other.is_a?(DynVtable) && other.c_name == c_name
+      end
+
+      alias == eql?
+
+      def hash
+        [self.class, c_name].hash
+      end
+
+      def to_s
+        c_name
+      end
+
+      def field(name)
+        @fields[name]
+      end
+    end
+
     BUILTIN_OPTION_TYPE = GenericVariantDefinition.new("Option", ["T"]).define_arms(
       "some" => { "value" => TypeVar.new("T") },
       "none" => {},

@@ -75,7 +75,7 @@ module MilkTea
       def prepare_call_expression_for_inline_lowering(expression, env:, expected_type: nil, allow_root_statement_foreign: false, materialize_array_calls: true)
         kind, _callee_name, _receiver, callee_type, binding = resolve_callee(expression.callee, env, arguments: expression.arguments)
 
-        if binding && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
+        if binding && binding.respond_to?(:ast) && kind != :variant_arm_ctor && foreign_function_binding?(binding) && !allow_root_statement_foreign && foreign_call_requires_statement_lowering?(expression, binding, env:)
           type = infer_expression_type(expression, env:, expected_type:)
           setup, value = lower_foreign_call_statement({ call: expression, binding: binding }, env:, expected_type: type, statement_position: false)
           return materialize_prepared_expression(setup, value, env:, type:, prefix: "foreign_expr")

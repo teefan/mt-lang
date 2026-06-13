@@ -106,6 +106,9 @@ module MilkTea
             when Types::Dyn
               base = dyn_type_name(type)
               pointer ? "#{base}*" : base
+            when Types::DynVtable
+              base = type.c_name
+              pointer ? "#{base}*" : base
             when Types::Function
               base = c_declaration(type, "")
               pointer ? "#{base}*" : base

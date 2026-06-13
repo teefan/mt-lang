@@ -259,8 +259,7 @@ extending MeasurableCounter:
 function dyn_adapt_demo() -> float:
     var c = MeasurableCounter(value = 42)
     var handler: dyn[Measurable] = adapt[Measurable](ref_of(c))
-    let _h = handler
-    return float<-(c.value)
+    return handler.measure()
 
 # ============================================================================
 # 7  Entrypoint

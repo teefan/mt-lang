@@ -13,6 +13,7 @@ require_relative "lowering/calls"
 require_relative "lowering/foreign_cstr"
 require_relative "lowering/str_buffer"
 require_relative "lowering/resolve"
+require_relative "lowering/dyn"
 require_relative "lowering/utils"
 
 module MilkTea
@@ -59,6 +60,7 @@ module MilkTea
       @synthetic_structs = []
       @synthetic_enums = []
       @synthetic_functions = []
+      @synthetic_constants = []
       @synthetic_proc_counter = 0
       @event_runtime_infos = {}
       @subscription_runtime_emitted = false
@@ -91,6 +93,7 @@ module MilkTea
         @synthetic_structs.concat(synths[:structs] || [])
         @synthetic_enums.concat(synths[:enums] || [])
         @synthetic_functions.concat(synths[:functions] || [])
+        @synthetic_constants.concat(synths[:constants] || [])
       end
 
       cached&.each do |module_name, cached_ir|
@@ -109,6 +112,7 @@ module MilkTea
         synth_before_s = @synthetic_structs.length
         synth_before_e = @synthetic_enums.length
         synth_before_f = @synthetic_functions.length
+        synth_before_c = @synthetic_constants.length
 
         modules[analysis.module_name] = IR::Program.new(
           module_name: analysis.module_name,
@@ -130,6 +134,7 @@ module MilkTea
           structs: @synthetic_structs[synth_before_s..] || [],
           enums: @synthetic_enums[synth_before_e..] || [],
           functions: @synthetic_functions[synth_before_f..] || [],
+          constants: @synthetic_constants[synth_before_c..] || [],
         }
       end
 
@@ -146,6 +151,7 @@ module MilkTea
           synth_before_s = @synthetic_structs.length
           synth_before_e = @synthetic_enums.length
           synth_before_f = @synthetic_functions.length
+          synth_before_c = @synthetic_constants.length
 
           newly_lowered = lower_functions
           next if newly_lowered.empty?
@@ -156,6 +162,7 @@ module MilkTea
             structs: @synthetic_structs[synth_before_s..] || [],
             enums: @synthetic_enums[synth_before_e..] || [],
             functions: @synthetic_functions[synth_before_f..] || [],
+            constants: @synthetic_constants[synth_before_c..] || [],
           }
           existing = per_module_synthetics[analysis.module_name]
           per_module_synthetics[analysis.module_name] = existing ? merge_synthetics(existing, delta) : delta
@@ -176,6 +183,7 @@ module MilkTea
         structs: (a[:structs] || []) + (b[:structs] || []),
         enums: (a[:enums] || []) + (b[:enums] || []),
         functions: (a[:functions] || []) + (b[:functions] || []),
+        constants: (a[:constants] || []) + (b[:constants] || []),
       }
     end
 
@@ -196,6 +204,7 @@ module MilkTea
       includes = collect_includes
 
       all_constants = modules.values.flat_map(&:constants)
+      all_constants.concat(@synthetic_constants)
       all_globals = modules.values.flat_map(&:globals)
       all_opaques = modules.values.flat_map(&:opaques)
       all_structs = modules.values.flat_map(&:structs)
@@ -265,6 +274,7 @@ module MilkTea
     include LowererForeignCstr
     include LowererStrBuffer
     include LowererResolve
+    include LowererDyn
     include LowererUtils
   end
 end
