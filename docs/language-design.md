@@ -302,9 +302,9 @@ That keeps the contract visible at the owning type and avoids import-sensitive s
 Rules for interfaces in v1:
 
 - `interface` bodies contain `function`, `editable function`, or `static function` signatures.
-- Interface declarations themselves are not generic in v1.
-- Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance in v1.
-- Interface methods may not be generic or async in v1.
+- Generic interfaces are supported: `interface Mapper[T]: function map(x: T) -> T`.
+- Interface methods may not have bodies, fields, constants, default implementations, associated types, or inheritance.
+- Interface methods may not declare their own type params or be `async`.
 - `struct` and `opaque` declarations may implement zero or more interfaces.
 - Multiple interfaces are allowed: `struct Boss implements Damageable, Drawable:`.
 - A type implements an interface only when its declaration says so explicitly.

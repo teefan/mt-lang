@@ -237,10 +237,15 @@ module MilkTea
       def resolve_generic_type_param_constraints
         @ast.declarations.each do |decl|
           with_error_node(decl) do
-            next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::VariantDecl)
+            next unless decl.is_a?(AST::StructDecl) || decl.is_a?(AST::VariantDecl) || decl.is_a?(AST::InterfaceDecl)
             next if decl.type_params.empty?
 
-            @types.fetch(decl.name).define_type_param_constraints(resolve_type_param_constraints(decl.type_params))
+            constraints = resolve_type_param_constraints(decl.type_params)
+            if decl.is_a?(AST::InterfaceDecl)
+              @interfaces[decl.name] = @interfaces.fetch(decl.name).with(type_param_constraints: constraints)
+            else
+              @types.fetch(decl.name).define_type_param_constraints(constraints)
+            end
           end
         end
       end
@@ -281,24 +286,46 @@ module MilkTea
       end
 
       def declare_interface_binding(decl)
-        methods = {}
+        if decl.type_params.any?
+          type_param_names = decl.type_params.map(&:name)
+          type_params_map = type_param_names.map { |n| [n, Types::TypeVar.new(n)] }.to_h
+          methods = {}
 
-        decl.methods.each do |method_decl|
-          method = resolve_interface_method_binding(method_decl)
-          raise_sema_error("duplicate method #{decl.name}.#{method.name}") if methods.key?(method.name)
+          decl.methods.each do |method_decl|
+            method = resolve_interface_method_binding(method_decl, type_params: type_params_map, type_param_constraints: {})
+            raise_sema_error("duplicate method #{decl.name}.#{method.name}") if methods.key?(method.name)
 
-          methods[method.name] = method
+            methods[method.name] = method
+          end
+
+          GenericInterfaceBinding.new(
+            name: decl.name,
+            type_params: type_param_names.freeze,
+            type_param_constraints: {},
+            methods: methods.freeze,
+            ast: decl,
+            module_name: @module_name,
+          )
+        else
+          methods = {}
+
+          decl.methods.each do |method_decl|
+            method = resolve_interface_method_binding(method_decl)
+            raise_sema_error("duplicate method #{decl.name}.#{method.name}") if methods.key?(method.name)
+
+            methods[method.name] = method
+          end
+
+          InterfaceBinding.new(
+            name: decl.name,
+            methods: methods.freeze,
+            ast: decl,
+            module_name: @module_name,
+          )
         end
-
-        InterfaceBinding.new(
-          name: decl.name,
-          methods: methods.freeze,
-          ast: decl,
-          module_name: @module_name,
-        )
       end
 
-      def resolve_interface_method_binding(method_decl)
+      def resolve_interface_method_binding(method_decl, type_params: {}, type_param_constraints: {})
         raise_sema_error("interface method #{method_decl.name} cannot be async") if method_decl.async
 
         params = []
@@ -307,13 +334,13 @@ module MilkTea
           raise_sema_error("duplicate parameter #{param.name} in #{method_decl.name}") if seen.key?(param.name)
 
           seen[param.name] = true
-          type = resolve_type_ref(param.type)
+          type = resolve_type_ref(param.type, type_params:, type_param_constraints:)
           validate_parameter_ref_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false)
           validate_parameter_proc_type!(type, function_name: method_decl.name, parameter_name: param.name, external: false, foreign: false)
           params << Types::Parameter.new(param.name, type)
         end
 
-        return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type) : @types.fetch("void")
+        return_type = method_decl.return_type ? resolve_type_ref(method_decl.return_type, type_params:, type_param_constraints:) : @types.fetch("void")
         validate_return_ref_type!(return_type, function_name: method_decl.name)
         validate_return_proc_type!(return_type, function_name: method_decl.name)
 

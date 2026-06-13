@@ -292,7 +292,9 @@ module MilkTea
           text += " = c#{declaration.c_name.inspect}" if declaration.c_name
           line(text)
         when AST::InterfaceDecl
-          line("#{visibility_prefix(declaration)}interface #{declaration.name}:")
+          header = "#{visibility_prefix(declaration)}interface #{declaration.name}"
+          header += render_type_params(declaration.type_params) if declaration.type_params.any?
+          line("#{header}:")
           with_indent do
             declaration.methods.each do |method|
               emit_attribute_applications(method.attributes)

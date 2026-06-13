@@ -3167,4 +3167,30 @@ class MilkTeaParserTest < Minitest::Test
     assert_nil param_type.lifetime
   end
 
+  def test_parses_generic_interface
+    source = <<~MT
+      interface Mapper[T, U]:
+          function map(x: T) -> U
+          static function identity() -> T
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    iface = ast.declarations.first
+    assert_instance_of MilkTea::AST::InterfaceDecl, iface
+    assert_equal ["T", "U"], iface.type_params.map(&:name)
+    assert_equal ["map", "identity"], iface.methods.map(&:name)
+  end
+
+  def test_parses_interface_without_type_params
+    source = <<~MT
+      interface Empty:
+          function nothing() -> void
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    iface = ast.declarations.first
+    assert_instance_of MilkTea::AST::InterfaceDecl, iface
+    assert_equal [], iface.type_params
+  end
+
 end

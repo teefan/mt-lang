@@ -264,11 +264,13 @@ public interface Damageable:
 Interface rules:
 
 - Interface bodies contain `function`, `editable function`, or `static function` signatures.
-- Interface declarations are not generic in v1.
-- Interface methods may not be `async` or generic.
+- Generic interfaces are supported: `interface Mapper[T]: function map(x: T) -> T`.
+- Interface methods may not have their own type params — `T` comes from the interface.
+- Interface methods may not be `async`.
 - Interface methods do not have bodies.
 - Bare interface names are not runtime storage types.
 - Interfaces are used by `implements` and constrained generics, not as runtime value types.
+- Conformance with generic interfaces uses type substitution: `struct Foo implements Mapper[int]` checks that `Foo`'s methods match `Mapper`'s methods with `T` replaced by `int`.
 
 Method kinds:
 
@@ -612,7 +614,8 @@ Nullability:
 Generics:
 
 - Generic structs, variants, functions, methods, and foreign functions are supported.
-- Generic type parameter constraints use `implements` on structs, variants, functions, and methods.
+- Generic interfaces are supported: `interface Mapper[T]: function map(x: T) -> T`.
+- Generic type parameter constraints use `implements` on structs, variants, interfaces, functions, and methods.
 - `implements` is the interface constraint kind.
 - Multiple interface constraints are joined with `and`.
 - There are no separate `hashes` or `equates` constraints. Generic bodies that call `hash[T](...)`, `equal[T](...)`, or `order[T](...)` rely on specialization-time checking of the canonical associated functions.
