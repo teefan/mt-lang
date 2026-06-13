@@ -120,9 +120,9 @@ function advance_slice(view: ref[SliceView], by: ptr_uint) -> void:
     view.offset += by
     view.length -= by
 
-# --- composition: outer struct with own lifetime + ref field
+# --- composition: outer struct propagating lifetime through type argument
 struct FramedSlice[@a]:
-    data: ref[@a, span[ubyte]]
+    inner: SliceView[@a]
     frame_start: ubyte
     frame_end: ubyte
 

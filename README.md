@@ -646,8 +646,8 @@ Special recognized callables:
 
 Reference and pointer notes:
 
-- `read(ref_value)` explicitly projects the referent value.
-- Member access and method calls auto-dereference `ref[T]` receivers.
+- `read(ref_value)` explicitly projects the referent value. Use `read(handle) = value` to write through a bare `ref[T]` value.
+- Member access and method calls auto-dereference `ref[T]` receivers. For mutable field access through `ref[Struct]`, use `handle.field += x` directly — no `read()` needed.
 - Passing a mutable addressable `T` to a parameter of type `ref[T]` implicitly borrows it.
 - `hash[T](value)`, `equal[T](left, right)`, and `order[T](left, right)` lower to `T.hash(...)`, `T.equal(...)`, and `T.order(...)` associated functions. Each argument must be a safe stored `T` lvalue that can be borrowed, or an existing `ref[T]`, `ptr[T]`, or `const_ptr[T]`.
 - `T.order(left: const_ptr[T], right: const_ptr[T]) -> int` returns a negative value when `left < right`, `0` when equal, and a positive value when `left > right`.
@@ -727,6 +727,7 @@ Format strings:
 
 - `f"count=#{count}"` has type `str`.
 - Allowed interpolations: `str`, `cstr`, `bool`, numeric primitives, integer-backed enums and flags, plus types implementing `format_len() -> ptr_uint` and `append_format(output: ref[std.string.String]) -> void`.
+- `f"..."` is a borrowed temporary on the stack — it cannot be returned from a function as `str`. Use `std.fmt.format(f"...")` returning `string.String` when ownership must escape.
 - Float and double interpolations support `:.N` precision.
 - Integer primitive and integer-backed enum/flags interpolations support `:x` (lowercase hex) and `:X` (uppercase hex).
 - Integer primitive and integer-backed enum/flags interpolations support `:o` / `:O` (octal) and `:b` / `:B` (binary).

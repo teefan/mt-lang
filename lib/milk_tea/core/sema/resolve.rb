@@ -250,6 +250,17 @@ module MilkTea
             end
           end
 
+          # Handle types with lifetime params only (no type params)
+          if arguments.all? { |a| a.is_a?(Types::LifetimeRef) }
+            type = @types[name]
+            if type.is_a?(Types::Struct) && type.lifetime_params&.any?
+              lifetime_args = arguments.select { |a| a.is_a?(Types::LifetimeRef) }.map(&:name)
+              if lifetime_args.to_set == type.lifetime_params.to_set
+                return type
+              end
+            end
+          end
+
           validate_generic_type!(name, arguments)
           return Types::Span.new(arguments.first) if name == "span"
 
@@ -265,6 +276,10 @@ module MilkTea
 
         if parts.length == 1
           return type_params.fetch(parts.first) if type_params.key?(parts.first)
+
+          if parts.first.start_with?("@")
+            raise_sema_error("unknown lifetime #{parts.first}", type_ref)
+          end
 
           type = @types[parts.first]
           unless type

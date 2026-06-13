@@ -401,16 +401,19 @@ module MilkTea
             struct_type = @types.fetch(decl.name)
             struct_type.ast_declaration = decl if struct_type.respond_to?(:ast_declaration=)
             type_params = if struct_type.is_a?(Types::GenericStructDefinition)
-                            seen = {}
-                            struct_type.type_params.each_with_object({}) do |name, params|
-                              raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
+                             seen = {}
+                             struct_type.type_params.each_with_object({}) do |name, params|
+                               raise_sema_error("duplicate type parameter #{decl.name}[#{name}]") if seen.key?(name)
 
-                              seen[name] = true
-                              params[name] = Types::TypeVar.new(name)
-                            end
-                          else
-                            {}
-                          end
+                               seen[name] = true
+                               params[name] = Types::TypeVar.new(name)
+                             end
+                           else
+                             {}
+                           end
+            decl.lifetime_params.each do |lt|
+              type_params[lt] = Types::LifetimeRef.new(lt)
+            end if decl.respond_to?(:lifetime_params)
             type_param_constraints = struct_type.is_a?(Types::GenericStructDefinition) ? struct_type.type_param_constraints : {}
             fields = {}
             events = {}
