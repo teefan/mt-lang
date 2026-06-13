@@ -55,7 +55,7 @@ module MilkTea
       DEFAULT_LIBRARY_TYPE_NAMES = Types::BUILTIN_TYPE_NAMES.to_set.freeze
       BUILTIN_FUNCTION_NAMES = %w[
         ref_of const_ptr_of ptr_of read fatal reinterpret array span zero default
-        field_of callable_of has_attribute attribute_of attribute_arg adapt get
+        field_of callable_of has_attribute attribute_of attribute_arg adapt get cast
       ].to_set.freeze
       BUILTIN_ASSOCIATED_HOOK_NAMES = %w[hash equal order].to_set.freeze
       BUILTIN_CALL_HOVER_INFO = {
@@ -126,6 +126,10 @@ module MilkTea
         'attribute_of' => {
           signature: 'builtin attribute_of(target, attribute_name) -> attribute_handle',
           docs: '`attribute_of(target, attribute_name)` returns the applied attribute handle for the resolved target-and-attribute pair; use `has_attribute(...)` when absence is expected.'
+        },
+        'cast' => {
+          signature: 'builtin cast[T](value) -> T',
+          docs: '`cast[T](value)` performs a C-style type cast of `value` to type `T`. Requires `unsafe`.',
         },
       }.freeze
       OPERATOR_TOKEN_TYPES = %i[

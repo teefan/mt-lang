@@ -6,6 +6,21 @@ module MilkTea
       module ServerHover
         private
 
+        KEYWORD_HOVER_INFO = {
+          'size_of' => {
+            signature: 'size_of(expr) -> int',
+            docs: '`size_of(expr)` evaluates the compile-time size (in bytes) of the expression\'s type.',
+          },
+          'align_of' => {
+            signature: 'align_of(expr) -> int',
+            docs: '`align_of(expr)` evaluates the compile-time alignment (in bytes) of the expression\'s type.',
+          },
+          'offset_of' => {
+            signature: 'offset_of(Type, field) -> int',
+            docs: '`offset_of(Type, field)` evaluates the compile-time byte offset of `field` within `Type`.',
+          },
+        }.freeze
+
       def handle_hover(params)
         stages = new_perf_stages
         total_start = stages ? monotonic_time : nil
@@ -19,6 +34,9 @@ module MilkTea
         token = context&.fetch(:token, nil)
         token_kind = token&.type || :none
         unless token&.type == :identifier
+          info = builtin_keyword_hover_info(token)
+          return info if info
+
           result_state = 'not-identifier'
           return nil
         end
@@ -1094,7 +1112,7 @@ module MilkTea
       end
 
       def builtin_type_constructor_hover_info(name, tokens, token_index)
-        return nil unless %w[array span Option Result].include?(name)
+        return nil unless %w[array span Option Result SoA].include?(name)
 
         lbracket_index = next_non_trivia_token_index(tokens, token_index + 1)
         return nil unless lbracket_index && tokens[lbracket_index].type == :lbracket
@@ -1108,6 +1126,10 @@ module MilkTea
         if after_bracket_index && tokens[after_bracket_index].type == :lparen
           docs = if name == 'array'
                    '`array[T, N](...)` constructs a fixed-length array value of type `array[T, N]`.'
+                 elsif name == 'span'
+                   '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
+                 elsif name == 'SoA'
+                   '`SoA[T, N](...)` constructs a Struct-of-Arrays value with `N` elements of type `T`. Fields are stored in separate contiguous arrays.'
                  else
                    '`span[T](data = ..., len = ...)` constructs a span view over contiguous `T` storage.'
                  end
@@ -1127,6 +1149,8 @@ module MilkTea
                  '`array[T, N]` is the built-in fixed-length array type.'
                when 'span'
                  '`span[T]` is the built-in non-owning contiguous view type.'
+               when 'SoA'
+                 '`SoA[T, N]` is the built-in Struct-of-Arrays type. Each struct field is stored in a separate contiguous array of `N` elements, improving SIMD/cache behavior for parallel field access.'
                when 'Option'
                  '`Option[T]` is the built-in optional value type with `some(value = ...)` and `none` arms.'
                else
@@ -1198,6 +1222,14 @@ module MilkTea
         return nil unless next_index
         next_type = tokens[next_index].type
         return nil unless next_type == :lparen || next_type == :lbracket
+
+        info
+      end
+
+      def builtin_keyword_hover_info(token)
+        info = KEYWORD_HOVER_INFO[token.lexeme]
+        return nil unless info
+        return nil unless [:size_of, :align_of, :offset_of].include?(token.type)
 
         info
       end
