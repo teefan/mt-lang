@@ -768,7 +768,7 @@ module MilkTea
         line_text = lines[line] || ''
         return nil if line_text.empty?
 
-        attr_match = line_text[0...char].match(/@\[([\w_]*)$/)
+        attr_match = line_text[0...char].match(/@\[(\w*)$/)
         return nil unless attr_match
 
         prefix = attr_match[1]
@@ -854,7 +854,7 @@ module MilkTea
         return nil unless call_match
 
         callable_name = call_match[1]
-        prefix_match = text_before.match(/(?:^|[,\s(])([\w_]*)$/)
+        prefix_match = text_before.match(/(?:^|[,\s(])(\w*)$/)
         prefix = prefix_match ? prefix_match[1] : ''
 
         already_provided = text_before.scan(/(\w+)\s*[=:]/).flatten.to_set

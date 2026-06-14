@@ -496,7 +496,7 @@ class CompletionTest < Minitest::Test
         workspace.open_document(uri, source)
 
         partial_source = source.sub("return foo.Point.zero()", "return foo.Point.")
-        workspace.update_document(uri, partial_source)
+        workspace.open_document(uri, partial_source)
 
         dot_line = partial_source.lines.index { |line| line.include?("return foo.Point.") }
         dot_char = partial_source.lines[dot_line].chomp.length

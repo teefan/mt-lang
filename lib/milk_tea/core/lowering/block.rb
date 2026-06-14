@@ -867,7 +867,7 @@ module MilkTea
 
       def lower_destructure_decl(statement, env:, lowered:, local_defers:, active_defers:, return_type:, loop_flow:, allow_return:)
         value_type = infer_expression_type(statement.value, env:)
-        setup, prepared_value, cleanups = prepare_expression_with_cleanups(statement.value, env:, expected_type: value_type)
+        setup, prepared_value, _cleanups = prepare_expression_with_cleanups(statement.value, env:, expected_type: value_type)
         lowered.concat(setup)
         value = lower_contextual_expression(prepared_value, env:, expected_type: value_type)
 
