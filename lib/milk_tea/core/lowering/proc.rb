@@ -67,6 +67,26 @@ module MilkTea
         env_pointer_type = pointer_to(env_struct_type)
         env_pointer = IR::Name.new(name: "__mt_proc_env_ptr", type: env_pointer_type, pointer: false)
         ref_count = IR::Member.new(receiver: env_pointer, member: "__mt_ref_count", type: @types.fetch("ptr_uint"))
+
+        free_body = []
+
+        if contains_proc_storage_type?(env_struct_type)
+          env_struct_type.fields.reject { |name, _| name == "__mt_ref_count" }.each do |field_name, field_type|
+            next unless contains_proc_storage_type?(field_type)
+
+            member = IR::Member.new(receiver: env_pointer, member: field_name, type: field_type)
+            free_body.concat(lower_proc_contained_release_statements(member, field_type))
+          end
+        end
+
+        free_body << IR::ExpressionStmt.new(
+          expression: IR::Call.new(
+            callee: "mt_async_free",
+            arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
+            type: @types.fetch("void"),
+          ),
+        )
+
         IR::Function.new(
           name: release_c_name,
           c_name: release_c_name,
@@ -82,15 +102,7 @@ module MilkTea
             IR::Assignment.new(target: ref_count, operator: "-=", value: IR::IntegerLiteral.new(value: 1, type: @types.fetch("ptr_uint"))),
             IR::IfStmt.new(
               condition: IR::Binary.new(operator: "==", left: ref_count, right: IR::IntegerLiteral.new(value: 0, type: @types.fetch("ptr_uint")), type: @types.fetch("bool")),
-              then_body: [
-                IR::ExpressionStmt.new(
-                  expression: IR::Call.new(
-                    callee: "mt_async_free",
-                    arguments: [IR::Name.new(name: "__mt_proc_env", type: proc_env_pointer_type, pointer: false)],
-                    type: @types.fetch("void"),
-                  ),
-                ),
-              ],
+              then_body: free_body,
               else_body: nil,
             ),
             IR::ReturnStmt.new(value: nil),

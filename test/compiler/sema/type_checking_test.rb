@@ -1252,6 +1252,78 @@ class TypeCheckingTest < Minitest::Test
     assert_equal true, result.functions.key?("run")
   end
 
+  def test_type_checks_proc_array_capture
+    source = <<~MT
+      # module demo.proc_array_capture
+
+      function main() -> int:
+          let arr = array[int, 3](1, 2, 3)
+          let cb = proc() -> int:
+              return arr[0] + arr[1] + arr[2]
+          return cb()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_proc_capturing_proc
+    source = <<~MT
+      # module demo.proc_capture_proc
+
+      function main() -> int:
+          let offset = 10
+          let inner = proc() -> int:
+              return 5
+          let outer = proc() -> int:
+              return inner() + offset
+          return outer()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_nested_proc_returns
+    source = <<~MT
+      # module demo.nested_proc
+
+      function factory(x: int) -> proc() -> int:
+          return proc() -> int:
+              return x
+
+      function main() -> int:
+          let cb = factory(42)
+          return cb()
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("factory")
+    assert_equal true, result.functions.key?("main")
+  end
+
+  def test_type_checks_proc_returning_proc
+    source = <<~MT
+      # module demo.proc_return_proc
+
+      function make_adder(base: int) -> proc(add: int) -> int:
+          return proc(add: int) -> int:
+              return base + add
+
+      function main() -> int:
+          let adder = make_adder(10)
+          return adder(5)
+    MT
+
+    result = check_source(source)
+
+    assert_equal true, result.functions.key?("make_adder")
+    assert_equal true, result.functions.key?("main")
+  end
+
   def test_type_checks_foreign_defs_with_boundary_mappings
     root_source = <<~MT
       # module demo.main

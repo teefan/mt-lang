@@ -655,8 +655,6 @@ module MilkTea
           if ref_type?(capture[:type]) || contains_ref_type?(capture[:type])
             raise LoweringError, "proc capture #{capture[:name]} cannot use ref types"
           end
-          raise LoweringError, "proc capture #{capture[:name]} cannot capture proc values" if proc_type?(capture[:type])
-          raise LoweringError, "proc capture #{capture[:name]} cannot capture array values yet" if array_type?(capture[:type])
         end
 
         proc_id = fresh_proc_symbol
@@ -705,6 +703,12 @@ module MilkTea
                           operator: "=",
                           value: lower_expression(AST::Identifier.new(name: capture[:name]), env:, expected_type: capture[:type]),
                         )
+                      end
+                      captures.each do |capture|
+                        next unless contains_proc_storage_type?(capture[:type])
+
+                        member = IR::Member.new(receiver: env_pointer, member: capture[:field_name], type: capture[:type])
+                        setup.concat(lower_proc_contained_retain_statements(member, capture[:type]))
                       end
                       IR::Cast.new(target_type: proc_env_pointer_type, expression: env_pointer, type: proc_env_pointer_type)
                     end
