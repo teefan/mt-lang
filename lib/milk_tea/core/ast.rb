@@ -72,8 +72,8 @@ module MilkTea
     AttributeApplication = Data.define(:name, :arguments, :line, :column) do
       def initialize(name:, arguments:, line: nil, column: nil) = super
     end
-    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :attributes, :packed, :alignment, :visibility, :lifetime_params, :line) do
-      def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], attributes: [], packed:, alignment:, visibility:, lifetime_params: [], line: nil) = super
+    StructDecl = Data.define(:name, :type_params, :implements, :c_name, :fields, :events, :nested_types, :attributes, :packed, :alignment, :visibility, :lifetime_params, :line) do
+      def initialize(name:, type_params:, implements:, c_name:, fields:, events: [], nested_types: [], attributes: [], packed:, alignment:, visibility:, lifetime_params: [], line: nil) = super
     end
     UnionDecl = Data.define(:name, :c_name, :fields, :visibility, :line) do
       def initialize(name:, c_name:, fields:, visibility:, line: nil) = super

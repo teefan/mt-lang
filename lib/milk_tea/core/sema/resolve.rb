@@ -202,8 +202,8 @@ module MilkTea
         end
       end
 
-      def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints)
-        base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:)
+      def resolve_type_ref(type_ref, type_params: current_type_params, type_param_constraints: current_type_param_constraints, nested_types: nil)
+        base = resolve_non_nullable_type(type_ref, type_params:, type_param_constraints:, nested_types:)
         return base if type_ref.is_a?(AST::FunctionType) || type_ref.is_a?(AST::ProcType) || type_ref.is_a?(AST::TupleType)
 
         raise_sema_error("ref types are non-null and cannot be nullable", type_ref) if type_ref.nullable && ref_type?(base)
@@ -211,7 +211,7 @@ module MilkTea
         type_ref.nullable ? Types::Nullable.new(base) : base
       end
 
-      def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {})
+      def resolve_non_nullable_type(type_ref, type_params: {}, type_param_constraints: {}, nested_types: nil)
         if type_ref.is_a?(AST::FunctionType)
           params = type_ref.params.map do |param|
             Types::Parameter.new(param.name, resolve_type_ref(param.type, type_params:, type_param_constraints:))
@@ -302,6 +302,10 @@ module MilkTea
         if parts.length == 1
           return type_params.fetch(parts.first) if type_params.key?(parts.first)
 
+          if nested_types && (type = nested_types[parts.first])
+            return type
+          end
+
           if parts.first.start_with?("@")
             raise_sema_error("unknown lifetime #{parts.first}", type_ref)
           end
@@ -318,6 +322,11 @@ module MilkTea
           raise_sema_error("generic type #{parts.first} requires type arguments", type_ref) if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
           return type
+        end
+
+        if parts.length >= 2
+          type = resolve_nested_type_ref(parts)
+          return type if type
         end
 
         if parts.length == 2 && @imports.key?(parts.first)
@@ -755,13 +764,28 @@ module MilkTea
         super
       end
 
+      def resolve_nested_type_ref(parts)
+        current = @types[parts.first]
+        return nil unless current.is_a?(Types::Struct) || current.is_a?(Types::GenericStructDefinition)
+        parts[1..].each do |part|
+          nested = current.respond_to?(:nested_types) ? current.nested_types[part] : nil
+          return nil unless nested
+          current = nested
+        end
+        current
+      end
+
       def resolve_named_generic_type(parts)
         if parts.length == 1
           type = @types[parts.first]
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-        elsif parts.length == 2 && @imports.key?(parts.first)
-          type = @imports.fetch(parts.first).types[parts.last]
+        elsif parts.length >= 2
+          type = resolve_nested_type_ref(parts)
           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          if @imports.key?(parts.first)
+            type = @imports.fetch(parts.first).types[parts.last]
+            return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+          end
         end
 
         nil

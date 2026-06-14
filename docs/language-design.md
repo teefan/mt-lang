@@ -592,6 +592,26 @@ struct Vec2:
 	y: float
 ```
 
+Structs may contain nested struct declarations, which become independently named types scoped inside the parent:
+
+```mt
+struct Rectangle:
+	x: float
+	y: float
+
+	struct Edge:
+		start: float
+		end: float
+
+	top_edge: Edge
+	left_edge: Edge
+```
+
+Nested structs are full types, not inline anonymous members. Their qualified name is `Parent.Nested`
+(e.g., `Rectangle.Edge`). Inside the parent struct, bare names resolve to nested types. Outside,
+use the qualified name. Nested structs may themselves contain nested structs. The generated C name
+joins the path with underscores (e.g., `module_Rectangle_Edge`).
+
 #### Enums
 
 Enums always have an explicit backing type.

@@ -89,6 +89,19 @@ struct Header:
 struct Mat4:
     data: array[float, 16]
 
+# --- nested struct (scoped type inside enclosing struct body; also exercises qualified name access)
+
+struct Rectangle:
+    x: float
+    y: float
+
+    struct Edge:
+        start: float
+        end: float
+
+    top_edge: Edge
+    left_edge: Edge
+
 # --- union
 
 union Number:
@@ -1232,7 +1245,34 @@ function get_coords() -> (int, int):
     return (50, 60)
 
 # ---------------------------------------------------------------------------
-# 32  Entrypoint
+# 32  Nested structs (scoped types inside enclosing struct bodies)
+# ---------------------------------------------------------------------------
+
+function nested_struct_demo() -> float:
+    var r: Rectangle
+
+    r.x = 100.0
+    r.y = 200.0
+
+    r.top_edge.start = 0.0
+    r.top_edge.end = 50.0
+
+    r.left_edge.start = 0.0
+    r.left_edge.end = 100.0
+
+    let width = r.top_edge.end - r.top_edge.start
+    let area = width * (r.left_edge.end - r.left_edge.start)
+
+    var qualified: Rectangle.Edge
+    qualified.start = 1.0
+    qualified.end = 2.0
+
+    let _q = qualified
+
+    return r.x + r.y + area
+
+# ---------------------------------------------------------------------------
+# 33  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -1273,6 +1313,8 @@ function main() -> int:
     total += named_args_demo()
     total += int<-(dyn_demo())
     total += tuple_demo()
+
+    total += int<-(nested_struct_demo())
 
     total += aio.wait(async_child())
     total += aio.wait(async_demo())

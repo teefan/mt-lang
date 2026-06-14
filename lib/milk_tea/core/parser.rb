@@ -483,7 +483,8 @@ module MilkTea
       end
       fields = members.filter_map { |kind, member| member if kind == :field }
       events = members.filter_map { |kind, member| member if kind == :event }
-      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:)
+      nested_types = members.filter_map { |kind, member| member if kind == :nested_type }
+      AST::StructDecl.new(name:, type_params:, implements:, c_name:, fields:, events:, nested_types:, attributes:, packed:, alignment:, visibility:, lifetime_params:, line:)
     end
 
     def parse_struct_decl_params
@@ -536,6 +537,10 @@ module MilkTea
       if match(:event)
         reject_attributes!(field_attributes)
         return [:event, parse_event_decl(visibility:)]
+      end
+
+      if match(:struct)
+        return [:nested_type, parse_struct_decl(visibility:, attributes: field_attributes)]
       end
 
       raise error(visibility_token, "public is only allowed on struct events") if visibility == :public

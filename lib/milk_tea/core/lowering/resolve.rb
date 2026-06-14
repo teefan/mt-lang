@@ -2320,37 +2320,61 @@ module MilkTea
                  raise LoweringError, "generic type #{parts.first} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
 
                  type
-               elsif parts.length == 2 && @imports.key?(parts.first)
-                 imported_module = @imports.fetch(parts.first)
-                 if imported_module.private_type?(parts.last)
-                   raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
-                 end
+                elsif parts.length >= 2
+                  type = resolve_nested_type_ref(parts)
 
-                 type = imported_module.types[parts.last]
-                 raise LoweringError, "unknown type #{type_ref.name}" unless type
-                 raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+                  unless type
+                    if @imports.key?(parts.first)
+                      imported_module = @imports.fetch(parts.first)
+                      if imported_module.private_type?(parts.last)
+                        raise LoweringError, "#{parts.first}.#{parts.last} is private to module #{imported_module.name}"
+                      end
 
-                 type
-               else
-                 raise LoweringError, "unknown type #{type_ref.name}"
-               end
+                      type = imported_module.types[parts.last]
+                      raise LoweringError, "unknown type #{type_ref.name}" unless type
+                      raise LoweringError, "generic type #{type_ref.name} requires type arguments" if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+                    else
+                      raise LoweringError, "unknown type #{type_ref.name}"
+                    end
+                  end
 
-        raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
+                  type
+                else
+                  raise LoweringError, "unknown type #{type_ref.name}"
+                end
 
-        type_ref.nullable ? Types::Nullable.new(base) : base
-      end
+         raise LoweringError, "ref types are non-null and cannot be nullable" if type_ref.nullable && ref_type?(base)
 
-      def resolve_named_generic_type(parts)
-        if parts.length == 1
-          type = @types[parts.first]
-          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-        elsif parts.length == 2 && @imports.key?(parts.first)
-          type = @imports.fetch(parts.first).types[parts.last]
-          return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
-        end
+         type_ref.nullable ? Types::Nullable.new(base) : base
+       end
 
-        nil
-      end
+       def resolve_nested_type_ref(parts)
+         current = @types[parts.first]
+         return nil unless current.is_a?(Types::Struct) || current.is_a?(Types::GenericStructDefinition)
+
+         parts[1..].each do |part|
+           nested = current.respond_to?(:nested_types) ? current.nested_types[part] : nil
+           return nil unless nested
+           current = nested
+         end
+         current
+       end
+
+       def resolve_named_generic_type(parts)
+         if parts.length == 1
+           type = @types[parts.first]
+           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+         elsif parts.length >= 2
+           type = resolve_nested_type_ref(parts)
+           return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+           if @imports.key?(parts.first)
+             type = @imports.fetch(parts.first).types[parts.last]
+             return type if type.is_a?(Types::GenericStructDefinition) || type.is_a?(Types::GenericVariantDefinition)
+           end
+         end
+
+         nil
+       end
 
       def infer_field_handle_member_type(expression)
         case expression.member

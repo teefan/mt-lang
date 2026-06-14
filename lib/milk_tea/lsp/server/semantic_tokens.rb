@@ -371,7 +371,7 @@ module MilkTea
         end
 
         if next_tok&.type == :dot && facts
-          return [:type, []] if facts.types.key?(name)
+          return [:type, []] if known_type_name?(facts, name)
           return [:type, []] if facts.interfaces.key?(name)
           return [:namespace, []] if facts.imports.key?(name)
 
@@ -384,7 +384,7 @@ module MilkTea
           end
         end
 
-        if facts && (facts.types.key?(name) || facts.interfaces.key?(name)) && identifier_in_type_argument_position?(tokens, index)
+        if facts && (known_type_name?(facts, name) || facts.interfaces.key?(name)) && identifier_in_type_argument_position?(tokens, index)
           return [:type, []]
         end
 
@@ -410,6 +410,7 @@ module MilkTea
               return [:namespace, []] if facts.imports.key?(name)
             end
 
+            return [:type, []] if dot_nested_type_member?(tokens, index, facts)
             return [:property, []] if callable_field_member_access?(name, tokens, index, facts)
             return [:method, []] if static_type_member_access?(tokens, index, facts)
           end
@@ -437,7 +438,7 @@ module MilkTea
         return [:function, []] if next_tok&.type == :lbracket && user_defined_function
 
         if facts && identifier_in_type_reference_position?(tokens, index)
-          if facts.types.key?(name)
+          if known_type_name?(facts, name)
             modifiers = []
             modifiers << 'defaultLibrary' if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
             return [:type, modifiers]
@@ -455,7 +456,7 @@ module MilkTea
             return semantic_value_binding_entry(binding, declaration: binding.kind == :param && parameter_declaration)
           end
 
-          if facts.types.key?(name)
+          if known_type_name?(facts, name)
             modifiers = []
             modifiers << 'defaultLibrary' if DEFAULT_LIBRARY_TYPE_NAMES.include?(name)
             return [:type, modifiers]
@@ -937,6 +938,43 @@ module MilkTea
 
       def callable_semantic_type?(type)
         type.is_a?(Types::Function) || type.is_a?(Types::Proc)
+      end
+
+      def known_type_name?(facts, name)
+        return false unless facts
+        return true if facts.types.key?(name)
+        facts.types.each_value do |type|
+          return true if type.respond_to?(:nested_types) && type.nested_types.key?(name)
+        end
+        false
+      end
+
+      def dot_nested_type_member?(tokens, index, facts)
+        return false unless facts
+
+        dot_index = index - 1
+        return false unless dot_index >= 0 && tokens[dot_index].type == :dot
+
+        receiver_index = previous_non_trivia_token_index(tokens, dot_index)
+        return false unless receiver_index && tokens[receiver_index].type == :identifier
+
+        receiver_name = tokens[receiver_index].lexeme
+        type = resolve_struct_type_name(facts, receiver_name)
+        return false unless type.is_a?(Types::Struct)
+
+        member_name = tokens[index].lexeme
+        type.nested_types.key?(member_name)
+      end
+
+      def resolve_struct_type_name(facts, name)
+        type = facts.types[name]
+        return type if type.is_a?(Types::Struct)
+        facts.types.each_value do |t|
+          next unless t.respond_to?(:nested_types)
+          found = t.nested_types[name]
+          return found if found.is_a?(Types::Struct)
+        end
+        nil
       end
 
       def constructible_semantic_type?(type)

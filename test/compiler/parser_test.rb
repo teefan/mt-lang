@@ -3266,4 +3266,104 @@ class MilkTeaParserTest < Minitest::Test
     assert_equal "height", call.expression.arguments[1].name
   end
 
+  def test_parses_nested_struct
+    source = <<~MT
+      struct Rectangle:
+          x: float
+          y: float
+
+          struct Edge:
+              start: float
+              end: float
+
+          width: float
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct = ast.declarations.first
+    assert_kind_of MilkTea::AST::StructDecl, struct
+    assert_equal "Rectangle", struct.name
+    assert_equal %w[x y width], struct.fields.map(&:name)
+    assert_equal 1, struct.nested_types.length
+
+    edge = struct.nested_types.first
+    assert_kind_of MilkTea::AST::StructDecl, edge
+    assert_equal "Edge", edge.name
+    assert_equal %w[start end], edge.fields.map(&:name)
+    assert_empty edge.nested_types
+  end
+
+  def test_parses_deeply_nested_struct
+    source = <<~MT
+      struct A:
+          struct B:
+              struct C:
+                  value: int
+              x: float
+          y: float
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    a = ast.declarations.first
+    assert_equal %w[y], a.fields.map(&:name)
+    assert_equal 1, a.nested_types.length
+
+    b = a.nested_types.first
+    assert_equal "B", b.name
+    assert_equal %w[x], b.fields.map(&:name)
+    assert_equal 1, b.nested_types.length
+
+    c = b.nested_types.first
+    assert_equal "C", c.name
+    assert_equal %w[value], c.fields.map(&:name)
+  end
+
+  def test_parses_nested_struct_with_attributes
+    source = <<~MT
+      struct Outer:
+          @[packed]
+          struct Inner:
+              a: ubyte
+              b: ubyte
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct = ast.declarations.first
+    assert_equal 1, struct.nested_types.length
+    inner = struct.nested_types.first
+    assert inner.packed
+  end
+
+  def test_parses_nested_struct_with_type_params
+    source = <<~MT
+      struct Container[T]:
+          struct Wrapper[U]:
+              value: U
+          data: T
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct = ast.declarations.first
+    assert_equal 1, struct.nested_types.length
+    wrapper = struct.nested_types.first
+    assert_equal "Wrapper", wrapper.name
+    assert_equal ["U"], wrapper.type_params.map(&:name)
+    assert_equal %w[value], wrapper.fields.map(&:name)
+  end
+
+  def test_parses_multiple_nested_structs
+    source = <<~MT
+      struct Outer:
+          struct First:
+              a: int
+          struct Second:
+              b: int
+    MT
+
+    ast = MilkTea::Parser.parse(source)
+    struct = ast.declarations.first
+    assert_equal 2, struct.nested_types.length
+    assert_equal %w[First Second], struct.nested_types.map(&:name)
+  end
+
 end

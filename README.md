@@ -231,6 +231,27 @@ struct Header:
 struct Mat4:
     data: array[float, 16]
 
+Nested structs declare scoped types inside an enclosing struct body:
+
+```mt
+struct Rectangle:
+    x: float
+    y: float
+
+    struct Edge:
+        start: float
+        end: float
+
+    top_edge: Edge
+    left_edge: Edge
+```
+
+- Nested structs are full independent types scoped inside their parent. Their qualified name is `Parent.Nested` (e.g., `Rectangle.Edge`).
+- Inside the parent struct, bare names resolve to nested types (e.g., `Edge` means `Rectangle.Edge`).
+- Outside, use the qualified name: `var e: Rectangle.Edge`.
+- Nested structs may themselves contain nested structs to arbitrary depth.
+- The generated C name uses underscore-separated path components (e.g., `module_Rectangle_Edge`).
+
 union Number:
     i: int
     f: float

@@ -170,7 +170,9 @@ module MilkTea
       def child_symbols_for(decl)
         case decl
         when AST::StructDecl
-          (decl.fields&.map { |f| child_field_symbol(f) } || []).compact
+          field_children = (decl.fields&.map { |f| child_field_symbol(f) } || []).compact
+          nested_children = (decl.nested_types&.map { |n| child_nested_struct_symbol(n) } || []).compact
+          field_children + nested_children
         when AST::UnionDecl
           (decl.fields&.map { |f| child_field_symbol(f) } || []).compact
         when AST::EnumDecl, AST::FlagsDecl
@@ -183,6 +185,20 @@ module MilkTea
           (decl.methods&.map { |m| child_method_symbol(m) } || []).compact
         else nil
         end
+      end
+
+      def child_nested_struct_symbol(nested)
+        return nil unless nested.respond_to?(:name) && nested.name && nested.respond_to?(:line) && nested.line
+
+        grandchildren = child_symbols_for(nested)
+        {
+          name: nested.name, kind: 5,
+          range: { start: { line: nested.line - 1, character: 0 }, end: { line: nested.line, character: 0 } },
+          selectionRange: {
+            start: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 : 0) },
+            end: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 + nested.name.length : 0) },
+          },
+        }.tap { |s| s[:children] = grandchildren if grandchildren&.any? }
       end
 
       def child_field_symbol(f)

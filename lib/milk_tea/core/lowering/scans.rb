@@ -11,9 +11,18 @@ module MilkTea
             @opaque_types[decl.name] = @types.fetch(decl.name)
           when AST::StructDecl
             @struct_types[decl.name] = @types.fetch(decl.name)
+            collect_nested_structs(decl)
           when AST::UnionDecl
             @union_types[decl.name] = @types.fetch(decl.name)
           end
+        end
+      end
+
+      def collect_nested_structs(parent_decl, parent_name: parent_decl.name)
+        parent_decl.nested_types.each do |nested|
+          qualified_name = "#{parent_name}.#{nested.name}"
+          @struct_types[qualified_name] = @types.fetch(qualified_name)
+          collect_nested_structs(nested, parent_name: qualified_name)
         end
       end
 
