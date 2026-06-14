@@ -4,6 +4,7 @@ require "cgi/escape"
 require "set"
 require "uri"
 require_relative "linter/doc_tags.rb"
+require_relative "linter/fix_engine.rb"
 require_relative "linter/flow_rules.rb"
 require_relative "linter/imports_platform.rb"
 require_relative "linter/reserved_names.rb"
@@ -427,131 +428,13 @@ module MilkTea
       )
       lines = source.lines
 
-      # prefer-let: simple var→let substitution on the declaration line
-      prefer_let_fixes = warnings.select { |w| w.code == "prefer-let" && w.line }
-      prefer_let_fixes.sort_by(&:line).each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
+      warnings.group_by(&:code).each do |code, code_warnings|
+        next unless rule_enabled.call(code)
 
-        lines[idx] = lines[idx].sub(/\bvar\b/, "let")
-      end
-
-      redundant_ignored_match_binding_fixes = warnings.select do |w|
-        w.code == "redundant-ignored-match-binding" && w.line && w.column
-      end
-      redundant_ignored_match_binding_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
-
-        span = redundant_ignored_match_binding_span(lines[idx], column: w.column)
-        next unless span
-
-        lines[idx] = lines[idx].dup
-        lines[idx][span[:start_char]...span[:end_char]] = ""
-      end
-
-      # prefer-let-else: rewrite adjacent nullable guard clauses into
-      # `let value = expr else:`.
-      prefer_let_else_fixes = warnings.select { |w| w.code == "prefer-let-else" && w.line }
-      prefer_let_else_fixes.sort_by(&:line).reverse_each do |w|
-        fix = build_prefer_let_else_fix(lines, w.line - 1, symbol_name: w.symbol_name)
-        next unless fix
-
-        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
-      end
-
-      # prefer-var-else: rewrite adjacent nullable guard clauses into
-      # `var value = expr else:`.
-      prefer_var_else_fixes = warnings.select { |w| w.code == "prefer-var-else" && w.line }
-      prefer_var_else_fixes.sort_by(&:line).reverse_each do |w|
-        fix = build_prefer_let_else_fix(lines, w.line - 1, symbol_name: w.symbol_name)
-        next unless fix
-
-        lines[fix[:start_line_idx]..fix[:end_line_idx]] = [fix[:new_text]]
-      end
-
-      # redundant-bool-compare: simplify `x == true`, `x == false`,
-      # `x != true`, `x != false`.
-      redundant_bool_compare_fixes = warnings.select do |w|
-        w.code == "redundant-bool-compare" && w.line && w.column && w.length
-      end
-      redundant_bool_compare_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
-
-        start_char = w.column - 1
-        end_char = start_char + w.length
-        next if start_char.negative? || end_char > lines[idx].length
-
-        expr_text = lines[idx][start_char...end_char]
-        replacement = redundant_bool_compare_replacement(expr_text)
-        next unless replacement
-
-        lines[idx] = lines[idx].dup
-        lines[idx][start_char...end_char] = replacement
-      end
-
-      # redundant-else: for each warning, find the `else:` line above, delete it,
-      # and dedent the else body by one indent level.
-      # Process in reverse line order to keep indices stable.
-      redundant_else_fixes = warnings.select { |w| w.code == "redundant-else" && w.line }
-      redundant_else_fixes.sort_by(&:line).reverse_each do |w|
-        else_idx = w.line - 1   # 0-based index of the `else:` line
-        next unless lines[else_idx]&.match?(/\A\s*else:\s*\z/)
-
-        else_indent  = lines[else_idx].match(/\A(\s*)/)[1]
-        body_indent  = else_indent + "    "   # one additional 4-space indent level
-        first_body_idx = else_idx + 1
-
-        # Find extent of the else body: all consecutive lines that are blank or indented >= body_indent
-        body_end_idx = first_body_idx - 1
-        (first_body_idx...lines.length).each do |i|
-          l = lines[i]
-          if l.chomp.empty? || l.start_with?(body_indent)
-            body_end_idx = i
-          else
-            break
-          end
+        code_warnings.sort_by { |w| [-(w.line || 0), -(w.column || 0)] }.each do |warning|
+          edits = FixEngine.edits_for_rule(code, lines, warning)
+          FixEngine.apply_fix_edits(lines, edits)
         end
-
-        # Dedent the body lines by 4 spaces
-        (first_body_idx..body_end_idx).each do |i|
-          lines[i] = lines[i].sub(/\A    /, "") if lines[i]
-        end
-
-        # Delete the `else:` line
-        lines.delete_at(else_idx)
-      end
-
-      # redundant-return: delete a final bare `return` in a void function.
-      redundant_return_fixes = warnings.select { |w| w.code == "redundant-return" && w.line }
-      redundant_return_fixes.sort_by(&:line).reverse_each do |w|
-        idx = w.line - 1
-        next unless lines[idx]&.match?(/\A\s*return\s*\z/)
-
-        lines.delete_at(idx)
-      end
-
-      # unused-import: delete the import line entirely.
-      # Process in reverse order to keep indices stable after deletions.
-      import_fixes = warnings.select { |w| w.code == "unused-import" && w.line }
-      import_fixes.sort_by(&:line).reverse_each do |w|
-        idx = w.line - 1
-        lines.delete_at(idx) if lines[idx]&.match?(/\A\s*import\b/)
-      end
-
-      # trailing-list-comma: delete trailing comma in call argument lists.
-      trailing_list_comma_fixes = warnings.select { |w| w.code == "trailing-list-comma" && w.line && w.column }
-      trailing_list_comma_fixes.sort_by { |w| [w.line, w.column] }.reverse_each do |w|
-        idx = w.line - 1
-        next unless lines[idx]
-
-        char_idx = w.column - 1
-        next if char_idx.negative? || char_idx >= lines[idx].length
-        next unless lines[idx][char_idx] == ","
-
-        lines[idx] = lines[idx].dup
-        lines[idx][char_idx] = ""
       end
 
       fixed_source = lines.join

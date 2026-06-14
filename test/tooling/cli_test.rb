@@ -3460,7 +3460,7 @@ class MilkTeaCliTest < Minitest::Test
     assert_match(/mtc deps publish \[PATH_OR_PACKAGE\] \[--upstream\]/, err.string)
     assert_match(/mtc deps fetch \[PATH_OR_PACKAGE\]/, err.string)
     assert_match(/mtc bindgen MODULE HEADER .*--nullable-report PATH/, err.string)
-    assert_match(/mtc dap/, err.string)
+    refute_match(/mtc dap/, err.string)
   end
 
   def test_new_command_creates_project_scaffold_and_generated_entry_checks
@@ -4149,21 +4149,14 @@ class MilkTeaCliTest < Minitest::Test
   end
 
   def test_dap_command_runs_server
-    fake_server = Object.new
-    runs = []
-    fake_server.define_singleton_method(:run) { runs << :run }
-
     out = StringIO.new
     err = StringIO.new
 
-    status = with_singleton_method_override(MilkTea::DAP::Server, :new, ->(*, **) { fake_server }) do
-      MilkTea::CLI.start(["dap"], out:, err:)
-    end
+    status = MilkTea::CLI.start(["dap"], out:, err:)
 
-    assert_equal 0, status
+    assert_equal 1, status
     assert_equal "", out.string
-    assert_equal "", err.string
-    assert_equal [:run], runs
+    assert_match(/Usage: mtc lex PATH/, err.string)
   end
 
   def test_build_run_and_format_reject_invalid_options

@@ -3,6 +3,8 @@
 module MilkTea
   module LSP
     class Server
+      FakeWarning = Struct.new(:line, :column, :length, :symbol_name, keyword_init: true)
+
       module ServerCodeActions
         private
 
@@ -96,121 +98,23 @@ module MilkTea
               }
             }
 
-          when 'prefer-let'
-            # Replace `var` with `let` on the declaration line
-            source_line = lines[diag_line - 1].to_s
-            next unless source_line.match?(/\bvar\b/)
-
-            new_line = source_line.sub(/\bvar\b/, 'let')
-            actions << {
-              title: Linter.quick_fix_title('prefer-let'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: diag_line - 1, character: 0 },
-                      end:   { line: diag_line,     character: 0 }
-                    },
-                    newText: new_line
-                  }]
-                }
-              }
-            }
-
-          when 'redundant-ignored-match-binding'
-            next if source_line.empty?
-
-            span = Linter.redundant_ignored_match_binding_span(source_line, column: diag_start_char + 1)
-            next unless span
+          when 'prefer-let', 'redundant-ignored-match-binding', 'prefer-let-else',
+               'prefer-var-else', 'redundant-bool-compare', 'redundant-else',
+               'redundant-return', 'unused-import', 'trailing-list-comma'
+            fake_warning = FakeWarning.new(
+              line: diag_line,
+              column: diag_start_char + 1,
+              length: (diag_end_char - diag_start_char).positive? ? diag_end_char - diag_start_char : nil,
+              symbol_name: message[/'([^']+)'/, 1],
+            )
+            edits = Linter::FixEngine.edits_for_rule(code, lines, fake_warning)
+            next if edits.empty?
 
             actions << {
-              title: Linter.quick_fix_title('redundant-ignored-match-binding'),
+              title: Linter.quick_fix_title(code),
               kind: 'quickFix',
               diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: diag_line - 1, character: span[:start_char] },
-                      end:   { line: diag_line - 1, character: span[:end_char] }
-                    },
-                    newText: ''
-                  }]
-                }
-              }
-            }
-
-          when 'redundant-else'
-            # Remove the `else:` line above and dedent the body.
-            # Supports diagnostics anchored either on `else:` or the first body line.
-            diag_idx = diag_line - 1
-            next if diag_idx.negative?
-
-            if lines[diag_idx]&.match?(/\A\s*else:\s*\z/)
-              else_idx = diag_idx
-              first_body_idx = else_idx + 1
-            else
-              first_body_idx = diag_idx
-              next if first_body_idx < 1
-              else_idx = (0...first_body_idx).to_a.reverse.find do |i|
-                lines[i]&.match?(/\A\s*else:\s*\z/)
-              end
-            end
-            next unless else_idx
-            next if first_body_idx >= lines.length
-
-            else_indent  = lines[else_idx].match(/\A(\s*)/)[1]
-            body_indent  = else_indent + '    '
-
-            body_end_idx = first_body_idx
-            (first_body_idx...lines.length).each do |i|
-              l = lines[i]
-              if l.chomp.empty? || l.start_with?(body_indent)
-                body_end_idx = i
-              else
-                break
-              end
-            end
-
-            # Build the replacement: dedented body lines replacing `else:\nbody`
-            new_body = lines[first_body_idx..body_end_idx].map { |l| l.sub(/\A    /, '') }.join
-            actions << {
-              title: Linter.quick_fix_title('redundant-else'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: else_idx,        character: 0 },
-                      end:   { line: body_end_idx + 1, character: 0 }
-                    },
-                    newText: new_body
-                  }]
-                }
-              }
-            }
-
-          when 'redundant-return'
-            next unless source_line.match?(/\A\s*return\s*\z/)
-
-            actions << {
-              title: Linter.quick_fix_title('redundant-return'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: diag_line - 1, character: 0 },
-                      end:   { line: diag_line,     character: 0 }
-                    },
-                    newText: ''
-                  }]
-                }
-              }
+              edit: { changes: { uri => Linter::FixEngine.edits_to_lsp_text_edits(edits, uri) } }
             }
 
           when 'line-too-long'
@@ -234,74 +138,6 @@ module MilkTea
                       end:   { line: fix[:end_line_idx] + 1, character: 0 }
                     },
                     newText: fix[:new_text]
-                  }]
-                }
-              }
-            }
-
-          when 'prefer-let-else'
-            fix = Linter.build_prefer_let_else_fix(content.lines, diag_line - 1)
-            next unless fix
-
-            actions << {
-              title: Linter.quick_fix_title('prefer-let-else'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: fix[:start_line_idx], character: 0 },
-                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
-                    },
-                    newText: fix[:new_text]
-                  }]
-                }
-              }
-            }
-
-          when 'prefer-var-else'
-            fix = Linter.build_prefer_let_else_fix(content.lines, diag_line - 1)
-            next unless fix
-
-            actions << {
-              title: Linter.quick_fix_title('prefer-var-else'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: fix[:start_line_idx], character: 0 },
-                      end:   { line: fix[:end_line_idx] + 1, character: 0 }
-                    },
-                    newText: fix[:new_text]
-                  }]
-                }
-              }
-            }
-
-          when 'redundant-bool-compare'
-            next if source_line.empty?
-
-            expression = source_line[diag_start_char...diag_end_char].to_s
-            next if expression.empty?
-
-            replacement = Linter.redundant_bool_compare_replacement(expression)
-            next unless replacement
-
-            actions << {
-              title: Linter.quick_fix_title('redundant-bool-compare'),
-              kind: 'quickFix',
-              diagnostics: [diag],
-              edit: {
-                changes: {
-                  uri => [{
-                    range: {
-                      start: { line: diag_line - 1, character: diag_start_char },
-                      end:   { line: diag_line - 1, character: diag_end_char }
-                    },
-                    newText: replacement
                   }]
                 }
               }
