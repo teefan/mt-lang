@@ -391,8 +391,6 @@ module MilkTea
 
         errors = @structural_errors.dup
 
-        return { analysis: nil, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } } unless errors.empty?
-
         begin
           check_top_level_values
         rescue SemaError => e
@@ -411,9 +409,9 @@ module MilkTea
           errors << e
         end
 
-        check_functions_collecting(errors)
+        check_functions_collecting(errors) if @top_level_functions.any? || @methods.values.any?(&:any?)
 
-        analysis = build_analysis
+        analysis = errors.empty? ? build_analysis : nil
 
         { analysis: analysis, errors: errors.uniq { |e| [e.message, e.line, e.column, e.length] } }
       end
