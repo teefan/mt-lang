@@ -6,6 +6,7 @@ module MilkTea
       private
 
       def check_block(statements, scopes:, return_type:, allow_return: true)
+        statements ||= []
         with_return_context(return_type, allow_return:) do
           with_nested_scope(scopes) do |nested_scopes|
             statements.each_with_index do |statement, idx|

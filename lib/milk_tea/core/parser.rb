@@ -689,6 +689,11 @@ module MilkTea
       name = name_token.lexeme
       type_params, params, return_type, body = parse_callable_signature
       AST::FunctionDef.new(name:, type_params:, params:, return_type:, body:, visibility:, async:, const:, attributes:, line:, column: name_token.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      AST::FunctionDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, visibility:, async:, const:, attributes:, line:, column: name_token.column)
     end
 
     def parse_method_def(attributes: [])
@@ -696,6 +701,11 @@ module MilkTea
       name = name_token.lexeme
       type_params, params, return_type, body = parse_callable_signature
       AST::MethodDef.new(name:, type_params:, params:, return_type:, body:, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
+    rescue ParseError => e
+      raise unless @recovery_errors
+
+      @recovery_errors << e
+      AST::MethodDef.new(name:, type_params: [], params: [], return_type: nil, body: nil, kind:, visibility:, async:, attributes:, line:, column: name_token.column)
     end
 
     def parse_interface_method_decl(attributes: [])
