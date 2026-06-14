@@ -668,13 +668,15 @@ module MilkTea
       bundle = options[:bundle]
       package_graph = package_graph_for(path, locked:)
       result = Build.build(path, module_roots: module_roots_for(path, locked:), package_graph:, frontend: @build_frontend, **options.except(:timings))
-      cache_annotation = result.cached ? " (cached)" : ""
       if bundle
-        @out.puts("built #{path} -> #{File.dirname(result.output_path)}#{cache_annotation}")
+        @out.puts("built #{path} -> #{File.dirname(result.output_path)}")
         @out.puts("entry executable #{result.output_path}")
+        @out.puts("  [cached]") if result.cached
         @out.puts("archive #{result.archive_path}") if result.archive_path
+      elsif result.cached
+        @out.puts("built #{path} -> #{result.output_path}  [cached]")
       else
-        @out.puts("built #{path} -> #{result.output_path}#{cache_annotation}")
+        @out.puts("built #{path} -> #{result.output_path}")
       end
       @out.puts("saved C to #{result.c_path}") if result.c_path
       0
@@ -758,7 +760,7 @@ module MilkTea
       end
       @out.flush if @out.respond_to?(:flush)
       @err.write(result.stderr) unless @err.equal?($stderr)
-      @err.puts("(cached)") if result.cached
+      @out.puts("[cached]") if result.cached
       result.exit_status
     end
 
@@ -927,10 +929,8 @@ module MilkTea
         total_size = (program_dirs + binary_files).sum { |p|
           File.file?(p) ? File.size(p) : Dir.glob(File.join(p, "**", "*")).sum { |f| File.file?(f) ? File.size(f) : 0 }
         }
-        @out.puts("cache root   #{cache_root}")
-        @out.puts("cached programs  #{program_dirs.length}")
-        @out.puts("cached binaries  #{binary_files.length}")
-        @out.puts("total size       #{format_size(total_size)}")
+        @out.puts("cache  #{program_dirs.length} programs, #{binary_files.length} binaries  (#{format_size(total_size)})")
+        @out.puts("  root  #{cache_root}")
         0
       else
         @err.puts("unknown cache subcommand #{subcommand}")
