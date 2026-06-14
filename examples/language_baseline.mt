@@ -590,24 +590,60 @@ function unsafe_demo() -> void:
     return
 
 # ---------------------------------------------------------------------------
-# 12  proc expressions
+# 12  proc expressions (closures, captures, nesting)
 # ---------------------------------------------------------------------------
 
+# --- 12a: proc capturing local int value
 function proc_demo() -> int:
-    # --- expression-bodied proc
-    let triple = proc(x: int) -> int: x * 3
+    let offset = 3
+    let triple = proc(x: int) -> int: x * offset
 
-    # --- block-bodied proc
-    let accumulate = proc(seed: int, count: int) -> int:
-        var sum = seed
-        var i: int = 0
-        while i < count:
-            sum += i
-            i += 1
-        return sum
-
-    let result = triple(5) + accumulate(0, 3)
+    let result = triple(5)
     return result
+
+# --- 12b: proc capturing array[T, N] by value
+function proc_array_capture_demo() -> int:
+    let offsets = array[int, 3](1, 2, 3)
+    let cb = proc() -> int:
+        return offsets[0] + offsets[1] + offsets[2]
+    return cb()
+
+# --- 12c: proc capturing another proc (retain/release lifecycle)
+function proc_capture_proc_demo() -> int:
+    let inner = proc() -> int:
+        return 42
+    let outer = proc() -> int:
+        return inner() + 1
+    return outer()
+
+# --- 12d: function returning a capturing proc from factory
+function make_multiplier(factor: int) -> proc(x: int) -> int:
+    return proc(x: int) -> int:
+        return x * factor
+
+function proc_factory_demo() -> int:
+    let doubler = make_multiplier(2)
+    return doubler(21)
+
+# --- 12e: proc returning another proc (higher-order closure)
+function make_adder(base: int) -> proc(add: int) -> int:
+    return proc(add: int) -> int:
+        return base + add
+
+function proc_returning_proc_demo() -> int:
+    let adder = make_adder(10)
+    return adder(5)
+
+# --- 12f: proc stored in struct field, with capture
+struct Callback:
+    invoke: proc() -> int
+
+function proc_struct_demo() -> int:
+    let offset = 7
+    let invoke = proc() -> int:
+        return offset + 3
+    let cb = Callback(invoke = invoke)
+    return cb.invoke()
 
 # ---------------------------------------------------------------------------
 # 13  events usage (within declaring module)
@@ -1180,6 +1216,11 @@ function main() -> int:
     total += expressions_demo(3, 2)
     total += builtins_demo()
     total += proc_demo()
+    total += proc_array_capture_demo()
+    total += proc_capture_proc_demo()
+    total += proc_factory_demo()
+    total += proc_returning_proc_demo()
+    total += proc_struct_demo()
     total += generics_demo()
     total += comptime_demo()
     total += emit_demo()
