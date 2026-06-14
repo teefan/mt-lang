@@ -151,6 +151,8 @@ module MilkTea
         binding_resolution.identifier_binding_ids[identifier.object_id] || identifier.name
       end
       def ignored_binding_name?(name)
+        return true unless name
+
         name == "_" || name.start_with?("_")
       end
       # ── constant-condition ─────────────────────────────────────────────────

@@ -323,6 +323,14 @@ module MilkTea
           walk_expression_tree(statement.expression, &block)
         when AST::StaticAssert
           walk_expression_tree(statement.condition, &block)
+        when AST::WhenStmt
+          walk_expression_tree(statement.discriminant, &block)
+          statement.branches.each { |branch| branch.body.each { |s| each_statement_expression(s, &block) } }
+          statement.else_body&.each { |s| each_statement_expression(s, &block) }
+        when AST::UnsafeStmt
+          statement.body.each { |s| each_statement_expression(s, &block) }
+        when AST::ErrorBlockStmt
+          statement.body.each { |s| each_statement_expression(s, &block) }
         end
       end
   

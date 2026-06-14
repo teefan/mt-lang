@@ -693,7 +693,8 @@ module MilkTea
         unresolved_import_paths: unresolved_import_paths,
       }
     rescue StandardError
-      { ast: nil, facts: nil, sema_snapshot: nil, errors: nil, imported_modules: {}, unresolved_import_paths: Set.new }
+      unresolved = ast ? ast.imports.map { |i| i.path.to_s }.to_set : Set.new
+      { ast: nil, facts: nil, sema_snapshot: nil, errors: nil, imported_modules: {}, unresolved_import_paths: unresolved }
     end
 
     def self.best_effort_sema_facts(source, path: nil)
@@ -849,11 +850,15 @@ module MilkTea
     def lint(ast)
       @source_ast ||= ast
       visit_source_file(ast)
-      profile_phase("rule.doc_tag") { emit_doc_tag_warnings(ast) }
+      profile_phase("rule.doc_tag") { emit_doc_tag_warnings(ast) } if full_tier?
       profile_phase("rule.event_capacity") { emit_event_capacity_warnings(ast) }
       profile_phase("rule.trailing_list_comma") { emit_trailing_list_comma_warnings(ast) }
       profile_phase("rule.line_too_long") { emit_line_too_long_warnings }
       @warnings
+    end
+
+    def full_tier?
+      @lint_tier == :full
     end
 
     def reserved_primitive_name_fixes

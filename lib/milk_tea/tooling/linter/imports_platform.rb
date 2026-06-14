@@ -545,10 +545,8 @@ module MilkTea
           collect_indirect_import_uses_from_expr(expr.expression, used, binding_resolution, import_module_names)
         when AST::FormatString
           expr.parts.each { |part| collect_indirect_import_uses_from_expr(part.expression, used, binding_resolution, import_module_names) if part.is_a?(AST::FormatExprPart) }
-        when AST::SizeofExpr, AST::AlignofExpr
+        when AST::SizeofExpr, AST::AlignofExpr, AST::OffsetofExpr
           nil
-        when AST::OffsetofExpr
-          collect_indirect_import_uses_from_expr(expr.receiver, used, binding_resolution, import_module_names)
         end
       end
 
@@ -718,7 +716,7 @@ module MilkTea
         when AST::SizeofExpr, AST::AlignofExpr
           collect_names_from_type(expr.type, used)
         when AST::OffsetofExpr
-          collect_names_from_expr(expr.receiver, used)
+          collect_names_from_type(expr.type, used)
         end
       end
   
