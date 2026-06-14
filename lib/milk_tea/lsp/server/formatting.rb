@@ -33,8 +33,11 @@ module MilkTea
       def enrich_with_children(symbols, ast)
         removed_local_names = []
         removed_method_names = []
+        removed_nested_type_names = []
 
         ast.declarations&.each do |decl|
+          removed_nested_type_names.concat(collect_nested_type_names(decl)) if decl.is_a?(AST::StructDecl)
+
           case decl
           when AST::FunctionDef
             parent = symbols.find { |s| s[:name] == decl.name }
@@ -137,7 +140,10 @@ module MilkTea
               next if parent_children.any? { |pc| pc[:name] == c[:name] }
 
               parent_children << c
-              removed_method_names << c[:name] if c[:kind] == 6
+              case c[:kind]
+              when 6 then removed_method_names << c[:name]
+              when 5 then removed_nested_type_names << c[:name]
+              end
             end
           end
         end
@@ -149,6 +155,10 @@ module MilkTea
         if removed_method_names.any?
           removed_set = removed_method_names.to_set
           symbols.reject! { |s| s[:kind] == 6 && removed_set.include?(s[:name]) }
+        end
+        if removed_nested_type_names.any?
+          removed_set = removed_nested_type_names.to_set
+          symbols.reject! { |s| s[:kind] == 5 && removed_set.include?(s[:name]) && (!s[:children] || s[:children].empty?) }
         end
 
         symbols
@@ -199,6 +209,15 @@ module MilkTea
             end: { line: nested.line - 1, character: (nested.respond_to?(:column) && nested.column ? nested.column - 1 + nested.name.length : 0) },
           },
         }.tap { |s| s[:children] = grandchildren if grandchildren&.any? }
+      end
+
+      def collect_nested_type_names(decl)
+        names = []
+        decl.nested_types.each do |nested|
+          names << nested.name
+          names.concat(collect_nested_type_names(nested))
+        end
+        names
       end
 
       def child_field_symbol(f)
