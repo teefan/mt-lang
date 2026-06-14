@@ -203,7 +203,21 @@ function mixed_inline_demo() -> float:
     return 1.0
 
 # ---------------------------------------------------------------------------
-# 11  Entrypoint
+# 11  Extending a nested struct via its qualified name
+# ---------------------------------------------------------------------------
+
+extending Rectangle.Edge:
+    function length() -> float:
+        return this.end - this.start
+
+function extend_nested_demo() -> float:
+    var e: Rectangle.Edge
+    e.start = 0.0
+    e.end = 10.0
+    return e.length()
+
+# ---------------------------------------------------------------------------
+# 12  Entrypoint
 # ---------------------------------------------------------------------------
 
 function main() -> int:
@@ -219,5 +233,6 @@ function main() -> int:
     total += int<-(sibling_ref_demo())
     total += int<-(param_nested_demo())
     total += int<-(mixed_inline_demo())
+    total += int<-(extend_nested_demo())
 
     return total
