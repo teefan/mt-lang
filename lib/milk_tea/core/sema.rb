@@ -208,7 +208,7 @@ module MilkTea
       when "deprecated"
         AttributeBinding.new(
           name: "deprecated",
-          targets: %i[function struct const enum flags union variant event].freeze,
+          targets: %i[callable struct const enum flags union variant event].freeze,
           params: [Types::Parameter.new("message", types.fetch("str"))].freeze,
           module_name: nil,
           builtin: true,

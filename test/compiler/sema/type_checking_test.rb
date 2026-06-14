@@ -4779,4 +4779,131 @@ class TypeCheckingTest < Minitest::Test
     assert result.functions.key?("main")
   end
 
+  def test_type_checks_float_literal_with_f_suffix
+    source = <<~MT
+      # module demo.float_lit_suffix
+
+      function main() -> float:
+          return 1.0f
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_double_literal_with_d_suffix
+    source = <<~MT
+      # module demo.double_lit_suffix
+
+      function main() -> double:
+          return 1.0d
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_integer_literal_with_underscore_separators
+    source = <<~MT
+      # module demo.underscore_lit
+
+      const MILLION: int = 1_000_000
+      const HEX: int = 0xff_ff
+      const BIN: int = 0b1010_0101
+
+      function main() -> int:
+          return MILLION + HEX + BIN
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_deprecated_attribute_on_function
+    source = <<~MT
+      # module demo.deprecated_attr
+
+      @[deprecated("use new_func instead")]
+      function old_func() -> int:
+          return 0
+
+      function main() -> int:
+          return old_func()
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_attributes_of_reflection
+    source = <<~MT
+      # module demo.attributes_of_reflect
+
+      @[packed]
+      struct Labeled:
+          value: int
+
+      function check() -> void:
+          inline for attr in attributes_of(Labeled):
+              static_assert(size_of(int) > 0, "check")
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("check")
+  end
+
+  def test_type_checks_attributes_of_with_name_filter
+    source = <<~MT
+      # module demo.attributes_of_filter
+
+      @[packed]
+      struct Labeled:
+          value: int
+
+      function check() -> void:
+          inline for attr in attributes_of(Labeled, packed):
+              static_assert(size_of(int) > 0, "check")
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("check")
+  end
+
+  def test_type_checks_members_of_enum
+    source = <<~MT
+      # module demo.members_of_test
+
+      enum Color: ubyte
+          red = 1
+          green = 2
+
+      function main() -> int:
+          var count: int = 0
+          inline for member in members_of(Color):
+              count += 1
+          return count
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
+  def test_type_checks_block_bodied_const
+    source = <<~MT
+      # module demo.block_const
+
+      const POW2 -> int:
+          var n: int = 1
+          while n < 64:
+              n = n * 2
+          return n
+
+      function main() -> int:
+          return POW2
+    MT
+
+    result = check_source(source)
+    assert result.functions.key?("main")
+  end
+
 end

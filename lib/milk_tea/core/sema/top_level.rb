@@ -480,10 +480,10 @@ module MilkTea
         CompileTime::Reflection.core_member_handles(type)
       end
 
-      def evaluate_attributes_of_call(arguments)
+      def evaluate_attributes_of_call(arguments, scopes:)
         raise_sema_error("attributes_of expects 1 or 2 arguments") unless (1..2).include?(arguments.length)
 
-        target = evaluate_reflection_target_argument(arguments.first.value, [])
+        target = evaluate_reflection_target_argument(arguments.first.value, scopes:)
 
         if arguments.length == 2
           attribute_binding = resolve_attribute_name_argument(arguments[1].value)
