@@ -267,15 +267,13 @@ function syntax_sugar_stress() -> int:
     let named = (x = 10, y = 20)
     let (nx, ny) = named
 
-    # struct destructuring (access fields directly)
+    # struct destructuring (module-qualified)
     var t = types.Transform(x = 5.0, y = 10.0, rotation = 0.0)
-    let sx = t.x
-    let sy = t.y
-    let sr = t.rotation
+    let types.Transform(x, y, rotation) = t
 
     var total = int<-(updated.x) + int<-(updated.y)
     total += a + b + nx + ny
-    total += int<-(sx) + int<-(sy) + int<-(sr)
+    total += int<-(x) + int<-(y) + int<-(rotation)
 
     return total
 
