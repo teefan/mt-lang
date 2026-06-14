@@ -430,7 +430,7 @@ module MilkTea
             expression: statement.value,
             external_numeric: external_numeric_assignment_target?(statement.target, scopes:),
             contextual_int_to_float: contextual_int_to_float_target?(target_type),
-            line: statement.line,
+            line: statement.line, column: statement.column,
           )
         when "+=", "-=", "*=", "/="
           raise_sema_error("operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}") unless target_type.numeric? && value_type.numeric?
@@ -441,7 +441,7 @@ module MilkTea
             "operator #{statement.operator} requires matching numeric types, got #{target_type} and #{value_type}",
             expression: statement.value,
             contextual_int_to_float: contextual_int_to_float_target?(target_type),
-            line: statement.line,
+            line: statement.line, column: statement.column,
           )
         when "%="
           unless common_integer_type(target_type, value_type) == target_type
